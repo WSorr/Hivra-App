@@ -25,3 +25,12 @@ Cargo.lock
 
 # Local tooling
 /.tooling/
+
+# Local machine artifacts
+.DS_Store
+/.cargo/.crates.toml
+/.cargo/.crates2.json
+/.cargo/bin/
+/flutter/libhivra_ffi.dylib
+/flutter/macos/libhivra_ffi.dylib
+/flutter/macos/Frameworks/libhivra_ffi.dylib
