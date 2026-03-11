@@ -1,6 +1,6 @@
 [package]
 name = "hivra-nostr-crypto"
-version = "0.1.0"
+version = "3.2.13"
 edition = "2021"
 description = "Nostr secp256k1 CryptoProvider adapter for Hivra Engine"
 license = "MIT"

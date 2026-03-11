@@ -1,6 +1,6 @@
 [package]
 name = "hivra-keystore"
-version = "0.1.0"
+version = "3.2.13"
 edition = "2021"
 
 [lib]
