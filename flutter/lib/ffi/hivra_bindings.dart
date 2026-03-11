@@ -1,6 +1,6 @@
 import 'dart:ffi';
 import 'dart:typed_data';
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, File, Platform;
 import 'package:ffi/ffi.dart';
 
 // C function typedefs
@@ -144,11 +144,37 @@ class HivraBindings {
   factory HivraBindings() => _instance;
   static HivraBindings load() => _instance;
 
-  static final DynamicLibrary _lib = Platform.isMacOS
-      ? DynamicLibrary.open('libhivra_ffi.dylib')
-      : Platform.isAndroid
-          ? DynamicLibrary.open('libhivra_ffi.so')
-          : DynamicLibrary.process();
+  static final DynamicLibrary _lib = _openLibrary();
+
+  static DynamicLibrary _openLibrary() {
+    if (Platform.isMacOS) {
+      final executable = File(Platform.resolvedExecutable);
+      final candidates = <String>[
+        '${executable.parent.parent.path}/Frameworks/libhivra_ffi.dylib',
+        '${Directory.current.path}/libhivra_ffi.dylib',
+        'libhivra_ffi.dylib',
+      ];
+
+      Object? lastError;
+      for (final path in candidates) {
+        try {
+          return DynamicLibrary.open(path);
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw Exception(
+        'Failed to load libhivra_ffi.dylib from app bundle Frameworks. '
+        'Last error: $lastError',
+      );
+    }
+
+    if (Platform.isAndroid) {
+      return DynamicLibrary.open('libhivra_ffi.so');
+    }
+
+    return DynamicLibrary.process();
+  }
 
   late final HivraSeedToMnemonicDart _seedToMnemonic;
   late final HivraMnemonicToSeedDart _mnemonicToSeed;
