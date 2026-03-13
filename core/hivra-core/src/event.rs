@@ -21,6 +21,7 @@ pub enum EventKind {
     StarterBurned = 6,
     RelationshipEstablished = 7,
     RelationshipBroken = 8,
+    InvitationReceived = 9,
 }
 
 /// A signed event
@@ -115,4 +116,3 @@ mod tests {
         assert_eq!(event_a.event_id(), event_b.event_id());
     }
 }
-

@@ -94,6 +94,8 @@ typedef HivraSendInvitationDart = int Function(
 
 typedef HivraTransportReceiveC = Int32 Function();
 typedef HivraTransportReceiveDart = int Function();
+typedef HivraTransportReceiveQuickC = Int32 Function();
+typedef HivraTransportReceiveQuickDart = int Function();
 
 typedef HivraAcceptInvitationC = Int32 Function(
   Pointer<Uint8> invitationId,
@@ -117,6 +119,17 @@ typedef HivraRejectInvitationDart = int Function(
 
 typedef HivraExpireInvitationC = Int32 Function(Pointer<Uint8> invitationId);
 typedef HivraExpireInvitationDart = int Function(Pointer<Uint8> invitationId);
+
+typedef HivraBreakRelationshipC = Int32 Function(
+  Pointer<Uint8> peerPubkey,
+  Pointer<Uint8> ownStarterId,
+  Pointer<Uint8> peerStarterId,
+);
+typedef HivraBreakRelationshipDart = int Function(
+  Pointer<Uint8> peerPubkey,
+  Pointer<Uint8> ownStarterId,
+  Pointer<Uint8> peerStarterId,
+);
 
 typedef HivraNostrSendPreparedSelfCheckC = Int32 Function();
 typedef HivraNostrSendPreparedSelfCheckDart = int Function();
@@ -193,9 +206,11 @@ class HivraBindings {
   late final HivraStarterExistsDart _starterExists;
   HivraSendInvitationDart? _sendInvitation;
   HivraTransportReceiveDart? _transportReceive;
+  HivraTransportReceiveQuickDart? _transportReceiveQuick;
   HivraAcceptInvitationDart? _acceptInvitation;
   HivraRejectInvitationDart? _rejectInvitation;
   HivraExpireInvitationDart? _expireInvitation;
+  HivraBreakRelationshipDart? _breakRelationship;
   HivraNostrSendPreparedSelfCheckDart? _nostrSendPreparedSelfCheck;
   late final HivraExportLedgerDart _exportLedger;
   late final HivraImportLedgerDart _importLedger;
@@ -279,6 +294,15 @@ class HivraBindings {
     }
 
     try {
+      _transportReceiveQuick = _lib
+          .lookup<NativeFunction<HivraTransportReceiveQuickC>>(
+              'hivra_transport_receive_quick')
+          .asFunction();
+    } catch (_) {
+      _transportReceiveQuick = null;
+    }
+
+    try {
       _acceptInvitation = _lib
           .lookup<NativeFunction<HivraAcceptInvitationC>>('hivra_accept_invitation')
           .asFunction();
@@ -300,6 +324,14 @@ class HivraBindings {
           .asFunction();
     } catch (_) {
       _expireInvitation = null;
+    }
+
+    try {
+      _breakRelationship = _lib
+          .lookup<NativeFunction<HivraBreakRelationshipC>>('hivra_break_relationship')
+          .asFunction();
+    } catch (_) {
+      _breakRelationship = null;
     }
 
     _exportLedger = _lib
@@ -452,6 +484,8 @@ class HivraBindings {
 
   int receiveTransportMessages() => _transportReceive?.call() ?? -1002;
 
+  int receiveTransportMessagesQuick() => _transportReceiveQuick?.call() ?? -1002;
+
   int acceptInvitationCode(Uint8List invitationId, Uint8List fromPubkey, Uint8List createdStarterId) {
     if (invitationId.length != 32 || fromPubkey.length != 32 || createdStarterId.length != 32) {
       return -1;
@@ -506,6 +540,35 @@ class HivraBindings {
       return expireInvitationFn(invitationIdPtr) == 0;
     } finally {
       calloc.free(invitationIdPtr);
+    }
+  }
+
+  bool breakRelationship(
+    Uint8List peerPubkey,
+    Uint8List ownStarterId,
+    Uint8List peerStarterId,
+  ) {
+    if (peerPubkey.length != 32 ||
+        ownStarterId.length != 32 ||
+        peerStarterId.length != 32) {
+      return false;
+    }
+    final peerPtr = calloc<Uint8>(32);
+    final ownPtr = calloc<Uint8>(32);
+    final peerStarterPtr = calloc<Uint8>(32);
+    try {
+      final breakRelationshipFn = _breakRelationship;
+      if (breakRelationshipFn == null) {
+        return false;
+      }
+      peerPtr.asTypedList(32).setAll(0, peerPubkey);
+      ownPtr.asTypedList(32).setAll(0, ownStarterId);
+      peerStarterPtr.asTypedList(32).setAll(0, peerStarterId);
+      return breakRelationshipFn(peerPtr, ownPtr, peerStarterPtr) == 0;
+    } finally {
+      calloc.free(peerPtr);
+      calloc.free(ownPtr);
+      calloc.free(peerStarterPtr);
     }
   }
 

@@ -98,22 +98,6 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       return;
     }
 
-    final bootstrapped =
-        await persistence.bootstrapActiveCapsuleRuntime(_hivra);
-    if (!bootstrapped && mounted) {
-      final reason = await persistence.diagnoseActiveCapsuleBootstrap(_hivra);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            reason == null
-                ? 'Failed to load capsule into runtime'
-                : 'Failed to load capsule: $reason',
-          ),
-        ),
-      );
-      return;
-    }
-
     if (!mounted) return;
     navigator.pushReplacement(
       MaterialPageRoute(builder: (_) => const MainScreen()),
@@ -217,6 +201,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     await persistence.deleteCapsule(
       capsule.publicKeyHex,
       deleteLocalData: true,
+      hivra: _hivra,
     );
     if (!mounted) return;
     await _loadCapsules();

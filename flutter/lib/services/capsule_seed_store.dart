@@ -47,6 +47,10 @@ class CapsuleSeedStore {
     return _decodeSeedString(encoded) != null;
   }
 
+  Future<bool> hasFallback(String pubKeyHex) async {
+    return _decodeSeedString(await _readSeedFallback(pubKeyHex)) != null;
+  }
+
   Future<void> deleteSeed(String pubKeyHex) async {
     try {
       await _secureStorage.delete(key: '$_seedKeyPrefix$pubKeyHex');

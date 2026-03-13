@@ -94,6 +94,15 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
 /// - negative value on failure
 #[no_mangle]
 pub unsafe extern "C" fn hivra_transport_receive() -> i32 {
+    hivra_transport_receive_with_config(NostrConfig::default())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn hivra_transport_receive_quick() -> i32 {
+    hivra_transport_receive_with_config(NostrConfig::quick_launch())
+}
+
+fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
     let seed = match load_seed() {
         Ok(seed) => seed,
         Err(_) => return -1,
@@ -116,7 +125,7 @@ pub unsafe extern "C" fn hivra_transport_receive() -> i32 {
         }
     }
 
-    let transport = match NostrTransport::new(NostrConfig::default(), &sender_secret) {
+    let transport = match NostrTransport::new(config, &sender_secret) {
         Ok(transport) => transport,
         Err(_) => return -4,
     };
@@ -172,16 +181,34 @@ pub unsafe extern "C" fn hivra_transport_receive() -> i32 {
         }
 
         let local_payload = message.payload.clone();
+        let local_kind = if kind == EventKind::InvitationSent {
+            EventKind::InvitationReceived
+        } else {
+            kind
+        };
 
         let message_signer = PubKey::from(message.from);
+        if local_kind == EventKind::InvitationReceived && local_payload.len() >= 32 {
+            let mut invitation_id = [0u8; 32];
+            invitation_id.copy_from_slice(&local_payload[..32]);
+            if invitation_is_resolved_in_runtime(&invitation_id) {
+                eprintln!("[Nostr] Skip message: invitation already resolved");
+                continue;
+            }
+            if invitation_offer_exists_in_runtime(local_kind, &invitation_id, message_signer) {
+                eprintln!("[Nostr] Skip message: invitation offer already exists");
+                continue;
+            }
+        }
+
         let already_exists =
-            event_exists_in_runtime_with_signer(kind, &local_payload, message_signer);
+            event_exists_in_runtime_with_signer(local_kind, &local_payload, message_signer);
         if already_exists {
             eprintln!("[Nostr] Skip message: event already exists");
             continue;
         }
 
-        match append_runtime_event_with_signer(kind, &local_payload, message_signer) {
+        match append_runtime_event_with_signer(local_kind, &local_payload, message_signer) {
             Ok(_) => {
                 appended += 1;
             }

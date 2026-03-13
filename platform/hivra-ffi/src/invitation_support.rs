@@ -6,6 +6,45 @@ pub(crate) fn find_invitation_sent_in_runtime(
     find_invitation_sent_in_runtime_with_direction(invitation_id, None)
 }
 
+pub(crate) fn invitation_offer_exists_in_runtime(
+    kind: EventKind,
+    invitation_id: &[u8; 32],
+    signer: PubKey,
+) -> bool {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return false;
+    };
+
+    capsule.ledger.events().iter().any(|event| {
+        if event.kind() != kind || event.signer() != &signer {
+            return false;
+        }
+        let payload = event.payload();
+        if payload.len() != 96 && payload.len() != 97 {
+            return false;
+        }
+        &payload[..32] == invitation_id
+    })
+}
+
+pub(crate) fn invitation_is_resolved_in_runtime(invitation_id: &[u8; 32]) -> bool {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return false;
+    };
+
+    capsule.ledger.events().iter().any(|event| {
+        let payload = event.payload();
+        match event.kind() {
+            EventKind::InvitationAccepted if payload.len() == 96 => &payload[..32] == invitation_id,
+            EventKind::InvitationRejected if payload.len() == 33 => &payload[..32] == invitation_id,
+            EventKind::InvitationExpired if payload.len() == 32 => payload == invitation_id,
+            _ => false,
+        }
+    })
+}
+
 pub(crate) fn find_invitation_sent_in_runtime_with_direction(
     invitation_id: &[u8; 32],
     expect_incoming: Option<bool>,
@@ -16,7 +55,10 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
     let mut fallback: Option<(StarterId, StarterKind, PubKey, bool)> = None;
 
     for event in capsule.ledger.events() {
-        if event.kind() != EventKind::InvitationSent {
+        let event_kind = event.kind();
+        if event_kind != EventKind::InvitationSent
+            && event_kind != EventKind::InvitationReceived
+        {
             continue;
         }
 
@@ -38,9 +80,9 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
         addressed_to.copy_from_slice(&payload[64..96]);
         let signer = *event.signer().as_bytes();
 
-        let is_incoming_by_signer_and_address = addressed_to == local_pubkey.as_bytes().to_owned()
-            && signer != local_pubkey.as_bytes().to_owned();
-        let is_incoming = is_incoming_by_signer_and_address;
+        let is_incoming = event_kind == EventKind::InvitationReceived
+            || (addressed_to == local_pubkey.as_bytes().to_owned()
+                && signer != local_pubkey.as_bytes().to_owned());
 
         let mut peer_pubkey = [0u8; 32];
         if is_incoming {
@@ -91,7 +133,10 @@ pub(crate) fn debug_log_invitation_sent_candidates(label: &str, target_invitatio
     );
 
     for event in capsule.ledger.events() {
-        if event.kind() != EventKind::InvitationSent {
+        let event_kind = event.kind();
+        if event_kind != EventKind::InvitationSent
+            && event_kind != EventKind::InvitationReceived
+        {
             continue;
         }
 
@@ -106,8 +151,9 @@ pub(crate) fn debug_log_invitation_sent_candidates(label: &str, target_invitatio
         let mut addressed_to = [0u8; 32];
         addressed_to.copy_from_slice(&payload[64..96]);
         let signer = *event.signer().as_bytes();
-        let is_incoming = addressed_to == local_pubkey.as_bytes().to_owned()
-            && signer != local_pubkey.as_bytes().to_owned();
+        let is_incoming = event_kind == EventKind::InvitationReceived
+            || (addressed_to == local_pubkey.as_bytes().to_owned()
+                && signer != local_pubkey.as_bytes().to_owned());
 
         eprintln!(
             "[InviteLookup] candidate id={:02x?} signer={:02x?} to={:02x?} incoming={} len={}",

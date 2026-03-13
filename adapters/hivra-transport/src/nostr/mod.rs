@@ -68,6 +68,20 @@ impl Default for NostrConfig {
     }
 }
 
+impl NostrConfig {
+    pub fn quick_launch() -> Self {
+        Self {
+            relays: vec![
+                "wss://nos.lol".into(),
+                "wss://relay.damus.io".into(),
+                "wss://relay.primal.net".into(),
+            ],
+            ephemeral: true,
+            timeout: 2,
+        }
+    }
+}
+
 pub struct NostrTransport {
     runtime: Runtime,
     client: Client,

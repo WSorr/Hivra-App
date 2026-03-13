@@ -77,3 +77,59 @@ class CapsuleRuntimeBootstrap {
     required this.ledgerJson,
   });
 }
+
+class CapsuleTraceReport {
+  final String? activePubKeyHex;
+  final String? runtimePubKeyHex;
+  final bool runtimeSeedExists;
+  final bool indexHasEntry;
+  final bool secureSeedExists;
+  final bool fallbackSeedExists;
+  final String capsuleDirPath;
+  final bool capsuleDirExists;
+  final bool ledgerFileExists;
+  final bool stateFileExists;
+  final bool backupFileExists;
+  final String legacyDocsPath;
+  final bool legacyLedgerExists;
+  final bool legacyStateExists;
+  final bool legacyBackupExists;
+
+  CapsuleTraceReport({
+    required this.activePubKeyHex,
+    required this.runtimePubKeyHex,
+    required this.runtimeSeedExists,
+    required this.indexHasEntry,
+    required this.secureSeedExists,
+    required this.fallbackSeedExists,
+    required this.capsuleDirPath,
+    required this.capsuleDirExists,
+    required this.ledgerFileExists,
+    required this.stateFileExists,
+    required this.backupFileExists,
+    required this.legacyDocsPath,
+    required this.legacyLedgerExists,
+    required this.legacyStateExists,
+    required this.legacyBackupExists,
+  });
+
+  String toMultilineString() {
+    return [
+      'activePubKeyHex: ${activePubKeyHex ?? "none"}',
+      'runtimePubKeyHex: ${runtimePubKeyHex ?? "none"}',
+      'runtimeSeedExists: $runtimeSeedExists',
+      'indexHasEntry: $indexHasEntry',
+      'secureSeedExists: $secureSeedExists',
+      'fallbackSeedExists: $fallbackSeedExists',
+      'capsuleDirPath: $capsuleDirPath',
+      'capsuleDirExists: $capsuleDirExists',
+      'ledgerFileExists: $ledgerFileExists',
+      'stateFileExists: $stateFileExists',
+      'backupFileExists: $backupFileExists',
+      'legacyDocsPath: $legacyDocsPath',
+      'legacyLedgerExists: $legacyLedgerExists',
+      'legacyStateExists: $legacyStateExists',
+      'legacyBackupExists: $legacyBackupExists',
+    ].join('\n');
+  }
+}

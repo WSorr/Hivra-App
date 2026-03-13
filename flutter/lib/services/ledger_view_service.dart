@@ -68,8 +68,11 @@ class LedgerViewService {
     return CapsuleLedgerSnapshot(
       publicKey: pubKey,
       starterCount: starterCount,
-      relationshipCount:
-          relationships.where((relationship) => relationship.isActive).length,
+      relationshipCount: relationships
+          .where((relationship) => relationship.isActive)
+          .map((relationship) => relationship.peerPubkey)
+          .toSet()
+          .length,
       pendingInvitations: pendingInvitations,
       version: version,
       ledgerHashHex: hashHex,

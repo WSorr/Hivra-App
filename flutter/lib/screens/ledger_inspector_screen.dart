@@ -119,6 +119,8 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
           return 'CapsuleCreated';
         case 1:
           return 'InvitationSent';
+        case 9:
+          return 'InvitationReceived';
         case 2:
           return 'InvitationAccepted';
         case 3:

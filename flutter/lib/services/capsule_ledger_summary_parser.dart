@@ -15,11 +15,10 @@ class CapsuleLedgerSummaryParser {
       final eventsRaw = ledger['events'];
       final events = eventsRaw is List ? eventsRaw : const [];
 
-      int relationshipEstablished = 0;
-      int relationshipBroken = 0;
       int invitationSent = 0;
       int invitationResolved = 0;
       final activeStartersById = <String, int>{};
+      final activeRelationshipsByKey = <String, String>{};
 
       for (final eventRaw in events) {
         if (eventRaw is! Map) continue;
@@ -29,6 +28,8 @@ class CapsuleLedgerSummaryParser {
         switch (kind) {
           case 1:
             invitationSent++;
+            break;
+          case 9:
             break;
           case 2:
           case 3:
@@ -51,10 +52,18 @@ class CapsuleLedgerSummaryParser {
             }
             break;
           case 7:
-            relationshipEstablished++;
+            final payload = parseBytesField(event['payload']);
+            final relationship = _parseRelationshipEstablished(payload, toHex);
+            if (relationship != null) {
+              activeRelationshipsByKey[relationship.key] = relationship.peerHex;
+            }
             break;
           case 8:
-            relationshipBroken++;
+            final payload = parseBytesField(event['payload']);
+            final relationshipKey = _parseRelationshipBrokenKey(payload, toHex);
+            if (relationshipKey != null) {
+              activeRelationshipsByKey.remove(relationshipKey);
+            }
             break;
           default:
             break;
@@ -63,7 +72,7 @@ class CapsuleLedgerSummaryParser {
 
       final starterCount = activeStartersById.length.clamp(0, 5);
       final relationshipCount =
-          (relationshipEstablished - relationshipBroken).clamp(0, 9999);
+          activeRelationshipsByKey.values.toSet().length.clamp(0, 9999);
       final pendingInvitations = (invitationSent - invitationResolved).clamp(0, 9999);
       final ledgerVersion = events.length;
       final ledgerHashHex = _parseLedgerHashHex(ledger['last_hash']);
@@ -117,6 +126,8 @@ class CapsuleLedgerSummaryParser {
     switch (rawKind) {
       case 'InvitationSent':
         return 1;
+      case 'InvitationReceived':
+        return 9;
       case 'InvitationAccepted':
         return 2;
       case 'InvitationRejected':
@@ -149,6 +160,29 @@ class CapsuleLedgerSummaryParser {
     return payload.sublist(0, 32);
   }
 
+  _RelationshipEstablishedRecord? _parseRelationshipEstablished(
+    List<int>? payload,
+    String Function(Uint8List bytes) toHex,
+  ) {
+    if (payload == null || payload.length < 97) return null;
+    final peerBytes = Uint8List.fromList(payload.sublist(0, 32));
+    final ownStarterBytes = Uint8List.fromList(payload.sublist(32, 64));
+    return _RelationshipEstablishedRecord(
+      key: '${toHex(peerBytes)}:${toHex(ownStarterBytes)}',
+      peerHex: toHex(peerBytes),
+    );
+  }
+
+  String? _parseRelationshipBrokenKey(
+    List<int>? payload,
+    String Function(Uint8List bytes) toHex,
+  ) {
+    if (payload == null || payload.length < 64) return null;
+    final peerBytes = Uint8List.fromList(payload.sublist(0, 32));
+    final ownStarterBytes = Uint8List.fromList(payload.sublist(32, 64));
+    return '${toHex(peerBytes)}:${toHex(ownStarterBytes)}';
+  }
+
   String _parseLedgerHashHex(dynamic raw) {
     if (raw == null) return '0';
     if (raw is int) {
@@ -176,4 +210,11 @@ class _StarterRecord {
   final List<int> starterId;
 
   _StarterRecord({required this.kindCode, required this.starterId});
+}
+
+class _RelationshipEstablishedRecord {
+  final String key;
+  final String peerHex;
+
+  _RelationshipEstablishedRecord({required this.key, required this.peerHex});
 }

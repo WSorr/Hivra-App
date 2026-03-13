@@ -224,10 +224,62 @@ class CapsulePersistenceService {
     return null;
   }
 
+  Future<CapsuleTraceReport> diagnoseCapsuleTraces(HivraBindings hivra) async {
+    final activeHex = await resolveActiveCapsuleHex(hivra);
+    final runtimePubKey = hivra.capsulePublicKey();
+    final runtimeHex = runtimePubKey != null && runtimePubKey.length == 32
+        ? _bytesToHex(runtimePubKey)
+        : null;
+    final runtimeSeedExists = hivra.seedExists();
+
+    final index = await _readIndex();
+    final docs = await _fileStore.docsDirectory();
+
+    var capsuleDirPath = docs.path;
+    var capsuleDirExists = false;
+    var ledgerFileExists = false;
+    var stateFileExists = false;
+    var backupFileExists = false;
+    var indexHasEntry = false;
+    var secureSeedExists = false;
+    var fallbackSeedExists = false;
+
+    if (activeHex != null && activeHex.isNotEmpty) {
+      indexHasEntry = index.capsules.containsKey(activeHex);
+      secureSeedExists = await _seedStore.readSecureEncoded(activeHex) != null;
+      fallbackSeedExists = await _seedStore.hasFallback(activeHex);
+
+      final capsuleDir = await _fileStore.capsuleDirForHex(activeHex);
+      capsuleDirPath = capsuleDir.path;
+      capsuleDirExists = await capsuleDir.exists();
+      ledgerFileExists = await _fileStore.ledgerFile(capsuleDir).exists();
+      stateFileExists = await _fileStore.stateFile(capsuleDir).exists();
+      backupFileExists = await _fileStore.backupFile(capsuleDir).exists();
+    }
+
+    return CapsuleTraceReport(
+      activePubKeyHex: activeHex,
+      runtimePubKeyHex: runtimeHex,
+      runtimeSeedExists: runtimeSeedExists,
+      indexHasEntry: indexHasEntry,
+      secureSeedExists: secureSeedExists,
+      fallbackSeedExists: fallbackSeedExists,
+      capsuleDirPath: capsuleDirPath,
+      capsuleDirExists: capsuleDirExists,
+      ledgerFileExists: ledgerFileExists,
+      stateFileExists: stateFileExists,
+      backupFileExists: backupFileExists,
+      legacyDocsPath: docs.path,
+      legacyLedgerExists: await _fileStore.legacyLedgerFile(docs).exists(),
+      legacyStateExists: await _fileStore.legacyStateFile(docs).exists(),
+      legacyBackupExists: await _fileStore.legacyBackupFile(docs).exists(),
+    );
+  }
+
   Future<void> deleteActiveCapsule(HivraBindings hivra) async {
     final pubKeyHex = await resolveActiveCapsuleHex(hivra);
     if (pubKeyHex == null || pubKeyHex.isEmpty) return;
-    await deleteCapsule(pubKeyHex, deleteLocalData: true);
+    await deleteCapsule(pubKeyHex, deleteLocalData: true, hivra: hivra);
   }
 
   Future<String> getCurrentBackupPath(HivraBindings hivra) async {
@@ -347,10 +399,24 @@ class CapsulePersistenceService {
     return ownerHex;
   }
 
-  Future<void> deleteCapsule(String pubKeyHex,
-      {bool deleteLocalData = false}) async {
+  Future<void> deleteCapsule(
+    String pubKeyHex, {
+    bool deleteLocalData = false,
+    HivraBindings? hivra,
+  }) async {
+    if (hivra != null) {
+      final currentPubKey = hivra.capsulePublicKey();
+      final currentHex = currentPubKey != null && currentPubKey.length == 32
+          ? _bytesToHex(currentPubKey)
+          : null;
+      if (currentHex == pubKeyHex) {
+        hivra.resetCapsule();
+      }
+    }
+
     if (deleteLocalData) {
       await _fileStore.deleteCapsuleDir(pubKeyHex);
+      await _deleteLegacyFilesForCapsule(pubKeyHex);
     }
     await _seedStore.deleteSeed(pubKeyHex);
     final index = await _readIndex();
@@ -472,6 +538,37 @@ class CapsulePersistenceService {
     }
     if (await legacyBackup.exists()) {
       await legacyBackup.rename('${target.path}/${CapsuleFileStore.backupFileName}');
+    }
+  }
+
+  Future<void> _deleteLegacyFilesForCapsule(String pubKeyHex) async {
+    final docs = await _fileStore.docsDirectory();
+    final legacyLedger = _fileStore.legacyLedgerFile(docs);
+    if (!await legacyLedger.exists()) return;
+
+    try {
+      final raw = await legacyLedger.readAsString();
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      final ledger = Map<String, dynamic>.from(decoded);
+      final ownerBytes = _summaryParser.parseBytesField(ledger['owner']);
+      if (ownerBytes == null) return;
+      final ownerHex = _bytesToHex(Uint8List.fromList(ownerBytes));
+      if (ownerHex != pubKeyHex) return;
+    } catch (_) {
+      return;
+    }
+
+    final legacyState = _fileStore.legacyStateFile(docs);
+    final legacyBackup = _fileStore.legacyBackupFile(docs);
+    if (await legacyState.exists()) {
+      await legacyState.delete();
+    }
+    if (await legacyLedger.exists()) {
+      await legacyLedger.delete();
+    }
+    if (await legacyBackup.exists()) {
+      await legacyBackup.delete();
     }
   }
 

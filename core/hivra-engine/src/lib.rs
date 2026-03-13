@@ -366,6 +366,18 @@ where
         )
     }
 
+    pub fn prepare_relationship_broken(
+        &self,
+        peer_pubkey: PubKey,
+        own_starter_id: StarterId,
+    ) -> Result<PreparedEvent, EngineError<K::Error>> {
+        let payload = RelationshipBrokenPayload {
+            peer_pubkey,
+            own_starter_id,
+        };
+        self.prepare_event(EventKind::RelationshipBroken, payload.to_bytes(), None)
+    }
+
     pub fn resolve_accept_plan(
         &self,
         ledger: &Ledger,

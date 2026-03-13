@@ -261,6 +261,7 @@ pub(crate) fn event_kind_from_u8(kind: u8) -> Option<EventKind> {
         6 => Some(EventKind::StarterBurned),
         7 => Some(EventKind::RelationshipEstablished),
         8 => Some(EventKind::RelationshipBroken),
+        9 => Some(EventKind::InvitationReceived),
         _ => None,
     }
 }

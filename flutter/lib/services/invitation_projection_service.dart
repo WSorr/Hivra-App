@@ -43,7 +43,7 @@ class InvitationProjectionService {
       final payload = _support.payloadBytes(e['payload']);
       final signer = _support.bytes32(e['signer']);
 
-      if (kind == 1 && (payload.length == 96 || payload.length == 97)) {
+      if ((kind == 1 || kind == 9) && (payload.length == 96 || payload.length == 97)) {
         final invitationId = payload.sublist(0, 32);
         final starterId = payload.sublist(32, 64);
         final toPubkey = payload.sublist(64, 96);
@@ -57,7 +57,8 @@ class InvitationProjectionService {
         final starterSlot =
             _support.slotForStarterId(starterId, ownStarterBySlot);
         final isIncomingByAddress = _support.eq32(toPubkey, self);
-        final isIncoming = isIncomingByAddress || (current?.isIncoming ?? false);
+        final isIncoming =
+            kind == 9 || isIncomingByAddress || (current?.isIncoming ?? false);
 
         final expiresAt = timestamp.add(const Duration(hours: 24));
         InvitationStatus status = InvitationStatus.pending;

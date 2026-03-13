@@ -1,5 +1,5 @@
 use super::*;
-use hivra_core::event_payloads::RelationshipEstablishedPayload;
+use hivra_core::event_payloads::{RelationshipBrokenPayload, RelationshipEstablishedPayload};
 use std::sync::Mutex;
 
 static TEST_GUARD: Mutex<()> = Mutex::new(());
@@ -47,8 +47,12 @@ fn append_invitation_sent_for_test(
         bytes.push(slot);
     }
     if let Some(from) = from_pubkey {
-        append_runtime_event_with_signer(EventKind::InvitationSent, &bytes, PubKey::from(from))
-            .unwrap();
+        append_runtime_event_with_signer(
+            EventKind::InvitationReceived,
+            &bytes,
+            PubKey::from(from),
+        )
+        .unwrap();
     } else {
         append_runtime_event(EventKind::InvitationSent, &bytes).unwrap();
     }
@@ -166,4 +170,51 @@ fn incoming_empty_slot_reject_burns_sender_starter() {
                     && payload.reason == RejectReason::EmptySlot as u8
             })
     }));
+}
+
+#[test]
+fn relationship_broken_payload_tracks_specific_local_starter() {
+    let payload = RelationshipBrokenPayload {
+        peer_pubkey: PubKey::from([9u8; 32]),
+        own_starter_id: StarterId::from([7u8; 32]),
+    };
+
+    let parsed = RelationshipBrokenPayload::from_bytes(&payload.to_bytes()).unwrap();
+    assert_eq!(parsed.peer_pubkey, PubKey::from([9u8; 32]));
+    assert_eq!(parsed.own_starter_id, StarterId::from([7u8; 32]));
+}
+
+#[test]
+fn resolved_invitation_blocks_replayed_incoming_offer() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(31);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [17u8; 32];
+    let invitation_id = [22u8; 32];
+    let peer_starter_id = derive_starter_id(&test_seed(41), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(0),
+        Some(peer_pubkey),
+    );
+
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(derive_starter_id(&local_seed, 0)),
+    };
+    append_runtime_event(EventKind::InvitationAccepted, &accepted.to_bytes()).unwrap();
+
+    assert!(invitation_is_resolved_in_runtime(&invitation_id));
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationReceived,
+        &invitation_id,
+        PubKey::from(peer_pubkey),
+    ));
 }

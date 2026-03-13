@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -29,7 +28,7 @@ Map<String, Object?> _receiveTransportMessagesInWorker(
       !hivra.importLedger(ledgerJson)) {
     return <String, Object?>{'result': -1004};
   }
-  final result = hivra.receiveTransportMessages();
+  final result = hivra.receiveTransportMessagesQuick();
   return <String, Object?>{
     'result': result,
     'ledgerJson': hivra.exportLedger(),
@@ -49,13 +48,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   late final CapsuleStateManager _stateManager;
   final CapsulePersistenceService _persistence = CapsulePersistenceService();
 
-  Timer? _ledgerWatcher;
-  int _lastObservedLedgerVersion = 0;
-  int _lastPromptedLedgerVersion = 0;
-  bool _isBackupPromptOpen = false;
-  bool _ledgerBaselineInitialized = false;
-  bool _ledgerWatcherTickInProgress = false;
   bool _bootstrapping = true;
+  Stopwatch? _launchStopwatch;
 
   String _publicKeyHex = '';
   int _starterCount = 0;
@@ -95,7 +89,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _ledgerWatcher?.cancel();
     super.dispose();
   }
 
@@ -113,89 +106,58 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     await _persistence.exportBackupEnvelope(_hivra);
   }
 
-  void _startLedgerWatcher() {
-    _ledgerWatcher?.cancel();
-    _ledgerWatcher = Timer.periodic(const Duration(seconds: 2), (_) async {
-      if (!mounted || _ledgerWatcherTickInProgress) return;
-      _ledgerWatcherTickInProgress = true;
-
-      try {
-        final bootstrap = await _loadWorkerBootstrap();
-        if (bootstrap != null) {
-          final workerResult =
-              await compute<Map<String, Object?>, Map<String, Object?>>(
-            _receiveTransportMessagesInWorker,
-            bootstrap,
-          );
-          final result = workerResult['result'] as int?;
-          final ledgerJson = workerResult['ledgerJson'] as String?;
-          if (ledgerJson != null && ledgerJson.isNotEmpty) {
-            _hivra.importLedger(ledgerJson);
-            if ((result ?? -1) >= 0) {
-              await _persistence.persistLedgerSnapshot(_hivra);
-            }
-          }
-        }
-
-        _stateManager.refreshWithFullState();
-        final nextVersion = _stateManager.state.version;
-        if (nextVersion != _lastObservedLedgerVersion) {
-          _lastObservedLedgerVersion = nextVersion;
-          _loadCapsuleData();
-        }
-        if (nextVersion > _lastPromptedLedgerVersion) {
-          _lastPromptedLedgerVersion = nextVersion;
-          await _showBackupPrompt(nextVersion);
-        }
-      } catch (_) {
-        // Ignore transient polling failures; UI must stay responsive.
-      } finally {
-        _ledgerWatcherTickInProgress = false;
-      }
-    });
-  }
-
   Future<Map<String, Object?>?> _loadWorkerBootstrap() async {
     return _persistence.loadWorkerBootstrapArgs(_hivra);
   }
 
-  Future<void> _showBackupPrompt(int version) async {
-    if (!mounted || _isBackupPromptOpen) return;
-    _isBackupPromptOpen = true;
+  Future<void> _receiveTransportOnLaunch() async {
+    final startedAtMs = _launchStopwatch?.elapsedMilliseconds;
+    final bootstrap = await _loadWorkerBootstrap();
+    if (bootstrap == null) return;
+
     try {
-      final backupNow = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Capsule Changed'),
-          content: Text(
-            'Ledger updated to v$version. Export a backup now?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Later'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Backup now'),
-            ),
-          ],
-        ),
+      final workerResult =
+          await compute<Map<String, Object?>, Map<String, Object?>>(
+        _receiveTransportMessagesInWorker,
+        bootstrap,
       );
-      if (backupNow == true) {
-        final path = await _persistence.exportBackupEnvelope(_hivra);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(path == null
-                ? 'Backup export failed'
-                : 'Backup exported: ${path.split('/').last}'),
-          ),
-        );
+      final result = workerResult['result'] as int?;
+      final ledgerJson = workerResult['ledgerJson'] as String?;
+      if ((result ?? -1) < 0 || ledgerJson == null || ledgerJson.isEmpty) {
+        return;
       }
-    } finally {
-      _isBackupPromptOpen = false;
+      _hivra.importLedger(ledgerJson);
+      await _persistence.persistLedgerSnapshot(_hivra);
+      debugPrint(
+        '[StartupTiming] launch_receive_done_ms='
+        '${_launchStopwatch?.elapsedMilliseconds ?? -1} '
+        'started_ms=${startedAtMs ?? -1}',
+      );
+    } catch (_) {
+      // Launch-time receive is best-effort only.
+      debugPrint(
+        '[StartupTiming] launch_receive_failed_ms='
+        '${_launchStopwatch?.elapsedMilliseconds ?? -1} '
+        'started_ms=${startedAtMs ?? -1}',
+      );
     }
+  }
+
+  void _scheduleLaunchReceive() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      debugPrint(
+        '[StartupTiming] first_frame_ms='
+        '${_launchStopwatch?.elapsedMilliseconds ?? -1}',
+      );
+      await _receiveTransportOnLaunch();
+      if (!mounted) return;
+      _loadCapsuleData();
+      debugPrint(
+        '[StartupTiming] post_receive_refresh_ms='
+        '${_launchStopwatch?.elapsedMilliseconds ?? -1}',
+      );
+    });
   }
 
   void _loadCapsuleData() {
@@ -211,11 +173,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _ledgerVersion = state.version;
       _publicKeyHex =
           state.publicKey.isEmpty ? '' : base64.encode(state.publicKey);
-      if (!_ledgerBaselineInitialized) {
-        _lastObservedLedgerVersion = state.version;
-        _lastPromptedLedgerVersion = state.version;
-        _ledgerBaselineInitialized = true;
-      }
     });
   }
 
@@ -225,6 +182,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _bootstrapActiveRuntime() async {
+    _launchStopwatch = Stopwatch()..start();
     final ok = await _persistence.bootstrapActiveCapsuleRuntime(_hivra);
     if (!mounted) return;
 
@@ -238,11 +196,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       return;
     }
 
+    debugPrint(
+      '[StartupTiming] bootstrap_done_ms='
+      '${_launchStopwatch?.elapsedMilliseconds ?? -1}',
+    );
     _loadCapsuleData();
-    _startLedgerWatcher();
     setState(() {
       _bootstrapping = false;
     });
+    _scheduleLaunchReceive();
   }
 
   Widget _buildCurrentScreen() {

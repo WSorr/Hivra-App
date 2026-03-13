@@ -25,6 +25,8 @@ class LedgerViewSupport {
           return 0;
         case 'InvitationSent':
           return 1;
+        case 'InvitationReceived':
+          return 9;
         case 'InvitationAccepted':
           return 2;
         case 'InvitationRejected':

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../ffi/hivra_bindings.dart';
+import '../services/capsule_persistence_service.dart';
 import '../services/capsule_state_manager.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -14,6 +15,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _isNeste = true;
   bool _isRelay = false;
+  final CapsulePersistenceService _persistence = CapsulePersistenceService();
 
   @override
   void initState() {
@@ -38,6 +40,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'seed': seed,
         'isNewWallet': false,
       },
+    );
+  }
+
+  Future<void> _showLocalTraceReport() async {
+    final report = await _persistence.diagnoseCapsuleTraces(widget.hivra);
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Local capsule trace'),
+        content: SingleChildScrollView(
+          child: SelectableText(report.toMultilineString()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -74,6 +97,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('Ledger inspector'),
                 subtitle: const Text('View owner, hash and recent ledger events'),
                 onTap: () => Navigator.pushNamed(context, '/ledger_inspector'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.bug_report),
+                title: const Text('Local capsule trace'),
+                subtitle: const Text(
+                    'Inspect local files, seeds, runtime and legacy traces'),
+                onTap: _showLocalTraceReport,
               ),
             ],
           ),

@@ -63,17 +63,16 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
             onPressed: () async {
               final peer = _decodeB64_32(relationship.peerPubkey);
               final own = _decodeB64_32(relationship.ownStarterId);
-              if (peer == null || own == null) {
+              final peerStarter = _decodeB64_32(relationship.peerStarterId);
+              if (peer == null || own == null || peerStarter == null) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Failed to break relationship')),
                 );
                 return;
               }
-              final payload = Uint8List(64);
-              payload.setRange(0, 32, peer);
-              payload.setRange(32, 64, own);
-              final ok = widget.hivra.ledgerAppendEvent(8, payload);
+              final ok =
+                  widget.hivra.breakRelationship(peer, own, peerStarter);
               Navigator.pop(context);
               if (!ok) {
                 ScaffoldMessenger.of(context).showSnackBar(

@@ -36,6 +36,7 @@ mod ffi_support;
 mod invitation_api;
 mod invitation_support;
 mod ledger_api;
+mod relationship_api;
 mod runtime_support;
 mod seed_api;
 mod selfcheck_api;
@@ -43,6 +44,7 @@ mod selfcheck_api;
 pub use ffi_support::FfiBytes;
 pub(crate) use invitation_support::{
     finalize_local_acceptance, find_invitation_sent_in_runtime,
+    invitation_is_resolved_in_runtime, invitation_offer_exists_in_runtime,
     project_effects_from_invitation_rejected, project_relationship_from_invitation_accepted,
     resolve_local_acceptance_plan,
 };
