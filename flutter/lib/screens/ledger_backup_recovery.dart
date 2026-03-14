@@ -1,18 +1,19 @@
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
-
 import '../ffi/hivra_bindings.dart';
+import '../services/user_visible_data_directory_service.dart';
 
 class LedgerBackupRecovery {
   final HivraBindings _hivra = HivraBindings();
+  final UserVisibleDataDirectoryService _userVisibleDirs =
+      const UserVisibleDataDirectoryService();
 
   /// Exports the Ledger to a local file
   Future<String?> exportLedgerToFile() async {
     final ledgerJson = _hivra.exportLedger();
     if (ledgerJson == null) return null;
 
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await _userVisibleDirs.ledgerExportsDirectory(create: true);
     final file = File('${dir.path}/ledger.json');
     await file.writeAsString(ledgerJson);
     return file.path;
@@ -20,7 +21,7 @@ class LedgerBackupRecovery {
 
   /// Imports the Ledger from a local file if it exists
   Future<bool> importLedgerFromFile() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await _userVisibleDirs.ledgerExportsDirectory(create: true);
     final file = File('${dir.path}/ledger.json');
     if (!await file.exists()) return false;
 

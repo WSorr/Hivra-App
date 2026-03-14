@@ -30,6 +30,7 @@ mkdir -p "${APP_PATH}"
 lipo -create -output "${UNIVERSAL_LIB}" "${ARM_LIB}" "${INTEL_LIB}"
 install_name_tool -id "@rpath/libhivra_ffi.dylib" "${UNIVERSAL_LIB}"
 chmod 755 "${UNIVERSAL_LIB}"
+codesign --force --sign - "${UNIVERSAL_LIB}"
 
 echo "SUCCESS: Universal library created"
 file "${UNIVERSAL_LIB}"

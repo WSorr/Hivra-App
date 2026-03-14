@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models/relationship_peer_group.dart';
 import '../models/relationship.dart';
 import 'ledger_view_support.dart';
 
@@ -47,5 +48,25 @@ class RelationshipProjectionService {
     final list = byKey.values.toList();
     list.sort((a, b) => b.establishedAt.compareTo(a.establishedAt));
     return list;
+  }
+
+  List<RelationshipPeerGroup> loadRelationshipGroups(Map<String, dynamic> root) {
+    final relationships = loadRelationships(root);
+    final byPeer = <String, List<Relationship>>{};
+    for (final relationship in relationships) {
+      byPeer.putIfAbsent(relationship.peerPubkey, () => <Relationship>[])
+          .add(relationship);
+    }
+
+    final groups = byPeer.entries
+        .map(
+          (entry) => RelationshipPeerGroup(
+            peerPubkey: entry.key,
+            relationships: entry.value,
+          ),
+        )
+        .toList();
+    groups.sort((a, b) => b.latestEstablishedAt.compareTo(a.latestEstablishedAt));
+    return groups;
   }
 }

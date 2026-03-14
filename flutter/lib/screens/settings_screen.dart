@@ -126,11 +126,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
               ),
+              ListTile(
+                leading: const Icon(Icons.extension),
+                title: const Text('WASM plugins'),
+                subtitle: const Text(
+                  'Inspect plugin host status and planned transport adapters',
+                ),
+                onTap: () => Navigator.pushNamed(context, '/wasm_plugins'),
+              ),
             ],
           ),
-
-          const Divider(),
-
           if (Theme.of(context).platform == TargetPlatform.android) ...[
             _buildSection(
               title: 'Role',

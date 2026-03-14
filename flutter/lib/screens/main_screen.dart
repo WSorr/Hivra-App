@@ -1,5 +1,4 @@
-import 'dart:convert';
-
+import 'package:bech32/bech32.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +9,7 @@ import 'starters_screen.dart';
 import 'invitations_screen.dart';
 import 'relationships_screen.dart';
 import 'settings_screen.dart';
+import 'wasm_plugins_screen.dart';
 
 Map<String, Object?> _receiveTransportMessagesInWorker(
     Map<String, Object?> args) {
@@ -51,7 +51,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _bootstrapping = true;
   Stopwatch? _launchStopwatch;
 
-  String _publicKeyHex = '';
+  String _publicKeyText = '';
   int _starterCount = 0;
   int _relationshipCount = 0;
   int _pendingInvitations = 0;
@@ -60,9 +60,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _ledgerVersion = 0;
 
   String get _shortPublicKey {
-    if (_publicKeyHex.isEmpty) return 'No key';
-    if (_publicKeyHex.length <= 18) return _publicKeyHex;
-    return '${_publicKeyHex.substring(0, 10)}...${_publicKeyHex.substring(_publicKeyHex.length - 6)}';
+    if (_publicKeyText.isEmpty) return 'No key';
+    if (_publicKeyText.length <= 18) return _publicKeyText;
+    return '${_publicKeyText.substring(0, 10)}...${_publicKeyText.substring(_publicKeyText.length - 6)}';
   }
 
   String get _shortLedgerHash {
@@ -75,6 +75,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     'Starters',
     'Invitations',
     'Relationships',
+    'Plugins',
     'Settings',
   ];
 
@@ -103,7 +104,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _snapshotLedger() async {
     await _persistence.persistLedgerSnapshot(_hivra);
-    await _persistence.exportBackupEnvelope(_hivra);
   }
 
   Future<Map<String, Object?>?> _loadWorkerBootstrap() async {
@@ -171,9 +171,45 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _isNeste = state.isNeste;
       _ledgerHashHex = state.ledgerHashHex;
       _ledgerVersion = state.version;
-      _publicKeyHex =
-          state.publicKey.isEmpty ? '' : base64.encode(state.publicKey);
+      _publicKeyText = state.publicKey.isEmpty
+          ? ''
+          : _encodeCapsulePublicKey(state.publicKey);
     });
+  }
+
+  String _encodeCapsulePublicKey(Uint8List bytes) {
+    final words = _convertBits(bytes, 8, 5, true);
+    return bech32.encode(Bech32('h', words));
+  }
+
+  List<int> _convertBits(List<int> data, int from, int to, bool pad) {
+    var acc = 0;
+    var bits = 0;
+    final result = <int>[];
+    final maxValue = (1 << to) - 1;
+
+    for (final value in data) {
+      if (value < 0 || (value >> from) != 0) {
+        throw ArgumentError('Invalid key byte for bech32 conversion');
+      }
+      acc = (acc << from) | value;
+      bits += from;
+      while (bits >= to) {
+        bits -= to;
+        result.add((acc >> bits) & maxValue);
+      }
+    }
+
+    if (pad) {
+      if (bits > 0) {
+        result.add((acc << (to - bits)) & maxValue);
+      }
+    } else if (bits >= from ||
+        ((acc << (to - bits)) & maxValue) != 0) {
+      throw ArgumentError('Invalid bech32 padding');
+    }
+
+    return result;
   }
 
   Future<void> _handleLedgerChanged() async {
@@ -228,6 +264,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           onLedgerChanged: _handleLedgerChanged,
         );
       case 3:
+        return const WasmPluginsScreen(embedded: true);
+      case 4:
         return SettingsScreen(hivra: _hivra);
       default:
         return StartersScreen(
@@ -298,16 +336,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           IconButton(
                             icon: const Icon(Icons.copy, size: 16),
                             splashRadius: 16,
-                            tooltip: 'Copy public key',
-                            onPressed: _publicKeyHex.isEmpty
+                            tooltip: 'Copy capsule key',
+                            onPressed: _publicKeyText.isEmpty
                                 ? null
                                 : () async {
                                     await Clipboard.setData(
-                                        ClipboardData(text: _publicKeyHex));
+                                        ClipboardData(text: _publicKeyText));
                                     if (!context.mounted) return;
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                          content: Text('Public key copied')),
+                                          content: Text('Capsule key copied')),
                                     );
                                   },
                           ),
@@ -381,6 +419,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           BottomNavigationBarItem(
             icon: Icon(Icons.people),
             label: 'Relationships',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.extension),
+            label: 'Plugins',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),

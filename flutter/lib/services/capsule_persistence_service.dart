@@ -10,6 +10,7 @@ import 'capsule_ledger_summary_parser.dart';
 import 'capsule_persistence_models.dart';
 import 'capsule_runtime_bootstrap_service.dart';
 import 'capsule_seed_store.dart';
+import 'user_visible_data_directory_service.dart';
 
 class CapsulePersistenceService {
   static final CapsulePersistenceService _instance =
@@ -27,6 +28,8 @@ class CapsulePersistenceService {
   final CapsuleLedgerSummaryParser _summaryParser =
       const CapsuleLedgerSummaryParser();
   final CapsuleSeedStore _seedStore = const CapsuleSeedStore();
+  final UserVisibleDataDirectoryService _userVisibleDirs =
+      const UserVisibleDataDirectoryService();
   late final CapsuleRuntimeBootstrapService _runtimeBootstrapService;
 
   Future<void> persistAfterCreate({
@@ -121,6 +124,44 @@ class CapsulePersistenceService {
     await _fileStore.writeBackup(dir, backupJson);
     await _touchActiveCapsule(hivra);
     return _fileStore.backupPath(dir);
+  }
+
+  Future<String?> exportBackupEnvelopeToUserDirectory(HivraBindings hivra) async {
+    final ledger = hivra.exportLedger();
+    if (ledger == null || ledger.isEmpty) return null;
+
+    final state = await _readStateForCurrentCapsule(hivra);
+    final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
+      ledgerJson: ledger,
+      isGenesis: state?['isGenesis'] == true,
+      isNeste: state?['isNeste'] != false,
+    );
+
+    final backupsDir = await _userVisibleDirs.backupsDirectory(create: true);
+    final file = File(
+      '${backupsDir.path}/capsule-backup-${DateTime.now().toIso8601String()}.json',
+    );
+    await file.writeAsString(backupJson, flush: true);
+    return file.path;
+  }
+
+  Future<String?> exportBackupEnvelopeToPath(
+    HivraBindings hivra,
+    String targetPath,
+  ) async {
+    final ledger = hivra.exportLedger();
+    if (ledger == null || ledger.isEmpty) return null;
+
+    final state = await _readStateForCurrentCapsule(hivra);
+    final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
+      ledgerJson: ledger,
+      isGenesis: state?['isGenesis'] == true,
+      isNeste: state?['isNeste'] != false,
+    );
+
+    final outFile = File(targetPath);
+    await outFile.writeAsString(backupJson, flush: true);
+    return outFile.path;
   }
 
   Future<bool> importBackupEnvelopeIfExists(HivraBindings hivra) async {

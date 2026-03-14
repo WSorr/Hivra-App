@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:share_plus/share_plus.dart';
 import '../ffi/hivra_bindings.dart';
 import '../services/capsule_persistence_service.dart';
 
@@ -23,6 +27,7 @@ class _BackupScreenState extends State<BackupScreen> {
   final HivraBindings _hivra = HivraBindings();
   String? _mnemonic;
   String? _backupPath;
+  bool _isSavingBackup = false;
 
   @override
   void initState() {
@@ -53,8 +58,32 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<void> _exportBackup() async {
+    if (_isSavingBackup) return;
+
     try {
-      final path = await CapsulePersistenceService().exportBackupEnvelope(_hivra);
+      final location = await getSaveLocation(
+        suggestedName:
+            'capsule-backup-${DateTime.now().toIso8601String()}.json',
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'JSON', extensions: ['json']),
+        ],
+      );
+      if (location == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Backup save canceled')),
+        );
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _isSavingBackup = true;
+        });
+      }
+
+      final path = await CapsulePersistenceService()
+          .exportBackupEnvelopeToPath(_hivra, location.path);
       if (!mounted) return;
       if (path == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -73,6 +102,12 @@ class _BackupScreenState extends State<BackupScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Backup export failed: $e')),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingBackup = false;
+        });
+      }
     }
   }
 
@@ -89,6 +124,53 @@ class _BackupScreenState extends State<BackupScreen> {
       }
     } else {
       Navigator.pop(context);
+    }
+  }
+
+  Future<void> _shareBackup() async {
+    try {
+      final tempFile = File(
+        '${Directory.systemTemp.path}/capsule-backup-${DateTime.now().millisecondsSinceEpoch}.json',
+      );
+      final path = await CapsulePersistenceService()
+          .exportBackupEnvelopeToPath(_hivra, tempFile.path);
+      if (!mounted) return;
+      if (path == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to prepare capsule backup')),
+        );
+        return;
+      }
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(path)],
+          text: 'Hivra capsule backup',
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Backup share failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _revealBackup() async {
+    final path = _backupPath;
+    if (path == null || path.isEmpty) return;
+
+    try {
+      final result = await Process.run('open', ['-R', path]);
+      if (!mounted) return;
+      if (result.exitCode != 0) {
+        throw Exception(result.stderr.toString());
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to reveal backup: $e')),
+      );
     }
   }
 
@@ -171,9 +253,23 @@ class _BackupScreenState extends State<BackupScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _exportBackup,
-                    icon: const Icon(Icons.save),
-                    label: const Text('Save Backup'),
+                    onPressed: _isSavingBackup ? null : _exportBackup,
+                    icon: _isSavingBackup
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save),
+                    label: Text(_isSavingBackup ? 'Saving...' : 'Save Backup'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _shareBackup,
+                    icon: const Icon(Icons.share),
+                    label: const Text('Share'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -186,6 +282,14 @@ class _BackupScreenState extends State<BackupScreen> {
                 ),
               ],
             ),
+            if (_backupPath != null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _revealBackup,
+                icon: const Icon(Icons.folder_open),
+                label: const Text('Reveal Saved Backup'),
+              ),
+            ],
           ],
         ),
       ),

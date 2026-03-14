@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../ffi/hivra_bindings.dart';
 import '../models/invitation.dart';
 import '../models/relationship.dart';
+import '../models/relationship_peer_group.dart';
 import 'capsule_ledger_snapshot.dart';
 import 'invitation_projection_service.dart';
 import 'ledger_view_support.dart';
@@ -53,7 +54,7 @@ class LedgerViewService {
     final rawHash = root['last_hash'];
     final hashHex = rawHash == null ? '0' : rawHash.toString();
 
-    final relationships = loadRelationships();
+    final relationshipGroups = loadRelationshipGroups();
     final invitations = loadInvitations();
     final pendingInvitations = invitations
         .where((invitation) => invitation.status == InvitationStatus.pending)
@@ -68,11 +69,8 @@ class LedgerViewService {
     return CapsuleLedgerSnapshot(
       publicKey: pubKey,
       starterCount: starterCount,
-      relationshipCount: relationships
-          .where((relationship) => relationship.isActive)
-          .map((relationship) => relationship.peerPubkey)
-          .toSet()
-          .length,
+      relationshipCount:
+          relationshipGroups.where((group) => group.isActive).length,
       pendingInvitations: pendingInvitations,
       version: version,
       ledgerHashHex: hashHex,
@@ -92,6 +90,12 @@ class LedgerViewService {
     final root = _exportLedgerRoot();
     if (root == null) return <Relationship>[];
     return _relationshipProjection.loadRelationships(root);
+  }
+
+  List<RelationshipPeerGroup> loadRelationshipGroups() {
+    final root = _exportLedgerRoot();
+    if (root == null) return <RelationshipPeerGroup>[];
+    return _relationshipProjection.loadRelationshipGroups(root);
   }
 
   Map<String, dynamic>? _exportLedgerRoot() {

@@ -2,10 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../ffi/hivra_bindings.dart';
+import '../services/user_visible_data_directory_service.dart';
 
 class BackupScreen extends StatefulWidget {
   final Uint8List seed;
@@ -18,6 +18,8 @@ class BackupScreen extends StatefulWidget {
 
 class _BackupScreenState extends State<BackupScreen> {
   final HivraBindings _hivra = HivraBindings();
+  final UserVisibleDataDirectoryService _userVisibleDirs =
+      const UserVisibleDataDirectoryService();
   String? _ledgerJson;
   String? _statusMessage;
   String? _ledgerPath;
@@ -55,8 +57,9 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<File?> _writeLedgerFile(String json, {String? forcedPath}) async {
+    final exportDir = await _userVisibleDirs.ledgerExportsDirectory(create: true);
     final path = forcedPath ??
-        '${(await getApplicationDocumentsDirectory()).path}/hivra-ledger-${DateTime.now().toIso8601String()}.json';
+        '${exportDir.path}/hivra-ledger-${DateTime.now().toIso8601String()}.json';
     final file = File(path);
     await file.writeAsString(json);
     if (!mounted) return file;

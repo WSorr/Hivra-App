@@ -42,29 +42,7 @@ class _FirstLaunchScreenState extends State<FirstLaunchScreen> {
   }
 
   void _recoverCapsule() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Recovery'),
-        content: const Text(
-          'Recovery from Ledger will be implemented when Ledger is ready.\n\n'
-          'For now, use seed phrase recovery.'
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pushNamed(context, '/recovery');
-            },
-            child: const Text('Use Seed Phrase'),
-          ),
-        ],
-      ),
-    );
+    Navigator.pushNamed(context, '/recovery');
   }
 
   @override
