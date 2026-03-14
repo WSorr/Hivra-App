@@ -107,6 +107,23 @@ pub struct Signature([u8; 64]);
 pub struct StarterId([u8; 32]);
 ```
 
+### 3.2.1 Capsule Root Identity
+
+Each capsule has one canonical root identity.
+
+- The canonical capsule root identity curve is `ed25519`.
+- This identity is transport-agnostic.
+- Transport-specific keys MUST be derived from the same recovery seed using explicit domain separation.
+- A transport key MUST NOT replace the canonical capsule identity in the architecture.
+
+Examples:
+
+- capsule root identity: `ed25519`
+- Nostr transport identity: derived `secp256k1`
+- Matrix transport identity: derived `ed25519` using a transport-specific derivation label
+
+UI, documentation, and cross-capsule semantics should refer to capsule identity at the root-identity layer unless a transport-specific key is explicitly required.
+
 ### 3.3 Core Entities
 
 #### 3.3.1 Capsule
@@ -290,6 +307,14 @@ Each transport provides:
 
 1. Transport implementation (send/receive bytes).
 2. CryptoProvider implementation (for its curve).
+
+### 5.2.1 Identity Separation Rule
+
+Transport adapters operate on transport-specific keys only.
+
+They MUST NOT redefine or replace the canonical capsule root identity.
+
+The existence of a Nostr public key, Matrix public key, or any other transport key does not change the fact that capsule identity is rooted in the canonical `ed25519` identity layer.
 
 ### 5.3 Unified Message Format
 
@@ -494,6 +519,33 @@ SHA256(version || kind || payload_bytes)
 
 - Event ID is never computed from JSON, base64, or transport representation.
 - Starter ID is never derived from peer starter identity or invitation provenance.
+
+### 10.3 Identity Derivation Rule
+
+Identity derivation must follow this order:
+
+1. recovery seed phrase
+2. canonical capsule root identity (`ed25519`)
+3. transport-specific derived keys
+
+Transport-specific keys MUST be treated as adapter-level identities, not as the canonical capsule identity.
+
+### 10.4 Current Implementation Note
+
+Current implementation still contains a legacy path where the exposed capsule public key is derived from the Nostr transport key.
+
+This is an implementation debt, not the intended architecture.
+
+The target architecture is:
+
+- canonical capsule identity on `ed25519`
+- transport-specific keys derived afterward for Nostr, Matrix, and future adapters
+
+Any migration or refactor in this area must preserve:
+
+- seed compatibility
+- ledger ownership consistency
+- capsule identity stability across upgrades
 
 ---
 

@@ -14,18 +14,20 @@ This repository implements Hivra v1.0.0 specification:
 
 ## Specification Documents
 
-- [Hivra Protocol v3.2 Full Specification](docs/hivra-v3.2-full-specification.md)
-- [Hivra v3.2 Conceptual Model](docs/hivra-v3.2-conceptual-model.md)
-- [Hivra v3.2 UI Screen Standard](docs/hivra-v3.2-ui-screen-standard.md)
-- [Documentation and Code Comment Language Policy](docs/documentation-language-policy.md)
+- [Hivra Protocol Specification](docs/specification.md)
+- [Hivra Conceptual Model](docs/hivra-conceptual-model.md)
+- [Docs Map](docs/README.md)
 
 ## Identity and Key Derivation
 
 - One capsule is backed by one recovery seed phrase (BIP39).
-- Transport keys are derived deterministically from that seed using domain-separated labels.
+- The canonical capsule root identity is `ed25519`.
+- Transport keys are derived deterministically from the same seed using domain-separated labels.
+- Capsule identity and transport identity are different layers.
 - Different transports may use different curves while sharing the same recovery phrase:
   - Nostr: secp256k1
   - Other adapters (for example Matrix): ed25519
+- UI-facing capsule identity should represent the capsule root identity layer, not a transport-specific public key.
 - Recovery requires only the seed phrase and derivation version compatibility.
 
 ## Capsule Lifecycle in UI

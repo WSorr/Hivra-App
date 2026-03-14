@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import '../ffi/hivra_bindings.dart';
 import '../services/capsule_persistence_service.dart';
 import 'main_screen.dart';
@@ -142,18 +143,39 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   Future<void> _exportCapsule(CapsuleInfo capsule) async {
     final persistence = CapsulePersistenceService();
     try {
-      final location = await getSaveLocation(
-        suggestedName:
-            'capsule-backup-${capsule.publicKeyHex.substring(0, 8)}.json',
-        acceptedTypeGroups: const [
-          XTypeGroup(label: 'JSON', extensions: ['json']),
-        ],
-      );
-      if (location == null) return;
+      if (Platform.isMacOS) {
+        final tempDir = Directory.systemTemp;
+        final tempPath =
+            '${tempDir.path}/capsule-backup-${capsule.publicKeyHex.substring(0, 8)}.json';
+        final path = await persistence.exportCapsuleBackupToPath(
+          capsule.publicKeyHex,
+          tempPath,
+        );
+        if (path == null) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Export failed')),
+          );
+          return;
+        }
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(path)],
+            text: 'Hivra capsule backup',
+          ),
+        );
+        return;
+      }
+
+      final folder = await getDirectoryPath(confirmButtonText: 'Save Here');
+      if (folder == null || folder.isEmpty) return;
+
+      final targetPath =
+          '$folder/capsule-backup-${capsule.publicKeyHex.substring(0, 8)}.json';
 
       final path = await persistence.exportCapsuleBackupToPath(
         capsule.publicKeyHex,
-        location.path,
+        targetPath,
       );
       if (path == null) {
         if (!mounted) return;

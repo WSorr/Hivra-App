@@ -101,11 +101,11 @@ class _StartersScreenState extends State<StartersScreen> {
       if (bytes.length == 32) return bytes;
     } catch (_) {}
     
-    // Try bech32 (npub...)
-    if (input.startsWith('npub1')) {
+    // Try bech32 (h..., npub...)
+    if (input.startsWith('npub1') || input.startsWith('h1')) {
       try {
         final decoded = bech32.decode(input);
-        if (decoded.hrp == 'npub') {
+        if (decoded.hrp == 'npub' || decoded.hrp == 'h') {
           final data = _convertBits(decoded.data, 5, 8, false);
           if (data != null && data.length == 32) {
             return Uint8List.fromList(data);
@@ -144,7 +144,7 @@ class _StartersScreenState extends State<StartersScreen> {
             const Text('Enter recipient public key:'),
             const SizedBox(height: 8),
             const Text(
-              'Supports: base64, npub... (bech32), hex',
+              'Supports: h..., npub... (bech32), base64, hex',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 16),

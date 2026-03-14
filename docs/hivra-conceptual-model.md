@@ -1,4 +1,4 @@
-# Hivra v3.2*: CONCEPTUAL MODEL
+# Hivra Conceptual Model
 
 Hive Integrated Value & Relationship Architecture
 
@@ -95,12 +95,19 @@ Capsule is you. An application instance, your identity.
 
 What a capsule has:
 
-- Public key — the only identifier
+- Canonical capsule root public key — the primary identity
 - 5 slots — exactly five, no more, no less
 - Role — Leaf (regular) or Relay (forwarder, Android only)
 - Trusted peers — list of capsules allowed to store your messages (Relay only)
 - Ledger — local signed log of all events
 - Two networks — Neste (main) and Hood (test) — fully isolated states
+
+Identity model:
+
+- A capsule has one canonical root identity.
+- The canonical root identity is transport-agnostic.
+- Transport adapters derive their own transport-specific keys from the same seed.
+- A transport key must not replace the capsule identity in the product model.
 
 Capsule states on first launch:
 

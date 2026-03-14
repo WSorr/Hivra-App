@@ -60,21 +60,24 @@ class _BackupScreenState extends State<BackupScreen> {
   Future<void> _exportBackup() async {
     if (_isSavingBackup) return;
 
+    if (Platform.isMacOS) {
+      await _shareBackup();
+      return;
+    }
+
     try {
-      final location = await getSaveLocation(
-        suggestedName:
-            'capsule-backup-${DateTime.now().toIso8601String()}.json',
-        acceptedTypeGroups: const [
-          XTypeGroup(label: 'JSON', extensions: ['json']),
-        ],
-      );
-      if (location == null) {
+      final folder = await getDirectoryPath(confirmButtonText: 'Save Here');
+      if (folder == null || folder.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Backup save canceled')),
         );
         return;
       }
+
+      final fileName =
+          'capsule-backup-${DateTime.now().toIso8601String()}.json';
+      final targetPath = '$folder/$fileName';
 
       if (mounted) {
         setState(() {
@@ -83,7 +86,7 @@ class _BackupScreenState extends State<BackupScreen> {
       }
 
       final path = await CapsulePersistenceService()
-          .exportBackupEnvelopeToPath(_hivra, location.path);
+          .exportBackupEnvelopeToPath(_hivra, targetPath);
       if (!mounted) return;
       if (path == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -148,6 +151,10 @@ class _BackupScreenState extends State<BackupScreen> {
           text: 'Hivra capsule backup',
         ),
       );
+      if (!mounted) return;
+      setState(() {
+        _backupPath = path;
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

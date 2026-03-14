@@ -128,6 +128,35 @@ Scope:
 Definition of done:
 - Published macOS artifacts match the tested build and launch reliably on supported Macs.
 
+### 7.1 Update Safety Blockers
+
+Goal:
+- Prevent app updates from silently changing capsule truth for existing users.
+
+Required conditions before treating updates as safe:
+- The same persisted `ledger.json` reconstructs the same:
+  - starters
+  - relationships
+  - pending invitations
+  - capsule header counters
+- Bootstrap remains ledger-first.
+- Transport replay cannot override already reconstructed local truth.
+- Resolved invitation history cannot reappear as pending state.
+- A single invitation lineage cannot be realized twice after an update.
+- Public release builds must not share a mutable test/dev container story.
+- Capsule identity, seed binding, and active capsule selection must survive upgrade.
+
+Minimum required upgrade tests:
+- same container, same ledger, new build -> same UI truth
+- accepted relationship survives update
+- broken relationship survives update
+- re-invite history does not duplicate after update
+- old resolved invites do not resurrect after update
+- restore on a clean machine still reconstructs the same capsule truth
+
+Definition of done:
+- Updating the app preserves the same capsule truth instead of reconstructing a partial or duplicated history.
+
 ## Modularity and Architecture
 
 ### 8. Thin FFI Boundary
@@ -158,6 +187,22 @@ Scope:
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.
+
+### 9.1 Identity Decoupling
+
+Goal:
+- Separate canonical capsule identity from transport-specific keys.
+
+Scope:
+- Make `ed25519` the canonical capsule root identity.
+- Derive Nostr, Matrix, and future adapter keys from the same recovery seed using domain-separated derivation.
+- Remove legacy behavior where a transport-specific public key is exposed as the capsule public key.
+- Preserve seed compatibility, ledger ownership stability, and upgrade safety during migration.
+
+Definition of done:
+- Capsule identity is transport-agnostic.
+- Transport keys remain adapter-level concerns.
+- UI no longer presents a transport-derived key as the canonical capsule identity.
 
 ## Longer-Term Work
 

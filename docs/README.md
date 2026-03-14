@@ -16,7 +16,7 @@ Contains:
 
 If there is any conflict, `specification.md` wins.
 
-### 2) `hivra-v3.2-conceptual-model.md` (product model)
+### 2) `hivra-conceptual-model.md` (product model)
 Use this to understand product intent, user-facing mechanics, and behavior scenarios.
 
 Contains:
@@ -40,13 +40,13 @@ Contains:
 ## Recommended Reading Order
 
 1. `specification.md`
-2. `hivra-v3.2-conceptual-model.md`
+2. `hivra-conceptual-model.md`
 3. `roadmap.md`
 
 ## Update Rules
 
 - Any protocol, invariant, event, or UI contract change must update `specification.md` in the same PR.
-- If product behavior/flows are affected, update `hivra-v3.2-conceptual-model.md` in the same PR.
+- If product behavior/flows are affected, update `hivra-conceptual-model.md` in the same PR.
 - Keep terminology consistent: Capsule, Starter, Invitation, Relationship, Ledger, Network.
 - All product-bound documentation and code comments must be in English.
 

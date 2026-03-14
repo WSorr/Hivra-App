@@ -706,10 +706,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       final bytes = base64.decode(value);
       if (bytes.length == 32) return Uint8List.fromList(bytes);
     } catch (_) {}
-    if (value.startsWith('npub1')) {
+    if (value.startsWith('npub1') || value.startsWith('h1')) {
       try {
         final decoded = bech32.decode(value);
-        if (decoded.hrp == 'npub') {
+        if (decoded.hrp == 'npub' || decoded.hrp == 'h') {
           final data = _convertBits(decoded.data, 5, 8, false);
           if (data != null && data.length == 32) {
             return Uint8List.fromList(data);

@@ -324,13 +324,39 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              _shortPublicKey,
-                              style: const TextStyle(
+                            child: Tooltip(
+                              message: _publicKeyText.isEmpty
+                                  ? 'No capsule key'
+                                  : _publicKeyText,
+                              waitDuration: const Duration(milliseconds: 200),
+                              showDuration: const Duration(seconds: 12),
+                              preferBelow: false,
+                              verticalOffset: 18,
+                              padding: const EdgeInsets.all(12),
+                              constraints: const BoxConstraints(
+                                maxWidth: 520,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF11161D),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFF2C3642),
+                                ),
+                              ),
+                              textStyle: const TextStyle(
+                                color: Colors.white,
                                 fontSize: 12,
                                 fontFamily: 'monospace',
+                                height: 1.35,
                               ),
-                              overflow: TextOverflow.ellipsis,
+                              child: Text(
+                                _shortPublicKey,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'monospace',
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ),
                           IconButton(
