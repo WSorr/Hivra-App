@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "core/hivra-core",
-    "core/hivra-engine", 
+    "engine/hivra-engine", 
     "adapters/hivra-transport",
     "adapters/hivra-nostr-crypto",
     "platform/hivra-keystore",

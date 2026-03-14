@@ -376,7 +376,7 @@ InvitationRejected | invitation_id, reason (EmptySlot | Other)
 InvitationExpired | invitation_id
 StarterCreated | starter_id, nonce, kind, network
 StarterBurned | starter_id, reason
-RelationshipEstablished | peer_pubkey, own_starter_id, peer_starter_id, kind
+RelationshipEstablished | peer_pubkey, own_starter_id, peer_starter_id, kind, invitation_id, sender_pubkey, sender_starter_type, sender_starter_id
 RelationshipBroken | peer_pubkey, own_starter_id
 
 ---
@@ -409,6 +409,34 @@ Empty slot + Reject | InvitationRejected(EmptySlot) | A's starter is burned
 Slot occupied + Reject | InvitationRejected(Other) | A's starter is unlocked
 Timeout (24h) | - | A's starter unlocked
 
+### 8.1.1 Acceptance Provenance
+
+When an invitation is accepted, the receiver does not merely acknowledge acceptance.
+
+The receiver MUST also communicate the recipient-side starter reference that now anchors the relationship on the receiver side.
+
+At minimum, relationship history MUST preserve:
+
+- `sender_pubkey`
+- `invitation_id`
+- `sender_starter_type`
+- `sender_starter_id`
+
+This provenance is required so that both ledgers can reconstruct how the relationship was formed.
+
+### 8.1.2 Starter Identity vs Provenance
+
+A recipient-side starter does NOT derive its identity hash from the sender starter.
+
+Starter identity remains local to the receiving capsule.
+
+Cross-capsule lineage MUST remain recoverable from ledger history, not embedded into the recipient starter hash.
+
+The sender MUST record the newly created or selected recipient-side starter as a remote starter reference in relationship history.
+
+This does NOT create a sender-local starter entity owned by the recipient.
+It creates a relationship-level reference to a remote starter entity owned by the recipient capsule.
+
 ### 8.2 Burn Rule (Critical)
 
 A starter is burned ONLY at the sender and only when ALL conditions are met:
@@ -422,6 +450,8 @@ A starter is burned ONLY at the sender and only when ALL conditions are met:
 
 - Established automatically on successful acceptance.
 - Recorded in both ledgers.
+- Relationship history MUST preserve both local and remote starter references.
+- Relationship history MUST preserve invitation provenance sufficient to reconstruct which sender starter originated the relationship.
 - Either side can break at any time (RelationshipBroken).
 - Starters are not burned on break.
 
@@ -463,6 +493,7 @@ SHA256(version || kind || payload_bytes)
 ```
 
 - Event ID is never computed from JSON, base64, or transport representation.
+- Starter ID is never derived from peer starter identity or invitation provenance.
 
 ---
 

@@ -1,0 +1,188 @@
+# Hivra Roadmap
+
+This roadmap tracks the main engineering work needed to move Hivra from a working prototype to a disciplined, stable public product.
+
+It is intentionally focused on architecture, determinism, release hygiene, and recovery safety rather than feature volume.
+
+## Current Priorities
+
+### 1. Replay Safety
+
+Goal:
+- Ensure transport replay can never rewrite resolved local truth.
+
+Scope:
+- Formalize replay rules for:
+  - `InvitationAccepted`
+  - `RelationshipEstablished`
+  - `RelationshipBroken`
+- Extend the current invitation replay guards into a general replay policy.
+- Add regression coverage for replay on long-lived capsules.
+
+Definition of done:
+- Replayed transport events are either safely ignored or appended as genuinely new facts.
+- Old resolved state cannot reappear as pending state after restart, restore, or device migration.
+
+### 2. Persist / Import Idempotence
+
+Goal:
+- Guarantee that a persisted ledger reconstructs the same capsule truth after bootstrap.
+
+Scope:
+- Audit the full path:
+  - `append -> export -> persist -> bootstrap -> import`
+- Add regression tests for:
+  - send -> accept
+  - break
+  - re-invite with same starter type
+  - re-invite with different starter type
+  - reverse-direction invitation flows
+- Detect incomplete or inconsistent capsule histories during bootstrap.
+
+Definition of done:
+- If an event is present in persisted ledger state, it survives restart and reconstructs the same projections.
+
+### 3. Device Migration Safety
+
+Goal:
+- Make recovery on a new machine predictable and safe.
+
+Scope:
+- Validate recovery flows for:
+  - seed phrase only
+  - seed phrase + backup
+  - backup import after clean install
+- Confirm transport receive after restore does not resurrect closed invitation history.
+- Ensure user-facing recovery artifacts remain understandable and easy to locate.
+
+Definition of done:
+- A user can restore a capsule on a new machine without manual container surgery or hidden-path knowledge.
+
+### 4. Ledger Inspector v2
+
+Goal:
+- Make the inspector useful for humans without weakening the underlying ledger model.
+
+Principle:
+- Decoded first, raw on demand.
+
+Scope:
+- Decode and display human-readable fields for:
+  - `InvitationSent`
+  - `InvitationReceived`
+  - `InvitationAccepted`
+  - `StarterCreated`
+  - `RelationshipEstablished`
+  - `RelationshipBroken`
+- Show keys in Hivra bech32 form.
+- Keep raw payload available behind an explicit disclosure.
+- Add integrity hints for obviously inconsistent histories.
+
+Definition of done:
+- The inspector is understandable without reading binary payloads.
+- Raw event details remain available for debugging.
+
+### 5. Shared Projection Discipline
+
+Goal:
+- Prevent UI drift where different screens interpret the same ledger with different semantics.
+
+Scope:
+- Keep peer-level relationship grouping in one shared projection path.
+- Continue removing duplicated projection logic from individual screens.
+- Identify any remaining places where summary widgets and full screens compute different truths.
+
+Definition of done:
+- Header counts, list screens, and detail views use the same underlying projection semantics.
+
+## Release Discipline
+
+### 6. Release Preflight as a Gate
+
+Goal:
+- Make release validation a repeatable process rather than memory.
+
+Scope:
+- Maintain:
+  - `tools/release/preflight.sh`
+  - `tools/review/review_all.sh`
+  - macOS release checklist
+- Expand preflight coverage where useful, without turning it into fragile theater.
+
+Definition of done:
+- Every release candidate is validated through one clear preflight path before packaging and publishing.
+
+### 7. Public macOS Release Quality
+
+Goal:
+- Move from test distribution to clean public distribution.
+
+Scope:
+- Keep universal macOS FFI packaging in place.
+- Move toward:
+  - proper signing
+  - notarization
+  - clean tester/public release separation
+- Verify release artifacts from the packaged archive, not only from the build tree.
+
+Definition of done:
+- Published macOS artifacts match the tested build and launch reliably on supported Macs.
+
+## Modularity and Architecture
+
+### 8. Thin FFI Boundary
+
+Goal:
+- Keep FFI as a narrow bridge rather than a second policy layer.
+
+Scope:
+- Audit FFI entrypoints for hidden orchestration or domain leakage.
+- Move business rules down into core/engine where they belong.
+- Keep Flutter focused on presentation and screen-level orchestration.
+
+Definition of done:
+- FFI remains explicit, narrow, and predictable.
+
+### 9. Flutter Policy Reduction
+
+Goal:
+- Reduce business-policy drift in Flutter-side services.
+
+Scope:
+- Review:
+  - capsule persistence
+  - projections
+  - recovery flows
+  - transport-triggered UI behavior
+- Remove any remaining logic that creates a second truth beside the ledger.
+
+Definition of done:
+- Flutter consumes projections and initiates actions, but does not own domain truth.
+
+## Longer-Term Work
+
+### 10. WASM Plugin Host
+
+Goal:
+- Introduce a plugin system without violating modularity, determinism, or dependency direction.
+
+Scope:
+- Keep plugin storage and registry sandboxed.
+- Define:
+  - manifest format
+  - capability model
+  - host API
+  - execution boundaries
+- Only introduce execution after the shell and safety model are explicit.
+
+Definition of done:
+- Plugins extend transport capabilities without bypassing core rules or rewriting local truth.
+
+## Working Rule
+
+When tradeoffs are unclear, prefer:
+1. one source of truth
+2. deterministic reconstruction
+3. explicit boundaries
+4. fewer hidden side effects
+5. release discipline over speed theater

@@ -40,7 +40,7 @@ require_absent() {
 }
 
 CORE_TOML="$ROOT/core/hivra-core/Cargo.toml"
-ENGINE_TOML="$ROOT/core/hivra-engine/Cargo.toml"
+ENGINE_TOML="$ROOT/engine/hivra-engine/Cargo.toml"
 TRANSPORT_TOML="$ROOT/adapters/hivra-transport/Cargo.toml"
 CRYPTO_TOML="$ROOT/adapters/hivra-nostr-crypto/Cargo.toml"
 FFI_TOML="$ROOT/platform/hivra-ffi/Cargo.toml"

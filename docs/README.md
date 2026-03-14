@@ -27,10 +27,21 @@ Contains:
 
 This document must stay consistent with `specification.md`.
 
+### 3) `roadmap.md` (engineering priorities)
+Use this to track the current engineering direction and the highest-value stabilization work.
+
+Contains:
+- replay safety priorities
+- persist/import reliability work
+- device migration safety
+- release discipline and preflight expectations
+- medium-term architecture and plugin-host work
+
 ## Recommended Reading Order
 
 1. `specification.md`
 2. `hivra-v3.2-conceptual-model.md`
+3. `roadmap.md`
 
 ## Update Rules
 
