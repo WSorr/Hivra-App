@@ -5,6 +5,7 @@ Use this checklist before publishing any macOS build to testers or end users.
 ## Build
 
 - [ ] `main` contains the intended release commits.
+- [ ] `tools/release/preflight.sh` passes before packaging.
 - [ ] `flutter build macos --release` succeeds.
 - [ ] `libhivra_ffi.dylib` inside the app bundle is universal (`x86_64` + `arm64`).
 - [ ] App bundle contains `Contents/Frameworks/libhivra_ffi.dylib`.
@@ -30,4 +31,3 @@ Use this checklist before publishing any macOS build to testers or end users.
 - [ ] GitHub Release assets match the latest local artifacts.
 - [ ] `Pre-release` flag is correct.
 - [ ] Tester instructions are included if the build is unsigned.
-
