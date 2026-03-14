@@ -196,7 +196,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const ListTile(
                 leading: Icon(Icons.info),
                 title: Text('Version'),
-                subtitle: Text('Hivra v3.2.13'),
+                subtitle: Text('Hivra v1.0.0'),
               ),
             ],
           ),

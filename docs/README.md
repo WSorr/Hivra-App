@@ -1,6 +1,6 @@
 # Hivra Docs Map
 
-This folder contains the canonical project documentation for Hivra v3.2.13.
+This folder contains the canonical project documentation for Hivra v1.0.0.
 
 ## Documents
 
