@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../ffi/hivra_bindings.dart';
 import '../services/capsule_backup_codec.dart';
 import '../services/capsule_persistence_service.dart';
@@ -23,6 +24,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
   bool? _selectedBackupIsGenesis;
   bool _isValid = false;
   bool _isRecovering = false;
+  bool _showAdvancedOptions = false;
 
   @override
   void initState() {
@@ -147,6 +149,47 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       if (!mounted) return;
       setState(() {
         _errorMessage = 'Backup file read failed: $e';
+      });
+    }
+  }
+
+  Future<void> _pasteBackupJson() async {
+    try {
+      final data = await Clipboard.getData('text/plain');
+      final raw = data?.text?.trim();
+      if (raw == null || raw.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = 'Clipboard is empty. Copy a backup JSON file and try again.';
+        });
+        return;
+      }
+
+      final ledgerJson = CapsuleBackupCodec.tryExtractLedgerJson(raw);
+      if (ledgerJson == null) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage =
+              'Clipboard does not contain backup JSON. Choose a backup file or copy the full backup JSON and try again.';
+        });
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedBackupLedgerJson = ledgerJson;
+        _selectedBackupName = 'Pasted from clipboard';
+        _selectedBackupIsGenesis = _extractGenesisHintFromBackupJson(raw);
+        _errorMessage = null;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Backup loaded from clipboard')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Could not read backup JSON from the clipboard: $e';
       });
     }
   }
@@ -328,12 +371,17 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Type or paste your 12 or 24 word seed phrase to restore your capsule.',
+              'Use your 12 or 24 word seed phrase to restore your capsule identity.',
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 16),
             const Text(
               'Capsule type will be inferred automatically from recovered state.',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'A backup file can be added to restore your history after the seed phrase is validated.',
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 8),
@@ -355,11 +403,50 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: _pickBackupFile,
-              icon: const Icon(Icons.upload_file),
-              label: const Text('Choose Backup File (Optional)'),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _pickBackupFile,
+                    icon: const Icon(Icons.upload_file),
+                    label: const Text('Choose Backup File'),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Choose a backup file to restore history after your seed phrase is validated.',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _showAdvancedOptions = !_showAdvancedOptions;
+                  });
+                },
+                icon: Icon(
+                  _showAdvancedOptions ? Icons.expand_less : Icons.expand_more,
+                ),
+                label: const Text('Advanced recovery options'),
+              ),
+            ),
+            if (_showAdvancedOptions) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'If file selection is unavailable, you can paste the full backup JSON from the clipboard.',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _pasteBackupJson,
+                icon: const Icon(Icons.content_paste),
+                label: const Text('Paste Backup JSON'),
+              ),
+            ],
             if (_selectedBackupName != null) ...[
               const SizedBox(height: 8),
               Text(
