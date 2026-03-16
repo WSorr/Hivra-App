@@ -5,10 +5,23 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val buildRustFfi by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Build hivra Rust FFI libraries for Android ABIs"
+    workingDir = rootProject.projectDir
+    commandLine("sh", "${rootProject.projectDir}/build_rust_android.sh")
+}
+
 android {
     namespace = "com.hivra.hivra_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDir("build/generated/rustJniLibs")
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -41,4 +54,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildRustFfi)
 }
