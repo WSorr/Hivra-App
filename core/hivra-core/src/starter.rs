@@ -45,7 +45,7 @@ impl Starter {
 
     /// Derive starter ID deterministically from protocol fields.
     ///
-    /// v3.2 formula:
+    /// Canonical formula:
     /// SHA256(owner_pubkey || network || kind || creation_nonce)
     pub fn derive_id(
         owner_pubkey: &PubKey,

@@ -1,7 +1,7 @@
-# Hivra Protocol v3.2 — Full Specification
+# Hivra Protocol v1.0 — Full Specification
 
-Version: 3.2
-Date: 2026-02-20
+Version: 1.0
+Date: 2026-03-16
 
 Hive Integrated Value & Relationship Architecture
 
@@ -9,9 +9,9 @@ Hive Integrated Value & Relationship Architecture
 
 ## 0. Preamble
 
-This document is the single source of truth for the architecture and implementation of the HIVRA v3.2 protocol. It defines a strict layered architecture, domain invariants, data formats, and participant roles.
+This document is the single source of truth for the architecture and implementation of the Hivra protocol. It defines a strict layered architecture, domain invariants, data formats, and participant roles.
 
-The key change in v3.2 is a hard rule: Core knows nothing about transport, cryptography, time, or RNG. All external dependencies are injected through the Engine.
+The key architectural rule in this revision is strict layer isolation: Core knows nothing about transport, cryptography, time, or RNG. All external dependencies are injected through the Engine.
 
 ---
 
@@ -591,7 +591,7 @@ Rules:
 
 ---
 
-## 13. v3.2 Limitations (Not Implemented)
+## 13. Current Limitations (Not Implemented)
 
 - Friend-based recovery (planned for v4.x)
 - Kick mechanic (forced break)
@@ -622,7 +622,7 @@ CryptoProvider | Cryptography interface in Engine (transport-specific)
 
 ## 15. Status and Readiness
 
-HIVRA Protocol v3.2 in this revision is:
+Hivra Protocol in this revision is:
 
 - Architecturally clean (strict downward dependencies)
 - Logically consistent

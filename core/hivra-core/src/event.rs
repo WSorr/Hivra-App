@@ -62,7 +62,7 @@ impl Event {
 
     /// Deterministic event ID from protocol fields.
     ///
-    /// v3.2 formula:
+    /// Canonical formula:
     /// SHA256(version || kind || payload_bytes)
     pub fn event_id(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();

@@ -361,7 +361,7 @@ Invite with locked starter | Error: starter busy
 
 ## 5. Transport Layer (Extensibility)
 
-Hivra v3.2 ships with Nostr as the main transport, but the architecture allows others:
+Hivra currently ships with Nostr as the main transport, but the architecture allows others:
 
 Supported transports (plugins):
 
@@ -383,7 +383,7 @@ Guarantees:
 
 ---
 
-## 6. v3.2 Limitations (Not Implemented)
+## 6. Current Limitations (Not Implemented)
 
 - Friend-based recovery (planned for v4.x)
 - Kick mechanic (forced break)

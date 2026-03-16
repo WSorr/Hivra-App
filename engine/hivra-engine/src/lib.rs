@@ -251,7 +251,7 @@ where
     /// This is the only place where signing happens.
     /// Private key never leaves secure storage.
     pub fn sign_event(&self, event: &Event) -> Result<Signature, K::Error> {
-        // v3.2 canonical signing bytes are derived deterministically from the event.
+        // Canonical signing bytes are derived deterministically from the event.
         let msg = event.event_id();
         self.keystore.sign(&msg).map(Signature::from)
     }

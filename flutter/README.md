@@ -1,6 +1,6 @@
 # Hivra Flutter App
 
-Flutter client for Hivra Protocol v3.2.
+Flutter client for Hivra Protocol v1.0.
 
 ## Capsule UX Rules
 
