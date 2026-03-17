@@ -128,6 +128,27 @@ Scope:
 Definition of done:
 - Published macOS artifacts match the tested build and launch reliably on supported Macs.
 
+### 7.2 Android Release Quality
+
+Goal:
+- Move Android from bring-up success to a disciplined release channel.
+
+Scope:
+- Keep Rust FFI packaging explicit and reproducible in Android builds.
+- Replace temporary app-private seed storage with a proper Android keystore-backed implementation.
+- Add Android-specific smoke coverage for:
+  - app launch
+  - capsule create/recover
+  - invitation send
+  - invitation accept
+  - backup/recovery entry paths
+- Improve outbound transport diagnostics so relay write failures are visible and actionable.
+- Verify release APKs from the packaged artifact, not only from a local build tree install.
+
+Definition of done:
+- Published Android APKs install cleanly, launch, and complete basic invitation flows on real devices.
+- Android release verification is part of the normal release process rather than an ad hoc side task.
+
 ### 7.1 Update Safety Blockers
 
 Goal:
@@ -171,6 +192,20 @@ Scope:
 
 Definition of done:
 - FFI remains explicit, narrow, and predictable.
+
+### 8.1 Android Runtime Hardening
+
+Goal:
+- Reduce Android-specific fragility in capsule bootstrap, outbound transport, and seed storage.
+
+Scope:
+- Remove Android-only blind spots where transport failures collapse into generic UI errors.
+- Keep runtime bootstrap behavior aligned with macOS so cross-platform truth stays comparable.
+- Audit Android-specific storage and lifecycle assumptions for restart, reinstall, and upgrade behavior.
+
+Definition of done:
+- Android runtime failures are diagnosable.
+- Android behavior matches the same ledger/truth rules expected on other platforms.
 
 ### 9. Flutter Policy Reduction
 

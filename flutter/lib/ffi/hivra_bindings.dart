@@ -467,20 +467,23 @@ class HivraBindings {
 
   bool starterExists(int slot) => _starterExists(slot) != 0;
 
-  bool sendInvitation(Uint8List toPubkey, int starterSlot) {
-    if (toPubkey.length != 32 || starterSlot < 0 || starterSlot > 4) return false;
+  int sendInvitationCode(Uint8List toPubkey, int starterSlot) {
+    if (toPubkey.length != 32 || starterSlot < 0 || starterSlot > 4) return -1;
     final toPtr = calloc<Uint8>(32);
     try {
       final sendInvitationFn = _sendInvitation;
       if (sendInvitationFn == null) {
-        return false;
+        return -1002;
       }
       toPtr.asTypedList(32).setAll(0, toPubkey);
-      return sendInvitationFn(toPtr, starterSlot) == 0;
+      return sendInvitationFn(toPtr, starterSlot);
     } finally {
       calloc.free(toPtr);
     }
   }
+
+  bool sendInvitation(Uint8List toPubkey, int starterSlot) =>
+      sendInvitationCode(toPubkey, starterSlot) == 0;
 
   int receiveTransportMessages() => _transportReceive?.call() ?? -1002;
 

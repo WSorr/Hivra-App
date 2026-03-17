@@ -276,17 +276,18 @@ impl NostrTransport {
     pub fn send_event(&self, event: Event) -> Result<(), TransportError> {
         if !self.ensure_connected_relays() {
             eprintln!("[Nostr] No connected relays available before publish");
-            return Err(TransportError::SendFailed);
+            return Err(TransportError::ConnectionFailed);
         }
 
         let relays = self.runtime.block_on(self.client.relays());
 
         if relays.is_empty() {
             eprintln!("[Nostr] No relays available for publish");
-            return Err(TransportError::SendFailed);
+            return Err(TransportError::ConnectionFailed);
         }
 
         let mut any_success = false;
+        let mut last_reason: Option<String> = None;
 
         for relay in relays.into_values() {
             let relay_url = relay.url().to_string();
@@ -314,6 +315,7 @@ impl NostrTransport {
                     }
                     Err(err) => {
                         let reason = err.to_string();
+                        last_reason = Some(reason.clone());
                         eprintln!(
                             "[Nostr] Relay {} reject on attempt {}/{}: {}",
                             relay_url,
@@ -361,7 +363,9 @@ impl NostrTransport {
             Ok(())
         } else {
             eprintln!("[Nostr] Send failed: no relay accepted event");
-            Err(TransportError::SendFailed)
+            Err(TransportError::Other(
+                last_reason.unwrap_or_else(|| "no relay accepted event".to_string()),
+            ))
         }
     }
 

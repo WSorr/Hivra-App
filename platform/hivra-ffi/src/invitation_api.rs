@@ -1,5 +1,23 @@
 use super::*;
 
+fn map_publish_error(err: TransportError, default_code: i32) -> i32 {
+    match err {
+        TransportError::ConnectionFailed => -11,
+        TransportError::Timeout => -12,
+        TransportError::Other(reason) => {
+            let lower = reason.to_lowercase();
+            if lower.contains("auth") {
+                -14
+            } else if lower.contains("timeout") || lower.contains("timed out") {
+                -12
+            } else {
+                -13
+            }
+        }
+        _ => default_code,
+    }
+}
+
 /// Send invitation through transport and append InvitationSent to local ledger.
 ///
 /// Returns:
@@ -66,9 +84,9 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
         invitation_id: Some(invitation_id),
     };
 
-    if transport.send(message).is_err() {
-        eprintln!("[Nostr] InvitationSent publish failed");
-        return -7;
+    if let Err(err) = transport.send(message) {
+        eprintln!("[Nostr] InvitationSent publish failed: {:?}", err);
+        return map_publish_error(err, -7);
     }
 
     eprintln!("[Nostr] InvitationSent published");
@@ -357,12 +375,13 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         Err(_) => return -6,
     };
 
-    if transport.send(message).is_err() {
+    if let Err(err) = transport.send(message) {
         eprintln!(
-            "[Accept] transport send failed invitation={:02x?}",
-            &invitation_id[..4]
+            "[Accept] transport send failed invitation={:02x?}: {:?}",
+            &invitation_id[..4],
+            err
         );
-        return -7;
+        return map_publish_error(err, -7);
     }
 
     if append_prepared_event(prepared).is_err() {

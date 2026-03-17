@@ -32,15 +32,15 @@ bool _bootstrapWorkerRuntime(HivraBindings hivra, Map<String, Object?> args) {
 Map<String, Object?> _sendInvitationInWorker(Map<String, Object?> args) {
   final hivra = HivraBindings();
   if (!_bootstrapWorkerRuntime(hivra, args)) {
-    return <String, Object?>{'ok': false};
+    return <String, Object?>{'result': -1004};
   }
 
   final toPubkey = args['toPubkey'] as Uint8List;
   final starterSlot = args['starterSlot'] as int;
-  final ok = hivra.sendInvitation(toPubkey, starterSlot);
+  final result = hivra.sendInvitationCode(toPubkey, starterSlot);
   return <String, Object?>{
-    'ok': ok,
-    'ledgerJson': ok ? hivra.exportLedger() : null,
+    'result': result,
+    'ledgerJson': result == 0 ? hivra.exportLedger() : null,
   };
 }
 
@@ -132,22 +132,24 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       },
     ).timeout(
       const Duration(seconds: 8),
-      onTimeout: () => <String, Object?>{'ok': false},
+      onTimeout: () => <String, Object?>{'result': -1003},
     );
-    final ok = workerResult['ok'] == true;
+    final result = (workerResult['result'] as int?) ?? -1003;
     final ledgerJson = workerResult['ledgerJson'] as String?;
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ok
-              ? 'Invitation sent'
-              : 'Send timed out. Pull to refresh and check status.'),
+          content: Text(
+            result == 0
+                ? 'Invitation sent'
+                : _sendErrorMessage(result),
+          ),
         ),
       );
     }
 
-    if (ok) {
+    if (result == 0) {
       if (ledgerJson != null && ledgerJson.isNotEmpty) {
         widget.hivra.importLedger(ledgerJson);
         await _persistence.persistLedgerSnapshot(widget.hivra);
@@ -182,6 +184,41 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     }
   }
 
+  String _sendErrorMessage(int code) {
+    switch (code) {
+      case -1:
+        return 'Invalid invitation arguments';
+      case -2:
+        return 'Seed not found';
+      case -3:
+        return 'Sender key derivation failed';
+      case -4:
+        return 'Capsule is not initialized';
+      case -5:
+        return 'Transport init failed';
+      case -6:
+        return 'Failed to prepare local invitation state';
+      case -7:
+        return 'Failed to publish invitation';
+      case -11:
+        return 'No connected relays available for publish';
+      case -12:
+        return 'Publish timed out';
+      case -13:
+        return 'Relay rejected the invitation publish';
+      case -14:
+        return 'Relay requires or rejected authentication';
+      case -1002:
+        return 'Send API is not available in FFI';
+      case -1003:
+        return 'Send timed out. Pull to refresh and check status.';
+      case -1004:
+        return 'Active capsule bootstrap failed';
+      default:
+        return 'Failed to send invitation (code $code)';
+    }
+  }
+
   String _acceptErrorMessage(int code) {
     switch (code) {
       case -1:
@@ -198,6 +235,14 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         return 'Transport init failed';
       case -7:
         return 'Failed to send InvitationAccepted';
+      case -11:
+        return 'No connected relays available for publish';
+      case -12:
+        return 'InvitationAccepted publish timed out';
+      case -13:
+        return 'Relay rejected InvitationAccepted';
+      case -14:
+        return 'Relay requires or rejected authentication';
       case -8:
         return 'Matching incoming invitation not found in ledger';
       case -9:
