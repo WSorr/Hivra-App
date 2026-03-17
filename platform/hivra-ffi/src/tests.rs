@@ -29,6 +29,24 @@ fn runtime_events() -> Vec<Event> {
     runtime.capsule.as_ref().unwrap().ledger.events().to_vec()
 }
 
+fn runtime_capsule_state() -> hivra_core::capsule::CapsuleState {
+    current_capsule_state().expect("runtime capsule state")
+}
+
+fn relationship_established_count() -> usize {
+    runtime_events()
+        .into_iter()
+        .filter(|event| event.kind() == EventKind::RelationshipEstablished)
+        .count()
+}
+
+fn invitation_accepted_count() -> usize {
+    runtime_events()
+        .into_iter()
+        .filter(|event| event.kind() == EventKind::InvitationAccepted)
+        .count()
+}
+
 fn append_invitation_sent_for_test(
     invitation_id: [u8; 32],
     starter_id: [u8; 32],
@@ -212,6 +230,168 @@ fn resolved_invitation_blocks_replayed_incoming_offer() {
     append_runtime_event(EventKind::InvitationAccepted, &accepted.to_bytes()).unwrap();
 
     assert!(invitation_is_resolved_in_runtime(&invitation_id));
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationReceived,
+        &invitation_id,
+        PubKey::from(peer_pubkey),
+    ));
+}
+
+#[test]
+fn exported_ledger_roundtrips_same_event_count() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(51);
+    let owner = derived_pubkey(&seed);
+    set_runtime_capsule(owner, Network::Neste);
+
+    append_runtime_event(EventKind::CapsuleCreated, &[]).unwrap();
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(derive_starter_id(&seed, 0)),
+            nonce: [1u8; 32],
+            kind: StarterKind::Spark,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    let before = runtime_events();
+    let exported = export_runtime_ledger().unwrap();
+
+    clear_runtime_state();
+    set_runtime_capsule(owner, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    let after = runtime_events();
+    assert_eq!(after.len(), before.len());
+    assert_eq!(after.last().map(|event| event.kind()), before.last().map(|event| event.kind()));
+}
+
+#[test]
+fn accepted_relationship_survives_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(61);
+    let local_pubkey = derived_pubkey(&seed);
+    let inviter_pubkey = [13u8; 32];
+    let invitation_id = [19u8; 32];
+    let inviter_slot = 0u8;
+    let peer_starter_id = derive_starter_id(&test_seed(62), inviter_slot);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(inviter_slot),
+        Some(inviter_pubkey),
+    );
+
+    let engine = build_engine(&seed);
+    let acceptance_plan = resolve_local_acceptance_plan(&seed, invitation_id).unwrap();
+    finalize_local_acceptance(&engine, &acceptance_plan, inviter_pubkey).unwrap();
+
+    assert_eq!(relationship_established_count(), 1);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert_eq!(relationship_established_count(), 1);
+    assert!(runtime_events().iter().any(|event| {
+        event.kind() == EventKind::RelationshipEstablished
+            && RelationshipEstablishedPayload::from_bytes(event.payload()).is_ok_and(|payload| {
+                payload.peer_pubkey == PubKey::from(inviter_pubkey)
+                    && payload.peer_starter_id.as_bytes() == &peer_starter_id
+            })
+    }));
+}
+
+#[test]
+fn resolved_invitation_stays_resolved_after_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(71);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [23u8; 32];
+    let invitation_id = [29u8; 32];
+    let peer_starter_id = derive_starter_id(&test_seed(72), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(0),
+        Some(peer_pubkey),
+    );
+
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(derive_starter_id(&local_seed, 0)),
+    };
+    append_runtime_event(EventKind::InvitationAccepted, &accepted.to_bytes()).unwrap();
+
+    assert!(invitation_is_resolved_in_runtime(&invitation_id));
+    assert_eq!(invitation_accepted_count(), 1);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert!(invitation_is_resolved_in_runtime(&invitation_id));
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationReceived,
+        &invitation_id,
+        PubKey::from(peer_pubkey),
+    ));
+    assert_eq!(invitation_accepted_count(), 1);
+}
+
+#[test]
+fn capsule_state_and_incoming_offer_truth_survive_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(81);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [31u8; 32];
+    let invitation_id = [37u8; 32];
+    let peer_starter_id = derive_starter_id(&test_seed(82), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(0),
+        Some(peer_pubkey),
+    );
+
+    let before_state = runtime_capsule_state();
+    let exported = export_runtime_ledger().unwrap();
+
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    let after_state = runtime_capsule_state();
+    assert_eq!(after_state.public_key, before_state.public_key);
+    assert_eq!(after_state.capsule_type, before_state.capsule_type);
+    assert_eq!(after_state.network, before_state.network);
+    assert_eq!(after_state.slots, before_state.slots);
+    assert_eq!(after_state.ledger_hash, before_state.ledger_hash);
+    assert_eq!(after_state.relationships_count, before_state.relationships_count);
+    assert_eq!(after_state.version, before_state.version);
     assert!(invitation_offer_exists_in_runtime(
         EventKind::InvitationReceived,
         &invitation_id,
