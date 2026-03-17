@@ -157,6 +157,34 @@ fn incoming_invitation_accepted_projects_outgoing_relationship() {
 }
 
 #[test]
+fn incoming_invitation_accepted_projection_is_idempotent() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(14);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [18u8; 32];
+    let invitation_id = [9u8; 32];
+    let own_starter_id = derive_starter_id(&test_seed(14), 0);
+    let peer_starter_id = derive_starter_id(&test_seed(15), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    let payload = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_starter_id),
+    };
+
+    let engine = build_engine(&local_seed);
+    project_relationship_from_invitation_accepted(&engine, peer_pubkey, &payload).unwrap();
+    project_relationship_from_invitation_accepted(&engine, peer_pubkey, &payload).unwrap();
+
+    assert_eq!(relationship_established_count(), 1);
+}
+
+#[test]
 fn incoming_empty_slot_reject_burns_sender_starter() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

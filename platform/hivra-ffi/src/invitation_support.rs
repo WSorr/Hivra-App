@@ -216,21 +216,13 @@ pub(crate) fn project_relationship_from_invitation_accepted(
         return Err("matching outgoing invitation not found");
     };
 
-    let relationship = engine
-        .prepare_relationship_established(
-            PubKey::from(message_from),
-            own_starter_id,
-            payload.created_starter_id,
-            kind,
-        )
-        .map_err(|_| "prepare failed")?;
-
-    let effect = IncomingEffect::Append(relationship.event);
-    let IncomingEffect::Append(event) = effect;
-    append_prepared_event(PreparedEvent {
-        event,
-        recipient: None,
-    })
+    append_relationship_established_if_missing(
+        engine,
+        PubKey::from(message_from),
+        own_starter_id,
+        payload.created_starter_id,
+        kind,
+    )
 }
 
 pub(crate) fn project_effects_from_invitation_rejected(

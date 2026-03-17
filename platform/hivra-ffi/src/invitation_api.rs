@@ -355,6 +355,14 @@ pub unsafe extern "C" fn hivra_accept_invitation(
     };
     let payload_bytes = prepared.event.payload().to_vec();
 
+    if event_exists_in_runtime(EventKind::InvitationAccepted, &payload_bytes) {
+        eprintln!(
+            "[Accept] skip duplicate local InvitationAccepted invitation={:02x?}",
+            &invitation_id[..4]
+        );
+        return 0;
+    }
+
     let message = Message {
         from: sender_pubkey,
         to: from_pubkey,
