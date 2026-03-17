@@ -64,6 +64,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _showBootstrapDiagnostics() async {
+    final report = await _persistence.diagnoseBootstrapReport(widget.hivra);
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Bootstrap diagnostics'),
+        content: SingleChildScrollView(
+          child: SelectableText(report.toMultilineString()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -104,6 +125,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: const Text(
                     'Inspect local files, seeds, runtime and legacy traces'),
                 onTap: _showLocalTraceReport,
+              ),
+              ListTile(
+                leading: const Icon(Icons.health_and_safety),
+                title: const Text('Bootstrap diagnostics'),
+                subtitle: const Text(
+                    'Inspect startup bootstrap source, seed match and import readiness'),
+                onTap: _showBootstrapDiagnostics,
               ),
             ],
           ),

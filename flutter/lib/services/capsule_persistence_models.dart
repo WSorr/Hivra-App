@@ -133,3 +133,47 @@ class CapsuleTraceReport {
     ].join('\n');
   }
 }
+
+class CapsuleBootstrapReport {
+  final String? activePubKeyHex;
+  final String? runtimePubKeyHex;
+  final String bootstrapSource;
+  final bool seedAvailable;
+  final bool seedMatchesActiveCapsule;
+  final bool stateFileExists;
+  final bool ledgerFileExists;
+  final bool backupFileExists;
+  final bool workerBootstrapAvailable;
+  final bool ledgerImportable;
+  final String? issue;
+
+  CapsuleBootstrapReport({
+    required this.activePubKeyHex,
+    required this.runtimePubKeyHex,
+    required this.bootstrapSource,
+    required this.seedAvailable,
+    required this.seedMatchesActiveCapsule,
+    required this.stateFileExists,
+    required this.ledgerFileExists,
+    required this.backupFileExists,
+    required this.workerBootstrapAvailable,
+    required this.ledgerImportable,
+    required this.issue,
+  });
+
+  String toMultilineString() {
+    return [
+      'activePubKeyHex: ${activePubKeyHex ?? "none"}',
+      'runtimePubKeyHex: ${runtimePubKeyHex ?? "none"}',
+      'bootstrapSource: $bootstrapSource',
+      'seedAvailable: $seedAvailable',
+      'seedMatchesActiveCapsule: $seedMatchesActiveCapsule',
+      'stateFileExists: $stateFileExists',
+      'ledgerFileExists: $ledgerFileExists',
+      'backupFileExists: $backupFileExists',
+      'workerBootstrapAvailable: $workerBootstrapAvailable',
+      'ledgerImportable: $ledgerImportable',
+      'issue: ${issue ?? "none"}',
+    ].join('\n');
+  }
+}

@@ -265,6 +265,66 @@ class CapsulePersistenceService {
     return null;
   }
 
+  Future<CapsuleBootstrapReport> diagnoseBootstrapReport(
+      HivraBindings hivra) async {
+    final activeHex = await resolveActiveCapsuleHex(hivra);
+    final runtimePubKey = hivra.capsulePublicKey();
+    final runtimeHex = runtimePubKey != null && runtimePubKey.length == 32
+        ? _bytesToHex(runtimePubKey)
+        : null;
+
+    if (activeHex == null || activeHex.isEmpty) {
+      return CapsuleBootstrapReport(
+        activePubKeyHex: null,
+        runtimePubKeyHex: runtimeHex,
+        bootstrapSource: 'none',
+        seedAvailable: false,
+        seedMatchesActiveCapsule: false,
+        stateFileExists: false,
+        ledgerFileExists: false,
+        backupFileExists: false,
+        workerBootstrapAvailable: false,
+        ledgerImportable: false,
+        issue: 'No active capsule selected',
+      );
+    }
+
+    final capsuleDir = await _capsuleDirForHex(activeHex);
+    final stateFileExists = await _fileStore.stateFile(capsuleDir).exists();
+    final ledgerFileExists = await _fileStore.ledgerFile(capsuleDir).exists();
+    final backupFileExists = await _fileStore.backupFile(capsuleDir).exists();
+    final bootstrapSource = ledgerFileExists
+        ? 'ledger'
+        : backupFileExists
+            ? 'backup'
+            : 'none';
+
+    final seed = await _loadSeedForCapsule(activeHex);
+    final seedAvailable = seed != null;
+    final seedMatches = seed != null
+        ? await seedMatchesCapsule(hivra, seed, activeHex)
+        : false;
+
+    final bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
+    final workerBootstrap = await loadWorkerBootstrapArgs(hivra);
+    final issue = await diagnoseActiveCapsuleBootstrap(hivra);
+
+    return CapsuleBootstrapReport(
+      activePubKeyHex: activeHex,
+      runtimePubKeyHex: runtimeHex,
+      bootstrapSource: bootstrapSource,
+      seedAvailable: seedAvailable,
+      seedMatchesActiveCapsule: seedMatches,
+      stateFileExists: stateFileExists,
+      ledgerFileExists: ledgerFileExists,
+      backupFileExists: backupFileExists,
+      workerBootstrapAvailable: workerBootstrap != null,
+      ledgerImportable:
+          bootstrap?.ledgerJson != null && bootstrap!.ledgerJson!.isNotEmpty,
+      issue: issue,
+    );
+  }
+
   Future<CapsuleTraceReport> diagnoseCapsuleTraces(HivraBindings hivra) async {
     final activeHex = await resolveActiveCapsuleHex(hivra);
     final runtimePubKey = hivra.capsulePublicKey();
