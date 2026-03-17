@@ -37,11 +37,21 @@ Contains:
 - release discipline and preflight expectations
 - medium-term architecture and plugin-host work
 
+### 4) `android-keystore-migration.md` (implementation note)
+Use this when working on Android seed-storage hardening.
+
+Contains:
+- current Android storage debt
+- target keystore-backed storage model
+- migration path for existing Android users
+- implementation constraints and rollout checkpoints
+
 ## Recommended Reading Order
 
 1. `specification.md`
 2. `hivra-conceptual-model.md`
 3. `roadmap.md`
+4. `android-keystore-migration.md` when touching Android seed storage
 
 ## Update Rules
 
