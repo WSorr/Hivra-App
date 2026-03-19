@@ -93,13 +93,16 @@ pub unsafe extern "C" fn hivra_seed_public_key(seed_ptr: *const u8, out_key: *mu
 /// Check if seed exists in keystore
 #[no_mangle]
 pub unsafe extern "C" fn hivra_seed_exists() -> i8 {
+    clear_last_error();
     seed_exists() as i8
 }
 
 /// Save seed to keystore
 #[no_mangle]
 pub unsafe extern "C" fn hivra_seed_save(seed_ptr: *const u8) -> i32 {
+    clear_last_error();
     if seed_ptr.is_null() {
+        set_last_error("Seed save failed: seed pointer was null");
         return -1;
     }
 
@@ -110,14 +113,19 @@ pub unsafe extern "C" fn hivra_seed_save(seed_ptr: *const u8) -> i32 {
 
     match store_seed(&seed) {
         Ok(_) => 0,
-        Err(_) => -1,
+        Err(err) => {
+            set_last_error(format!("Seed save failed: {err}"));
+            -1
+        }
     }
 }
 
 /// Load seed from keystore
 #[no_mangle]
 pub unsafe extern "C" fn hivra_seed_load(out_seed: *mut u8) -> i32 {
+    clear_last_error();
     if out_seed.is_null() {
+        set_last_error("Seed load failed: output pointer was null");
         return -1;
     }
 
@@ -128,15 +136,22 @@ pub unsafe extern "C" fn hivra_seed_load(out_seed: *mut u8) -> i32 {
             std::ptr::copy_nonoverlapping(seed_bytes.as_ptr(), out_seed, 32);
             0
         }
-        Err(_) => -1,
+        Err(err) => {
+            set_last_error(format!("Seed load failed: {err}"));
+            -1
+        }
     }
 }
 
 /// Delete seed from keystore
 #[no_mangle]
 pub unsafe extern "C" fn hivra_seed_delete() -> i32 {
+    clear_last_error();
     match delete_seed() {
         Ok(_) => 0,
-        Err(_) => -1,
+        Err(err) => {
+            set_last_error(format!("Seed delete failed: {err}"));
+            -1
+        }
     }
 }

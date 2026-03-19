@@ -63,8 +63,12 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       bool isGenesisRecovered = _selectedBackupIsGenesis ?? false;
 
       // Start from backup hint when available; otherwise Proto fallback.
-      if (!_hivra.createCapsule(seed, isGenesis: isGenesisRecovered)) {
-        throw Exception('Failed to create capsule from seed');
+      final createError = _hivra.createCapsuleError(
+        seed,
+        isGenesis: isGenesisRecovered,
+      );
+      if (createError != null) {
+        throw Exception(createError);
       }
 
       if (_selectedBackupLedgerJson != null) {
@@ -89,8 +93,12 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
         final inferredFromLedger = _inferGenesisFromLedgerJson(_hivra.exportLedger());
         isGenesisRecovered = inferredFromLedger ?? (_countOccupiedStarters() > 0);
 
-        if (!_hivra.createCapsule(seed, isGenesis: isGenesisRecovered)) {
-          throw Exception('Failed to re-create capsule with inferred type');
+        final recreateError = _hivra.createCapsuleError(
+          seed,
+          isGenesis: isGenesisRecovered,
+        );
+        if (recreateError != null) {
+          throw Exception(recreateError);
         }
         if (_selectedBackupLedgerJson != null) {
           if (!_hivra.importLedger(_selectedBackupLedgerJson!)) {

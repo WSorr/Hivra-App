@@ -7,7 +7,9 @@ pub unsafe extern "C" fn hivra_capsule_create(
     _network: u8,
     _capsule_type: u8,
 ) -> i32 {
+    clear_last_error();
     if seed_ptr.is_null() {
+        set_last_error("Capsule create failed: seed pointer was null");
         return -1;
     }
 
@@ -29,19 +31,25 @@ pub unsafe extern "C" fn hivra_capsule_create(
 
     match store_seed(&seed) {
         Ok(_) => {
-            if init_runtime_state(&seed, network, capsule_type).is_err() {
+            if let Err(err) = init_runtime_state(&seed, network, capsule_type) {
+                set_last_error(format!("Capsule create failed during runtime init: {err}"));
                 return -2;
             }
             0
         }
-        Err(_) => -1,
+        Err(err) => {
+            set_last_error(format!("Capsule create failed while storing seed: {err}"));
+            -1
+        }
     }
 }
 
 /// Get capsule public key (derived from seed)
 #[no_mangle]
 pub unsafe extern "C" fn hivra_capsule_public_key(out_key: *mut u8) -> i32 {
+    clear_last_error();
     if out_key.is_null() {
+        set_last_error("Capsule public key failed: output pointer was null");
         return -1;
     }
 
@@ -52,21 +60,31 @@ pub unsafe extern "C" fn hivra_capsule_public_key(out_key: *mut u8) -> i32 {
                 std::ptr::copy_nonoverlapping(pubkey_array.as_ptr(), out_key, 32);
                 0
             }
-            Err(_) => -1,
+            Err(_) => {
+                set_last_error("Capsule public key derivation failed");
+                -1
+            }
         },
-        Err(_) => -1,
+        Err(err) => {
+            set_last_error(format!("Capsule public key failed while loading seed: {err}"));
+            -1
+        }
     }
 }
 
 /// Reset capsule (delete seed and ledger)
 #[no_mangle]
 pub unsafe extern "C" fn hivra_capsule_reset() -> i32 {
+    clear_last_error();
     match delete_seed() {
         Ok(_) => {
             clear_runtime_state();
             0
         }
-        Err(_) => -1,
+        Err(err) => {
+            set_last_error(format!("Capsule reset failed: {err}"));
+            -1
+        }
     }
 }
 

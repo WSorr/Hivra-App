@@ -39,6 +39,9 @@ typedef HivraSeedPublicKeyDart = int Function(
 typedef HivraFreeStringC = Void Function(Pointer<Int8> ptr);
 typedef HivraFreeStringDart = void Function(Pointer<Int8> ptr);
 
+typedef HivraLastErrorMessageC = Pointer<Int8> Function();
+typedef HivraLastErrorMessageDart = Pointer<Int8> Function();
+
 typedef HivraSeedExistsC = Int8 Function();
 typedef HivraSeedExistsDart = int Function();
 
@@ -194,6 +197,7 @@ class HivraBindings {
   late final HivraGenerateRandomSeedDart _generateRandomSeed;
   late final HivraSeedPublicKeyDart _seedPublicKey;
   late final HivraFreeStringDart _freeString;
+  late final HivraLastErrorMessageDart _lastErrorMessage;
   late final HivraSeedExistsDart _seedExists;
   late final HivraSeedSaveDart _seedSave;
   late final HivraSeedLoadDart _seedLoad;
@@ -235,6 +239,10 @@ class HivraBindings {
     
     _freeString = _lib
         .lookup<NativeFunction<HivraFreeStringC>>('hivra_free_string')
+        .asFunction();
+
+    _lastErrorMessage = _lib
+        .lookup<NativeFunction<HivraLastErrorMessageC>>('hivra_last_error_message')
         .asFunction();
 
     _seedExists = _lib
@@ -362,6 +370,16 @@ class HivraBindings {
   Uint8List? publicKey() => capsulePublicKey();
 
   bool seedExists() => _seedExists() != 0;
+
+  String? lastErrorMessage() {
+    final ptr = _lastErrorMessage();
+    if (ptr == nullptr) return null;
+    try {
+      return ptr.cast<Utf8>().toDartString();
+    } finally {
+      _freeString(ptr);
+    }
+  }
   
   bool saveSeed(Uint8List seed) {
     if (seed.length != 32) return false;
@@ -420,6 +438,13 @@ class HivraBindings {
     } finally {
       calloc.free(seedPtr);
     }
+  }
+
+  String? createCapsuleError(Uint8List seed, {bool isNeste = true, bool isGenesis = false}) {
+    if (createCapsule(seed, isNeste: isNeste, isGenesis: isGenesis)) {
+      return null;
+    }
+    return lastErrorMessage() ?? 'Failed to create capsule';
   }
 
   Uint8List? capsulePublicKey() {

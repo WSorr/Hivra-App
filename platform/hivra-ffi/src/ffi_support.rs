@@ -15,6 +15,18 @@ pub unsafe extern "C" fn hivra_free_string(ptr: *mut c_char) {
     }
 }
 
+/// Return the last FFI error string, if any.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_last_error_message() -> *mut c_char {
+    let message = LAST_ERROR.lock().unwrap().clone();
+    match message {
+        Some(message) => CString::new(message)
+            .map(CString::into_raw)
+            .unwrap_or(ptr::null_mut()),
+        None => ptr::null_mut(),
+    }
+}
+
 /// Free memory allocated by capsule_state_encode
 #[no_mangle]
 pub unsafe extern "C" fn free_bytes(ptr: *mut u8, len: usize) {

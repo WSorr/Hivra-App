@@ -31,6 +31,16 @@ use serde_json;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub(crate) static LAST_ERROR: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+
+pub(crate) fn set_last_error(message: impl Into<String>) {
+    *LAST_ERROR.lock().unwrap() = Some(message.into());
+}
+
+pub(crate) fn clear_last_error() {
+    *LAST_ERROR.lock().unwrap() = None;
+}
+
 mod capsule_api;
 mod ffi_support;
 mod invitation_api;

@@ -15,13 +15,13 @@ class _FirstLaunchScreenState extends State<FirstLaunchScreen> {
     try {
       final seed = _hivra.generateRandomSeed();
       final isGenesis = type == 'genesis';
-      final success = _hivra.createCapsule(
+      final error = _hivra.createCapsuleError(
         seed, 
         isNeste: true, 
         isGenesis: isGenesis,
       );
-      
-      if (!success) throw Exception('Failed to create capsule');
+
+      if (error != null) throw Exception(error);
       
       if (mounted) {
         Navigator.pushNamed(
