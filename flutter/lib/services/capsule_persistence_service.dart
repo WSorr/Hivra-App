@@ -334,7 +334,14 @@ class CapsulePersistenceService {
 
     final seed = await _loadSeedForCapsule(activeHex);
     final seedAvailable = seed != null;
-    final seedMatches = seed != null ? await seedMatchesCapsule(hivra, seed, activeHex) : false;
+    final seedMatches = seed != null
+        ? await seedMatchesCapsule(
+            hivra,
+            seed,
+            activeHex,
+            identityMode: identityMode,
+          )
+        : false;
     final seedRootPubKey = seed != null ? hivra.seedRootPublicKey(seed) : null;
     final seedRootHex = seedRootPubKey != null && seedRootPubKey.length == 32
         ? _bytesToHex(seedRootPubKey)
@@ -619,13 +626,33 @@ class CapsulePersistenceService {
     String pubKeyHex, {
     String identityMode = 'legacy_nostr_owner',
   }) async {
-    final derivedPubKey = switch (identityMode) {
-      'root_owner' => hivra.seedRootPublicKey(seed),
-      'legacy_nostr_owner' => hivra.seedNostrPublicKey(seed),
-      _ => hivra.seedPublicKey(seed),
-    };
-    if (derivedPubKey == null || derivedPubKey.length != 32) return false;
-    return _bytesToHex(derivedPubKey) == pubKeyHex;
+    if (identityMode == 'root_owner') {
+      final derivedPubKey = hivra.seedRootPublicKey(seed);
+      if (derivedPubKey == null || derivedPubKey.length != 32) return false;
+      return _bytesToHex(derivedPubKey) == pubKeyHex;
+    }
+
+    if (identityMode == 'legacy_nostr_owner') {
+      final derivedPubKey = hivra.seedNostrPublicKey(seed);
+      if (derivedPubKey == null || derivedPubKey.length != 32) return false;
+      return _bytesToHex(derivedPubKey) == pubKeyHex;
+    }
+
+    final rootPubKey = hivra.seedRootPublicKey(seed);
+    if (rootPubKey != null &&
+        rootPubKey.length == 32 &&
+        _bytesToHex(rootPubKey) == pubKeyHex) {
+      return true;
+    }
+
+    final nostrPubKey = hivra.seedNostrPublicKey(seed);
+    if (nostrPubKey != null &&
+        nostrPubKey.length == 32 &&
+        _bytesToHex(nostrPubKey) == pubKeyHex) {
+      return true;
+    }
+
+    return false;
   }
 
 

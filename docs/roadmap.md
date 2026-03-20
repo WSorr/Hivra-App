@@ -75,6 +75,7 @@ Scope:
   - `RelationshipEstablished`
   - `RelationshipBroken`
 - Show keys in Hivra bech32 form.
+- Stop showing starter identifiers in human-facing views as raw base64 with padding.
 - Keep raw payload available behind an explicit disclosure.
 - Add integrity hints for obviously inconsistent histories.
 

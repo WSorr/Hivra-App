@@ -22,7 +22,7 @@ class LedgerViewService {
 
   CapsuleLedgerSnapshot loadCapsuleSnapshot() {
     final root = _exportLedgerRoot();
-    final pubKey = _hivra.capsulePublicKey() ?? Uint8List(0);
+    final pubKey = _hivra.capsuleRuntimeOwnerPublicKey() ?? Uint8List(0);
 
     var starterCount = 0;
     final starterIds = List<Uint8List?>.filled(5, null);

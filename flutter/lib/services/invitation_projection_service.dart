@@ -14,7 +14,7 @@ class InvitationProjectionService {
 
   List<Invitation> loadInvitations(Map<String, dynamic> root) {
     final events = _support.events(root);
-    final self = _hivra.capsulePublicKey();
+    final self = _hivra.capsuleRuntimeOwnerPublicKey();
     if (self == null) return <Invitation>[];
 
     final starterKinds = <String, StarterKind>{};

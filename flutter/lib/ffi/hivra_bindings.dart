@@ -420,8 +420,9 @@ class HivraBindings {
   // Alias for seedExists for compatibility
   bool initSeed() => _seedExists() != 0;
   
-  // Alias for capsulePublicKey for compatibility
-  Uint8List? publicKey() => capsulePublicKey();
+  // Legacy alias retained for compatibility. New code should prefer
+  // `capsuleRuntimeOwnerPublicKey()` or an explicit transport key method.
+  Uint8List? publicKey() => capsuleRuntimeOwnerPublicKey();
 
   static const int legacyNostrOwnerMode = 0;
   static const int rootOwnerMode = 1;
@@ -450,6 +451,8 @@ class HivraBindings {
     }
   }
 
+  // Legacy compatibility path. Prefer `seedRootPublicKey()` or
+  // `seedNostrPublicKey()` explicitly in new code.
   Uint8List? seedPublicKey(Uint8List seed) {
     if (seed.length != 32) return null;
     final seedPtr = calloc<Uint8>(32);
@@ -553,6 +556,9 @@ class HivraBindings {
     return lastErrorMessage() ?? 'Failed to create capsule';
   }
 
+  // Legacy transport-facing compatibility path. Prefer
+  // `capsuleRuntimeOwnerPublicKey()`, `capsuleRootPublicKey()`, or
+  // `capsuleNostrPublicKey()` explicitly in new code.
   Uint8List? capsulePublicKey() {
     final outPtr = calloc<Uint8>(32);
     try {

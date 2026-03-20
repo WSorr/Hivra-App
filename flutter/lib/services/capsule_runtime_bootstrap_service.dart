@@ -159,12 +159,32 @@ class CapsuleRuntimeBootstrapService {
     String Function(Uint8List bytes) bytesToHex, {
     required String identityMode,
   }) async {
-    final derivedPubKey = switch (identityMode) {
-      'root_owner' => hivra.seedRootPublicKey(seed),
-      'legacy_nostr_owner' => hivra.seedNostrPublicKey(seed),
-      _ => hivra.seedPublicKey(seed),
-    };
-    if (derivedPubKey == null || derivedPubKey.length != 32) return false;
-    return bytesToHex(derivedPubKey) == pubKeyHex;
+    if (identityMode == 'root_owner') {
+      final derivedPubKey = hivra.seedRootPublicKey(seed);
+      if (derivedPubKey == null || derivedPubKey.length != 32) return false;
+      return bytesToHex(derivedPubKey) == pubKeyHex;
+    }
+
+    if (identityMode == 'legacy_nostr_owner') {
+      final derivedPubKey = hivra.seedNostrPublicKey(seed);
+      if (derivedPubKey == null || derivedPubKey.length != 32) return false;
+      return bytesToHex(derivedPubKey) == pubKeyHex;
+    }
+
+    final rootPubKey = hivra.seedRootPublicKey(seed);
+    if (rootPubKey != null &&
+        rootPubKey.length == 32 &&
+        bytesToHex(rootPubKey) == pubKeyHex) {
+      return true;
+    }
+
+    final nostrPubKey = hivra.seedNostrPublicKey(seed);
+    if (nostrPubKey != null &&
+        nostrPubKey.length == 32 &&
+        bytesToHex(nostrPubKey) == pubKeyHex) {
+      return true;
+    }
+
+    return false;
   }
 }
