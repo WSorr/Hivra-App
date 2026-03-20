@@ -67,12 +67,6 @@ pub unsafe extern "C" fn hivra_generate_random_seed(out_seed: *mut u8) -> i32 {
     0
 }
 
-/// Derive capsule public key from seed without mutating keystore/runtime
-#[no_mangle]
-pub unsafe extern "C" fn hivra_seed_public_key(seed_ptr: *const u8, out_key: *mut u8) -> i32 {
-    hivra_seed_nostr_public_key(seed_ptr, out_key)
-}
-
 /// Derive canonical root capsule public key from seed without mutating keystore/runtime.
 #[no_mangle]
 pub unsafe extern "C" fn hivra_seed_root_public_key(

@@ -46,12 +46,6 @@ pub unsafe extern "C" fn hivra_capsule_create(
     }
 }
 
-/// Get capsule public key (derived from seed)
-#[no_mangle]
-pub unsafe extern "C" fn hivra_capsule_public_key(out_key: *mut u8) -> i32 {
-    hivra_capsule_nostr_public_key(out_key)
-}
-
 /// Get the current runtime owner public key from the active capsule.
 #[no_mangle]
 pub unsafe extern "C" fn hivra_capsule_runtime_owner_public_key(out_key: *mut u8) -> i32 {

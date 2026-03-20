@@ -27,15 +27,6 @@ typedef HivraMnemonicToSeedDart = int Function(
 typedef HivraGenerateRandomSeedC = Int32 Function(Pointer<Uint8> outSeed);
 typedef HivraGenerateRandomSeedDart = int Function(Pointer<Uint8> outSeed);
 
-typedef HivraSeedPublicKeyC = Int32 Function(
-  Pointer<Uint8> seed,
-  Pointer<Uint8> outKey,
-);
-typedef HivraSeedPublicKeyDart = int Function(
-  Pointer<Uint8> seed,
-  Pointer<Uint8> outKey,
-);
-
 typedef HivraSeedRootPublicKeyC = Int32 Function(
   Pointer<Uint8> seed,
   Pointer<Uint8> outKey,
@@ -84,9 +75,6 @@ typedef HivraCapsuleCreateDart = int Function(
   int capsuleType,
   int ownerMode,
 );
-
-typedef HivraCapsulePublicKeyC = Int32 Function(Pointer<Uint8> outKey);
-typedef HivraCapsulePublicKeyDart = int Function(Pointer<Uint8> outKey);
 
 typedef HivraCapsuleRuntimeOwnerPublicKeyC = Int32 Function(Pointer<Uint8> outKey);
 typedef HivraCapsuleRuntimeOwnerPublicKeyDart = int Function(Pointer<Uint8> outKey);
@@ -224,7 +212,6 @@ class HivraBindings {
   late final HivraSeedToMnemonicDart _seedToMnemonic;
   late final HivraMnemonicToSeedDart _mnemonicToSeed;
   late final HivraGenerateRandomSeedDart _generateRandomSeed;
-  late final HivraSeedPublicKeyDart _seedPublicKey;
   late final HivraSeedRootPublicKeyDart _seedRootPublicKey;
   late final HivraSeedNostrPublicKeyDart _seedNostrPublicKey;
   late final HivraFreeStringDart _freeString;
@@ -234,7 +221,6 @@ class HivraBindings {
   late final HivraSeedLoadDart _seedLoad;
   late final HivraSeedDeleteDart _seedDelete;
   late final HivraCapsuleCreateDart _capsuleCreate;
-  late final HivraCapsulePublicKeyDart _capsulePublicKey;
   late final HivraCapsuleRuntimeOwnerPublicKeyDart _capsuleRuntimeOwnerPublicKey;
   late final HivraCapsuleRootPublicKeyDart _capsuleRootPublicKey;
   late final HivraCapsuleNostrPublicKeyDart _capsuleNostrPublicKey;
@@ -265,10 +251,6 @@ class HivraBindings {
     
     _generateRandomSeed = _lib
         .lookup<NativeFunction<HivraGenerateRandomSeedC>>('hivra_generate_random_seed')
-        .asFunction();
-
-    _seedPublicKey = _lib
-        .lookup<NativeFunction<HivraSeedPublicKeyC>>('hivra_seed_public_key')
         .asFunction();
 
     _seedRootPublicKey = _lib
@@ -305,10 +287,6 @@ class HivraBindings {
 
     _capsuleCreate = _lib
         .lookup<NativeFunction<HivraCapsuleCreateC>>('hivra_capsule_create')
-        .asFunction();
-
-    _capsulePublicKey = _lib
-        .lookup<NativeFunction<HivraCapsulePublicKeyC>>('hivra_capsule_public_key')
         .asFunction();
 
     _capsuleRuntimeOwnerPublicKey = _lib
@@ -420,10 +398,6 @@ class HivraBindings {
   // Alias for seedExists for compatibility
   bool initSeed() => _seedExists() != 0;
   
-  // Legacy alias retained for compatibility. New code should prefer
-  // `capsuleRuntimeOwnerPublicKey()` or an explicit transport key method.
-  Uint8List? publicKey() => capsuleRuntimeOwnerPublicKey();
-
   static const int legacyNostrOwnerMode = 0;
   static const int rootOwnerMode = 1;
 
@@ -448,25 +422,6 @@ class HivraBindings {
       return _seedSave(seedPtr) == 0;
     } finally {
       calloc.free(seedPtr);
-    }
-  }
-
-  // Legacy compatibility path. Prefer `seedRootPublicKey()` or
-  // `seedNostrPublicKey()` explicitly in new code.
-  Uint8List? seedPublicKey(Uint8List seed) {
-    if (seed.length != 32) return null;
-    final seedPtr = calloc<Uint8>(32);
-    final outPtr = calloc<Uint8>(32);
-    try {
-      seedPtr.asTypedList(32).setAll(0, seed);
-      final result = _seedPublicKey(seedPtr, outPtr);
-      if (result != 0) return null;
-      final key = Uint8List(32);
-      key.setAll(0, outPtr.asTypedList(32));
-      return key;
-    } finally {
-      calloc.free(seedPtr);
-      calloc.free(outPtr);
     }
   }
 
@@ -554,23 +509,6 @@ class HivraBindings {
       return null;
     }
     return lastErrorMessage() ?? 'Failed to create capsule';
-  }
-
-  // Legacy transport-facing compatibility path. Prefer
-  // `capsuleRuntimeOwnerPublicKey()`, `capsuleRootPublicKey()`, or
-  // `capsuleNostrPublicKey()` explicitly in new code.
-  Uint8List? capsulePublicKey() {
-    final outPtr = calloc<Uint8>(32);
-    try {
-      final result = _capsulePublicKey(outPtr);
-      if (result != 0) return null;
-      final key = Uint8List(32);
-      final keyNative = outPtr.asTypedList(32);
-      key.setAll(0, keyNative);
-      return key;
-    } finally {
-      calloc.free(outPtr);
-    }
   }
 
   Uint8List? capsuleRuntimeOwnerPublicKey() {
