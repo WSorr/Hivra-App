@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import '../ffi/hivra_bindings.dart';
-import '../services/capsule_contact_card_service.dart';
+import '../services/invitation_delivery_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/capsule_persistence_service.dart';
 import '../utils/hivra_id_format.dart';
@@ -22,7 +22,7 @@ class StartersScreen extends StatefulWidget {
 
 class _StartersScreenState extends State<StartersScreen> {
   final CapsulePersistenceService _persistence = CapsulePersistenceService();
-  final CapsuleContactCardService _contactCards = const CapsuleContactCardService();
+  final InvitationDeliveryService _delivery = const InvitationDeliveryService();
   List<Map<String, dynamic>> _slots = const [];
 
   @override
@@ -74,7 +74,7 @@ class _StartersScreenState extends State<StartersScreen> {
             const Text('Enter recipient public key:'),
             const SizedBox(height: 8),
             const Text(
-              'Supports: h... (if imported) or npub... (Nostr)',
+              'Supports: h... (if imported) or another supported delivery address',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 16),
@@ -105,17 +105,13 @@ class _StartersScreenState extends State<StartersScreen> {
                 return;
               }
               
-              final pubkeyBytes = await _contactCards.resolveNostrRecipient(input);
-              if (pubkeyBytes == null) {
-                final missingEndpoint =
-                    input.startsWith('h1') &&
-                    !await _contactCards.hasKnownNostrEndpoint(input);
+              final resolution = await _delivery.resolveRecipientAddress(input);
+              if (!resolution.isSuccess) {
                 messenger.showSnackBar(
                   SnackBar(
                     content: Text(
-                      missingEndpoint
-                          ? 'No known Nostr endpoint for this capsule. Import its contact card first.'
-                          : 'Use a capsule key (h...) with an imported contact card, or a Nostr npub address.',
+                      resolution.errorMessage ??
+                          'Could not resolve recipient address',
                     ),
                   ),
                 );
@@ -128,7 +124,10 @@ class _StartersScreenState extends State<StartersScreen> {
                   throw Exception('Invalid starter slot');
                 }
 
-                final sent = widget.hivra.sendInvitation(pubkeyBytes, slotIndex);
+                final sent = widget.hivra.sendInvitation(
+                  resolution.transportRecipient!,
+                  slotIndex,
+                );
                 if (!sent) {
                   throw Exception('transport send failed');
                 }

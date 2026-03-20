@@ -6,7 +6,7 @@ import '../models/invitation.dart';
 import '../models/starter.dart';
 import '../widgets/invitation_card.dart';
 import '../ffi/hivra_bindings.dart';
-import '../services/capsule_contact_card_service.dart';
+import '../services/invitation_delivery_service.dart';
 import '../services/capsule_persistence_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/ledger_view_service.dart';
@@ -97,9 +97,9 @@ class InvitationsScreen extends StatefulWidget {
 
 class _InvitationsScreenState extends State<InvitationsScreen> {
   final CapsulePersistenceService _persistence = CapsulePersistenceService();
-  final CapsuleContactCardService _contactCards = const CapsuleContactCardService();
+  final InvitationDeliveryService _delivery = const InvitationDeliveryService();
   List<Invitation> _invitations = [];
-  bool _isFetchingFromNostr = false;
+  bool _isFetchingDeliveries = false;
   String? _processingId;
 
   @override
@@ -151,8 +151,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         SnackBar(
           content: Text(
             result == 0
-                ? 'Invitation sent'
-                : _sendErrorMessage(result),
+                ? _delivery.invitationSentMessage()
+                : _delivery.sendFailureMessage(result),
           ),
         ),
       );
@@ -170,109 +170,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     }
   }
 
-  String _receiveErrorMessage(int code) {
-    switch (code) {
-      case -1:
-        return 'Seed not found on receiver';
-      case -2:
-        return 'Receiver key derivation failed';
-      case -3:
-        return 'Capsule is not initialized';
-      case -4:
-        return 'Transport init failed';
-      case -5:
-        return 'Nostr receive failed';
-      case -1002:
-        return 'Receive API is not available in FFI';
-      case -1003:
-        return 'Fetch timed out';
-      case -1004:
-        return 'Active capsule bootstrap failed';
-      default:
-        return 'Receive failed (code $code)';
-    }
-  }
+  Future<void> _fetchInvitationDeliveries() async {
+    if (_isFetchingDeliveries) return;
 
-  String _sendErrorMessage(int code) {
-    switch (code) {
-      case -1:
-        return 'Invalid invitation arguments';
-      case -2:
-        return 'Seed not found';
-      case -3:
-        return 'Sender key derivation failed';
-      case -4:
-        return 'Capsule is not initialized';
-      case -5:
-        return 'Transport init failed';
-      case -6:
-        return 'Failed to prepare local invitation state';
-      case -7:
-        return 'Failed to publish invitation';
-      case -11:
-        return 'No connected relays available for publish';
-      case -12:
-        return 'Publish timed out';
-      case -13:
-        return 'Relay rejected the invitation publish';
-      case -14:
-        return 'Relay requires or rejected authentication';
-      case -1002:
-        return 'Send API is not available in FFI';
-      case -1003:
-        return 'Send timed out. Pull to refresh and check status.';
-      case -1004:
-        return 'Active capsule bootstrap failed';
-      default:
-        return 'Failed to send invitation (code $code)';
-    }
-  }
-
-  String _acceptErrorMessage(int code) {
-    switch (code) {
-      case -1:
-        return 'Invalid acceptance arguments';
-      case -2:
-        return 'Seed not found';
-      case -3:
-        return 'Failed to append InvitationAccepted';
-      case -4:
-        return 'Sender key derivation failed';
-      case -5:
-        return 'Capsule is not initialized';
-      case -6:
-        return 'Transport init failed';
-      case -7:
-        return 'Failed to send InvitationAccepted';
-      case -11:
-        return 'No connected relays available for publish';
-      case -12:
-        return 'InvitationAccepted publish timed out';
-      case -13:
-        return 'Relay rejected InvitationAccepted';
-      case -14:
-        return 'Relay requires or rejected authentication';
-      case -8:
-        return 'Matching incoming invitation not found in ledger';
-      case -9:
-        return 'No capacity to accept this invitation';
-      case -10:
-        return 'Failed to finalize local acceptance';
-      case -1002:
-        return 'Accept API is not available in FFI';
-      case -1003:
-        return 'Accept timed out';
-      case -1004:
-        return 'Active capsule bootstrap failed';
-      default:
-        return 'Failed to accept invitation (code $code)';
-    }
-  }
-
-  Future<void> _fetchFromNostr() async {
-    if (_isFetchingFromNostr) return;
-
-    setState(() => _isFetchingFromNostr = true);
+    setState(() => _isFetchingDeliveries = true);
     int result = -1003;
 
     try {
@@ -297,7 +198,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isFetchingFromNostr = false);
+        setState(() => _isFetchingDeliveries = false);
       }
     }
 
@@ -307,13 +208,13 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       await _refreshAfterLedgerMutation();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Fetched from Nostr: $result new event(s)')),
+        SnackBar(content: Text(_delivery.fetchSuccessMessage(result))),
       );
       return;
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_receiveErrorMessage(result))),
+      SnackBar(content: Text(_delivery.receiveFailureMessage(result))),
     );
   }
 
@@ -330,7 +231,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       if (invitationId == null || fromPubkey == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_acceptErrorMessage(-1))),
+            SnackBar(content: Text(_delivery.acceptFailureMessage(-1))),
           );
         }
         return;
@@ -340,7 +241,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       if (bootstrap == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_acceptErrorMessage(-1004))),
+            SnackBar(content: Text(_delivery.acceptFailureMessage(-1004))),
           );
         }
         return;
@@ -365,7 +266,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       if (acceptCode != 0 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_acceptErrorMessage(acceptCode)),
+            content: Text(_delivery.acceptFailureMessage(acceptCode)),
           ),
         );
       }
@@ -630,19 +531,15 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                             final messenger =
                                 ScaffoldMessenger.of(this.context);
                             final input = controller.text.trim();
-                            final pubkey =
-                                await _contactCards.resolveNostrRecipient(input);
+                            final resolution =
+                                await _delivery.resolveRecipientAddress(input);
                             final slot = selectedSlot;
-                            if (pubkey == null || slot == null) {
-                              final missingEndpoint =
-                                  input.startsWith('h1') &&
-                                  !await _contactCards.hasKnownNostrEndpoint(input);
+                            if (!resolution.isSuccess || slot == null) {
                               messenger.showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    missingEndpoint
-                                        ? 'No known Nostr endpoint for this capsule. Import its contact card first.'
-                                        : 'Use a capsule key (h...) with an imported contact card, or a Nostr npub address.',
+                                    resolution.errorMessage ??
+                                        'Could not resolve recipient address',
                                   ),
                                 ),
                               );
@@ -654,7 +551,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                               Navigator.of(sheetContext).pop();
                             }
 
-                            unawaited(_sendInvitationAsync(pubkey, slot));
+                            unawaited(_sendInvitationAsync(
+                              resolution.transportRecipient!,
+                              slot,
+                            ));
                           },
                     icon: const Icon(Icons.send),
                     label: const Text('Send'),
@@ -756,15 +656,15 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
             onPressed: _showSendInvitationDialog,
           ),
           IconButton(
-            icon: _isFetchingFromNostr
+            icon: _isFetchingDeliveries
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.cloud_download),
-            onPressed: _isFetchingFromNostr ? null : _fetchFromNostr,
-            tooltip: 'Fetch from Nostr',
+            onPressed: _isFetchingDeliveries ? null : _fetchInvitationDeliveries,
+            tooltip: 'Fetch invitation deliveries',
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -773,7 +673,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _fetchFromNostr,
+        onRefresh: _fetchInvitationDeliveries,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
