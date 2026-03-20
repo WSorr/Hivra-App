@@ -49,7 +49,7 @@ class CapsuleFileStore {
 
     String? capsuleId;
     if (hivra != null) {
-      final pubKey = hivra.capsulePublicKey();
+      final pubKey = hivra.capsuleRuntimeOwnerPublicKey();
       if (pubKey != null && pubKey.length == 32) {
         capsuleId = bytesToHex(pubKey);
       }

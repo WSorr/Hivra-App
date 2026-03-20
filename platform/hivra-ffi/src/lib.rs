@@ -64,7 +64,7 @@ pub(crate) use runtime_support::{
     derive_starter_id, derive_starter_nonce, event_exists_in_runtime,
     event_exists_in_runtime_with_signer, event_kind_from_u8, export_runtime_ledger,
     find_starter_kind_by_id_in_runtime, import_runtime_ledger, init_runtime_state,
-    starter_kind_from_slot, FfiEngine, RUNTIME,
+    starter_kind_from_slot, CapsuleOwnerMode, FfiEngine, RUNTIME,
 };
 
 #[cfg(test)]

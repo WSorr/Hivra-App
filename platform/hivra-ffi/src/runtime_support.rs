@@ -91,12 +91,35 @@ pub(crate) fn derive_nostr_public_key(seed: &Seed) -> Result<[u8; 32], ()> {
     Ok(keys.public_key().to_bytes())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CapsuleOwnerMode {
+    LegacyNostr = 0,
+    Root = 1,
+}
+
+impl CapsuleOwnerMode {
+    pub(crate) fn from_u8(value: u8) -> Self {
+        match value {
+            1 => Self::Root,
+            _ => Self::LegacyNostr,
+        }
+    }
+}
+
 pub(crate) fn init_runtime_state(
     seed: &Seed,
     network: Network,
     capsule_type: CapsuleType,
+    owner_mode: CapsuleOwnerMode,
 ) -> Result<(), &'static str> {
-    let owner_bytes = derive_nostr_public_key(seed).map_err(|_| "failed to derive pubkey")?;
+    let owner_bytes = match owner_mode {
+        CapsuleOwnerMode::LegacyNostr => {
+            derive_nostr_public_key(seed).map_err(|_| "failed to derive pubkey")?
+        }
+        CapsuleOwnerMode::Root => {
+            derive_root_public_key(seed).map_err(|_| "failed to derive pubkey")?
+        }
+    };
     let owner = PubKey::from(owner_bytes);
     let mut ledger = Ledger::new(owner);
 

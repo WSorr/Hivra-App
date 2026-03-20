@@ -54,6 +54,7 @@ class CapsuleRuntimeBootstrapService {
       seed: seed,
       isGenesis: isGenesis,
       isNeste: isNeste,
+      identityMode: identityMode,
       ledgerJson: ledgerJson,
     );
   }
@@ -62,7 +63,7 @@ class CapsuleRuntimeBootstrapService {
     HivraBindings hivra, {
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
-    final pubKey = hivra.capsulePublicKey();
+    final pubKey = hivra.capsuleRuntimeOwnerPublicKey();
     final seed = hivra.loadSeed();
     if (pubKey == null || pubKey.length != 32 || seed == null) return null;
 
@@ -75,12 +76,23 @@ class CapsuleRuntimeBootstrapService {
     final isGenesis = state?['isGenesis'] == true;
     final isNeste = state?['isNeste'] != false;
     final ledgerJson = hivra.exportLedger();
+    final runtimeOwner = hivra.capsuleRuntimeOwnerPublicKey();
+    final rootPubKey = hivra.capsuleRootPublicKey();
+    final runtimeHex = runtimeOwner != null && runtimeOwner.length == 32
+        ? bytesToHex(runtimeOwner)
+        : null;
+    final rootHex = rootPubKey != null && rootPubKey.length == 32
+        ? bytesToHex(rootPubKey)
+        : null;
+    final identityMode =
+        runtimeHex != null && runtimeHex == rootHex ? 'root_owner' : 'legacy_nostr_owner';
 
     return CapsuleRuntimeBootstrap(
       pubKeyHex: bytesToHex(pubKey),
       seed: seed,
       isGenesis: isGenesis,
       isNeste: isNeste,
+      identityMode: identityMode,
       ledgerJson:
           (ledgerJson != null && ledgerJson.isNotEmpty) ? ledgerJson : null,
     );
@@ -110,7 +122,14 @@ class CapsuleRuntimeBootstrapService {
     final state = await _fileStore.readState(dir);
     final isGenesis = state?['isGenesis'] == true;
     final isNeste = state?['isNeste'] != false;
-    if (!hivra.createCapsule(seed, isGenesis: isGenesis, isNeste: isNeste)) {
+    if (!hivra.createCapsule(
+      seed,
+      isGenesis: isGenesis,
+      isNeste: isNeste,
+      ownerMode: identityMode == 'root_owner'
+          ? HivraBindings.rootOwnerMode
+          : HivraBindings.legacyNostrOwnerMode,
+    )) {
       return false;
     }
 

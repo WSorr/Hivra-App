@@ -32,7 +32,10 @@ class LedgerBackupRecovery {
   /// Restores capsule with seed phrase and then tries to import Ledger.
   Future<void> restoreCapsule(String mnemonic) async {
     final seed = _hivra.mnemonicToSeed(mnemonic);
-    final created = _hivra.createCapsule(seed);
+    final created = _hivra.createCapsule(
+      seed,
+      ownerMode: HivraBindings.rootOwnerMode,
+    );
     if (!created) {
       throw Exception('Failed to create capsule from provided mnemonic');
     }

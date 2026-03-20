@@ -15,10 +15,18 @@ bool _bootstrapWorkerRuntime(HivraBindings hivra, Map<String, Object?> args) {
   final seed = args['seed'] as Uint8List;
   final isGenesis = args['isGenesis'] as bool;
   final isNeste = args['isNeste'] as bool;
+  final identityMode = args['identityMode'] as String? ?? 'legacy_nostr_owner';
   final ledgerJson = args['ledgerJson'] as String?;
 
   if (!hivra.saveSeed(seed)) return false;
-  if (!hivra.createCapsule(seed, isGenesis: isGenesis, isNeste: isNeste)) {
+  if (!hivra.createCapsule(
+    seed,
+    isGenesis: isGenesis,
+    isNeste: isNeste,
+    ownerMode: identityMode == 'root_owner'
+        ? HivraBindings.rootOwnerMode
+        : HivraBindings.legacyNostrOwnerMode,
+  )) {
     return false;
   }
   if (ledgerJson != null &&

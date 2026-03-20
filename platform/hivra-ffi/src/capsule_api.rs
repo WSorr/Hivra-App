@@ -6,6 +6,7 @@ pub unsafe extern "C" fn hivra_capsule_create(
     seed_ptr: *const u8,
     _network: u8,
     _capsule_type: u8,
+    _owner_mode: u8,
 ) -> i32 {
     clear_last_error();
     if seed_ptr.is_null() {
@@ -28,10 +29,11 @@ pub unsafe extern "C" fn hivra_capsule_create(
     } else {
         CapsuleType::Leaf
     };
+    let owner_mode = CapsuleOwnerMode::from_u8(_owner_mode);
 
     match store_seed(&seed) {
         Ok(_) => {
-            if let Err(err) = init_runtime_state(&seed, network, capsule_type) {
+            if let Err(err) = init_runtime_state(&seed, network, capsule_type, owner_mode) {
                 set_last_error(format!("Capsule create failed during runtime init: {err}"));
                 return -2;
             }
@@ -48,6 +50,28 @@ pub unsafe extern "C" fn hivra_capsule_create(
 #[no_mangle]
 pub unsafe extern "C" fn hivra_capsule_public_key(out_key: *mut u8) -> i32 {
     hivra_capsule_nostr_public_key(out_key)
+}
+
+/// Get the current runtime owner public key from the active capsule.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_capsule_runtime_owner_public_key(out_key: *mut u8) -> i32 {
+    clear_last_error();
+    if out_key.is_null() {
+        set_last_error("Capsule runtime owner public key failed: output pointer was null");
+        return -1;
+    }
+
+    let runtime = RUNTIME.lock().unwrap();
+    let capsule = match runtime.capsule.as_ref() {
+        Some(capsule) => capsule,
+        None => {
+            set_last_error("Capsule runtime owner public key failed: no active capsule");
+            return -1;
+        }
+    };
+
+    std::ptr::copy_nonoverlapping(capsule.pubkey.as_bytes().as_ptr(), out_key, 32);
+    0
 }
 
 /// Get canonical root capsule public key from the stored seed.

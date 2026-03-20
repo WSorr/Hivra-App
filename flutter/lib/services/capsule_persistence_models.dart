@@ -72,6 +72,7 @@ class CapsuleRuntimeBootstrap {
   final Uint8List seed;
   final bool isGenesis;
   final bool isNeste;
+  final String identityMode;
   final String? ledgerJson;
 
   CapsuleRuntimeBootstrap({
@@ -79,6 +80,7 @@ class CapsuleRuntimeBootstrap {
     required this.seed,
     required this.isGenesis,
     required this.isNeste,
+    required this.identityMode,
     required this.ledgerJson,
   });
 }

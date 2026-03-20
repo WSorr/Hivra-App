@@ -19,6 +19,7 @@ class _FirstLaunchScreenState extends State<FirstLaunchScreen> {
         seed, 
         isNeste: true, 
         isGenesis: isGenesis,
+        ownerMode: HivraBindings.rootOwnerMode,
       );
 
       if (error != null) throw Exception(error);

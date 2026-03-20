@@ -248,7 +248,10 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       if (seedText.isEmpty) throw Exception('Seed required');
 
       final seedBytes = Uint8List.fromList(seedText.split(',').map((e) => int.parse(e)).toList());
-      _hivra.createCapsule(seedBytes);
+      _hivra.createCapsule(
+        seedBytes,
+        ownerMode: HivraBindings.rootOwnerMode,
+      );
 
       if (ledgerJson.isNotEmpty) {
         final ok = _hivra.importLedger(ledgerJson);

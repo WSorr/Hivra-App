@@ -17,10 +17,18 @@ Map<String, Object?> _receiveTransportMessagesInWorker(
   final seed = args['seed'] as Uint8List;
   final isGenesis = args['isGenesis'] as bool;
   final isNeste = args['isNeste'] as bool;
+  final identityMode = args['identityMode'] as String? ?? 'legacy_nostr_owner';
   final ledgerJson = args['ledgerJson'] as String?;
 
   if (!hivra.saveSeed(seed)) return <String, Object?>{'result': -1004};
-  if (!hivra.createCapsule(seed, isGenesis: isGenesis, isNeste: isNeste)) {
+  if (!hivra.createCapsule(
+    seed,
+    isGenesis: isGenesis,
+    isNeste: isNeste,
+    ownerMode: identityMode == 'root_owner'
+        ? HivraBindings.rootOwnerMode
+        : HivraBindings.legacyNostrOwnerMode,
+  )) {
     return <String, Object?>{'result': -1004};
   }
   if (ledgerJson != null &&
