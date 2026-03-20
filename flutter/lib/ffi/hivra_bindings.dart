@@ -36,6 +36,24 @@ typedef HivraSeedPublicKeyDart = int Function(
   Pointer<Uint8> outKey,
 );
 
+typedef HivraSeedRootPublicKeyC = Int32 Function(
+  Pointer<Uint8> seed,
+  Pointer<Uint8> outKey,
+);
+typedef HivraSeedRootPublicKeyDart = int Function(
+  Pointer<Uint8> seed,
+  Pointer<Uint8> outKey,
+);
+
+typedef HivraSeedNostrPublicKeyC = Int32 Function(
+  Pointer<Uint8> seed,
+  Pointer<Uint8> outKey,
+);
+typedef HivraSeedNostrPublicKeyDart = int Function(
+  Pointer<Uint8> seed,
+  Pointer<Uint8> outKey,
+);
+
 typedef HivraFreeStringC = Void Function(Pointer<Int8> ptr);
 typedef HivraFreeStringDart = void Function(Pointer<Int8> ptr);
 
@@ -67,6 +85,12 @@ typedef HivraCapsuleCreateDart = int Function(
 
 typedef HivraCapsulePublicKeyC = Int32 Function(Pointer<Uint8> outKey);
 typedef HivraCapsulePublicKeyDart = int Function(Pointer<Uint8> outKey);
+
+typedef HivraCapsuleRootPublicKeyC = Int32 Function(Pointer<Uint8> outKey);
+typedef HivraCapsuleRootPublicKeyDart = int Function(Pointer<Uint8> outKey);
+
+typedef HivraCapsuleNostrPublicKeyC = Int32 Function(Pointer<Uint8> outKey);
+typedef HivraCapsuleNostrPublicKeyDart = int Function(Pointer<Uint8> outKey);
 
 typedef HivraCapsuleResetC = Int32 Function();
 typedef HivraCapsuleResetDart = int Function();
@@ -196,6 +220,8 @@ class HivraBindings {
   late final HivraMnemonicToSeedDart _mnemonicToSeed;
   late final HivraGenerateRandomSeedDart _generateRandomSeed;
   late final HivraSeedPublicKeyDart _seedPublicKey;
+  late final HivraSeedRootPublicKeyDart _seedRootPublicKey;
+  late final HivraSeedNostrPublicKeyDart _seedNostrPublicKey;
   late final HivraFreeStringDart _freeString;
   late final HivraLastErrorMessageDart _lastErrorMessage;
   late final HivraSeedExistsDart _seedExists;
@@ -204,6 +230,8 @@ class HivraBindings {
   late final HivraSeedDeleteDart _seedDelete;
   late final HivraCapsuleCreateDart _capsuleCreate;
   late final HivraCapsulePublicKeyDart _capsulePublicKey;
+  late final HivraCapsuleRootPublicKeyDart _capsuleRootPublicKey;
+  late final HivraCapsuleNostrPublicKeyDart _capsuleNostrPublicKey;
   late final HivraCapsuleResetDart _capsuleReset;
   late final HivraStarterGetIdDart _starterGetId;
   late final HivraStarterGetTypeDart _starterGetType;
@@ -236,6 +264,14 @@ class HivraBindings {
     _seedPublicKey = _lib
         .lookup<NativeFunction<HivraSeedPublicKeyC>>('hivra_seed_public_key')
         .asFunction();
+
+    _seedRootPublicKey = _lib
+        .lookup<NativeFunction<HivraSeedRootPublicKeyC>>('hivra_seed_root_public_key')
+        .asFunction();
+
+    _seedNostrPublicKey = _lib
+        .lookup<NativeFunction<HivraSeedNostrPublicKeyC>>('hivra_seed_nostr_public_key')
+        .asFunction();
     
     _freeString = _lib
         .lookup<NativeFunction<HivraFreeStringC>>('hivra_free_string')
@@ -267,6 +303,14 @@ class HivraBindings {
 
     _capsulePublicKey = _lib
         .lookup<NativeFunction<HivraCapsulePublicKeyC>>('hivra_capsule_public_key')
+        .asFunction();
+
+    _capsuleRootPublicKey = _lib
+        .lookup<NativeFunction<HivraCapsuleRootPublicKeyC>>('hivra_capsule_root_public_key')
+        .asFunction();
+
+    _capsuleNostrPublicKey = _lib
+        .lookup<NativeFunction<HivraCapsuleNostrPublicKeyC>>('hivra_capsule_nostr_public_key')
         .asFunction();
 
     _capsuleReset = _lib
@@ -410,6 +454,40 @@ class HivraBindings {
     }
   }
 
+  Uint8List? seedRootPublicKey(Uint8List seed) {
+    if (seed.length != 32) return null;
+    final seedPtr = calloc<Uint8>(32);
+    final outPtr = calloc<Uint8>(32);
+    try {
+      seedPtr.asTypedList(32).setAll(0, seed);
+      final result = _seedRootPublicKey(seedPtr, outPtr);
+      if (result != 0) return null;
+      final key = Uint8List(32);
+      key.setAll(0, outPtr.asTypedList(32));
+      return key;
+    } finally {
+      calloc.free(seedPtr);
+      calloc.free(outPtr);
+    }
+  }
+
+  Uint8List? seedNostrPublicKey(Uint8List seed) {
+    if (seed.length != 32) return null;
+    final seedPtr = calloc<Uint8>(32);
+    final outPtr = calloc<Uint8>(32);
+    try {
+      seedPtr.asTypedList(32).setAll(0, seed);
+      final result = _seedNostrPublicKey(seedPtr, outPtr);
+      if (result != 0) return null;
+      final key = Uint8List(32);
+      key.setAll(0, outPtr.asTypedList(32));
+      return key;
+    } finally {
+      calloc.free(seedPtr);
+      calloc.free(outPtr);
+    }
+  }
+
   Uint8List? loadSeed() {
     final outPtr = calloc<Uint8>(32);
     try {
@@ -451,6 +529,34 @@ class HivraBindings {
     final outPtr = calloc<Uint8>(32);
     try {
       final result = _capsulePublicKey(outPtr);
+      if (result != 0) return null;
+      final key = Uint8List(32);
+      final keyNative = outPtr.asTypedList(32);
+      key.setAll(0, keyNative);
+      return key;
+    } finally {
+      calloc.free(outPtr);
+    }
+  }
+
+  Uint8List? capsuleRootPublicKey() {
+    final outPtr = calloc<Uint8>(32);
+    try {
+      final result = _capsuleRootPublicKey(outPtr);
+      if (result != 0) return null;
+      final key = Uint8List(32);
+      final keyNative = outPtr.asTypedList(32);
+      key.setAll(0, keyNative);
+      return key;
+    } finally {
+      calloc.free(outPtr);
+    }
+  }
+
+  Uint8List? capsuleNostrPublicKey() {
+    final outPtr = calloc<Uint8>(32);
+    try {
+      final result = _capsuleNostrPublicKey(outPtr);
       if (result != 0) return null;
       final key = Uint8List(32);
       final keyNative = outPtr.asTypedList(32);

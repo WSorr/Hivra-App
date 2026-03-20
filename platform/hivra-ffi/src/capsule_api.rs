@@ -47,9 +47,44 @@ pub unsafe extern "C" fn hivra_capsule_create(
 /// Get capsule public key (derived from seed)
 #[no_mangle]
 pub unsafe extern "C" fn hivra_capsule_public_key(out_key: *mut u8) -> i32 {
+    hivra_capsule_nostr_public_key(out_key)
+}
+
+/// Get canonical root capsule public key from the stored seed.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_capsule_root_public_key(out_key: *mut u8) -> i32 {
     clear_last_error();
     if out_key.is_null() {
-        set_last_error("Capsule public key failed: output pointer was null");
+        set_last_error("Capsule root public key failed: output pointer was null");
+        return -1;
+    }
+
+    match load_seed() {
+        Ok(seed) => match derive_root_public_key(&seed) {
+            Ok(pubkey) => {
+                std::ptr::copy_nonoverlapping(pubkey.as_ptr(), out_key, 32);
+                0
+            }
+            Err(_) => {
+                set_last_error("Capsule root public key derivation failed");
+                -1
+            }
+        },
+        Err(err) => {
+            set_last_error(format!(
+                "Capsule root public key failed while loading seed: {err}"
+            ));
+            -1
+        }
+    }
+}
+
+/// Get Nostr transport public key from the stored seed.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_capsule_nostr_public_key(out_key: *mut u8) -> i32 {
+    clear_last_error();
+    if out_key.is_null() {
+        set_last_error("Capsule Nostr public key failed: output pointer was null");
         return -1;
     }
 
@@ -61,12 +96,14 @@ pub unsafe extern "C" fn hivra_capsule_public_key(out_key: *mut u8) -> i32 {
                 0
             }
             Err(_) => {
-                set_last_error("Capsule public key derivation failed");
+                set_last_error("Capsule Nostr public key derivation failed");
                 -1
             }
         },
         Err(err) => {
-            set_last_error(format!("Capsule public key failed while loading seed: {err}"));
+            set_last_error(format!(
+                "Capsule Nostr public key failed while loading seed: {err}"
+            ));
             -1
         }
     }

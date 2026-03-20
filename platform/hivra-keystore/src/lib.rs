@@ -77,9 +77,24 @@ pub fn mnemonic_to_seed(phrase: &str) -> Result<Seed> {
 
 /// Derive Nostr keypair from seed using HKDF
 pub fn derive_nostr_keypair(seed: &Seed) -> Result<[u8; 32]> {
+    derive_key_with_label(seed, b"HIVRA_NOSTR_KEY_v1")
+}
+
+/// Derive canonical root signing key from seed using HKDF.
+pub fn derive_root_keypair(seed: &Seed) -> Result<[u8; 32]> {
+    derive_key_with_label(seed, b"HIVRA_ROOT_IDENTITY_v1")
+}
+
+/// Derive canonical root public key from seed.
+pub fn derive_root_public_key(seed: &Seed) -> Result<[u8; 32]> {
+    let signing_bytes = derive_root_keypair(seed)?;
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&signing_bytes);
+    Ok(signing_key.verifying_key().to_bytes())
+}
+
+fn derive_key_with_label(seed: &Seed, info: &[u8]) -> Result<[u8; 32]> {
     use hkdf::Hkdf;
     use sha2::Sha256;
-    let info = b"HIVRA_NOSTR_KEY_v1";
     let hk = Hkdf::<Sha256>::new(None, seed.as_bytes());
     let mut okm = [0u8; 32];
     hk.expand(info, &mut okm)
@@ -99,3 +114,28 @@ pub mod android;
 
 #[cfg(target_os = "android")]
 pub use android::{store_seed, load_seed, delete_seed, seed_exists};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_identity_derivation_is_deterministic() {
+        let seed = Seed([7u8; 32]);
+        assert_eq!(derive_root_keypair(&seed).unwrap(), derive_root_keypair(&seed).unwrap());
+        assert_eq!(
+            derive_root_public_key(&seed).unwrap(),
+            derive_root_public_key(&seed).unwrap()
+        );
+    }
+
+    #[test]
+    fn root_and_nostr_derivation_are_domain_separated() {
+        let seed = Seed([9u8; 32]);
+        assert_ne!(derive_root_keypair(&seed).unwrap(), derive_nostr_keypair(&seed).unwrap());
+        assert_ne!(
+            derive_root_public_key(&seed).unwrap(),
+            derive_nostr_keypair(&seed).unwrap()
+        );
+    }
+}
