@@ -139,6 +139,7 @@ class CapsuleBootstrapReport {
   final String? runtimePubKeyHex;
   final String? rootPubKeyHex;
   final String? nostrPubKeyHex;
+  final String identityMode;
   final String bootstrapSource;
   final bool seedAvailable;
   final bool seedMatchesActiveCapsule;
@@ -158,6 +159,7 @@ class CapsuleBootstrapReport {
     required this.runtimePubKeyHex,
     required this.rootPubKeyHex,
     required this.nostrPubKeyHex,
+    required this.identityMode,
     required this.bootstrapSource,
     required this.seedAvailable,
     required this.seedMatchesActiveCapsule,
@@ -179,6 +181,7 @@ class CapsuleBootstrapReport {
       'runtimePubKeyHex: ${runtimePubKeyHex ?? "none"}',
       'rootPubKeyHex: ${rootPubKeyHex ?? "none"}',
       'nostrPubKeyHex: ${nostrPubKeyHex ?? "none"}',
+      'identityMode: $identityMode',
       'bootstrapSource: $bootstrapSource',
       'seedAvailable: $seedAvailable',
       'seedMatchesActiveCapsule: $seedMatchesActiveCapsule',

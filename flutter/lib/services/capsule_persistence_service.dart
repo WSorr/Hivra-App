@@ -280,6 +280,13 @@ class CapsulePersistenceService {
     final nostrHex = nostrPubKey != null && nostrPubKey.length == 32
         ? _bytesToHex(nostrPubKey)
         : null;
+    final runtimeMatchesRoot = runtimeHex != null && runtimeHex == rootHex;
+    final runtimeMatchesNostr = runtimeHex != null && runtimeHex == nostrHex;
+    final identityMode = runtimeMatchesRoot
+        ? 'root_owner'
+        : runtimeMatchesNostr
+            ? 'legacy_nostr_owner'
+            : 'mixed_or_unknown';
 
     if (activeHex == null || activeHex.isEmpty) {
       return CapsuleBootstrapReport(
@@ -287,13 +294,14 @@ class CapsulePersistenceService {
         runtimePubKeyHex: runtimeHex,
         rootPubKeyHex: rootHex,
         nostrPubKeyHex: nostrHex,
+        identityMode: identityMode,
         bootstrapSource: 'none',
         seedAvailable: false,
         seedMatchesActiveCapsule: false,
         rootMatchesActiveCapsule: false,
         nostrMatchesActiveCapsule: false,
-        runtimeMatchesRoot: runtimeHex != null && runtimeHex == rootHex,
-        runtimeMatchesNostr: runtimeHex != null && runtimeHex == nostrHex,
+        runtimeMatchesRoot: runtimeMatchesRoot,
+        runtimeMatchesNostr: runtimeMatchesNostr,
         stateFileExists: false,
         ledgerFileExists: false,
         backupFileExists: false,
@@ -334,6 +342,7 @@ class CapsulePersistenceService {
       runtimePubKeyHex: runtimeHex,
       rootPubKeyHex: rootHex,
       nostrPubKeyHex: nostrHex,
+      identityMode: identityMode,
       bootstrapSource: bootstrapSource,
       seedAvailable: seedAvailable,
       seedMatchesActiveCapsule: seedMatches,
@@ -341,8 +350,8 @@ class CapsulePersistenceService {
           seedRootHex != null && activeHex == seedRootHex,
       nostrMatchesActiveCapsule:
           seedNostrHex != null && activeHex == seedNostrHex,
-      runtimeMatchesRoot: runtimeHex != null && runtimeHex == rootHex,
-      runtimeMatchesNostr: runtimeHex != null && runtimeHex == nostrHex,
+      runtimeMatchesRoot: runtimeMatchesRoot,
+      runtimeMatchesNostr: runtimeMatchesNostr,
       stateFileExists: stateFileExists,
       ledgerFileExists: ledgerFileExists,
       backupFileExists: backupFileExists,
