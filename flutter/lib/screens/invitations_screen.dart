@@ -45,7 +45,7 @@ Map<String, Object?> _sendInvitationInWorker(Map<String, Object?> args) {
 
   final toPubkey = args['toPubkey'] as Uint8List;
   final starterSlot = args['starterSlot'] as int;
-  final result = hivra.sendInvitationCode(toPubkey, starterSlot);
+  final result = hivra.deliverInvitationCode(toPubkey, starterSlot);
   return <String, Object?>{
     'result': result,
     'ledgerJson': result == 0 ? hivra.exportLedger() : null,
@@ -57,7 +57,7 @@ Map<String, Object?> _receiveInvitationsInWorker(Map<String, Object?> args) {
   if (!_bootstrapWorkerRuntime(hivra, args)) {
     return <String, Object?>{'result': -1004};
   }
-  final result = hivra.receiveTransportMessages();
+  final result = hivra.fetchInvitationDeliveries();
   return <String, Object?>{
     'result': result,
     'ledgerJson': hivra.exportLedger(),

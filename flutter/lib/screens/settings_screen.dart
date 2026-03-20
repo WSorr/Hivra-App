@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../ffi/hivra_bindings.dart';
-import '../services/capsule_contact_card_service.dart';
+import '../services/capsule_address_service.dart';
 import '../services/capsule_persistence_service.dart';
 import '../services/capsule_state_manager.dart';
 
@@ -18,7 +18,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isNeste = true;
   bool _isRelay = false;
   final CapsulePersistenceService _persistence = CapsulePersistenceService();
-  final CapsuleContactCardService _contactCards = const CapsuleContactCardService();
+  final CapsuleAddressService _contactCards = const CapsuleAddressService();
   int _contactCount = 0;
 
   @override
@@ -101,7 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (card == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not build contact card')),
+        const SnackBar(content: Text('Could not build capsule card')),
       );
       return;
     }
@@ -109,7 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await Clipboard.setData(ClipboardData(text: card.toPrettyJson()));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Contact card copied')),
+      const SnackBar(content: Text('Capsule card copied')),
     );
   }
 
@@ -129,7 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _loadContactCount();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Peer contact card imported')),
+        const SnackBar(content: Text('Peer capsule card imported')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -249,14 +249,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.badge),
-                title: const Text('Copy my contact card'),
-                subtitle: const Text('Copy root identity + Nostr endpoint as JSON'),
+                title: const Text('Copy my capsule card'),
+                subtitle: const Text('Copy capsule address card as JSON'),
                 onTap: _copyContactCard,
               ),
               ListTile(
                 leading: const Icon(Icons.download),
                 title: const Text('Import peer card from clipboard'),
-                subtitle: const Text('Import a trusted peer contact card'),
+                subtitle: const Text('Import a trusted peer capsule card'),
                 onTap: _importPeerCardFromClipboard,
               ),
               ListTile(

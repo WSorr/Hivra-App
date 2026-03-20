@@ -36,7 +36,7 @@ Map<String, Object?> _receiveTransportMessagesInWorker(
       !hivra.importLedger(ledgerJson)) {
     return <String, Object?>{'result': -1004};
   }
-  final result = hivra.receiveTransportMessagesQuick();
+  final result = hivra.fetchInvitationDeliveriesQuick();
   return <String, Object?>{
     'result': result,
     'ledgerJson': hivra.exportLedger(),

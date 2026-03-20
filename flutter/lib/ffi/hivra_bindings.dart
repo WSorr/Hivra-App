@@ -602,9 +602,19 @@ class HivraBindings {
   bool sendInvitation(Uint8List toPubkey, int starterSlot) =>
       sendInvitationCode(toPubkey, starterSlot) == 0;
 
+  int deliverInvitationCode(Uint8List toPubkey, int starterSlot) =>
+      sendInvitationCode(toPubkey, starterSlot);
+
+  bool deliverInvitation(Uint8List toPubkey, int starterSlot) =>
+      deliverInvitationCode(toPubkey, starterSlot) == 0;
+
   int receiveTransportMessages() => _transportReceive?.call() ?? -1002;
 
   int receiveTransportMessagesQuick() => _transportReceiveQuick?.call() ?? -1002;
+
+  int fetchInvitationDeliveries() => receiveTransportMessages();
+
+  int fetchInvitationDeliveriesQuick() => receiveTransportMessagesQuick();
 
   int acceptInvitationCode(Uint8List invitationId, Uint8List fromPubkey, Uint8List createdStarterId) {
     if (invitationId.length != 32 || fromPubkey.length != 32 || createdStarterId.length != 32) {
@@ -693,6 +703,8 @@ class HivraBindings {
   }
 
   int nostrSendPreparedSelfCheck() => _nostrSendPreparedSelfCheck?.call() ?? -1001;
+
+  int deliveryPreparedSelfCheck() => nostrSendPreparedSelfCheck();
 
   String? exportLedger() {
     final outPtr = calloc<Pointer<Int8>>();

@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'capsule_contact_card_service.dart';
+import 'capsule_address_service.dart';
 
 class InvitationRecipientResolution {
   final Uint8List? transportRecipient;
@@ -28,10 +28,10 @@ class InvitationRecipientResolution {
 
 class InvitationDeliveryService {
   const InvitationDeliveryService({
-    CapsuleContactCardService contactCards = const CapsuleContactCardService(),
+    CapsuleAddressService contactCards = const CapsuleAddressService(),
   }) : _contactCards = contactCards;
 
-  final CapsuleContactCardService _contactCards;
+  final CapsuleAddressService _contactCards;
 
   Future<InvitationRecipientResolution> resolveRecipientAddress(
     String input,

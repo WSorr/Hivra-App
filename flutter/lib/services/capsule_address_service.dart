@@ -8,13 +8,13 @@ import 'package:path_provider/path_provider.dart';
 import '../ffi/hivra_bindings.dart';
 import '../utils/hivra_id_format.dart';
 
-class CapsuleContactCard {
+class CapsuleAddressCard {
   final String rootKey;
   final String rootHex;
   final String nostrNpub;
   final String nostrHex;
 
-  const CapsuleContactCard({
+  const CapsuleAddressCard({
     required this.rootKey,
     required this.rootHex,
     required this.nostrNpub,
@@ -33,7 +33,7 @@ class CapsuleContactCard {
         },
       };
 
-  static CapsuleContactCard? fromJsonMap(Map<String, dynamic> map) {
+  static CapsuleAddressCard? fromJsonMap(Map<String, dynamic> map) {
     final rootKey = map['rootKey']?.toString();
     final rootHex = map['rootHex']?.toString();
     final transports = map['transports'];
@@ -45,7 +45,7 @@ class CapsuleContactCard {
     final nostrHex = nostr['hex']?.toString();
     if (nostrNpub == null || nostrHex == null) return null;
 
-    return CapsuleContactCard(
+    return CapsuleAddressCard(
       rootKey: rootKey,
       rootHex: rootHex,
       nostrNpub: nostrNpub,
@@ -57,10 +57,10 @@ class CapsuleContactCard {
       const JsonEncoder.withIndent('  ').convert(toJson());
 }
 
-class CapsuleContactCardService {
-  const CapsuleContactCardService();
+class CapsuleAddressService {
+  const CapsuleAddressService();
 
-  Future<CapsuleContactCard?> buildOwnCard(HivraBindings hivra) async {
+  Future<CapsuleAddressCard?> buildOwnCard(HivraBindings hivra) async {
     final root = hivra.capsuleRootPublicKey();
     final nostr = hivra.capsuleNostrPublicKey();
     if (root == null || root.length != 32 || nostr == null || nostr.length != 32) {
@@ -69,7 +69,7 @@ class CapsuleContactCardService {
 
     final rootBytes = Uint8List.fromList(root);
     final nostrBytes = Uint8List.fromList(nostr);
-    return CapsuleContactCard(
+    return CapsuleAddressCard(
       rootKey: HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
       rootHex: _toHex(rootBytes),
       nostrNpub: _encodeBech32('npub', nostrBytes),
@@ -87,12 +87,12 @@ class CapsuleContactCardService {
     return cards.length;
   }
 
-  Future<List<CapsuleContactCard>> listTrustedCards() async {
+  Future<List<CapsuleAddressCard>> listTrustedCards() async {
     final cards = await _readCards();
-    final result = <CapsuleContactCard>[];
+    final result = <CapsuleAddressCard>[];
     for (final entry in cards.values) {
       if (entry is! Map<String, dynamic>) continue;
-      final card = CapsuleContactCard.fromJsonMap(entry);
+      final card = CapsuleAddressCard.fromJsonMap(entry);
       if (card != null) {
         result.add(card);
       }
@@ -110,7 +110,7 @@ class CapsuleContactCardService {
     if (version != 1) {
       throw const FormatException('Unsupported contact card version');
     }
-    final card = CapsuleContactCard.fromJsonMap(decoded);
+    final card = CapsuleAddressCard.fromJsonMap(decoded);
     if (card == null) {
       throw const FormatException('Invalid contact card');
     }
@@ -162,7 +162,7 @@ class CapsuleContactCardService {
     final cards = await _readCards();
     final cardMap = cards[_toHex(rootBytes)];
     if (cardMap is! Map<String, dynamic>) return null;
-    final card = CapsuleContactCard.fromJsonMap(cardMap);
+    final card = CapsuleAddressCard.fromJsonMap(cardMap);
     if (card == null) return null;
     return _decodeHex32(card.nostrHex);
   }
