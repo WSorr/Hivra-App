@@ -1,5 +1,23 @@
 use super::*;
 
+fn load_relationship_delivery_context(seed: &Seed) -> Result<(NostrTransport, PubKey), i32> {
+    let sender_secret = match derive_nostr_keypair(seed) {
+        Ok(key) => key,
+        Err(_) => return Err(-3),
+    };
+    let sender_pubkey = match derive_nostr_public_key(seed) {
+        Ok(key) => PubKey::from(key),
+        Err(_) => return Err(-3),
+    };
+
+    let transport = match NostrTransport::new(NostrConfig::default(), &sender_secret) {
+        Ok(transport) => transport,
+        Err(_) => return Err(-5),
+    };
+
+    Ok((transport, sender_pubkey))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn hivra_break_relationship(
     peer_pubkey_ptr: *const u8,
@@ -31,13 +49,9 @@ pub unsafe extern "C" fn hivra_break_relationship(
         Err(_) => return -2,
     };
 
-    let sender_secret = match derive_nostr_keypair(&seed) {
-        Ok(key) => key,
-        Err(_) => return -3,
-    };
-    let sender_pubkey = match derive_nostr_public_key(&seed) {
-        Ok(key) => PubKey::from(key),
-        Err(_) => return -3,
+    let (transport, sender_pubkey) = match load_relationship_delivery_context(&seed) {
+        Ok(context) => context,
+        Err(code) => return code,
     };
 
     let engine = build_engine(&seed);
@@ -50,11 +64,6 @@ pub unsafe extern "C" fn hivra_break_relationship(
         Err(_) => return -4,
     };
 
-    let transport = match NostrTransport::new(NostrConfig::default(), &sender_secret) {
-        Ok(transport) => transport,
-        Err(_) => return -5,
-    };
-
     let message = Message {
         from: *sender_pubkey.as_bytes(),
         to: *peer_pubkey.as_bytes(),
@@ -64,7 +73,8 @@ pub unsafe extern "C" fn hivra_break_relationship(
         invitation_id: None,
     };
 
-    if transport.send(message).is_err() {
+    if let Err(err) = transport.send(message) {
+        eprintln!("[Delivery/Nostr] RelationshipBroken delivery failed: {:?}", err);
         return -6;
     }
 
