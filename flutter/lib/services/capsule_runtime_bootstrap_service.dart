@@ -14,7 +14,7 @@ class CapsuleRuntimeBootstrapService {
 
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrap(
     String pubKeyHex, {
-    String identityMode = 'legacy_nostr_owner',
+    String identityMode = 'root_owner',
     HivraBindings? hivra,
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
@@ -101,7 +101,7 @@ class CapsuleRuntimeBootstrapService {
   Future<bool> refreshCapsuleSnapshot(
     HivraBindings hivra,
     String pubKeyHex, {
-    String identityMode = 'legacy_nostr_owner',
+    String identityMode = 'root_owner',
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
     final seed = await _seedStore.loadValidatedSeed(

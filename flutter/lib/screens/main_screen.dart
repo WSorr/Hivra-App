@@ -17,7 +17,7 @@ Map<String, Object?> _receiveTransportMessagesInWorker(
   final seed = args['seed'] as Uint8List;
   final isGenesis = args['isGenesis'] as bool;
   final isNeste = args['isNeste'] as bool;
-  final identityMode = args['identityMode'] as String? ?? 'legacy_nostr_owner';
+  final identityMode = args['identityMode'] as String? ?? 'root_owner';
   final ledgerJson = args['ledgerJson'] as String?;
 
   if (!hivra.saveSeed(seed)) return <String, Object?>{'result': -1004};

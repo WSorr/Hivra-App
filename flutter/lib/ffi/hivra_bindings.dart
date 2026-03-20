@@ -479,7 +479,7 @@ class HivraBindings {
     Uint8List seed, {
     bool isNeste = true,
     bool isGenesis = false,
-    int ownerMode = legacyNostrOwnerMode,
+    int ownerMode = rootOwnerMode,
   }) {
     if (seed.length != 32) return false;
     final seedPtr = calloc<Uint8>(32);
@@ -498,7 +498,7 @@ class HivraBindings {
     Uint8List seed, {
     bool isNeste = true,
     bool isGenesis = false,
-    int ownerMode = legacyNostrOwnerMode,
+    int ownerMode = rootOwnerMode,
   }) {
     if (createCapsule(
       seed,

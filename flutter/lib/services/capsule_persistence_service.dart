@@ -624,7 +624,7 @@ class CapsulePersistenceService {
     HivraBindings hivra,
     Uint8List seed,
     String pubKeyHex, {
-    String identityMode = 'legacy_nostr_owner',
+    String identityMode = 'root_owner',
   }) async {
     if (identityMode == 'root_owner') {
       final derivedPubKey = hivra.seedRootPublicKey(seed);
@@ -657,7 +657,7 @@ class CapsulePersistenceService {
 
 
   String _identityModeForCapsule({CapsuleIndexEntry? indexEntry}) {
-    return indexEntry?.identityMode ?? 'legacy_nostr_owner';
+    return indexEntry?.identityMode ?? 'root_owner';
   }
 
   int _ownerModeCode(String identityMode) {

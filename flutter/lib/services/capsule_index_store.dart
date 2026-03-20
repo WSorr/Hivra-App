@@ -69,7 +69,7 @@ class CapsuleIndexStore {
       isGenesis: isGenesis ?? existing?.isGenesis ?? false,
       isNeste: isNeste ?? existing?.isNeste ?? true,
       identityMode:
-          identityMode ?? existing?.identityMode ?? 'legacy_nostr_owner',
+          identityMode ?? existing?.identityMode ?? 'root_owner',
     );
     await write(index);
   }
