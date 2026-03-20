@@ -63,11 +63,13 @@ class CapsulePersistenceService {
     }
 
     if (pubKeyHex != null) {
+      final identityMode = _detectIdentityMode(hivra, pubKeyHex);
       await _storeSeedForCapsule(pubKeyHex, seed);
       await _upsertCapsuleIndex(
         pubKeyHex,
         isGenesis: isGenesis,
         isNeste: isNeste,
+        identityMode: identityMode,
       );
       await _setActiveCapsule(pubKeyHex);
     }
@@ -722,7 +724,10 @@ class CapsulePersistenceService {
     final pubKey = hivra.capsulePublicKey();
     if (pubKey == null || pubKey.length != 32) return;
     final pubKeyHex = _bytesToHex(pubKey);
-    await _upsertCapsuleIndex(pubKeyHex);
+    await _upsertCapsuleIndex(
+      pubKeyHex,
+      identityMode: _detectIdentityMode(hivra, pubKeyHex),
+    );
     await _setActiveCapsule(pubKeyHex);
   }
 
@@ -730,11 +735,13 @@ class CapsulePersistenceService {
     String pubKeyHex, {
     bool? isGenesis,
     bool? isNeste,
+    String? identityMode,
   }) async {
     await _indexStore.upsert(
       pubKeyHex,
       isGenesis: isGenesis,
       isNeste: isNeste,
+      identityMode: identityMode,
     );
   }
 
@@ -768,8 +775,29 @@ class CapsulePersistenceService {
       pubKeyHex,
       isGenesis: state?['isGenesis'] == true,
       isNeste: state?['isNeste'] != false,
+      identityMode: _detectIdentityMode(hivra, pubKeyHex),
     );
     await _setActiveCapsule(pubKeyHex);
+  }
+
+  String _detectIdentityMode(HivraBindings hivra, String pubKeyHex) {
+    final rootPubKey = hivra.capsuleRootPublicKey();
+    final rootHex = rootPubKey != null && rootPubKey.length == 32
+        ? _bytesToHex(rootPubKey)
+        : null;
+    if (rootHex != null && rootHex == pubKeyHex) {
+      return 'root_owner';
+    }
+
+    final nostrPubKey = hivra.capsuleNostrPublicKey();
+    final nostrHex = nostrPubKey != null && nostrPubKey.length == 32
+        ? _bytesToHex(nostrPubKey)
+        : null;
+    if (nostrHex != null && nostrHex == pubKeyHex) {
+      return 'legacy_nostr_owner';
+    }
+
+    return 'mixed_or_unknown';
   }
 
   Future<Map<String, dynamic>?> _readStateForCapsuleHex(

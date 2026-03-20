@@ -6,6 +6,7 @@ class CapsuleIndexEntry {
   final DateTime lastActive;
   final bool isGenesis;
   final bool isNeste;
+  final String identityMode;
 
   CapsuleIndexEntry({
     required this.pubKeyHex,
@@ -13,6 +14,7 @@ class CapsuleIndexEntry {
     required this.lastActive,
     required this.isGenesis,
     required this.isNeste,
+    required this.identityMode,
   });
 
   Map<String, dynamic> toMap() => {
@@ -21,6 +23,7 @@ class CapsuleIndexEntry {
         'lastActive': lastActive.toIso8601String(),
         'isGenesis': isGenesis,
         'isNeste': isNeste,
+        'identityMode': identityMode,
       };
 
   static CapsuleIndexEntry fromMap(Map<String, dynamic> map) {
@@ -34,6 +37,8 @@ class CapsuleIndexEntry {
       lastActive: last.toUtc(),
       isGenesis: map['isGenesis'] == true,
       isNeste: map['isNeste'] != false,
+      identityMode:
+          map['identityMode']?.toString() ?? 'legacy_nostr_owner',
     );
   }
 }

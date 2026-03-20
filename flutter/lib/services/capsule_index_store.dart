@@ -57,6 +57,7 @@ class CapsuleIndexStore {
     String pubKeyHex, {
     bool? isGenesis,
     bool? isNeste,
+    String? identityMode,
   }) async {
     final index = await read();
     final now = DateTime.now().toUtc();
@@ -67,6 +68,8 @@ class CapsuleIndexStore {
       lastActive: now,
       isGenesis: isGenesis ?? existing?.isGenesis ?? false,
       isNeste: isNeste ?? existing?.isNeste ?? true,
+      identityMode:
+          identityMode ?? existing?.identityMode ?? 'legacy_nostr_owner',
     );
     await write(index);
   }
