@@ -2,6 +2,14 @@
 
 Hivra is an infrastructure for relationships, not a social network. No likes, no followers, no algorithmic feeds. Only you, your 5 unique starters, and people you trust.
 
+Hivra is best understood as a personal capsule computer:
+
+- not a global shared world computer
+- not an account inside someone else's network
+- but a local-first runtime for your own capsule state, history, recovery, and relationships
+
+The capsule is the center of truth. Transport adapters move messages, but they do not define identity or replace local truth.
+
 ## Architecture
 
 This repository implements Hivra v1.0.0 specification:

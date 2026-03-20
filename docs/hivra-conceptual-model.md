@@ -66,6 +66,14 @@ Commits containing non-English documentation or comments (in production-bound fi
 
 Hivra is infrastructure for relationships, not a social network. There are no likes, followers, or algorithmic feeds. There is only you, your 5 unique starters, and people you trust.
 
+Hivra is not a global shared computer. It is closer to a pocket capsule computer:
+
+- a personal runtime for local-first truth
+- a capsule-owned history and recovery model
+- a relationship system built on invitations rather than discovery
+
+The important architectural point is that capsule state is primary. Transport exists to exchange messages between capsules, but capsule identity, ledger truth, and recovery must remain owned by the capsule itself.
+
 Metaphor: Imagine you have 5 unique slippers. Each has its own distinct pattern (Juice, Spark, Seed, Pulse, Kick). You cannot give your slipper away — it always stays with you. But you can invite someone so they create their own slipper with the same pattern. When you both have slippers with the same pattern, a relationship forms.
 
 If you invite someone who does not have that slipper and they refuse to create it — your slipper is destroyed. Forever.

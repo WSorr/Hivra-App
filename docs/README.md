@@ -46,12 +46,22 @@ Contains:
 - migration path for existing Android users
 - implementation constraints and rollout checkpoints
 
+### 5) `identity-decoupling-migration.md` (implementation note)
+Use this when working on canonical capsule identity and transport-key separation.
+
+Contains:
+- current legacy coupling between capsule identity and Nostr identity
+- target root-identity model
+- phased migration plan
+- upgrade-safety decision points and constraints
+
 ## Recommended Reading Order
 
 1. `specification.md`
 2. `hivra-conceptual-model.md`
 3. `roadmap.md`
 4. `android-keystore-migration.md` when touching Android seed storage
+5. `identity-decoupling-migration.md` when touching root identity or transport key derivation
 
 ## Update Rules
 
