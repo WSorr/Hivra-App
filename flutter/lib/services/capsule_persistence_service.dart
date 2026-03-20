@@ -205,7 +205,10 @@ class CapsulePersistenceService {
       return bootstrapRuntimeFromDisk(hivra);
     }
 
-    final bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
+    final bootstrap = await loadRuntimeBootstrap(
+      activeHex,
+      hivra: hivra,
+    );
     if (bootstrap == null) return false;
 
     if (!hivra.saveSeed(bootstrap.seed)) return false;
@@ -233,7 +236,10 @@ class CapsulePersistenceService {
       return 'No active capsule selected';
     }
 
-    final bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
+    final bootstrap = await loadRuntimeBootstrap(
+      activeHex,
+      hivra: hivra,
+    );
     if (bootstrap == null) {
       return 'No bootstrap data for capsule $activeHex';
     }
@@ -336,7 +342,10 @@ class CapsulePersistenceService {
         ? _bytesToHex(seedNostrPubKey)
         : null;
 
-    final bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
+    final bootstrap = await loadRuntimeBootstrap(
+      activeHex,
+      hivra: hivra,
+    );
     final workerBootstrap = await loadWorkerBootstrapArgs(hivra);
     final issue = await diagnoseActiveCapsuleBootstrap(hivra);
 
@@ -488,8 +497,10 @@ class CapsulePersistenceService {
     String pubKeyHex, {
     HivraBindings? hivra,
   }) async {
+    final index = await _readIndex();
     return _runtimeBootstrapService.loadRuntimeBootstrap(
       pubKeyHex,
+      identityMode: _identityModeForCapsule(indexEntry: index.capsules[pubKeyHex]),
       hivra: hivra,
       bytesToHex: _bytesToHex,
     );
@@ -537,9 +548,11 @@ class CapsulePersistenceService {
 
   Future<bool> refreshCapsuleSnapshot(
       HivraBindings hivra, String pubKeyHex) async {
+    final index = await _readIndex();
     return _runtimeBootstrapService.refreshCapsuleSnapshot(
       hivra,
       pubKeyHex,
+      identityMode: _identityModeForCapsule(indexEntry: index.capsules[pubKeyHex]),
       bytesToHex: _bytesToHex,
     );
   }
@@ -600,11 +613,21 @@ class CapsulePersistenceService {
   Future<bool> seedMatchesCapsule(
     HivraBindings hivra,
     Uint8List seed,
-    String pubKeyHex,
-  ) async {
-    final derivedPubKey = hivra.seedPublicKey(seed);
+    String pubKeyHex, {
+    String identityMode = 'legacy_nostr_owner',
+  }) async {
+    final derivedPubKey = switch (identityMode) {
+      'root_owner' => hivra.seedRootPublicKey(seed),
+      'legacy_nostr_owner' => hivra.seedNostrPublicKey(seed),
+      _ => hivra.seedPublicKey(seed),
+    };
     if (derivedPubKey == null || derivedPubKey.length != 32) return false;
     return _bytesToHex(derivedPubKey) == pubKeyHex;
+  }
+
+
+  String _identityModeForCapsule({CapsuleIndexEntry? indexEntry}) {
+    return indexEntry?.identityMode ?? 'legacy_nostr_owner';
   }
 
   Future<void> saveSeedForCapsule(String pubKeyHex, Uint8List seed) async {

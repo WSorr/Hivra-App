@@ -14,6 +14,7 @@ class CapsuleRuntimeBootstrapService {
 
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrap(
     String pubKeyHex, {
+    String identityMode = 'legacy_nostr_owner',
     HivraBindings? hivra,
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
@@ -21,8 +22,13 @@ class CapsuleRuntimeBootstrapService {
         ? await _seedStore.loadSeed(pubKeyHex)
         : await _seedStore.loadValidatedSeed(
             pubKeyHex,
-            isValidSeed: (seed) =>
-                _seedMatchesCapsule(hivra, seed, pubKeyHex, bytesToHex),
+            isValidSeed: (seed) => _seedMatchesCapsule(
+              hivra,
+              seed,
+              pubKeyHex,
+              bytesToHex,
+              identityMode: identityMode,
+            ),
             persistValidatedSeed: (seed) => _seedStore.storeSeed(pubKeyHex, seed),
           );
     if (seed == null) return null;
@@ -83,11 +89,18 @@ class CapsuleRuntimeBootstrapService {
   Future<bool> refreshCapsuleSnapshot(
     HivraBindings hivra,
     String pubKeyHex, {
+    String identityMode = 'legacy_nostr_owner',
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
     final seed = await _seedStore.loadValidatedSeed(
       pubKeyHex,
-      isValidSeed: (seed) => _seedMatchesCapsule(hivra, seed, pubKeyHex, bytesToHex),
+      isValidSeed: (seed) => _seedMatchesCapsule(
+        hivra,
+        seed,
+        pubKeyHex,
+        bytesToHex,
+        identityMode: identityMode,
+      ),
       persistValidatedSeed: (seed) => _seedStore.storeSeed(pubKeyHex, seed),
     );
     if (seed == null) return false;
@@ -124,9 +137,14 @@ class CapsuleRuntimeBootstrapService {
     HivraBindings hivra,
     Uint8List seed,
     String pubKeyHex,
-    String Function(Uint8List bytes) bytesToHex,
-  ) async {
-    final derivedPubKey = hivra.seedPublicKey(seed);
+    String Function(Uint8List bytes) bytesToHex, {
+    required String identityMode,
+  }) async {
+    final derivedPubKey = switch (identityMode) {
+      'root_owner' => hivra.seedRootPublicKey(seed),
+      'legacy_nostr_owner' => hivra.seedNostrPublicKey(seed),
+      _ => hivra.seedPublicKey(seed),
+    };
     if (derivedPubKey == null || derivedPubKey.length != 32) return false;
     return bytesToHex(derivedPubKey) == pubKeyHex;
   }
