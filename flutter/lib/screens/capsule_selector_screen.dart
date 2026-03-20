@@ -143,7 +143,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   Future<void> _exportCapsule(CapsuleInfo capsule) async {
     final persistence = CapsulePersistenceService();
     try {
-      if (Platform.isMacOS) {
+      if (Platform.isMacOS || Platform.isAndroid) {
         final tempDir = Directory.systemTemp;
         final tempPath =
             '${tempDir.path}/capsule-backup-${capsule.publicKeyHex.substring(0, 8)}.json';

@@ -60,7 +60,7 @@ class _BackupScreenState extends State<BackupScreen> {
   Future<void> _exportBackup() async {
     if (_isSavingBackup) return;
 
-    if (Platform.isMacOS) {
+    if (Platform.isMacOS || Platform.isAndroid) {
       await _shareBackup();
       return;
     }
@@ -190,6 +190,8 @@ class _BackupScreenState extends State<BackupScreen> {
     }
 
     final words = _mnemonic!.split(' ');
+    final backupActionLabel = Platform.isAndroid ? 'Share Backup' : 'Save Backup';
+    final backupActionIcon = Platform.isAndroid ? Icons.share : Icons.save;
 
     return Scaffold(
       appBar: AppBar(
@@ -213,6 +215,14 @@ class _BackupScreenState extends State<BackupScreen> {
               'Store it securely. Never share it.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              Platform.isAndroid
+                  ? 'On Android, backup export currently uses the system share sheet.'
+                  : 'Save a backup file in addition to storing the seed phrase securely.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 24),
             Container(
@@ -267,18 +277,20 @@ class _BackupScreenState extends State<BackupScreen> {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.save),
-                    label: Text(_isSavingBackup ? 'Saving...' : 'Save Backup'),
+                        : Icon(backupActionIcon),
+                    label: Text(_isSavingBackup ? 'Saving...' : backupActionLabel),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _shareBackup,
-                    icon: const Icon(Icons.share),
-                    label: const Text('Share'),
+                if (!Platform.isAndroid) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _shareBackup,
+                      icon: const Icon(Icons.share),
+                      label: const Text('Share'),
+                    ),
                   ),
-                ),
+                ],
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
@@ -289,7 +301,7 @@ class _BackupScreenState extends State<BackupScreen> {
                 ),
               ],
             ),
-            if (_backupPath != null) ...[
+            if (_backupPath != null && Platform.isMacOS) ...[
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _revealBackup,
