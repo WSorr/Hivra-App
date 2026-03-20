@@ -56,6 +56,8 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
         CapsuleInfo(
           id: entry.pubKeyHex,
           publicKeyHex: entry.pubKeyHex,
+          displayKeyText:
+              await persistence.resolveDisplayCapsuleKey(_hivra, entry.pubKeyHex),
           network: entry.isNeste ? 'NESTE' : 'HOOD',
           starterCount: summary.starterCount,
           relationshipCount: summary.relationshipCount,
@@ -370,7 +372,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _formatPubKeyHex(capsule.publicKeyHex),
+                      _formatDisplayKey(capsule.displayKeyText),
                       style: const TextStyle(
                           fontFamily: 'monospace', fontSize: 12),
                       overflow: TextOverflow.ellipsis,
@@ -437,10 +439,10 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     }
   }
 
-  String _formatPubKeyHex(String hex) {
-    if (hex.isEmpty) return 'No key';
-    if (hex.length <= 18) return hex;
-    return '${hex.substring(0, 10)}...${hex.substring(hex.length - 6)}';
+  String _formatDisplayKey(String key) {
+    if (key.isEmpty) return 'No key';
+    if (key.length <= 18) return key;
+    return '${key.substring(0, 10)}...${key.substring(key.length - 6)}';
   }
 
   String _formatDate(DateTime date) {
@@ -461,6 +463,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
 class CapsuleInfo {
   final String id;
   final String publicKeyHex;
+  final String displayKeyText;
   final String network;
   final int starterCount;
   final int relationshipCount;
@@ -473,6 +476,7 @@ class CapsuleInfo {
   CapsuleInfo({
     required this.id,
     required this.publicKeyHex,
+    required this.displayKeyText,
     required this.network,
     required this.starterCount,
     required this.relationshipCount,

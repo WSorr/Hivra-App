@@ -163,6 +163,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void _loadCapsuleData() {
     _stateManager.refreshWithFullState();
     final state = _stateManager.state;
+    final displayKey = _hivra.capsuleRootPublicKey() ?? state.publicKey;
 
     setState(() {
       _starterCount = state.starterCount;
@@ -171,9 +172,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _isNeste = state.isNeste;
       _ledgerHashHex = state.ledgerHashHex;
       _ledgerVersion = state.version;
-      _publicKeyText = state.publicKey.isEmpty
+      _publicKeyText = displayKey.isEmpty
           ? ''
-          : _encodeCapsulePublicKey(state.publicKey);
+          : _encodeCapsulePublicKey(displayKey);
     });
   }
 

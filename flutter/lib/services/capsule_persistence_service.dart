@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:bech32/bech32.dart';
 
 import '../ffi/hivra_bindings.dart';
 import 'capsule_backup_codec.dart';
@@ -458,6 +459,31 @@ class CapsulePersistenceService {
     }
   }
 
+  Future<String> resolveDisplayCapsuleKey(
+    HivraBindings hivra,
+    String pubKeyHex,
+  ) async {
+    final currentRoot = hivra.capsuleRootPublicKey();
+    final currentLegacy = hivra.capsulePublicKey();
+    if (currentRoot != null &&
+        currentRoot.length == 32 &&
+        currentLegacy != null &&
+        currentLegacy.length == 32 &&
+        _bytesToHex(currentLegacy) == pubKeyHex) {
+      return _encodeCapsuleKey(currentRoot);
+    }
+
+    final seed = await _loadSeedForCapsule(pubKeyHex);
+    if (seed != null) {
+      final rootPubKey = hivra.seedRootPublicKey(seed);
+      if (rootPubKey != null && rootPubKey.length == 32) {
+        return _encodeCapsuleKey(rootPubKey);
+      }
+    }
+
+    return _encodeCapsuleKey(_hexToBytes(pubKeyHex));
+  }
+
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrap(
     String pubKeyHex, {
     HivraBindings? hivra,
@@ -812,6 +838,49 @@ class CapsulePersistenceService {
       b.write(byte.toRadixString(16).padLeft(2, '0'));
     }
     return b.toString();
+  }
+
+  Uint8List _hexToBytes(String hex) {
+    final normalized = hex.length.isEven ? hex : '0$hex';
+    final out = Uint8List(normalized.length ~/ 2);
+    for (var i = 0; i < normalized.length; i += 2) {
+      out[i ~/ 2] = int.parse(normalized.substring(i, i + 2), radix: 16);
+    }
+    return out;
+  }
+
+  String _encodeCapsuleKey(Uint8List bytes) {
+    final words = _convertBits(bytes, 8, 5, true);
+    return bech32.encode(Bech32('h', words));
+  }
+
+  List<int> _convertBits(List<int> data, int from, int to, bool pad) {
+    var acc = 0;
+    var bits = 0;
+    final result = <int>[];
+    final maxValue = (1 << to) - 1;
+
+    for (final value in data) {
+      if (value < 0 || (value >> from) != 0) {
+        throw ArgumentError('Invalid key byte for bech32 conversion');
+      }
+      acc = (acc << from) | value;
+      bits += from;
+      while (bits >= to) {
+        bits -= to;
+        result.add((acc >> bits) & maxValue);
+      }
+    }
+
+    if (pad) {
+      if (bits > 0) {
+        result.add((acc << (to - bits)) & maxValue);
+      }
+    } else if (bits >= from || ((acc << (to - bits)) & maxValue) != 0) {
+      throw ArgumentError('Invalid bech32 padding');
+    }
+
+    return result;
   }
 
   String? _extractOwnerHex(String ledgerJson) {
