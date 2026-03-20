@@ -121,7 +121,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
                 ),
                 title: Text(relationship.kind.displayName),
                 subtitle: Text(
-                  'Own ${_shortId(relationship.ownStarterId)} · Peer ${_shortId(relationship.peerStarterId)}',
+                  'Own ${_shortId(relationship.ownStarterDisplayId)} · Peer ${_shortId(relationship.peerStarterDisplayId)}',
                 ),
                 trailing: const Icon(Icons.link_off, color: Colors.red),
                 onTap: () async {

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
-import 'dart:convert';
-import 'package:bech32/bech32.dart';
 import '../ffi/hivra_bindings.dart';
+import '../services/capsule_contact_card_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/capsule_persistence_service.dart';
+import '../utils/hivra_id_format.dart';
 
 class StartersScreen extends StatefulWidget {
   final HivraBindings hivra;
@@ -22,37 +22,8 @@ class StartersScreen extends StatefulWidget {
 
 class _StartersScreenState extends State<StartersScreen> {
   final CapsulePersistenceService _persistence = CapsulePersistenceService();
+  final CapsuleContactCardService _contactCards = const CapsuleContactCardService();
   List<Map<String, dynamic>> _slots = const [];
-
-  // Helper function to convert bits (5-bit to 8-bit)
-  List<int>? _convertBits(List<int> data, int fromBits, int toBits, bool pad) {
-    var acc = 0;
-    var bits = 0;
-    var result = <int>[];
-    var maxv = (1 << toBits) - 1;
-    
-    for (var value in data) {
-      if (value < 0 || (value >> fromBits) != 0) {
-        return null;
-      }
-      acc = (acc << fromBits) | value;
-      bits += fromBits;
-      while (bits >= toBits) {
-        bits -= toBits;
-        result.add((acc >> bits) & maxv);
-      }
-    }
-    
-    if (pad) {
-      if (bits > 0) {
-        result.add((acc << (toBits - bits)) & maxv);
-      }
-    } else if (bits >= fromBits || ((acc << (toBits - bits)) & maxv) != 0) {
-      return null;
-    }
-    
-    return result;
-  }
 
   @override
   void initState() {
@@ -87,48 +58,7 @@ class _StartersScreenState extends State<StartersScreen> {
   }
 
   String _formatStarterId(Uint8List id) {
-    final b64 = base64.encode(id);
-    if (b64.length <= 12) return b64;
-    return '${b64.substring(0, 6)}...${b64.substring(b64.length - 6)}';
-  }
-
-  Uint8List? _decodePubkey(String input) {
-    input = input.trim();
-    
-    // Try base64 first (32 bytes)
-    try {
-      final bytes = base64.decode(input);
-      if (bytes.length == 32) return bytes;
-    } catch (_) {}
-    
-    // Try bech32 (h..., npub...)
-    if (input.startsWith('npub1') || input.startsWith('h1')) {
-      try {
-        final decoded = bech32.decode(input);
-        if (decoded.hrp == 'npub' || decoded.hrp == 'h') {
-          final data = _convertBits(decoded.data, 5, 8, false);
-          if (data != null && data.length == 32) {
-            return Uint8List.fromList(data);
-          }
-        }
-      } catch (_) {}
-    }
-    
-    // Try hex
-    try {
-      final cleanHex = input.replaceAll(':', '').replaceAll(' ', '').replaceAll('-', '');
-      // Convert hex string to bytes manually
-      final bytes = <int>[];
-      for (int i = 0; i < cleanHex.length; i += 2) {
-        final hexByte = cleanHex.substring(i, i + 2);
-        bytes.add(int.parse(hexByte, radix: 16));
-      }
-      if (bytes.length == 32) {
-        return Uint8List.fromList(bytes);
-      }
-    } catch (_) {}
-    
-    return null;
+    return HivraIdFormat.short(HivraIdFormat.formatStarterIdBytes(id));
   }
 
   Future<void> _showInviteDialog(Map<String, dynamic> slot) async {
@@ -144,7 +74,7 @@ class _StartersScreenState extends State<StartersScreen> {
             const Text('Enter recipient public key:'),
             const SizedBox(height: 8),
             const Text(
-              'Supports: h..., npub... (bech32), base64, hex',
+              'Supports: h... (if imported) or npub... (Nostr)',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 16),
@@ -175,10 +105,19 @@ class _StartersScreenState extends State<StartersScreen> {
                 return;
               }
               
-              final pubkeyBytes = _decodePubkey(input);
+              final pubkeyBytes = await _contactCards.resolveNostrRecipient(input);
               if (pubkeyBytes == null) {
+                final missingEndpoint =
+                    input.startsWith('h1') &&
+                    !await _contactCards.hasKnownNostrEndpoint(input);
                 messenger.showSnackBar(
-                  const SnackBar(content: Text('Invalid public key format')),
+                  SnackBar(
+                    content: Text(
+                      missingEndpoint
+                          ? 'No known Nostr endpoint for this capsule. Import its contact card first.'
+                          : 'Use a capsule key (h...) with an imported contact card, or a Nostr npub address.',
+                    ),
+                  ),
                 );
                 return;
               }

@@ -55,6 +55,15 @@ Contains:
 - phased migration plan
 - upgrade-safety decision points and constraints
 
+### 6) `capsule-addressing-model.md` (design note)
+Use this when working on peer addressing after root identity became canonical.
+
+Contains:
+- why `v1.0.0` send worked with one visible key
+- why root identity alone is not enough for remote routing
+- the public capsule card model
+- trusted peer records and encrypted endpoint updates
+
 ## Recommended Reading Order
 
 1. `specification.md`
@@ -62,6 +71,7 @@ Contains:
 3. `roadmap.md`
 4. `android-keystore-migration.md` when touching Android seed storage
 5. `identity-decoupling-migration.md` when touching root identity or transport key derivation
+6. `capsule-addressing-model.md` when touching invitation addressing or peer endpoint resolution
 
 ## Update Rules
 

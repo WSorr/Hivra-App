@@ -1,4 +1,5 @@
 import 'starter.dart';
+import '../utils/hivra_id_format.dart';
 
 /// Relationship between two capsules
 class Relationship {
@@ -21,9 +22,14 @@ class Relationship {
   /// Get display name for peer (safe short preview)
   String get peerDisplayName {
     if (peerPubkey.isEmpty) return 'Unknown';
-    if (peerPubkey.length <= 8) return peerPubkey;
-    return '${peerPubkey.substring(0, 8)}...';
+    return HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyFromBase64(peerPubkey));
   }
+
+  String get ownStarterDisplayId =>
+      HivraIdFormat.short(HivraIdFormat.formatStarterIdFromBase64(ownStarterId));
+
+  String get peerStarterDisplayId =>
+      HivraIdFormat.short(HivraIdFormat.formatStarterIdFromBase64(peerStarterId));
 
   /// For mock data
   static Relationship mock(int index) {

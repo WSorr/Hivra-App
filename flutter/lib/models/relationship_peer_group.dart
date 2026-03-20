@@ -1,5 +1,6 @@
 import 'relationship.dart';
 import 'starter.dart';
+import '../utils/hivra_id_format.dart';
 
 class RelationshipPeerGroup {
   final String peerPubkey;
@@ -25,8 +26,7 @@ class RelationshipPeerGroup {
 
   String get peerDisplayName {
     if (peerPubkey.isEmpty) return 'Unknown';
-    if (peerPubkey.length <= 8) return peerPubkey;
-    return '${peerPubkey.substring(0, 8)}...';
+    return HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyFromBase64(peerPubkey));
   }
 
   List<StarterKind> get activeKinds {

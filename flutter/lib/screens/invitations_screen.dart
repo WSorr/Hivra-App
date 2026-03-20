@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'package:bech32/bech32.dart';
 import '../models/invitation.dart';
 import '../models/starter.dart';
 import '../widgets/invitation_card.dart';
 import '../ffi/hivra_bindings.dart';
+import '../services/capsule_contact_card_service.dart';
 import '../services/capsule_persistence_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/ledger_view_service.dart';
@@ -97,6 +97,7 @@ class InvitationsScreen extends StatefulWidget {
 
 class _InvitationsScreenState extends State<InvitationsScreen> {
   final CapsulePersistenceService _persistence = CapsulePersistenceService();
+  final CapsuleContactCardService _contactCards = const CapsuleContactCardService();
   List<Invitation> _invitations = [];
   bool _isFetchingFromNostr = false;
   String? _processingId;
@@ -527,7 +528,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                   controller: controller,
                   decoration: const InputDecoration(
                     labelText: 'Recipient Public Key',
-                    hintText: 'base64 / npub / hex',
+                                        hintText: 'h... / npub...',
                     border: OutlineInputBorder(),
                   ),
                   maxLines: 2,
@@ -625,14 +626,25 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                   child: ElevatedButton.icon(
                     onPressed: selectedSlot == null
                         ? null
-                        : () {
-                            final pubkey = _decodePubkey(controller.text);
+                        : () async {
+                            final messenger =
+                                ScaffoldMessenger.of(this.context);
+                            final input = controller.text.trim();
+                            final pubkey =
+                                await _contactCards.resolveNostrRecipient(input);
                             final slot = selectedSlot;
                             if (pubkey == null || slot == null) {
-                              ScaffoldMessenger.of(this.context).showSnackBar(
-                                const SnackBar(
-                                    content:
-                                        Text('Invalid recipient public key')),
+                              final missingEndpoint =
+                                  input.startsWith('h1') &&
+                                  !await _contactCards.hasKnownNostrEndpoint(input);
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    missingEndpoint
+                                        ? 'No known Nostr endpoint for this capsule. Import its contact card first.'
+                                        : 'Use a capsule key (h...) with an imported contact card, or a Nostr npub address.',
+                                  ),
+                                ),
                               );
                               return;
                             }
@@ -728,60 +740,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       default:
         return Colors.grey;
     }
-  }
-
-  List<int>? _convertBits(List<int> data, int fromBits, int toBits, bool pad) {
-    var acc = 0;
-    var bits = 0;
-    final result = <int>[];
-    final maxv = (1 << toBits) - 1;
-    for (final value in data) {
-      if (value < 0 || (value >> fromBits) != 0) return null;
-      acc = (acc << fromBits) | value;
-      bits += fromBits;
-      while (bits >= toBits) {
-        bits -= toBits;
-        result.add((acc >> bits) & maxv);
-      }
-    }
-    if (pad) {
-      if (bits > 0) result.add((acc << (toBits - bits)) & maxv);
-    } else if (bits >= fromBits || ((acc << (toBits - bits)) & maxv) != 0) {
-      return null;
-    }
-    return result;
-  }
-
-  Uint8List? _decodePubkey(String input) {
-    final value = input.trim();
-    if (value.isEmpty) return null;
-    try {
-      final bytes = base64.decode(value);
-      if (bytes.length == 32) return Uint8List.fromList(bytes);
-    } catch (_) {}
-    if (value.startsWith('npub1') || value.startsWith('h1')) {
-      try {
-        final decoded = bech32.decode(value);
-        if (decoded.hrp == 'npub' || decoded.hrp == 'h') {
-          final data = _convertBits(decoded.data, 5, 8, false);
-          if (data != null && data.length == 32) {
-            return Uint8List.fromList(data);
-          }
-        }
-      } catch (_) {}
-    }
-    try {
-      final hex =
-          value.replaceAll(':', '').replaceAll(' ', '').replaceAll('-', '');
-      if (hex.length == 64) {
-        final bytes = <int>[];
-        for (var i = 0; i < hex.length; i += 2) {
-          bytes.add(int.parse(hex.substring(i, i + 2), radix: 16));
-        }
-        return Uint8List.fromList(bytes);
-      }
-    } catch (_) {}
-    return null;
   }
 
   @override

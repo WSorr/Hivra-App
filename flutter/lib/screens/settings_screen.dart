@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../ffi/hivra_bindings.dart';
+import '../services/capsule_contact_card_service.dart';
 import '../services/capsule_persistence_service.dart';
 import '../services/capsule_state_manager.dart';
 
@@ -16,12 +18,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isNeste = true;
   bool _isRelay = false;
   final CapsulePersistenceService _persistence = CapsulePersistenceService();
+  final CapsuleContactCardService _contactCards = const CapsuleContactCardService();
+  int _contactCount = 0;
 
   @override
   void initState() {
     super.initState();
     final state = CapsuleStateManager(widget.hivra).state;
     _isNeste = state.isNeste;
+    _loadContactCount();
+  }
+
+  Future<void> _loadContactCount() async {
+    final count = await _contactCards.contactCount();
+    if (!mounted) return;
+    setState(() => _contactCount = count);
   }
 
   void _showSeedPhrase() async {
@@ -83,6 +94,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _copyContactCard() async {
+    final card = await _contactCards.buildOwnCard(widget.hivra);
+    if (card == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not build contact card')),
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: card.toPrettyJson()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Contact card copied')),
+    );
+  }
+
+  Future<void> _importPeerCardFromClipboard() async {
+    final data = await Clipboard.getData('text/plain');
+    final raw = data?.text?.trim();
+    if (raw == null || raw.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Clipboard is empty')),
+      );
+      return;
+    }
+
+    try {
+      await _contactCards.importCardJson(raw);
+      await _loadContactCount();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Peer contact card imported')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
   }
 
   @override
@@ -194,24 +248,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Trusted Peers',
             children: [
               ListTile(
-                leading: const Icon(Icons.people),
-                title: const Text('Add trusted peer'),
-                subtitle: const Text('Manually add a peer to trust'),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Coming soon')),
-                  );
-                },
+                leading: const Icon(Icons.badge),
+                title: const Text('Copy my contact card'),
+                subtitle: const Text('Copy root identity + Nostr endpoint as JSON'),
+                onTap: _copyContactCard,
               ),
               ListTile(
-                leading: const Icon(Icons.list),
-                title: const Text('View trusted peers'),
-                subtitle: const Text('0 peers'),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Coming soon')),
-                  );
-                },
+                leading: const Icon(Icons.download),
+                title: const Text('Import peer card from clipboard'),
+                subtitle: const Text('Import a trusted peer contact card'),
+                onTap: _importPeerCardFromClipboard,
+              ),
+              ListTile(
+                leading: const Icon(Icons.people),
+                title: const Text('Trusted peer cards'),
+                subtitle: Text('$_contactCount saved'),
+                onTap: null,
               ),
             ],
           ),
