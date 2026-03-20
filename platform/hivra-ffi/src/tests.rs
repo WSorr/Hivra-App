@@ -9,7 +9,7 @@ fn test_seed(byte: u8) -> Seed {
 }
 
 fn derived_pubkey(seed: &Seed) -> PubKey {
-    PubKey::from(derive_nostr_public_key(seed).unwrap())
+    PubKey::from(derive_root_public_key(seed).unwrap())
 }
 
 fn set_runtime_capsule(owner: PubKey, network: Network) {
@@ -236,6 +236,16 @@ fn relationship_broken_payload_tracks_specific_local_starter() {
     let parsed = RelationshipBrokenPayload::from_bytes(&payload.to_bytes()).unwrap();
     assert_eq!(parsed.peer_pubkey, PubKey::from([9u8; 32]));
     assert_eq!(parsed.own_starter_id, StarterId::from([7u8; 32]));
+}
+
+#[test]
+fn build_engine_uses_root_identity_for_signer() {
+    let seed = test_seed(91);
+    let engine = build_engine(&seed);
+    let signer = engine.public_key().expect("engine pubkey");
+
+    assert_eq!(signer, PubKey::from(derive_root_public_key(&seed).unwrap()));
+    assert_ne!(signer, PubKey::from(derive_nostr_public_key(&seed).unwrap()));
 }
 
 #[test]

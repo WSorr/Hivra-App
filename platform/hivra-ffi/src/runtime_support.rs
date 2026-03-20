@@ -32,16 +32,16 @@ impl SecureKeyStore for SeedBackedKeyStore {
     type Error = ();
 
     fn generate(&self) -> Result<[u8; 32], Self::Error> {
-        derive_nostr_public_key(&self.seed).map_err(|_| ())
+        derive_root_public_key(&self.seed).map_err(|_| ())
     }
 
     fn public_key(&self) -> Result<[u8; 32], Self::Error> {
-        derive_nostr_public_key(&self.seed).map_err(|_| ())
+        derive_root_public_key(&self.seed).map_err(|_| ())
     }
 
     fn sign(&self, msg: &[u8]) -> Result<[u8; 64], Self::Error> {
-        let privkey = derive_nostr_keypair(&self.seed).map_err(|_| ())?;
-        let crypto = NostrCryptoProvider::new();
+        let privkey = derive_root_keypair(&self.seed).map_err(|_| ())?;
+        let crypto = Ed25519CryptoProvider::new();
         crypto.sign(msg, &privkey).map_err(|_| ())
     }
 }
@@ -50,13 +50,13 @@ pub(crate) static RUNTIME: Lazy<Mutex<RuntimeState>> =
     Lazy::new(|| Mutex::new(RuntimeState::default()));
 
 pub(crate) type FfiEngine =
-    Engine<FfiTimeSource, FfiRandomSource, NostrCryptoProvider, SeedBackedKeyStore>;
+    Engine<FfiTimeSource, FfiRandomSource, Ed25519CryptoProvider, SeedBackedKeyStore>;
 
 pub(crate) fn build_engine(seed: &Seed) -> FfiEngine {
     Engine::new(
         FfiTimeSource,
         FfiRandomSource,
-        NostrCryptoProvider::new(),
+        Ed25519CryptoProvider::new(),
         SeedBackedKeyStore { seed: seed.clone() },
         EngineConfig::default(),
     )
