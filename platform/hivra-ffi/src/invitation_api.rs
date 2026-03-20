@@ -1,6 +1,6 @@
 use super::*;
 
-fn map_publish_error(err: TransportError, default_code: i32) -> i32 {
+fn map_delivery_error(err: TransportError, default_code: i32) -> i32 {
     match err {
         TransportError::ConnectionFailed => -11,
         TransportError::Timeout => -12,
@@ -18,11 +18,45 @@ fn map_publish_error(err: TransportError, default_code: i32) -> i32 {
     }
 }
 
-/// Send invitation through transport and append InvitationSent to local ledger.
+fn load_invitation_delivery_context(
+    seed: &Seed,
+) -> Result<(NostrTransport, [u8; 32]), i32> {
+    let sender_secret = match derive_nostr_keypair(&seed) {
+        Ok(key) => key,
+        Err(_) => return Err(-3),
+    };
+
+    let sender_pubkey = match derive_nostr_public_key(&seed) {
+        Ok(key) => key,
+        Err(_) => return Err(-3),
+    };
+
+    let transport = match NostrTransport::new(NostrConfig::default(), &sender_secret) {
+        Ok(transport) => transport,
+        Err(_) => return Err(-5),
+    };
+
+    Ok((transport, sender_pubkey))
+}
+
+fn send_delivery_message(
+    transport: &NostrTransport,
+    message: Message,
+    failure_code: i32,
+    debug_label: &str,
+) -> Result<(), i32> {
+    if let Err(err) = transport.send(message) {
+        eprintln!("[Delivery/Nostr] {} failed: {:?}", debug_label, err);
+        return Err(map_delivery_error(err, failure_code));
+    }
+
+    eprintln!("[Delivery/Nostr] {} delivered", debug_label);
+    Ok(())
+}
+
+/// Deliver an invitation and append `InvitationSent` to the local ledger.
 ///
-/// Returns:
-/// - 0 on success
-/// - negative value on failure
+/// Exported symbol remains stable for existing bindings.
 #[no_mangle]
 pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter_slot: u8) -> i32 {
     if to_pubkey_ptr.is_null() || starter_slot >= 5 {
@@ -38,16 +72,6 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
         Err(_) => return -2,
     };
 
-    let sender_secret = match derive_nostr_keypair(&seed) {
-        Ok(key) => key,
-        Err(_) => return -3,
-    };
-
-    let sender_pubkey = match derive_nostr_public_key(&seed) {
-        Ok(key) => key,
-        Err(_) => return -3,
-    };
-
     {
         let runtime = RUNTIME.lock().unwrap();
         if runtime.capsule.is_none() {
@@ -55,9 +79,9 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
         }
     }
 
-    let transport = match NostrTransport::new(NostrConfig::default(), &sender_secret) {
-        Ok(transport) => transport,
-        Err(_) => return -5,
+    let (transport, sender_pubkey) = match load_invitation_delivery_context(&seed) {
+        Ok(context) => context,
+        Err(code) => return code,
     };
 
     let engine = build_engine(&seed);
@@ -84,12 +108,9 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
         invitation_id: Some(invitation_id),
     };
 
-    if let Err(err) = transport.send(message) {
-        eprintln!("[Nostr] InvitationSent publish failed: {:?}", err);
-        return map_publish_error(err, -7);
+    if let Err(code) = send_delivery_message(&transport, message, -7, "InvitationSent") {
+        return code;
     }
-
-    eprintln!("[Nostr] InvitationSent published");
 
     append_prepared_event(PreparedEvent {
         event: Event::new(
@@ -105,7 +126,7 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
     .unwrap_or(-6)
 }
 
-/// Receive transport messages from relays and append supported events to local ledger.
+/// Receive invitation deliveries from transport and append supported events to local ledger.
 ///
 /// Returns:
 /// - >=0 number of newly appended events
@@ -156,7 +177,7 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
     let mut appended: i32 = 0;
     for message in received {
         eprintln!(
-            "[Nostr] Received message kind={} payload_len={} to_prefix={:02x?}",
+            "[Delivery/Nostr] Received message kind={} payload_len={} to_prefix={:02x?}",
             message.kind,
             message.payload.len(),
             &message.to[..4]
@@ -168,7 +189,7 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
             Ok(value) => value,
             Err(_) => {
                 eprintln!(
-                    "[Nostr] Skip message: unsupported kind value {}",
+                    "[Delivery/Nostr] Skip message: unsupported kind value {}",
                     message.kind
                 );
                 continue;
@@ -178,7 +199,7 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
         let kind = match event_kind_from_u8(kind_u8) {
             Some(value) => value,
             None => {
-                eprintln!("[Nostr] Skip message: unmapped kind {}", kind_u8);
+                eprintln!("[Delivery/Nostr] Skip message: unmapped kind {}", kind_u8);
                 continue;
             }
         };
@@ -194,7 +215,7 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
             };
 
         if !to_matches && !payload_targets_local {
-            eprintln!("[Nostr] Skip message: not addressed to local capsule");
+            eprintln!("[Delivery/Nostr] Skip message: not addressed to local capsule");
             continue;
         }
 
@@ -210,11 +231,11 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
             let mut invitation_id = [0u8; 32];
             invitation_id.copy_from_slice(&local_payload[..32]);
             if invitation_is_resolved_in_runtime(&invitation_id) {
-                eprintln!("[Nostr] Skip message: invitation already resolved");
+                eprintln!("[Delivery/Nostr] Skip message: invitation already resolved");
                 continue;
             }
             if invitation_offer_exists_in_runtime(local_kind, &invitation_id, message_signer) {
-                eprintln!("[Nostr] Skip message: invitation offer already exists");
+                eprintln!("[Delivery/Nostr] Skip message: invitation offer already exists");
                 continue;
             }
         }
@@ -222,7 +243,7 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
         let already_exists =
             event_exists_in_runtime_with_signer(local_kind, &local_payload, message_signer);
         if already_exists {
-            eprintln!("[Nostr] Skip message: event already exists");
+            eprintln!("[Delivery/Nostr] Skip message: event already exists");
             continue;
         }
 
@@ -231,7 +252,7 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
                 appended += 1;
             }
             Err(err) => {
-                eprintln!("[Nostr] Skip message: append failed ({})", err);
+                eprintln!("[Delivery/Nostr] Skip message: append failed ({})", err);
                 continue;
             }
         }
@@ -246,7 +267,7 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
                 project_relationship_from_invitation_accepted(&engine, message.from, &payload)
             {
                 eprintln!(
-                    "[Nostr] Failed to project RelationshipEstablished from InvitationAccepted ({})",
+                    "[Delivery/Nostr] Failed to project RelationshipEstablished from InvitationAccepted ({})",
                     err
                 );
             }
@@ -258,7 +279,7 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
             let engine = build_engine(&seed);
             if let Err(err) = project_effects_from_invitation_rejected(&engine, &payload) {
                 eprintln!(
-                    "[Nostr] Failed to project local effects from InvitationRejected ({})",
+                    "[Delivery/Nostr] Failed to project local effects from InvitationRejected ({})",
                     err
                 );
             }
@@ -290,22 +311,19 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         Err(_) => return -2,
     };
 
-    let sender_secret = match derive_nostr_keypair(&seed) {
-        Ok(key) => key,
-        Err(_) => return -4,
-    };
-
-    let sender_pubkey = match derive_nostr_public_key(&seed) {
-        Ok(key) => key,
-        Err(_) => return -4,
-    };
-
     {
         let runtime = RUNTIME.lock().unwrap();
         if runtime.capsule.is_none() {
             return -5;
         }
     }
+
+    let (transport, sender_pubkey) = match load_invitation_delivery_context(&seed) {
+        Ok(context) => context,
+        Err(-3) => return -4,
+        Err(-5) => return -6,
+        Err(_) => return -6,
+    };
 
     let engine = build_engine(&seed);
     let acceptance_plan = match resolve_local_acceptance_plan(&seed, invitation_id) {
@@ -373,23 +391,18 @@ pub unsafe extern "C" fn hivra_accept_invitation(
     };
 
     eprintln!(
-        "[Nostr] Sending InvitationAccepted to_prefix={:02x?} invitation_prefix={:02x?}",
+        "[Delivery/Nostr] Sending InvitationAccepted to_prefix={:02x?} invitation_prefix={:02x?}",
         &from_pubkey[..4],
         &invitation_id[..4]
     );
 
-    let transport = match NostrTransport::new(NostrConfig::default(), &sender_secret) {
-        Ok(transport) => transport,
-        Err(_) => return -6,
-    };
-
-    if let Err(err) = transport.send(message) {
+    if let Err(code) = send_delivery_message(&transport, message, -7, "InvitationAccepted") {
         eprintln!(
-            "[Accept] transport send failed invitation={:02x?}: {:?}",
+            "[Accept] delivery send failed invitation={:02x?}: code {}",
             &invitation_id[..4],
-            err
+            code
         );
-        return map_publish_error(err, -7);
+        return code;
     }
 
     if append_prepared_event(prepared).is_err() {
