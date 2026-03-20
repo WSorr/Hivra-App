@@ -191,9 +191,22 @@ fn append_relationship_established_if_missing(
     own_starter_id: StarterId,
     peer_starter_id: StarterId,
     kind: StarterKind,
+    invitation_id: [u8; 32],
+    sender_pubkey: PubKey,
+    sender_starter_type: StarterKind,
+    sender_starter_id: StarterId,
 ) -> Result<(), &'static str> {
     let prepared = engine
-        .prepare_relationship_established(peer_pubkey, own_starter_id, peer_starter_id, kind)
+        .prepare_relationship_established(
+            peer_pubkey,
+            own_starter_id,
+            peer_starter_id,
+            kind,
+            invitation_id,
+            sender_pubkey,
+            sender_starter_type,
+            sender_starter_id,
+        )
         .map_err(|_| "prepare failed")?;
     let payload_bytes = prepared.event.payload().to_vec();
 
@@ -222,6 +235,10 @@ pub(crate) fn project_relationship_from_invitation_accepted(
         own_starter_id,
         payload.created_starter_id,
         kind,
+        payload.invitation_id,
+        payload.from_pubkey,
+        kind,
+        own_starter_id,
     )
 }
 
@@ -252,6 +269,10 @@ pub(crate) fn project_effects_from_invitation_rejected(
 }
 
 pub(crate) struct LocalAcceptancePlan {
+    pub(crate) invitation_id: [u8; 32],
+    pub(crate) sender_pubkey: PubKey,
+    pub(crate) sender_starter_id: StarterId,
+    pub(crate) sender_starter_type: StarterKind,
     pub(crate) relationship_starter_id: StarterId,
     pub(crate) relationship_kind: StarterKind,
     pub(crate) peer_starter_id: StarterId,
@@ -262,7 +283,7 @@ pub(crate) fn resolve_local_acceptance_plan(
     seed: &Seed,
     invitation_id: [u8; 32],
 ) -> Result<LocalAcceptancePlan, &'static str> {
-    let Some((peer_starter_id, invited_kind, _, true)) =
+    let Some((peer_starter_id, invited_kind, sender_pubkey, true)) =
         find_invitation_sent_in_runtime_with_direction(&invitation_id, Some(true))
     else {
         eprintln!(
@@ -301,6 +322,10 @@ pub(crate) fn resolve_local_acceptance_plan(
             });
 
             Ok(LocalAcceptancePlan {
+                invitation_id,
+                sender_pubkey,
+                sender_starter_id: peer_starter_id,
+                sender_starter_type: invited_kind,
                 relationship_starter_id,
                 relationship_kind: invited_kind,
                 peer_starter_id,
@@ -309,6 +334,10 @@ pub(crate) fn resolve_local_acceptance_plan(
         }
         hivra_core::AcceptPlan::CreateStarterInEmptySlot { slot, kind } => {
             Ok(LocalAcceptancePlan {
+                invitation_id,
+                sender_pubkey,
+                sender_starter_id: peer_starter_id,
+                sender_starter_type: invited_kind,
                 relationship_starter_id: StarterId::from(derive_starter_id(seed, slot.as_u8())),
                 relationship_kind: invited_kind,
                 peer_starter_id,
@@ -361,6 +390,10 @@ pub(crate) fn finalize_local_acceptance(
         plan.relationship_starter_id,
         plan.peer_starter_id,
         plan.relationship_kind,
+        plan.invitation_id,
+        plan.sender_pubkey,
+        plan.sender_starter_type,
+        plan.sender_starter_id,
     )?;
     eprintln!("[Accept] RelationshipEstablished append ok");
     Ok(())

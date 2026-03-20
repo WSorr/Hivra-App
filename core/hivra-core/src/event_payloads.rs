@@ -252,6 +252,10 @@ pub struct RelationshipEstablishedPayload {
     pub own_starter_id: StarterId,
     pub peer_starter_id: StarterId,
     pub kind: StarterKind,
+    pub invitation_id: [u8; 32],
+    pub sender_pubkey: PubKey,
+    pub sender_starter_type: StarterKind,
+    pub sender_starter_id: StarterId,
 }
 
 impl EventPayload for RelationshipEstablishedPayload {
@@ -260,24 +264,34 @@ impl EventPayload for RelationshipEstablishedPayload {
     }
 
     fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(97);
+        let mut out = Vec::with_capacity(194);
         out.extend_from_slice(self.peer_pubkey.as_bytes());
         out.extend_from_slice(self.own_starter_id.as_bytes());
         out.extend_from_slice(self.peer_starter_id.as_bytes());
         out.push(self.kind as u8);
+        out.extend_from_slice(&self.invitation_id);
+        out.extend_from_slice(self.sender_pubkey.as_bytes());
+        out.push(self.sender_starter_type as u8);
+        out.extend_from_slice(self.sender_starter_id.as_bytes());
         out
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
-        if bytes.len() != 97 {
+        if bytes.len() != 194 {
             return Err("invalid relationship_established payload length");
         }
         let kind = StarterKind::from_u8(bytes[96]).ok_or("invalid starter kind")?;
+        let sender_starter_type =
+            StarterKind::from_u8(bytes[161]).ok_or("invalid sender starter kind")?;
         Ok(Self {
             peer_pubkey: PubKey::from(read_fixed_32(bytes, 0)),
             own_starter_id: StarterId::from(read_fixed_32(bytes, 32)),
             peer_starter_id: StarterId::from(read_fixed_32(bytes, 64)),
             kind,
+            invitation_id: read_fixed_32(bytes, 97),
+            sender_pubkey: PubKey::from(read_fixed_32(bytes, 129)),
+            sender_starter_type,
+            sender_starter_id: StarterId::from(read_fixed_32(bytes, 162)),
         })
     }
 }
@@ -340,6 +354,10 @@ mod tests {
             own_starter_id: StarterId::from([2u8; 32]),
             peer_starter_id: StarterId::from([3u8; 32]),
             kind: StarterKind::Seed,
+            invitation_id: [4u8; 32],
+            sender_pubkey: PubKey::from([5u8; 32]),
+            sender_starter_type: StarterKind::Juice,
+            sender_starter_id: StarterId::from([6u8; 32]),
         };
 
         let bytes = payload.to_bytes();

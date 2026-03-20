@@ -116,6 +116,10 @@ fn finalize_local_acceptance_creates_starter_and_relationship() {
                     && payload.own_starter_id.as_bytes() == &created_starter_id
                     && payload.peer_starter_id.as_bytes() == &peer_starter_id
                     && payload.kind == StarterKind::Spark
+                    && payload.invitation_id == invitation_id
+                    && payload.sender_pubkey == PubKey::from(inviter_pubkey)
+                    && payload.sender_starter_type == StarterKind::Spark
+                    && payload.sender_starter_id.as_bytes() == &peer_starter_id
             })
     }));
 }
@@ -152,6 +156,10 @@ fn incoming_invitation_accepted_projects_outgoing_relationship() {
                     && projected.own_starter_id.as_bytes() == &own_starter_id
                     && projected.peer_starter_id.as_bytes() == &peer_starter_id
                     && projected.kind == StarterKind::Juice
+                    && projected.invitation_id == invitation_id
+                    && projected.sender_pubkey == local_pubkey
+                    && projected.sender_starter_type == StarterKind::Juice
+                    && projected.sender_starter_id.as_bytes() == &own_starter_id
             })
     }));
 }
@@ -337,6 +345,10 @@ fn accepted_relationship_survives_export_import() {
             && RelationshipEstablishedPayload::from_bytes(event.payload()).is_ok_and(|payload| {
                 payload.peer_pubkey == PubKey::from(inviter_pubkey)
                     && payload.peer_starter_id.as_bytes() == &peer_starter_id
+                    && payload.invitation_id == invitation_id
+                    && payload.sender_pubkey == PubKey::from(inviter_pubkey)
+                    && payload.sender_starter_type == StarterKind::Juice
+                    && payload.sender_starter_id.as_bytes() == &peer_starter_id
             })
     }));
 }

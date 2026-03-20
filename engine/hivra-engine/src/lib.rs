@@ -352,12 +352,20 @@ where
         own_starter_id: StarterId,
         peer_starter_id: StarterId,
         kind: StarterKind,
+        invitation_id: [u8; 32],
+        sender_pubkey: PubKey,
+        sender_starter_type: StarterKind,
+        sender_starter_id: StarterId,
     ) -> Result<PreparedEvent, EngineError<K::Error>> {
         let payload = RelationshipEstablishedPayload {
             peer_pubkey,
             own_starter_id,
             peer_starter_id,
             kind,
+            invitation_id,
+            sender_pubkey,
+            sender_starter_type,
+            sender_starter_id,
         };
         self.prepare_event(
             EventKind::RelationshipEstablished,
@@ -410,6 +418,10 @@ where
             invitation.starter_id,
             payload.created_starter_id,
             kind,
+            payload.invitation_id,
+            self.public_key().map_err(EngineError::Keystore)?,
+            kind,
+            invitation.starter_id,
         )?;
 
         Ok(vec![IncomingEffect::Append(relationship.event)])

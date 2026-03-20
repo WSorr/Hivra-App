@@ -125,6 +125,10 @@ mod tests {
                     own_starter_id: StarterId::from([3u8; 32]),
                     peer_starter_id: StarterId::from([4u8; 32]),
                     kind: StarterKind::Juice,
+                    invitation_id: [5u8; 32],
+                    sender_pubkey: PubKey::from([6u8; 32]),
+                    sender_starter_type: StarterKind::Juice,
+                    sender_starter_id: StarterId::from([7u8; 32]),
                 }
                 .to_bytes(),
                 Timestamp::from(1),
