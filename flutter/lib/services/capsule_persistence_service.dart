@@ -272,14 +272,28 @@ class CapsulePersistenceService {
     final runtimeHex = runtimePubKey != null && runtimePubKey.length == 32
         ? _bytesToHex(runtimePubKey)
         : null;
+    final rootPubKey = hivra.capsuleRootPublicKey();
+    final rootHex = rootPubKey != null && rootPubKey.length == 32
+        ? _bytesToHex(rootPubKey)
+        : null;
+    final nostrPubKey = hivra.capsuleNostrPublicKey();
+    final nostrHex = nostrPubKey != null && nostrPubKey.length == 32
+        ? _bytesToHex(nostrPubKey)
+        : null;
 
     if (activeHex == null || activeHex.isEmpty) {
       return CapsuleBootstrapReport(
         activePubKeyHex: null,
         runtimePubKeyHex: runtimeHex,
+        rootPubKeyHex: rootHex,
+        nostrPubKeyHex: nostrHex,
         bootstrapSource: 'none',
         seedAvailable: false,
         seedMatchesActiveCapsule: false,
+        rootMatchesActiveCapsule: false,
+        nostrMatchesActiveCapsule: false,
+        runtimeMatchesRoot: runtimeHex != null && runtimeHex == rootHex,
+        runtimeMatchesNostr: runtimeHex != null && runtimeHex == nostrHex,
         stateFileExists: false,
         ledgerFileExists: false,
         backupFileExists: false,
@@ -301,9 +315,15 @@ class CapsulePersistenceService {
 
     final seed = await _loadSeedForCapsule(activeHex);
     final seedAvailable = seed != null;
-    final seedMatches = seed != null
-        ? await seedMatchesCapsule(hivra, seed, activeHex)
-        : false;
+    final seedMatches = seed != null ? await seedMatchesCapsule(hivra, seed, activeHex) : false;
+    final seedRootPubKey = seed != null ? hivra.seedRootPublicKey(seed) : null;
+    final seedRootHex = seedRootPubKey != null && seedRootPubKey.length == 32
+        ? _bytesToHex(seedRootPubKey)
+        : null;
+    final seedNostrPubKey = seed != null ? hivra.seedNostrPublicKey(seed) : null;
+    final seedNostrHex = seedNostrPubKey != null && seedNostrPubKey.length == 32
+        ? _bytesToHex(seedNostrPubKey)
+        : null;
 
     final bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
     final workerBootstrap = await loadWorkerBootstrapArgs(hivra);
@@ -312,9 +332,17 @@ class CapsulePersistenceService {
     return CapsuleBootstrapReport(
       activePubKeyHex: activeHex,
       runtimePubKeyHex: runtimeHex,
+      rootPubKeyHex: rootHex,
+      nostrPubKeyHex: nostrHex,
       bootstrapSource: bootstrapSource,
       seedAvailable: seedAvailable,
       seedMatchesActiveCapsule: seedMatches,
+      rootMatchesActiveCapsule:
+          seedRootHex != null && activeHex == seedRootHex,
+      nostrMatchesActiveCapsule:
+          seedNostrHex != null && activeHex == seedNostrHex,
+      runtimeMatchesRoot: runtimeHex != null && runtimeHex == rootHex,
+      runtimeMatchesNostr: runtimeHex != null && runtimeHex == nostrHex,
       stateFileExists: stateFileExists,
       ledgerFileExists: ledgerFileExists,
       backupFileExists: backupFileExists,

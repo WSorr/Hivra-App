@@ -137,9 +137,15 @@ class CapsuleTraceReport {
 class CapsuleBootstrapReport {
   final String? activePubKeyHex;
   final String? runtimePubKeyHex;
+  final String? rootPubKeyHex;
+  final String? nostrPubKeyHex;
   final String bootstrapSource;
   final bool seedAvailable;
   final bool seedMatchesActiveCapsule;
+  final bool rootMatchesActiveCapsule;
+  final bool nostrMatchesActiveCapsule;
+  final bool runtimeMatchesRoot;
+  final bool runtimeMatchesNostr;
   final bool stateFileExists;
   final bool ledgerFileExists;
   final bool backupFileExists;
@@ -150,9 +156,15 @@ class CapsuleBootstrapReport {
   CapsuleBootstrapReport({
     required this.activePubKeyHex,
     required this.runtimePubKeyHex,
+    required this.rootPubKeyHex,
+    required this.nostrPubKeyHex,
     required this.bootstrapSource,
     required this.seedAvailable,
     required this.seedMatchesActiveCapsule,
+    required this.rootMatchesActiveCapsule,
+    required this.nostrMatchesActiveCapsule,
+    required this.runtimeMatchesRoot,
+    required this.runtimeMatchesNostr,
     required this.stateFileExists,
     required this.ledgerFileExists,
     required this.backupFileExists,
@@ -165,9 +177,15 @@ class CapsuleBootstrapReport {
     return [
       'activePubKeyHex: ${activePubKeyHex ?? "none"}',
       'runtimePubKeyHex: ${runtimePubKeyHex ?? "none"}',
+      'rootPubKeyHex: ${rootPubKeyHex ?? "none"}',
+      'nostrPubKeyHex: ${nostrPubKeyHex ?? "none"}',
       'bootstrapSource: $bootstrapSource',
       'seedAvailable: $seedAvailable',
       'seedMatchesActiveCapsule: $seedMatchesActiveCapsule',
+      'rootMatchesActiveCapsule: $rootMatchesActiveCapsule',
+      'nostrMatchesActiveCapsule: $nostrMatchesActiveCapsule',
+      'runtimeMatchesRoot: $runtimeMatchesRoot',
+      'runtimeMatchesNostr: $runtimeMatchesNostr',
       'stateFileExists: $stateFileExists',
       'ledgerFileExists: $ledgerFileExists',
       'backupFileExists: $backupFileExists',
