@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:bech32/bech32.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -215,6 +216,10 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   Widget build(BuildContext context) {
     final state = _stateManager.state;
     final ownerB64 = state.publicKey.isEmpty ? 'No key' : base64.encode(state.publicKey);
+    final rootPubKey = _hivra.capsuleRootPublicKey();
+    final rootDisplayKey = rootPubKey == null || rootPubKey.isEmpty
+        ? 'No key'
+        : _encodeCapsulePublicKey(rootPubKey);
     final distribution = _eventCounts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
@@ -253,9 +258,17 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                       _sectionTitle('Capsule'),
                       _infoCard(
                         children: [
-                          _kv('Owner (base64)', _short(ownerB64, start: 14, end: 8), trailing: IconButton(
+                          _kv('Capsule root', _short(rootDisplayKey, start: 16, end: 10), trailing: IconButton(
                             icon: const Icon(Icons.copy, size: 16),
-                            onPressed: ownerB64 == 'No key' ? null : () => _copyToClipboard(ownerB64, 'Owner key'),
+                            onPressed: rootDisplayKey == 'No key'
+                                ? null
+                                : () => _copyToClipboard(rootDisplayKey, 'Capsule root identity'),
+                          )),
+                          _kv('Ledger owner (base64)', _short(ownerB64, start: 14, end: 8), trailing: IconButton(
+                            icon: const Icon(Icons.copy, size: 16),
+                            onPressed: ownerB64 == 'No key'
+                                ? null
+                                : () => _copyToClipboard(ownerB64, 'Ledger owner key'),
                           )),
                           _kv('Network', state.isNeste ? 'NESTE' : 'HOOD'),
                           _kv('Ledger version', state.version.toString()),
@@ -362,6 +375,40 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
       side: BorderSide(color: color.withValues(alpha: 0.45)),
       labelStyle: TextStyle(color: color),
     );
+  }
+
+  String _encodeCapsulePublicKey(Uint8List bytes) {
+    final words = _convertBits(bytes, 8, 5, true);
+    return bech32.encode(Bech32('h', words));
+  }
+
+  List<int> _convertBits(List<int> data, int from, int to, bool pad) {
+    var acc = 0;
+    var bits = 0;
+    final result = <int>[];
+    final maxValue = (1 << to) - 1;
+
+    for (final value in data) {
+      if (value < 0 || (value >> from) != 0) {
+        throw ArgumentError('Invalid key byte for bech32 conversion');
+      }
+      acc = (acc << from) | value;
+      bits += from;
+      while (bits >= to) {
+        bits -= to;
+        result.add((acc >> bits) & maxValue);
+      }
+    }
+
+    if (pad) {
+      if (bits > 0) {
+        result.add((acc << (to - bits)) & maxValue);
+      }
+    } else if (bits >= from || ((acc << (to - bits)) & maxValue) != 0) {
+      throw ArgumentError('Invalid bech32 padding');
+    }
+
+    return result;
   }
 }
 
