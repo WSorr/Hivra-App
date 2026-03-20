@@ -22,7 +22,6 @@ use hivra_keystore::{
     mnemonic_to_seed, seed_exists, seed_to_mnemonic, store_seed, Seed,
 };
 use hivra_ed25519_crypto::Ed25519CryptoProvider;
-use hivra_nostr_crypto::NostrCryptoProvider;
 use hivra_transport::nostr::{NostrConfig, NostrTransport};
 use hivra_transport::{Message, Transport, TransportError};
 use nostr_sdk::prelude::{Keys, SecretKey};

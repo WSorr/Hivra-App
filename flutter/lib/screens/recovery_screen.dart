@@ -61,28 +61,12 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       final phrase = _phraseController.text.trim();
       final seed = _hivra.mnemonicToSeed(phrase);
       bool isGenesisRecovered = _selectedBackupIsGenesis ?? false;
-      var identityMode = 'root_owner';
-
-      if (_selectedBackupLedgerJson != null) {
-        final expectedOwner = _extractOwnerHexFromLedger(_selectedBackupLedgerJson!);
-        final rootKey = _hivra.seedRootPublicKey(seed);
-        final nostrKey = _hivra.seedNostrPublicKey(seed);
-        final rootHex = rootKey == null ? null : _bytesToHex(rootKey);
-        final nostrHex = nostrKey == null ? null : _bytesToHex(nostrKey);
-        if (expectedOwner != null && expectedOwner == nostrHex) {
-          identityMode = 'legacy_nostr_owner';
-        } else if (expectedOwner != null && expectedOwner == rootHex) {
-          identityMode = 'root_owner';
-        }
-      }
 
       // Start from backup hint when available; otherwise Proto fallback.
       final createError = _hivra.createCapsuleError(
         seed,
         isGenesis: isGenesisRecovered,
-        ownerMode: identityMode == 'root_owner'
-            ? HivraBindings.rootOwnerMode
-            : HivraBindings.legacyNostrOwnerMode,
+        ownerMode: HivraBindings.rootOwnerMode,
       );
       if (createError != null) {
         throw Exception(createError);
@@ -113,9 +97,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
         final recreateError = _hivra.createCapsuleError(
           seed,
           isGenesis: isGenesisRecovered,
-          ownerMode: identityMode == 'root_owner'
-              ? HivraBindings.rootOwnerMode
-              : HivraBindings.legacyNostrOwnerMode,
+          ownerMode: HivraBindings.rootOwnerMode,
         );
         if (recreateError != null) {
           throw Exception(recreateError);

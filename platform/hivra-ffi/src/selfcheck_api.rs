@@ -1,6 +1,6 @@
 use super::*;
 
-/// Basic crypto adapter self-check.
+/// Root runtime signing self-check.
 ///
 /// Returns:
 /// - 0 on success
@@ -12,23 +12,33 @@ pub unsafe extern "C" fn hivra_crypto_self_check() -> i32 {
         Err(_) => return -1,
     };
 
-    let privkey = match derive_nostr_keypair(&seed) {
+    let privkey = match derive_root_keypair(&seed) {
         Ok(key) => key,
         Err(_) => return -2,
     };
+    let pubkey = match derive_root_public_key(&seed) {
+        Ok(key) => key,
+        Err(_) => return -3,
+    };
 
-    let provider = NostrCryptoProvider::new();
+    let provider = Ed25519CryptoProvider::new();
     let msg = [0x42u8; 32];
 
-    match provider.sign(&msg, &privkey) {
+    let sig = match provider.sign(&msg, &privkey) {
+        Ok(sig) => sig,
+        Err(_) => return -4,
+    };
+
+    match provider.verify(&msg, &pubkey, &sig) {
         Ok(_) => 0,
-        Err(_) => -3,
+        Err(_) => -5,
     }
 }
 
-/// End-to-end self-check for the prepared-send path.
+/// End-to-end self-check for the Nostr prepared-send path.
 ///
-/// This validates the migration path where transport does not own signing.
+/// This remains transport-specific and validates the migration path where
+/// transport does not own signing.
 ///
 /// Returns:
 /// - 0 on success
