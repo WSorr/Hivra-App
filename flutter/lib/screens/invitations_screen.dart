@@ -404,6 +404,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           i,
     ];
     int? selectedSlot = availableSlots.isNotEmpty ? availableSlots.first : null;
+    String? formError;
 
     showModalBottomSheet(
       context: context,
@@ -427,12 +428,18 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: controller,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Recipient Public Key',
-                                        hintText: 'h... / npub...',
+                    hintText: 'h... / npub / nostr hex / base64',
                     border: OutlineInputBorder(),
+                    errorText: formError,
                   ),
                   maxLines: 2,
+                  onChanged: (_) {
+                    if (formError != null) {
+                      setModalState(() => formError = null);
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
                 const Align(
@@ -528,20 +535,21 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                     onPressed: selectedSlot == null
                         ? null
                         : () async {
-                            final messenger =
-                                ScaffoldMessenger.of(this.context);
                             final input = controller.text.trim();
+                            final selfRootKey = widget.hivra.capsuleRootPublicKey();
+                            final selfNostrKey = widget.hivra.capsuleNostrPublicKey();
                             final resolution =
-                                await _delivery.resolveRecipientAddress(input);
+                                await _delivery.resolveRecipientAddress(
+                              input,
+                              selfRootKey: selfRootKey,
+                              selfNostrKey: selfNostrKey,
+                            );
                             final slot = selectedSlot;
                             if (!resolution.isSuccess || slot == null) {
-                              messenger.showSnackBar(
-                                SnackBar(
-                                  content: Text(
+                              setModalState(
+                                () => formError =
                                     resolution.errorMessage ??
-                                        'Could not resolve recipient address',
-                                  ),
-                                ),
+                                    'Could not resolve recipient address',
                               );
                               return;
                             }

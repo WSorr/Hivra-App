@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models/relationship_peer_group.dart';
 import '../models/relationship.dart';
+import '../models/starter.dart';
 import 'ledger_view_support.dart';
 
 class RelationshipProjectionService {
@@ -17,14 +18,15 @@ class RelationshipProjectionService {
       final kind = _support.kindCode(e['kind']);
       final payload = _support.payloadBytes(e['payload']);
       final timestamp = _support.eventTime(e['timestamp']);
-      if (kind == 7 && payload.length == 97) {
-        final key =
-            '${base64.encode(payload.sublist(0, 32))}:${base64.encode(payload.sublist(32, 64))}';
+      if (kind == 7) {
+        final established = _parseRelationshipEstablished(payload);
+        if (established == null) continue;
+        final key = '${established.peerPubkey}:${established.ownStarterId}';
         byKey[key] = Relationship(
-          peerPubkey: base64.encode(payload.sublist(0, 32)),
-          kind: _support.starterKindFromByte(payload[96]),
-          ownStarterId: base64.encode(payload.sublist(32, 64)),
-          peerStarterId: base64.encode(payload.sublist(64, 96)),
+          peerPubkey: established.peerPubkey,
+          kind: established.kind,
+          ownStarterId: established.ownStarterId,
+          peerStarterId: established.peerStarterId,
           establishedAt: timestamp,
           isActive: true,
         );
@@ -69,4 +71,35 @@ class RelationshipProjectionService {
     groups.sort((a, b) => b.latestEstablishedAt.compareTo(a.latestEstablishedAt));
     return groups;
   }
+
+  _ProjectedRelationship? _parseRelationshipEstablished(List<int> payload) {
+    // Legacy payload:
+    //   peer(32) + ownStarter(32) + peerStarter(32) + kind(1) = 97 bytes
+    // Current payload adds provenance after the first 97 bytes:
+    //   + invitationId(32) + senderPubkey(32) + senderStarterType(1) + senderStarterId(32)
+    if (payload.length != 97 && payload.length != 194) {
+      return null;
+    }
+
+    return _ProjectedRelationship(
+      peerPubkey: base64.encode(payload.sublist(0, 32)),
+      ownStarterId: base64.encode(payload.sublist(32, 64)),
+      peerStarterId: base64.encode(payload.sublist(64, 96)),
+      kind: _support.starterKindFromByte(payload[96]),
+    );
+  }
+}
+
+class _ProjectedRelationship {
+  final String peerPubkey;
+  final String ownStarterId;
+  final String peerStarterId;
+  final StarterKind kind;
+
+  const _ProjectedRelationship({
+    required this.peerPubkey,
+    required this.ownStarterId,
+    required this.peerStarterId,
+    required this.kind,
+  });
 }

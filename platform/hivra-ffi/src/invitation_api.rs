@@ -455,6 +455,21 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
         Ok(seed) => seed,
         Err(_) => return -3,
     };
+
+    {
+        let runtime = RUNTIME.lock().unwrap();
+        if runtime.capsule.is_none() {
+            return -4;
+        }
+    }
+
+    let (transport, sender_pubkey) = match load_invitation_delivery_context(&seed) {
+        Ok(context) => context,
+        Err(-3) => return -4,
+        Err(-5) => return -5,
+        Err(_) => return -5,
+    };
+
     let engine = build_engine(&seed);
     let peer_pubkey = match find_invitation_sent_in_runtime(&invitation_id) {
         Some((_, _, peer_pubkey, _)) => peer_pubkey,
@@ -465,6 +480,25 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
             Ok(prepared) => prepared,
             Err(_) => return -4,
         };
+
+    let payload_bytes = prepared.event.payload().to_vec();
+
+    if event_exists_in_runtime(EventKind::InvitationRejected, &payload_bytes) {
+        return 0;
+    }
+
+    let message = Message {
+        from: sender_pubkey,
+        to: *peer_pubkey.as_bytes(),
+        kind: EventKind::InvitationRejected as u32,
+        payload: payload_bytes,
+        timestamp: prepared.event.timestamp().as_u64(),
+        invitation_id: Some(invitation_id),
+    };
+
+    if let Err(code) = send_delivery_message(&transport, message, -6, "InvitationRejected") {
+        return code;
+    }
 
     match append_prepared_event(prepared) {
         Ok(_) => 0,

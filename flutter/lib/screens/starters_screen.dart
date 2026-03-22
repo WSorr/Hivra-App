@@ -63,102 +63,113 @@ class _StartersScreenState extends State<StartersScreen> {
 
   Future<void> _showInviteDialog(Map<String, dynamic> slot) async {
     final TextEditingController pubkeyController = TextEditingController();
+    String? formError;
     
     return showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Invite with ${slot['type']}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Enter recipient public key:'),
-            const SizedBox(height: 8),
-            const Text(
-              'Supports: h... (if imported) or another supported delivery address',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: pubkeyController,
-              decoration: const InputDecoration(
-                hintText: 'Public key',
-                border: OutlineInputBorder(),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Invite with ${slot['type']}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Enter recipient public key:'),
+              const SizedBox(height: 8),
+              const Text(
+                'Supports: h... (if imported) or another supported delivery address',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
-              maxLines: 2,
+              const SizedBox(height: 16),
+              TextField(
+                controller: pubkeyController,
+                decoration: InputDecoration(
+                  hintText: 'Public key',
+                  border: const OutlineInputBorder(),
+                  errorText: formError,
+                ),
+                maxLines: 2,
+                onChanged: (_) {
+                  if (formError != null) {
+                    setDialogState(() => formError = null);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final navigator = Navigator.of(context);
+                final messenger = ScaffoldMessenger.of(this.context);
+                final input = pubkeyController.text.trim();
+                if (input.isEmpty) {
+                  setDialogState(
+                    () => formError =
+                        'Please enter a capsule address or delivery address',
+                  );
+                  return;
+                }
+
+                final resolution = await _delivery.resolveRecipientAddress(
+                  input,
+                  selfRootKey: widget.hivra.capsuleRootPublicKey(),
+                  selfNostrKey: widget.hivra.capsuleNostrPublicKey(),
+                );
+                if (!resolution.isSuccess) {
+                  setDialogState(
+                    () => formError =
+                        resolution.errorMessage ??
+                        'Could not resolve recipient address',
+                  );
+                  return;
+                }
+
+                try {
+                  final slotIndex = slot['index'] is int ? slot['index'] as int : -1;
+                  if (slotIndex < 0 || slotIndex > 4) {
+                    throw Exception('Invalid starter slot');
+                  }
+
+                  final sent = widget.hivra.deliverInvitation(
+                    resolution.transportRecipient!,
+                    slotIndex,
+                  );
+                  if (!sent) {
+                    throw Exception('transport send failed');
+                  }
+
+                  final persisted = await _persistence.persistLedgerSnapshot(widget.hivra);
+                  if (!persisted) {
+                    throw Exception('ledger snapshot was not saved');
+                  }
+
+                  navigator.pop();
+                  if (!mounted) return;
+                  final peerPreview = input.length <= 8 ? input : '${input.substring(0, 8)}...';
+                  messenger.showSnackBar(
+                    SnackBar(content: Text('Invitation sent to $peerPreview')),
+                  );
+
+                  setState(() {
+                    slot['locked'] = true;
+                  });
+                  _loadSlots();
+                  await widget.onLedgerChanged?.call();
+                } catch (e) {
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(content: Text('Failed to send: $e')),
+                  );
+                }
+              },
+              child: const Text('Send Invitation'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final navigator = Navigator.of(context);
-              final messenger = ScaffoldMessenger.of(this.context);
-              final input = pubkeyController.text.trim();
-              if (input.isEmpty) {
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Please enter public key')),
-                );
-                return;
-              }
-              
-              final resolution = await _delivery.resolveRecipientAddress(input);
-              if (!resolution.isSuccess) {
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      resolution.errorMessage ??
-                          'Could not resolve recipient address',
-                    ),
-                  ),
-                );
-                return;
-              }
-              
-              try {
-                final slotIndex = slot['index'] is int ? slot['index'] as int : -1;
-                if (slotIndex < 0 || slotIndex > 4) {
-                  throw Exception('Invalid starter slot');
-                }
-
-                final sent = widget.hivra.sendInvitation(
-                  resolution.transportRecipient!,
-                  slotIndex,
-                );
-                if (!sent) {
-                  throw Exception('transport send failed');
-                }
-
-                final persisted = await _persistence.persistLedgerSnapshot(widget.hivra);
-                if (!persisted) {
-                  throw Exception('ledger snapshot was not saved');
-                }
-
-                navigator.pop();
-                if (!mounted) return;
-                final peerPreview = input.length <= 8 ? input : '${input.substring(0, 8)}...';
-                messenger.showSnackBar(
-                  SnackBar(content: Text('Invitation sent to $peerPreview')),
-                );
-
-                setState(() {
-                  slot['locked'] = true;
-                });
-                _loadSlots();
-                await widget.onLedgerChanged?.call();
-              } catch (e) {
-                if (!mounted) return;
-                messenger.showSnackBar(
-                  SnackBar(content: Text('Failed to send: $e')),
-                );
-              }
-            },
-            child: const Text('Send Invitation'),
-          ),
-        ],
       ),
     );
   }

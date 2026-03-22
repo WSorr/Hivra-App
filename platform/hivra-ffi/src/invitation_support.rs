@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime_support::starter_is_active_in_runtime;
 
 pub(crate) fn find_invitation_sent_in_runtime(
     invitation_id: &[u8; 32],
@@ -176,9 +177,7 @@ fn append_starter_created_if_missing(
     let prepared = engine
         .prepare_starter_created(starter_id, nonce, kind, network)
         .map_err(|_| "prepare failed")?;
-    let payload_bytes = prepared.event.payload().to_vec();
-
-    if event_exists_in_runtime(EventKind::StarterCreated, &payload_bytes) {
+    if starter_is_active_in_runtime(starter_id) {
         return Ok(());
     }
 

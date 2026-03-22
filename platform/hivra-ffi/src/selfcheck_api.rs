@@ -35,10 +35,11 @@ pub unsafe extern "C" fn hivra_crypto_self_check() -> i32 {
     }
 }
 
-/// End-to-end self-check for the Nostr prepared-send path.
+/// End-to-end self-check for the current delivery prepared-send path.
 ///
-/// This remains transport-specific and validates the migration path where
-/// transport does not own signing.
+/// The current implementation still exercises the Nostr adapter, but the
+/// purpose of this check is delivery-path validation rather than transport
+/// naming exposure in higher layers.
 ///
 /// Returns:
 /// - 0 on success

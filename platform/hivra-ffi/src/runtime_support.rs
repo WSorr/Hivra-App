@@ -402,3 +402,13 @@ pub(crate) fn find_starter_kind_by_id_in_runtime(starter_id: &[u8; 32]) -> Optio
 
     None
 }
+
+pub(crate) fn starter_is_active_in_runtime(starter_id: StarterId) -> bool {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return false;
+    };
+
+    let layout = hivra_core::slot::SlotLayout::from_ledger(&capsule.ledger);
+    layout.find_by_starter(starter_id).is_some()
+}

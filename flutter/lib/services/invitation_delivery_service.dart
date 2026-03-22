@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'capsule_address_service.dart';
+import '../utils/hivra_id_format.dart';
 
 class InvitationRecipientResolution {
   final Uint8List? transportRecipient;
@@ -34,12 +35,21 @@ class InvitationDeliveryService {
   final CapsuleAddressService _contactCards;
 
   Future<InvitationRecipientResolution> resolveRecipientAddress(
-    String input,
+    String input, {
+    Uint8List? selfRootKey,
+    Uint8List? selfNostrKey,
+  }
   ) async {
     final value = input.trim();
     if (value.isEmpty) {
       return InvitationRecipientResolution.failure(
         'Please enter a capsule address',
+      );
+    }
+
+    if (_isSelfAddress(value, selfRootKey: selfRootKey, selfNostrKey: selfNostrKey)) {
+      return InvitationRecipientResolution.failure(
+        "You can't invite this capsule to itself.",
       );
     }
 
@@ -60,7 +70,7 @@ class InvitationDeliveryService {
     }
 
     return InvitationRecipientResolution.failure(
-      'Use a capsule key (h...) with an imported contact card, or a supported delivery address.',
+      'Use a capsule key (h...) with an imported capsule card, or a direct delivery address (npub, 64-hex, or base64).',
     );
   }
 
@@ -167,4 +177,40 @@ class InvitationDeliveryService {
       'Fetched invitation deliveries: $count new event(s)';
 
   String invitationSentMessage() => 'Invitation sent';
+
+  bool _isSelfAddress(
+    String input, {
+    Uint8List? selfRootKey,
+    Uint8List? selfNostrKey,
+  }) {
+    final trimmed = input.trim();
+
+    if (selfRootKey != null && selfRootKey.length == 32) {
+      final selfRootH = HivraIdFormat.formatCapsuleKeyBytes(
+        Uint8List.fromList(selfRootKey),
+      );
+      final parsedRoot = _contactCards.decodeRootKey(trimmed);
+      if (trimmed == selfRootH ||
+          (parsedRoot != null && _sameBytes(parsedRoot, selfRootKey))) {
+        return true;
+      }
+    }
+
+    if (selfNostrKey != null && selfNostrKey.length == 32) {
+      final parsedDirect = _contactCards.decodeDirectNostrRecipient(trimmed);
+      if (parsedDirect != null && _sameBytes(parsedDirect, selfNostrKey)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  bool _sameBytes(Uint8List a, Uint8List b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 }

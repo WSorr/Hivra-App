@@ -151,8 +151,8 @@ typedef HivraBreakRelationshipDart = int Function(
   Pointer<Uint8> peerStarterId,
 );
 
-typedef HivraNostrSendPreparedSelfCheckC = Int32 Function();
-typedef HivraNostrSendPreparedSelfCheckDart = int Function();
+typedef HivraDeliveryPreparedSelfCheckC = Int32 Function();
+typedef HivraDeliveryPreparedSelfCheckDart = int Function();
 
 typedef HivraExportLedgerC = Int32 Function(Pointer<Pointer<Int8>> outJson);
 typedef HivraExportLedgerDart = int Function(Pointer<Pointer<Int8>> outJson);
@@ -235,7 +235,7 @@ class HivraBindings {
   HivraRejectInvitationDart? _rejectInvitation;
   HivraExpireInvitationDart? _expireInvitation;
   HivraBreakRelationshipDart? _breakRelationship;
-  HivraNostrSendPreparedSelfCheckDart? _nostrSendPreparedSelfCheck;
+  HivraDeliveryPreparedSelfCheckDart? _deliveryPreparedSelfCheck;
   late final HivraExportLedgerDart _exportLedger;
   late final HivraImportLedgerDart _importLedger;
   late final HivraLedgerAppendEventDart _ledgerAppendEvent;
@@ -387,11 +387,11 @@ class HivraBindings {
         .asFunction();
 
     try {
-      _nostrSendPreparedSelfCheck = _lib
-          .lookup<NativeFunction<HivraNostrSendPreparedSelfCheckC>>('hivra_nostr_send_prepared_self_check')
+      _deliveryPreparedSelfCheck = _lib
+          .lookup<NativeFunction<HivraDeliveryPreparedSelfCheckC>>('hivra_nostr_send_prepared_self_check')
           .asFunction();
     } catch (_) {
-      _nostrSendPreparedSelfCheck = null;
+      _deliveryPreparedSelfCheck = null;
     }
   }
 
@@ -584,7 +584,7 @@ class HivraBindings {
 
   bool starterExists(int slot) => _starterExists(slot) != 0;
 
-  int sendInvitationCode(Uint8List toPubkey, int starterSlot) {
+  int deliverInvitationCode(Uint8List toPubkey, int starterSlot) {
     if (toPubkey.length != 32 || starterSlot < 0 || starterSlot > 4) return -1;
     final toPtr = calloc<Uint8>(32);
     try {
@@ -599,22 +599,13 @@ class HivraBindings {
     }
   }
 
-  bool sendInvitation(Uint8List toPubkey, int starterSlot) =>
-      sendInvitationCode(toPubkey, starterSlot) == 0;
-
-  int deliverInvitationCode(Uint8List toPubkey, int starterSlot) =>
-      sendInvitationCode(toPubkey, starterSlot);
-
   bool deliverInvitation(Uint8List toPubkey, int starterSlot) =>
       deliverInvitationCode(toPubkey, starterSlot) == 0;
 
-  int receiveTransportMessages() => _transportReceive?.call() ?? -1002;
+  int fetchInvitationDeliveries() => _transportReceive?.call() ?? -1002;
 
-  int receiveTransportMessagesQuick() => _transportReceiveQuick?.call() ?? -1002;
-
-  int fetchInvitationDeliveries() => receiveTransportMessages();
-
-  int fetchInvitationDeliveriesQuick() => receiveTransportMessagesQuick();
+  int fetchInvitationDeliveriesQuick() =>
+      _transportReceiveQuick?.call() ?? -1002;
 
   int acceptInvitationCode(Uint8List invitationId, Uint8List fromPubkey, Uint8List createdStarterId) {
     if (invitationId.length != 32 || fromPubkey.length != 32 || createdStarterId.length != 32) {
@@ -702,9 +693,7 @@ class HivraBindings {
     }
   }
 
-  int nostrSendPreparedSelfCheck() => _nostrSendPreparedSelfCheck?.call() ?? -1001;
-
-  int deliveryPreparedSelfCheck() => nostrSendPreparedSelfCheck();
+  int deliveryPreparedSelfCheck() => _deliveryPreparedSelfCheck?.call() ?? -1001;
 
   String? exportLedger() {
     final outPtr = calloc<Pointer<Int8>>();

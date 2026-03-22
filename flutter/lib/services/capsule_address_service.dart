@@ -189,6 +189,16 @@ class CapsuleAddressService {
       } catch (_) {}
     }
 
+    final hex = _decodeHex32(value);
+    if (hex != null) return hex;
+
+    try {
+      final bytes = base64.decode(value);
+      if (bytes.length == 32) {
+        return Uint8List.fromList(bytes);
+      }
+    } catch (_) {}
+
     return null;
   }
 

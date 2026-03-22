@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'starter.dart';
+import '../utils/hivra_id_format.dart';
 
 enum InvitationStatus {
   pending('Pending', Colors.orange),
@@ -48,6 +49,15 @@ class Invitation {
   bool get isIncoming => toPubkey == null;
   bool get isOutgoing => toPubkey != null;
   bool get isExpired => expiresAt != null && expiresAt!.isBefore(DateTime.now());
+
+  String get peerKeyDisplay {
+    final raw = isIncoming ? fromPubkey : (toPubkey ?? '');
+    if (raw.isEmpty) return 'unknown';
+    return HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyFromBase64(raw));
+  }
+
+  String get invitationIdDisplay =>
+      HivraIdFormat.short(HivraIdFormat.formatStarterIdFromBase64(id));
 
   // Mock data for testing
   static List<Invitation> mock() {

@@ -4,6 +4,7 @@ import '../ffi/hivra_bindings.dart';
 import '../services/capsule_address_service.dart';
 import '../services/capsule_persistence_service.dart';
 import '../services/capsule_state_manager.dart';
+import '../utils/hivra_id_format.dart';
 
 class SettingsScreen extends StatefulWidget {
   final HivraBindings hivra;
@@ -113,30 +114,175 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _importPeerCardFromClipboard() async {
-    final data = await Clipboard.getData('text/plain');
-    final raw = data?.text?.trim();
-    if (raw == null || raw.isEmpty) {
+  Future<void> _showOwnCardDialog() async {
+    final json = await _contactCards.exportOwnCardJson(widget.hivra);
+    if (json == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clipboard is empty')),
+        const SnackBar(content: Text('Could not build capsule card')),
       );
       return;
     }
 
-    try {
-      await _contactCards.importCardJson(raw);
-      await _loadContactCount();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Peer capsule card imported')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Import failed: $e')),
-      );
-    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('My capsule card'),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: SelectableText(json),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: json));
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Capsule card copied')),
+              );
+            },
+            icon: const Icon(Icons.copy),
+            label: const Text('Copy'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _importPeerCard() async {
+    final data = await Clipboard.getData('text/plain');
+    final controller = TextEditingController(text: data?.text?.trim() ?? '');
+    String? errorText;
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Import peer capsule card'),
+          content: SizedBox(
+            width: 560,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Paste the JSON capsule card shared by the other capsule.',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  minLines: 8,
+                  maxLines: 16,
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    hintText: '{ "version": 1, ... }',
+                    errorText: errorText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final clipboard = await Clipboard.getData('text/plain');
+                controller.text = clipboard?.text?.trim() ?? '';
+                setDialogState(() => errorText = null);
+              },
+              child: const Text('Paste clipboard'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final raw = controller.text.trim();
+                if (raw.isEmpty) {
+                  setDialogState(() => errorText = 'Card JSON is empty');
+                  return;
+                }
+                try {
+                  await _contactCards.importCardJson(raw);
+                  await _loadContactCount();
+                  if (!dialogContext.mounted) return;
+                  Navigator.of(dialogContext).pop();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Peer capsule card imported')),
+                  );
+                } catch (e) {
+                  setDialogState(() => errorText = '$e');
+                }
+              },
+              child: const Text('Import'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showTrustedPeerCards() async {
+    final cards = await _contactCards.listTrustedCards();
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Trusted peer cards'),
+          content: SizedBox(
+            width: 620,
+            child: cards.isEmpty
+                ? const Text('No trusted peer cards imported yet.')
+                : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: cards.length,
+                    separatorBuilder: (_, __) => const Divider(height: 16),
+                    itemBuilder: (context, index) {
+                      final card = cards[index];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.person_outline),
+                        title: Text(HivraIdFormat.short(card.rootKey)),
+                        subtitle: Text(
+                          'Nostr ${HivraIdFormat.short(card.nostrNpub)}',
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: 'Remove',
+                          onPressed: () async {
+                            final removed =
+                                await _contactCards.removeTrustedCard(card.rootKey);
+                            if (!removed) return;
+                            cards.removeAt(index);
+                            await _loadContactCount();
+                            if (!dialogContext.mounted) return;
+                            setDialogState(() {});
+                          },
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -254,16 +400,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: _copyContactCard,
               ),
               ListTile(
+                leading: const Icon(Icons.qr_code_2),
+                title: const Text('Show my capsule card'),
+                subtitle: const Text('View the JSON shared with remote peers'),
+                onTap: _showOwnCardDialog,
+              ),
+              ListTile(
                 leading: const Icon(Icons.download),
-                title: const Text('Import peer card from clipboard'),
-                subtitle: const Text('Import a trusted peer capsule card'),
-                onTap: _importPeerCardFromClipboard,
+                title: const Text('Import peer capsule card'),
+                subtitle: const Text('Paste JSON from clipboard or message'),
+                onTap: _importPeerCard,
               ),
               ListTile(
                 leading: const Icon(Icons.people),
                 title: const Text('Trusted peer cards'),
                 subtitle: Text('$_contactCount saved'),
-                onTap: null,
+                onTap: _showTrustedPeerCards,
               ),
             ],
           ),
