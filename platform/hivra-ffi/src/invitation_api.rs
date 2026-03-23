@@ -516,6 +516,12 @@ pub unsafe extern "C" fn hivra_expire_invitation(invitation_id_ptr: *const u8) -
     let mut invitation_id = [0u8; 32];
     invitation_id.copy_from_slice(std::slice::from_raw_parts(invitation_id_ptr, 32));
 
+    // Do not append a weaker terminal fact after the invitation is already
+    // accepted, rejected, or expired in local runtime state.
+    if invitation_is_resolved_in_runtime(&invitation_id) {
+        return 0;
+    }
+
     let seed = match load_seed() {
         Ok(seed) => seed,
         Err(_) => return -2,

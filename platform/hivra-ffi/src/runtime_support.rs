@@ -1,4 +1,7 @@
 use super::*;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static LAST_ENGINE_TS_MS: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 pub(crate) struct RuntimeState {
@@ -9,10 +12,24 @@ pub(crate) struct FfiTimeSource;
 
 impl TimeSource for FfiTimeSource {
     fn now(&self) -> u64 {
-        SystemTime::now()
+        let current = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
+            .unwrap_or(0);
+
+        let mut observed = LAST_ENGINE_TS_MS.load(Ordering::Relaxed);
+        loop {
+            let next = current.max(observed.saturating_add(1));
+            match LAST_ENGINE_TS_MS.compare_exchange_weak(
+                observed,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return next,
+                Err(actual) => observed = actual,
+            }
+        }
     }
 }
 

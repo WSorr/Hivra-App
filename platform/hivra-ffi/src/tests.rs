@@ -227,6 +227,81 @@ fn incoming_empty_slot_reject_burns_sender_starter() {
 }
 
 #[test]
+fn burned_starter_can_be_recreated_on_later_accept() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(91);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let inviter_pubkey = [33u8; 32];
+    let first_invitation_id = [41u8; 32];
+    let second_invitation_id = [42u8; 32];
+    let slot = 0u8;
+    let local_starter_id = derive_starter_id(&local_seed, slot);
+    let peer_starter_id = derive_starter_id(&test_seed(92), slot);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(local_starter_id),
+            nonce: derive_starter_nonce(&local_seed, slot),
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    append_invitation_sent_for_test(
+        first_invitation_id,
+        local_starter_id,
+        inviter_pubkey,
+        Some(slot),
+        None,
+    );
+
+    let engine = build_engine(&local_seed);
+    project_effects_from_invitation_rejected(
+        &engine,
+        &InvitationRejectedPayload {
+            invitation_id: first_invitation_id,
+            reason: RejectReason::EmptySlot,
+        },
+    )
+    .unwrap();
+
+    append_invitation_sent_for_test(
+        second_invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(slot),
+        Some(inviter_pubkey),
+    );
+
+    let acceptance_plan = resolve_local_acceptance_plan(&local_seed, second_invitation_id).unwrap();
+    assert_eq!(
+        acceptance_plan.relationship_starter_id.as_bytes(),
+        &local_starter_id,
+    );
+    assert!(acceptance_plan.created_starter.is_some());
+
+    finalize_local_acceptance(&engine, &acceptance_plan, inviter_pubkey).unwrap();
+
+    let recreated_count = runtime_events()
+        .into_iter()
+        .filter(|event| {
+            event.kind() == EventKind::StarterCreated
+                && StarterCreatedPayload::from_bytes(event.payload())
+                    .is_ok_and(|payload| payload.starter_id.as_bytes() == &local_starter_id)
+        })
+        .count();
+
+    assert_eq!(recreated_count, 2);
+}
+
+#[test]
 fn relationship_broken_payload_tracks_specific_local_starter() {
     let payload = RelationshipBrokenPayload {
         peer_pubkey: PubKey::from([9u8; 32]),
