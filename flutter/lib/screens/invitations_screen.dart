@@ -120,6 +120,14 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     await widget.onLedgerChanged?.call();
   }
 
+  List<String> _activePeerPubkeys() {
+    return LedgerViewService(widget.hivra)
+        .loadRelationshipGroups()
+        .where((group) => group.isActive)
+        .map((group) => group.peerPubkey)
+        .toList(growable: false);
+  }
+
   Future<void> _sendInvitationAsync(Uint8List pubkey, int slot) async {
     final bootstrap = await _loadWorkerBootstrap();
     if (bootstrap == null) {
@@ -538,6 +546,30 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                             final input = controller.text.trim();
                             final selfRootKey = widget.hivra.capsuleRootPublicKey();
                             final selfNostrKey = widget.hivra.capsuleNostrPublicKey();
+                            final alreadyConnected =
+                                await _delivery.blockIfAlreadyConnected(
+                              input,
+                              activePeerPubkeys: _activePeerPubkeys(),
+                            );
+                            if (alreadyConnected.errorMessage != null) {
+                              setModalState(
+                                () => formError = alreadyConnected.errorMessage,
+                              );
+                              if (alreadyConnected.shouldOpenRelationships &&
+                                  sheetContext.mounted &&
+                                  mounted) {
+                                Navigator.of(sheetContext).pop();
+                                ScaffoldMessenger.of(this.context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Open Relationships to manage this connection.',
+                                    ),
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+
                             final resolution =
                                 await _delivery.resolveRecipientAddress(
                               input,

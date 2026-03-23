@@ -317,18 +317,40 @@ When tradeoffs are unclear, prefer:
 5. release discipline over speed theater
 
 - `9.4 Root-Scoped Pairwise Consensus Truth`
-  - Current ledger relationship provenance still anchors the peer on transport identity, not peer root identity.
-  - True root-scoped `pairwise consensus snapshot v1` cannot be derived from ledger alone until peer root identity is carried in shared relationship/invitation provenance.
+  - Current shared truth still anchors peers on transport identity, not peer root identity.
+  - True root-scoped `pairwise consensus snapshot v1` cannot be derived from ledger alone until peer root identity is carried through invitation lineage and then anchored in relationship events.
+  - Invitation lineage must first carry peer root truth so both sides can derive the same pair identity during accept/projection.
+  - Relationship events then become the root-aware pair anchor:
+    - extend `RelationshipEstablished` with `peer_root_pubkey` and `sender_root_pubkey`
+    - extend `RelationshipBroken` with `peer_root_pubkey` so break operates on the same root-scoped pair truth
+  - Keep invitation transport payloads delivery-oriented where possible, but stop losing root provenance in the shared lineage.
   - Keep current inspector snapshot explicitly transport-scoped until ledger truth is expanded.
 
 - `9.5 Ledger-Gated Capsule UI`
   - Capsule UI should treat the local ledger as the primary source of domain truth once any ledger history exists.
   - If the ledger is empty, enter an explicit awaiting-history state instead of projecting starters, invitations, and relationships from runtime slot probes.
   - Rebuild UI state immediately after any ledger mutation source: local create/init, JSON import, backup restore, or transport-delivered events.
+  - When a user targets an already-connected peer with a repeated starter action that would not create a meaningful new ledger fact, redirect them into relationship management instead of fabricating invitation history.
   - Keep bootstrap/runtime fallback only for truly empty-ledger birth state, not as the normal steady-state source of capsule truth.
 
 - `9.6 Ledger-Derived Slot Projection In Flutter`
   - Core already provides deterministic slot projection via `SlotLayout::from_ledger` and `CapsuleState::from_capsule`.
   - Flutter still relies on legacy per-slot FFI probing (`starterExists/getStarterId/getStarterType`) instead of consuming the same ledger-derived slot truth.
   - Replace slot-by-slot probing with a single ledger-derived slot projection path so UI follows the same domain rules as core and reduces secure-store chatter.
+
+- `9.7 Local Relationship Sovereignty And Pairwise Consensus`
+  - Each capsule remains sovereign over its own relationship truth: one side may append `RelationshipBroken` locally without waiting for remote approval.
+  - A break should still emit a remote notification so the peer can accept the break and converge onto the same pairwise state.
+  - The remote side should not get a reject path for break-notifications; this is closer to accepting a delivered fact than negotiating a new invite.
+  - Repeated starter sends toward an already-connected peer should not be silently repurposed into break semantics or other hidden ledger mutations.
+  - Relationship mutation remains explicit: if the user wants to change or break an existing connection, route them to `Relationships` rather than recording a new invitation-shaped fact.
+  - Resulting model:
+    - local break is immediately valid for the initiator
+    - remote break notification remains in ledger and continues to project as pending until accepted
+    - pairwise consensus exists only after the peer also accepts the break notification
+    - if consensus is absent, pair-scoped smart contracts must not execute
+    - any future pair-scoped contract with that capsule remains blocked until the old pending break is resolved
+    - disagreement about one peer must not affect relationships or contracts with other capsules
+  - UI implication: break-notification should be presented as a pending state transition to accept, not as a bidirectional accept/reject negotiation, and repeated send attempts against an already-connected peer should open relationship management instead of appending history.
+  - Current local/runtime behavior may auto-apply remote break immediately, especially in single-app local testing; target behavior should preserve a pending remote break until explicit acceptance.
 

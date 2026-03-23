@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'capsule_address_service.dart';
@@ -6,10 +7,12 @@ import '../utils/hivra_id_format.dart';
 class InvitationRecipientResolution {
   final Uint8List? transportRecipient;
   final String? errorMessage;
+  final bool shouldOpenRelationships;
 
   const InvitationRecipientResolution._({
     required this.transportRecipient,
     required this.errorMessage,
+    this.shouldOpenRelationships = false,
   });
 
   factory InvitationRecipientResolution.success(Uint8List recipient) =>
@@ -18,10 +21,14 @@ class InvitationRecipientResolution {
         errorMessage: null,
       );
 
-  factory InvitationRecipientResolution.failure(String message) =>
+  factory InvitationRecipientResolution.failure(
+    String message, {
+    bool shouldOpenRelationships = false,
+  }) =>
       InvitationRecipientResolution._(
         transportRecipient: null,
         errorMessage: message,
+        shouldOpenRelationships: shouldOpenRelationships,
       );
 
   bool get isSuccess => transportRecipient != null;
@@ -177,6 +184,54 @@ class InvitationDeliveryService {
       'Fetched invitation deliveries: $count new event(s)';
 
   String invitationSentMessage() => 'Invitation sent';
+
+  Future<InvitationRecipientResolution> blockIfAlreadyConnected(
+    String input, {
+    required List<String> activePeerPubkeys,
+  }) async {
+    final value = input.trim();
+    if (value.isEmpty) {
+      return const InvitationRecipientResolution._(
+        transportRecipient: null,
+        errorMessage: null,
+      );
+    }
+
+    final recipient = await _contactCards.resolveTransportEndpoint(
+      value,
+      transport: 'nostr',
+    );
+    if (recipient == null) {
+      return const InvitationRecipientResolution._(
+        transportRecipient: null,
+        errorMessage: null,
+      );
+    }
+
+    for (final peerB64 in activePeerPubkeys) {
+      final decoded = _decodeBase6432(peerB64);
+      if (decoded != null && _sameBytes(decoded, recipient)) {
+        return InvitationRecipientResolution.failure(
+          'This capsule is already connected. Use Relationships to manage the connection.',
+          shouldOpenRelationships: true,
+        );
+      }
+    }
+
+    return const InvitationRecipientResolution._(
+      transportRecipient: null,
+      errorMessage: null,
+    );
+  }
+
+  Uint8List? _decodeBase6432(String value) {
+    try {
+      final bytes = Uint8List.fromList(base64.decode(value));
+      return bytes.length == 32 ? bytes : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   bool _isSelfAddress(
     String input, {
