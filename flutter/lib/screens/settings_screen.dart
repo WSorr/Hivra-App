@@ -8,14 +8,19 @@ import '../utils/hivra_id_format.dart';
 
 class SettingsScreen extends StatefulWidget {
   final HivraBindings hivra;
+  final Future<void> Function()? onLedgerChanged;
 
-  const SettingsScreen({super.key, required this.hivra});
+  const SettingsScreen({super.key, required this.hivra, this.onLedgerChanged});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  Future<void> _notifyLedgerChanged() async {
+    await widget.onLedgerChanged?.call();
+  }
+
   bool _isNeste = true;
   bool _isRelay = false;
   final CapsulePersistenceService _persistence = CapsulePersistenceService();
@@ -36,7 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _contactCount = count);
   }
 
-  void _showSeedPhrase() async {
+  Future<void> _showSeedPhrase() async {
     final seed = widget.hivra.loadSeed();
     if (seed == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -45,7 +50,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    Navigator.pushNamed(
+    await Navigator.pushNamed(
       context,
       '/backup',
       arguments: {
@@ -53,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'isNewWallet': false,
       },
     );
+    await _notifyLedgerChanged();
   }
 
   Future<void> _showLocalTraceReport() async {
@@ -317,7 +323,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 leading: const Icon(Icons.storage),
                 title: const Text('Ledger inspector'),
                 subtitle: const Text('View owner, hash and recent ledger events'),
-                onTap: () => Navigator.pushNamed(context, '/ledger_inspector'),
+                onTap: () async {
+                  await Navigator.pushNamed(context, '/ledger_inspector');
+                  await _notifyLedgerChanged();
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.bug_report),
@@ -360,7 +369,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: const Text(
                   'Inspect plugin host status and planned transport adapters',
                 ),
-                onTap: () => Navigator.pushNamed(context, '/wasm_plugins'),
+                onTap: () async {
+                  await Navigator.pushNamed(context, '/wasm_plugins');
+                  await _notifyLedgerChanged();
+                },
               ),
             ],
           ),

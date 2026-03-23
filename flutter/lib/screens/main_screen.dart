@@ -104,6 +104,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadCapsuleData();
+      return;
+    }
+
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
@@ -281,7 +286,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       case 3:
         return const WasmPluginsScreen(embedded: true);
       case 4:
-        return SettingsScreen(hivra: _hivra);
+        return SettingsScreen(
+          hivra: _hivra,
+          onLedgerChanged: _handleLedgerChanged,
+        );
       default:
         return StartersScreen(
           key: ValueKey('starters-$_ledgerVersion'),
@@ -318,6 +326,26 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 color: Colors.grey.shade400,
                 height: 1.4,
               ),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() => _selectedIndex = 4);
+                  },
+                  icon: const Icon(Icons.settings),
+                  label: const Text('Open Settings'),
+                ),
+                FilledButton.icon(
+                  onPressed: _loadCapsuleData,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh from ledger'),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             Text(
