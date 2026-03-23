@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../ffi/hivra_bindings.dart';
 import '../services/capsule_state_manager.dart';
+import '../utils/hivra_id_format.dart';
 
 class LedgerInspectorScreen extends StatefulWidget {
   const LedgerInspectorScreen({super.key});
@@ -79,6 +80,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
             timestamp: _timestampLabel(event['timestamp']),
             payloadSize: _payloadSize(event['payload']),
             signer: _shortSigner(event['signer']),
+            details: _decodeEventDetails(kindLabel, event['payload']),
           ),
         );
       }
@@ -195,6 +197,11 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   String _shortSigner(dynamic signer) {
     if (signer is List) {
       final bytes = signer.whereType<num>().map((v) => v.toInt()).toList(growable: false);
+      if (bytes.length == 32) {
+        return HivraIdFormat.short(
+          HivraIdFormat.formatCapsuleKeyBytes(Uint8List.fromList(bytes)),
+        );
+      }
       if (bytes.isNotEmpty) return _short(base64.encode(bytes));
     }
     if (signer is String && signer.isNotEmpty) return _short(signer);
@@ -204,6 +211,176 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   String _short(String value, {int start = 10, int end = 6}) {
     if (value.length <= start + end + 3) return value;
     return '${value.substring(0, start)}...${value.substring(value.length - end)}';
+  }
+
+  List<String> _decodeEventDetails(String kind, dynamic payloadRaw) {
+    final payload = _payloadBytes(payloadRaw);
+    if (payload.isEmpty) return const <String>[];
+
+    switch (kind) {
+      case 'CapsuleCreated':
+        if (payload.length >= 2) {
+          return <String>[
+            'network ${_networkLabel(payload[0])}',
+            'capsule ${_capsuleTypeLabel(payload[1])}',
+          ];
+        }
+        break;
+      case 'InvitationSent':
+      case 'InvitationReceived':
+        if (payload.length >= 96) {
+          final details = <String>[
+            'invite ${_starterLabel(payload.sublist(0, 32))}',
+            'starter ${_starterLabel(payload.sublist(32, 64))}',
+            'to ${_keyLabel(payload.sublist(64, 96))}',
+          ];
+          if (payload.length >= 97) {
+            details.add('kind ${_starterKindLabel(payload[96])}');
+          }
+          return details;
+        }
+        break;
+      case 'InvitationAccepted':
+        if (payload.length >= 96) {
+          return <String>[
+            'invite ${_starterLabel(payload.sublist(0, 32))}',
+            'from ${_keyLabel(payload.sublist(32, 64))}',
+            'created ${_starterLabel(payload.sublist(64, 96))}',
+          ];
+        }
+        break;
+      case 'InvitationRejected':
+        if (payload.length >= 33) {
+          return <String>[
+            'invite ${_starterLabel(payload.sublist(0, 32))}',
+            'reason ${_rejectReasonLabel(payload[32])}',
+          ];
+        }
+        break;
+      case 'InvitationExpired':
+        if (payload.length >= 32) {
+          return <String>['invite ${_starterLabel(payload.sublist(0, 32))}'];
+        }
+        break;
+      case 'StarterCreated':
+        if (payload.length >= 66) {
+          return <String>[
+            'starter ${_starterLabel(payload.sublist(0, 32))}',
+            'kind ${_starterKindLabel(payload[64])}',
+            'network ${_networkLabel(payload[65])}',
+          ];
+        }
+        break;
+      case 'StarterBurned':
+        if (payload.length >= 33) {
+          return <String>[
+            'starter ${_starterLabel(payload.sublist(0, 32))}',
+            'reason ${_rejectReasonLabel(payload[32])}',
+          ];
+        }
+        break;
+      case 'RelationshipEstablished':
+        if (payload.length >= 97) {
+          final details = <String>[
+            'peer ${_keyLabel(payload.sublist(0, 32))}',
+            'own ${_starterLabel(payload.sublist(32, 64))}',
+            'peerstarter ${_starterLabel(payload.sublist(64, 96))}',
+            'kind ${_starterKindLabel(payload[96])}',
+          ];
+          if (payload.length >= 194) {
+            details.addAll(<String>[
+              'invite ${_starterLabel(payload.sublist(97, 129))}',
+              'sender ${_keyLabel(payload.sublist(129, 161))}',
+              'sender kind ${_starterKindLabel(payload[161])}',
+              'sender starter ${_starterLabel(payload.sublist(162, 194))}',
+            ]);
+          }
+          return details;
+        }
+        break;
+      case 'RelationshipBroken':
+        if (payload.length >= 64) {
+          return <String>[
+            'peer ${_keyLabel(payload.sublist(0, 32))}',
+            'own ${_starterLabel(payload.sublist(32, 64))}',
+          ];
+        }
+        break;
+    }
+
+    return const <String>[];
+  }
+
+  Uint8List _payloadBytes(dynamic payload) {
+    if (payload is List) {
+      return Uint8List.fromList(
+        payload.whereType<num>().map((v) => v.toInt()).toList(growable: false),
+      );
+    }
+    if (payload is String) {
+      try {
+        return Uint8List.fromList(base64.decode(payload));
+      } catch (_) {
+        return Uint8List(0);
+      }
+    }
+    return Uint8List(0);
+  }
+
+  String _keyLabel(List<int> bytes) =>
+      HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(Uint8List.fromList(bytes)));
+
+  String _starterLabel(List<int> bytes) =>
+      HivraIdFormat.short(HivraIdFormat.formatStarterIdBytes(Uint8List.fromList(bytes)));
+
+  String _starterKindLabel(int value) {
+    switch (value) {
+      case 0:
+        return 'Juice';
+      case 1:
+        return 'Spark';
+      case 2:
+        return 'Seed';
+      case 3:
+        return 'Pulse';
+      case 4:
+        return 'Kick';
+      default:
+        return 'Kind($value)';
+    }
+  }
+
+  String _rejectReasonLabel(int value) {
+    switch (value) {
+      case 0:
+        return 'EmptySlot';
+      case 1:
+        return 'Other';
+      default:
+        return 'Reason($value)';
+    }
+  }
+
+  String _networkLabel(int value) {
+    switch (value) {
+      case 0:
+        return 'HOOD';
+      case 1:
+        return 'NESTE';
+      default:
+        return 'Network($value)';
+    }
+  }
+
+  String _capsuleTypeLabel(int value) {
+    switch (value) {
+      case 0:
+        return 'Leaf';
+      case 1:
+        return 'Relay';
+      default:
+        return 'Type($value)';
+    }
   }
 
   Future<void> _copyToClipboard(String text, String label) async {
@@ -308,13 +485,54 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                         )
                       else
                         ..._recentEvents.map((event) => Card(
-                              child: ListTile(
-                                dense: true,
-                                title: Text(event.kind),
-                                subtitle: Text(
-                                  '#${event.index}  •  ${event.timestamp}\n'
-                                  'payload ${event.payloadSize} bytes  •  signer ${event.signer}',
-                                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        _eventKindChip(event.kind),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            '#${event.index}',
+                                            style: TextStyle(
+                                              color: Colors.grey.shade500,
+                                              fontFamily: 'monospace',
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          event.timestamp,
+                                          style: TextStyle(
+                                            color: Colors.grey.shade500,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      'payload ${event.payloadSize} bytes  •  signer ${event.signer}',
+                                      style: TextStyle(
+                                        fontFamily: 'monospace',
+                                        fontSize: 12,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
+                                    if (event.details.isNotEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: event.details
+                                            .map((detail) => _detailChip(detail))
+                                            .toList(growable: false),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                             )),
@@ -377,6 +595,67 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
     );
   }
 
+  Widget _eventKindChip(String label) {
+    final color = _eventColor(label);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _detailChip(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2733),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF413C50)),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Color _eventColor(String kind) {
+    switch (kind) {
+      case 'CapsuleCreated':
+        return Colors.tealAccent.shade200;
+      case 'InvitationSent':
+      case 'InvitationReceived':
+        return Colors.orangeAccent.shade200;
+      case 'InvitationAccepted':
+        return Colors.greenAccent.shade200;
+      case 'InvitationRejected':
+      case 'InvitationExpired':
+      case 'StarterBurned':
+      case 'RelationshipBroken':
+        return Colors.redAccent.shade100;
+      case 'StarterCreated':
+        return Colors.blueAccent.shade100;
+      case 'RelationshipEstablished':
+        return Colors.purpleAccent.shade100;
+      default:
+        return Colors.grey.shade300;
+    }
+  }
+
   String _encodeCapsulePublicKey(Uint8List bytes) {
     final words = _convertBits(bytes, 8, 5, true);
     return bech32.encode(Bech32('h', words));
@@ -418,6 +697,7 @@ class _LedgerEventRow {
   final String timestamp;
   final int payloadSize;
   final String signer;
+  final List<String> details;
 
   const _LedgerEventRow({
     required this.index,
@@ -425,5 +705,6 @@ class _LedgerEventRow {
     required this.timestamp,
     required this.payloadSize,
     required this.signer,
+    required this.details,
   });
 }

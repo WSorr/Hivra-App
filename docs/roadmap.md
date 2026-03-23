@@ -238,6 +238,54 @@ Scope:
 Definition of done:
 - Capsule identity is transport-agnostic.
 - Transport keys remain adapter-level concerns.
+
+### 9.2 Lineage-Derived Starter Identity
+
+Goal:
+- Move starter identity from slot-only derivation to lineage-derived derivation.
+
+Scope:
+- Replace `starter_id = H(seed || slot)` as the long-term model.
+- Design and adopt a `starter_v2` derivation anchored in:
+  - local seed
+  - slot
+  - `invitation_id`
+  - `sender_pubkey`
+- Keep starter birth reconstructible from ledger truth rather than hidden runtime state.
+- Ensure repeated use of the same slot after burn can produce a genuinely new lineage-born starter identity.
+- Define how legacy slot-only starters remain readable during migration.
+
+Definition of done:
+- New starter identity reflects both local capsule structure and invitation lineage.
+- Reconstructing a capsule from ledger preserves starter ancestry without relying on transport-era shortcuts.
+
+### 9.3 Pairwise Consensus Snapshot v1
+
+Goal:
+- Define the smallest pairwise state snapshot that two capsules can independently derive, hash, and sign the same way.
+
+Scope:
+- Build the first canonical pairwise snapshot from:
+  - `schema_version`
+  - `pair_roots_sorted`
+  - `finalized_invitations`
+  - `active_relationships`
+- Use terminal invitation precedence:
+  - `accepted > rejected > expired > pending`
+- Keep the snapshot symmetric:
+  - no sender/receiver perspective bias
+  - no transport delivery artifacts
+  - no local-only counters or timestamps
+- Explicitly exclude local starter-state facts such as:
+  - `created_count`
+  - `burned_count`
+  - local `active/inactive`
+  because those remain capsule-local rather than pairwise-consensus facts.
+- Treat richer lineage or starter-state checks as future snapshot/schema revisions rather than overloading v1.
+
+Definition of done:
+- A fresh pair of capsules can derive the same `pairwise consensus snapshot v1` hash from local ledger truth.
+- The snapshot is small and stable enough to serve as a signed execution precondition for future smart-contract plugins.
 - UI no longer presents a transport-derived key as the canonical capsule identity.
 
 ## Longer-Term Work
