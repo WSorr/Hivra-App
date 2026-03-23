@@ -154,6 +154,9 @@ typedef HivraBreakRelationshipDart = int Function(
 typedef HivraDeliveryPreparedSelfCheckC = Int32 Function();
 typedef HivraDeliveryPreparedSelfCheckDart = int Function();
 
+typedef HivraExportCapsuleStateJsonC = Int32 Function(Pointer<Pointer<Int8>> outJson);
+typedef HivraExportCapsuleStateJsonDart = int Function(Pointer<Pointer<Int8>> outJson);
+
 typedef HivraExportLedgerC = Int32 Function(Pointer<Pointer<Int8>> outJson);
 typedef HivraExportLedgerDart = int Function(Pointer<Pointer<Int8>> outJson);
 
@@ -236,6 +239,7 @@ class HivraBindings {
   HivraExpireInvitationDart? _expireInvitation;
   HivraBreakRelationshipDart? _breakRelationship;
   HivraDeliveryPreparedSelfCheckDart? _deliveryPreparedSelfCheck;
+  late final HivraExportCapsuleStateJsonDart _exportCapsuleStateJson;
   late final HivraExportLedgerDart _exportLedger;
   late final HivraImportLedgerDart _importLedger;
   late final HivraLedgerAppendEventDart _ledgerAppendEvent;
@@ -373,6 +377,10 @@ class HivraBindings {
     } catch (_) {
       _breakRelationship = null;
     }
+
+    _exportCapsuleStateJson = _lib
+        .lookup<NativeFunction<HivraExportCapsuleStateJsonC>>('hivra_export_capsule_state_json')
+        .asFunction();
 
     _exportLedger = _lib
         .lookup<NativeFunction<HivraExportLedgerC>>('hivra_export_ledger')
@@ -694,6 +702,20 @@ class HivraBindings {
   }
 
   int deliveryPreparedSelfCheck() => _deliveryPreparedSelfCheck?.call() ?? -1001;
+
+  String? exportCapsuleStateJson() {
+    final outPtr = calloc<Pointer<Int8>>();
+    try {
+      if (_exportCapsuleStateJson(outPtr) != 0) return null;
+      final cstr = outPtr.value;
+      if (cstr == nullptr) return null;
+      final json = cstr.cast<Utf8>().toDartString();
+      _freeString(cstr);
+      return json;
+    } finally {
+      calloc.free(outPtr);
+    }
+  }
 
   String? exportLedger() {
     final outPtr = calloc<Pointer<Int8>>();

@@ -12,7 +12,10 @@ class InvitationProjectionService {
 
   const InvitationProjectionService(this._hivra, this._support);
 
-  List<Invitation> loadInvitations(Map<String, dynamic> root) {
+  List<Invitation> loadInvitations(
+    Map<String, dynamic> root, {
+    List<Uint8List?> starterIds = const <Uint8List?>[],
+  }) {
     final events = _support.events(root);
     final self = _hivra.capsuleRuntimeOwnerPublicKey();
     if (self == null) return <Invitation>[];
@@ -27,8 +30,8 @@ class InvitationProjectionService {
     }
 
     final ownStarterBySlot = <int, Uint8List>{};
-    for (var i = 0; i < 5; i++) {
-      final id = _hivra.getStarterId(i);
+    for (var i = 0; i < starterIds.length; i++) {
+      final id = starterIds[i];
       if (id != null) ownStarterBySlot[i] = id;
     }
 

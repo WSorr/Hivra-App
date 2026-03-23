@@ -315,3 +315,20 @@ When tradeoffs are unclear, prefer:
 3. explicit boundaries
 4. fewer hidden side effects
 5. release discipline over speed theater
+
+- `9.4 Root-Scoped Pairwise Consensus Truth`
+  - Current ledger relationship provenance still anchors the peer on transport identity, not peer root identity.
+  - True root-scoped `pairwise consensus snapshot v1` cannot be derived from ledger alone until peer root identity is carried in shared relationship/invitation provenance.
+  - Keep current inspector snapshot explicitly transport-scoped until ledger truth is expanded.
+
+- `9.5 Ledger-Gated Capsule UI`
+  - Capsule UI should treat the local ledger as the primary source of domain truth once any ledger history exists.
+  - If the ledger is empty, enter an explicit awaiting-history state instead of projecting starters, invitations, and relationships from runtime slot probes.
+  - Rebuild UI state immediately after any ledger mutation source: local create/init, JSON import, backup restore, or transport-delivered events.
+  - Keep bootstrap/runtime fallback only for truly empty-ledger birth state, not as the normal steady-state source of capsule truth.
+
+- `9.6 Ledger-Derived Slot Projection In Flutter`
+  - Core already provides deterministic slot projection via `SlotLayout::from_ledger` and `CapsuleState::from_capsule`.
+  - Flutter still relies on legacy per-slot FFI probing (`starterExists/getStarterId/getStarterType`) instead of consuming the same ledger-derived slot truth.
+  - Replace slot-by-slot probing with a single ledger-derived slot projection path so UI follows the same domain rules as core and reduces secure-store chatter.
+

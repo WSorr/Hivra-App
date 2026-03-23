@@ -9,6 +9,7 @@ class CapsuleState {
   final int pendingInvitations;
   final int version;
   final String ledgerHashHex;
+  final bool hasLedgerHistory;
   final bool isNeste;
   final List<Uint8List?> starterIds;
   final List<String?> starterKinds;
@@ -21,6 +22,7 @@ class CapsuleState {
     required this.pendingInvitations,
     required this.version,
     required this.ledgerHashHex,
+    required this.hasLedgerHistory,
     required this.isNeste,
     required this.starterIds,
     required this.starterKinds,
@@ -50,6 +52,7 @@ class CapsuleState {
       pendingInvitations: snapshot.pendingInvitations,
       version: snapshot.version,
       ledgerHashHex: snapshot.ledgerHashHex,
+      hasLedgerHistory: snapshot.hasLedgerHistory,
       isNeste: true, // Will come from settings
       starterIds: snapshot.starterIds,
       starterKinds: snapshot.starterKinds,

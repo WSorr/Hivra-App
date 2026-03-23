@@ -66,6 +66,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _isNeste = true;
   String _ledgerHashHex = '0';
   int _ledgerVersion = 0;
+  bool _hasLedgerHistory = false;
 
   String get _shortPublicKey {
     if (_publicKeyText.isEmpty) return 'No key';
@@ -180,6 +181,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _isNeste = state.isNeste;
       _ledgerHashHex = state.ledgerHashHex;
       _ledgerVersion = state.version;
+      _hasLedgerHistory = state.hasLedgerHistory;
       _publicKeyText = displayKey.isEmpty
           ? ''
           : _encodeCapsulePublicKey(displayKey);
@@ -253,6 +255,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildCurrentScreen() {
+    if (!_hasLedgerHistory && _selectedIndex != 4) {
+      return _buildAwaitingHistoryState();
+    }
+
     switch (_selectedIndex) {
       case 0:
         return StartersScreen(
@@ -283,6 +289,49 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           onLedgerChanged: _handleLedgerChanged,
         );
     }
+  }
+
+
+  Widget _buildAwaitingHistoryState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.auto_stories_outlined,
+              size: 64,
+              color: Colors.grey.shade500,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Awaiting ledger history',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'This capsule is loaded, but its local ledger has no events yet. '
+              'Import a ledger, restore a backup, or receive transport events to activate the capsule view.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade400,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Settings stays available for import and recovery.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade500,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -413,7 +462,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Ledger v$_ledgerVersion · hash $_shortLedgerHash',
+                        _hasLedgerHistory
+                            ? 'Ledger v$_ledgerVersion · hash $_shortLedgerHash'
+                            : 'Ledger empty · awaiting history',
                         style: const TextStyle(
                           fontSize: 10,
                           color: Colors.grey,

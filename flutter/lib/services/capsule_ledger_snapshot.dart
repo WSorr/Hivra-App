@@ -7,6 +7,7 @@ class CapsuleLedgerSnapshot {
   final int pendingInvitations;
   final int version;
   final String ledgerHashHex;
+  final bool hasLedgerHistory;
   final List<Uint8List?> starterIds;
   final List<String?> starterKinds;
   final Set<int> lockedStarterSlots;
@@ -18,6 +19,7 @@ class CapsuleLedgerSnapshot {
     required this.pendingInvitations,
     required this.version,
     required this.ledgerHashHex,
+    required this.hasLedgerHistory,
     required this.starterIds,
     required this.starterKinds,
     required this.lockedStarterSlots,

@@ -25,6 +25,29 @@ pub unsafe extern "C" fn capsule_state_encode(_capsule_ptr: *const c_void) -> Ff
     }
 }
 
+
+/// Export the current capsule state projection as JSON
+#[no_mangle]
+pub unsafe extern "C" fn hivra_export_capsule_state_json(out_json: *mut *mut c_char) -> i32 {
+    if out_json.is_null() {
+        return -1;
+    }
+
+    match current_capsule_state() {
+        Some(state) => match serde_json::to_string(&state) {
+            Ok(json) => match CString::new(json) {
+                Ok(cstr) => {
+                    *out_json = cstr.into_raw();
+                    0
+                }
+                Err(_) => -2,
+            },
+            Err(_) => -2,
+        },
+        None => -3,
+    }
+}
+
 /// Export the current ledger as JSON
 #[no_mangle]
 pub unsafe extern "C" fn hivra_export_ledger(out_json: *mut *mut c_char) -> i32 {
