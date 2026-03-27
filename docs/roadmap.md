@@ -330,7 +330,10 @@ When tradeoffs are unclear, prefer:
   - Capsule UI should treat the local ledger as the primary source of domain truth once any ledger history exists.
   - If the ledger is empty, enter an explicit awaiting-history state instead of projecting starters, invitations, and relationships from runtime slot probes.
   - Rebuild UI state immediately after any ledger mutation source: local create/init, JSON import, backup restore, or transport-delivered events.
-  - When a user targets an already-connected peer with a repeated starter action that would not create a meaningful new ledger fact, redirect them into relationship management instead of fabricating invitation history.
+  - When a user targets an already-connected peer, invitation flow must distinguish between:
+    - a genuinely meaningful recovery/re-consensus invite that may rebuild missing generative state
+    - and a no-op or purely relationship-management action that should redirect into `Relationships`
+  - Do not fabricate invitation history for actions that are purely relationship management, but do not block legitimate repeat invites that may help capsules converge again after later anatomy changes.
   - Keep bootstrap/runtime fallback only for truly empty-ledger birth state, not as the normal steady-state source of capsule truth.
 
 - `9.6 Ledger-Derived Slot Projection In Flutter`
@@ -351,6 +354,9 @@ When tradeoffs are unclear, prefer:
     - if consensus is absent, pair-scoped smart contracts must not execute
     - any future pair-scoped contract with that capsule remains blocked until the old pending break is resolved
     - disagreement about one peer must not affect relationships or contracts with other capsules
-  - UI implication: break-notification should be presented as a pending state transition to accept, not as a bidirectional accept/reject negotiation, and repeated send attempts against an already-connected peer should open relationship management instead of appending history.
+  - UI implication: break-notification should be presented as a pending state transition to accept, not as a bidirectional accept/reject negotiation.
   - Current local/runtime behavior may auto-apply remote break immediately, especially in single-app local testing; target behavior should preserve a pending remote break until explicit acceptance.
-
+  - Pairwise event reading should remain layered:
+    - invitation events record transit/history and terminal responses
+    - starter events record local anatomy only
+    - relationship events remain the pairwise truth anchors used for explicit relationship mutation and future smart-contract gating

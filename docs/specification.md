@@ -404,6 +404,24 @@ StarterBurned | starter_id, reason
 RelationshipEstablished | peer_pubkey, own_starter_id, peer_starter_id, kind, invitation_id, sender_pubkey, sender_starter_type, sender_starter_id
 RelationshipBroken | peer_pubkey, own_starter_id
 
+Event layers are intentionally distinct:
+
+- Transit/history events:
+  - `InvitationSent`
+  - `InvitationReceived` when materialized locally
+- Terminal response events:
+  - `InvitationAccepted`
+  - `InvitationRejected`
+  - `InvitationExpired`
+- Local anatomy events:
+  - `StarterCreated`
+  - `StarterBurned`
+- Pairwise truth anchors:
+  - `RelationshipEstablished`
+  - `RelationshipBroken`
+
+These layers MUST NOT be treated as interchangeable. Invitation history records intent and response, starter events record local capsule anatomy, and relationship events anchor pairwise truth used for relationship management and future pair-scoped consensus checks.
+
 ---
 
 ## 8. Mechanics

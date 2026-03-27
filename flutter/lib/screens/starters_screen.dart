@@ -4,7 +4,6 @@ import '../ffi/hivra_bindings.dart';
 import '../services/invitation_delivery_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/capsule_persistence_service.dart';
-import '../services/ledger_view_service.dart';
 import '../utils/hivra_id_format.dart';
 
 class StartersScreen extends StatefulWidget {
@@ -112,26 +111,6 @@ class _StartersScreenState extends State<StartersScreen> {
                     () => formError =
                         'Please enter a capsule address or delivery address',
                   );
-                  return;
-                }
-
-                final activePeers = LedgerViewService(widget.hivra)
-                    .loadRelationshipGroups()
-                    .where((group) => group.isActive)
-                    .map((group) => group.peerPubkey)
-                    .toList(growable: false);
-                final alreadyConnected = await _delivery.blockIfAlreadyConnected(
-                  input,
-                  activePeerPubkeys: activePeers,
-                );
-                if (alreadyConnected.errorMessage != null) {
-                  setDialogState(() => formError = alreadyConnected.errorMessage);
-                  if (alreadyConnected.shouldOpenRelationships && mounted) {
-                    navigator.pop();
-                    ScaffoldMessenger.of(this.context).showSnackBar(
-                      const SnackBar(content: Text('Open Relationships to manage this connection.')),
-                    );
-                  }
                   return;
                 }
 
