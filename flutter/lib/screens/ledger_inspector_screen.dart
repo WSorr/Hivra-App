@@ -104,7 +104,10 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
       }
 
       final recent = rows.reversed.take(40).toList(growable: false);
-      final snapshots = _buildPairwiseSnapshots(events, state.publicKey);
+      final snapshots = _buildPairwiseSnapshots(
+        events,
+        _hivra.capsuleNostrPublicKey() ?? Uint8List(0),
+      );
 
       setState(() {
         _capsuleState = state;
