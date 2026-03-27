@@ -395,8 +395,8 @@ struct Event {
 
 Event | Fields
 --- | ---
-InvitationSent | invitation_id, starter_id, to_pubkey
-InvitationAccepted | invitation_id, from_pubkey, created_starter_id (recipient starter used for the relationship; if accept created a new invited starter, this is that starter ID)
+InvitationSent | invitation_id, starter_id, to_pubkey, target_root_pubkey? (optional until root-aware lineage becomes canonical)
+InvitationAccepted | invitation_id, from_pubkey, created_starter_id (recipient starter used for the relationship; if accept created a new invited starter, this is that starter ID), accepter_root_pubkey? (optional until root-aware lineage becomes canonical)
 InvitationRejected | invitation_id, reason (EmptySlot | Other)
 InvitationExpired | invitation_id
 StarterCreated | starter_id, nonce, kind, network
@@ -443,6 +443,13 @@ The receiver MUST also communicate the recipient-side starter reference that now
 At minimum, relationship history MUST preserve:
 
 - `sender_pubkey`
+
+To support future root-scoped pairwise consensus, invitation lineage SHOULD also preserve root identity once known:
+
+- `InvitationSent.target_root_pubkey` when the sender knows the peer root identity
+- `InvitationAccepted.accepter_root_pubkey` so the sender can anchor the accepting capsule at root level
+
+These fields are lineage provenance, not delivery routing. Transport delivery may remain transport-key based even when root provenance is preserved in ledger history.
 - `invitation_id`
 - `sender_starter_type`
 - `sender_starter_id`
