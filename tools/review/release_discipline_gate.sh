@@ -38,9 +38,11 @@ ROADMAP="$ROOT/docs/roadmap.md"
 PRECHECK="$ROOT/tools/release/preflight.sh"
 REVIEW_ALL="$ROOT/tools/review/review_all.sh"
 CHECKLIST_MAC="$ROOT/docs/checklists/release-macos.md"
+CHECKLIST_SMOKE="$ROOT/docs/checklists/manual-smoke.md"
 
 require_file "$PRECHECK" "preflight script exists"
 require_file "$CHECKLIST_MAC" "macOS release checklist exists"
+require_file "$CHECKLIST_SMOKE" "manual smoke checklist exists"
 
 require_present "$ROADMAP" '^### 6\. Release Preflight as a Gate' \
   "roadmap tracks release preflight gate"
@@ -51,6 +53,12 @@ require_present "$CHECKLIST_MAC" 'tools/release/preflight\.sh' \
   "macOS checklist requires preflight run"
 require_present "$CHECKLIST_MAC" 'codesign --verify --deep --strict' \
   "macOS checklist requires codesign verify"
+require_present "$CHECKLIST_SMOKE" 'Invitation Flow' \
+  "manual smoke checklist covers invitation flow"
+require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \
+  "manual smoke checklist covers relationship flow"
+require_present "$CHECKLIST_SMOKE" 'Ledger Truth' \
+  "manual smoke checklist covers ledger truth projection"
 
 require_present "$PRECHECK" 'tools/review/review_all\.sh' \
   "preflight executes review_all"
