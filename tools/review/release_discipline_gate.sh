@@ -53,6 +53,10 @@ require_present "$CHECKLIST_MAC" 'tools/release/preflight\.sh' \
   "macOS checklist requires preflight run"
 require_present "$CHECKLIST_MAC" 'codesign --verify --deep --strict' \
   "macOS checklist requires codesign verify"
+require_present "$CHECKLIST_MAC" 'update path was evaluated for truth preservation' \
+  "macOS checklist requires update truth-preservation verification"
+require_present "$CHECKLIST_MAC" 'does not re-materialize previously resolved invitation history' \
+  "macOS checklist requires no resolved-invite resurrection check"
 require_present "$CHECKLIST_SMOKE" 'Invitation Flow' \
   "manual smoke checklist covers invitation flow"
 require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \

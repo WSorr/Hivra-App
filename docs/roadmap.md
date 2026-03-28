@@ -144,6 +144,7 @@ Scope:
   - Gate validates release-discipline sync between roadmap milestones, macOS release checklist, preflight steps, and review gate composition.
   - Gate also validates that preflight still includes and wires macOS bundle verification (`check_release_bundle`).
   - Gate validates presence and baseline scope of manual smoke checklist (invitation flow, relationship flow, ledger truth).
+  - Gate validates that macOS release checklist includes explicit update-safety checks (truth preservation and no re-materialized resolved invites).
 
 Definition of done:
 - Every release candidate is validated through one clear preflight path before packaging and publishing.
