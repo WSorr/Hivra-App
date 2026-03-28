@@ -369,9 +369,11 @@ When tradeoffs are unclear, prefer:
 
 - `9.9 UI-FFI Boundary Reduction`
   - Reduce direct `HivraBindings` imports in UI screens by moving operational calls into service/facade boundaries.
-  - Current baseline (audit):
+  - Baseline at start:
     - `12` screens import `HivraBindings` directly
     - `7` services import `HivraBindings` directly
+  - Current snapshot:
+    - `8` screens import `HivraBindings` directly
   - Prioritize extracting read-only screens and backup/recovery orchestration first.
   - Definition of done for this slice:
     - screens depend on application services/facades, not raw FFI bindings

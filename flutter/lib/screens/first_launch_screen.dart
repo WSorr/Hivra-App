@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../ffi/hivra_bindings.dart';
+import '../services/first_launch_service.dart';
 
 class FirstLaunchScreen extends StatefulWidget {
   const FirstLaunchScreen({super.key});
@@ -9,35 +9,32 @@ class FirstLaunchScreen extends StatefulWidget {
 }
 
 class _FirstLaunchScreenState extends State<FirstLaunchScreen> {
-  final HivraBindings _hivra = HivraBindings();
+  late final FirstLaunchService _firstLaunch;
+
+  @override
+  void initState() {
+    super.initState();
+    _firstLaunch = FirstLaunchService();
+  }
 
   void _createCapsule(String type) async {
-    try {
-      final seed = _hivra.generateRandomSeed();
-      final isGenesis = type == 'genesis';
-      final error = _hivra.createCapsuleError(
-        seed, 
-        isNeste: true, 
-        isGenesis: isGenesis,
-        ownerMode: HivraBindings.rootOwnerMode,
-      );
-
-      if (error != null) throw Exception(error);
-      
-      if (mounted) {
-        Navigator.pushNamed(
-          context,
-          '/backup',
-          arguments: {
-            'seed': seed,
-            'isNewWallet': true,
-            'isGenesis': isGenesis,
-          },
-        );
-      }
-    } catch (e) {
+    final result = _firstLaunch.createCapsuleDraft(type);
+    if (!result.isSuccess || result.seed == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        SnackBar(content: Text('Error: ${result.errorMessage ?? 'unknown'}')),
+      );
+      return;
+    }
+
+    if (mounted) {
+      Navigator.pushNamed(
+        context,
+        '/backup',
+        arguments: {
+          'seed': result.seed!,
+          'isNewWallet': true,
+          'isGenesis': result.isGenesis,
+        },
       );
     }
   }
