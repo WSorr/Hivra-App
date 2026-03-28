@@ -61,12 +61,19 @@ Forbidden:
 - Transport does not know about Core.
 - Violating this rule is an architectural error.
 
+Crate-level dependency contract (enforced by review scripts):
+
+- `hivra-core` has no dependency on engine/adapters/platform/UI crates.
+- `hivra-engine` depends on `hivra-core` and does not depend on transport/ffi/UI crates.
+- `hivra-transport` does not depend on `hivra-core`, `hivra-engine`, or `hivra-ffi`.
+- `hivra-ffi` is the boundary crate that composes `core + engine + adapters + keystore`.
+
 ### 2.2 Separation of Responsibilities
 
 Layer | Responsible For | Knows Nothing About
 --- | --- | ---
 UI | Rendering, user input | Domain logic, transport
-Transport | Byte transfer, network adaptation | Business meaning, cryptography
+Transport | Byte transfer, network adaptation | Core entities/invariants, business meaning, cryptography policy
 Engine | Orchestration, dependency injection, signature validation | Detailed event structure (only bytes)
 Core | Domain invariants, events, projections | Time, RNG, I/O, JSON, cryptography
 

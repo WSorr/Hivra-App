@@ -20,6 +20,13 @@ This repository implements Hivra v1.0.0 specification:
 - **Platform** — OS-specific implementations (SecureKeyStore)
 - **Flutter UI** — Cross-platform interface
 
+### Compile-Time Dependency Contract
+
+- `hivra-core` is dependency-free from engine/adapters/platform/UI crates.
+- `hivra-engine` depends on `hivra-core`.
+- `hivra-transport` is adapter-only and does **not** depend on `hivra-core` or `hivra-engine`.
+- `hivra-ffi` is the boundary crate that composes `core + engine + adapters + keystore`.
+
 ## Specification Documents
 
 - [Hivra Protocol Specification](docs/specification.md)
