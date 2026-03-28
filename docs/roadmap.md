@@ -330,10 +330,7 @@ When tradeoffs are unclear, prefer:
   - Capsule UI should treat the local ledger as the primary source of domain truth once any ledger history exists.
   - If the ledger is empty, enter an explicit awaiting-history state instead of projecting starters, invitations, and relationships from runtime slot probes.
   - Rebuild UI state immediately after any ledger mutation source: local create/init, JSON import, backup restore, or transport-delivered events.
-  - When a user targets an already-connected peer, invitation flow must distinguish between:
-    - a genuinely meaningful recovery/re-consensus invite that may rebuild missing generative state
-    - and a no-op or purely relationship-management action that should redirect into `Relationships`
-  - Do not fabricate invitation history for actions that are purely relationship management, but do not block legitimate repeat invites that may help capsules converge again after later anatomy changes.
+  - Keep invitation UI simple: block only clearly invalid cases such as self-invite, and avoid embedding pairwise-consensus policy directly into send forms.
   - Keep bootstrap/runtime fallback only for truly empty-ledger birth state, not as the normal steady-state source of capsule truth.
 
 - `9.6 Ledger-Derived Slot Projection In Flutter`
@@ -346,7 +343,7 @@ When tradeoffs are unclear, prefer:
   - A break should still emit a remote notification so the peer can accept the break and converge onto the same pairwise state.
   - The remote side should not get a reject path for break-notifications; this is closer to accepting a delivered fact than negotiating a new invite.
   - Repeated starter sends toward an already-connected peer should not be silently repurposed into break semantics or other hidden ledger mutations.
-  - Relationship mutation remains explicit: if the user wants to change or break an existing connection, route them to `Relationships` rather than recording a new invitation-shaped fact.
+  - Relationship mutation remains explicit, but invitation UI should stay lightweight and avoid taking on full pairwise-consensus policy.
   - Resulting model:
     - local break is immediately valid for the initiator
     - remote break notification remains in ledger and continues to project as pending until accepted
