@@ -1,85 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import '../models/invitation.dart';
 import '../models/starter.dart';
 import '../widgets/invitation_card.dart';
 import '../ffi/hivra_bindings.dart';
 import '../services/invitation_delivery_service.dart';
-import '../services/capsule_persistence_service.dart';
+import '../services/invitation_actions_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/ledger_view_service.dart';
-
-bool _bootstrapWorkerRuntime(HivraBindings hivra, Map<String, Object?> args) {
-  final seed = args['seed'] as Uint8List;
-  final isGenesis = args['isGenesis'] as bool;
-  final isNeste = args['isNeste'] as bool;
-  final identityMode = args['identityMode'] as String? ?? 'root_owner';
-  final ledgerJson = args['ledgerJson'] as String?;
-
-  if (!hivra.saveSeed(seed)) return false;
-  if (!hivra.createCapsule(
-    seed,
-    isGenesis: isGenesis,
-    isNeste: isNeste,
-    ownerMode: identityMode == 'root_owner'
-        ? HivraBindings.rootOwnerMode
-        : HivraBindings.legacyNostrOwnerMode,
-  )) {
-    return false;
-  }
-  if (ledgerJson != null &&
-      ledgerJson.isNotEmpty &&
-      !hivra.importLedger(ledgerJson)) {
-    return false;
-  }
-  return true;
-}
-
-Map<String, Object?> _sendInvitationInWorker(Map<String, Object?> args) {
-  final hivra = HivraBindings();
-  if (!_bootstrapWorkerRuntime(hivra, args)) {
-    return <String, Object?>{'result': -1004};
-  }
-
-  final toPubkey = args['toPubkey'] as Uint8List;
-  final starterSlot = args['starterSlot'] as int;
-  final result = hivra.deliverInvitationCode(toPubkey, starterSlot);
-  return <String, Object?>{
-    'result': result,
-    'ledgerJson': result == 0 ? hivra.exportLedger() : null,
-  };
-}
-
-Map<String, Object?> _receiveInvitationsInWorker(Map<String, Object?> args) {
-  final hivra = HivraBindings();
-  if (!_bootstrapWorkerRuntime(hivra, args)) {
-    return <String, Object?>{'result': -1004};
-  }
-  final result = hivra.fetchInvitationDeliveries();
-  return <String, Object?>{
-    'result': result,
-    'ledgerJson': hivra.exportLedger(),
-  };
-}
-
-Map<String, Object?> _acceptInvitationInWorker(Map<String, Object?> args) {
-  final hivra = HivraBindings();
-  if (!_bootstrapWorkerRuntime(hivra, args)) {
-    return <String, Object?>{'result': -1004};
-  }
-
-  final invitationId = args['invitationId'] as Uint8List;
-  final fromPubkey = args['fromPubkey'] as Uint8List;
-  final placeholderStarterId = Uint8List(32);
-  final result =
-      hivra.acceptInvitationCode(invitationId, fromPubkey, placeholderStarterId);
-  return <String, Object?>{
-    'result': result,
-    'ledgerJson': result == 0 ? hivra.exportLedger() : null,
-  };
-}
 
 class InvitationsScreen extends StatefulWidget {
   final HivraBindings hivra;
@@ -96,8 +26,8 @@ class InvitationsScreen extends StatefulWidget {
 }
 
 class _InvitationsScreenState extends State<InvitationsScreen> {
-  final CapsulePersistenceService _persistence = CapsulePersistenceService();
   final InvitationDeliveryService _delivery = const InvitationDeliveryService();
+  late final InvitationActionsService _actions;
   List<Invitation> _invitations = [];
   bool _isFetchingDeliveries = false;
   String? _processingId;
@@ -105,6 +35,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   @override
   void initState() {
     super.initState();
+    _actions = InvitationActionsService(widget.hivra);
     _loadInvitations();
   }
 
@@ -121,30 +52,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   Future<void> _sendInvitationAsync(Uint8List pubkey, int slot) async {
-    final bootstrap = await _loadWorkerBootstrap();
-    if (bootstrap == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Active capsule bootstrap failed')),
-        );
-      }
-      return;
-    }
-
-    final workerResult =
-        await compute<Map<String, Object?>, Map<String, Object?>>(
-      _sendInvitationInWorker,
-      <String, Object?>{
-        ...bootstrap,
-        'toPubkey': pubkey,
-        'starterSlot': slot,
-      },
-    ).timeout(
-      const Duration(seconds: 8),
-      onTimeout: () => <String, Object?>{'result': -1003},
-    );
-    final result = (workerResult['result'] as int?) ?? -1003;
-    final ledgerJson = workerResult['ledgerJson'] as String?;
+    final workerResult = await _actions.sendInvitation(pubkey, slot);
+    final result = workerResult.code;
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -159,10 +68,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     }
 
     if (result == 0) {
-      if (ledgerJson != null && ledgerJson.isNotEmpty) {
-        widget.hivra.importLedger(ledgerJson);
-        await _persistence.persistLedgerSnapshot(widget.hivra);
-      }
       await Future<void>.delayed(const Duration(seconds: 1));
       if (mounted) {
         await _refreshAfterLedgerMutation();
@@ -177,25 +82,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     int result = -1003;
 
     try {
-      final bootstrap = await _loadWorkerBootstrap();
-      if (bootstrap == null) {
-        result = -1004;
-      } else {
-        final workerResult =
-            await compute<Map<String, Object?>, Map<String, Object?>>(
-          _receiveInvitationsInWorker,
-          bootstrap,
-        ).timeout(
-          const Duration(seconds: 12),
-          onTimeout: () => <String, Object?>{'result': -1003},
-        );
-        result = (workerResult['result'] as int?) ?? -1003;
-        final ledgerJson = workerResult['ledgerJson'] as String?;
-        if (result >= 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
-          widget.hivra.importLedger(ledgerJson);
-          await _persistence.persistLedgerSnapshot(widget.hivra);
-        }
-      }
+      result = (await _actions.fetchInvitations()).code;
     } finally {
       if (mounted) {
         setState(() => _isFetchingDeliveries = false);
@@ -218,10 +105,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     );
   }
 
-  Future<Map<String, Object?>?> _loadWorkerBootstrap() async {
-    return _persistence.loadWorkerBootstrapArgs(widget.hivra);
-  }
-
   Future<void> _acceptInvitation(Invitation invitation) async {
     setState(() => _processingId = invitation.id);
 
@@ -237,31 +120,11 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         return;
       }
 
-      final bootstrap = await _loadWorkerBootstrap();
-      if (bootstrap == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_delivery.acceptFailureMessage(-1004))),
-          );
-        }
-        return;
-      }
-
-      final workerResult =
-          await compute<Map<String, Object?>, Map<String, Object?>>(
-        _acceptInvitationInWorker,
-        <String, Object?>{
-          ...bootstrap,
-          'invitationId': invitationId,
-          'fromPubkey': fromPubkey,
-        },
-      ).timeout(
-        const Duration(seconds: 12),
-        onTimeout: () => <String, Object?>{'result': -1003},
+      final workerResult = await _actions.acceptInvitation(
+        invitationId,
+        fromPubkey,
       );
-
-      final acceptCode = (workerResult['result'] as int?) ?? -1003;
-      final ledgerJson = workerResult['ledgerJson'] as String?;
+      final acceptCode = workerResult.code;
 
       if (acceptCode != 0 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -269,10 +132,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
             content: Text(_delivery.acceptFailureMessage(acceptCode)),
           ),
         );
-      }
-      if (acceptCode == 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
-        widget.hivra.importLedger(ledgerJson);
-        await _persistence.persistLedgerSnapshot(widget.hivra);
       }
       await _refreshAfterLedgerMutation();
     } finally {
@@ -340,15 +199,14 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     final invitationId = _decodeB64_32(invitation.id);
     final ok = invitationId != null &&
-        widget.hivra.rejectInvitation(
-            invitationId, _rejectReasonForInvitation(invitation));
+        await _actions.rejectInvitation(
+          invitationId,
+          _rejectReasonForInvitation(invitation),
+        );
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to reject invitation')),
       );
-    }
-    if (ok) {
-      await _persistence.persistLedgerSnapshot(widget.hivra);
     }
     await _refreshAfterLedgerMutation();
     if (mounted) setState(() => _processingId = null);
@@ -378,15 +236,11 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     setState(() => _processingId = invitation.id);
 
     final invitationId = _decodeB64_32(invitation.id);
-    final ok =
-        invitationId != null && widget.hivra.expireInvitation(invitationId);
+    final ok = invitationId != null && await _actions.cancelInvitation(invitationId);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to cancel invitation')),
       );
-    }
-    if (ok) {
-      await _persistence.persistLedgerSnapshot(widget.hivra);
     }
     await _refreshAfterLedgerMutation();
     if (mounted) setState(() => _processingId = null);
