@@ -16,6 +16,12 @@ SCREEN_IMPORTS="$(
 MAIN_IMPORTS="$(
   rg -n "import .*ffi/hivra_bindings.dart" "$ROOT/flutter/lib/main.dart" -S || true
 )"
+WIDGET_IMPORTS="$(
+  rg -n "import .*ffi/hivra_bindings.dart" "$ROOT/flutter/lib/widgets" -S || true
+)"
+UTIL_IMPORTS="$(
+  rg -n "import .*ffi/hivra_bindings.dart" "$ROOT/flutter/lib/utils" -S || true
+)"
 
 if [ -n "$SCREEN_IMPORTS" ]; then
   fail "screens must not import ffi/hivra_bindings.dart directly"
@@ -29,6 +35,20 @@ if [ -n "$MAIN_IMPORTS" ]; then
   echo "$MAIN_IMPORTS"
 else
   pass "no direct HivraBindings import in flutter/lib/main.dart"
+fi
+
+if [ -n "$WIDGET_IMPORTS" ]; then
+  fail "widgets must not import ffi/hivra_bindings.dart directly"
+  echo "$WIDGET_IMPORTS"
+else
+  pass "no direct HivraBindings imports in flutter/lib/widgets"
+fi
+
+if [ -n "$UTIL_IMPORTS" ]; then
+  fail "utils must not import ffi/hivra_bindings.dart directly"
+  echo "$UTIL_IMPORTS"
+else
+  pass "no direct HivraBindings imports in flutter/lib/utils"
 fi
 
 exit "$STATUS"

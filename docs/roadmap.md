@@ -411,6 +411,7 @@ When tradeoffs are unclear, prefer:
   - Current snapshot:
     - `0` screens import `HivraBindings` directly
     - UI entrypoint `main.dart` no longer imports `HivraBindings` directly
+    - review gate also protects `widgets/` and `utils/` from direct `HivraBindings` imports
   - Prioritize extracting read-only screens and backup/recovery orchestration first.
   - Definition of done for this slice:
     - screens depend on application services/facades, not raw FFI bindings
