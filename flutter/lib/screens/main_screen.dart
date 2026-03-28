@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../ffi/hivra_bindings.dart';
 import '../services/capsule_persistence_service.dart';
 import '../services/capsule_state_manager.dart';
+import '../services/relationship_service.dart';
 import 'starters_screen.dart';
 import 'invitations_screen.dart';
 import 'relationships_screen.dart';
@@ -280,7 +281,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       case 2:
         return RelationshipsScreen(
           key: ValueKey('relationships-$_ledgerVersion'),
-          hivra: _hivra,
+          service: RelationshipService(_hivra),
           onLedgerChanged: _handleLedgerChanged,
         );
       case 3:

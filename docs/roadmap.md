@@ -335,8 +335,8 @@ When tradeoffs are unclear, prefer:
 
 - `9.6 Ledger-Derived Slot Projection In Flutter`
   - Core already provides deterministic slot projection via `SlotLayout::from_ledger` and `CapsuleState::from_capsule`.
-  - Flutter still relies on legacy per-slot FFI probing (`starterExists/getStarterId/getStarterType`) instead of consuming the same ledger-derived slot truth.
-  - Replace slot-by-slot probing with a single ledger-derived slot projection path so UI follows the same domain rules as core and reduces secure-store chatter.
+  - Legacy per-slot Flutter FFI probes (`starterExists/getStarterId/getStarterType`) have been removed from the active read-path and bindings surface.
+  - Keep slot projection sourced from the same ledger-derived capsule state path used by core.
 
 - `9.7 Local Relationship Sovereignty And Pairwise Consensus`
   - Each capsule remains sovereign over its own relationship truth: one side may append `RelationshipBroken` locally without waiting for remote approval.
@@ -357,3 +357,22 @@ When tradeoffs are unclear, prefer:
     - invitation events record transit/history and terminal responses
     - starter events record local anatomy only
     - relationship events remain the pairwise truth anchors used for explicit relationship mutation and future smart-contract gating
+
+- `9.8 Consensus Processor Module`
+  - Keep consensus logic out of screen flows and invitation form orchestration.
+  - Build a dedicated processor module that:
+    - consumes ledger projections
+    - computes canonical pairwise snapshots
+    - reports consensus state (`match`/`mismatch`) and blocking facts
+  - Expose processor output as read-only inputs to UI and plugin execution guards.
+  - Do not mix processor rollout with transport send/receive UX changes.
+
+- `9.9 UI-FFI Boundary Reduction`
+  - Reduce direct `HivraBindings` imports in UI screens by moving operational calls into service/facade boundaries.
+  - Current baseline (audit):
+    - `12` screens import `HivraBindings` directly
+    - `7` services import `HivraBindings` directly
+  - Prioritize extracting read-only screens and backup/recovery orchestration first.
+  - Definition of done for this slice:
+    - screens depend on application services/facades, not raw FFI bindings
+    - FFI access is concentrated in a smaller boundary layer with explicit ownership

@@ -1,22 +1,17 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 
-import '../ffi/hivra_bindings.dart';
 import '../models/relationship.dart';
 import '../models/relationship_peer_group.dart';
 import '../models/starter.dart';
-import '../services/capsule_persistence_service.dart';
-import '../services/ledger_view_service.dart';
+import '../services/relationship_service.dart';
 
 class RelationshipsScreen extends StatefulWidget {
-  final HivraBindings hivra;
+  final RelationshipService service;
   final Future<void> Function()? onLedgerChanged;
 
   const RelationshipsScreen({
     super.key,
-    required this.hivra,
+    required this.service,
     this.onLedgerChanged,
   });
 
@@ -25,7 +20,6 @@ class RelationshipsScreen extends StatefulWidget {
 }
 
 class _RelationshipsScreenState extends State<RelationshipsScreen> {
-  final CapsulePersistenceService _persistence = CapsulePersistenceService();
   List<RelationshipPeerGroup> _relationshipGroups = [];
   bool _isLoading = true;
   String? _filterKind;
@@ -37,9 +31,8 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   }
 
   Future<void> _loadRelationships() async {
-    final service = LedgerViewService(widget.hivra);
     setState(() {
-      _relationshipGroups = service.loadRelationshipGroups();
+      _relationshipGroups = widget.service.loadRelationshipGroups();
       _isLoading = false;
     });
   }
@@ -61,26 +54,17 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () async {
-              final peer = _decodeB64_32(relationship.peerPubkey);
-              final own = _decodeB64_32(relationship.ownStarterId);
-              final peerStarter = _decodeB64_32(relationship.peerStarterId);
-              if (peer == null || own == null || peerStarter == null) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to break relationship')),
-                );
-                return;
-              }
-              final ok = widget.hivra.breakRelationship(peer, own, peerStarter);
+              final navigator = Navigator.of(context);
+              final messenger = ScaffoldMessenger.of(context);
+              final ok = await widget.service.breakRelationship(relationship);
               if (!mounted) return;
-              Navigator.pop(context);
+              navigator.pop();
               if (!ok) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(content: Text('Failed to break relationship')),
                 );
                 return;
               }
-              await _persistence.persistLedgerSnapshot(widget.hivra);
               await _loadRelationships();
               await widget.onLedgerChanged?.call();
             },
@@ -242,15 +226,6 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   String _shortId(String value) {
     if (value.length <= 10) return value;
     return '${value.substring(0, 6)}...${value.substring(value.length - 4)}';
-  }
-
-  Uint8List? _decodeB64_32(String value) {
-    try {
-      final bytes = base64.decode(value);
-      return bytes.length == 32 ? Uint8List.fromList(bytes) : null;
-    } catch (_) {
-      return null;
-    }
   }
 }
 
