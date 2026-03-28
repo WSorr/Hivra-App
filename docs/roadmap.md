@@ -138,6 +138,9 @@ Scope:
   - `tools/review/review_all.sh`
   - macOS release checklist
 - Expand preflight coverage where useful, without turning it into fragile theater.
+- Current progress:
+  - Added `tools/review/release_discipline_gate.sh` and wired it into `review_all.sh`.
+  - Gate validates release-discipline sync between roadmap milestones, macOS release checklist, preflight steps, and review gate composition.
 
 Definition of done:
 - Every release candidate is validated through one clear preflight path before packaging and publishing.
