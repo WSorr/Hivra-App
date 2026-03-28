@@ -66,6 +66,11 @@ Scope:
   - backup import after clean install
 - Confirm transport receive after restore does not resurrect closed invitation history.
 - Ensure user-facing recovery artifacts remain understandable and easy to locate.
+- Current progress:
+  - Added `capsule_runtime_bootstrap_service_test.dart` coverage for bootstrap source selection:
+    - prefers `ledger.json` when both ledger and backup are present
+    - falls back to backup envelope when `ledger.json` is missing
+    - returns no bootstrap when seed is unavailable
 
 Definition of done:
 - A user can restore a capsule on a new machine without manual container surgery or hidden-path knowledge.
