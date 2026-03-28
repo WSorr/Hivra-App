@@ -19,12 +19,14 @@ class RecoveryExecutionResult {
 }
 
 class RecoveryService {
-  const RecoveryService();
+  final HivraBindings _hivra;
 
-  bool validateMnemonic(HivraBindings hivra, String phrase) {
+  RecoveryService([HivraBindings? hivra]) : _hivra = hivra ?? HivraBindings();
+
+  bool validateMnemonic(String phrase) {
     final trimmed = phrase.trim();
     if (trimmed.isEmpty) return false;
-    return hivra.validateMnemonic(trimmed);
+    return _hivra.validateMnemonic(trimmed);
   }
 
   bool? extractGenesisHintFromBackupJson(String rawJson) {
@@ -43,16 +45,15 @@ class RecoveryService {
   }
 
   Future<RecoveryExecutionResult> recover({
-    required HivraBindings hivra,
     required String phrase,
     required String? selectedBackupLedgerJson,
     required bool? selectedBackupIsGenesis,
   }) async {
     try {
-      final seed = hivra.mnemonicToSeed(phrase.trim());
+      final seed = _hivra.mnemonicToSeed(phrase.trim());
       bool isGenesisRecovered = selectedBackupIsGenesis ?? false;
 
-      final createError = hivra.createCapsuleError(
+      final createError = _hivra.createCapsuleError(
         seed,
         isGenesis: isGenesisRecovered,
         ownerMode: HivraBindings.rootOwnerMode,
@@ -63,7 +64,7 @@ class RecoveryService {
 
       if (selectedBackupLedgerJson != null) {
         final expectedOwner = _extractOwnerHexFromLedger(selectedBackupLedgerJson);
-        final currentPubKey = hivra.capsuleRuntimeOwnerPublicKey();
+        final currentPubKey = _hivra.capsuleRuntimeOwnerPublicKey();
         final currentOwner = currentPubKey == null ? null : _bytesToHex(currentPubKey);
         if (expectedOwner != null &&
             currentOwner != null &&
@@ -76,8 +77,8 @@ class RecoveryService {
 
       final persistence = CapsulePersistenceService();
       final importedLedger = selectedBackupLedgerJson != null
-          ? hivra.importLedger(selectedBackupLedgerJson)
-          : await persistence.importLedgerIfExists(hivra);
+          ? _hivra.importLedger(selectedBackupLedgerJson)
+          : await persistence.importLedgerIfExists(_hivra);
 
       if (selectedBackupLedgerJson != null && !importedLedger) {
         return const RecoveryExecutionResult.failure(
@@ -86,10 +87,10 @@ class RecoveryService {
       }
 
       if (importedLedger) {
-        final inferredFromLedger = _inferGenesisFromLedgerJson(hivra.exportLedger());
-        isGenesisRecovered = inferredFromLedger ?? (_countOccupiedStarters(hivra) > 0);
+        final inferredFromLedger = _inferGenesisFromLedgerJson(_hivra.exportLedger());
+        isGenesisRecovered = inferredFromLedger ?? (_countOccupiedStarters(_hivra) > 0);
 
-        final recreateError = hivra.createCapsuleError(
+        final recreateError = _hivra.createCapsuleError(
           seed,
           isGenesis: isGenesisRecovered,
           ownerMode: HivraBindings.rootOwnerMode,
@@ -99,18 +100,18 @@ class RecoveryService {
         }
 
         if (selectedBackupLedgerJson != null) {
-          if (!hivra.importLedger(selectedBackupLedgerJson)) {
+          if (!_hivra.importLedger(selectedBackupLedgerJson)) {
             return const RecoveryExecutionResult.failure(
               'Failed to import selected backup',
             );
           }
         } else {
-          await persistence.importLedgerIfExists(hivra);
+          await persistence.importLedgerIfExists(_hivra);
         }
       }
 
       await persistence.persistAfterCreate(
-        hivra: hivra,
+        hivra: _hivra,
         seed: seed,
         isGenesis: isGenesisRecovered,
         isNeste: true,

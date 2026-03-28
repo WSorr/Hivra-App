@@ -3,20 +3,19 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../ffi/hivra_bindings.dart';
 import '../services/capsule_backup_codec.dart';
 import '../services/recovery_service.dart';
 
 class RecoveryScreen extends StatefulWidget {
-  const RecoveryScreen({super.key});
+  final RecoveryService service;
+
+  const RecoveryScreen({super.key, required this.service});
 
   @override
   State<RecoveryScreen> createState() => _RecoveryScreenState();
 }
 
 class _RecoveryScreenState extends State<RecoveryScreen> {
-  final HivraBindings _hivra = HivraBindings();
-  final RecoveryService _recovery = const RecoveryService();
   final TextEditingController _phraseController = TextEditingController();
   String? _errorMessage;
   String? _selectedBackupName;
@@ -42,7 +41,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       return;
     }
 
-    final isValid = _recovery.validateMnemonic(_hivra, phrase);
+    final isValid = widget.service.validateMnemonic(phrase);
     setState(() {
       _isValid = isValid;
       _errorMessage = isValid ? null : 'Invalid seed phrase';
@@ -57,8 +56,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       _errorMessage = null;
     });
 
-    final result = await _recovery.recover(
-      hivra: _hivra,
+    final result = await widget.service.recover(
       phrase: _phraseController.text.trim(),
       selectedBackupLedgerJson: _selectedBackupLedgerJson,
       selectedBackupIsGenesis: _selectedBackupIsGenesis,
@@ -99,7 +97,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       setState(() {
         _selectedBackupLedgerJson = ledgerJson;
         _selectedBackupName = file.name;
-        _selectedBackupIsGenesis = _recovery.extractGenesisHintFromBackupJson(raw);
+        _selectedBackupIsGenesis =
+            widget.service.extractGenesisHintFromBackupJson(raw);
         _errorMessage = null;
       });
     } catch (e) {
@@ -136,7 +135,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       setState(() {
         _selectedBackupLedgerJson = ledgerJson;
         _selectedBackupName = 'Pasted from clipboard';
-        _selectedBackupIsGenesis = _recovery.extractGenesisHintFromBackupJson(raw);
+        _selectedBackupIsGenesis =
+            widget.service.extractGenesisHintFromBackupJson(raw);
         _errorMessage = null;
       });
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
+import 'ffi/hivra_bindings.dart';
 import 'screens/capsule_selector_screen.dart';
 import 'screens/first_launch_screen.dart';
 import 'screens/backup_screen.dart';
@@ -7,6 +8,7 @@ import 'screens/recovery_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/ledger_inspector_screen.dart';
 import 'screens/wasm_plugins_screen.dart';
+import 'services/recovery_service.dart';
 
 void main() {
   runApp(const MyApp());
@@ -32,7 +34,11 @@ class MyApp extends StatelessWidget {
           case '/first_launch':
             return MaterialPageRoute(builder: (_) => const FirstLaunchScreen());
           case '/recovery':
-            return MaterialPageRoute(builder: (_) => const RecoveryScreen());
+            return MaterialPageRoute(
+              builder: (_) => RecoveryScreen(
+                service: RecoveryService(HivraBindings()),
+              ),
+            );
           case '/backup':
             final args = settings.arguments as Map<String, dynamic>?;
             return MaterialPageRoute(
