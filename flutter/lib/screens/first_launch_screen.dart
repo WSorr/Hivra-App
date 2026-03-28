@@ -9,16 +9,11 @@ class FirstLaunchScreen extends StatefulWidget {
 }
 
 class _FirstLaunchScreenState extends State<FirstLaunchScreen> {
-  late final FirstLaunchService _firstLaunch;
-
-  @override
-  void initState() {
-    super.initState();
-    _firstLaunch = FirstLaunchService();
-  }
+  FirstLaunchService? _firstLaunch;
 
   void _createCapsule(String type) async {
-    final result = _firstLaunch.createCapsuleDraft(type);
+    final firstLaunch = _firstLaunch ??= FirstLaunchService();
+    final result = firstLaunch.createCapsuleDraft(type);
     if (!result.isSuccess || result.seed == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${result.errorMessage ?? 'unknown'}')),
