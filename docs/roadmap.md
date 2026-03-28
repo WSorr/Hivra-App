@@ -22,6 +22,8 @@ Scope:
   - `hivra-ffi` regression tests now cover replay-skip behavior after export/import for:
     - duplicated `InvitationAccepted` delivery (no duplicate relationship projection)
     - duplicated `InvitationRejected` delivery (no duplicate burn effects)
+    - duplicated `RelationshipEstablished` delivery (no duplicate relationship facts)
+    - duplicated `RelationshipBroken` delivery (no duplicate break facts)
     - replayed incoming offer for already resolved invitation (blocked)
 
 Definition of done:

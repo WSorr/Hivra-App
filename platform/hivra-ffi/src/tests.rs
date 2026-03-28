@@ -40,6 +40,13 @@ fn relationship_established_count() -> usize {
         .count()
 }
 
+fn relationship_broken_count() -> usize {
+    runtime_events()
+        .into_iter()
+        .filter(|event| event.kind() == EventKind::RelationshipBroken)
+        .count()
+}
+
 fn invitation_accepted_count() -> usize {
     runtime_events()
         .into_iter()
@@ -487,6 +494,129 @@ fn replayed_invitation_rejected_is_skipped_after_export_import() {
     }
 
     assert_eq!(starter_burned_count(), 1);
+}
+
+#[test]
+fn replayed_relationship_established_is_skipped_after_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(36);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [22u8; 32];
+    let invitation_id = [25u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_starter_id = derive_starter_id(&test_seed(37), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    let established = RelationshipEstablishedPayload {
+        peer_pubkey: PubKey::from(peer_pubkey),
+        own_starter_id: StarterId::from(own_starter_id),
+        peer_starter_id: StarterId::from(peer_starter_id),
+        kind: StarterKind::Juice,
+        invitation_id,
+        sender_pubkey: PubKey::from(peer_pubkey),
+        sender_starter_type: StarterKind::Juice,
+        sender_starter_id: StarterId::from(peer_starter_id),
+    };
+    let established_bytes = established.to_bytes();
+
+    append_runtime_event_with_signer(
+        EventKind::RelationshipEstablished,
+        &established_bytes,
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+    assert_eq!(relationship_established_count(), 1);
+    assert_eq!(runtime_capsule_state().relationships_count, 1);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    if !event_exists_in_runtime_with_signer(
+        EventKind::RelationshipEstablished,
+        &established_bytes,
+        PubKey::from(peer_pubkey),
+    ) {
+        append_runtime_event_with_signer(
+            EventKind::RelationshipEstablished,
+            &established_bytes,
+            PubKey::from(peer_pubkey),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(relationship_established_count(), 1);
+    assert_eq!(runtime_capsule_state().relationships_count, 1);
+}
+
+#[test]
+fn replayed_relationship_broken_is_skipped_after_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(38);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [24u8; 32];
+    let invitation_id = [26u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_starter_id = derive_starter_id(&test_seed(39), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    let established = RelationshipEstablishedPayload {
+        peer_pubkey: PubKey::from(peer_pubkey),
+        own_starter_id: StarterId::from(own_starter_id),
+        peer_starter_id: StarterId::from(peer_starter_id),
+        kind: StarterKind::Juice,
+        invitation_id,
+        sender_pubkey: PubKey::from(peer_pubkey),
+        sender_starter_type: StarterKind::Juice,
+        sender_starter_id: StarterId::from(peer_starter_id),
+    };
+    append_runtime_event_with_signer(
+        EventKind::RelationshipEstablished,
+        &established.to_bytes(),
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+
+    let broken = RelationshipBrokenPayload {
+        peer_pubkey: PubKey::from(peer_pubkey),
+        own_starter_id: StarterId::from(own_starter_id),
+    };
+    let broken_bytes = broken.to_bytes();
+    append_runtime_event_with_signer(
+        EventKind::RelationshipBroken,
+        &broken_bytes,
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+
+    assert_eq!(relationship_broken_count(), 1);
+    assert_eq!(runtime_capsule_state().relationships_count, 0);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    if !event_exists_in_runtime_with_signer(
+        EventKind::RelationshipBroken,
+        &broken_bytes,
+        PubKey::from(peer_pubkey),
+    ) {
+        append_runtime_event_with_signer(
+            EventKind::RelationshipBroken,
+            &broken_bytes,
+            PubKey::from(peer_pubkey),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(relationship_broken_count(), 1);
+    assert_eq!(runtime_capsule_state().relationships_count, 0);
 }
 
 #[test]
