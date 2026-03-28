@@ -113,8 +113,10 @@ require_present "$CHECKLIST_ANDROID_RUNTIME" 'Outbound relay write failures surf
   "Android runtime checklist covers outbound transport diagnostics"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'Receive path diagnostics distinguish transport failure from projection/ledger failure' \
   "Android runtime checklist covers receive-path diagnostic separation"
-require_present "$CHECKLIST_ANDROID_RUNTIME" 'projections match macOS for the same ledger history' \
-  "Android runtime checklist covers cross-platform projection parity"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'invitation send/accept projections match macOS for the same ledger history' \
+  "Android runtime checklist covers invitation projection parity"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'relationship break/re-invite projections match macOS for the same ledger history' \
+  "Android runtime checklist covers relationship projection parity"
 require_present "$CHECKLIST_SMOKE" 'Invitation Flow' \
   "manual smoke checklist covers invitation flow"
 require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \

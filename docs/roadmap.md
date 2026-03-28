@@ -150,6 +150,7 @@ Scope:
 
 Definition of done:
 - Every release candidate is validated through one clear preflight path before packaging and publishing.
+- Status: completed (2026-03-29).
 
 ### 7. Public macOS Release Quality
 
@@ -262,6 +263,7 @@ Scope:
   - `release_discipline_gate.sh` now validates Android runtime hardening checklist presence and key coverage.
   - Gate coverage now includes restart active-capsule stability, reinstall stale-seed guard, and receive-path diagnostic separation checks.
   - Gate coverage now includes restart seed-binding stability and backup-import truth parity checks.
+  - Gate now enforces explicit parity checks for both invitation projections and relationship break/re-invite projections versus macOS.
 
 Definition of done:
 - Android runtime failures are diagnosable.
