@@ -118,4 +118,35 @@ class LedgerViewSupport {
         return StarterKind.juice;
     }
   }
+
+  String? relationshipKeyFromEstablishedPayload(
+    Uint8List payload, {
+    String Function(Uint8List bytes)? encode32,
+  }) {
+    if (payload.length != 97 && payload.length != 194) return null;
+    final encode = encode32 ?? (Uint8List bytes) => base64.encode(bytes);
+    final peer = encode(Uint8List.fromList(payload.sublist(0, 32)));
+    final ownStarter = encode(Uint8List.fromList(payload.sublist(32, 64)));
+    return '$peer:$ownStarter';
+  }
+
+  String? relationshipPeerFromEstablishedPayload(
+    Uint8List payload, {
+    String Function(Uint8List bytes)? encode32,
+  }) {
+    if (payload.length != 97 && payload.length != 194) return null;
+    final encode = encode32 ?? (Uint8List bytes) => base64.encode(bytes);
+    return encode(Uint8List.fromList(payload.sublist(0, 32)));
+  }
+
+  String? relationshipKeyFromBrokenPayload(
+    Uint8List payload, {
+    String Function(Uint8List bytes)? encode32,
+  }) {
+    if (payload.length < 64) return null;
+    final encode = encode32 ?? (Uint8List bytes) => base64.encode(bytes);
+    final peer = encode(Uint8List.fromList(payload.sublist(0, 32)));
+    final ownStarter = encode(Uint8List.fromList(payload.sublist(32, 64)));
+    return '$peer:$ownStarter';
+  }
 }

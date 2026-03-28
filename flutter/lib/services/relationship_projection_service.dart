@@ -21,7 +21,8 @@ class RelationshipProjectionService {
       if (kind == 7) {
         final established = _parseRelationshipEstablished(payload);
         if (established == null) continue;
-        final key = '${established.peerPubkey}:${established.ownStarterId}';
+        final key = _support.relationshipKeyFromEstablishedPayload(payload);
+        if (key == null) continue;
         byKey[key] = Relationship(
           peerPubkey: established.peerPubkey,
           kind: established.kind,
@@ -30,9 +31,9 @@ class RelationshipProjectionService {
           establishedAt: timestamp,
           isActive: true,
         );
-      } else if (kind == 8 && payload.length == 64) {
-        final key =
-            '${base64.encode(payload.sublist(0, 32))}:${base64.encode(payload.sublist(32, 64))}';
+      } else if (kind == 8) {
+        final key = _support.relationshipKeyFromBrokenPayload(payload);
+        if (key == null) continue;
         final current = byKey[key];
         if (current != null) {
           byKey[key] = Relationship(

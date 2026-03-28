@@ -2,9 +2,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'capsule_persistence_models.dart';
+import 'ledger_view_support.dart';
 
 class CapsuleLedgerSummaryParser {
-  const CapsuleLedgerSummaryParser();
+  final LedgerViewSupport _support;
+
+  const CapsuleLedgerSummaryParser({
+    LedgerViewSupport support = const LedgerViewSupport(),
+  }) : _support = support;
 
   CapsuleLedgerSummary parse(String json, String Function(Uint8List bytes) toHex) {
     if (json.trim().isEmpty) return CapsuleLedgerSummary.empty();
@@ -23,7 +28,8 @@ class CapsuleLedgerSummaryParser {
       for (final eventRaw in events) {
         if (eventRaw is! Map) continue;
         final event = Map<String, dynamic>.from(eventRaw);
-        final kind = _eventKindCode(event['kind']);
+        final kind = _support.kindCode(event['kind']);
+        final payload = _support.payloadBytes(event['payload']);
 
         switch (kind) {
           case 1:
@@ -37,7 +43,6 @@ class CapsuleLedgerSummaryParser {
             invitationResolved++;
             break;
           case 5:
-            final payload = parseBytesField(event['payload']);
             final starter = _parseStarterCreated(payload);
             if (starter != null) {
               activeStartersById[toHex(Uint8List.fromList(starter.starterId))] =
@@ -45,22 +50,29 @@ class CapsuleLedgerSummaryParser {
             }
             break;
           case 6:
-            final payload = parseBytesField(event['payload']);
             final burnedId = _parseStarterBurnedId(payload);
             if (burnedId != null) {
               activeStartersById.remove(toHex(Uint8List.fromList(burnedId)));
             }
             break;
           case 7:
-            final payload = parseBytesField(event['payload']);
-            final relationship = _parseRelationshipEstablished(payload, toHex);
-            if (relationship != null) {
-              activeRelationshipsByKey[relationship.key] = relationship.peerHex;
+            final key = _support.relationshipKeyFromEstablishedPayload(
+              payload,
+              encode32: toHex,
+            );
+            final peer = _support.relationshipPeerFromEstablishedPayload(
+              payload,
+              encode32: toHex,
+            );
+            if (key != null && peer != null) {
+              activeRelationshipsByKey[key] = peer;
             }
             break;
           case 8:
-            final payload = parseBytesField(event['payload']);
-            final relationshipKey = _parseRelationshipBrokenKey(payload, toHex);
+            final relationshipKey = _support.relationshipKeyFromBrokenPayload(
+              payload,
+              encode32: toHex,
+            );
             if (relationshipKey != null) {
               activeRelationshipsByKey.remove(relationshipKey);
             }
@@ -120,67 +132,17 @@ class CapsuleLedgerSummaryParser {
     return null;
   }
 
-  int _eventKindCode(dynamic rawKind) {
-    if (rawKind is num) return rawKind.toInt();
-    if (rawKind is! String) return -1;
-    switch (rawKind) {
-      case 'InvitationSent':
-        return 1;
-      case 'InvitationReceived':
-        return 9;
-      case 'InvitationAccepted':
-        return 2;
-      case 'InvitationRejected':
-        return 3;
-      case 'InvitationExpired':
-        return 4;
-      case 'StarterCreated':
-        return 5;
-      case 'StarterBurned':
-        return 6;
-      case 'RelationshipEstablished':
-        return 7;
-      case 'RelationshipBroken':
-        return 8;
-      default:
-        return -1;
-    }
-  }
-
-  _StarterRecord? _parseStarterCreated(List<int>? payload) {
-    if (payload == null || payload.length < 66) return null;
+  _StarterRecord? _parseStarterCreated(Uint8List payload) {
+    if (payload.length < 66) return null;
     final kindCode = payload[64];
     if (kindCode < 0 || kindCode > 4) return null;
     final starterId = payload.sublist(0, 32);
     return _StarterRecord(kindCode: kindCode, starterId: starterId);
   }
 
-  List<int>? _parseStarterBurnedId(List<int>? payload) {
-    if (payload == null || payload.length < 32) return null;
+  Uint8List? _parseStarterBurnedId(Uint8List payload) {
+    if (payload.length < 32) return null;
     return payload.sublist(0, 32);
-  }
-
-  _RelationshipEstablishedRecord? _parseRelationshipEstablished(
-    List<int>? payload,
-    String Function(Uint8List bytes) toHex,
-  ) {
-    if (payload == null || payload.length < 97) return null;
-    final peerBytes = Uint8List.fromList(payload.sublist(0, 32));
-    final ownStarterBytes = Uint8List.fromList(payload.sublist(32, 64));
-    return _RelationshipEstablishedRecord(
-      key: '${toHex(peerBytes)}:${toHex(ownStarterBytes)}',
-      peerHex: toHex(peerBytes),
-    );
-  }
-
-  String? _parseRelationshipBrokenKey(
-    List<int>? payload,
-    String Function(Uint8List bytes) toHex,
-  ) {
-    if (payload == null || payload.length < 64) return null;
-    final peerBytes = Uint8List.fromList(payload.sublist(0, 32));
-    final ownStarterBytes = Uint8List.fromList(payload.sublist(32, 64));
-    return '${toHex(peerBytes)}:${toHex(ownStarterBytes)}';
   }
 
   String _parseLedgerHashHex(dynamic raw) {
@@ -207,14 +169,7 @@ class CapsuleLedgerSummaryParser {
 
 class _StarterRecord {
   final int kindCode;
-  final List<int> starterId;
+  final Uint8List starterId;
 
   _StarterRecord({required this.kindCode, required this.starterId});
-}
-
-class _RelationshipEstablishedRecord {
-  final String key;
-  final String peerHex;
-
-  _RelationshipEstablishedRecord({required this.key, required this.peerHex});
 }
