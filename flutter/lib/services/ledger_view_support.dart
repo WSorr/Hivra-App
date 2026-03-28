@@ -63,13 +63,28 @@ class LedgerViewSupport {
 
   Uint8List payloadBytes(dynamic payload) {
     if (payload is List) {
-      return Uint8List.fromList(
-        payload.whereType<num>().map((v) => v.toInt()).toList(),
-      );
+      final out = <int>[];
+      for (final item in payload) {
+        if (item is! num) return Uint8List(0);
+        final value = item.toInt();
+        if (value < 0 || value > 255) return Uint8List(0);
+        out.add(value);
+      }
+      return Uint8List.fromList(out);
     }
     if (payload is String) {
+      final trimmed = payload.trim();
+      if (trimmed.isEmpty) return Uint8List(0);
+      final isHex = RegExp(r'^[0-9a-fA-F]+$').hasMatch(trimmed);
+      if (isHex && trimmed.length.isEven) {
+        final out = <int>[];
+        for (int i = 0; i < trimmed.length; i += 2) {
+          out.add(int.parse(trimmed.substring(i, i + 2), radix: 16));
+        }
+        return Uint8List.fromList(out);
+      }
       try {
-        return Uint8List.fromList(base64.decode(payload));
+        return Uint8List.fromList(base64.decode(trimmed));
       } catch (_) {
         return Uint8List(0);
       }

@@ -246,6 +246,8 @@ Scope:
   - recovery flows
   - transport-triggered UI behavior
 - Remove any remaining logic that creates a second truth beside the ledger.
+- Current progress:
+  - Recovery flow ledger decoding now reuses shared `LedgerViewSupport` (`kindCode` / `payloadBytes`) instead of maintaining a duplicate decoder path.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.

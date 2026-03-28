@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../ffi/hivra_bindings.dart';
 import 'capsule_persistence_service.dart';
+import 'ledger_view_support.dart';
 
 class RecoveryExecutionResult {
   final bool isSuccess;
@@ -20,8 +21,11 @@ class RecoveryExecutionResult {
 
 class RecoveryService {
   final HivraBindings _hivra;
+  final LedgerViewSupport _support;
 
-  RecoveryService([HivraBindings? hivra]) : _hivra = hivra ?? HivraBindings();
+  RecoveryService([HivraBindings? hivra, LedgerViewSupport? support])
+      : _hivra = hivra ?? HivraBindings(),
+        _support = support ?? const LedgerViewSupport();
 
   bool validateMnemonic(String phrase) {
     final trimmed = phrase.trim();
@@ -139,9 +143,9 @@ class RecoveryService {
       for (final eventRaw in events) {
         if (eventRaw is! Map) continue;
         final event = Map<String, dynamic>.from(eventRaw);
-        final kindCode = _eventKindCode(event['kind']);
-        final payload = _decodePayloadBytes(event['payload']);
-        if (payload == null) continue;
+        final kindCode = _support.kindCode(event['kind']);
+        final payload = _support.payloadBytes(event['payload']);
+        if (payload.isEmpty) continue;
 
         if (kindCode == 5) {
           if (payload.length < 66) continue;
@@ -176,8 +180,8 @@ class RecoveryService {
       final decoded = jsonDecode(ledgerJson);
       if (decoded is! Map) return null;
       final map = Map<String, dynamic>.from(decoded);
-      final ownerBytes = _decodePayloadBytes(map['owner']);
-      if (ownerBytes == null || ownerBytes.length != 32) return null;
+      final ownerBytes = _support.payloadBytes(map['owner']);
+      if (ownerBytes.length != 32) return null;
       return _bytesToHex(ownerBytes);
     } catch (_) {
       return null;
@@ -196,11 +200,11 @@ class RecoveryService {
       for (final eventRaw in eventsRaw) {
         if (eventRaw is! Map) continue;
         final event = Map<String, dynamic>.from(eventRaw);
-        final kindCode = _eventKindCode(event['kind']);
+        final kindCode = _support.kindCode(event['kind']);
         if (kindCode != 0) continue;
 
-        final payload = _decodePayloadBytes(event['payload']);
-        if (payload == null || payload.length < 2) return null;
+        final payload = _support.payloadBytes(event['payload']);
+        if (payload.length < 2) return null;
         final capsuleType = payload[1];
         if (capsuleType == 1) return true;
         if (capsuleType == 0) return false;
@@ -208,55 +212,6 @@ class RecoveryService {
     } catch (_) {
       return null;
     }
-    return null;
-  }
-
-  int _eventKindCode(dynamic rawKind) {
-    if (rawKind is num) return rawKind.toInt();
-    if (rawKind is! String) return -1;
-    switch (rawKind) {
-      case 'CapsuleCreated':
-        return 0;
-      case 'StarterCreated':
-        return 5;
-      case 'StarterBurned':
-        return 6;
-      default:
-        return -1;
-    }
-  }
-
-  List<int>? _decodePayloadBytes(dynamic raw) {
-    if (raw is List) {
-      final out = <int>[];
-      for (final item in raw) {
-        if (item is! num) return null;
-        final value = item.toInt();
-        if (value < 0 || value > 255) return null;
-        out.add(value);
-      }
-      return out;
-    }
-
-    if (raw is String) {
-      final trimmed = raw.trim();
-      if (trimmed.isEmpty) return null;
-
-      if (RegExp(r'^[0-9a-fA-F]+$').hasMatch(trimmed) && trimmed.length.isEven) {
-        final out = <int>[];
-        for (int i = 0; i < trimmed.length; i += 2) {
-          out.add(int.parse(trimmed.substring(i, i + 2), radix: 16));
-        }
-        return out;
-      }
-
-      try {
-        return base64Decode(trimmed);
-      } catch (_) {
-        return null;
-      }
-    }
-
     return null;
   }
 
