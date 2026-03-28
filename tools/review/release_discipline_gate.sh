@@ -60,6 +60,10 @@ require_present "$PRECHECK" 'flutter analyze' \
   "preflight executes flutter analyze"
 require_present "$PRECHECK" 'flutter test' \
   "preflight executes flutter tests"
+require_present "$PRECHECK" 'macOS Release Bundle Checks' \
+  "preflight includes macOS release bundle check step"
+require_present "$PRECHECK" 'check_release_bundle' \
+  "preflight wires check_release_bundle"
 require_present "$REVIEW_ALL" 'release_discipline_gate\.sh' \
   "review_all includes release discipline gate"
 

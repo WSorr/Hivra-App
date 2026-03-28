@@ -141,6 +141,7 @@ Scope:
 - Current progress:
   - Added `tools/review/release_discipline_gate.sh` and wired it into `review_all.sh`.
   - Gate validates release-discipline sync between roadmap milestones, macOS release checklist, preflight steps, and review gate composition.
+  - Gate also validates that preflight still includes and wires macOS bundle verification (`check_release_bundle`).
 
 Definition of done:
 - Every release candidate is validated through one clear preflight path before packaging and publishing.
