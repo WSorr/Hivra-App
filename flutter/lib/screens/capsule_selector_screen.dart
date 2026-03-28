@@ -2,8 +2,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
-import '../ffi/hivra_bindings.dart';
-import '../services/capsule_persistence_service.dart';
+import '../services/capsule_selector_service.dart';
 import 'main_screen.dart';
 import 'first_launch_screen.dart';
 
@@ -17,8 +16,8 @@ class CapsuleSelectorScreen extends StatefulWidget {
 }
 
 class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
-  final HivraBindings _hivra = HivraBindings();
-  List<CapsuleInfo> _capsules = [];
+  final CapsuleSelectorService _service = CapsuleSelectorService();
+  List<CapsuleSelectorItem> _capsules = [];
   bool _isLoading = true;
   final TextEditingController _seedController = TextEditingController();
 
@@ -35,42 +34,9 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   }
 
   Future<void> _loadCapsules() async {
-    final persistence = CapsulePersistenceService();
-    final entries = await persistence.listCapsules(hivra: _hivra);
-    _capsules = [];
-    for (final entry in entries) {
-      var summary = await persistence.loadCapsuleSummary(entry.pubKeyHex);
-      if (summary.ledgerHashHex == '7fffffffffffffff') {
-        final hasSeed = await persistence.hasStoredSeed(entry.pubKeyHex);
-        if (hasSeed) {
-          final refreshed = await persistence.refreshCapsuleSnapshot(
-            _hivra,
-            entry.pubKeyHex,
-          );
-          if (refreshed) {
-            summary = await persistence.loadCapsuleSummary(entry.pubKeyHex);
-          }
-        }
-      }
-      _capsules.add(
-        CapsuleInfo(
-          id: entry.pubKeyHex,
-          publicKeyHex: entry.pubKeyHex,
-          displayKeyText:
-              await persistence.resolveDisplayCapsuleKey(_hivra, entry.pubKeyHex),
-          network: entry.isNeste ? 'NESTE' : 'HOOD',
-          starterCount: summary.starterCount,
-          relationshipCount: summary.relationshipCount,
-          pendingInvitations: summary.pendingInvitations,
-          ledgerVersion: summary.ledgerVersion,
-          ledgerHashHex: summary.ledgerHashHex,
-          lastActive: entry.lastActive,
-          createdAt: entry.createdAt,
-        ),
-      );
-    }
+    _capsules = await _service.loadCapsules();
 
-    if (_capsules.isEmpty && _hivra.seedExists()) {
+    if (_capsules.isEmpty && _service.seedExists()) {
       // If we still don't have an index, stay empty and let user create/recover.
     }
 
@@ -87,12 +53,11 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     }
   }
 
-  Future<void> _selectCapsule(CapsuleInfo capsule) async {
+  Future<void> _selectCapsule(CapsuleSelectorItem capsule) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    final persistence = CapsulePersistenceService();
     try {
-      await persistence.activateCapsule(_hivra, capsule.publicKeyHex);
+      await _service.activateCapsule(capsule.publicKeyHex);
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -115,7 +80,6 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   }
 
   Future<void> _importCapsule() async {
-    final persistence = CapsulePersistenceService();
     try {
       final file = await openFile(
         acceptedTypeGroups: const [
@@ -125,7 +89,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       if (file == null) return;
 
       final raw = await File(file.path).readAsString();
-      final importedHex = await persistence.importCapsuleFromBackupJson(raw);
+      final importedHex = await _service.importCapsuleFromBackupJson(raw);
       if (importedHex == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -142,14 +106,13 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     }
   }
 
-  Future<void> _exportCapsule(CapsuleInfo capsule) async {
-    final persistence = CapsulePersistenceService();
+  Future<void> _exportCapsule(CapsuleSelectorItem capsule) async {
     try {
       if (Platform.isMacOS || Platform.isAndroid) {
         final tempDir = Directory.systemTemp;
         final tempPath =
             '${tempDir.path}/capsule-backup-${capsule.publicKeyHex.substring(0, 8)}.json';
-        final path = await persistence.exportCapsuleBackupToPath(
+        final path = await _service.exportCapsuleBackupToPath(
           capsule.publicKeyHex,
           tempPath,
         );
@@ -175,7 +138,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       final targetPath =
           '$folder/capsule-backup-${capsule.publicKeyHex.substring(0, 8)}.json';
 
-      final path = await persistence.exportCapsuleBackupToPath(
+      final path = await _service.exportCapsuleBackupToPath(
         capsule.publicKeyHex,
         targetPath,
       );
@@ -198,7 +161,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     }
   }
 
-  Future<void> _deleteCapsule(CapsuleInfo capsule) async {
+  Future<void> _deleteCapsule(CapsuleSelectorItem capsule) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -221,17 +184,12 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       ),
     );
     if (confirm != true) return;
-    final persistence = CapsulePersistenceService();
-    await persistence.deleteCapsule(
-      capsule.publicKeyHex,
-      deleteLocalData: true,
-      hivra: _hivra,
-    );
+    await _service.deleteCapsule(capsule.publicKeyHex);
     if (!mounted) return;
     await _loadCapsules();
   }
 
-  Future<void> _restoreSeedForCapsule(CapsuleInfo capsule) async {
+  Future<void> _restoreSeedForCapsule(CapsuleSelectorItem capsule) async {
     _seedController.clear();
     final confirm = await showDialog<bool>(
       context: context,
@@ -261,7 +219,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
 
     if (confirm != true) return;
     final phrase = _seedController.text.trim();
-    if (!_hivra.validateMnemonic(phrase)) {
+    if (!_service.validateMnemonic(phrase)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Invalid seed phrase')),
@@ -269,10 +227,8 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       return;
     }
 
-    final seed = _hivra.mnemonicToSeed(phrase);
-    final persistence = CapsulePersistenceService();
-    final matches = await persistence.seedMatchesCapsule(
-      _hivra,
+    final seed = _service.mnemonicToSeed(phrase);
+    final matches = await _service.seedMatchesCapsule(
       seed,
       capsule.publicKeyHex,
     );
@@ -284,7 +240,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       return;
     }
 
-    await persistence.saveSeedForCapsule(capsule.publicKeyHex, seed);
+    await _service.saveSeedForCapsule(capsule.publicKeyHex, seed);
     await _loadCapsules();
   }
 
@@ -399,9 +355,8 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     );
   }
 
-  Future<void> _showCapsuleMenu(CapsuleInfo capsule) async {
-    final persistence = CapsulePersistenceService();
-    final hasSeed = await persistence.hasStoredSeed(capsule.publicKeyHex);
+  Future<void> _showCapsuleMenu(CapsuleSelectorItem capsule) async {
+    final hasSeed = await _service.hasStoredSeed(capsule.publicKeyHex);
     if (!mounted) return;
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -458,32 +413,4 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     }
   }
 
-}
-
-class CapsuleInfo {
-  final String id;
-  final String publicKeyHex;
-  final String displayKeyText;
-  final String network;
-  final int starterCount;
-  final int relationshipCount;
-  final int pendingInvitations;
-  final int ledgerVersion;
-  final String ledgerHashHex;
-  final DateTime lastActive;
-  final DateTime createdAt;
-
-  CapsuleInfo({
-    required this.id,
-    required this.publicKeyHex,
-    required this.displayKeyText,
-    required this.network,
-    required this.starterCount,
-    required this.relationshipCount,
-    required this.pendingInvitations,
-    required this.ledgerVersion,
-    required this.ledgerHashHex,
-    required this.lastActive,
-    required this.createdAt,
-  });
 }
