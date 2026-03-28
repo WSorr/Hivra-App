@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../ffi/hivra_bindings.dart';
-import '../services/capsule_address_service.dart';
-import '../services/capsule_persistence_service.dart';
-import '../services/capsule_state_manager.dart';
+import '../services/settings_service.dart';
 import '../utils/hivra_id_format.dart';
 
 class SettingsScreen extends StatefulWidget {
-  final HivraBindings hivra;
+  final SettingsService service;
   final Future<void> Function()? onLedgerChanged;
 
-  const SettingsScreen({super.key, required this.hivra, this.onLedgerChanged});
+  const SettingsScreen({super.key, required this.service, this.onLedgerChanged});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -23,26 +20,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _isNeste = true;
   bool _isRelay = false;
-  final CapsulePersistenceService _persistence = CapsulePersistenceService();
-  final CapsuleAddressService _contactCards = const CapsuleAddressService();
   int _contactCount = 0;
 
   @override
   void initState() {
     super.initState();
-    final state = CapsuleStateManager(widget.hivra).state;
-    _isNeste = state.isNeste;
+    _isNeste = widget.service.loadIsNeste();
     _loadContactCount();
   }
 
   Future<void> _loadContactCount() async {
-    final count = await _contactCards.contactCount();
+    final count = await widget.service.contactCount();
     if (!mounted) return;
     setState(() => _contactCount = count);
   }
 
   Future<void> _showSeedPhrase() async {
-    final seed = widget.hivra.loadSeed();
+    final seed = widget.service.loadSeed();
     if (seed == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No seed found')),
@@ -62,7 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showLocalTraceReport() async {
-    final report = await _persistence.diagnoseCapsuleTraces(widget.hivra);
+    final report = await widget.service.diagnoseCapsuleTraces();
     if (!mounted) return;
 
     await showDialog<void>(
@@ -83,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showBootstrapDiagnostics() async {
-    final report = await _persistence.diagnoseBootstrapReport(widget.hivra);
+    final report = await widget.service.diagnoseBootstrapReport();
     if (!mounted) return;
 
     await showDialog<void>(
@@ -104,7 +98,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _copyContactCard() async {
-    final card = await _contactCards.buildOwnCard(widget.hivra);
+    final card = await widget.service.buildOwnCard();
     if (card == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -121,7 +115,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showOwnCardDialog() async {
-    final json = await _contactCards.exportOwnCardJson(widget.hivra);
+    final json = await widget.service.exportOwnCardJson();
     if (json == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -217,7 +211,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   return;
                 }
                 try {
-                  await _contactCards.importCardJson(raw);
+                  await widget.service.importCardJson(raw);
                   await _loadContactCount();
                   if (!dialogContext.mounted) return;
                   Navigator.of(dialogContext).pop();
@@ -238,7 +232,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showTrustedPeerCards() async {
-    final cards = await _contactCards.listTrustedCards();
+    final cards = await widget.service.listTrustedCards();
     if (!mounted) return;
 
     await showDialog<void>(
@@ -268,7 +262,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           tooltip: 'Remove',
                           onPressed: () async {
                             final removed =
-                                await _contactCards.removeTrustedCard(card.rootKey);
+                                await widget.service.removeTrustedCard(card.rootKey);
                             if (!removed) return;
                             cards.removeAt(index);
                             await _loadContactCount();

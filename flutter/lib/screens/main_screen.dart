@@ -6,6 +6,7 @@ import '../services/capsule_persistence_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/invitation_actions_service.dart';
 import '../services/relationship_service.dart';
+import '../services/settings_service.dart';
 import 'starters_screen.dart';
 import 'invitations_screen.dart';
 import 'relationships_screen.dart';
@@ -244,7 +245,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return const WasmPluginsScreen(embedded: true);
       case 4:
         return SettingsScreen(
-          hivra: _hivra,
+          service: SettingsService(_hivra),
           onLedgerChanged: _handleLedgerChanged,
         );
       default:
