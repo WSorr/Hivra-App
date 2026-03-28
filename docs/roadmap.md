@@ -174,6 +174,11 @@ Definition of done:
 Goal:
 - Prevent app updates from silently changing capsule truth for existing users.
 
+Current progress:
+- Added persistence safety coverage for capsule index active-selection:
+  - active capsule survives index write/read roundtrip
+  - stale `active` pointers are sanitized when the referenced capsule entry is absent
+
 Required conditions before treating updates as safe:
 - The same persisted `ledger.json` reconstructs the same:
   - starters

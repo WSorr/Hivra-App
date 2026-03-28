@@ -90,7 +90,13 @@ class CapsuleIndexStore {
         }
       }
     }
-    return CapsulesIndex(activePubKeyHex: active, capsules: capsulesMap);
+    final normalizedActive = active != null && capsulesMap.containsKey(active)
+        ? active
+        : null;
+    return CapsulesIndex(
+      activePubKeyHex: normalizedActive,
+      capsules: capsulesMap,
+    );
   }
 
   String _toJson(CapsulesIndex index) {
