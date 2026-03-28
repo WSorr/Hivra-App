@@ -61,6 +61,12 @@ require_present "$CHECKLIST_MAC" 'signed/notarized or test-only' \
   "macOS checklist requires signed/notarized disclosure in release notes"
 require_present "$CHECKLIST_MAC" 'Tester instructions are included if the build is unsigned' \
   "macOS checklist requires unsigned-build tester instructions"
+require_present "$CHECKLIST_MAC" 'Correct Git tag exists on the intended commit' \
+  "macOS checklist requires publish tag verification"
+require_present "$CHECKLIST_MAC" 'GitHub Release assets match the latest local artifacts' \
+  "macOS checklist requires publish artifact parity check"
+require_present "$CHECKLIST_MAC" '`Pre-release` flag is correct' \
+  "macOS checklist requires publish pre-release flag check"
 require_present "$CHECKLIST_SMOKE" 'Invitation Flow' \
   "manual smoke checklist covers invitation flow"
 require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \
