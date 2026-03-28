@@ -7,7 +7,7 @@ Scripts:
 - `topology_check.sh` validates high-level repository placement rules.
 - `dependency_check.sh` validates downward dependency direction between Rust crates.
 - `architecture_gate.sh` validates architecture-law sync across code, gates, and docs.
-- `ui_ffi_boundary_gate.sh` validates that Flutter screens do not import raw `HivraBindings` directly.
+- `ui_ffi_boundary_gate.sh` validates that Flutter UI entry/screen layer (`main.dart` + `screens/`) does not import raw `HivraBindings` directly.
 - `security_check.sh` validates that common local artifacts and obvious secret-like content are not tracked.
 - `review_all.sh` runs every check and returns non-zero on any failure.
 
