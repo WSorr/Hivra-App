@@ -15,6 +15,7 @@ run_check() {
 run_check "topology_check.sh"
 run_check "dependency_check.sh"
 run_check "architecture_gate.sh"
+run_check "ui_ffi_boundary_gate.sh"
 run_check "security_check.sh"
 
 exit "$STATUS"
