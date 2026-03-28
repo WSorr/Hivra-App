@@ -18,6 +18,11 @@ Scope:
   - `RelationshipBroken`
 - Extend the current invitation replay guards into a general replay policy.
 - Add regression coverage for replay on long-lived capsules.
+- Current progress:
+  - `hivra-ffi` regression tests now cover replay-skip behavior after export/import for:
+    - duplicated `InvitationAccepted` delivery (no duplicate relationship projection)
+    - duplicated `InvitationRejected` delivery (no duplicate burn effects)
+    - replayed incoming offer for already resolved invitation (blocked)
 
 Definition of done:
 - Replayed transport events are either safely ignored or appended as genuinely new facts.

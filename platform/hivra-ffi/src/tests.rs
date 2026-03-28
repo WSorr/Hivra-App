@@ -47,6 +47,13 @@ fn invitation_accepted_count() -> usize {
         .count()
 }
 
+fn starter_burned_count() -> usize {
+    runtime_events()
+        .into_iter()
+        .filter(|event| event.kind() == EventKind::StarterBurned)
+        .count()
+}
+
 fn append_invitation_sent_for_test(
     invitation_id: [u8; 32],
     starter_id: [u8; 32],
@@ -356,6 +363,130 @@ fn resolved_invitation_blocks_replayed_incoming_offer() {
         &invitation_id,
         PubKey::from(peer_pubkey),
     ));
+}
+
+#[test]
+fn replayed_invitation_accepted_is_skipped_after_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(33);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [19u8; 32];
+    let invitation_id = [23u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_created_starter_id = derive_starter_id(&test_seed(34), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_created_starter_id),
+    };
+    let accepted_bytes = accepted.to_bytes();
+
+    append_runtime_event_with_signer(
+        EventKind::InvitationAccepted,
+        &accepted_bytes,
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+    let engine = build_engine(&local_seed);
+    project_relationship_from_invitation_accepted(&engine, peer_pubkey, &accepted).unwrap();
+
+    assert_eq!(invitation_accepted_count(), 1);
+    assert_eq!(relationship_established_count(), 1);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert!(event_exists_in_runtime_with_signer(
+        EventKind::InvitationAccepted,
+        &accepted_bytes,
+        PubKey::from(peer_pubkey),
+    ));
+
+    // Mimic delivery replay guard path: duplicate accepted message must be ignored.
+    if !event_exists_in_runtime_with_signer(
+        EventKind::InvitationAccepted,
+        &accepted_bytes,
+        PubKey::from(peer_pubkey),
+    ) {
+        append_runtime_event_with_signer(
+            EventKind::InvitationAccepted,
+            &accepted_bytes,
+            PubKey::from(peer_pubkey),
+        )
+        .unwrap();
+        project_relationship_from_invitation_accepted(&engine, peer_pubkey, &accepted).unwrap();
+    }
+
+    assert_eq!(invitation_accepted_count(), 1);
+    assert_eq!(relationship_established_count(), 1);
+}
+
+#[test]
+fn replayed_invitation_rejected_is_skipped_after_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(35);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [20u8; 32];
+    let invitation_id = [24u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    let rejected = InvitationRejectedPayload {
+        invitation_id,
+        reason: RejectReason::EmptySlot,
+    };
+    let rejected_bytes = rejected.to_bytes();
+
+    append_runtime_event_with_signer(
+        EventKind::InvitationRejected,
+        &rejected_bytes,
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+    let engine = build_engine(&local_seed);
+    project_effects_from_invitation_rejected(&engine, &rejected).unwrap();
+
+    assert_eq!(starter_burned_count(), 1);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert!(event_exists_in_runtime_with_signer(
+        EventKind::InvitationRejected,
+        &rejected_bytes,
+        PubKey::from(peer_pubkey),
+    ));
+
+    // Mimic delivery replay guard path: duplicate rejected message must be ignored.
+    if !event_exists_in_runtime_with_signer(
+        EventKind::InvitationRejected,
+        &rejected_bytes,
+        PubKey::from(peer_pubkey),
+    ) {
+        append_runtime_event_with_signer(
+            EventKind::InvitationRejected,
+            &rejected_bytes,
+            PubKey::from(peer_pubkey),
+        )
+        .unwrap();
+        project_effects_from_invitation_rejected(&engine, &rejected).unwrap();
+    }
+
+    assert_eq!(starter_burned_count(), 1);
 }
 
 #[test]
