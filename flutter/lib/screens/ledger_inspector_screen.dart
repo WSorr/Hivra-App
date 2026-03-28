@@ -1,11 +1,11 @@
 import 'dart:convert';
 
-import 'package:bech32/bech32.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
+import '../services/ledger_view_support.dart';
 import '../services/pairwise_snapshot_service.dart';
 import '../utils/hivra_id_format.dart';
 
@@ -28,13 +28,15 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   String? _error;
   String _rawLedgerJson = '';
   CapsuleState? _capsuleState;
-  String _ledgerOwnerB64 = 'No key';
+  String _ledgerOwnerKey = 'No key';
   String _rootDisplayKey = 'No key';
   List<_LedgerEventRow> _recentEvents = const <_LedgerEventRow>[];
   List<PairwiseSnapshotRow> _pairwiseSnapshots = const <PairwiseSnapshotRow>[];
   Map<String, int> _eventCounts = const <String, int>{};
+  List<String> _integrityHints = const <String>[];
   final PairwiseSnapshotService _pairwiseSnapshotService =
       const PairwiseSnapshotService();
+  final LedgerViewSupport _support = const LedgerViewSupport();
 
   @override
   void initState() {
@@ -52,21 +54,24 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
     try {
       _stateManager.refreshWithFullState();
       final state = _stateManager.state;
-      final ownerB64 = state.publicKey.isEmpty ? 'No key' : base64.encode(state.publicKey);
+      final ownerKey = state.publicKey.length == 32
+          ? HivraIdFormat.formatCapsuleKeyBytes(state.publicKey)
+          : 'No key';
       final rootPubKey = widget.runtime.capsuleRootPublicKey();
       final rootDisplayKey = rootPubKey == null || rootPubKey.isEmpty
-          ? 'No key'
-          : _encodeCapsulePublicKey(rootPubKey);
+          ? ownerKey
+          : HivraIdFormat.formatCapsuleKeyBytes(rootPubKey);
 
       final raw = widget.runtime.exportLedger();
       if (raw == null || raw.trim().isEmpty) {
         setState(() {
           _capsuleState = state;
-          _ledgerOwnerB64 = ownerB64;
+          _ledgerOwnerKey = ownerKey;
           _rootDisplayKey = rootDisplayKey;
           _rawLedgerJson = '';
           _recentEvents = const <_LedgerEventRow>[];
           _eventCounts = const <String, int>{};
+          _integrityHints = const <String>[];
           _error = 'Ledger export returned empty result';
           _isLoading = false;
         });
@@ -77,11 +82,12 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
       if (decoded is! Map<String, dynamic>) {
         setState(() {
           _capsuleState = state;
-          _ledgerOwnerB64 = ownerB64;
+          _ledgerOwnerKey = ownerKey;
           _rootDisplayKey = rootDisplayKey;
           _rawLedgerJson = raw;
           _recentEvents = const <_LedgerEventRow>[];
           _eventCounts = const <String, int>{};
+          _integrityHints = const <String>[];
           _error = 'Ledger JSON has unsupported shape';
           _isLoading = false;
         });
@@ -96,15 +102,20 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
         final event = events[i];
         final kindLabel = _kindLabel(event['kind']);
         counts[kindLabel] = (counts[kindLabel] ?? 0) + 1;
+        final payloadBytes = _payloadBytes(event['payload']);
 
         rows.add(
           _LedgerEventRow(
             index: i,
             kind: kindLabel,
             timestamp: _timestampLabel(event['timestamp']),
-            payloadSize: _payloadSize(event['payload']),
+            payloadSize: payloadBytes.length,
             signer: _shortSigner(event['signer']),
             details: _decodeEventDetails(kindLabel, event['payload']),
+            rawEventJson: const JsonEncoder.withIndent('  ').convert(event),
+            rawPayloadBase64:
+                payloadBytes.isEmpty ? 'empty' : base64.encode(payloadBytes),
+            rawPayloadHex: payloadBytes.isEmpty ? 'empty' : _hex(payloadBytes),
           ),
         );
       }
@@ -114,15 +125,18 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
         events,
         widget.runtime.capsuleNostrPublicKey() ?? Uint8List(0),
       );
+      final ledgerOwnerKey = _ownerKeyFromLedger(decoded) ?? ownerKey;
+      final integrityHints = _buildIntegrityHints(events, rows);
 
       setState(() {
         _capsuleState = state;
-        _ledgerOwnerB64 = ownerB64;
+        _ledgerOwnerKey = ledgerOwnerKey;
         _rootDisplayKey = rootDisplayKey;
         _rawLedgerJson = raw;
         _recentEvents = recent;
         _pairwiseSnapshots = snapshots;
         _eventCounts = counts;
+        _integrityHints = integrityHints;
         _isLoading = false;
       });
     } catch (e) {
@@ -214,21 +228,61 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
     return '$yyyy-$mm-$dd $hh:$mi:$ss UTC';
   }
 
-  int _payloadSize(dynamic payload) {
-    if (payload is List) return payload.length;
-    if (payload is String) {
-      try {
-        return base64.decode(payload).length;
-      } catch (_) {
-        return payload.length;
+  String? _ownerKeyFromLedger(Map<String, dynamic> root) {
+    final ownerBytes = _payloadBytes(root['owner']);
+    if (ownerBytes.length != 32) return null;
+    try {
+      return HivraIdFormat.formatCapsuleKeyBytes(ownerBytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<String> _buildIntegrityHints(
+    List<Map<String, dynamic>> events,
+    List<_LedgerEventRow> rows,
+  ) {
+    var unknownKinds = 0;
+    var malformedPayloads = 0;
+    var malformedSigners = 0;
+
+    for (var i = 0; i < events.length; i++) {
+      final event = events[i];
+      final row = rows[i];
+      final kind = row.kind;
+      if (kind.startsWith('Kind(') || kind == 'Unknown') {
+        unknownKinds++;
+      }
+      final minPayloadBytes = _minPayloadBytes(kind);
+      if (minPayloadBytes != null && row.payloadSize < minPayloadBytes) {
+        malformedPayloads++;
+      }
+      final signerBytes = _payloadBytes(event['signer']);
+      if (signerBytes.isNotEmpty && signerBytes.length != 32) {
+        malformedSigners++;
       }
     }
-    return 0;
+
+    final hints = <String>[];
+    if (unknownKinds > 0) {
+      hints.add('Unknown event kinds: $unknownKinds');
+    }
+    if (malformedPayloads > 0) {
+      hints.add('Malformed known-event payloads: $malformedPayloads');
+    }
+    if (malformedSigners > 0) {
+      hints.add('Non-32-byte signer fields: $malformedSigners');
+    }
+    if (hints.isEmpty && events.isNotEmpty) {
+      hints.add('No obvious integrity issues detected');
+    }
+    return hints;
   }
 
   String _shortSigner(dynamic signer) {
     if (signer is List) {
-      final bytes = signer.whereType<num>().map((v) => v.toInt()).toList(growable: false);
+      final bytes =
+          signer.whereType<num>().map((v) => v.toInt()).toList(growable: false);
       if (bytes.length == 32) {
         return HivraIdFormat.short(
           HivraIdFormat.formatCapsuleKeyBytes(Uint8List.fromList(bytes)),
@@ -344,26 +398,14 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   }
 
   Uint8List _payloadBytes(dynamic payload) {
-    if (payload is List) {
-      return Uint8List.fromList(
-        payload.whereType<num>().map((v) => v.toInt()).toList(growable: false),
-      );
-    }
-    if (payload is String) {
-      try {
-        return Uint8List.fromList(base64.decode(payload));
-      } catch (_) {
-        return Uint8List(0);
-      }
-    }
-    return Uint8List(0);
+    return _support.payloadBytes(payload);
   }
 
-  String _keyLabel(List<int> bytes) =>
-      HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(Uint8List.fromList(bytes)));
+  String _keyLabel(List<int> bytes) => HivraIdFormat.short(
+      HivraIdFormat.formatCapsuleKeyBytes(Uint8List.fromList(bytes)));
 
-  String _starterLabel(List<int> bytes) =>
-      HivraIdFormat.short(HivraIdFormat.formatStarterIdBytes(Uint8List.fromList(bytes)));
+  String _starterLabel(List<int> bytes) => HivraIdFormat.short(
+      HivraIdFormat.formatStarterIdBytes(Uint8List.fromList(bytes)));
 
   String _starterKindLabel(int value) {
     switch (value) {
@@ -418,7 +460,8 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   Future<void> _copyToClipboard(String text, String label) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label copied')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('$label copied')));
   }
 
   @override
@@ -458,7 +501,8 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                    child: Text(_error!,
+                        style: const TextStyle(color: Colors.redAccent)),
                   ),
                 )
               : RefreshIndicator(
@@ -469,24 +513,35 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                       _sectionTitle('Capsule'),
                       _infoCard(
                         children: [
-                          _kv('Capsule root', _short(_rootDisplayKey, start: 16, end: 10), trailing: IconButton(
-                            icon: const Icon(Icons.copy, size: 16),
-                            onPressed: _rootDisplayKey == 'No key'
-                                ? null
-                                : () => _copyToClipboard(_rootDisplayKey, 'Capsule root identity'),
-                          )),
-                          _kv('Ledger owner (base64)', _short(_ledgerOwnerB64, start: 14, end: 8), trailing: IconButton(
-                            icon: const Icon(Icons.copy, size: 16),
-                            onPressed: _ledgerOwnerB64 == 'No key'
-                                ? null
-                                : () => _copyToClipboard(_ledgerOwnerB64, 'Ledger owner key'),
-                          )),
+                          _kv('Capsule root',
+                              _short(_rootDisplayKey, start: 16, end: 10),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.copy, size: 16),
+                                onPressed: _rootDisplayKey == 'No key'
+                                    ? null
+                                    : () => _copyToClipboard(_rootDisplayKey,
+                                        'Capsule root identity'),
+                              )),
+                          _kv('Ledger owner',
+                              _short(_ledgerOwnerKey, start: 16, end: 10),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.copy, size: 16),
+                                onPressed: _ledgerOwnerKey == 'No key'
+                                    ? null
+                                    : () => _copyToClipboard(
+                                        _ledgerOwnerKey, 'Ledger owner key'),
+                              )),
                           _kv('Network', state.isNeste ? 'NESTE' : 'HOOD'),
                           _kv('Ledger version', state.version.toString()),
-                          _kv('Ledger hash', _short(state.ledgerHashHex, start: 12, end: 8), trailing: IconButton(
-                            icon: const Icon(Icons.copy, size: 16),
-                            onPressed: state.ledgerHashHex.isEmpty ? null : () => _copyToClipboard(state.ledgerHashHex, 'Ledger hash'),
-                          )),
+                          _kv('Ledger hash',
+                              _short(state.ledgerHashHex, start: 12, end: 8),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.copy, size: 16),
+                                onPressed: state.ledgerHashHex.isEmpty
+                                    ? null
+                                    : () => _copyToClipboard(
+                                        state.ledgerHashHex, 'Ledger hash'),
+                              )),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -495,10 +550,14 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          _counterChip('Starters', state.starterCount, Colors.blue),
-                          _counterChip('Relationships', state.relationshipCount, Colors.green),
-                          _counterChip('Pending', state.pendingInvitations, Colors.orange),
-                          _counterChip('Events', _recentEvents.length, Colors.purple),
+                          _counterChip(
+                              'Starters', state.starterCount, Colors.blue),
+                          _counterChip('Relationships', state.relationshipCount,
+                              Colors.green),
+                          _counterChip('Pending', state.pendingInvitations,
+                              Colors.orange),
+                          _counterChip(
+                              'Events', _recentEvents.length, Colors.purple),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -506,6 +565,13 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                       _infoCard(
                         children: distribution
                             .map<Widget>((e) => _kv(e.key, e.value.toString()))
+                            .toList(growable: false),
+                      ),
+                      const SizedBox(height: 16),
+                      _sectionTitle('Integrity Hints'),
+                      _infoCard(
+                        children: _integrityHints
+                            .map<Widget>((hint) => _kv('Hint', hint))
                             .toList(growable: false),
                       ),
                       if (_pairwiseSnapshots.isNotEmpty) ...[
@@ -552,8 +618,10 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                                     spacing: 8,
                                     runSpacing: 8,
                                     children: [
-                                      _detailChip('invites ${snapshot.invitationCount}'),
-                                      _detailChip('relationships ${snapshot.relationshipCount}'),
+                                      _detailChip(
+                                          'invites ${snapshot.invitationCount}'),
+                                      _detailChip(
+                                          'relationships ${snapshot.relationshipCount}'),
                                     ],
                                   ),
                                   const SizedBox(height: 10),
@@ -567,8 +635,10 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                                         padding: const EdgeInsets.all(12),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFF211E27),
-                                          borderRadius: BorderRadius.circular(10),
-                                          border: Border.all(color: const Color(0xFF3A3646)),
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          border: Border.all(
+                                              color: const Color(0xFF3A3646)),
                                         ),
                                         child: SelectableText(
                                           snapshot.canonicalJson,
@@ -640,10 +710,40 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                                         spacing: 8,
                                         runSpacing: 8,
                                         children: event.details
-                                            .map((detail) => _detailChip(detail))
+                                            .map(
+                                                (detail) => _detailChip(detail))
                                             .toList(growable: false),
                                       ),
                                     ],
+                                    const SizedBox(height: 8),
+                                    ExpansionTile(
+                                      tilePadding: EdgeInsets.zero,
+                                      title:
+                                          const Text('Raw event (on demand)'),
+                                      childrenPadding: EdgeInsets.zero,
+                                      children: [
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF211E27),
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                            border: Border.all(
+                                                color: const Color(0xFF3A3646)),
+                                          ),
+                                          child: SelectableText(
+                                            'payload.base64: ${event.rawPayloadBase64}\n'
+                                            'payload.hex: ${event.rawPayloadHex}\n\n'
+                                            '${event.rawEventJson}',
+                                            style: const TextStyle(
+                                              fontFamily: 'monospace',
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ],
                                 ),
                               ),
@@ -768,38 +868,37 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
     }
   }
 
-  String _encodeCapsulePublicKey(Uint8List bytes) {
-    final words = _convertBits(bytes, 8, 5, true);
-    return bech32.encode(Bech32('h', words));
+  int? _minPayloadBytes(String kind) {
+    switch (kind) {
+      case 'CapsuleCreated':
+        return 2;
+      case 'InvitationSent':
+      case 'InvitationReceived':
+      case 'InvitationAccepted':
+        return 96;
+      case 'InvitationRejected':
+        return 33;
+      case 'InvitationExpired':
+        return 32;
+      case 'StarterCreated':
+        return 66;
+      case 'StarterBurned':
+        return 33;
+      case 'RelationshipEstablished':
+        return 97;
+      case 'RelationshipBroken':
+        return 64;
+      default:
+        return null;
+    }
   }
 
-  List<int> _convertBits(List<int> data, int from, int to, bool pad) {
-    var acc = 0;
-    var bits = 0;
-    final result = <int>[];
-    final maxValue = (1 << to) - 1;
-
-    for (final value in data) {
-      if (value < 0 || (value >> from) != 0) {
-        throw ArgumentError('Invalid key byte for bech32 conversion');
-      }
-      acc = (acc << from) | value;
-      bits += from;
-      while (bits >= to) {
-        bits -= to;
-        result.add((acc >> bits) & maxValue);
-      }
+  String _hex(Uint8List bytes) {
+    final buffer = StringBuffer();
+    for (final b in bytes) {
+      buffer.write(b.toRadixString(16).padLeft(2, '0'));
     }
-
-    if (pad) {
-      if (bits > 0) {
-        result.add((acc << (to - bits)) & maxValue);
-      }
-    } else if (bits >= from || ((acc << (to - bits)) & maxValue) != 0) {
-      throw ArgumentError('Invalid bech32 padding');
-    }
-
-    return result;
+    return buffer.toString();
   }
 }
 
@@ -810,6 +909,9 @@ class _LedgerEventRow {
   final int payloadSize;
   final String signer;
   final List<String> details;
+  final String rawEventJson;
+  final String rawPayloadBase64;
+  final String rawPayloadHex;
 
   const _LedgerEventRow({
     required this.index,
@@ -818,5 +920,8 @@ class _LedgerEventRow {
     required this.payloadSize,
     required this.signer,
     required this.details,
+    required this.rawEventJson,
+    required this.rawPayloadBase64,
+    required this.rawPayloadHex,
   });
 }

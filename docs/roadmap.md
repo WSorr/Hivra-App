@@ -96,9 +96,19 @@ Scope:
 - Keep raw payload available behind an explicit disclosure.
 - Add integrity hints for obviously inconsistent histories.
 
+Current progress:
+- Inspector event cards are decoded-first for all target kinds:
+  - `InvitationSent`, `InvitationReceived`, `InvitationAccepted`
+  - `StarterCreated`
+  - `RelationshipEstablished`, `RelationshipBroken`
+- Capsule/owner keys in inspector are shown in Hivra bech32 form.
+- Raw event details are available on demand via per-event disclosure (`Raw event (on demand)`), with payload shown in base64 + hex and canonical event JSON.
+- Integrity hints are surfaced for obvious inconsistencies (unknown event kinds, malformed payload lengths for known kinds, malformed signer field width).
+
 Definition of done:
 - The inspector is understandable without reading binary payloads.
 - Raw event details remain available for debugging.
+- Status: completed (2026-03-28).
 
 ### 5. Shared Projection Discipline
 
