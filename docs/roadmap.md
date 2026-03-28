@@ -121,6 +121,7 @@ Scope:
 - Identify any remaining places where summary widgets and full screens compute different truths.
 - Current progress:
   - Pairwise snapshot projection used by Ledger Inspector was moved from screen-local code into `PairwiseSnapshotService`, keeping projection logic in service layer rather than widget layer.
+  - Event-kind label mapping for inspector/pairwise projections is now centralized in `LedgerViewSupport.kindLabel`, reducing duplicated event dictionaries in screen/service code.
 
 Definition of done:
 - Header counts, list screens, and detail views use the same underlying projection semantics.

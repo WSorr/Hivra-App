@@ -46,6 +46,37 @@ class LedgerViewSupport {
     return -1;
   }
 
+  String kindLabel(dynamic kind) {
+    if (kind is String) return kind;
+    if (kind is int) {
+      switch (kind) {
+        case 0:
+          return 'CapsuleCreated';
+        case 1:
+          return 'InvitationSent';
+        case 9:
+          return 'InvitationReceived';
+        case 2:
+          return 'InvitationAccepted';
+        case 3:
+          return 'InvitationRejected';
+        case 4:
+          return 'InvitationExpired';
+        case 5:
+          return 'StarterCreated';
+        case 6:
+          return 'StarterBurned';
+        case 7:
+          return 'RelationshipEstablished';
+        case 8:
+          return 'RelationshipBroken';
+        default:
+          return 'Kind($kind)';
+      }
+    }
+    return 'Unknown';
+  }
+
   DateTime eventTime(dynamic ts) {
     if (ts is! num) return DateTime.now();
 

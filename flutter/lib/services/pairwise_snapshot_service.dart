@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import 'ledger_view_support.dart';
 import '../utils/hivra_id_format.dart';
 
 class PairwiseSnapshotRow {
@@ -24,7 +25,11 @@ class PairwiseSnapshotRow {
 }
 
 class PairwiseSnapshotService {
-  const PairwiseSnapshotService();
+  final LedgerViewSupport _support;
+
+  const PairwiseSnapshotService({
+    LedgerViewSupport support = const LedgerViewSupport(),
+  }) : _support = support;
 
   List<PairwiseSnapshotRow> buildSnapshots(
     List<Map<String, dynamic>> events,
@@ -42,13 +47,15 @@ class PairwiseSnapshotService {
     final relationshipFactsByPeer = <String, List<_PairwiseRelationshipFact>>{};
 
     for (final event in events) {
-      final kind = _kindLabel(event['kind']);
+      final kind = _support.kindLabel(event['kind']);
       final payload = _payloadBytes(event['payload']);
       final signer = _bytes32(event['signer']);
 
-      if ((kind == 'InvitationSent' || kind == 'InvitationReceived') && payload.length >= 96) {
+      if ((kind == 'InvitationSent' || kind == 'InvitationReceived') &&
+          payload.length >= 96) {
         final invitationId = _hex(payload.sublist(0, 32));
-        final fact = inviteFactsById.putIfAbsent(invitationId, () => _PairwiseInviteFact(invitationId));
+        final fact = inviteFactsById.putIfAbsent(
+            invitationId, () => _PairwiseInviteFact(invitationId));
         final transportPeerHex = kind == 'InvitationReceived' && signer != null
             ? _hex(signer)
             : _hex(payload.sublist(64, 96));
@@ -73,17 +80,20 @@ class PairwiseSnapshotService {
             _hex(payload.sublist(64, 96)),
           ]..sort(),
         );
-        relationshipFactsByPeer.putIfAbsent(peerRootHex, () => <_PairwiseRelationshipFact>[]).add(relationship);
+        relationshipFactsByPeer
+            .putIfAbsent(peerRootHex, () => <_PairwiseRelationshipFact>[])
+            .add(relationship);
       }
     }
 
     for (final entry in inviteTransportPeerById.entries) {
-      inviteRootPeerById.putIfAbsent(entry.key, () => transportPeerToRootPeer[entry.value] ?? '');
+      inviteRootPeerById.putIfAbsent(
+          entry.key, () => transportPeerToRootPeer[entry.value] ?? '');
     }
     inviteRootPeerById.removeWhere((_, value) => value.isEmpty);
 
     for (final event in events) {
-      final kind = _kindLabel(event['kind']);
+      final kind = _support.kindLabel(event['kind']);
       final payload = _payloadBytes(event['payload']);
       if (payload.length < 32) continue;
 
@@ -110,21 +120,30 @@ class PairwiseSnapshotService {
     final inviteFactsByPeer = <String, List<_PairwiseInviteFact>>{};
     for (final entry in inviteFactsById.entries) {
       final peerRootHex = inviteRootPeerById[entry.key];
-      if (peerRootHex == null || peerRootHex.isEmpty || entry.value.status == 'pending') {
+      if (peerRootHex == null ||
+          peerRootHex.isEmpty ||
+          entry.value.status == 'pending') {
         continue;
       }
-      inviteFactsByPeer.putIfAbsent(peerRootHex, () => <_PairwiseInviteFact>[]).add(entry.value);
+      inviteFactsByPeer
+          .putIfAbsent(peerRootHex, () => <_PairwiseInviteFact>[])
+          .add(entry.value);
     }
 
     final snapshots = <PairwiseSnapshotRow>[];
-    final peers = <String>{...inviteFactsByPeer.keys, ...relationshipFactsByPeer.keys}.toList()
+    final peers = <String>{
+      ...inviteFactsByPeer.keys,
+      ...relationshipFactsByPeer.keys
+    }.toList()
       ..sort();
 
     for (final peerRootHex in peers) {
       final pairRoots = <String>[localTransportHex, peerRootHex]..sort();
-      final finalizedInvitations = (inviteFactsByPeer[peerRootHex] ?? <_PairwiseInviteFact>[])
+      final finalizedInvitations = (inviteFactsByPeer[peerRootHex] ??
+          <_PairwiseInviteFact>[])
         ..sort((a, b) => a.invitationId.compareTo(b.invitationId));
-      final relationships = (relationshipFactsByPeer[peerRootHex] ?? <_PairwiseRelationshipFact>[])
+      final relationships = (relationshipFactsByPeer[peerRootHex] ??
+          <_PairwiseRelationshipFact>[])
         ..sort((a, b) {
           final inviteCmp = a.invitationId.compareTo(b.invitationId);
           if (inviteCmp != 0) return inviteCmp;
@@ -177,64 +196,13 @@ class PairwiseSnapshotService {
     return snapshots;
   }
 
-  String _kindLabel(dynamic kind) {
-    if (kind is String) return kind;
-    if (kind is int) {
-      switch (kind) {
-        case 0:
-          return 'CapsuleCreated';
-        case 1:
-          return 'InvitationSent';
-        case 9:
-          return 'InvitationReceived';
-        case 2:
-          return 'InvitationAccepted';
-        case 3:
-          return 'InvitationRejected';
-        case 4:
-          return 'InvitationExpired';
-        case 5:
-          return 'StarterCreated';
-        case 6:
-          return 'StarterBurned';
-        case 7:
-          return 'RelationshipEstablished';
-        case 8:
-          return 'RelationshipBroken';
-      }
-      return 'Kind($kind)';
-    }
-    return 'Unknown';
-  }
-
   Uint8List _payloadBytes(dynamic payload) {
-    if (payload is List) {
-      return Uint8List.fromList(
-        payload.whereType<num>().map((v) => v.toInt()).toList(growable: false),
-      );
-    }
-    if (payload is String) {
-      try {
-        return Uint8List.fromList(base64.decode(payload));
-      } catch (_) {
-        return Uint8List(0);
-      }
-    }
-    return Uint8List(0);
+    return _support.payloadBytes(payload);
   }
 
   Uint8List? _bytes32(dynamic raw) {
-    if (raw is List) {
-      final bytes = raw.whereType<num>().map((v) => v.toInt()).toList(growable: false);
-      if (bytes.length == 32) return Uint8List.fromList(bytes);
-    }
-    if (raw is String) {
-      try {
-        final decoded = base64.decode(raw);
-        if (decoded.length == 32) return Uint8List.fromList(decoded);
-      } catch (_) {}
-    }
-    return null;
+    final bytes = _support.payloadBytes(raw);
+    return bytes.length == 32 ? bytes : null;
   }
 
   String _hex(List<int> bytes) =>

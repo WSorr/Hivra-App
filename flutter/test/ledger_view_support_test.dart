@@ -5,6 +5,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/ledger_view_support.dart';
 
 void main() {
+  group('LedgerViewSupport.kindLabel', () {
+    const support = LedgerViewSupport();
+
+    test('maps known numeric kinds', () {
+      expect(support.kindLabel(1), equals('InvitationSent'));
+      expect(support.kindLabel(9), equals('InvitationReceived'));
+    });
+
+    test('keeps string kind as-is and formats unknown int', () {
+      expect(support.kindLabel('CustomKind'), equals('CustomKind'));
+      expect(support.kindLabel(42), equals('Kind(42)'));
+    });
+  });
+
   group('LedgerViewSupport.payloadBytes', () {
     const support = LedgerViewSupport();
 

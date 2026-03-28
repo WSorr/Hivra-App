@@ -100,7 +100,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
 
       for (var i = 0; i < events.length; i++) {
         final event = events[i];
-        final kindLabel = _kindLabel(event['kind']);
+        final kindLabel = _support.kindLabel(event['kind']);
         counts[kindLabel] = (counts[kindLabel] ?? 0) + 1;
         final payloadBytes = _payloadBytes(event['payload']);
 
@@ -158,36 +158,6 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
       }
     }
     return out;
-  }
-
-  String _kindLabel(dynamic kind) {
-    if (kind is String) return kind;
-    if (kind is int) {
-      switch (kind) {
-        case 0:
-          return 'CapsuleCreated';
-        case 1:
-          return 'InvitationSent';
-        case 9:
-          return 'InvitationReceived';
-        case 2:
-          return 'InvitationAccepted';
-        case 3:
-          return 'InvitationRejected';
-        case 4:
-          return 'InvitationExpired';
-        case 5:
-          return 'StarterCreated';
-        case 6:
-          return 'StarterBurned';
-        case 7:
-          return 'RelationshipEstablished';
-        case 8:
-          return 'RelationshipBroken';
-      }
-      return 'Kind($kind)';
-    }
-    return 'Unknown';
   }
 
   String _timestampLabel(dynamic timestamp) {
