@@ -260,6 +260,7 @@ Scope:
 - Current progress:
   - Added `docs/checklists/android-runtime-hardening.md` to track bootstrap/storage/transport/parity runtime hardening checks.
   - `release_discipline_gate.sh` now validates Android runtime hardening checklist presence and key coverage.
+  - Gate coverage now includes restart active-capsule stability, reinstall stale-seed guard, and receive-path diagnostic separation checks.
 
 Definition of done:
 - Android runtime failures are diagnosable.

@@ -99,10 +99,16 @@ require_present "$CHECKLIST_ANDROID" 'Release notes mention testing scope and kn
   "Android checklist requires publish release-notes scope check"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'matches ledger-first policy' \
   "Android runtime checklist covers ledger-first bootstrap parity"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'preserves active capsule selection' \
+  "Android runtime checklist covers active-capsule stability on restart"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'Keystore-backed seed access is validated after cold restart' \
   "Android runtime checklist covers keystore cold-restart validation"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'does not silently reuse stale app-private seed state' \
+  "Android runtime checklist covers reinstall stale-seed guard"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'Outbound relay write failures surface actionable diagnostics' \
   "Android runtime checklist covers outbound transport diagnostics"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'Receive path diagnostics distinguish transport failure from projection/ledger failure' \
+  "Android runtime checklist covers receive-path diagnostic separation"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'projections match macOS for the same ledger history' \
   "Android runtime checklist covers cross-platform projection parity"
 require_present "$CHECKLIST_SMOKE" 'Invitation Flow' \
