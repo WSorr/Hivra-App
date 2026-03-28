@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import '../ffi/hivra_bindings.dart';
 import '../services/invitation_delivery_service.dart';
+import '../services/invitation_actions_service.dart';
 import '../services/capsule_state_manager.dart';
-import '../services/capsule_persistence_service.dart';
 import '../utils/hivra_id_format.dart';
 
 class StartersScreen extends StatefulWidget {
@@ -21,13 +21,14 @@ class StartersScreen extends StatefulWidget {
 }
 
 class _StartersScreenState extends State<StartersScreen> {
-  final CapsulePersistenceService _persistence = CapsulePersistenceService();
   final InvitationDeliveryService _delivery = const InvitationDeliveryService();
+  late final InvitationActionsService _actions;
   List<Map<String, dynamic>> _slots = const [];
 
   @override
   void initState() {
     super.initState();
+    _actions = InvitationActionsService(widget.hivra);
     _loadSlots();
   }
 
@@ -134,17 +135,12 @@ class _StartersScreenState extends State<StartersScreen> {
                     throw Exception('Invalid starter slot');
                   }
 
-                  final sent = widget.hivra.deliverInvitation(
+                  final workerResult = await _actions.sendInvitation(
                     resolution.transportRecipient!,
                     slotIndex,
                   );
-                  if (!sent) {
-                    throw Exception('transport send failed');
-                  }
-
-                  final persisted = await _persistence.persistLedgerSnapshot(widget.hivra);
-                  if (!persisted) {
-                    throw Exception('ledger snapshot was not saved');
+                  if (workerResult.code != 0) {
+                    throw Exception(_delivery.sendFailureMessage(workerResult.code));
                   }
 
                   navigator.pop();
