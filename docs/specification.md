@@ -512,6 +512,24 @@ A starter is burned ONLY at the sender and only when ALL conditions are met:
 - Either side can break at any time (RelationshipBroken).
 - Starters are not burned on break.
 
+### 8.4 Pairwise Consensus Computation Mode
+
+Pairwise consensus is an execution-time operation, not a permanent UI/runtime background process.
+
+Rules:
+
+1. Pairwise consensus MUST be computed on demand only.
+2. Valid triggers for recomputation are:
+   - smart-contract execution precondition checks
+   - explicit user-requested consensus checks
+3. Consensus derivation MUST read only canonical ledger-derived projections.
+4. A dedicated Consensus Processor module MUST provide at least:
+   - `preview` (derive canonical projection and hash)
+   - `signable` (derive the hash to be signed)
+   - `verify` (check signature set and hash equality)
+5. Pair-scoped smart-contract execution MUST be blocked when consensus state is `mismatch` or unresolved for required participants.
+6. Consensus logic MUST NOT be embedded in invitation form policy or screen-local UI orchestration.
+
 ---
 
 ## 9. Invariants (DO NOT VIOLATE)

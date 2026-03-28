@@ -27,6 +27,13 @@ This repository implements Hivra v1.0.0 specification:
 - `hivra-transport` is adapter-only and does **not** depend on `hivra-core` or `hivra-engine`.
 - `hivra-ffi` is the boundary crate that composes `core + engine + adapters + keystore`.
 
+### Consensus Execution Contract
+
+- Pairwise consensus is computed on demand by a dedicated Consensus Processor.
+- It is not continuously recomputed in UI/background flows.
+- Trigger points: smart-contract precondition checks and explicit user-requested checks.
+- Pair-scoped smart contracts execute only when participants derive and sign the same canonical consensus hash.
+
 ## Specification Documents
 
 - [Hivra Protocol Specification](docs/specification.md)

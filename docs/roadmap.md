@@ -364,6 +364,14 @@ When tradeoffs are unclear, prefer:
     - consumes ledger projections
     - computes canonical pairwise snapshots
     - reports consensus state (`match`/`mismatch`) and blocking facts
+  - Consensus must be computed on demand, not continuously in UI/runtime background.
+  - Recalculation triggers are explicit:
+    - smart-contract precondition check
+    - user-requested manual consensus check
+  - Processor API should support:
+    - `preview` (derive and display snapshot/hash)
+    - `signable` (derive hash to be signed)
+    - `verify` (validate signatures and hash equality)
   - Expose processor output as read-only inputs to UI and plugin execution guards.
   - Do not mix processor rollout with transport send/receive UX changes.
 
