@@ -163,6 +163,8 @@ Scope:
   - notarization
   - clean tester/public release separation
 - Verify release artifacts from the packaged archive, not only from the build tree.
+- Current progress:
+  - Release-discipline gate now enforces checklist coverage for release-note signing/notarization disclosure and unsigned-build tester instructions.
 
 Definition of done:
 - Published macOS artifacts match the tested build and launch reliably on supported Macs.

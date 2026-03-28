@@ -57,6 +57,10 @@ require_present "$CHECKLIST_MAC" 'update path was evaluated for truth preservati
   "macOS checklist requires update truth-preservation verification"
 require_present "$CHECKLIST_MAC" 'does not re-materialize previously resolved invitation history' \
   "macOS checklist requires no resolved-invite resurrection check"
+require_present "$CHECKLIST_MAC" 'signed/notarized or test-only' \
+  "macOS checklist requires signed/notarized disclosure in release notes"
+require_present "$CHECKLIST_MAC" 'Tester instructions are included if the build is unsigned' \
+  "macOS checklist requires unsigned-build tester instructions"
 require_present "$CHECKLIST_SMOKE" 'Invitation Flow' \
   "manual smoke checklist covers invitation flow"
 require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \
