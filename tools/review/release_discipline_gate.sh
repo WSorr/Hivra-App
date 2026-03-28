@@ -39,11 +39,13 @@ PRECHECK="$ROOT/tools/release/preflight.sh"
 REVIEW_ALL="$ROOT/tools/review/review_all.sh"
 CHECKLIST_MAC="$ROOT/docs/checklists/release-macos.md"
 CHECKLIST_ANDROID="$ROOT/docs/checklists/release-android.md"
+CHECKLIST_ANDROID_RUNTIME="$ROOT/docs/checklists/android-runtime-hardening.md"
 CHECKLIST_SMOKE="$ROOT/docs/checklists/manual-smoke.md"
 
 require_file "$PRECHECK" "preflight script exists"
 require_file "$CHECKLIST_MAC" "macOS release checklist exists"
 require_file "$CHECKLIST_ANDROID" "Android release checklist exists"
+require_file "$CHECKLIST_ANDROID_RUNTIME" "Android runtime hardening checklist exists"
 require_file "$CHECKLIST_SMOKE" "manual smoke checklist exists"
 
 require_present "$ROADMAP" '^### 6\. Release Preflight as a Gate' \
@@ -52,6 +54,8 @@ require_present "$ROADMAP" '^### 7\. Public macOS Release Quality' \
   "roadmap tracks macOS release quality"
 require_present "$ROADMAP" '^### 7\.2 Android Release Quality' \
   "roadmap tracks Android release quality"
+require_present "$ROADMAP" '^### 8\.1 Android Runtime Hardening' \
+  "roadmap tracks Android runtime hardening"
 
 require_present "$CHECKLIST_MAC" 'tools/release/preflight\.sh' \
   "macOS checklist requires preflight run"
@@ -93,6 +97,14 @@ require_present "$CHECKLIST_ANDROID" 'Release asset name clearly indicates versi
   "Android checklist requires publish asset naming check"
 require_present "$CHECKLIST_ANDROID" 'Release notes mention testing scope and known Android limitations' \
   "Android checklist requires publish release-notes scope check"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'matches ledger-first policy' \
+  "Android runtime checklist covers ledger-first bootstrap parity"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'Keystore-backed seed access is validated after cold restart' \
+  "Android runtime checklist covers keystore cold-restart validation"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'Outbound relay write failures surface actionable diagnostics' \
+  "Android runtime checklist covers outbound transport diagnostics"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'projections match macOS for the same ledger history' \
+  "Android runtime checklist covers cross-platform projection parity"
 require_present "$CHECKLIST_SMOKE" 'Invitation Flow' \
   "manual smoke checklist covers invitation flow"
 require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \

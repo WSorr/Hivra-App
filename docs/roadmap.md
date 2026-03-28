@@ -257,6 +257,9 @@ Scope:
 - Remove Android-only blind spots where transport failures collapse into generic UI errors.
 - Keep runtime bootstrap behavior aligned with macOS so cross-platform truth stays comparable.
 - Audit Android-specific storage and lifecycle assumptions for restart, reinstall, and upgrade behavior.
+- Current progress:
+  - Added `docs/checklists/android-runtime-hardening.md` to track bootstrap/storage/transport/parity runtime hardening checks.
+  - `release_discipline_gate.sh` now validates Android runtime hardening checklist presence and key coverage.
 
 Definition of done:
 - Android runtime failures are diagnosable.
