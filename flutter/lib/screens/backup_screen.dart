@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:share_plus/share_plus.dart';
-import '../ffi/hivra_bindings.dart';
-import '../services/capsule_persistence_service.dart';
+import '../services/backup_service.dart';
 
 class BackupScreen extends StatefulWidget {
   final Uint8List seed;
@@ -24,7 +23,7 @@ class BackupScreen extends StatefulWidget {
 }
 
 class _BackupScreenState extends State<BackupScreen> {
-  final HivraBindings _hivra = HivraBindings();
+  final BackupService _backup = BackupService();
   String? _mnemonic;
   String? _backupPath;
   bool _isSavingBackup = false;
@@ -37,7 +36,7 @@ class _BackupScreenState extends State<BackupScreen> {
 
   void _generateMnemonic() {
     try {
-      final phrase = _hivra.seedToMnemonic(widget.seed, wordCount: 24);
+      final phrase = _backup.mnemonicFromSeed(widget.seed, wordCount: 24);
       setState(() {
         _mnemonic = phrase;
       });
@@ -85,8 +84,7 @@ class _BackupScreenState extends State<BackupScreen> {
         });
       }
 
-      final path = await CapsulePersistenceService()
-          .exportBackupEnvelopeToPath(_hivra, targetPath);
+      final path = await _backup.exportBackupEnvelopeToPath(targetPath);
       if (!mounted) return;
       if (path == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -116,11 +114,9 @@ class _BackupScreenState extends State<BackupScreen> {
 
   Future<void> _continue() async {
     if (widget.isNewWallet) {
-      await CapsulePersistenceService().persistAfterCreate(
-        hivra: _hivra,
+      await _backup.persistAfterCreate(
         seed: widget.seed,
         isGenesis: widget.isGenesis,
-        isNeste: true,
       );
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/main');
@@ -135,8 +131,7 @@ class _BackupScreenState extends State<BackupScreen> {
       final tempFile = File(
         '${Directory.systemTemp.path}/capsule-backup-${DateTime.now().millisecondsSinceEpoch}.json',
       );
-      final path = await CapsulePersistenceService()
-          .exportBackupEnvelopeToPath(_hivra, tempFile.path);
+      final path = await _backup.exportBackupEnvelopeToPath(tempFile.path);
       if (!mounted) return;
       if (path == null) {
         ScaffoldMessenger.of(context).showSnackBar(

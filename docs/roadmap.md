@@ -373,7 +373,7 @@ When tradeoffs are unclear, prefer:
     - `12` screens import `HivraBindings` directly
     - `7` services import `HivraBindings` directly
   - Current snapshot:
-    - `8` screens import `HivraBindings` directly
+    - `7` screens import `HivraBindings` directly
   - Prioritize extracting read-only screens and backup/recovery orchestration first.
   - Definition of done for this slice:
     - screens depend on application services/facades, not raw FFI bindings
