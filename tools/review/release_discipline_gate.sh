@@ -81,10 +81,14 @@ require_present "$CHECKLIST_ANDROID" 'Invitation send succeeds' \
   "Android checklist covers invitation send flow"
 require_present "$CHECKLIST_ANDROID" 'Invitation accept succeeds' \
   "Android checklist covers invitation accept flow"
+require_present "$CHECKLIST_ANDROID" 'packaged release artifact' \
+  "Android checklist requires packaged-artifact install verification"
 require_present "$CHECKLIST_ANDROID" 'Outbound transport failure path was exercised' \
   "Android checklist covers transport diagnostics"
 require_present "$CHECKLIST_ANDROID" 'Android keystore-backed seed storage behavior was validated' \
   "Android checklist covers keystore seed storage validation"
+require_present "$CHECKLIST_ANDROID" 'Checksums were generated for published APK assets' \
+  "Android checklist requires APK checksum verification"
 require_present "$CHECKLIST_SMOKE" 'Invitation Flow' \
   "manual smoke checklist covers invitation flow"
 require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \

@@ -11,6 +11,7 @@ Use this checklist before publishing Android builds to testers or end users.
 ## Verification
 
 - [ ] APK installs on a clean Android device.
+- [ ] APK install verification used the packaged release artifact (not only a local debug/build-tree install).
 - [ ] App launches and reaches first interactive screen.
 - [ ] Create or recover capsule path succeeds.
 - [ ] Invitation send succeeds.

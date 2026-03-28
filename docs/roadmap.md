@@ -190,6 +190,7 @@ Scope:
 - Current progress:
   - Added `docs/checklists/release-android.md` for build/verification/diagnostics/publish discipline.
   - `release_discipline_gate.sh` now validates Android checklist presence and key coverage (send/accept smoke, transport diagnostics, keystore seed validation).
+  - Android checklist and gate now require packaged-artifact install verification and APK checksum verification.
 
 Definition of done:
 - Published Android APKs install cleanly, launch, and complete basic invitation flows on real devices.
