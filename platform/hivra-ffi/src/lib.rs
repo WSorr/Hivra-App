@@ -9,10 +9,12 @@ use hivra_core::{
     event::{Event, EventKind},
     event_payloads::{
         CapsuleCreatedPayload, EventPayload, InvitationAcceptedPayload, InvitationRejectedPayload,
-        InvitationSentPayload, RejectReason, StarterBurnedPayload, StarterCreatedPayload,
+        InvitationSentPayload, RejectReason, StarterCreatedPayload,
     },
     Ledger, Network, PubKey, Signature, StarterId, StarterKind, Timestamp,
 };
+#[cfg(test)]
+use hivra_core::event_payloads::StarterBurnedPayload;
 use hivra_engine::{
     CryptoProvider, Engine, EngineConfig, PreparedEvent, RandomSource, SecureKeyStore,
     TimeSource,
