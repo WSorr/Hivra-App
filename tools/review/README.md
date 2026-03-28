@@ -6,6 +6,7 @@ Scripts:
 
 - `topology_check.sh` validates high-level repository placement rules.
 - `dependency_check.sh` validates downward dependency direction between Rust crates.
+- `architecture_gate.sh` validates architecture-law sync across code, gates, and docs.
 - `security_check.sh` validates that common local artifacts and obvious secret-like content are not tracked.
 - `review_all.sh` runs every check and returns non-zero on any failure.
 
