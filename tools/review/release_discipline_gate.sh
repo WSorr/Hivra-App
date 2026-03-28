@@ -101,10 +101,14 @@ require_present "$CHECKLIST_ANDROID_RUNTIME" 'matches ledger-first policy' \
   "Android runtime checklist covers ledger-first bootstrap parity"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'preserves active capsule selection' \
   "Android runtime checklist covers active-capsule stability on restart"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'Seed-to-capsule binding remains stable across app restart' \
+  "Android runtime checklist covers restart seed-binding stability"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'Keystore-backed seed access is validated after cold restart' \
   "Android runtime checklist covers keystore cold-restart validation"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'does not silently reuse stale app-private seed state' \
   "Android runtime checklist covers reinstall stale-seed guard"
+require_present "$CHECKLIST_ANDROID_RUNTIME" 'Backup import path reconstructs the same ledger truth as before reinstall' \
+  "Android runtime checklist covers backup-import truth parity"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'Outbound relay write failures surface actionable diagnostics' \
   "Android runtime checklist covers outbound transport diagnostics"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'Receive path diagnostics distinguish transport failure from projection/ledger failure' \
