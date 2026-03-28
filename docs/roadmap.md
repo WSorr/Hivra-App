@@ -124,6 +124,7 @@ Scope:
   - Event-kind label mapping for inspector/pairwise projections is now centralized in `LedgerViewSupport.kindLabel`, reducing duplicated event dictionaries in screen/service code.
   - Added `pairwise_snapshot_service_test.dart` regression coverage for numeric event-kind inputs, locking shared kind-label projection behavior across ledger readers.
   - Added `LedgerViewSupport` mapping invariant test coverage (`kindCode <-> kindLabel`) for canonical event kinds to prevent projection dictionary drift.
+  - Added `projection_discipline_gate.sh` to prevent reintroduction of local kind dictionaries in key projection readers.
 
 Definition of done:
 - Header counts, list screens, and detail views use the same underlying projection semantics.
