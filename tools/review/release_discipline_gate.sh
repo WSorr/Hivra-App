@@ -59,6 +59,12 @@ require_present "$CHECKLIST_MAC" 'does not re-materialize previously resolved in
   "macOS checklist requires no resolved-invite resurrection check"
 require_present "$CHECKLIST_MAC" 'signed/notarized or test-only' \
   "macOS checklist requires signed/notarized disclosure in release notes"
+require_present "$CHECKLIST_MAC" 'Release asset name clearly indicates version and target' \
+  "macOS checklist requires packaging asset naming check"
+require_present "$CHECKLIST_MAC" 'ZIP or DMG was rebuilt from the latest `.app`' \
+  "macOS checklist requires package rebuild check"
+require_present "$CHECKLIST_MAC" '`SHA256SUMS.txt` was regenerated' \
+  "macOS checklist requires checksum regeneration check"
 require_present "$CHECKLIST_MAC" 'Tester instructions are included if the build is unsigned' \
   "macOS checklist requires unsigned-build tester instructions"
 require_present "$CHECKLIST_MAC" 'Correct Git tag exists on the intended commit' \
