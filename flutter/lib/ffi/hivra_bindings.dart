@@ -88,21 +88,6 @@ typedef HivraCapsuleNostrPublicKeyDart = int Function(Pointer<Uint8> outKey);
 typedef HivraCapsuleResetC = Int32 Function();
 typedef HivraCapsuleResetDart = int Function();
 
-typedef HivraStarterGetIdC = Int32 Function(
-  Uint8 slot,
-  Pointer<Uint8> outId,
-);
-typedef HivraStarterGetIdDart = int Function(
-  int slot,
-  Pointer<Uint8> outId,
-);
-
-typedef HivraStarterGetTypeC = Int32 Function(Uint8 slot);
-typedef HivraStarterGetTypeDart = int Function(int slot);
-
-typedef HivraStarterExistsC = Int8 Function(Uint8 slot);
-typedef HivraStarterExistsDart = int Function(int slot);
-
 typedef HivraSendInvitationC = Int32 Function(
   Pointer<Uint8> toPubkey,
   Uint8 starterSlot,
@@ -228,9 +213,6 @@ class HivraBindings {
   late final HivraCapsuleRootPublicKeyDart _capsuleRootPublicKey;
   late final HivraCapsuleNostrPublicKeyDart _capsuleNostrPublicKey;
   late final HivraCapsuleResetDart _capsuleReset;
-  late final HivraStarterGetIdDart _starterGetId;
-  late final HivraStarterGetTypeDart _starterGetType;
-  late final HivraStarterExistsDart _starterExists;
   HivraSendInvitationDart? _sendInvitation;
   HivraTransportReceiveDart? _transportReceive;
   HivraTransportReceiveQuickDart? _transportReceiveQuick;
@@ -307,18 +289,6 @@ class HivraBindings {
 
     _capsuleReset = _lib
         .lookup<NativeFunction<HivraCapsuleResetC>>('hivra_capsule_reset')
-        .asFunction();
-
-    _starterGetId = _lib
-        .lookup<NativeFunction<HivraStarterGetIdC>>('hivra_starter_get_id')
-        .asFunction();
-
-    _starterGetType = _lib
-        .lookup<NativeFunction<HivraStarterGetTypeC>>('hivra_starter_get_type')
-        .asFunction();
-
-    _starterExists = _lib
-        .lookup<NativeFunction<HivraStarterExistsC>>('hivra_starter_exists')
         .asFunction();
 
     try {
@@ -562,35 +532,6 @@ class HivraBindings {
   }
 
   bool resetCapsule() => _capsuleReset() == 0;
-
-  Uint8List? getStarterId(int slot) {
-    if (slot < 0 || slot > 4) return null;
-    final outPtr = calloc<Uint8>(32);
-    try {
-      final result = _starterGetId(slot, outPtr);
-      if (result != 0) return null;
-      final id = Uint8List(32);
-      final idNative = outPtr.asTypedList(32);
-      id.setAll(0, idNative);
-      return id;
-    } finally {
-      calloc.free(outPtr);
-    }
-  }
-
-  String getStarterType(int slot) {
-    final typeIndex = _starterGetType(slot);
-    switch (typeIndex) {
-      case 0: return 'Juice';
-      case 1: return 'Spark';
-      case 2: return 'Seed';
-      case 3: return 'Pulse';
-      case 4: return 'Kick';
-      default: return 'Unknown';
-    }
-  }
-
-  bool starterExists(int slot) => _starterExists(slot) != 0;
 
   int deliverInvitationCode(Uint8List toPubkey, int starterSlot) {
     if (toPubkey.length != 32 || starterSlot < 0 || starterSlot > 4) return -1;
