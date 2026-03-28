@@ -187,6 +187,9 @@ Scope:
   - backup/recovery entry paths
 - Improve outbound transport diagnostics so relay write failures are visible and actionable.
 - Verify release APKs from the packaged artifact, not only from a local build tree install.
+- Current progress:
+  - Added `docs/checklists/release-android.md` for build/verification/diagnostics/publish discipline.
+  - `release_discipline_gate.sh` now validates Android checklist presence and key coverage (send/accept smoke, transport diagnostics, keystore seed validation).
 
 Definition of done:
 - Published Android APKs install cleanly, launch, and complete basic invitation flows on real devices.
