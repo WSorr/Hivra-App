@@ -70,6 +70,20 @@ Map<String, Object?> _receiveInvitationsInWorker(Map<String, Object?> args) {
   };
 }
 
+Map<String, Object?> _receiveInvitationsQuickInWorker(
+  Map<String, Object?> args,
+) {
+  final hivra = HivraBindings();
+  if (!_bootstrapWorkerRuntime(hivra, args)) {
+    return <String, Object?>{'result': -1004};
+  }
+  final result = hivra.fetchInvitationDeliveriesQuick();
+  return <String, Object?>{
+    'result': result,
+    'ledgerJson': hivra.exportLedger(),
+  };
+}
+
 Map<String, Object?> _acceptInvitationInWorker(Map<String, Object?> args) {
   final hivra = HivraBindings();
   if (!_bootstrapWorkerRuntime(hivra, args)) {
@@ -136,6 +150,30 @@ class InvitationActionsService {
     final workerResult =
         await compute<Map<String, Object?>, Map<String, Object?>>(
       _receiveInvitationsInWorker,
+      bootstrap,
+    ).timeout(
+      const Duration(seconds: 12),
+      onTimeout: () => <String, Object?>{'result': -1003},
+    );
+
+    final code = (workerResult['result'] as int?) ?? -1003;
+    final ledgerJson = workerResult['ledgerJson'] as String?;
+    if (code >= 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
+      _hivra.importLedger(ledgerJson);
+      await _persistence.persistLedgerSnapshot(_hivra);
+    }
+    return InvitationWorkerResult(code: code, ledgerJson: ledgerJson);
+  }
+
+  Future<InvitationWorkerResult> fetchInvitationsQuick() async {
+    final bootstrap = await _persistence.loadWorkerBootstrapArgs(_hivra);
+    if (bootstrap == null) {
+      return const InvitationWorkerResult(code: -1004);
+    }
+
+    final workerResult =
+        await compute<Map<String, Object?>, Map<String, Object?>>(
+      _receiveInvitationsQuickInWorker,
       bootstrap,
     ).timeout(
       const Duration(seconds: 12),
