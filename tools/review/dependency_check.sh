@@ -53,8 +53,8 @@ require_present "$ENGINE_TOML" 'hivra-core' \
 require_absent "$ENGINE_TOML" 'hivra-(transport|nostr-crypto|ffi|keystore)' \
   "hivra-engine must not depend on transport/crypto/ffi/keystore"
 
-require_present "$TRANSPORT_TOML" 'hivra-core' \
-  "hivra-transport depends on hivra-core"
+require_absent "$TRANSPORT_TOML" 'hivra-core' \
+  "hivra-transport must not depend on hivra-core"
 require_absent "$TRANSPORT_TOML" 'hivra-ffi' \
   "hivra-transport must not depend on hivra-ffi"
 
