@@ -204,6 +204,8 @@ Scope:
 - Audit FFI entrypoints for hidden orchestration or domain leakage.
 - Move business rules down into core/engine where they belong.
 - Keep Flutter focused on presentation and screen-level orchestration.
+- Current progress:
+  - Legacy starter slot FFI getters (`hivra_starter_get_id/get_type/exists`) were aligned to ledger-derived slot projection (`SlotLayout::from_ledger`) instead of seed/slot-side derivation in the FFI layer.
 
 Definition of done:
 - FFI remains explicit, narrow, and predictable.
