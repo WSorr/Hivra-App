@@ -123,6 +123,7 @@ Scope:
   - Pairwise snapshot projection used by Ledger Inspector was moved from screen-local code into `PairwiseSnapshotService`, keeping projection logic in service layer rather than widget layer.
   - Event-kind label mapping for inspector/pairwise projections is now centralized in `LedgerViewSupport.kindLabel`, reducing duplicated event dictionaries in screen/service code.
   - Added `pairwise_snapshot_service_test.dart` regression coverage for numeric event-kind inputs, locking shared kind-label projection behavior across ledger readers.
+  - Added `LedgerViewSupport` mapping invariant test coverage (`kindCode <-> kindLabel`) for canonical event kinds to prevent projection dictionary drift.
 
 Definition of done:
 - Header counts, list screens, and detail views use the same underlying projection semantics.

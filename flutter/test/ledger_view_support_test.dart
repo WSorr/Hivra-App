@@ -17,6 +17,26 @@ void main() {
       expect(support.kindLabel('CustomKind'), equals('CustomKind'));
       expect(support.kindLabel(42), equals('Kind(42)'));
     });
+
+    test('stays consistent with kindCode for canonical event names', () {
+      const canonicalKinds = <String, int>{
+        'CapsuleCreated': 0,
+        'InvitationSent': 1,
+        'InvitationReceived': 9,
+        'InvitationAccepted': 2,
+        'InvitationRejected': 3,
+        'InvitationExpired': 4,
+        'StarterCreated': 5,
+        'StarterBurned': 6,
+        'RelationshipEstablished': 7,
+        'RelationshipBroken': 8,
+      };
+
+      canonicalKinds.forEach((name, code) {
+        expect(support.kindCode(name), equals(code));
+        expect(support.kindLabel(code), equals(name));
+      });
+    });
   });
 
   group('LedgerViewSupport.payloadBytes', () {
