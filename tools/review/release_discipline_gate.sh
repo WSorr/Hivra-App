@@ -89,6 +89,10 @@ require_present "$CHECKLIST_ANDROID" 'Android keystore-backed seed storage behav
   "Android checklist covers keystore seed storage validation"
 require_present "$CHECKLIST_ANDROID" 'Checksums were generated for published APK assets' \
   "Android checklist requires APK checksum verification"
+require_present "$CHECKLIST_ANDROID" 'Release asset name clearly indicates version and target' \
+  "Android checklist requires publish asset naming check"
+require_present "$CHECKLIST_ANDROID" 'Release notes mention testing scope and known Android limitations' \
+  "Android checklist requires publish release-notes scope check"
 require_present "$CHECKLIST_SMOKE" 'Invitation Flow' \
   "manual smoke checklist covers invitation flow"
 require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \
