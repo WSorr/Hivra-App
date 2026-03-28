@@ -439,6 +439,120 @@ fn accepted_relationship_survives_export_import() {
 }
 
 #[test]
+fn broken_relationship_survives_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(63);
+    let local_pubkey = derived_pubkey(&seed);
+    let peer_pubkey = [15u8; 32];
+    let invitation_id = [21u8; 32];
+    let own_starter_id = derive_starter_id(&seed, 0);
+    let peer_starter_id = derive_starter_id(&test_seed(64), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::RelationshipEstablished,
+        &RelationshipEstablishedPayload {
+            peer_pubkey: PubKey::from(peer_pubkey),
+            own_starter_id: StarterId::from(own_starter_id),
+            peer_starter_id: StarterId::from(peer_starter_id),
+            kind: StarterKind::Juice,
+            invitation_id,
+            sender_pubkey: PubKey::from(peer_pubkey),
+            sender_starter_type: StarterKind::Juice,
+            sender_starter_id: StarterId::from(peer_starter_id),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+    append_runtime_event(
+        EventKind::RelationshipBroken,
+        &RelationshipBrokenPayload {
+            peer_pubkey: PubKey::from(peer_pubkey),
+            own_starter_id: StarterId::from(own_starter_id),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    assert_eq!(runtime_capsule_state().relationships_count, 0);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert_eq!(runtime_capsule_state().relationships_count, 0);
+    assert!(runtime_events().iter().any(|event| {
+        event.kind() == EventKind::RelationshipBroken
+            && RelationshipBrokenPayload::from_bytes(event.payload()).is_ok_and(|payload| {
+                payload.peer_pubkey == PubKey::from(peer_pubkey)
+                    && payload.own_starter_id.as_bytes() == &own_starter_id
+            })
+    }));
+}
+
+#[test]
+fn reverse_direction_pending_invitations_survive_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(83);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [32u8; 32];
+    let outgoing_invitation_id = [38u8; 32];
+    let incoming_invitation_id = [39u8; 32];
+    let local_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_starter_id = derive_starter_id(&test_seed(84), 1);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        outgoing_invitation_id,
+        local_starter_id,
+        peer_pubkey,
+        Some(0),
+        None,
+    );
+    append_invitation_sent_for_test(
+        incoming_invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(1),
+        Some(peer_pubkey),
+    );
+
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationSent,
+        &outgoing_invitation_id,
+        local_pubkey,
+    ));
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationReceived,
+        &incoming_invitation_id,
+        PubKey::from(peer_pubkey),
+    ));
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationSent,
+        &outgoing_invitation_id,
+        local_pubkey,
+    ));
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationReceived,
+        &incoming_invitation_id,
+        PubKey::from(peer_pubkey),
+    ));
+    assert!(!invitation_is_resolved_in_runtime(&outgoing_invitation_id));
+    assert!(!invitation_is_resolved_in_runtime(&incoming_invitation_id));
+}
+
+#[test]
 fn resolved_invitation_stays_resolved_after_export_import() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

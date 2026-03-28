@@ -38,6 +38,11 @@ Scope:
   - re-invite with different starter type
   - reverse-direction invitation flows
 - Detect incomplete or inconsistent capsule histories during bootstrap.
+- Current progress:
+  - `hivra-ffi` regression tests now explicitly cover:
+    - accepted relationship survives export/import
+    - broken relationship survives export/import
+    - reverse-direction pending invitation offers survive export/import
 
 Definition of done:
 - If an event is present in persisted ledger state, it survives restart and reconstructs the same projections.
