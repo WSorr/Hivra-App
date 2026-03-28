@@ -51,7 +51,7 @@ class MyApp extends StatelessWidget {
           case '/main':
             return MaterialPageRoute(builder: (_) => const MainScreen());
           case '/ledger_inspector':
-            return MaterialPageRoute(builder: (_) => const LedgerInspectorScreen());
+            return MaterialPageRoute(builder: (_) => LedgerInspectorScreen());
           case '/wasm_plugins':
             return MaterialPageRoute(builder: (_) => const WasmPluginsScreen());
           default:

@@ -5,19 +5,17 @@ import 'dart:typed_data';
 import '../models/invitation.dart';
 import '../models/starter.dart';
 import '../widgets/invitation_card.dart';
-import '../ffi/hivra_bindings.dart';
+import '../services/app_runtime_service.dart';
 import '../services/invitation_delivery_service.dart';
 import '../services/invitation_actions_service.dart';
-import '../services/capsule_state_manager.dart';
-import '../services/ledger_view_service.dart';
 
 class InvitationsScreen extends StatefulWidget {
-  final HivraBindings hivra;
+  final AppRuntimeService runtime;
   final Future<void> Function()? onLedgerChanged;
 
   const InvitationsScreen({
     super.key,
-    required this.hivra,
+    required this.runtime,
     this.onLedgerChanged,
   });
 
@@ -35,12 +33,12 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   @override
   void initState() {
     super.initState();
-    _actions = InvitationActionsService(widget.hivra);
+    _actions = widget.runtime.invitationActions;
     _loadInvitations();
   }
 
   Future<void> _loadInvitations({bool showLoading = true}) async {
-    final service = LedgerViewService(widget.hivra);
+    final service = widget.runtime.ledgerView;
     setState(() {
       _invitations = service.loadInvitations();
     });
@@ -248,7 +246,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
   void _showSendInvitationDialog() {
     final controller = TextEditingController();
-    final state = CapsuleStateManager(widget.hivra).state;
+    widget.runtime.stateManager.refreshWithFullState();
+    final state = widget.runtime.stateManager.state;
     final lockedSlots = state.lockedStarterSlots;
     final availableSlots = <int>[
       for (var i = 0; i < 5; i++)
@@ -390,8 +389,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                         ? null
                         : () async {
                             final input = controller.text.trim();
-                            final selfRootKey = widget.hivra.capsuleRootPublicKey();
-                            final selfNostrKey = widget.hivra.capsuleNostrPublicKey();
+                            final selfRootKey = widget.runtime.capsuleRootPublicKey();
+                            final selfNostrKey = widget.runtime.capsuleNostrPublicKey();
                             final resolution =
                                 await _delivery.resolveRecipientAddress(
                               input,
@@ -440,7 +439,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   int _rejectReasonForInvitation(Invitation invitation) {
-    final state = CapsuleStateManager(widget.hivra).state;
+    widget.runtime.stateManager.refreshWithFullState();
+    final state = widget.runtime.stateManager.state;
     final hasMatchingStarter = state.starterSlots.any(
       (slot) => slot.occupied && _starterKindFromName(slot.kind) == invitation.kind,
     );
@@ -449,7 +449,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   List<Widget> _lockedSlotRows(Set<int> lockedSlots) {
-    final state = CapsuleStateManager(widget.hivra).state;
+    widget.runtime.stateManager.refreshWithFullState();
+    final state = widget.runtime.stateManager.state;
     return lockedSlots.map((slot) {
       final kind =
           slot < state.starterSlots.length ? state.starterSlots[slot].kind : 'Unknown';

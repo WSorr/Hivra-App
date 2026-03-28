@@ -3,6 +3,21 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static LAST_ENGINE_TS_MS: AtomicU64 = AtomicU64::new(0);
 
+fn observe_engine_ts(ts: u64) {
+    let mut observed = LAST_ENGINE_TS_MS.load(Ordering::Relaxed);
+    while ts > observed {
+        match LAST_ENGINE_TS_MS.compare_exchange_weak(
+            observed,
+            ts,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return,
+            Err(actual) => observed = actual,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct RuntimeState {
     pub(crate) capsule: Option<Capsule>,
@@ -327,6 +342,7 @@ pub(crate) fn append_runtime_event_with_signer(
         .unwrap_or(last_plus_one);
 
     let next_ts = core::cmp::max(now_ms, last_plus_one);
+    observe_engine_ts(next_ts);
 
     let event = Event::new(
         kind,
@@ -347,12 +363,15 @@ pub(crate) fn append_runtime_event(kind: EventKind, payload: &[u8]) -> Result<()
 }
 
 pub(crate) fn append_prepared_event(prepared: PreparedEvent) -> Result<(), &'static str> {
+    let event_ts = prepared.event.timestamp().as_u64();
     let mut runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_mut().ok_or("no capsule")?;
     capsule
         .ledger
         .append(prepared.event)
-        .map_err(|_| "append failed")
+        .map_err(|_| "append failed")?;
+    observe_engine_ts(event_ts);
+    Ok(())
 }
 
 pub(crate) fn event_exists_in_runtime(kind: EventKind, payload: &[u8]) -> bool {

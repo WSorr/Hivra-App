@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
-import '../ffi/hivra_bindings.dart';
+import '../services/app_runtime_service.dart';
 import '../services/invitation_delivery_service.dart';
 import '../services/invitation_actions_service.dart';
-import '../services/capsule_state_manager.dart';
 import '../utils/hivra_id_format.dart';
 
 class StartersScreen extends StatefulWidget {
-  final HivraBindings hivra;
+  final AppRuntimeService runtime;
   final Future<void> Function()? onLedgerChanged;
 
   const StartersScreen({
     super.key,
-    required this.hivra,
+    required this.runtime,
     this.onLedgerChanged,
   });
 
@@ -28,12 +27,12 @@ class _StartersScreenState extends State<StartersScreen> {
   @override
   void initState() {
     super.initState();
-    _actions = InvitationActionsService(widget.hivra);
+    _actions = widget.runtime.invitationActions;
     _loadSlots();
   }
 
   void _loadSlots() {
-    final stateManager = CapsuleStateManager(widget.hivra);
+    final stateManager = widget.runtime.stateManager;
     stateManager.refresh();
     final starterSlots = stateManager.state.starterSlots;
 
@@ -117,8 +116,8 @@ class _StartersScreenState extends State<StartersScreen> {
 
                 final resolution = await _delivery.resolveRecipientAddress(
                   input,
-                  selfRootKey: widget.hivra.capsuleRootPublicKey(),
-                  selfNostrKey: widget.hivra.capsuleNostrPublicKey(),
+                  selfRootKey: widget.runtime.capsuleRootPublicKey(),
+                  selfNostrKey: widget.runtime.capsuleNostrPublicKey(),
                 );
                 if (!resolution.isSuccess) {
                   setDialogState(

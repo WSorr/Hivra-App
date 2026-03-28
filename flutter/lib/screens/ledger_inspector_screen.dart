@@ -5,19 +5,23 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../ffi/hivra_bindings.dart';
+import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../utils/hivra_id_format.dart';
 
 class LedgerInspectorScreen extends StatefulWidget {
-  const LedgerInspectorScreen({super.key});
+  final AppRuntimeService runtime;
+
+  LedgerInspectorScreen({
+    super.key,
+    AppRuntimeService? runtime,
+  }) : runtime = runtime ?? AppRuntimeService();
 
   @override
   State<LedgerInspectorScreen> createState() => _LedgerInspectorScreenState();
 }
 
 class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
-  final HivraBindings _hivra = HivraBindings();
   late final CapsuleStateManager _stateManager;
 
   bool _isLoading = true;
@@ -33,7 +37,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   @override
   void initState() {
     super.initState();
-    _stateManager = CapsuleStateManager(_hivra);
+    _stateManager = widget.runtime.stateManager;
     _reload();
   }
 
@@ -47,12 +51,12 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
       _stateManager.refreshWithFullState();
       final state = _stateManager.state;
       final ownerB64 = state.publicKey.isEmpty ? 'No key' : base64.encode(state.publicKey);
-      final rootPubKey = _hivra.capsuleRootPublicKey();
+      final rootPubKey = widget.runtime.capsuleRootPublicKey();
       final rootDisplayKey = rootPubKey == null || rootPubKey.isEmpty
           ? 'No key'
           : _encodeCapsulePublicKey(rootPubKey);
 
-      final raw = _hivra.exportLedger();
+      final raw = widget.runtime.exportLedger();
       if (raw == null || raw.trim().isEmpty) {
         setState(() {
           _capsuleState = state;
@@ -106,7 +110,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
       final recent = rows.reversed.take(40).toList(growable: false);
       final snapshots = _buildPairwiseSnapshots(
         events,
-        _hivra.capsuleNostrPublicKey() ?? Uint8List(0),
+        widget.runtime.capsuleNostrPublicKey() ?? Uint8List(0),
       );
 
       setState(() {

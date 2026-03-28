@@ -1,12 +1,9 @@
 import 'package:bech32/bech32.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../ffi/hivra_bindings.dart';
-import '../services/capsule_persistence_service.dart';
+import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/invitation_actions_service.dart';
-import '../services/relationship_service.dart';
-import '../services/settings_service.dart';
 import 'starters_screen.dart';
 import 'invitations_screen.dart';
 import 'relationships_screen.dart';
@@ -22,9 +19,8 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
-  final HivraBindings _hivra = HivraBindings();
+  final AppRuntimeService _runtime = AppRuntimeService();
   late final CapsuleStateManager _stateManager;
-  final CapsulePersistenceService _persistence = CapsulePersistenceService();
   late final InvitationActionsService _invitationActions;
 
   bool _bootstrapping = true;
@@ -63,8 +59,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _stateManager = CapsuleStateManager(_hivra);
-    _invitationActions = InvitationActionsService(_hivra);
+    _stateManager = _runtime.stateManager;
+    _invitationActions = _runtime.invitationActions;
     Future.microtask(_bootstrapActiveRuntime);
   }
 
@@ -89,7 +85,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _snapshotLedger() async {
-    await _persistence.persistLedgerSnapshot(_hivra);
+    await _runtime.persistLedgerSnapshot();
   }
 
   Future<void> _receiveTransportOnLaunch() async {
@@ -135,7 +131,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void _loadCapsuleData() {
     _stateManager.refreshWithFullState();
     final state = _stateManager.state;
-    final displayKey = _hivra.capsuleRootPublicKey() ?? state.publicKey;
+    final displayKey = _runtime.capsuleRootPublicKey() ?? state.publicKey;
 
     setState(() {
       _starterCount = state.starterCount;
@@ -193,7 +189,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _bootstrapActiveRuntime() async {
     _launchStopwatch = Stopwatch()..start();
-    final ok = await _persistence.bootstrapActiveCapsuleRuntime(_hivra);
+    final ok = await _runtime.bootstrapActiveCapsuleRuntime();
     if (!mounted) return;
 
     if (!ok) {
@@ -226,32 +222,32 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       case 0:
         return StartersScreen(
           key: ValueKey('starters-$_ledgerVersion'),
-          hivra: _hivra,
+          runtime: _runtime,
           onLedgerChanged: _handleLedgerChanged,
         );
       case 1:
         return InvitationsScreen(
           key: ValueKey('invitations-$_ledgerVersion'),
-          hivra: _hivra,
+          runtime: _runtime,
           onLedgerChanged: _handleLedgerChanged,
         );
       case 2:
         return RelationshipsScreen(
           key: ValueKey('relationships-$_ledgerVersion'),
-          service: RelationshipService(_hivra),
+          service: _runtime.buildRelationshipService(),
           onLedgerChanged: _handleLedgerChanged,
         );
       case 3:
         return const WasmPluginsScreen(embedded: true);
       case 4:
         return SettingsScreen(
-          service: SettingsService(_hivra),
+          service: _runtime.buildSettingsService(),
           onLedgerChanged: _handleLedgerChanged,
         );
       default:
         return StartersScreen(
           key: ValueKey('starters-$_ledgerVersion'),
-          hivra: _hivra,
+          runtime: _runtime,
           onLedgerChanged: _handleLedgerChanged,
         );
     }
