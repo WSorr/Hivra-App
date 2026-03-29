@@ -43,9 +43,33 @@ class CapsuleSelectorService {
 
   Future<List<CapsuleSelectorItem>> loadCapsules() async {
     final entries = await _persistence.listCapsules(hivra: _hivra);
-    final capsules = <CapsuleSelectorItem>[];
+    final seedByHex = <String, bool>{};
+    final ownerByHex = <String, String?>{};
 
     for (final entry in entries) {
+      seedByHex[entry.pubKeyHex] =
+          await _persistence.hasStoredSeed(entry.pubKeyHex);
+      ownerByHex[entry.pubKeyHex] =
+          await _persistence.loadCapsuleLedgerOwnerHex(entry.pubKeyHex);
+    }
+
+    final filteredEntries = entries.where((entry) {
+      final pubKeyHex = entry.pubKeyHex;
+      if (seedByHex[pubKeyHex] == true) return true;
+
+      // Hide ghost aliases without seed when other seeded capsules clearly
+      // point to them as ledger owner.
+      final hasSeededOwnerRef = entries.any((other) {
+        if (other.pubKeyHex == pubKeyHex) return false;
+        return seedByHex[other.pubKeyHex] == true &&
+            ownerByHex[other.pubKeyHex] == pubKeyHex;
+      });
+      return !hasSeededOwnerRef;
+    }).toList();
+
+    final capsules = <CapsuleSelectorItem>[];
+
+    for (final entry in filteredEntries) {
       var summary = await _persistence.loadCapsuleSummary(entry.pubKeyHex);
       if (summary.ledgerHashHex == '7fffffffffffffff') {
         final hasSeed = await _persistence.hasStoredSeed(entry.pubKeyHex);
@@ -64,8 +88,8 @@ class CapsuleSelectorService {
         CapsuleSelectorItem(
           id: entry.pubKeyHex,
           publicKeyHex: entry.pubKeyHex,
-          displayKeyText:
-              await _persistence.resolveDisplayCapsuleKey(_hivra, entry.pubKeyHex),
+          displayKeyText: await _persistence.resolveDisplayCapsuleKey(
+              _hivra, entry.pubKeyHex),
           network: entry.isNeste ? 'NESTE' : 'HOOD',
           starterCount: summary.starterCount,
           relationshipCount: summary.relationshipCount,

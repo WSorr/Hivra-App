@@ -2,7 +2,7 @@
 
 use crate::{PubKey, Signature, Timestamp};
 use alloc::vec::Vec;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// Protocol version
@@ -53,12 +53,24 @@ impl Event {
         }
     }
 
-    pub fn version(&self) -> u8 { self.version }
-    pub fn kind(&self) -> EventKind { self.kind }
-    pub fn payload(&self) -> &[u8] { &self.payload }
-    pub fn timestamp(&self) -> Timestamp { self.timestamp }
-    pub fn signature(&self) -> &Signature { &self.signature }
-    pub fn signer(&self) -> &PubKey { &self.signer }
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+    pub fn kind(&self) -> EventKind {
+        self.kind
+    }
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+    pub fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+    pub fn signature(&self) -> &Signature {
+        &self.signature
+    }
+    pub fn signer(&self) -> &PubKey {
+        &self.signer
+    }
 
     /// Deterministic event ID from protocol fields.
     ///

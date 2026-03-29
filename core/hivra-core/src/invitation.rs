@@ -66,11 +66,7 @@ pub fn find_invitation(ledger: &Ledger, invitation_id: [u8; 32]) -> Option<Invit
         .find(|invitation| invitation.invitation_id == invitation_id)
 }
 
-pub fn plan_accept_for_kind(
-    ledger: &Ledger,
-    slots: &SlotLayout,
-    kind: StarterKind,
-) -> AcceptPlan {
+pub fn plan_accept_for_kind(ledger: &Ledger, slots: &SlotLayout, kind: StarterKind) -> AcceptPlan {
     let starter_kinds = active_starter_kinds(slots, ledger);
     let matching_starter_id = slots
         .entries_with_kinds(ledger)
@@ -236,7 +232,10 @@ mod tests {
         );
 
         assert_eq!(pending_invitation_count(&ledger), 1);
-        assert_eq!(invitation_status(&ledger, [9u8; 32]), InvitationStatus::Pending);
+        assert_eq!(
+            invitation_status(&ledger, [9u8; 32]),
+            InvitationStatus::Pending
+        );
 
         append_event(
             &mut ledger,

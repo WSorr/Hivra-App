@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../services/app_runtime_service.dart';
+import '../services/consensus_processor.dart';
+import '../services/plugin_execution_guard_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
 
 class WasmPluginsScreen extends StatefulWidget {
@@ -19,7 +22,16 @@ class WasmPluginsScreen extends StatefulWidget {
 
 class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   final WasmPluginRegistryService _registry = const WasmPluginRegistryService();
+  final PluginExecutionGuardService _guard =
+      AppRuntimeService().buildPluginExecutionGuardService();
   List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
+  PluginExecutionGuardSnapshot _guardSnapshot =
+      const PluginExecutionGuardSnapshot(
+    state: ConsensusGuardState.pending,
+    readyPairCount: 0,
+    blockedPairCount: 0,
+    blockingFacts: <ConsensusBlockingFact>[],
+  );
   bool _loading = true;
   bool _installing = false;
 
@@ -67,9 +79,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
   Future<void> _reload() async {
     final installed = await _registry.loadPlugins();
+    final guardSnapshot = _guard.inspectHostReadiness();
     if (!mounted) return;
     setState(() {
       _installed = installed;
+      _guardSnapshot = guardSnapshot;
       _loading = false;
     });
   }
@@ -167,7 +181,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               'A reserved shell for future wasm adapters and transport extensions.',
         ),
         const SizedBox(height: 10),
-        const _HostPanel(),
+        _HostPanel(snapshot: _guardSnapshot),
         const SizedBox(height: 20),
         _SectionTitle(
           title: 'Transport Plugins',
@@ -318,15 +332,15 @@ class _EmptyInstalledState extends StatelessWidget {
           Icon(Icons.extension_off_rounded, color: Color(0xFF728196), size: 34),
           SizedBox(height: 10),
           Text(
-                  'No plugin packages installed yet.',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                SizedBox(height: 6),
-                Text(
-                  'Install a .wasm or .zip package to stage it locally inside the plugin sandbox.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF93A0B1), height: 1.35),
-                ),
+            'No plugin packages installed yet.',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          SizedBox(height: 6),
+          Text(
+            'Install a .wasm or .zip package to stage it locally inside the plugin sandbox.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF93A0B1), height: 1.35),
+          ),
         ],
       ),
     );
@@ -607,10 +621,35 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _HostPanel extends StatelessWidget {
-  const _HostPanel();
+  final PluginExecutionGuardSnapshot snapshot;
+
+  const _HostPanel({required this.snapshot});
 
   @override
   Widget build(BuildContext context) {
+    final accent = switch (snapshot.state) {
+      ConsensusGuardState.ready => const Color(0xFF75D98A),
+      ConsensusGuardState.partial => const Color(0xFFFFC76A),
+      ConsensusGuardState.blocked => const Color(0xFFFF8A7A),
+      ConsensusGuardState.pending => const Color(0xFF75D2FF),
+    };
+    final title = switch (snapshot.state) {
+      ConsensusGuardState.ready => 'Consensus guard ready',
+      ConsensusGuardState.partial => 'Consensus guard partially blocked',
+      ConsensusGuardState.blocked => 'Consensus guard blocked',
+      ConsensusGuardState.pending => 'Runtime boundary reserved',
+    };
+    final summary = switch (snapshot.state) {
+      ConsensusGuardState.ready =>
+        'Read-only precondition checks found ${snapshot.readyPairCount} signable pairwise path(s). Execution is still disabled, but the guard boundary is now alive.',
+      ConsensusGuardState.partial =>
+        'Some pairwise paths are signable and some are blocked. Ready: ${snapshot.readyPairCount}, blocked: ${snapshot.blockedPairCount}.',
+      ConsensusGuardState.blocked =>
+        'Pairwise consensus checks are now wired into the future host boundary, but current ledger truth is blocking execution for ${snapshot.blockedPairCount} pair(s).',
+      ConsensusGuardState.pending =>
+        'Plugins are not mounted yet. This screen exists to keep the boundary explicit while transport, ledger and policy remain inside the current core stack.',
+    };
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -618,35 +657,51 @@ class _HostPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFF2B3846)),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _PluginIconPlate(
             icon: Icons.shield_moon_rounded,
-            accent: Color(0xFF75D2FF),
-            glow: Color(0xFF183142),
+            accent: accent,
+            glow: accent.withAlpha(20),
             size: 54,
           ),
-          SizedBox(width: 14),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Runtime boundary reserved',
-                  style: TextStyle(
+                  title,
+                  style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 16,
                   ),
                 ),
-                SizedBox(height: 6),
+                const SizedBox(height: 6),
                 Text(
-                  'Plugins are not mounted yet. This screen exists to keep the boundary explicit while transport, ledger and policy remain inside the current core stack.',
-                  style: TextStyle(
+                  summary,
+                  style: const TextStyle(
                     color: Color(0xFF9FAABA),
                     height: 1.4,
                   ),
                 ),
+                if (snapshot.blockingFacts.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: snapshot.blockingFacts
+                        .take(3)
+                        .map(
+                          (fact) => _InfoChip(
+                            icon: Icons.lock_outline_rounded,
+                            label: fact.label,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
               ],
             ),
           ),

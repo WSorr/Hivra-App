@@ -94,9 +94,7 @@ pub struct Relationships {
 impl Relationships {
     /// Creates a new empty relationships collection.
     pub fn new() -> Self {
-        Self {
-            active: Vec::new(),
-        }
+        Self { active: Vec::new() }
     }
 
     /// Returns all active relationships.
@@ -134,8 +132,7 @@ impl Relationships {
     pub fn add(&mut self, relationship: Relationship) -> bool {
         // Check for duplicate (same peer and same own starter)
         let exists = self.active.iter().any(|r: &Relationship| {
-            r.peer() == relationship.peer() && 
-            r.own_starter_id() == relationship.own_starter_id()
+            r.peer() == relationship.peer() && r.own_starter_id() == relationship.own_starter_id()
         });
 
         if exists {
@@ -187,9 +184,9 @@ impl Relationships {
 
     /// Checks if a relationship exists with a specific peer and starter.
     pub fn exists(&self, peer: &PubKey, own_starter_id: &StarterId) -> bool {
-        self.active.iter().any(|r: &Relationship| {
-            r.is_with_peer(peer) && r.own_starter_id() == own_starter_id
-        })
+        self.active
+            .iter()
+            .any(|r: &Relationship| r.is_with_peer(peer) && r.own_starter_id() == own_starter_id)
     }
 
     /// Returns the number of active relationships.
@@ -239,11 +236,7 @@ mod tests {
 
     #[test]
     fn test_relationship_creation() {
-        let rel = create_test_relationship(
-            1, 2, 3, 
-            StarterKind::Juice, 
-            1234567890
-        );
+        let rel = create_test_relationship(1, 2, 3, StarterKind::Juice, 1234567890);
 
         assert_eq!(rel.peer(), &test_pubkey(1));
         assert_eq!(rel.own_starter_id(), &test_starter_id(2));

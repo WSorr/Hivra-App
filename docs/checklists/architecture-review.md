@@ -9,6 +9,16 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] `hivra-engine` depends on `hivra-core`, not on FFI or Flutter.
 - [ ] Adapters do not introduce upward dependencies.
 - [ ] FFI is a boundary layer, not a second domain layer.
+- [ ] Flutter dependencies flow `Screens/Widgets -> Application Use Cases -> FFI Boundary Services -> Rust`.
+- [ ] Widgets do not call raw FFI directly.
+- [ ] No cross-screen orchestration coupling was introduced.
+
+## Engine Integrity
+
+- [ ] Engine remains the single orchestration layer for time/RNG/crypto injection.
+- [ ] Engine does not absorb UI policy or rendering concerns.
+- [ ] Core remains pure and deterministic with no time/RNG/crypto calls.
+- [ ] Transport remains provider/adapter-only and does not reimplement Engine orchestration.
 
 ## Modularity
 
@@ -17,6 +27,8 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Crypto concerns are isolated to adapter/platform code.
 - [ ] UI reads projections instead of inventing parallel truth.
 - [ ] No new cross-cutting timer, watcher, or hidden background pipeline was introduced.
+- [ ] Any new module has explicit non-overlapping ownership.
+- [ ] New modules map to one skeleton layer only (`UI Projection` | `Application Use Cases` | `Domain Core` | `Ledger` | `Transport` | `WASM Plugin Host`).
 
 ## Determinism
 
@@ -25,6 +37,15 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Resolved history is immutable.
 - [ ] Startup order is `import ledger first`, `receive second`.
 - [ ] New code does not add hidden side effects to validation or lookup paths.
+- [ ] Application logic does not create a second truth beside ledger-derived projection.
+
+## WASM Plugin Host
+
+- [ ] Plugin registry/storage remains sandboxed and isolated from ledger storage.
+- [ ] Plugins do not append ledger events directly.
+- [ ] Plugins cannot bypass Engine validation/Core invariants.
+- [ ] Pair-scoped plugin execution is gated by consensus guard readiness.
+- [ ] Plugin inputs/outputs are deterministic for identical inputs.
 
 ## Review Gates
 
@@ -32,4 +53,3 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Rust tests covering the changed behavior were added or updated.
 - [ ] Flutter analysis and tests pass.
 - [ ] Manual smoke scenarios were selected intentionally, not ad hoc.
-

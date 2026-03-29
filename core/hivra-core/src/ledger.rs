@@ -3,7 +3,7 @@
 use crate::{Event, EventKind, PubKey, Timestamp, PROTOCOL_VERSION};
 use alloc::vec::Vec;
 use core::hash::{Hash, Hasher};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Error type for ledger operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,8 +18,12 @@ pub enum LedgerError {
 struct SimpleHasher(u64);
 
 impl SimpleHasher {
-    fn new() -> Self { Self(0) }
-    fn finish(&self) -> u64 { self.0 }
+    fn new() -> Self {
+        Self(0)
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
 }
 
 impl Hasher for SimpleHasher {
@@ -29,7 +33,9 @@ impl Hasher for SimpleHasher {
             self.0 ^= *b as u64;
         }
     }
-    fn finish(&self) -> u64 { self.0 }
+    fn finish(&self) -> u64 {
+        self.0
+    }
 }
 
 /// Ledger — append-only journal of signed events
@@ -42,12 +48,22 @@ pub struct Ledger {
 
 impl Ledger {
     pub fn new(owner: PubKey) -> Self {
-        Self { events: Vec::new(), owner, last_hash: 0 }
+        Self {
+            events: Vec::new(),
+            owner,
+            last_hash: 0,
+        }
     }
 
-    pub fn owner(&self) -> &PubKey { &self.owner }
-    pub fn events(&self) -> &[Event] { &self.events }
-    pub fn last_hash(&self) -> u64 { self.last_hash }
+    pub fn owner(&self) -> &PubKey {
+        &self.owner
+    }
+    pub fn events(&self) -> &[Event] {
+        &self.events
+    }
+    pub fn last_hash(&self) -> u64 {
+        self.last_hash
+    }
 
     pub fn append(&mut self, event: Event) -> Result<(), LedgerError> {
         if event.version() != PROTOCOL_VERSION {
@@ -81,10 +97,7 @@ impl Ledger {
     }
 
     pub fn events_of_kind(&self, kind: EventKind) -> Vec<&Event> {
-        self.events
-            .iter()
-            .filter(|e| e.kind() == kind)
-            .collect()
+        self.events.iter().filter(|e| e.kind() == kind).collect()
     }
 
     pub fn verify(&self) -> bool {
@@ -96,7 +109,10 @@ impl Ledger {
                 return false;
             }
 
-            if self.events[..index].iter().any(|existing| existing == event) {
+            if self.events[..index]
+                .iter()
+                .any(|existing| existing == event)
+            {
                 return false;
             }
 

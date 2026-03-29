@@ -1,7 +1,7 @@
 //! Starter entity - unique non-transferable identifier
 
-use crate::primitives::{PubKey, StarterId, StarterKind, Timestamp, Network};
-use sha2::{Sha256, Digest};
+use crate::primitives::{Network, PubKey, StarterId, StarterKind, Timestamp};
+use sha2::{Digest, Sha256};
 
 /// Starter states
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,7 +125,7 @@ mod tests {
         let time = Timestamp::from(1000);
 
         let starter = Starter::new(id, owner, kind, network, None, time);
-        
+
         assert_eq!(starter.id(), id);
         assert_eq!(starter.kind(), kind);
         assert_eq!(starter.owner(), owner);
@@ -144,7 +144,7 @@ mod tests {
 
         let mut starter = Starter::new(id, owner, kind, network, None, time);
         assert!(starter.is_active());
-        
+
         starter.burn();
         assert!(!starter.is_active());
         assert_eq!(starter.state(), StarterState::Burned);

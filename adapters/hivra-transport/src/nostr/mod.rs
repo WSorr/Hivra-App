@@ -75,9 +75,12 @@ impl NostrConfig {
                 "wss://nos.lol".into(),
                 "wss://relay.damus.io".into(),
                 "wss://relay.primal.net".into(),
+                "wss://relay.snort.social".into(),
+                "wss://relay.nostr.band".into(),
+                "wss://relay.current.fyi".into(),
             ],
             ephemeral: true,
-            timeout: 2,
+            timeout: 3,
         }
     }
 }
@@ -94,15 +97,17 @@ impl NostrTransport {
     pub fn new(config: NostrConfig, secret_key: &[u8; 32]) -> Result<Self, TransportError> {
         eprintln!("[Nostr] Creating transport with external secret key");
 
-        let secret = SecretKey::from_slice(secret_key)
-            .map_err(|e| {
-                eprintln!("[Nostr] Invalid secret key: {:?}", e);
-                TransportError::InvalidKey
-            })?;
+        let secret = SecretKey::from_slice(secret_key).map_err(|e| {
+            eprintln!("[Nostr] Invalid secret key: {:?}", e);
+            TransportError::InvalidKey
+        })?;
         let keys = Keys::new(secret);
         let public_key = keys.public_key();
 
-        eprintln!("[Nostr] Public key: {}", public_key.to_bech32().unwrap_or("invalid".into()));
+        eprintln!(
+            "[Nostr] Public key: {}",
+            public_key.to_bech32().unwrap_or("invalid".into())
+        );
 
         let runtime = Self::build_runtime()?;
         let client = Self::build_client(&runtime, &config, &keys)?;
@@ -118,7 +123,10 @@ impl NostrTransport {
         })
     }
 
-    pub fn new_with_keys(config: NostrConfig, secret_key: &[u8; 32]) -> Result<Self, TransportError> {
+    pub fn new_with_keys(
+        config: NostrConfig,
+        secret_key: &[u8; 32],
+    ) -> Result<Self, TransportError> {
         Self::new(config, secret_key)
     }
 
@@ -130,7 +138,11 @@ impl NostrTransport {
             .map_err(|_| TransportError::ConnectionFailed)
     }
 
-    fn build_client(runtime: &Runtime, config: &NostrConfig, keys: &Keys) -> Result<Client, TransportError> {
+    fn build_client(
+        runtime: &Runtime,
+        config: &NostrConfig,
+        keys: &Keys,
+    ) -> Result<Client, TransportError> {
         let client = Client::new(keys.clone());
         client.automatic_authentication(true);
 
@@ -145,7 +157,11 @@ impl NostrTransport {
         eprintln!("[Nostr] Connecting to relays...");
         runtime.block_on(client.connect());
 
-        if !Self::wait_for_connected_relays(runtime, &client, Duration::from_secs(config.timeout.max(2))) {
+        if !Self::wait_for_connected_relays(
+            runtime,
+            &client,
+            Duration::from_secs(config.timeout.max(2)),
+        ) {
             eprintln!("[Nostr] Warning: no relay reached Connected state during init");
         }
 
@@ -195,11 +211,12 @@ impl NostrTransport {
     ///
     /// For kind=4 we publish a NIP-04 encrypted DM content.
     pub fn serialize_message(&self, message: &Message) -> Result<String, TransportError> {
-        let plaintext = serde_json::to_string(message).map_err(|_| TransportError::EncodingFailed)?;
+        let plaintext =
+            serde_json::to_string(message).map_err(|_| TransportError::EncodingFailed)?;
 
         if APP_EVENT_KIND == Kind::Custom(4) {
-            let recipient = PublicKey::from_slice(&message.to)
-                .map_err(|_| TransportError::InvalidKey)?;
+            let recipient =
+                PublicKey::from_slice(&message.to).map_err(|_| TransportError::InvalidKey)?;
             let secret = self.keys.secret_key();
             nip04::encrypt(secret, &recipient, plaintext.as_str())
                 .map_err(|_| TransportError::EncodingFailed)
@@ -210,11 +227,10 @@ impl NostrTransport {
 
     /// Builds Nostr tags for a transport message.
     pub fn message_tags(&self, message: &Message) -> Result<Vec<Tag>, TransportError> {
-        let recipient_pubkey = PublicKey::from_slice(&message.to)
-            .map_err(|e| {
-                eprintln!("[Nostr] Invalid recipient pubkey: {:?}", e);
-                TransportError::InvalidKey
-            })?;
+        let recipient_pubkey = PublicKey::from_slice(&message.to).map_err(|e| {
+            eprintln!("[Nostr] Invalid recipient pubkey: {:?}", e);
+            TransportError::InvalidKey
+        })?;
 
         Ok(vec![Tag::public_key(recipient_pubkey)])
     }
@@ -223,21 +239,27 @@ impl NostrTransport {
     ///
     /// This method exists so upper layers can sign outside of transport,
     /// then submit the fully signed event via `send_event`.
-    pub fn event_builder_for_message(&self, message: &Message) -> Result<EventBuilder, TransportError> {
+    pub fn event_builder_for_message(
+        &self,
+        message: &Message,
+    ) -> Result<EventBuilder, TransportError> {
         let content = self.serialize_message(message)?;
         let tags = self.message_tags(message)?;
         Ok(EventBuilder::new(APP_EVENT_KIND, content, tags))
     }
 
     fn build_signed_event(&self, content: String, tags: Vec<Tag>) -> Result<Event, TransportError> {
-        eprintln!("[Nostr] Creating event with kind: {}", APP_EVENT_KIND.as_u16());
+        eprintln!(
+            "[Nostr] Creating event with kind: {}",
+            APP_EVENT_KIND.as_u16()
+        );
 
         self.runtime
             .block_on(EventBuilder::new(APP_EVENT_KIND, content, tags).sign(&self.keys))
             .map_err(|e| {
-            eprintln!("[Nostr] Signing failed: {:?}", e);
-            TransportError::EncodingFailed
-        })
+                eprintln!("[Nostr] Signing failed: {:?}", e);
+                TransportError::EncodingFailed
+            })
     }
 
     fn encode_message(&self, message: Message) -> Result<Event, TransportError> {
@@ -278,28 +300,32 @@ impl NostrTransport {
             eprintln!("[Nostr] No connected relays available before publish");
             return Err(TransportError::ConnectionFailed);
         }
-
-        let relays = self.runtime.block_on(self.client.relays());
-
-        if relays.is_empty() {
-            eprintln!("[Nostr] No relays available for publish");
-            return Err(TransportError::ConnectionFailed);
-        }
-
-        let mut any_success = false;
         let mut last_reason: Option<String> = None;
 
-        for relay in relays.into_values() {
-            let relay_url = relay.url().to_string();
+        for attempt in 1..=RELAY_SEND_ATTEMPTS {
+            let relays = self.runtime.block_on(self.client.relays());
 
-            if !matches!(relay.status(), RelayStatus::Connected) {
-                eprintln!("[Nostr] Relay {} skipped: status {}", relay_url, relay.status());
-                continue;
+            if relays.is_empty() {
+                eprintln!("[Nostr] No relays available for publish");
+                return Err(TransportError::ConnectionFailed);
             }
 
-            let mut published = false;
+            let mut had_connected = false;
 
-            for attempt in 1..=RELAY_SEND_ATTEMPTS {
+            for relay in relays.into_values() {
+                let relay_url = relay.url().to_string();
+
+                if !matches!(relay.status(), RelayStatus::Connected) {
+                    eprintln!(
+                        "[Nostr] Relay {} skipped: status {}",
+                        relay_url,
+                        relay.status()
+                    );
+                    continue;
+                }
+
+                had_connected = true;
+
                 match self.runtime.block_on(relay.send_event(event.clone())) {
                     Ok(id) => {
                         eprintln!(
@@ -309,64 +335,57 @@ impl NostrTransport {
                             RELAY_SEND_ATTEMPTS,
                             id.to_hex()
                         );
-                        published = true;
-                        any_success = true;
-                        break;
+                        eprintln!("[Nostr] Message published to at least one relay");
+                        return Ok(());
                     }
                     Err(err) => {
                         let reason = err.to_string();
                         last_reason = Some(reason.clone());
                         eprintln!(
                             "[Nostr] Relay {} reject on attempt {}/{}: {}",
-                            relay_url,
-                            attempt,
-                            RELAY_SEND_ATTEMPTS,
-                            reason
+                            relay_url, attempt, RELAY_SEND_ATTEMPTS, reason
                         );
 
-                        if attempt < RELAY_SEND_ATTEMPTS {
-                            if let Some(challenge) = extract_auth_challenge(&reason) {
-                                eprintln!("[Nostr] Relay {} requested NIP-42 auth, trying AUTH", relay_url);
-                                match self
-                                    .runtime
-                                    .block_on(self.client.auth(challenge, relay.url().clone()))
-                                {
-                                    Ok(()) => {
-                                        eprintln!("[Nostr] Relay {} auth succeeded", relay_url);
-                                    }
-                                    Err(auth_err) => {
-                                        eprintln!(
-                                            "[Nostr] Relay {} auth failed: {}",
-                                            relay_url,
-                                            auth_err
-                                        );
-                                        break;
-                                    }
+                        if let Some(challenge) = extract_auth_challenge(&reason) {
+                            eprintln!(
+                                "[Nostr] Relay {} requested NIP-42 auth, trying AUTH",
+                                relay_url
+                            );
+                            match self
+                                .runtime
+                                .block_on(self.client.auth(challenge, relay.url().clone()))
+                            {
+                                Ok(()) => {
+                                    eprintln!("[Nostr] Relay {} auth succeeded", relay_url);
                                 }
-                            } else {
-                                // Keep old reconnect behavior for transient relay issues.
-                                self.runtime.block_on(self.client.connect());
-                                thread::sleep(Duration::from_millis(WRITE_RETRY_DELAY_MS));
+                                Err(auth_err) => {
+                                    eprintln!(
+                                        "[Nostr] Relay {} auth failed: {}",
+                                        relay_url, auth_err
+                                    );
+                                }
                             }
                         }
                     }
                 }
             }
 
-            if !published {
-                eprintln!("[Nostr] Relay {} did not accept event", relay_url);
+            if attempt < RELAY_SEND_ATTEMPTS {
+                if !had_connected {
+                    eprintln!(
+                        "[Nostr] No connected relays on attempt {}/{}, retrying after reconnect",
+                        attempt, RELAY_SEND_ATTEMPTS
+                    );
+                }
+                self.runtime.block_on(self.client.connect());
+                thread::sleep(Duration::from_millis(WRITE_RETRY_DELAY_MS));
             }
         }
 
-        if any_success {
-            eprintln!("[Nostr] Message published to at least one relay");
-            Ok(())
-        } else {
-            eprintln!("[Nostr] Send failed: no relay accepted event");
-            Err(TransportError::Other(
-                last_reason.unwrap_or_else(|| "no relay accepted event".to_string()),
-            ))
-        }
+        eprintln!("[Nostr] Send failed: no relay accepted event");
+        Err(TransportError::Other(
+            last_reason.unwrap_or_else(|| "no relay accepted event".to_string()),
+        ))
     }
 
     fn decode_event(&self, event: Event) -> Result<Message, TransportError> {
@@ -393,8 +412,8 @@ impl NostrTransport {
             event.content
         };
 
-        let message: Message = serde_json::from_str(&content)
-            .map_err(|_| TransportError::InvalidMessage)?;
+        let message: Message =
+            serde_json::from_str(&content).map_err(|_| TransportError::InvalidMessage)?;
         Ok(message)
     }
 }
@@ -419,23 +438,25 @@ impl Transport for NostrTransport {
             .kind(APP_EVENT_KIND)
             .pubkey(self.public_key)
             .limit(RECEIVE_LIMIT);
-        
-        let events = self.runtime.block_on(
-            self.client
-                .fetch_events(vec![filter], Some(Duration::from_secs(self.timeout_secs))),
-        )
+
+        let events = self
+            .runtime
+            .block_on(
+                self.client
+                    .fetch_events(vec![filter], Some(Duration::from_secs(self.timeout_secs))),
+            )
             .map_err(|e| {
                 eprintln!("[Nostr] Receive failed: {:?}", e);
                 TransportError::ReceiveFailed
             })?;
-        
+
         eprintln!("[Nostr] Received {} events", events.len());
 
         let mut seen_guard = seen_event_ids().lock().expect("seen ids mutex poisoned");
         let seen_for_pubkey = seen_guard
             .entry(self.public_key_bytes())
             .or_insert_with(HashSet::new);
-        
+
         let mut messages = Vec::new();
         for event in events {
             let event_id = event.id.to_hex();

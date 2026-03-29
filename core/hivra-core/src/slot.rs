@@ -204,8 +204,13 @@ fn starter_kinds_by_id(ledger: &Ledger) -> [(StarterId, StarterKind); 5] {
 }
 
 fn locked_starter_ids(ledger: &Ledger) -> [Option<StarterId>; 5] {
-    let mut pending: [(Option<[u8; 32]>, Option<StarterId>); 5] =
-        [(None, None), (None, None), (None, None), (None, None), (None, None)];
+    let mut pending: [(Option<[u8; 32]>, Option<StarterId>); 5] = [
+        (None, None),
+        (None, None),
+        (None, None),
+        (None, None),
+        (None, None),
+    ];
     let owner = ledger.owner();
 
     for event in ledger.events() {
@@ -219,7 +224,10 @@ fn locked_starter_ids(ledger: &Ledger) -> [Option<StarterId>; 5] {
                     continue;
                 };
 
-                if let Some(idx) = pending.iter().position(|(invitation, _)| invitation.is_none()) {
+                if let Some(idx) = pending
+                    .iter()
+                    .position(|(invitation, _)| invitation.is_none())
+                {
                     pending[idx] = (Some(payload.invitation_id), Some(payload.starter_id));
                 }
             }
@@ -248,11 +256,13 @@ fn locked_starter_ids(ledger: &Ledger) -> [Option<StarterId>; 5] {
     core::array::from_fn(|idx| pending[idx].1)
 }
 
-fn clear_pending(pending: &mut [(Option<[u8; 32]>, Option<StarterId>); 5], invitation_id: [u8; 32]) {
-    if let Some(idx) = pending
-        .iter()
-        .position(|(current_invitation_id, _)| current_invitation_id.is_some_and(|current| current == invitation_id))
-    {
+fn clear_pending(
+    pending: &mut [(Option<[u8; 32]>, Option<StarterId>); 5],
+    invitation_id: [u8; 32],
+) {
+    if let Some(idx) = pending.iter().position(|(current_invitation_id, _)| {
+        current_invitation_id.is_some_and(|current| current == invitation_id)
+    }) {
         pending[idx] = (None, None);
     }
 }
@@ -260,10 +270,10 @@ fn clear_pending(pending: &mut [(Option<[u8; 32]>, Option<StarterId>); 5], invit
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec::Vec;
     use crate::event::Event;
     use crate::event_payloads::{RejectReason, StarterCreatedPayload};
     use crate::primitives::{Network, PubKey, Signature, Timestamp};
+    use alloc::vec::Vec;
 
     fn append_event(ledger: &mut Ledger, kind: EventKind, payload: &[u8], timestamp: u64) {
         let owner = *ledger.owner();

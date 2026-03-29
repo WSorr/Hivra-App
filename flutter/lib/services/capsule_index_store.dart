@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
-
 import 'capsule_persistence_models.dart';
+import 'user_visible_data_directory_service.dart';
 
 class CapsulesIndex {
   String? activePubKeyHex;
@@ -16,14 +15,14 @@ class CapsulesIndex {
 }
 
 class CapsuleIndexStore {
-  static const String _capsulesDirName = 'capsules';
   static const String _indexFileName = 'capsules_index.json';
+  final UserVisibleDataDirectoryService _dirs;
 
-  const CapsuleIndexStore();
+  const CapsuleIndexStore({UserVisibleDataDirectoryService? dirs})
+      : _dirs = dirs ?? const UserVisibleDataDirectoryService();
 
   Future<CapsulesIndex> read() async {
-    final docs = await getApplicationDocumentsDirectory();
-    final capsulesRoot = Directory('${docs.path}/$_capsulesDirName');
+    final capsulesRoot = await _dirs.capsulesDirectory(create: false);
     final indexFile = File('${capsulesRoot.path}/$_indexFileName');
     if (!await indexFile.exists()) {
       return CapsulesIndex(activePubKeyHex: null, capsules: {});
@@ -38,11 +37,7 @@ class CapsuleIndexStore {
   }
 
   Future<void> write(CapsulesIndex index) async {
-    final docs = await getApplicationDocumentsDirectory();
-    final capsulesRoot = Directory('${docs.path}/$_capsulesDirName');
-    if (!await capsulesRoot.exists()) {
-      await capsulesRoot.create(recursive: true);
-    }
+    final capsulesRoot = await _dirs.capsulesDirectory(create: true);
     final indexFile = File('${capsulesRoot.path}/$_indexFileName');
     await indexFile.writeAsString(_toJson(index), flush: true);
   }
@@ -68,15 +63,16 @@ class CapsuleIndexStore {
       lastActive: now,
       isGenesis: isGenesis ?? existing?.isGenesis ?? false,
       isNeste: isNeste ?? existing?.isNeste ?? true,
-      identityMode:
-          identityMode ?? existing?.identityMode ?? 'root_owner',
+      identityMode: identityMode ?? existing?.identityMode ?? 'root_owner',
     );
     await write(index);
   }
 
   CapsulesIndex _fromJson(String raw) {
     final decoded = jsonDecode(raw);
-    if (decoded is! Map) return CapsulesIndex(activePubKeyHex: null, capsules: {});
+    if (decoded is! Map) {
+      return CapsulesIndex(activePubKeyHex: null, capsules: {});
+    }
     final map = Map<String, dynamic>.from(decoded);
     final active = map['active']?.toString();
     final capsulesMap = <String, CapsuleIndexEntry>{};
@@ -90,9 +86,8 @@ class CapsuleIndexStore {
         }
       }
     }
-    final normalizedActive = active != null && capsulesMap.containsKey(active)
-        ? active
-        : null;
+    final normalizedActive =
+        active != null && capsulesMap.containsKey(active) ? active : null;
     return CapsulesIndex(
       activePubKeyHex: normalizedActive,
       capsules: capsulesMap,

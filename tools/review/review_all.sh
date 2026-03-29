@@ -14,9 +14,8 @@ run_check() {
 
 run_check "topology_check.sh"
 run_check "dependency_check.sh"
-run_check "architecture_gate.sh"
+run_check "architecture_contract_gate.sh"
 run_check "ui_ffi_boundary_gate.sh"
-run_check "projection_discipline_gate.sh"
 run_check "release_discipline_gate.sh"
 run_check "security_check.sh"
 

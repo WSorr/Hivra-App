@@ -18,6 +18,16 @@ fn observe_engine_ts(ts: u64) {
     }
 }
 
+fn observe_ledger_tail_ts(ledger: &Ledger) {
+    if let Some(ts) = ledger
+        .events()
+        .last()
+        .map(|event| event.timestamp().as_u64())
+    {
+        observe_engine_ts(ts);
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct RuntimeState {
     pub(crate) capsule: Option<Capsule>,
@@ -195,6 +205,8 @@ pub(crate) fn init_runtime_state(
         }
     }
 
+    observe_ledger_tail_ts(&ledger);
+
     let capsule = Capsule {
         pubkey: owner,
         capsule_type,
@@ -301,6 +313,7 @@ pub(crate) fn import_runtime_ledger(json: &str) -> Result<(), &'static str> {
     if parsed.owner() != &capsule.pubkey {
         return Err("owner mismatch");
     }
+    observe_ledger_tail_ts(&parsed);
     capsule.ledger = parsed;
     Ok(())
 }
@@ -447,4 +460,12 @@ pub(crate) fn starter_is_active_in_runtime(starter_id: StarterId) -> bool {
 
     let layout = hivra_core::slot::SlotLayout::from_ledger(&capsule.ledger);
     layout.find_by_starter(starter_id).is_some()
+}
+
+pub(crate) fn active_starter_id_for_slot(slot: u8) -> Option<StarterId> {
+    let index = hivra_core::primitives::SlotIndex::new(slot)?;
+    let runtime = RUNTIME.lock().unwrap();
+    let capsule = runtime.capsule.as_ref()?;
+    let layout = hivra_core::slot::SlotLayout::from_ledger(&capsule.ledger);
+    layout.starter_id_at(index)
 }

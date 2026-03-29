@@ -7,6 +7,7 @@ class InvitationCard extends StatelessWidget {
   final VoidCallback? onReject;
   final VoidCallback? onCancel;
   final bool isLoading;
+  final String? loadingAction;
 
   const InvitationCard({
     super.key,
@@ -15,6 +16,7 @@ class InvitationCard extends StatelessWidget {
     this.onReject,
     this.onCancel,
     this.isLoading = false,
+    this.loadingAction,
   });
 
   @override
@@ -219,7 +221,7 @@ class InvitationCard extends StatelessWidget {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                         ),
-                        child: isLoading
+                        child: isLoading && loadingAction == 'accept'
                             ? const SizedBox(
                                 height: 20,
                                 width: 20,
@@ -238,7 +240,15 @@ class InvitationCard extends StatelessWidget {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
                         ),
-                        child: const Text('Reject'),
+                        child: isLoading && loadingAction == 'reject'
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Reject'),
                       ),
                     ),
                   ],
@@ -252,7 +262,15 @@ class InvitationCard extends StatelessWidget {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
                         ),
-                        child: const Text('Cancel'),
+                        child: isLoading && loadingAction == 'cancel'
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Cancel'),
                       ),
                     ),
                   ],

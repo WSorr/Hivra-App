@@ -40,8 +40,7 @@ class InvitationDeliveryService {
     String input, {
     Uint8List? selfRootKey,
     Uint8List? selfNostrKey,
-  }
-  ) async {
+  }) async {
     final value = input.trim();
     if (value.isEmpty) {
       return InvitationRecipientResolution.failure(
@@ -49,7 +48,8 @@ class InvitationDeliveryService {
       );
     }
 
-    if (_isSelfAddress(value, selfRootKey: selfRootKey, selfNostrKey: selfNostrKey)) {
+    if (_isSelfAddress(value,
+        selfRootKey: selfRootKey, selfNostrKey: selfNostrKey)) {
       return InvitationRecipientResolution.failure(
         "You can't invite this capsule to itself.",
       );
@@ -60,6 +60,13 @@ class InvitationDeliveryService {
       transport: 'nostr',
     );
     if (recipient != null) {
+      if (selfNostrKey != null &&
+          selfNostrKey.length == 32 &&
+          _sameBytes(recipient, selfNostrKey)) {
+        return InvitationRecipientResolution.failure(
+          'Resolved delivery endpoint points to this capsule. Re-import peer capsule card.',
+        );
+      }
       return InvitationRecipientResolution.success(recipient);
     }
 
@@ -91,7 +98,7 @@ class InvitationDeliveryService {
       case -6:
         return 'Failed to prepare local invitation state';
       case -7:
-        return 'Failed to deliver invitation';
+        return 'Failed to deliver invitation (local invitation is still recorded)';
       case -11:
         return 'No connected delivery relays available';
       case -12:
@@ -182,7 +189,7 @@ class InvitationDeliveryService {
 
   bool _isSelfAddress(
     String input, {
-      Uint8List? selfRootKey,
+    Uint8List? selfRootKey,
     Uint8List? selfNostrKey,
   }) {
     final trimmed = input.trim();

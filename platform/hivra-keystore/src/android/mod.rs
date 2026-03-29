@@ -34,7 +34,12 @@ pub extern "system" fn Java_com_hivra_hivra_1app_HivraKeystoreBridge_nativeInit(
     if let Ok(vm) = env.get_java_vm() {
         let _ = JVM.set(vm);
     }
-    if let Ok(instance) = env.get_static_field(&class, "INSTANCE", "Lcom/hivra/hivra_app/HivraKeystoreBridge;")
+    if let Ok(instance) = env
+        .get_static_field(
+            &class,
+            "INSTANCE",
+            "Lcom/hivra/hivra_app/HivraKeystoreBridge;",
+        )
         .and_then(|value| value.l())
         .and_then(|obj| env.new_global_ref(obj))
     {
@@ -263,24 +268,21 @@ fn seed_blob_exists(account: &str) -> Result<bool> {
 fn jni_error(env: &mut JNIEnv, op: &str, err: impl ToString) -> Error {
     let mut message = format!("Android JNI {op} failed: {}", err.to_string());
     if matches!(env.exception_check(), Ok(true)) {
-        let detail = env
-            .exception_occurred()
-            .ok()
-            .and_then(|throwable| {
-                let _ = env.exception_clear();
-                env.call_method(&throwable, "toString", "()Ljava/lang/String;", &[])
-                    .ok()?
-                    .l()
-                    .ok()
-                    .and_then(|value| {
-                        if value.is_null() {
-                            return None;
-                        }
-                        env.get_string(&JString::from(value))
-                            .ok()
-                            .and_then(|text| text.to_str().ok().map(ToOwned::to_owned))
-                    })
-            });
+        let detail = env.exception_occurred().ok().and_then(|throwable| {
+            let _ = env.exception_clear();
+            env.call_method(&throwable, "toString", "()Ljava/lang/String;", &[])
+                .ok()?
+                .l()
+                .ok()
+                .and_then(|value| {
+                    if value.is_null() {
+                        return None;
+                    }
+                    env.get_string(&JString::from(value))
+                        .ok()
+                        .and_then(|text| text.to_str().ok().map(ToOwned::to_owned))
+                })
+        });
         if let Some(detail) = detail {
             message.push_str(&format!(" (Java exception: {detail})"));
         } else {

@@ -77,6 +77,45 @@ Transport | Byte transfer, network adaptation | Core entities/invariants, busine
 Engine | Orchestration, dependency injection, signature validation | Detailed event structure (only bytes)
 Core | Domain invariants, events, projections | Time, RNG, I/O, JSON, cryptography
 
+### 2.3 Structural Minimality Contract (Anti-Sprawl)
+
+To prevent architecture drift into duplicated "modules for modules", implementation MUST stay within this explicit skeleton:
+
+1. UI Projection Layer (screens/widgets, user intent dispatch)
+2. Application Use-Case Layer (intent orchestration, policy, error mapping)
+3. Domain Core Layer (invariants, event transitions, deterministic logic)
+4. Ledger Layer (append-only storage + projection reconstruction)
+5. Transport Layer (providers/adapters only)
+6. Plugin Host Layer (WASM runtime with capability gates)
+
+Rules:
+
+- A new module MUST map to one of these six layers.
+- A module MUST NOT duplicate responsibilities already owned by another layer.
+- UI MUST NOT contain domain orchestration logic.
+- Application MUST treat ledger-derived projection as the only domain truth.
+- Plugin host MUST extend capabilities without changing dependency direction.
+
+### 2.4 Flutter Boundary Direction
+
+Inside Flutter/application code, dependencies are also strictly downward:
+
+```
+Screens/Widgets
+    ↓
+Application Use Cases / Facades
+    ↓
+FFI Boundary Services
+    ↓
+Rust Core + Engine + Transport
+```
+
+Forbidden inside Flutter:
+
+- direct FFI calls from widgets
+- duplicated projection logic in multiple screens
+- cross-screen orchestration coupling
+
 ---
 
 ## 3. Core (Domain Layer)
@@ -315,7 +354,20 @@ Each transport provides:
 1. Transport implementation (send/receive bytes).
 2. CryptoProvider implementation (for its curve).
 
-### 5.2.1 Identity Separation Rule
+### 5.2.1 WASM Plugin Host Contract
+
+WASM plugin execution is allowed only through a host boundary with explicit capabilities.
+
+Mandatory constraints:
+
+1. Plugin runtime is sandboxed.
+2. Plugin registry/storage is isolated from capsule ledger storage.
+3. Plugins MUST NOT append ledger events directly.
+4. Plugins MUST NOT bypass Engine validation or Core invariants.
+5. Pair-scoped plugin execution MUST be blocked when consensus guard is not signable.
+6. Plugin host inputs/outputs MUST be deterministic for identical inputs.
+
+### 5.2.2 Identity Separation Rule
 
 Transport adapters operate on transport-specific keys only.
 
@@ -451,13 +503,19 @@ B receives invitation. Check:
 
 Situation | B Action | Result
 --- | --- | ---
-No own X + empty slot + Accept | Create new starter of type X + InvitationAccepted + RelationshipEstablished | Relationship uses the newly created X
-Own X exists + empty slot + Accept | Create one missing starter type + InvitationAccepted + RelationshipEstablished | Relationship uses existing X; created starter fills a missing type
+No own X + empty slot + Accept | Create or reactivate local starter of type X + InvitationAccepted + RelationshipEstablished | Relationship uses the local X active after acceptance
+Own X exists + empty slot + Accept | Create or reactivate one missing starter type + InvitationAccepted + RelationshipEstablished | Relationship uses existing X; additional local capacity is restored
 Own X exists + no empty slot + Accept | InvitationAccepted + RelationshipEstablished | Relationship uses existing X; no new starter is created
 No own X + no empty slot + Accept | Accept is impossible | No acceptance without capacity for invited type
 Empty slot + Reject | InvitationRejected(EmptySlot) | A's starter is burned
 Slot occupied + Reject | InvitationRejected(Other) | A's starter is unlocked
 Timeout (24h) | - | A's starter unlocked
+
+Burn and slot identity rules:
+
+- `StarterBurned` finalizes the current active lifecycle of that starter identity.
+- A burned slot can be accepted again and deterministically reactivate the same local `starter_id`.
+- If reactivated starter is later rejected under EmptySlot conditions again, it can be burned again in a new lifecycle episode.
 
 ### 8.1.1 Acceptance Provenance
 
@@ -486,6 +544,8 @@ This provenance is required so that both ledgers can reconstruct how the relatio
 A recipient-side starter does NOT derive its identity hash from the sender starter.
 
 Starter identity remains local to the receiving capsule.
+Starter derivation for acceptance-created starters MUST be deterministic from local capsule state
+and MUST remain slot-stable for reactivation semantics.
 
 Cross-capsule lineage MUST remain recoverable from ledger history, not embedded into the recipient starter hash.
 
@@ -543,6 +603,10 @@ Rules:
 7. All state changes occur via events.
 8. Core does not call time, RNG, or crypto.
 9. Private key is never passed into Core.
+10. UI renders projections and dispatches intents; it does not own domain orchestration.
+11. Application logic cannot create a second truth beside ledger-derived state.
+12. Plugin execution cannot bypass consensus guard requirements for pair-scoped actions.
+13. New architecture modules require explicit non-overlapping ownership.
 
 ---
 

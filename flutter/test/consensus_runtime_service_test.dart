@@ -1,0 +1,99 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:hivra_app/services/consensus_runtime_service.dart';
+
+void main() {
+  group('ConsensusRuntimeService', () {
+    test('reads ledger/runtime inputs and exposes preview plus signable', () {
+      final invitationId = Uint8List.fromList(List<int>.filled(32, 1));
+      final ownStarter = Uint8List.fromList(List<int>.filled(32, 2));
+      final peerTransport = Uint8List.fromList(List<int>.filled(32, 3));
+      final peerRoot = Uint8List.fromList(List<int>.filled(32, 4));
+      final peerStarter = Uint8List.fromList(List<int>.filled(32, 5));
+      final sender = Uint8List.fromList(List<int>.filled(32, 6));
+      final senderStarter = Uint8List.fromList(List<int>.filled(32, 7));
+      final acceptedFrom = Uint8List.fromList(List<int>.filled(32, 8));
+      final acceptedCreated = Uint8List.fromList(List<int>.filled(32, 9));
+      final localTransport = Uint8List.fromList(List<int>.filled(32, 11));
+      final peerHex = List<int>.filled(32, 4)
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
+
+      final ledgerJson = jsonEncode(<String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 1,
+            'payload': <int>[
+              ...invitationId,
+              ...ownStarter,
+              ...peerTransport,
+              1,
+            ],
+          },
+          <String, dynamic>{
+            'kind': 7,
+            'payload': <int>[
+              ...peerRoot,
+              ...ownStarter,
+              ...peerStarter,
+              1,
+              ...invitationId,
+              ...sender,
+              1,
+              ...senderStarter,
+            ],
+          },
+          <String, dynamic>{
+            'kind': 2,
+            'payload': <int>[
+              ...invitationId,
+              ...acceptedFrom,
+              ...acceptedCreated,
+            ],
+          },
+        ],
+      });
+
+      final service = ConsensusRuntimeService(
+        exportLedger: () => ledgerJson,
+        readLocalTransportKey: () => localTransport,
+      );
+
+      final previews = service.preview();
+      final signable = service.signable(peerHex);
+
+      expect(previews, hasLength(1));
+      expect(previews.first.hashHex, hasLength(64));
+      expect(signable.isSignable, isTrue);
+      expect(signable.hashHex, previews.first.hashHex);
+    });
+
+    test('reports runtime-unavailable when ledger or local key is missing', () {
+      final missingLedger = ConsensusRuntimeService(
+        exportLedger: () => null,
+        readLocalTransportKey: () =>
+            Uint8List.fromList(List<int>.filled(32, 1)),
+      );
+      final missingKey = ConsensusRuntimeService(
+        exportLedger: () => jsonEncode(<String, dynamic>{'events': <Object>[]}),
+        readLocalTransportKey: () => null,
+      );
+      final missingLedgerSignable = missingLedger.signable('ab');
+      final missingKeySignable = missingKey.signable('ab');
+
+      expect(missingLedger.preview(), isEmpty);
+      expect(
+        missingLedgerSignable.blockingFacts.map((fact) => fact.key),
+        contains('consensus_runtime_unavailable'),
+      );
+      expect(missingKey.preview(), isEmpty);
+      expect(
+        missingKeySignable.blockingFacts.map((fact) => fact.key),
+        contains('consensus_runtime_unavailable'),
+      );
+    });
+  });
+}

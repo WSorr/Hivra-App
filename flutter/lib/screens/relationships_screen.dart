@@ -4,6 +4,7 @@ import '../models/relationship.dart';
 import '../models/relationship_peer_group.dart';
 import '../models/starter.dart';
 import '../services/relationship_service.dart';
+import '../services/ui_feedback_service.dart';
 
 class RelationshipsScreen extends StatefulWidget {
   final RelationshipService service;
@@ -23,6 +24,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   List<RelationshipPeerGroup> _relationshipGroups = [];
   bool _isLoading = true;
   String? _filterKind;
+  String? _breakingPeerPubkey;
 
   @override
   void initState() {
@@ -38,7 +40,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   }
 
   Future<void> _confirmBreakRelationship(Relationship relationship) async {
-    await showDialog<void>(
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Break Relationship?'),
@@ -48,30 +50,45 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () async {
-              final navigator = Navigator.of(context);
-              final messenger = ScaffoldMessenger.of(context);
-              final ok = await widget.service.breakRelationship(relationship);
-              if (!mounted) return;
-              navigator.pop();
-              if (!ok) {
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Failed to break relationship')),
-                );
-                return;
-              }
-              await _loadRelationships();
-              await widget.onLedgerChanged?.call();
-            },
+            onPressed: () => Navigator.pop(context, true),
             child: const Text('Break'),
           ),
         ],
       ),
+    );
+    if (confirm != true) return;
+
+    if (!mounted) return;
+    setState(() => _breakingPeerPubkey = relationship.peerPubkey);
+    UiFeedbackService.dismissCurrent(context);
+    final ok = await widget.service.breakRelationship(relationship);
+    if (!mounted) return;
+    setState(() => _breakingPeerPubkey = null);
+
+    if (!ok) {
+      UiFeedbackService.showSnackBar(
+        context,
+        'Failed to break relationship',
+        source: 'relationships.break',
+        duration: const Duration(seconds: 3),
+        enableCopy: false,
+      );
+      return;
+    }
+    await _loadRelationships();
+    await widget.onLedgerChanged?.call();
+    if (!mounted) return;
+    UiFeedbackService.showSnackBar(
+      context,
+      'Relationship broken',
+      source: 'relationships.break',
+      duration: const Duration(seconds: 2),
+      enableCopy: false,
     );
   }
 
@@ -109,6 +126,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
                 ),
                 trailing: const Icon(Icons.link_off, color: Colors.red),
                 onTap: () async {
+                  if (_breakingPeerPubkey != null) return;
                   Navigator.pop(context);
                   await _confirmBreakRelationship(relationship);
                 },
@@ -214,7 +232,9 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
                     final group = _groupedRelationships[index];
                     return _RelationshipPeerCard(
                       group: group,
+                      isBreaking: _breakingPeerPubkey == group.peerPubkey,
                       onBreak: group.activeRelationships.isEmpty
+                          || _breakingPeerPubkey != null
                           ? null
                           : () => _breakGroup(group),
                     );
@@ -232,10 +252,12 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
 class _RelationshipPeerCard extends StatelessWidget {
   final RelationshipPeerGroup group;
   final VoidCallback? onBreak;
+  final bool isBreaking;
 
   const _RelationshipPeerCard({
     required this.group,
     this.onBreak,
+    this.isBreaking = false,
   });
 
   @override
@@ -391,7 +413,13 @@ class _RelationshipPeerCard extends StatelessWidget {
             ),
             if (group.isActive && onBreak != null)
               IconButton(
-                icon: const Icon(Icons.link_off, color: Colors.red),
+                icon: isBreaking
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.link_off, color: Colors.red),
                 onPressed: onBreak,
                 tooltip: group.activeRelationships.length == 1
                     ? 'Break relationship'

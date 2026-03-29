@@ -3,17 +3,21 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:path_provider/path_provider.dart';
+
+import 'user_visible_data_directory_service.dart';
 
 class CapsuleSeedStore {
-  static const String _capsulesDirName = 'capsules';
   static const String _seedKeyPrefix = 'hivra.seed.';
   static const String _seedFallbackFileName = 'capsule_seeds.json';
 
   final FlutterSecureStorage _secureStorage;
+  final UserVisibleDataDirectoryService _dirs;
 
-  const CapsuleSeedStore({FlutterSecureStorage? secureStorage})
-      : _secureStorage = secureStorage ?? const FlutterSecureStorage();
+  const CapsuleSeedStore({
+    FlutterSecureStorage? secureStorage,
+    UserVisibleDataDirectoryService? dirs,
+  })  : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+        _dirs = dirs ?? const UserVisibleDataDirectoryService();
 
   Future<void> storeSeed(String pubKeyHex, Uint8List seed) async {
     final encoded = base64.encode(seed);
@@ -98,11 +102,7 @@ class CapsuleSeedStore {
   }
 
   Future<File> _seedFallbackFile() async {
-    final docs = await getApplicationDocumentsDirectory();
-    final capsulesRoot = Directory('${docs.path}/$_capsulesDirName');
-    if (!await capsulesRoot.exists()) {
-      await capsulesRoot.create(recursive: true);
-    }
+    final capsulesRoot = await _dirs.capsulesDirectory(create: true);
     return File('${capsulesRoot.path}/$_seedFallbackFileName');
   }
 

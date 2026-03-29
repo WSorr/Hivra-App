@@ -5,8 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
+import '../services/consensus_runtime_service.dart';
 import '../services/ledger_view_support.dart';
-import '../services/pairwise_snapshot_service.dart';
 import '../utils/hivra_id_format.dart';
 
 class LedgerInspectorScreen extends StatefulWidget {
@@ -31,11 +31,9 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   String _ledgerOwnerKey = 'No key';
   String _rootDisplayKey = 'No key';
   List<_LedgerEventRow> _recentEvents = const <_LedgerEventRow>[];
-  List<PairwiseSnapshotRow> _pairwiseSnapshots = const <PairwiseSnapshotRow>[];
+  List<ConsensusCheck> _consensusChecks = const <ConsensusCheck>[];
   Map<String, int> _eventCounts = const <String, int>{};
   List<String> _integrityHints = const <String>[];
-  final PairwiseSnapshotService _pairwiseSnapshotService =
-      const PairwiseSnapshotService();
   final LedgerViewSupport _support = const LedgerViewSupport();
 
   @override
@@ -70,6 +68,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
           _rootDisplayKey = rootDisplayKey;
           _rawLedgerJson = '';
           _recentEvents = const <_LedgerEventRow>[];
+          _consensusChecks = const <ConsensusCheck>[];
           _eventCounts = const <String, int>{};
           _integrityHints = const <String>[];
           _error = 'Ledger export returned empty result';
@@ -86,6 +85,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
           _rootDisplayKey = rootDisplayKey;
           _rawLedgerJson = raw;
           _recentEvents = const <_LedgerEventRow>[];
+          _consensusChecks = const <ConsensusCheck>[];
           _eventCounts = const <String, int>{};
           _integrityHints = const <String>[];
           _error = 'Ledger JSON has unsupported shape';
@@ -121,10 +121,8 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
       }
 
       final recent = rows.reversed.take(40).toList(growable: false);
-      final snapshots = _pairwiseSnapshotService.buildSnapshots(
-        events,
-        widget.runtime.capsuleNostrPublicKey() ?? Uint8List(0),
-      );
+      final consensusChecks =
+          widget.runtime.buildManualConsensusCheckService().loadChecks();
       final ledgerOwnerKey = _ownerKeyFromLedger(decoded) ?? ownerKey;
       final integrityHints = _buildIntegrityHints(events, rows);
 
@@ -134,7 +132,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
         _rootDisplayKey = rootDisplayKey;
         _rawLedgerJson = raw;
         _recentEvents = recent;
-        _pairwiseSnapshots = snapshots;
+        _consensusChecks = consensusChecks;
         _eventCounts = counts;
         _integrityHints = integrityHints;
         _isLoading = false;
@@ -544,11 +542,11 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                             .map<Widget>((hint) => _kv('Hint', hint))
                             .toList(growable: false),
                       ),
-                      if (_pairwiseSnapshots.isNotEmpty) ...[
+                      if (_consensusChecks.isNotEmpty) ...[
                         const SizedBox(height: 16),
-                        _sectionTitle('Pairwise Transport Snapshot Preview'),
-                        ..._pairwiseSnapshots.map(
-                          (snapshot) => Card(
+                        _sectionTitle('Manual Consensus Check'),
+                        ..._consensusChecks.map(
+                          (check) => Card(
                             child: Padding(
                               padding: const EdgeInsets.all(14),
                               child: Column(
@@ -558,7 +556,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          snapshot.peerLabel,
+                                          check.peerLabel,
                                           style: const TextStyle(
                                             fontFamily: 'monospace',
                                             fontWeight: FontWeight.w600,
@@ -566,10 +564,10 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                                         ),
                                       ),
                                       IconButton(
-                                        tooltip: 'Copy snapshot JSON',
+                                        tooltip: 'Copy consensus JSON',
                                         onPressed: () => _copyToClipboard(
-                                          snapshot.canonicalJson,
-                                          'Pairwise snapshot JSON',
+                                          check.canonicalJson,
+                                          'Consensus snapshot JSON',
                                         ),
                                         icon: const Icon(Icons.copy, size: 18),
                                       ),
@@ -577,7 +575,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    'hash ${_short(snapshot.hashHex, start: 18, end: 12)}',
+                                    'hash ${_short(check.hashHex, start: 18, end: 12)}',
                                     style: TextStyle(
                                       fontFamily: 'monospace',
                                       color: Colors.grey.shade300,
@@ -589,9 +587,14 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                                     runSpacing: 8,
                                     children: [
                                       _detailChip(
-                                          'invites ${snapshot.invitationCount}'),
+                                          'invites ${check.invitationCount}'),
                                       _detailChip(
-                                          'relationships ${snapshot.relationshipCount}'),
+                                          'relationships ${check.relationshipCount}'),
+                                      _detailChip(check.isSignable
+                                          ? 'signable'
+                                          : 'blocked'),
+                                      ...check.blockingFacts
+                                          .map((fact) => _detailChip(fact.label)),
                                     ],
                                   ),
                                   const SizedBox(height: 10),
@@ -611,7 +614,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                                               color: const Color(0xFF3A3646)),
                                         ),
                                         child: SelectableText(
-                                          snapshot.canonicalJson,
+                                          check.canonicalJson,
                                           style: const TextStyle(
                                             fontFamily: 'monospace',
                                             fontSize: 12,

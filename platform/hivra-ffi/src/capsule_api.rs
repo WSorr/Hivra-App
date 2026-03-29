@@ -194,10 +194,7 @@ pub unsafe extern "C" fn hivra_starter_get_type(slot: u8) -> i32 {
     let entries = layout.entries_with_kinds(&capsule.ledger);
     let entry = entries[index.as_u8() as usize];
 
-    entry
-        .starter_kind
-        .map(|kind| kind as i32)
-        .unwrap_or(-1)
+    entry.starter_kind.map(|kind| kind as i32).unwrap_or(-1)
 }
 
 /// Check if starter exists in slot
@@ -218,5 +215,9 @@ pub unsafe extern "C" fn hivra_starter_exists(slot: u8) -> i8 {
         None => return 0,
     };
     let layout = hivra_core::slot::SlotLayout::from_ledger(&capsule.ledger);
-    if layout.starter_id_at(index).is_some() { 1 } else { 0 }
+    if layout.starter_id_at(index).is_some() {
+        1
+    } else {
+        0
+    }
 }

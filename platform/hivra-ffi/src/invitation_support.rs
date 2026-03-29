@@ -1,5 +1,7 @@
 use super::*;
-use crate::runtime_support::starter_is_active_in_runtime;
+use crate::runtime_support::{
+    derive_starter_id, derive_starter_nonce, starter_is_active_in_runtime,
+};
 
 pub(crate) fn find_invitation_sent_in_runtime(
     invitation_id: &[u8; 32],
@@ -57,9 +59,7 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
 
     for event in capsule.ledger.events() {
         let event_kind = event.kind();
-        if event_kind != EventKind::InvitationSent
-            && event_kind != EventKind::InvitationReceived
-        {
+        if event_kind != EventKind::InvitationSent && event_kind != EventKind::InvitationReceived {
             continue;
         }
 
@@ -135,9 +135,7 @@ pub(crate) fn debug_log_invitation_sent_candidates(label: &str, target_invitatio
 
     for event in capsule.ledger.events() {
         let event_kind = event.kind();
-        if event_kind != EventKind::InvitationSent
-            && event_kind != EventKind::InvitationReceived
-        {
+        if event_kind != EventKind::InvitationSent && event_kind != EventKind::InvitationReceived {
             continue;
         }
 
@@ -221,6 +219,15 @@ pub(crate) fn project_relationship_from_invitation_accepted(
     message_from: [u8; 32],
     payload: &InvitationAcceptedPayload,
 ) -> Result<(), &'static str> {
+    let local_pubkey = {
+        let runtime = RUNTIME.lock().unwrap();
+        let capsule = runtime.capsule.as_ref().ok_or("no capsule")?;
+        *capsule.pubkey.as_bytes()
+    };
+    if message_from == local_pubkey {
+        return Err("ignore self InvitationAccepted delivery");
+    }
+
     debug_log_invitation_sent_candidates("incoming_accept", &payload.invitation_id);
     let Some((own_starter_id, kind, _, false)) =
         find_invitation_sent_in_runtime_with_direction(&payload.invitation_id, Some(false))
@@ -253,13 +260,13 @@ pub(crate) fn project_effects_from_invitation_rejected(
 
     match payload.reason {
         RejectReason::EmptySlot => {
+            if !starter_is_active_in_runtime(starter_id) {
+                return Ok(());
+            }
+
             let prepared = engine
                 .prepare_starter_burned(starter_id, payload.reason as u8)
                 .map_err(|_| "prepare failed")?;
-
-            if event_exists_in_runtime(EventKind::StarterBurned, prepared.event.payload()) {
-                return Ok(());
-            }
 
             append_prepared_event(prepared)
         }
@@ -332,18 +339,20 @@ pub(crate) fn resolve_local_acceptance_plan(
             })
         }
         hivra_core::AcceptPlan::CreateStarterInEmptySlot { slot, kind } => {
+            let slot_u8 = slot.as_u8();
+            let created_starter_id = StarterId::from(derive_starter_id(seed, slot_u8));
             Ok(LocalAcceptancePlan {
                 invitation_id,
                 sender_pubkey,
                 sender_starter_id: peer_starter_id,
                 sender_starter_type: invited_kind,
-                relationship_starter_id: StarterId::from(derive_starter_id(seed, slot.as_u8())),
+                relationship_starter_id: created_starter_id,
                 relationship_kind: invited_kind,
                 peer_starter_id,
                 created_starter: Some((
-                    StarterId::from(derive_starter_id(seed, slot.as_u8())),
+                    created_starter_id,
                     kind,
-                    derive_starter_nonce(seed, slot.as_u8()),
+                    derive_starter_nonce(seed, slot_u8),
                 )),
             })
         }

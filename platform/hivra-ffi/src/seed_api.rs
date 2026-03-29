@@ -69,10 +69,7 @@ pub unsafe extern "C" fn hivra_generate_random_seed(out_seed: *mut u8) -> i32 {
 
 /// Derive canonical root capsule public key from seed without mutating keystore/runtime.
 #[no_mangle]
-pub unsafe extern "C" fn hivra_seed_root_public_key(
-    seed_ptr: *const u8,
-    out_key: *mut u8,
-) -> i32 {
+pub unsafe extern "C" fn hivra_seed_root_public_key(seed_ptr: *const u8, out_key: *mut u8) -> i32 {
     if seed_ptr.is_null() || out_key.is_null() {
         return -1;
     }
@@ -93,10 +90,7 @@ pub unsafe extern "C" fn hivra_seed_root_public_key(
 
 /// Derive Nostr transport public key from seed without mutating keystore/runtime.
 #[no_mangle]
-pub unsafe extern "C" fn hivra_seed_nostr_public_key(
-    seed_ptr: *const u8,
-    out_key: *mut u8,
-) -> i32 {
+pub unsafe extern "C" fn hivra_seed_nostr_public_key(seed_ptr: *const u8, out_key: *mut u8) -> i32 {
     if seed_ptr.is_null() || out_key.is_null() {
         return -1;
     }

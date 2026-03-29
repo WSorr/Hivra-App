@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import '../services/app_runtime_service.dart';
 import '../services/invitation_delivery_service.dart';
-import '../services/invitation_actions_service.dart';
+import '../services/invitation_intent_handler.dart';
+import '../services/ui_feedback_service.dart';
 import '../utils/hivra_id_format.dart';
 
 class StartersScreen extends StatefulWidget {
@@ -21,13 +22,13 @@ class StartersScreen extends StatefulWidget {
 
 class _StartersScreenState extends State<StartersScreen> {
   final InvitationDeliveryService _delivery = const InvitationDeliveryService();
-  late final InvitationActionsService _actions;
+  late final InvitationIntentHandler _intents;
   List<Map<String, dynamic>> _slots = const [];
 
   @override
   void initState() {
     super.initState();
-    _actions = widget.runtime.invitationActions;
+    _intents = widget.runtime.invitationIntents;
     _loadSlots();
   }
 
@@ -64,6 +65,7 @@ class _StartersScreenState extends State<StartersScreen> {
   Future<void> _showInviteDialog(Map<String, dynamic> slot) async {
     final TextEditingController pubkeyController = TextEditingController();
     String? formError;
+    bool isSending = false;
     
     return showDialog(
       context: context,
@@ -98,13 +100,13 @@ class _StartersScreenState extends State<StartersScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: isSending ? null : () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () async {
-                final navigator = Navigator.of(context);
-                final messenger = ScaffoldMessenger.of(this.context);
+              onPressed: isSending
+                  ? null
+                  : () async {
                 final input = pubkeyController.text.trim();
                 if (input.isEmpty) {
                   setDialogState(
@@ -114,16 +116,23 @@ class _StartersScreenState extends State<StartersScreen> {
                   return;
                 }
 
+                setDialogState(() {
+                  isSending = true;
+                });
+
                 final resolution = await _delivery.resolveRecipientAddress(
                   input,
                   selfRootKey: widget.runtime.capsuleRootPublicKey(),
                   selfNostrKey: widget.runtime.capsuleNostrPublicKey(),
                 );
+                if (!context.mounted) return;
                 if (!resolution.isSuccess) {
                   setDialogState(
-                    () => formError =
-                        resolution.errorMessage ??
-                        'Could not resolve recipient address',
+                    () {
+                      formError = resolution.errorMessage ??
+                          'Could not resolve recipient address';
+                      isSending = false;
+                    },
                   );
                   return;
                 }
@@ -134,19 +143,38 @@ class _StartersScreenState extends State<StartersScreen> {
                     throw Exception('Invalid starter slot');
                   }
 
-                  final workerResult = await _actions.sendInvitation(
+                  final result = await _intents.sendInvitation(
                     resolution.transportRecipient!,
                     slotIndex,
                   );
-                  if (workerResult.code != 0) {
-                    throw Exception(_delivery.sendFailureMessage(workerResult.code));
+                  if (!result.isSuccess) {
+                    if (!mounted) return;
+                    UiFeedbackService.showSnackBar(
+                      this.context,
+                      result.message,
+                      source: 'starters.send',
+                      duration: const Duration(seconds: 3),
+                      enableCopy: false,
+                    );
+                    if (!context.mounted) return;
+                    setDialogState(() {
+                      formError = result.message;
+                      isSending = false;
+                    });
+                    return;
                   }
 
+                  if (!context.mounted) return;
+                  final navigator = Navigator.of(context);
                   navigator.pop();
                   if (!mounted) return;
                   final peerPreview = input.length <= 8 ? input : '${input.substring(0, 8)}...';
-                  messenger.showSnackBar(
-                    SnackBar(content: Text('Invitation sent to $peerPreview')),
+                  UiFeedbackService.showSnackBar(
+                    this.context,
+                    'Invitation sent to $peerPreview. Receiver should pull to refresh Invitations.',
+                    source: 'starters.send',
+                    duration: const Duration(seconds: 5),
+                    enableCopy: false,
                   );
 
                   setState(() {
@@ -156,12 +184,27 @@ class _StartersScreenState extends State<StartersScreen> {
                   await widget.onLedgerChanged?.call();
                 } catch (e) {
                   if (!mounted) return;
-                  messenger.showSnackBar(
-                    SnackBar(content: Text('Failed to send: $e')),
+                  UiFeedbackService.showSnackBar(
+                    this.context,
+                    'Failed to send: $e',
+                    source: 'starters.send',
+                    duration: const Duration(seconds: 3),
+                    enableCopy: false,
                   );
+                  if (context.mounted) {
+                    setDialogState(() {
+                      isSending = false;
+                    });
+                  }
                 }
               },
-              child: const Text('Send Invitation'),
+              child: isSending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Send Invitation'),
             ),
           ],
         ),

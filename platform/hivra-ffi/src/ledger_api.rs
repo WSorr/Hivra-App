@@ -25,7 +25,6 @@ pub unsafe extern "C" fn capsule_state_encode(_capsule_ptr: *const c_void) -> Ff
     }
 }
 
-
 /// Export the current capsule state projection as JSON
 #[no_mangle]
 pub unsafe extern "C" fn hivra_export_capsule_state_json(out_json: *mut *mut c_char) -> i32 {

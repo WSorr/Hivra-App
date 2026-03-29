@@ -2,9 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:path_provider/path_provider.dart';
-
 import '../ffi/hivra_bindings.dart';
+import 'user_visible_data_directory_service.dart';
 
 class CapsuleFileStore {
   static const String stateFileName = 'capsule_state.json';
@@ -12,10 +11,13 @@ class CapsuleFileStore {
   static const String backupFileName = 'capsule-backup.v1.json';
   static const String capsulesDirName = 'capsules';
 
-  const CapsuleFileStore();
+  final UserVisibleDataDirectoryService _dirs;
+
+  const CapsuleFileStore({UserVisibleDataDirectoryService? dirs})
+      : _dirs = dirs ?? const UserVisibleDataDirectoryService();
 
   Future<Directory> docsDirectory() async {
-    return getApplicationDocumentsDirectory();
+    return _dirs.rootDirectory(create: true);
   }
 
   Future<Directory> capsulesRoot({bool create = false}) async {

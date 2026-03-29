@@ -74,7 +74,10 @@ pub unsafe extern "C" fn hivra_break_relationship(
     };
 
     if let Err(err) = transport.send(message) {
-        eprintln!("[Delivery/Nostr] RelationshipBroken delivery failed: {:?}", err);
+        eprintln!(
+            "[Delivery/Nostr] RelationshipBroken delivery failed: {:?}",
+            err
+        );
         return -6;
     }
 

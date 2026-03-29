@@ -39,20 +39,26 @@ pub struct Seed(pub [u8; 32]);
 
 impl Seed {
     /// Create a new seed from bytes
-    pub fn new(bytes: [u8; 32]) -> Self { Self(bytes) }
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
     /// Get seed as bytes
-    pub fn as_bytes(&self) -> &[u8; 32] { &self.0 }
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 impl fmt::Debug for Seed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Seed").field("bytes", &"[redacted]").finish()
+        f.debug_struct("Seed")
+            .field("bytes", &"[redacted]")
+            .finish()
     }
 }
 
 /// Convert seed to BIP39 mnemonic phrase
 pub fn seed_to_mnemonic(seed: &Seed, word_count: usize) -> Result<String> {
-    use bip39::{Mnemonic, Language};
+    use bip39::{Language, Mnemonic};
     let entropy = match word_count {
         12 => &seed.0[..16],
         24 => &seed.0[..32],
@@ -65,7 +71,7 @@ pub fn seed_to_mnemonic(seed: &Seed, word_count: usize) -> Result<String> {
 
 /// Convert BIP39 mnemonic phrase to seed
 pub fn mnemonic_to_seed(phrase: &str) -> Result<Seed> {
-    use bip39::{Mnemonic, Language};
+    use bip39::{Language, Mnemonic};
     let mnemonic = Mnemonic::parse_in(Language::English, phrase)
         .map_err(|e| Error::Bip39Error(e.to_string()))?;
     let entropy = mnemonic.to_entropy();
@@ -107,13 +113,13 @@ pub mod macos;
 
 // Re-export platform functions at the crate root for convenience
 #[cfg(target_os = "macos")]
-pub use macos::{store_seed, load_seed, delete_seed, seed_exists};
+pub use macos::{delete_seed, load_seed, seed_exists, store_seed};
 
 #[cfg(target_os = "android")]
 pub mod android;
 
 #[cfg(target_os = "android")]
-pub use android::{store_seed, load_seed, delete_seed, seed_exists};
+pub use android::{delete_seed, load_seed, seed_exists, store_seed};
 
 #[cfg(test)]
 mod tests {
@@ -122,7 +128,10 @@ mod tests {
     #[test]
     fn root_identity_derivation_is_deterministic() {
         let seed = Seed([7u8; 32]);
-        assert_eq!(derive_root_keypair(&seed).unwrap(), derive_root_keypair(&seed).unwrap());
+        assert_eq!(
+            derive_root_keypair(&seed).unwrap(),
+            derive_root_keypair(&seed).unwrap()
+        );
         assert_eq!(
             derive_root_public_key(&seed).unwrap(),
             derive_root_public_key(&seed).unwrap()
@@ -132,7 +141,10 @@ mod tests {
     #[test]
     fn root_and_nostr_derivation_are_domain_separated() {
         let seed = Seed([9u8; 32]);
-        assert_ne!(derive_root_keypair(&seed).unwrap(), derive_nostr_keypair(&seed).unwrap());
+        assert_ne!(
+            derive_root_keypair(&seed).unwrap(),
+            derive_nostr_keypair(&seed).unwrap()
+        );
         assert_ne!(
             derive_root_public_key(&seed).unwrap(),
             derive_nostr_keypair(&seed).unwrap()

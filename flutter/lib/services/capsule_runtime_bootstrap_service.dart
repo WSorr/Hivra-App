@@ -29,7 +29,8 @@ class CapsuleRuntimeBootstrapService {
               bytesToHex,
               identityMode: identityMode,
             ),
-            persistValidatedSeed: (seed) => _seedStore.storeSeed(pubKeyHex, seed),
+            persistValidatedSeed: (seed) =>
+                _seedStore.storeSeed(pubKeyHex, seed),
           );
     if (seed == null) return null;
 
@@ -84,8 +85,9 @@ class CapsuleRuntimeBootstrapService {
     final rootHex = rootPubKey != null && rootPubKey.length == 32
         ? bytesToHex(rootPubKey)
         : null;
-    final identityMode =
-        runtimeHex != null && runtimeHex == rootHex ? 'root_owner' : 'legacy_nostr_owner';
+    final identityMode = runtimeHex != null && runtimeHex == rootHex
+        ? 'root_owner'
+        : 'legacy_nostr_owner';
 
     return CapsuleRuntimeBootstrap(
       pubKeyHex: bytesToHex(pubKey),
@@ -126,9 +128,9 @@ class CapsuleRuntimeBootstrapService {
       seed,
       isGenesis: isGenesis,
       isNeste: isNeste,
-      ownerMode: identityMode == 'root_owner'
-          ? HivraBindings.rootOwnerMode
-          : HivraBindings.legacyNostrOwnerMode,
+      ownerMode: identityMode == 'legacy_nostr_owner'
+          ? HivraBindings.legacyNostrOwnerMode
+          : HivraBindings.rootOwnerMode,
     )) {
       return false;
     }

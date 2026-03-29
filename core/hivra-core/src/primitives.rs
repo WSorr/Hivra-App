@@ -1,40 +1,60 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PubKey(#[serde(with = "serde_bytes")] [u8; 32]);
 
 impl PubKey {
-    pub const fn from(bytes: [u8; 32]) -> Self { Self(bytes) }
-    pub const fn as_bytes(&self) -> &[u8; 32] { &self.0 }
+    pub const fn from(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Signature(#[serde(with = "serde_bytes")] [u8; 64]);
 
 impl Signature {
-    pub const fn from(bytes: [u8; 64]) -> Self { Self(bytes) }
-    pub const fn as_bytes(&self) -> &[u8; 64] { &self.0 }
+    pub const fn from(bytes: [u8; 64]) -> Self {
+        Self(bytes)
+    }
+    pub const fn as_bytes(&self) -> &[u8; 64] {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StarterId(#[serde(with = "serde_bytes")] [u8; 32]);
 
 impl StarterId {
-    pub const fn from(bytes: [u8; 32]) -> Self { Self(bytes) }
-    pub const fn new(bytes: [u8; 32]) -> Self { Self::from(bytes) }
-    pub const fn as_bytes(&self) -> &[u8; 32] { &self.0 }
+    pub const fn from(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+    pub const fn new(bytes: [u8; 32]) -> Self {
+        Self::from(bytes)
+    }
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Timestamp(u64);
 
 impl Timestamp {
-    pub const fn from(value: u64) -> Self { Self(value) }
-    pub const fn as_u64(&self) -> u64 { self.0 }
+    pub const fn from(value: u64) -> Self {
+        Self(value)
+    }
+    pub const fn as_u64(&self) -> u64 {
+        self.0
+    }
 }
 
 impl From<u64> for Timestamp {
-    fn from(value: u64) -> Self { Self(value) }
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

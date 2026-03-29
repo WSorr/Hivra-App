@@ -50,10 +50,10 @@ impl CryptoProvider for NostrCryptoProvider {
 
     fn verify(&self, msg: &[u8], pubkey: &[u8; 32], sig: &[u8; 64]) -> Result<(), Self::Error> {
         let message = Self::parse_message(msg)?;
-        let xonly = XOnlyPublicKey::from_slice(pubkey)
-            .map_err(|_| NostrCryptoError::InvalidPublicKey)?;
-        let signature = SchnorrSignature::from_slice(sig)
-            .map_err(|_| NostrCryptoError::InvalidSignature)?;
+        let xonly =
+            XOnlyPublicKey::from_slice(pubkey).map_err(|_| NostrCryptoError::InvalidPublicKey)?;
+        let signature =
+            SchnorrSignature::from_slice(sig).map_err(|_| NostrCryptoError::InvalidSignature)?;
 
         self.secp
             .verify_schnorr(&signature, &message, &xonly)
@@ -62,7 +62,8 @@ impl CryptoProvider for NostrCryptoProvider {
 
     fn sign(&self, msg: &[u8], privkey: &[u8; 32]) -> Result<[u8; 64], Self::Error> {
         let message = Self::parse_message(msg)?;
-        let secret = SecretKey::from_slice(privkey).map_err(|_| NostrCryptoError::InvalidSecretKey)?;
+        let secret =
+            SecretKey::from_slice(privkey).map_err(|_| NostrCryptoError::InvalidSecretKey)?;
         let keypair = Keypair::from_secret_key(&self.secp, &secret);
         let signature = self.secp.sign_schnorr_no_aux_rand(&message, &keypair);
 
@@ -72,9 +73,10 @@ impl CryptoProvider for NostrCryptoProvider {
     }
 
     fn ecdh(&self, privkey: &[u8; 32], pubkey: &[u8; 32]) -> Result<[u8; 32], Self::Error> {
-        let secret = SecretKey::from_slice(privkey).map_err(|_| NostrCryptoError::InvalidSecretKey)?;
-        let xonly = XOnlyPublicKey::from_slice(pubkey)
-            .map_err(|_| NostrCryptoError::InvalidPublicKey)?;
+        let secret =
+            SecretKey::from_slice(privkey).map_err(|_| NostrCryptoError::InvalidSecretKey)?;
+        let xonly =
+            XOnlyPublicKey::from_slice(pubkey).map_err(|_| NostrCryptoError::InvalidPublicKey)?;
         let public = secp256k1::PublicKey::from_x_only_public_key(xonly, Parity::Even);
         let shared = SharedSecret::new(&public, &secret);
 
@@ -104,7 +106,9 @@ mod tests {
     #[test]
     fn reject_non_32_byte_message() {
         let provider = NostrCryptoProvider::new();
-        let err = provider.sign(&[1u8; 31], &[7u8; 32]).expect_err("must fail");
+        let err = provider
+            .sign(&[1u8; 31], &[7u8; 32])
+            .expect_err("must fail");
         assert_eq!(err, NostrCryptoError::InvalidMessageLength(31));
     }
 }

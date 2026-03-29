@@ -124,7 +124,7 @@ Scope:
   - Event-kind label mapping for inspector/pairwise projections is now centralized in `LedgerViewSupport.kindLabel`, reducing duplicated event dictionaries in screen/service code.
   - Added `pairwise_snapshot_service_test.dart` regression coverage for numeric event-kind inputs, locking shared kind-label projection behavior across ledger readers.
   - Added `LedgerViewSupport` mapping invariant test coverage (`kindCode <-> kindLabel`) for canonical event kinds to prevent projection dictionary drift.
-  - Added `projection_discipline_gate.sh` to prevent reintroduction of local kind dictionaries in key projection readers.
+  - Added architecture contract review gate coverage to prevent reintroduction of local kind dictionaries in key projection readers.
 
 Definition of done:
 - Header counts, list screens, and detail views use the same underlying projection semantics.
@@ -428,6 +428,13 @@ When tradeoffs are unclear, prefer:
     - consumes ledger projections
     - computes canonical pairwise snapshots
     - reports consensus state (`match`/`mismatch`) and blocking facts
+  - Current progress:
+    - Added `flutter/lib/services/consensus_processor.dart` with on-demand `preview`, `signable`, and `verify` APIs over ledger-derived pairwise projections.
+    - Added `flutter/lib/services/consensus_runtime_service.dart` as a read-only runtime facade that feeds the processor from exported ledger truth plus local transport identity.
+    - Added `flutter/lib/services/plugin_execution_guard_service.dart` so the future plugin host can read pairwise signability as a guard input without taking on execution or screen-owned consensus logic.
+    - Added `flutter/lib/services/manual_consensus_check_service.dart` so Ledger Inspector can consume a read-only manual consensus-check use case instead of building pairwise preview state directly.
+    - Removed the legacy `PairwiseSnapshotService` wrapper after moving inspector/guard readers onto shared consensus boundaries.
+    - Added processor regression coverage for canonical hash derivation, pending-invitation blocking facts, and verification mismatch reporting.
   - Consensus must be computed on demand, not continuously in UI/runtime background.
   - Recalculation triggers are explicit:
     - smart-contract precondition check

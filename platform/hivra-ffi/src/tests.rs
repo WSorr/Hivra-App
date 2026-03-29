@@ -79,12 +79,8 @@ fn append_invitation_sent_for_test(
         bytes.push(slot);
     }
     if let Some(from) = from_pubkey {
-        append_runtime_event_with_signer(
-            EventKind::InvitationReceived,
-            &bytes,
-            PubKey::from(from),
-        )
-        .unwrap();
+        append_runtime_event_with_signer(EventKind::InvitationReceived, &bytes, PubKey::from(from))
+            .unwrap();
     } else {
         append_runtime_event(EventKind::InvitationSent, &bytes).unwrap();
     }
@@ -207,6 +203,39 @@ fn incoming_invitation_accepted_projection_is_idempotent() {
 }
 
 #[test]
+fn incoming_invitation_accepted_from_self_is_rejected() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(16);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [19u8; 32];
+    let invitation_id = [10u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_starter_id = derive_starter_id(&test_seed(17), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    let payload = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_starter_id),
+    };
+
+    let engine = build_engine(&local_seed);
+    let err = project_relationship_from_invitation_accepted(
+        &engine,
+        local_pubkey.as_bytes().to_owned(),
+        &payload,
+    )
+    .unwrap_err();
+
+    assert_eq!(err, "ignore self InvitationAccepted delivery");
+    assert_eq!(relationship_established_count(), 0);
+}
+
+#[test]
 fn incoming_empty_slot_reject_burns_sender_starter() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
@@ -218,6 +247,17 @@ fn incoming_empty_slot_reject_burns_sender_starter() {
     let own_starter_id = derive_starter_id(&local_seed, 0);
 
     set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(own_starter_id),
+            nonce: derive_starter_nonce(&local_seed, 0),
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
     append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
 
     let engine = build_engine(&local_seed);
@@ -241,7 +281,7 @@ fn incoming_empty_slot_reject_burns_sender_starter() {
 }
 
 #[test]
-fn burned_starter_can_be_recreated_on_later_accept() {
+fn burned_starter_id_is_reused_on_later_accept() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
 
@@ -303,7 +343,7 @@ fn burned_starter_can_be_recreated_on_later_accept() {
 
     finalize_local_acceptance(&engine, &acceptance_plan, inviter_pubkey).unwrap();
 
-    let recreated_count = runtime_events()
+    let reused_count = runtime_events()
         .into_iter()
         .filter(|event| {
             event.kind() == EventKind::StarterCreated
@@ -312,7 +352,134 @@ fn burned_starter_can_be_recreated_on_later_accept() {
         })
         .count();
 
-    assert_eq!(recreated_count, 2);
+    assert_eq!(reused_count, 2);
+}
+
+#[test]
+fn active_slot_starter_identity_tracks_reactivated_starter_after_burn() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(93);
+    let owner = derived_pubkey(&seed);
+    set_runtime_capsule(owner, Network::Neste);
+
+    let slot = 0u8;
+    let burned_id = StarterId::from(derive_starter_id(&seed, slot));
+    let burned_nonce = derive_starter_nonce(&seed, slot);
+
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: burned_id,
+            nonce: burned_nonce,
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+    append_runtime_event(
+        EventKind::StarterBurned,
+        &StarterBurnedPayload {
+            starter_id: burned_id,
+            reason: 0,
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: burned_id,
+            nonce: burned_nonce,
+            kind: StarterKind::Spark,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    assert_eq!(active_starter_id_for_slot(slot), Some(burned_id));
+}
+
+#[test]
+fn reactivated_starter_can_burn_again_in_new_invitation_cycle() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(94);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [44u8; 32];
+    let first_invitation_id = [45u8; 32];
+    let second_invitation_id = [46u8; 32];
+    let slot = 0u8;
+    let local_starter_id = derive_starter_id(&local_seed, slot);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(local_starter_id),
+            nonce: derive_starter_nonce(&local_seed, slot),
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    append_invitation_sent_for_test(
+        first_invitation_id,
+        local_starter_id,
+        peer_pubkey,
+        Some(slot),
+        None,
+    );
+    let engine = build_engine(&local_seed);
+    project_effects_from_invitation_rejected(
+        &engine,
+        &InvitationRejectedPayload {
+            invitation_id: first_invitation_id,
+            reason: RejectReason::EmptySlot,
+        },
+    )
+    .unwrap();
+    assert_eq!(starter_burned_count(), 1);
+
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(local_starter_id),
+            nonce: derive_starter_nonce(&local_seed, slot),
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        active_starter_id_for_slot(slot),
+        Some(StarterId::from(local_starter_id))
+    );
+
+    append_invitation_sent_for_test(
+        second_invitation_id,
+        local_starter_id,
+        peer_pubkey,
+        Some(slot),
+        None,
+    );
+    project_effects_from_invitation_rejected(
+        &engine,
+        &InvitationRejectedPayload {
+            invitation_id: second_invitation_id,
+            reason: RejectReason::EmptySlot,
+        },
+    )
+    .unwrap();
+    assert_eq!(starter_burned_count(), 2);
 }
 
 #[test]
@@ -334,7 +501,10 @@ fn build_engine_uses_root_identity_for_signer() {
     let signer = engine.public_key().expect("engine pubkey");
 
     assert_eq!(signer, PubKey::from(derive_root_public_key(&seed).unwrap()));
-    assert_ne!(signer, PubKey::from(derive_nostr_public_key(&seed).unwrap()));
+    assert_ne!(
+        signer,
+        PubKey::from(derive_nostr_public_key(&seed).unwrap())
+    );
 }
 
 #[test]
@@ -448,6 +618,17 @@ fn replayed_invitation_rejected_is_skipped_after_export_import() {
     let own_starter_id = derive_starter_id(&local_seed, 0);
 
     set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(own_starter_id),
+            nonce: derive_starter_nonce(&local_seed, 0),
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
     append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
 
     let rejected = InvitationRejectedPayload {
@@ -650,7 +831,43 @@ fn exported_ledger_roundtrips_same_event_count() {
 
     let after = runtime_events();
     assert_eq!(after.len(), before.len());
-    assert_eq!(after.last().map(|event| event.kind()), before.last().map(|event| event.kind()));
+    assert_eq!(
+        after.last().map(|event| event.kind()),
+        before.last().map(|event| event.kind())
+    );
+}
+
+#[test]
+fn import_runtime_ledger_observes_tail_timestamp_for_future_prepared_events() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(95);
+    let owner = derived_pubkey(&seed);
+    set_runtime_capsule(owner, Network::Neste);
+
+    let mut imported = Ledger::new(owner);
+    imported
+        .append(Event::new(
+            EventKind::CapsuleCreated,
+            CapsuleCreatedPayload::new(
+                Network::Neste.to_byte(),
+                CapsuleType::Leaf as u8,
+                [0u8; 32],
+            )
+            .to_bytes(),
+            Timestamp::from(9_999_999_999_000u64),
+            Signature::from([0u8; 64]),
+            owner,
+        ))
+        .unwrap();
+
+    let imported_json = serde_json::to_string(&imported).unwrap();
+    import_runtime_ledger(&imported_json).unwrap();
+
+    let engine = build_engine(&seed);
+    let prepared = engine.prepare_invitation_expired([77u8; 32]).unwrap();
+    assert!(append_prepared_event(prepared).is_ok());
 }
 
 #[test]
@@ -890,7 +1107,10 @@ fn capsule_state_and_incoming_offer_truth_survive_export_import() {
     assert_eq!(after_state.network, before_state.network);
     assert_eq!(after_state.slots, before_state.slots);
     assert_eq!(after_state.ledger_hash, before_state.ledger_hash);
-    assert_eq!(after_state.relationships_count, before_state.relationships_count);
+    assert_eq!(
+        after_state.relationships_count,
+        before_state.relationships_count
+    );
     assert_eq!(after_state.version, before_state.version);
     assert!(invitation_offer_exists_in_runtime(
         EventKind::InvitationReceived,

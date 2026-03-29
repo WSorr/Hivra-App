@@ -1,9 +1,10 @@
 import 'package:bech32/bech32.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
-import '../services/invitation_actions_service.dart';
+import '../services/invitation_intent_handler.dart';
 import 'starters_screen.dart';
 import 'invitations_screen.dart';
 import 'relationships_screen.dart';
@@ -21,7 +22,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   final AppRuntimeService _runtime = AppRuntimeService();
   late final CapsuleStateManager _stateManager;
-  late final InvitationActionsService _invitationActions;
+  late final InvitationIntentHandler _invitationIntents;
 
   bool _bootstrapping = true;
   Stopwatch? _launchStopwatch;
@@ -34,6 +35,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   String _ledgerHashHex = '0';
   int _ledgerVersion = 0;
   bool _hasLedgerHistory = false;
+  String _activeCapsuleHex = '';
 
   String get _shortPublicKey {
     if (_publicKeyText.isEmpty) return 'No key';
@@ -60,7 +62,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _stateManager = _runtime.stateManager;
-    _invitationActions = _runtime.invitationActions;
+    _invitationIntents = _runtime.invitationIntents;
     Future.microtask(_bootstrapActiveRuntime);
   }
 
@@ -73,6 +75,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(_syncInvitationsOnResume());
       _loadCapsuleData();
       return;
     }
@@ -92,9 +95,23 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final startedAtMs = _launchStopwatch?.elapsedMilliseconds;
 
     try {
-      final result = await _invitationActions.fetchInvitationsQuick();
-      if (!result.isSuccess || result.ledgerJson == null || result.ledgerJson!.isEmpty) {
-        return;
+      // Relay propagation is eventually consistent; do a short bounded retry
+      // window so sender receives Accept/Reject after capsule switch.
+      const retries = 3;
+      for (var attempt = 0; attempt < retries; attempt++) {
+        final result = await _invitationIntents.fetchInvitations();
+        if (result.code > 0) {
+          break;
+        }
+        if (result.code < 0) {
+          debugPrint(
+            '[StartupTiming] launch_receive_attempt_${attempt + 1}_failed='
+            '${result.code}',
+          );
+        }
+        if (attempt < retries - 1) {
+          await Future<void>.delayed(const Duration(seconds: 3));
+        }
       }
       debugPrint(
         '[StartupTiming] launch_receive_done_ms='
@@ -108,6 +125,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         '${_launchStopwatch?.elapsedMilliseconds ?? -1} '
         'started_ms=${startedAtMs ?? -1}',
       );
+    }
+  }
+
+  Future<void> _syncInvitationsOnResume() async {
+    try {
+      final result = await _invitationIntents.fetchInvitationsQuick();
+      if (!mounted) return;
+      if (result.code >= 0) {
+        _loadCapsuleData();
+      }
+    } catch (_) {
+      // Resume sync is best-effort only.
     }
   }
 
@@ -132,6 +161,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _stateManager.refreshWithFullState();
     final state = _stateManager.state;
     final displayKey = _runtime.capsuleRootPublicKey() ?? state.publicKey;
+    final activeCapsuleHex = _bytesToHex(state.publicKey);
 
     setState(() {
       _starterCount = state.starterCount;
@@ -141,11 +171,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _ledgerHashHex = state.ledgerHashHex;
       _ledgerVersion = state.version;
       _hasLedgerHistory = state.hasLedgerHistory;
-      _publicKeyText = displayKey.isEmpty
-          ? ''
-          : _encodeCapsulePublicKey(displayKey);
+      _activeCapsuleHex = activeCapsuleHex;
+      _publicKeyText =
+          displayKey.isEmpty ? '' : _encodeCapsulePublicKey(displayKey);
     });
   }
+
+  String _bytesToHex(Uint8List bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
   String _encodeCapsulePublicKey(Uint8List bytes) {
     final words = _convertBits(bytes, 8, 5, true);
@@ -174,8 +207,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (bits > 0) {
         result.add((acc << (to - bits)) & maxValue);
       }
-    } else if (bits >= from ||
-        ((acc << (to - bits)) & maxValue) != 0) {
+    } else if (bits >= from || ((acc << (to - bits)) & maxValue) != 0) {
       throw ArgumentError('Invalid bech32 padding');
     }
 
@@ -184,6 +216,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _handleLedgerChanged() async {
     if (!mounted) return;
+    _loadCapsuleData();
+  }
+
+  Future<void> _refreshFromTopBar() async {
+    if (_selectedIndex == 1) {
+      final result = await _invitationIntents.fetchInvitations();
+      if (!mounted) return;
+      _loadCapsuleData();
+      if (result.code < 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message)),
+        );
+      }
+      return;
+    }
     _loadCapsuleData();
   }
 
@@ -221,19 +268,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     switch (_selectedIndex) {
       case 0:
         return StartersScreen(
-          key: ValueKey('starters-$_ledgerVersion'),
+          key: ValueKey('starters-$_activeCapsuleHex-$_ledgerVersion'),
           runtime: _runtime,
           onLedgerChanged: _handleLedgerChanged,
         );
       case 1:
         return InvitationsScreen(
-          key: ValueKey('invitations-$_ledgerVersion'),
+          key: ValueKey('invitations-$_activeCapsuleHex-$_ledgerVersion'),
           runtime: _runtime,
           onLedgerChanged: _handleLedgerChanged,
         );
       case 2:
         return RelationshipsScreen(
-          key: ValueKey('relationships-$_ledgerVersion'),
+          key: ValueKey('relationships-$_activeCapsuleHex-$_ledgerVersion'),
           service: _runtime.buildRelationshipService(),
           onLedgerChanged: _handleLedgerChanged,
         );
@@ -246,13 +293,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         );
       default:
         return StartersScreen(
-          key: ValueKey('starters-$_ledgerVersion'),
+          key: ValueKey('starters-$_activeCapsuleHex-$_ledgerVersion'),
           runtime: _runtime,
           onLedgerChanged: _handleLedgerChanged,
         );
     }
   }
-
 
   Widget _buildAwaitingHistoryState() {
     return Center(
@@ -458,7 +504,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
                 IconButton(
                   icon: const Icon(Icons.refresh),
-                  onPressed: _loadCapsuleData,
+                  onPressed: _refreshFromTopBar,
                   tooltip: 'Refresh',
                 ),
               ],

@@ -1,8 +1,8 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::primitives::{Network, PubKey};
-use crate::ledger::Ledger;
 use crate::event::EventKind;
+use crate::ledger::Ledger;
+use crate::primitives::{Network, PubKey};
 use crate::slot::SlotLayout;
 
 /// Capsule type (Leaf = 0, Relay = 1)
@@ -83,7 +83,6 @@ fn count_relationships(ledger: &Ledger) -> u32 {
 
     established.saturating_sub(broken)
 }
-
 
 #[cfg(test)]
 mod tests {

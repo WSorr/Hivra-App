@@ -3,10 +3,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bech32/bech32.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../ffi/hivra_bindings.dart';
 import '../utils/hivra_id_format.dart';
+import 'user_visible_data_directory_service.dart';
 
 class CapsuleAddressCard {
   final String rootKey;
@@ -53,17 +53,23 @@ class CapsuleAddressCard {
     );
   }
 
-  String toPrettyJson() =>
-      const JsonEncoder.withIndent('  ').convert(toJson());
+  String toPrettyJson() => const JsonEncoder.withIndent('  ').convert(toJson());
 }
 
 class CapsuleAddressService {
-  const CapsuleAddressService();
+  final UserVisibleDataDirectoryService _dirs;
+
+  const CapsuleAddressService({
+    UserVisibleDataDirectoryService? dirs,
+  }) : _dirs = dirs ?? const UserVisibleDataDirectoryService();
 
   Future<CapsuleAddressCard?> buildOwnCard(HivraBindings hivra) async {
     final root = hivra.capsuleRootPublicKey();
     final nostr = hivra.capsuleNostrPublicKey();
-    if (root == null || root.length != 32 || nostr == null || nostr.length != 32) {
+    if (root == null ||
+        root.length != 32 ||
+        nostr == null ||
+        nostr.length != 32) {
       return null;
     }
 
@@ -218,7 +224,8 @@ class CapsuleAddressService {
 
   Uint8List? _decodeHex32(String input) {
     try {
-      final clean = input.replaceAll(':', '').replaceAll(' ', '').replaceAll('-', '');
+      final clean =
+          input.replaceAll(':', '').replaceAll(' ', '').replaceAll('-', '');
       if (clean.length != 64) return null;
       final bytes = <int>[];
       for (var i = 0; i < clean.length; i += 2) {
@@ -269,8 +276,8 @@ class CapsuleAddressService {
   }
 
   Future<File> _cardsFile() async {
-    final docs = await getApplicationDocumentsDirectory();
-    final file = File('${docs.path}/capsule_contact_cards.json');
+    final root = await _dirs.rootDirectory(create: true);
+    final file = File('${root.path}/capsule_contact_cards.json');
     if (!await file.exists()) {
       await file.writeAsString('{}');
     }

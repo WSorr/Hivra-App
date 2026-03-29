@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import '../models/invitation.dart';
-import '../models/starter.dart';
 import '../widgets/invitation_card.dart';
 import '../services/app_runtime_service.dart';
 import '../services/invitation_delivery_service.dart';
-import '../services/invitation_actions_service.dart';
+import '../services/invitation_intent_handler.dart';
+import '../services/ui_event_log_service.dart';
+import '../services/ui_feedback_service.dart';
 
 class InvitationsScreen extends StatefulWidget {
   final AppRuntimeService runtime;
@@ -25,22 +26,35 @@ class InvitationsScreen extends StatefulWidget {
 
 class _InvitationsScreenState extends State<InvitationsScreen> {
   final InvitationDeliveryService _delivery = const InvitationDeliveryService();
-  late final InvitationActionsService _actions;
+  final UiEventLogService _uiLog = const UiEventLogService();
+  late final InvitationIntentHandler _intents;
   List<Invitation> _invitations = [];
   bool _isFetchingDeliveries = false;
   String? _processingId;
+  String? _processingAction;
+  final Set<String> _locallyResolvedIncomingIds = <String>{};
 
   @override
   void initState() {
     super.initState();
-    _actions = widget.runtime.invitationActions;
+    _intents = widget.runtime.invitationIntents;
     _loadInvitations();
+    unawaited(_fetchInvitationDeliveries(silent: true));
   }
 
   Future<void> _loadInvitations({bool showLoading = true}) async {
-    final service = widget.runtime.ledgerView;
+    final invitations = _intents.loadInvitations();
+    final stillPendingIncoming = invitations
+        .where(
+            (inv) => inv.isIncoming && inv.status == InvitationStatus.pending)
+        .map((inv) => inv.id)
+        .toSet();
+    if (!mounted) return;
     setState(() {
-      _invitations = service.loadInvitations();
+      _invitations = invitations;
+      _locallyResolvedIncomingIds.removeWhere(
+        (id) => !stillPendingIncoming.contains(id),
+      );
     });
   }
 
@@ -50,22 +64,11 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   Future<void> _sendInvitationAsync(Uint8List pubkey, int slot) async {
-    final workerResult = await _actions.sendInvitation(pubkey, slot);
-    final result = workerResult.code;
+    final result = await _intents.sendInvitation(pubkey, slot);
+    if (!mounted) return;
+    await _showUserMessage(result.message, source: 'invitations.send');
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result == 0
-                ? _delivery.invitationSentMessage()
-                : _delivery.sendFailureMessage(result),
-          ),
-        ),
-      );
-    }
-
-    if (result == 0) {
+    if (result.isSuccess) {
       await Future<void>.delayed(const Duration(seconds: 1));
       if (mounted) {
         await _refreshAfterLedgerMutation();
@@ -73,14 +76,17 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     }
   }
 
-  Future<void> _fetchInvitationDeliveries() async {
+  Future<void> _fetchInvitationDeliveries({bool silent = false}) async {
     if (_isFetchingDeliveries) return;
 
     setState(() => _isFetchingDeliveries = true);
-    int result = -1003;
+    InvitationIntentResult result = const InvitationIntentResult(
+      code: -1003,
+      message: 'Fetch timed out',
+    );
 
     try {
-      result = (await _actions.fetchInvitations()).code;
+      result = await _intents.fetchInvitations();
     } finally {
       if (mounted) {
         setState(() => _isFetchingDeliveries = false);
@@ -89,51 +95,71 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     if (!mounted) return;
 
-    if (result >= 0) {
+    if (result.code >= 0) {
       await _refreshAfterLedgerMutation();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_delivery.fetchSuccessMessage(result))),
-      );
+      if (!silent || result.code > 0) {
+        await _showUserMessage(result.message, source: 'invitations.fetch');
+      } else {
+        unawaited(_uiLog.log('invitations.fetch.silent', result.message));
+      }
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_delivery.receiveFailureMessage(result))),
-    );
+    if (!silent) {
+      await _showUserMessage(result.message, source: 'invitations.fetch');
+      return;
+    }
+    unawaited(_uiLog.log('invitations.fetch.silent.error', result.message));
   }
 
   Future<void> _acceptInvitation(Invitation invitation) async {
-    setState(() => _processingId = invitation.id);
+    if (_processingId != null) return;
+    if (_locallyResolvedIncomingIds.contains(invitation.id)) return;
+    setState(() {
+      _processingId = invitation.id;
+      _processingAction = 'accept';
+    });
+    UiFeedbackService.dismissCurrent(context);
 
     final invitationId = _decodeB64_32(invitation.id);
     final fromPubkey = _decodeB64_32(invitation.fromPubkey);
     try {
       if (invitationId == null || fromPubkey == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_delivery.acceptFailureMessage(-1))),
+          await _showUserMessage(
+            _delivery.acceptFailureMessage(-1),
+            source: 'invitations.accept',
           );
         }
         return;
       }
 
-      final workerResult = await _actions.acceptInvitation(
+      final result = await _intents.acceptInvitation(
         invitationId,
         fromPubkey,
       );
-      final acceptCode = workerResult.code;
 
-      if (acceptCode != 0 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_delivery.acceptFailureMessage(acceptCode)),
-          ),
-        );
+      if (result.code != 0 && mounted) {
+        await _showUserMessage(result.message, source: 'invitations.accept');
+      }
+      if (result.isSuccess) {
+        _locallyResolvedIncomingIds.add(invitation.id);
+      }
+      if (mounted && _processingId == invitation.id) {
+        setState(() {
+          _processingId = null;
+          _processingAction = null;
+        });
       }
       await _refreshAfterLedgerMutation();
     } finally {
-      if (mounted) setState(() => _processingId = null);
+      if (mounted && _processingId == invitation.id) {
+        setState(() {
+          _processingId = null;
+          _processingAction = null;
+        });
+      }
     }
   }
 
@@ -193,21 +219,62 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     if (confirm != true) return;
 
-    setState(() => _processingId = invitation.id);
+    final rejectDiagnostics = _buildRejectDiagnostics(invitation);
+    unawaited(_uiLog.log('invitations.reject.plan', rejectDiagnostics));
 
-    final invitationId = _decodeB64_32(invitation.id);
-    final ok = invitationId != null &&
-        await _actions.rejectInvitation(
-          invitationId,
-          _rejectReasonForInvitation(invitation),
-        );
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to reject invitation')),
-      );
+    setState(() {
+      _processingId = invitation.id;
+      _processingAction = 'reject';
+    });
+    UiFeedbackService.dismissCurrent(context);
+
+    try {
+      final result = await _intents.rejectInvitation(invitation);
+      if (result.isSuccess) {
+        _locallyResolvedIncomingIds.add(invitation.id);
+      }
+      if (mounted) {
+        await _showUserMessage(result.message, source: 'invitations.reject');
+      }
+      await _refreshAfterLedgerMutation();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _processingId = null;
+          _processingAction = null;
+        });
+      }
     }
-    await _refreshAfterLedgerMutation();
-    if (mounted) setState(() => _processingId = null);
+  }
+
+  String _buildRejectDiagnostics(Invitation invitation) {
+    widget.runtime.stateManager.refreshWithFullState();
+    final state = widget.runtime.stateManager.state;
+    final matchingSlots = state.starterSlots
+        .asMap()
+        .entries
+        .where(
+          (entry) =>
+              entry.value.occupied &&
+              entry.value.kind == invitation.kind.displayName,
+        )
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    final emptySlots = state.starterSlots
+        .asMap()
+        .entries
+        .where((entry) => !entry.value.occupied)
+        .map((entry) => entry.key)
+        .toList(growable: false);
+
+    final hasEmptySlot = emptySlots.isNotEmpty;
+    final reason = hasEmptySlot ? 0 : 1;
+    final invitationKey = invitation.id.length > 10
+        ? invitation.id.substring(0, 10)
+        : invitation.id;
+
+    return 'inv=$invitationKey kind=${invitation.kind.displayName} '
+        'matchingSlots=$matchingSlots emptySlots=$emptySlots reason=$reason';
   }
 
   Future<void> _cancelInvitation(Invitation invitation) async {
@@ -231,17 +298,26 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     if (confirm != true) return;
 
-    setState(() => _processingId = invitation.id);
+    setState(() {
+      _processingId = invitation.id;
+      _processingAction = 'cancel';
+    });
+    UiFeedbackService.dismissCurrent(context);
 
-    final invitationId = _decodeB64_32(invitation.id);
-    final ok = invitationId != null && await _actions.cancelInvitation(invitationId);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to cancel invitation')),
-      );
+    try {
+      final result = await _intents.cancelInvitation(invitation.id);
+      if (mounted) {
+        await _showUserMessage(result.message, source: 'invitations.cancel');
+      }
+      await _refreshAfterLedgerMutation();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _processingId = null;
+          _processingAction = null;
+        });
+      }
     }
-    await _refreshAfterLedgerMutation();
-    if (mounted) setState(() => _processingId = null);
   }
 
   void _showSendInvitationDialog() {
@@ -389,8 +465,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                         ? null
                         : () async {
                             final input = controller.text.trim();
-                            final selfRootKey = widget.runtime.capsuleRootPublicKey();
-                            final selfNostrKey = widget.runtime.capsuleNostrPublicKey();
+                            final selfRootKey =
+                                widget.runtime.capsuleRootPublicKey();
+                            final selfNostrKey =
+                                widget.runtime.capsuleNostrPublicKey();
                             final resolution =
                                 await _delivery.resolveRecipientAddress(
                               input,
@@ -400,8 +478,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                             final slot = selectedSlot;
                             if (!resolution.isSuccess || slot == null) {
                               setModalState(
-                                () => formError =
-                                    resolution.errorMessage ??
+                                () => formError = resolution.errorMessage ??
                                     'Could not resolve recipient address',
                               );
                               return;
@@ -438,22 +515,28 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     }
   }
 
-  int _rejectReasonForInvitation(Invitation invitation) {
-    widget.runtime.stateManager.refreshWithFullState();
-    final state = widget.runtime.stateManager.state;
-    final hasMatchingStarter = state.starterSlots.any(
-      (slot) => slot.occupied && _starterKindFromName(slot.kind) == invitation.kind,
+  Future<void> _showUserMessage(
+    String message, {
+    required String source,
+  }) async {
+    final text = message.trim();
+    if (text.isEmpty) return;
+    UiFeedbackService.showSnackBar(
+      context,
+      text,
+      source: source,
+      duration: const Duration(seconds: 3),
+      enableCopy: false,
     );
-    final hasEmptySlot = state.starterSlots.any((slot) => !slot.occupied);
-    return (!hasMatchingStarter && hasEmptySlot) ? 0 : 1;
   }
 
   List<Widget> _lockedSlotRows(Set<int> lockedSlots) {
     widget.runtime.stateManager.refreshWithFullState();
     final state = widget.runtime.stateManager.state;
     return lockedSlots.map((slot) {
-      final kind =
-          slot < state.starterSlots.length ? state.starterSlots[slot].kind : 'Unknown';
+      final kind = slot < state.starterSlots.length
+          ? state.starterSlots[slot].kind
+          : 'Unknown';
       final color = _starterColor(kind);
       return Padding(
         padding: const EdgeInsets.only(top: 6),
@@ -469,23 +552,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         ),
       );
     }).toList();
-  }
-
-  StarterKind? _starterKindFromName(String name) {
-    switch (name) {
-      case 'Juice':
-        return StarterKind.juice;
-      case 'Spark':
-        return StarterKind.spark;
-      case 'Seed':
-        return StarterKind.seed;
-      case 'Pulse':
-        return StarterKind.pulse;
-      case 'Kick':
-        return StarterKind.kick;
-      default:
-        return null;
-    }
   }
 
   Color _starterColor(String kind) {
@@ -507,73 +573,68 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final incoming = _invitations.where((inv) => inv.isIncoming).toList();
+    final incoming = _invitations
+        .where((inv) =>
+            inv.isIncoming &&
+            !(inv.status == InvitationStatus.pending &&
+                _locallyResolvedIncomingIds.contains(inv.id)))
+        .toList();
     final outgoing = _invitations.where((inv) => inv.isOutgoing).toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Invitations'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _showSendInvitationDialog,
+    return RefreshIndicator(
+      onRefresh: _fetchInvitationDeliveries,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Row(
+            children: [
+              const Spacer(),
+              IconButton(
+                tooltip: 'Send invitation',
+                icon: const Icon(Icons.add),
+                onPressed: _showSendInvitationDialog,
+              ),
+            ],
           ),
-          IconButton(
-            icon: _isFetchingDeliveries
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.cloud_download),
-            onPressed: _isFetchingDeliveries ? null : _fetchInvitationDeliveries,
-            tooltip: 'Fetch invitation deliveries',
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadInvitations,
-          ),
+          _sectionHeader('Incoming', incoming.length),
+          const SizedBox(height: 8),
+          if (incoming.isEmpty)
+            _emptySectionCard(
+              icon: Icons.inbox_outlined,
+              title: 'No incoming invitations',
+              subtitle: 'Incoming requests will appear here.',
+            )
+          else
+            ...incoming.map((inv) => InvitationCard(
+                  invitation: inv,
+                  onAccept: _locallyResolvedIncomingIds.contains(inv.id)
+                      ? null
+                      : () => _acceptInvitation(inv),
+                  onReject: () => _rejectInvitation(inv),
+                  isLoading: _processingId == inv.id,
+                  loadingAction:
+                      _processingId == inv.id ? _processingAction : null,
+                )),
+          const SizedBox(height: 20),
+          _sectionHeader('Outgoing', outgoing.length),
+          const SizedBox(height: 8),
+          if (outgoing.isEmpty)
+            _emptySectionCard(
+              icon: Icons.outbox_outlined,
+              title: 'No outgoing invitations',
+              subtitle:
+                  'Send invitations manually using recipient public keys.',
+              onTap: _showSendInvitationDialog,
+            )
+          else
+            ...outgoing.map((inv) => InvitationCard(
+                  invitation: inv,
+                  onCancel: () => _cancelInvitation(inv),
+                  isLoading: _processingId == inv.id,
+                  loadingAction:
+                      _processingId == inv.id ? _processingAction : null,
+                )),
         ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _fetchInvitationDeliveries,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _sectionHeader('Incoming', incoming.length),
-            const SizedBox(height: 8),
-            if (incoming.isEmpty)
-              _emptySectionCard(
-                icon: Icons.inbox_outlined,
-                title: 'No incoming invitations',
-                subtitle: 'Incoming requests will appear here.',
-              )
-            else
-              ...incoming.map((inv) => InvitationCard(
-                    invitation: inv,
-                    onAccept: () => _acceptInvitation(inv),
-                    onReject: () => _rejectInvitation(inv),
-                    isLoading: _processingId == inv.id,
-                  )),
-            const SizedBox(height: 20),
-            _sectionHeader('Outgoing', outgoing.length),
-            const SizedBox(height: 8),
-            if (outgoing.isEmpty)
-              _emptySectionCard(
-                icon: Icons.outbox_outlined,
-                title: 'No outgoing invitations',
-                subtitle:
-                    'Send invitations manually using recipient public keys.',
-                onTap: _showSendInvitationDialog,
-              )
-            else
-              ...outgoing.map((inv) => InvitationCard(
-                    invitation: inv,
-                    onCancel: () => _cancelInvitation(inv),
-                    isLoading: _processingId == inv.id,
-                  )),
-          ],
-        ),
       ),
     );
   }

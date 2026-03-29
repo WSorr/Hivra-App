@@ -1,30 +1,48 @@
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/services/capsule_index_store.dart';
+import 'package:hivra_app/services/user_visible_data_directory_service.dart';
+
+class _TestUserVisibleDataDirectoryService
+    extends UserVisibleDataDirectoryService {
+  final Directory _root;
+
+  const _TestUserVisibleDataDirectoryService(this._root);
+
+  @override
+  Future<Directory> rootDirectory({bool create = false}) async {
+    if (create && !await _root.exists()) {
+      await _root.create(recursive: true);
+    }
+    return _root;
+  }
+
+  @override
+  Future<Directory> capsulesDirectory({bool create = false}) async {
+    final dir = Directory('${_root.path}/capsules');
+    if (create && !await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  const channel = MethodChannel('plugins.flutter.io/path_provider');
   late Directory tempDocsDir;
+  late CapsuleIndexStore store;
 
   setUp(() async {
-    tempDocsDir = await Directory.systemTemp.createTemp('hivra_index_store_test_');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      if (methodCall.method == 'getApplicationDocumentsDirectory') {
-        return tempDocsDir.path;
-      }
-      return null;
-    });
+    tempDocsDir =
+        await Directory.systemTemp.createTemp('hivra_index_store_test_');
+    store = CapsuleIndexStore(
+      dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+    );
   });
 
   tearDown(() async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null);
     if (await tempDocsDir.exists()) {
       await tempDocsDir.delete(recursive: true);
     }
@@ -35,7 +53,6 @@ void main() {
         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     const capsuleB =
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
-    const store = CapsuleIndexStore();
 
     await store.upsert(capsuleA, isGenesis: true, isNeste: true);
     await store.upsert(capsuleB, isGenesis: false, isNeste: true);
@@ -60,10 +77,27 @@ void main() {
       flush: true,
     );
 
-    const store = CapsuleIndexStore();
     final index = await store.read();
 
     expect(index.activePubKeyHex, isNull);
     expect(index.capsules.containsKey(existingCapsule), isTrue);
+  });
+
+  test('defaults missing identity mode to root_owner', () async {
+    const capsuleHex =
+        'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    final capsulesRoot = Directory('${tempDocsDir.path}/capsules');
+    await capsulesRoot.create(recursive: true);
+    final indexFile = File('${capsulesRoot.path}/capsules_index.json');
+
+    await indexFile.writeAsString(
+      '{"active":"$capsuleHex","capsules":{"$capsuleHex":{"pubKeyHex":"$capsuleHex","createdAt":"2026-03-28T00:00:00.000Z","lastActive":"2026-03-28T00:00:00.000Z","isGenesis":false,"isNeste":true}}}',
+      flush: true,
+    );
+
+    final index = await store.read();
+    final entry = index.capsules[capsuleHex];
+    expect(entry, isNotNull);
+    expect(entry!.identityMode, equals('root_owner'));
   });
 }

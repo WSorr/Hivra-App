@@ -251,12 +251,12 @@ B receives invitation and checks:
 
 Case A: No own X + empty slot + ACCEPT
 
-- B generates a NEW starter of type X
+- B activates local starter of type X in an empty slot (new or reactivated for that slot)
 - B creates InvitationAccepted
 - B creates RelationshipEstablished with A
 - A receives confirmation, unlocks their starter
 - A creates RelationshipEstablished with B
-- Result: relationship established using the newly created X
+- Result: relationship established using B's active local X
 
 Case B: Empty slot + REJECT (BURN)
 
@@ -269,7 +269,7 @@ Case B: Empty slot + REJECT (BURN)
 Case C: Own X exists + empty slot + ACCEPT
 
 - B keeps using their existing X for the relationship
-- B generates one NEW starter of a type that is still missing in their set
+- B activates one missing starter type in the empty slot (new or reactivated for that slot)
 - B creates InvitationAccepted
 - B creates RelationshipEstablished
 - A receives, unlocks their starter
@@ -302,6 +302,12 @@ A starter is burned ONLY when ALL conditions are met:
 1. Recipient has no starter of that type and has an empty slot
 2. Recipient explicitly rejects the invitation
 3. Recipient confirmed the burn warning
+
+Burn invariants:
+
+- Burn applies to the current active lifecycle, not to slot capacity.
+- A burned starter ID may be reactivated later when the same slot is accepted again.
+- The slot remains available for future accepts, and the same slot-local identity can cycle active → burned → active deterministically.
 
 ### 3.3 Relationships
 

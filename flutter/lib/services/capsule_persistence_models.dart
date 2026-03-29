@@ -37,8 +37,7 @@ class CapsuleIndexEntry {
       lastActive: last.toUtc(),
       isGenesis: map['isGenesis'] == true,
       isNeste: map['isNeste'] != false,
-      identityMode:
-          map['identityMode']?.toString() ?? 'legacy_nostr_owner',
+      identityMode: map['identityMode']?.toString() ?? 'root_owner',
     );
   }
 }

@@ -8,8 +8,7 @@ const LEGACY_KEYCHAIN_ACCOUNT: &str = "capsule_seed";
 const ACTIVE_SEED_ACCOUNT: &str = "active_capsule_seed_account";
 
 fn entry_for_account(account: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, account)
-        .map_err(|e| Error::PlatformError(e.to_string()))
+    keyring::Entry::new(KEYCHAIN_SERVICE, account).map_err(|e| Error::PlatformError(e.to_string()))
 }
 
 /// Stores the capsule seed in the macOS Keychain.

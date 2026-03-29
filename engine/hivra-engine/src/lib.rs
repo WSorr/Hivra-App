@@ -109,17 +109,9 @@ pub trait SecureKeyStore {
 /// Engine works with these types but doesn't modify them directly.
 pub use hivra_core::capsule::{Capsule, CapsuleState, CapsuleType};
 pub use hivra_core::event_payloads::{
-    CapsuleCreatedPayload,
-    EventPayload,
-    InvitationAcceptedPayload,
-    InvitationExpiredPayload,
-    InvitationRejectedPayload,
-    InvitationSentPayload,
-    RejectReason,
-    RelationshipBrokenPayload,
-    RelationshipEstablishedPayload,
-    StarterBurnedPayload,
-    StarterCreatedPayload,
+    CapsuleCreatedPayload, EventPayload, InvitationAcceptedPayload, InvitationExpiredPayload,
+    InvitationRejectedPayload, InvitationSentPayload, RejectReason, RelationshipBrokenPayload,
+    RelationshipEstablishedPayload, StarterBurnedPayload, StarterCreatedPayload,
 };
 pub use hivra_core::primitives::SlotIndex;
 pub use hivra_core::{
@@ -205,13 +197,7 @@ where
     K: SecureKeyStore,
 {
     /// Creates a new Engine instance.
-    pub fn new(
-        time: T,
-        rng: R,
-        crypto: C,
-        keystore: K,
-        config: EngineConfig,
-    ) -> Self {
+    pub fn new(time: T, rng: R, crypto: C, keystore: K, config: EngineConfig) -> Self {
         Self {
             time,
             rng,
@@ -259,7 +245,8 @@ where
     /// Verifies an event signature.
     pub fn verify_event(&self, event: &Event, pubkey: &PubKey) -> Result<(), C::Error> {
         let msg = event.event_id();
-        self.crypto.verify(&msg, pubkey.as_bytes(), event.signature().as_bytes())
+        self.crypto
+            .verify(&msg, pubkey.as_bytes(), event.signature().as_bytes())
     }
 
     pub fn prepare_invitation_sent(
@@ -273,7 +260,11 @@ where
             to_pubkey,
         };
 
-        self.prepare_event(EventKind::InvitationSent, payload.to_bytes(), Some(to_pubkey))
+        self.prepare_event(
+            EventKind::InvitationSent,
+            payload.to_bytes(),
+            Some(to_pubkey),
+        )
     }
 
     pub fn prepare_invitation_accepted(
@@ -367,11 +358,7 @@ where
             sender_starter_type,
             sender_starter_id,
         };
-        self.prepare_event(
-            EventKind::RelationshipEstablished,
-            payload.to_bytes(),
-            None,
-        )
+        self.prepare_event(EventKind::RelationshipEstablished, payload.to_bytes(), None)
     }
 
     pub fn prepare_relationship_broken(
@@ -451,13 +438,7 @@ where
     ) -> Result<PreparedEvent, EngineError<K::Error>> {
         let signer = self.public_key().map_err(EngineError::Keystore)?;
         let timestamp = self.now();
-        let unsigned = Event::new(
-            kind,
-            payload,
-            timestamp,
-            Signature::from([0u8; 64]),
-            signer,
-        );
+        let unsigned = Event::new(kind, payload, timestamp, Signature::from([0u8; 64]), signer);
         let signature = self.sign_event(&unsigned).map_err(EngineError::Keystore)?;
         let event = Event::new(
             kind,
@@ -523,7 +504,12 @@ mod tests {
     impl CryptoProvider for MockCrypto {
         type Error = ();
 
-        fn verify(&self, _msg: &[u8], _pubkey: &[u8; 32], _sig: &[u8; 64]) -> Result<(), Self::Error> {
+        fn verify(
+            &self,
+            _msg: &[u8],
+            _pubkey: &[u8; 32],
+            _sig: &[u8; 64],
+        ) -> Result<(), Self::Error> {
             Ok(()) // Always succeeds in tests
         }
 
