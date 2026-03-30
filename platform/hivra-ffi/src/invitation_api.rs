@@ -271,22 +271,7 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
         };
 
         let message_signer = PubKey::from(message.from);
-        if local_kind == EventKind::InvitationReceived && local_payload.len() >= 32 {
-            let mut invitation_id = [0u8; 32];
-            invitation_id.copy_from_slice(&local_payload[..32]);
-            if invitation_is_resolved_in_runtime(&invitation_id) {
-                eprintln!("[Delivery/Nostr] Skip message: invitation already resolved");
-                continue;
-            }
-            if invitation_offer_exists_in_runtime(local_kind, &invitation_id, message_signer) {
-                eprintln!("[Delivery/Nostr] Skip message: invitation offer already exists");
-                continue;
-            }
-        }
-
-        let already_exists =
-            event_exists_in_runtime_with_signer(local_kind, &local_payload, message_signer);
-        if already_exists {
+        if should_skip_incoming_delivery_append(local_kind, &local_payload, message_signer) {
             eprintln!("[Delivery/Nostr] Skip message: event already exists");
             continue;
         }

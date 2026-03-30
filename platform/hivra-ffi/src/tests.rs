@@ -543,6 +543,77 @@ fn resolved_invitation_blocks_replayed_incoming_offer() {
 }
 
 #[test]
+fn replay_policy_skips_conflicting_terminal_event_for_resolved_invitation() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(40);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [25u8; 32];
+    let invitation_id = [47u8; 32];
+    let peer_starter_id = derive_starter_id(&test_seed(41), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(0),
+        Some(peer_pubkey),
+    );
+
+    append_runtime_event(
+        EventKind::InvitationRejected,
+        &InvitationRejectedPayload {
+            invitation_id,
+            reason: RejectReason::Other,
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    let conflicting_accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(derive_starter_id(&local_seed, 0)),
+    };
+
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationAccepted,
+        &conflicting_accepted.to_bytes(),
+        PubKey::from(peer_pubkey),
+    ));
+}
+
+#[test]
+fn replay_policy_allows_first_terminal_event_for_unresolved_invitation() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(41);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [26u8; 32];
+    let invitation_id = [48u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_created_starter_id = derive_starter_id(&test_seed(42), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_created_starter_id),
+    };
+
+    assert!(!should_skip_incoming_delivery_append(
+        EventKind::InvitationAccepted,
+        &accepted.to_bytes(),
+        PubKey::from(peer_pubkey),
+    ));
+}
+
+#[test]
 fn replayed_invitation_accepted_is_skipped_after_export_import() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

@@ -25,6 +25,11 @@ Scope:
     - duplicated `RelationshipEstablished` delivery (no duplicate relationship facts)
     - duplicated `RelationshipBroken` delivery (no duplicate break facts)
     - replayed incoming offer for already resolved invitation (blocked)
+  - Incoming delivery append now uses centralized replay guard policy (`should_skip_incoming_delivery_append`) in FFI receive path.
+  - Replay policy now explicitly blocks conflicting terminal invitation replays (`Accepted/Rejected/Expired`) once invitation lineage is already resolved.
+  - Added regression coverage for:
+    - conflicting terminal replay skipped for resolved invitation
+    - first terminal event still accepted for unresolved invitation
 
 Definition of done:
 - Replayed transport events are either safely ignored or appended as genuinely new facts.

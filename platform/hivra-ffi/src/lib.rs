@@ -55,9 +55,11 @@ mod selfcheck_api;
 pub use ffi_support::FfiBytes;
 pub(crate) use invitation_support::{
     finalize_local_acceptance, find_invitation_sent_in_runtime, invitation_is_resolved_in_runtime,
-    invitation_offer_exists_in_runtime, project_effects_from_invitation_rejected,
-    project_relationship_from_invitation_accepted, resolve_local_acceptance_plan,
+    project_effects_from_invitation_rejected, project_relationship_from_invitation_accepted,
+    resolve_local_acceptance_plan, should_skip_incoming_delivery_append,
 };
+#[cfg(test)]
+pub(crate) use invitation_support::invitation_offer_exists_in_runtime;
 pub(crate) use runtime_support::{
     active_starter_id_for_slot, append_prepared_event, append_runtime_event,
     append_runtime_event_with_signer, build_engine, capsule_network, clear_runtime_state,

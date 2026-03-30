@@ -48,6 +48,55 @@ pub(crate) fn invitation_is_resolved_in_runtime(invitation_id: &[u8; 32]) -> boo
     })
 }
 
+pub(crate) fn invitation_id_from_terminal_payload(
+    kind: EventKind,
+    payload: &[u8],
+) -> Option<[u8; 32]> {
+    match kind {
+        EventKind::InvitationAccepted if payload.len() == 96 => {
+            let mut invitation_id = [0u8; 32];
+            invitation_id.copy_from_slice(&payload[..32]);
+            Some(invitation_id)
+        }
+        EventKind::InvitationRejected if payload.len() == 33 => {
+            let mut invitation_id = [0u8; 32];
+            invitation_id.copy_from_slice(&payload[..32]);
+            Some(invitation_id)
+        }
+        EventKind::InvitationExpired if payload.len() == 32 => {
+            let mut invitation_id = [0u8; 32];
+            invitation_id.copy_from_slice(payload);
+            Some(invitation_id)
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn should_skip_incoming_delivery_append(
+    local_kind: EventKind,
+    payload: &[u8],
+    signer: PubKey,
+) -> bool {
+    if local_kind == EventKind::InvitationReceived && payload.len() >= 32 {
+        let mut invitation_id = [0u8; 32];
+        invitation_id.copy_from_slice(&payload[..32]);
+        if invitation_is_resolved_in_runtime(&invitation_id) {
+            return true;
+        }
+        if invitation_offer_exists_in_runtime(local_kind, &invitation_id, signer) {
+            return true;
+        }
+    }
+
+    if let Some(invitation_id) = invitation_id_from_terminal_payload(local_kind, payload) {
+        if invitation_is_resolved_in_runtime(&invitation_id) {
+            return true;
+        }
+    }
+
+    event_exists_in_runtime_with_signer(local_kind, payload, signer)
+}
+
 pub(crate) fn find_invitation_sent_in_runtime_with_direction(
     invitation_id: &[u8; 32],
     expect_incoming: Option<bool>,
