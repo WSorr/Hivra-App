@@ -12,8 +12,8 @@ class CapsuleBackupCodec {
     bool? isGenesis,
     bool? isNeste,
   }) {
-    final decoded = jsonDecode(ledgerJson);
-    if (decoded is! Map) {
+    final ledger = _support.exportLedgerRoot(ledgerJson);
+    if (ledger == null) {
       throw const FormatException('Ledger JSON must be an object');
     }
 
@@ -21,7 +21,7 @@ class CapsuleBackupCodec {
       'schema': schema,
       'version': version,
       'exported_at_utc': DateTime.now().toUtc().toIso8601String(),
-      'ledger': Map<String, dynamic>.from(decoded),
+      'ledger': ledger,
       'meta': <String, dynamic>{
         if (isGenesis != null) 'is_genesis': isGenesis,
         if (isNeste != null) 'is_neste': isNeste,
