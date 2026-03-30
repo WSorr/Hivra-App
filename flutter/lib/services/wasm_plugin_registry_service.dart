@@ -66,12 +66,12 @@ class WasmPluginRegistryService {
     if (!await file.exists()) return const <WasmPluginRecord>[];
 
     try {
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! List) return const <WasmPluginRecord>[];
+      final decoded = _parseJsonList(await file.readAsString());
+      if (decoded == null) return const <WasmPluginRecord>[];
       return decoded
-          .whereType<Map>()
-          .map((entry) =>
-              WasmPluginRecord.fromJson(Map<String, dynamic>.from(entry)))
+          .map(_coerceJsonMap)
+          .whereType<Map<String, dynamic>>()
+          .map(WasmPluginRecord.fromJson)
           .toList()
         ..sort((a, b) => b.installedAtIso.compareTo(a.installedAtIso));
     } catch (_) {
@@ -89,7 +89,8 @@ class WasmPluginRegistryService {
     final sourceName = _fileNameOnly(sourceFile.path);
     final extension = _fileExtension(sourceName).toLowerCase();
     if (extension != '.wasm' && extension != '.zip') {
-      throw const FormatException('Only .wasm or .zip plugin packages are supported');
+      throw const FormatException(
+          'Only .wasm or .zip plugin packages are supported');
     }
 
     final pluginsDir = await pluginsDirectory(create: true);
@@ -152,5 +153,16 @@ class WasmPluginRegistryService {
         .replaceAll(RegExp(r'[_\-]+'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  List<dynamic>? _parseJsonList(String rawJson) {
+    final decoded = jsonDecode(rawJson);
+    return decoded is List ? decoded : null;
+  }
+
+  Map<String, dynamic>? _coerceJsonMap(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
   }
 }
