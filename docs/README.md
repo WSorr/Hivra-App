@@ -64,6 +64,16 @@ Contains:
 - the public capsule card model
 - trusted peer records and encrypted endpoint updates
 
+### 7) `checklists/user-lifetime-safety-pack.md` (release safety checklist)
+Use this to validate the real-world user path (one or two capsules across long-term use, restore, and update).
+
+Contains:
+- first capsule birth stability
+- first relationship creation flow
+- recovery-on-clean-runtime verification
+- update truth-preservation checks
+- pending invitation stability checks
+
 ## Recommended Reading Order
 
 1. `specification.md`
@@ -72,6 +82,7 @@ Contains:
 4. `android-keystore-migration.md` when touching Android seed storage
 5. `identity-decoupling-migration.md` when touching root identity or transport key derivation
 6. `capsule-addressing-model.md` when touching invitation addressing or peer endpoint resolution
+7. `checklists/user-lifetime-safety-pack.md` when preparing release candidates
 
 ## Update Rules
 

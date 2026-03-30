@@ -17,6 +17,7 @@ Use this checklist before publishing Android builds to testers or end users.
 - [ ] Invitation send succeeds.
 - [ ] Invitation accept succeeds.
 - [ ] Backup/recovery entry path is reachable and operational.
+- [ ] User Lifetime Safety Pack (`docs/checklists/user-lifetime-safety-pack.md`) was completed on this build.
 
 ## Diagnostics
 

@@ -19,6 +19,7 @@ Use this checklist before publishing any macOS build to testers or end users.
 - [ ] App starts past first screen on a clean machine or clean user account.
 - [ ] Existing-user update path was evaluated for truth preservation (same ledger -> same starters/relationships/pending state).
 - [ ] Update build does not re-materialize previously resolved invitation history.
+- [ ] User Lifetime Safety Pack (`docs/checklists/user-lifetime-safety-pack.md`) was completed on this build.
 
 ## Packaging
 

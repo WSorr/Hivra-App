@@ -160,6 +160,8 @@ Scope:
   - Gate also validates that preflight still includes and wires macOS bundle verification (`check_release_bundle`).
   - Gate validates presence and baseline scope of manual smoke checklist (invitation flow, relationship flow, ledger truth).
   - Gate validates that macOS release checklist includes explicit update-safety checks (truth preservation and no re-materialized resolved invites).
+  - Added `docs/checklists/user-lifetime-safety-pack.md` and `tools/review/user_lifetime_safety_gate.sh`, wired into `review_all.sh` and `tools/release/preflight.sh`.
+  - Release checklists now require explicit completion of User Lifetime Safety Pack scenarios on the release candidate build.
 
 Definition of done:
 - Every release candidate is validated through one clear preflight path before packaging and publishing.

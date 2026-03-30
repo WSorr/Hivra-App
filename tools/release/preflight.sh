@@ -65,6 +65,9 @@ main() {
   run_step "Topology / Dependency / Security Review" \
     "$ROOT/tools/review/review_all.sh"
 
+  run_step "User Lifetime Safety Pack Gate" \
+    "$ROOT/tools/review/user_lifetime_safety_gate.sh"
+
   run_step "Rust FFI Tests" \
     cargo test -p hivra-ffi
 

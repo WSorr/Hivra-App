@@ -41,12 +41,14 @@ CHECKLIST_MAC="$ROOT/docs/checklists/release-macos.md"
 CHECKLIST_ANDROID="$ROOT/docs/checklists/release-android.md"
 CHECKLIST_ANDROID_RUNTIME="$ROOT/docs/checklists/android-runtime-hardening.md"
 CHECKLIST_SMOKE="$ROOT/docs/checklists/manual-smoke.md"
+CHECKLIST_USER_LIFETIME="$ROOT/docs/checklists/user-lifetime-safety-pack.md"
 
 require_file "$PRECHECK" "preflight script exists"
 require_file "$CHECKLIST_MAC" "macOS release checklist exists"
 require_file "$CHECKLIST_ANDROID" "Android release checklist exists"
 require_file "$CHECKLIST_ANDROID_RUNTIME" "Android runtime hardening checklist exists"
 require_file "$CHECKLIST_SMOKE" "manual smoke checklist exists"
+require_file "$CHECKLIST_USER_LIFETIME" "user lifetime safety checklist exists"
 
 require_present "$ROADMAP" '^### 6\. Release Preflight as a Gate' \
   "roadmap tracks release preflight gate"
@@ -75,6 +77,8 @@ require_present "$CHECKLIST_MAC" '`SHA256SUMS.txt` was regenerated' \
   "macOS checklist requires checksum regeneration check"
 require_present "$CHECKLIST_MAC" 'Tester instructions are included if the build is unsigned' \
   "macOS checklist requires unsigned-build tester instructions"
+require_present "$CHECKLIST_MAC" 'User Lifetime Safety Pack' \
+  "macOS checklist requires user lifetime safety pass"
 require_present "$CHECKLIST_MAC" 'Correct Git tag exists on the intended commit' \
   "macOS checklist requires publish tag verification"
 require_present "$CHECKLIST_MAC" 'GitHub Release assets match the latest local artifacts' \
@@ -97,6 +101,8 @@ require_present "$CHECKLIST_ANDROID" 'Release asset name clearly indicates versi
   "Android checklist requires publish asset naming check"
 require_present "$CHECKLIST_ANDROID" 'Release notes mention testing scope and known Android limitations' \
   "Android checklist requires publish release-notes scope check"
+require_present "$CHECKLIST_ANDROID" 'User Lifetime Safety Pack' \
+  "Android checklist requires user lifetime safety pass"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'matches ledger-first policy' \
   "Android runtime checklist covers ledger-first bootstrap parity"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'preserves active capsule selection' \
@@ -123,6 +129,16 @@ require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \
   "manual smoke checklist covers relationship flow"
 require_present "$CHECKLIST_SMOKE" 'Ledger Truth' \
   "manual smoke checklist covers ledger truth projection"
+require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 1: First Capsule Birth' \
+  "user lifetime checklist covers capsule birth"
+require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 2: First Relationship' \
+  "user lifetime checklist covers first relationship"
+require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 3: Recovery On New Device Path' \
+  "user lifetime checklist covers recovery path"
+require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 4: Update Truth Preservation' \
+  "user lifetime checklist covers update safety"
+require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 5: Long-Pending Invitation Stability' \
+  "user lifetime checklist covers pending stability"
 
 require_present "$PRECHECK" 'tools/review/review_all\.sh' \
   "preflight executes review_all"
@@ -136,7 +152,11 @@ require_present "$PRECHECK" 'macOS Release Bundle Checks' \
   "preflight includes macOS release bundle check step"
 require_present "$PRECHECK" 'check_release_bundle' \
   "preflight wires check_release_bundle"
+require_present "$PRECHECK" 'user_lifetime_safety_gate\.sh' \
+  "preflight includes user lifetime safety gate"
 require_present "$REVIEW_ALL" 'release_discipline_gate\.sh' \
   "review_all includes release discipline gate"
+require_present "$REVIEW_ALL" 'user_lifetime_safety_gate\.sh' \
+  "review_all includes user lifetime safety gate"
 
 exit "$STATUS"
