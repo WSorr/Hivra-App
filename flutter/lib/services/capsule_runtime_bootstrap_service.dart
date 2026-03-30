@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import '../ffi/hivra_bindings.dart';
@@ -39,14 +40,20 @@ class CapsuleRuntimeBootstrapService {
     final isGenesis = state?['isGenesis'] == true;
     final isNeste = state?['isNeste'] != false;
 
-    String? ledgerJson = await _fileStore.readLedger(dir);
+    String? ledgerJson = _validatedLedgerJsonForCapsule(
+      await _fileStore.readLedger(dir),
+      pubKeyHex,
+      bytesToHex,
+    );
     if (ledgerJson == null) {
       final backupJson = await _fileStore.readBackup(dir);
       if (backupJson != null) {
         final extracted = CapsuleBackupCodec.tryExtractLedgerJson(backupJson);
-        if (extracted != null && extracted.trim().isNotEmpty) {
-          ledgerJson = extracted;
-        }
+        ledgerJson = _validatedLedgerJsonForCapsule(
+          extracted,
+          pubKeyHex,
+          bytesToHex,
+        );
       }
     }
 
@@ -135,18 +142,35 @@ class CapsuleRuntimeBootstrapService {
       return false;
     }
 
-    final ledgerJson = await _fileStore.readLedger(dir);
-    if (ledgerJson != null) {
-      hivra.importLedger(ledgerJson);
+    final storedLedgerJson = await _fileStore.readLedger(dir);
+    final validatedLedgerJson = _validatedLedgerJsonForCapsule(
+      storedLedgerJson,
+      pubKeyHex,
+      bytesToHex,
+    );
+    final backupJson = await _fileStore.readBackup(dir);
+    final hasStoredHistory = (storedLedgerJson?.trim().isNotEmpty ?? false) ||
+        (backupJson?.trim().isNotEmpty ?? false);
+    var importedHistory = false;
+
+    if (validatedLedgerJson != null) {
+      if (!hivra.importLedger(validatedLedgerJson)) return false;
+      importedHistory = true;
     } else {
-      final backupJson = await _fileStore.readBackup(dir);
       if (backupJson != null) {
         final extracted = CapsuleBackupCodec.tryExtractLedgerJson(backupJson);
-        if (extracted != null && extracted.trim().isNotEmpty) {
-          hivra.importLedger(extracted);
+        final validatedFromBackup = _validatedLedgerJsonForCapsule(
+          extracted,
+          pubKeyHex,
+          bytesToHex,
+        );
+        if (validatedFromBackup != null) {
+          if (!hivra.importLedger(validatedFromBackup)) return false;
+          importedHistory = true;
         }
       }
     }
+    if (hasStoredHistory && !importedHistory) return false;
 
     final exported = hivra.exportLedger();
     if (exported == null || exported.isEmpty) return false;
@@ -188,5 +212,58 @@ class CapsuleRuntimeBootstrapService {
     }
 
     return false;
+  }
+
+  String? _validatedLedgerJsonForCapsule(
+    String? ledgerJson,
+    String pubKeyHex,
+    String Function(Uint8List bytes) bytesToHex,
+  ) {
+    if (ledgerJson == null || ledgerJson.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(ledgerJson);
+      if (decoded is! Map) return null;
+      final ledger = Map<String, dynamic>.from(decoded);
+      final events = ledger['events'];
+      if (events is! List) return null;
+      final owner = _parseBytes32Field(ledger['owner']);
+      if (owner == null) return null;
+      if (bytesToHex(Uint8List.fromList(owner)) != pubKeyHex) return null;
+      return jsonEncode(ledger);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<int>? _parseBytes32Field(dynamic raw) {
+    if (raw is List) {
+      if (raw.length != 32) return null;
+      final out = <int>[];
+      for (final item in raw) {
+        if (item is! num) return null;
+        final value = item.toInt();
+        if (value < 0 || value > 255) return null;
+        out.add(value);
+      }
+      return out;
+    }
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return null;
+      if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(trimmed)) {
+        final out = <int>[];
+        for (var i = 0; i < trimmed.length; i += 2) {
+          out.add(int.parse(trimmed.substring(i, i + 2), radix: 16));
+        }
+        return out;
+      }
+      try {
+        final bytes = base64Decode(trimmed);
+        return bytes.length == 32 ? bytes : null;
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
   }
 }

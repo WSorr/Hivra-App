@@ -71,6 +71,11 @@ Scope:
     - prefers `ledger.json` when both ledger and backup are present
     - falls back to backup envelope when `ledger.json` is missing
     - returns no bootstrap when seed is unavailable
+  - Runtime bootstrap now validates stored ledger compatibility before use:
+    - `owner` must match the active capsule key
+    - `events` must be a valid list
+    - mismatched/corrupt `ledger.json` falls back to compatible backup ledger when available
+    - refresh rejects incompatible stored history instead of importing ambiguous state
 
 Definition of done:
 - A user can restore a capsule on a new machine without manual container surgery or hidden-path knowledge.

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -57,10 +58,22 @@ void main() {
     String bytesToHex(Uint8List bytes) =>
         bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
+    String ledgerWithOwnerByte(
+      int ownerByte, {
+      required String kind,
+    }) {
+      return jsonEncode(<String, dynamic>{
+        'owner': List<int>.filled(32, ownerByte),
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{'kind': kind},
+        ],
+      });
+    }
+
     test('prefers ledger.json when both ledger and backup exist', () async {
-      final ledger = '{"owner":[1],"events":[{"kind":"InvitationSent"}]}';
+      final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
       final backup = CapsuleBackupCodec.encodeBackupEnvelope(
-        ledgerJson: '{"owner":[2],"events":[{"kind":"InvitationRejected"}]}',
+        ledgerJson: ledgerWithOwnerByte(0xaa, kind: 'InvitationRejected'),
         isGenesis: false,
         isNeste: true,
       );
@@ -89,7 +102,7 @@ void main() {
 
     test('falls back to backup envelope when ledger.json is missing', () async {
       final ledgerFromBackup =
-          '{"owner":[9],"events":[{"kind":"RelationshipEstablished"}]}';
+          ledgerWithOwnerByte(0xaa, kind: 'RelationshipEstablished');
       final backup = CapsuleBackupCodec.encodeBackupEnvelope(
         ledgerJson: ledgerFromBackup,
         isGenesis: false,
@@ -122,7 +135,10 @@ void main() {
       final service = CapsuleRuntimeBootstrapService(
         _FakeCapsuleFileStore(
           state: <String, dynamic>{'isGenesis': false, 'isNeste': true},
-          ledgerJson: '{"owner":[3],"events":[]}',
+          ledgerJson: jsonEncode(<String, dynamic>{
+            'owner': List<int>.filled(32, 0xaa),
+            'events': <Object>[],
+          }),
         ),
         const _FakeCapsuleSeedStore(null),
       );
@@ -133,6 +149,74 @@ void main() {
       );
 
       expect(bootstrap, isNull);
+    });
+
+    test('falls back to backup when ledger owner mismatches active capsule',
+        () async {
+      final mismatchedLedger =
+          ledgerWithOwnerByte(0xbb, kind: 'InvitationSent');
+      final validBackupLedger =
+          ledgerWithOwnerByte(0xaa, kind: 'RelationshipBroken');
+      final backup = CapsuleBackupCodec.encodeBackupEnvelope(
+        ledgerJson: validBackupLedger,
+        isGenesis: false,
+        isNeste: true,
+      );
+      final service = CapsuleRuntimeBootstrapService(
+        _FakeCapsuleFileStore(
+          state: <String, dynamic>{
+            'isGenesis': false,
+            'isNeste': true,
+          },
+          ledgerJson: mismatchedLedger,
+          backupJson: backup,
+        ),
+        _FakeCapsuleSeedStore(seed),
+      );
+
+      final bootstrap = await service.loadRuntimeBootstrap(
+        pubKeyHex,
+        bytesToHex: bytesToHex,
+      );
+
+      expect(bootstrap, isNotNull);
+      expect(bootstrap!.ledgerJson, isNotNull);
+      final decoded = jsonDecode(bootstrap.ledgerJson!) as Map<String, dynamic>;
+      expect(decoded['owner'], equals(List<int>.filled(32, 0xaa)));
+      expect((decoded['events'] as List).first['kind'], 'RelationshipBroken');
+    });
+
+    test(
+        'drops incompatible stored history when both ledger and backup invalid',
+        () async {
+      final malformedLedger = jsonEncode(<String, dynamic>{
+        'owner': <int>[170, 170],
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'InvitationSent'},
+        ],
+      });
+      final mismatchedBackup = CapsuleBackupCodec.encodeBackupEnvelope(
+        ledgerJson: ledgerWithOwnerByte(0xbb, kind: 'InvitationAccepted'),
+      );
+      final service = CapsuleRuntimeBootstrapService(
+        _FakeCapsuleFileStore(
+          state: <String, dynamic>{
+            'isGenesis': false,
+            'isNeste': true,
+          },
+          ledgerJson: malformedLedger,
+          backupJson: mismatchedBackup,
+        ),
+        _FakeCapsuleSeedStore(seed),
+      );
+
+      final bootstrap = await service.loadRuntimeBootstrap(
+        pubKeyHex,
+        bytesToHex: bytesToHex,
+      );
+
+      expect(bootstrap, isNotNull);
+      expect(bootstrap!.ledgerJson, isNull);
     });
   });
 }
