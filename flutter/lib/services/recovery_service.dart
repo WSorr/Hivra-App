@@ -145,16 +145,11 @@ class RecoveryService {
   }
 
   String? _extractOwnerHexFromLedger(String ledgerJson) {
-    try {
-      final decoded = jsonDecode(ledgerJson);
-      if (decoded is! Map) return null;
-      final map = Map<String, dynamic>.from(decoded);
-      final ownerBytes = _summaryParser.parseBytesField(map['owner']);
-      if (ownerBytes == null || ownerBytes.length != 32) return null;
-      return _bytesToHex(Uint8List.fromList(ownerBytes));
-    } catch (_) {
-      return null;
-    }
+    final root = _support.exportLedgerRoot(ledgerJson);
+    if (root == null) return null;
+    final ownerBytes = _summaryParser.parseBytesField(root['owner']);
+    if (ownerBytes == null || ownerBytes.length != 32) return null;
+    return _bytesToHex(Uint8List.fromList(ownerBytes));
   }
 
   bool? _inferGenesisFromLedgerJson(String? ledgerJson) {
