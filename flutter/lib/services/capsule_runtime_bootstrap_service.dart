@@ -40,22 +40,27 @@ class CapsuleRuntimeBootstrapService {
     final isGenesis = state?['isGenesis'] == true;
     final isNeste = state?['isNeste'] != false;
 
-    String? ledgerJson = _validatedLedgerJsonForCapsule(
+    final ledgerCandidate = _ledgerCandidateForCapsule(
       await _fileStore.readLedger(dir),
       pubKeyHex,
       bytesToHex,
+      source: _LedgerSource.ledger,
     );
-    if (ledgerJson == null) {
-      final backupJson = await _fileStore.readBackup(dir);
-      if (backupJson != null) {
-        final extracted = CapsuleBackupCodec.tryExtractLedgerJson(backupJson);
-        ledgerJson = _validatedLedgerJsonForCapsule(
-          extracted,
-          pubKeyHex,
-          bytesToHex,
-        );
-      }
+    _LedgerCandidate? backupCandidate;
+    final backupJson = await _fileStore.readBackup(dir);
+    if (backupJson != null) {
+      final extracted = CapsuleBackupCodec.tryExtractLedgerJson(backupJson);
+      backupCandidate = _ledgerCandidateForCapsule(
+        extracted,
+        pubKeyHex,
+        bytesToHex,
+        source: _LedgerSource.backup,
+      );
     }
+    final ledgerJson = _selectPreferredLedgerCandidate(
+      ledgerCandidate,
+      backupCandidate,
+    )?.json;
 
     return CapsuleRuntimeBootstrap(
       pubKeyHex: pubKeyHex,
@@ -143,32 +148,34 @@ class CapsuleRuntimeBootstrapService {
     }
 
     final storedLedgerJson = await _fileStore.readLedger(dir);
-    final validatedLedgerJson = _validatedLedgerJsonForCapsule(
+    final ledgerCandidate = _ledgerCandidateForCapsule(
       storedLedgerJson,
       pubKeyHex,
       bytesToHex,
+      source: _LedgerSource.ledger,
     );
     final backupJson = await _fileStore.readBackup(dir);
     final hasStoredHistory = (storedLedgerJson?.trim().isNotEmpty ?? false) ||
         (backupJson?.trim().isNotEmpty ?? false);
     var importedHistory = false;
 
-    if (validatedLedgerJson != null) {
-      if (!hivra.importLedger(validatedLedgerJson)) return false;
+    _LedgerCandidate? backupCandidate;
+    if (backupJson != null) {
+      final extracted = CapsuleBackupCodec.tryExtractLedgerJson(backupJson);
+      backupCandidate = _ledgerCandidateForCapsule(
+        extracted,
+        pubKeyHex,
+        bytesToHex,
+        source: _LedgerSource.backup,
+      );
+    }
+    final preferred = _selectPreferredLedgerCandidate(
+      ledgerCandidate,
+      backupCandidate,
+    );
+    if (preferred != null) {
+      if (!hivra.importLedger(preferred.json)) return false;
       importedHistory = true;
-    } else {
-      if (backupJson != null) {
-        final extracted = CapsuleBackupCodec.tryExtractLedgerJson(backupJson);
-        final validatedFromBackup = _validatedLedgerJsonForCapsule(
-          extracted,
-          pubKeyHex,
-          bytesToHex,
-        );
-        if (validatedFromBackup != null) {
-          if (!hivra.importLedger(validatedFromBackup)) return false;
-          importedHistory = true;
-        }
-      }
     }
     if (hasStoredHistory && !importedHistory) return false;
 
@@ -214,11 +221,9 @@ class CapsuleRuntimeBootstrapService {
     return false;
   }
 
-  String? _validatedLedgerJsonForCapsule(
-    String? ledgerJson,
-    String pubKeyHex,
-    String Function(Uint8List bytes) bytesToHex,
-  ) {
+  _LedgerCandidate? _ledgerCandidateForCapsule(String? ledgerJson,
+      String pubKeyHex, String Function(Uint8List bytes) bytesToHex,
+      {required _LedgerSource source}) {
     if (ledgerJson == null || ledgerJson.trim().isEmpty) return null;
     try {
       final decoded = jsonDecode(ledgerJson);
@@ -229,10 +234,31 @@ class CapsuleRuntimeBootstrapService {
       final owner = _parseBytes32Field(ledger['owner']);
       if (owner == null) return null;
       if (bytesToHex(Uint8List.fromList(owner)) != pubKeyHex) return null;
-      return jsonEncode(ledger);
+      return _LedgerCandidate(
+        source: source,
+        json: jsonEncode(ledger),
+        eventCount: events.length,
+      );
     } catch (_) {
       return null;
     }
+  }
+
+  _LedgerCandidate? _selectPreferredLedgerCandidate(
+    _LedgerCandidate? ledger,
+    _LedgerCandidate? backup,
+  ) {
+    if (ledger == null) return backup;
+    if (backup == null) return ledger;
+
+    if (backup.eventCount > ledger.eventCount) {
+      return backup;
+    }
+    if (ledger.eventCount > backup.eventCount) {
+      return ledger;
+    }
+    // Deterministic tie-breaker: prefer ledger.json on equal history length.
+    return ledger.source == _LedgerSource.ledger ? ledger : backup;
   }
 
   List<int>? _parseBytes32Field(dynamic raw) {
@@ -266,4 +292,18 @@ class CapsuleRuntimeBootstrapService {
     }
     return null;
   }
+}
+
+enum _LedgerSource { ledger, backup }
+
+class _LedgerCandidate {
+  final _LedgerSource source;
+  final String json;
+  final int eventCount;
+
+  const _LedgerCandidate({
+    required this.source,
+    required this.json,
+    required this.eventCount,
+  });
 }

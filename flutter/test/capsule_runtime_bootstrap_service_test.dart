@@ -100,6 +100,47 @@ void main() {
       expect(bootstrap.isNeste, isFalse);
     });
 
+    test('prefers backup when ledger history is shorter', () async {
+      final shortLedger = jsonEncode(<String, dynamic>{
+        'owner': List<int>.filled(32, 0xaa),
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'InvitationSent'},
+        ],
+      });
+      final longLedger = jsonEncode(<String, dynamic>{
+        'owner': List<int>.filled(32, 0xaa),
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'InvitationSent'},
+          <String, dynamic>{'kind': 'InvitationAccepted'},
+          <String, dynamic>{'kind': 'RelationshipEstablished'},
+        ],
+      });
+      final backup = CapsuleBackupCodec.encodeBackupEnvelope(
+        ledgerJson: longLedger,
+        isGenesis: false,
+        isNeste: true,
+      );
+      final service = CapsuleRuntimeBootstrapService(
+        _FakeCapsuleFileStore(
+          state: <String, dynamic>{
+            'isGenesis': true,
+            'isNeste': false,
+          },
+          ledgerJson: shortLedger,
+          backupJson: backup,
+        ),
+        _FakeCapsuleSeedStore(seed),
+      );
+
+      final bootstrap = await service.loadRuntimeBootstrap(
+        pubKeyHex,
+        bytesToHex: bytesToHex,
+      );
+
+      expect(bootstrap, isNotNull);
+      expect(bootstrap!.ledgerJson, equals(longLedger));
+    });
+
     test('falls back to backup envelope when ledger.json is missing', () async {
       final ledgerFromBackup =
           ledgerWithOwnerByte(0xaa, kind: 'RelationshipEstablished');

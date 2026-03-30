@@ -80,6 +80,9 @@ Scope:
     - valid 32-byte owner field (bytes/hex/base64)
     - `events` field must be a list
     - malformed envelopes/raw ledgers are rejected before persistence/index updates
+  - Bootstrap source selection between `ledger.json` and backup is now deterministic by completeness:
+    - when both sources are valid and owner-matching, the source with greater event count is selected
+    - equal event counts preserve `ledger.json` preference as stable tie-breaker
 
 Definition of done:
 - A user can restore a capsule on a new machine without manual container surgery or hidden-path knowledge.
