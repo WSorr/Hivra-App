@@ -69,20 +69,18 @@ class CapsuleIndexStore {
   }
 
   CapsulesIndex _fromJson(String raw) {
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) {
+    final map = _parseJsonMap(raw);
+    if (map == null) {
       return CapsulesIndex(activePubKeyHex: null, capsules: {});
     }
-    final map = Map<String, dynamic>.from(decoded);
     final active = map['active']?.toString();
     final capsulesMap = <String, CapsuleIndexEntry>{};
-    final list = map['capsules'];
-    if (list is Map) {
-      final items = Map<String, dynamic>.from(list);
+    final items = _coerceJsonMap(map['capsules']);
+    if (items != null) {
       for (final entry in items.entries) {
-        if (entry.value is Map) {
-          capsulesMap[entry.key] =
-              CapsuleIndexEntry.fromMap(Map<String, dynamic>.from(entry.value));
+        final entryMap = _coerceJsonMap(entry.value);
+        if (entryMap != null) {
+          capsulesMap[entry.key] = CapsuleIndexEntry.fromMap(entryMap);
         }
       }
     }
@@ -103,5 +101,20 @@ class CapsuleIndexStore {
       'active': index.activePubKeyHex,
       'capsules': capsulesJson,
     });
+  }
+
+  Map<String, dynamic>? _parseJsonMap(String rawJson) {
+    try {
+      final decoded = jsonDecode(rawJson);
+      return _coerceJsonMap(decoded);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? _coerceJsonMap(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
   }
 }
