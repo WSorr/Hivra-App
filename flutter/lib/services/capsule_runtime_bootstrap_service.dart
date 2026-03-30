@@ -7,18 +7,22 @@ import 'capsule_file_store.dart';
 import 'capsule_ledger_summary_parser.dart';
 import 'capsule_persistence_models.dart';
 import 'capsule_seed_store.dart';
+import 'ledger_view_support.dart';
 
 class CapsuleRuntimeBootstrapService {
   final CapsuleFileStore _fileStore;
   final CapsuleSeedStore _seedStore;
   final CapsuleLedgerSummaryParser _summaryParser;
+  final LedgerViewSupport _support;
 
   const CapsuleRuntimeBootstrapService(
     this._fileStore,
     this._seedStore, {
     CapsuleLedgerSummaryParser summaryParser =
         const CapsuleLedgerSummaryParser(),
-  }) : _summaryParser = summaryParser;
+    LedgerViewSupport support = const LedgerViewSupport(),
+  })  : _summaryParser = summaryParser,
+        _support = support;
 
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrap(
     String pubKeyHex, {
@@ -241,25 +245,18 @@ class CapsuleRuntimeBootstrapService {
   _LedgerCandidate? _ledgerCandidateForCapsule(String? ledgerJson,
       String pubKeyHex, String Function(Uint8List bytes) bytesToHex,
       {required _LedgerSource source}) {
-    if (ledgerJson == null || ledgerJson.trim().isEmpty) return null;
-    try {
-      final decoded = jsonDecode(ledgerJson);
-      if (decoded is! Map) return null;
-      final ledger = Map<String, dynamic>.from(decoded);
-      final events = ledger['events'];
-      if (events is! List) return null;
-      final owner = _summaryParser.parseBytesField(ledger['owner']);
-      if (owner == null || owner.length != 32) return null;
-      if (bytesToHex(Uint8List.fromList(owner)) != pubKeyHex) return null;
-      return _LedgerCandidate(
-        source: source,
-        json: jsonEncode(ledger),
-        eventCount: events.length,
-        tailTimestamp: _extractTailTimestamp(events),
-      );
-    } catch (_) {
-      return null;
-    }
+    final ledger = _parseLedgerRoot(ledgerJson);
+    if (ledger == null) return null;
+    final events = _support.events(ledger);
+    final owner = _summaryParser.parseBytesField(ledger['owner']);
+    if (owner == null || owner.length != 32) return null;
+    if (bytesToHex(Uint8List.fromList(owner)) != pubKeyHex) return null;
+    return _LedgerCandidate(
+      source: source,
+      json: jsonEncode(ledger),
+      eventCount: events.length,
+      tailTimestamp: _extractTailTimestamp(events),
+    );
   }
 
   _LedgerCandidate? _selectPreferredLedgerCandidate(
@@ -329,6 +326,10 @@ class CapsuleRuntimeBootstrapService {
       return int.tryParse(text);
     }
     return null;
+  }
+
+  Map<String, dynamic>? _parseLedgerRoot(String? ledgerJson) {
+    return _support.exportLedgerRoot(ledgerJson);
   }
 }
 
