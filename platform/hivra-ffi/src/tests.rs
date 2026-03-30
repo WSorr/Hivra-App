@@ -972,6 +972,234 @@ fn broken_relationship_survives_export_import() {
 }
 
 #[test]
+fn reinvite_same_starter_type_survives_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(65);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [16u8; 32];
+    let first_invitation_id = [27u8; 32];
+    let second_invitation_id = [28u8; 32];
+    let local_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_first_starter_id = derive_starter_id(&test_seed(66), 0);
+    let peer_second_starter_id = derive_starter_id(&test_seed(67), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(local_starter_id),
+            nonce: derive_starter_nonce(&local_seed, 0),
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    append_invitation_sent_for_test(
+        first_invitation_id,
+        local_starter_id,
+        peer_pubkey,
+        Some(0),
+        None,
+    );
+    let first_accepted = InvitationAcceptedPayload {
+        invitation_id: first_invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_first_starter_id),
+    };
+    append_runtime_event_with_signer(
+        EventKind::InvitationAccepted,
+        &first_accepted.to_bytes(),
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+    let engine = build_engine(&local_seed);
+    project_relationship_from_invitation_accepted(&engine, peer_pubkey, &first_accepted).unwrap();
+
+    append_runtime_event(
+        EventKind::RelationshipBroken,
+        &RelationshipBrokenPayload {
+            peer_pubkey: PubKey::from(peer_pubkey),
+            own_starter_id: StarterId::from(local_starter_id),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    append_invitation_sent_for_test(
+        second_invitation_id,
+        local_starter_id,
+        peer_pubkey,
+        Some(0),
+        None,
+    );
+    let second_accepted = InvitationAcceptedPayload {
+        invitation_id: second_invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_second_starter_id),
+    };
+    append_runtime_event_with_signer(
+        EventKind::InvitationAccepted,
+        &second_accepted.to_bytes(),
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+    project_relationship_from_invitation_accepted(&engine, peer_pubkey, &second_accepted).unwrap();
+
+    assert_eq!(relationship_established_count(), 2);
+    assert_eq!(relationship_broken_count(), 1);
+    assert_eq!(runtime_capsule_state().relationships_count, 1);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert_eq!(relationship_established_count(), 2);
+    assert_eq!(relationship_broken_count(), 1);
+    assert_eq!(runtime_capsule_state().relationships_count, 1);
+    assert!(runtime_events().iter().any(|event| {
+        event.kind() == EventKind::RelationshipEstablished
+            && RelationshipEstablishedPayload::from_bytes(event.payload()).is_ok_and(|payload| {
+                payload.invitation_id == first_invitation_id
+                    && payload.own_starter_id.as_bytes() == &local_starter_id
+                    && payload.kind == StarterKind::Juice
+            })
+    }));
+    assert!(runtime_events().iter().any(|event| {
+        event.kind() == EventKind::RelationshipEstablished
+            && RelationshipEstablishedPayload::from_bytes(event.payload()).is_ok_and(|payload| {
+                payload.invitation_id == second_invitation_id
+                    && payload.own_starter_id.as_bytes() == &local_starter_id
+                    && payload.kind == StarterKind::Juice
+            })
+    }));
+}
+
+#[test]
+fn reinvite_different_starter_type_survives_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(68);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [17u8; 32];
+    let first_invitation_id = [30u8; 32];
+    let second_invitation_id = [31u8; 32];
+    let local_starter_id_juice = derive_starter_id(&local_seed, 0);
+    let local_starter_id_spark = derive_starter_id(&local_seed, 1);
+    let peer_first_starter_id = derive_starter_id(&test_seed(69), 0);
+    let peer_second_starter_id = derive_starter_id(&test_seed(70), 1);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(local_starter_id_juice),
+            nonce: derive_starter_nonce(&local_seed, 0),
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(local_starter_id_spark),
+            nonce: derive_starter_nonce(&local_seed, 1),
+            kind: StarterKind::Spark,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    append_invitation_sent_for_test(
+        first_invitation_id,
+        local_starter_id_juice,
+        peer_pubkey,
+        Some(0),
+        None,
+    );
+    let first_accepted = InvitationAcceptedPayload {
+        invitation_id: first_invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_first_starter_id),
+    };
+    append_runtime_event_with_signer(
+        EventKind::InvitationAccepted,
+        &first_accepted.to_bytes(),
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+    let engine = build_engine(&local_seed);
+    project_relationship_from_invitation_accepted(&engine, peer_pubkey, &first_accepted).unwrap();
+
+    append_runtime_event(
+        EventKind::RelationshipBroken,
+        &RelationshipBrokenPayload {
+            peer_pubkey: PubKey::from(peer_pubkey),
+            own_starter_id: StarterId::from(local_starter_id_juice),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    append_invitation_sent_for_test(
+        second_invitation_id,
+        local_starter_id_spark,
+        peer_pubkey,
+        Some(1),
+        None,
+    );
+    let second_accepted = InvitationAcceptedPayload {
+        invitation_id: second_invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_second_starter_id),
+    };
+    append_runtime_event_with_signer(
+        EventKind::InvitationAccepted,
+        &second_accepted.to_bytes(),
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+    project_relationship_from_invitation_accepted(&engine, peer_pubkey, &second_accepted).unwrap();
+
+    assert_eq!(relationship_established_count(), 2);
+    assert_eq!(relationship_broken_count(), 1);
+    assert_eq!(runtime_capsule_state().relationships_count, 1);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert_eq!(relationship_established_count(), 2);
+    assert_eq!(relationship_broken_count(), 1);
+    assert_eq!(runtime_capsule_state().relationships_count, 1);
+    assert!(runtime_events().iter().any(|event| {
+        event.kind() == EventKind::RelationshipEstablished
+            && RelationshipEstablishedPayload::from_bytes(event.payload()).is_ok_and(|payload| {
+                payload.invitation_id == first_invitation_id
+                    && payload.own_starter_id.as_bytes() == &local_starter_id_juice
+                    && payload.kind == StarterKind::Juice
+            })
+    }));
+    assert!(runtime_events().iter().any(|event| {
+        event.kind() == EventKind::RelationshipEstablished
+            && RelationshipEstablishedPayload::from_bytes(event.payload()).is_ok_and(|payload| {
+                payload.invitation_id == second_invitation_id
+                    && payload.own_starter_id.as_bytes() == &local_starter_id_spark
+                    && payload.kind == StarterKind::Spark
+            })
+    }));
+}
+
+#[test]
 fn reverse_direction_pending_invitations_survive_export_import() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
