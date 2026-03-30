@@ -952,9 +952,8 @@ class CapsulePersistenceService {
     if (!await indexFile.exists()) return;
     try {
       final raw = await indexFile.readAsString();
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return;
-      final root = Map<String, dynamic>.from(decoded);
+      final root = _parseJsonMap(raw);
+      if (root == null) return;
 
       final active = root['active']?.toString();
       final capsulesRaw = root['capsules'];
@@ -977,9 +976,8 @@ class CapsulePersistenceService {
     if (!await seedsFile.exists()) return;
     try {
       final raw = await seedsFile.readAsString();
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return;
-      final map = Map<String, dynamic>.from(decoded);
+      final map = _parseJsonMap(raw);
+      if (map == null) return;
       map.remove(pubKeyHex);
       await seedsFile.writeAsString(jsonEncode(map), flush: true);
     } catch (_) {}
@@ -992,9 +990,8 @@ class CapsulePersistenceService {
     if (!await cardsFile.exists()) return;
     try {
       final raw = await cardsFile.readAsString();
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return;
-      final cards = Map<String, dynamic>.from(decoded);
+      final cards = _parseJsonMap(raw);
+      if (cards == null) return;
       cards.remove(pubKeyHex);
       await cardsFile.writeAsString(
         const JsonEncoder.withIndent('  ').convert(cards),
@@ -1323,28 +1320,34 @@ class CapsulePersistenceService {
   }
 
   _BackupMeta? _extractBackupMeta(String rawJson) {
-    try {
-      final decoded = jsonDecode(rawJson);
-      if (decoded is! Map) return null;
-      final map = Map<String, dynamic>.from(decoded);
-      final meta = map['meta'];
-      if (meta is! Map) return null;
-      final m = Map<String, dynamic>.from(meta);
-      return _BackupMeta(
-        isGenesis: m['is_genesis'] == true
-            ? true
-            : (m['is_genesis'] == false ? false : null),
-        isNeste: m['is_neste'] == true
-            ? true
-            : (m['is_neste'] == false ? false : null),
-      );
-    } catch (_) {
-      return null;
-    }
+    final map = _parseJsonMap(rawJson);
+    if (map == null) return null;
+    final metaRaw = map['meta'];
+    if (metaRaw is! Map) return null;
+    final meta = Map<String, dynamic>.from(metaRaw);
+    return _BackupMeta(
+      isGenesis: meta['is_genesis'] == true
+          ? true
+          : (meta['is_genesis'] == false ? false : null),
+      isNeste: meta['is_neste'] == true
+          ? true
+          : (meta['is_neste'] == false ? false : null),
+    );
   }
 
   Map<String, dynamic>? _parseLedgerRoot(String? ledgerJson) {
     return _support.exportLedgerRoot(ledgerJson);
+  }
+
+  Map<String, dynamic>? _parseJsonMap(String rawJson) {
+    try {
+      final decoded = jsonDecode(rawJson);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   String? _ownerHexFromLedgerRoot(Map<String, dynamic> ledger) {

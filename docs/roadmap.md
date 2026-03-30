@@ -320,6 +320,7 @@ Scope:
   - Summary parser byte-field decoding now reuses shared `LedgerViewSupport.payloadBytes` semantics, with parser-level regression tests locking expected null/empty behaviors.
   - Summary parser root/events extraction now reuses shared `LedgerViewSupport.exportLedgerRoot/events` helpers instead of local JSON decode/list branches.
   - Recovery owner extraction now reuses shared ledger-root parsing (`LedgerViewSupport.exportLedgerRoot`) instead of local JSON decode branches.
+  - Capsule persistence service now reuses a single JSON-map parse helper for index/seeds/contact-cards cleanup and backup-meta extraction instead of repeating per-call decode branches.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.
