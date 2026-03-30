@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'capsule_persistence_models.dart';
+import 'invitation_projection_service.dart';
 import 'ledger_view_support.dart';
+import '../models/invitation.dart';
 
 class CapsuleLedgerSummaryParser {
   final LedgerViewSupport _support;
@@ -11,7 +13,8 @@ class CapsuleLedgerSummaryParser {
     LedgerViewSupport support = const LedgerViewSupport(),
   }) : _support = support;
 
-  CapsuleLedgerSummary parse(String json, String Function(Uint8List bytes) toHex) {
+  CapsuleLedgerSummary parse(
+      String json, String Function(Uint8List bytes) toHex) {
     if (json.trim().isEmpty) return CapsuleLedgerSummary.empty();
     try {
       final decoded = jsonDecode(json);
@@ -20,8 +23,6 @@ class CapsuleLedgerSummaryParser {
       final eventsRaw = ledger['events'];
       final events = eventsRaw is List ? eventsRaw : const [];
 
-      int invitationSent = 0;
-      int invitationResolved = 0;
       final activeStartersById = <String, int>{};
       final activeRelationshipsByKey = <String, String>{};
 
@@ -32,16 +33,6 @@ class CapsuleLedgerSummaryParser {
         final payload = _support.payloadBytes(event['payload']);
 
         switch (kind) {
-          case 1:
-            invitationSent++;
-            break;
-          case 9:
-            break;
-          case 2:
-          case 3:
-          case 4:
-            invitationResolved++;
-            break;
           case 5:
             final starter = _parseStarterCreated(payload);
             if (starter != null) {
@@ -85,7 +76,18 @@ class CapsuleLedgerSummaryParser {
       final starterCount = activeStartersById.length.clamp(0, 5);
       final relationshipCount =
           activeRelationshipsByKey.values.toSet().length.clamp(0, 9999);
-      final pendingInvitations = (invitationSent - invitationResolved).clamp(0, 9999);
+      final ownerBytes = parseBytesField(ledger['owner']);
+      final projection = InvitationProjectionService.withOwnerKeyProvider(
+        () => ownerBytes != null && ownerBytes.length == 32
+            ? Uint8List.fromList(ownerBytes)
+            : null,
+        _support,
+      );
+      final pendingInvitations = projection
+          .loadInvitations(ledger)
+          .where((invitation) => invitation.status == InvitationStatus.pending)
+          .length
+          .clamp(0, 9999);
       final ledgerVersion = events.length;
       final ledgerHashHex = _parseLedgerHashHex(ledger['last_hash']);
 

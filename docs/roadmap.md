@@ -149,6 +149,7 @@ Scope:
   - Added `pairwise_snapshot_service_test.dart` regression coverage for numeric event-kind inputs, locking shared kind-label projection behavior across ledger readers.
   - Added `LedgerViewSupport` mapping invariant test coverage (`kindCode <-> kindLabel`) for canonical event kinds to prevent projection dictionary drift.
   - Added architecture contract review gate coverage to prevent reintroduction of local kind dictionaries in key projection readers.
+  - `CapsuleLedgerSummaryParser` pending-invitation count now uses `InvitationProjectionService` terminal-precedence semantics (instead of `InvitationSent - resolved` arithmetic), aligning capsule selector counters with runtime invitation projections.
 
 Definition of done:
 - Header counts, list screens, and detail views use the same underlying projection semantics.
