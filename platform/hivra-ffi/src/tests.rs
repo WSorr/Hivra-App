@@ -942,6 +942,193 @@ fn import_runtime_ledger_observes_tail_timestamp_for_future_prepared_events() {
 }
 
 #[test]
+fn import_runtime_ledger_rejects_inconsistent_hash_chain() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(96);
+    let owner = derived_pubkey(&seed);
+    set_runtime_capsule(owner, Network::Neste);
+
+    let mut imported = Ledger::new(owner);
+    imported
+        .append(Event::new(
+            EventKind::CapsuleCreated,
+            CapsuleCreatedPayload::new(
+                Network::Neste.to_byte(),
+                CapsuleType::Leaf as u8,
+                [0u8; 32],
+            )
+            .to_bytes(),
+            Timestamp::from(0),
+            Signature::from([0u8; 64]),
+            owner,
+        ))
+        .unwrap();
+
+    let mut json_value = serde_json::to_value(&imported).unwrap();
+    let bumped_hash = imported.last_hash().saturating_add(1);
+    json_value.as_object_mut().unwrap().insert(
+        "last_hash".to_string(),
+        serde_json::Value::Number(bumped_hash.into()),
+    );
+    let imported_json = serde_json::to_string(&json_value).unwrap();
+
+    let err = import_runtime_ledger(&imported_json).unwrap_err();
+    assert_eq!(err, "ledger inconsistent");
+}
+
+#[test]
+fn import_runtime_ledger_allows_legacy_history_without_capsule_birth() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(97);
+    let owner = derived_pubkey(&seed);
+    set_runtime_capsule(owner, Network::Neste);
+
+    let to_pubkey = PubKey::from([44u8; 32]);
+    let starter_id = StarterId::from(derive_starter_id(&seed, 0));
+    let invitation_payload = InvitationSentPayload {
+        invitation_id: [55u8; 32],
+        starter_id,
+        to_pubkey,
+    };
+
+    let mut imported = Ledger::new(owner);
+    imported
+        .append(Event::new(
+            EventKind::InvitationSent,
+            invitation_payload.to_bytes(),
+            Timestamp::from(1),
+            Signature::from([0u8; 64]),
+            owner,
+        ))
+        .unwrap();
+
+    let imported_json = serde_json::to_string(&imported).unwrap();
+    import_runtime_ledger(&imported_json).unwrap();
+}
+
+#[test]
+fn import_runtime_ledger_rejects_capsule_birth_signed_by_foreign_key() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(98);
+    let owner = derived_pubkey(&seed);
+    set_runtime_capsule(owner, Network::Neste);
+
+    let mut imported = Ledger::new(owner);
+    imported
+        .append(Event::new(
+            EventKind::CapsuleCreated,
+            CapsuleCreatedPayload::new(
+                Network::Neste.to_byte(),
+                CapsuleType::Leaf as u8,
+                [0u8; 32],
+            )
+            .to_bytes(),
+            Timestamp::from(0),
+            Signature::from([0u8; 64]),
+            PubKey::from([123u8; 32]),
+        ))
+        .unwrap();
+
+    let imported_json = serde_json::to_string(&imported).unwrap();
+    let err = import_runtime_ledger(&imported_json).unwrap_err();
+    assert_eq!(err, "capsule birth signer mismatch");
+}
+
+#[test]
+fn import_runtime_ledger_rejects_misplaced_capsule_birth() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(99);
+    let owner = derived_pubkey(&seed);
+    set_runtime_capsule(owner, Network::Neste);
+
+    let mut imported = Ledger::new(owner);
+    imported
+        .append(Event::new(
+            EventKind::InvitationSent,
+            InvitationSentPayload {
+                invitation_id: [1u8; 32],
+                starter_id: StarterId::from(derive_starter_id(&seed, 1)),
+                to_pubkey: PubKey::from([2u8; 32]),
+            }
+            .to_bytes(),
+            Timestamp::from(1),
+            Signature::from([0u8; 64]),
+            owner,
+        ))
+        .unwrap();
+    imported
+        .append(Event::new(
+            EventKind::CapsuleCreated,
+            CapsuleCreatedPayload::new(
+                Network::Neste.to_byte(),
+                CapsuleType::Leaf as u8,
+                [0u8; 32],
+            )
+            .to_bytes(),
+            Timestamp::from(2),
+            Signature::from([0u8; 64]),
+            owner,
+        ))
+        .unwrap();
+
+    let imported_json = serde_json::to_string(&imported).unwrap();
+    let err = import_runtime_ledger(&imported_json).unwrap_err();
+    assert_eq!(err, "capsule birth misplaced");
+}
+
+#[test]
+fn import_runtime_ledger_rejects_duplicate_capsule_birth() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(100);
+    let owner = derived_pubkey(&seed);
+    set_runtime_capsule(owner, Network::Neste);
+
+    let mut imported = Ledger::new(owner);
+    imported
+        .append(Event::new(
+            EventKind::CapsuleCreated,
+            CapsuleCreatedPayload::new(
+                Network::Neste.to_byte(),
+                CapsuleType::Leaf as u8,
+                [0u8; 32],
+            )
+            .to_bytes(),
+            Timestamp::from(0),
+            Signature::from([0u8; 64]),
+            owner,
+        ))
+        .unwrap();
+    imported
+        .append(Event::new(
+            EventKind::CapsuleCreated,
+            CapsuleCreatedPayload::new(
+                Network::Neste.to_byte(),
+                CapsuleType::Leaf as u8,
+                [0u8; 32],
+            )
+            .to_bytes(),
+            Timestamp::from(1),
+            Signature::from([0u8; 64]),
+            owner,
+        ))
+        .unwrap();
+
+    let imported_json = serde_json::to_string(&imported).unwrap();
+    let err = import_runtime_ledger(&imported_json).unwrap_err();
+    assert_eq!(err, "duplicate capsule birth");
+}
+
+#[test]
 fn accepted_relationship_survives_export_import() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
