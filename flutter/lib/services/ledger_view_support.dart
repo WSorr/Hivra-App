@@ -17,6 +17,23 @@ class LedgerViewSupport {
     return events is List ? events : const <dynamic>[];
   }
 
+  bool? inferGenesisFromLedgerRoot(Map<String, dynamic>? root) {
+    if (root == null) return null;
+    for (final eventRaw in events(root)) {
+      if (eventRaw is! Map) continue;
+      final event = Map<String, dynamic>.from(eventRaw);
+      if (kindCode(event['kind']) != 0) continue;
+
+      final payload = payloadBytes(event['payload']);
+      if (payload.length < 2) return null;
+
+      final capsuleType = payload[1];
+      if (capsuleType == 1) return true;
+      if (capsuleType == 0) return false;
+    }
+    return null;
+  }
+
   int kindCode(dynamic value) {
     if (value is int) return value;
     if (value is String) {

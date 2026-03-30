@@ -57,4 +57,60 @@ void main() {
       expect(bytes, isEmpty);
     });
   });
+
+  group('LedgerViewSupport.inferGenesisFromLedgerRoot', () {
+    const support = LedgerViewSupport();
+
+    test('returns true when CapsuleCreated payload marks relay capsule', () {
+      final root = <String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 'CapsuleCreated',
+            'payload': <int>[1, 1],
+          },
+        ],
+      };
+
+      expect(support.inferGenesisFromLedgerRoot(root), isTrue);
+    });
+
+    test('returns false when CapsuleCreated payload marks leaf capsule', () {
+      final root = <String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 0,
+            'payload': <int>[1, 0],
+          },
+        ],
+      };
+
+      expect(support.inferGenesisFromLedgerRoot(root), isFalse);
+    });
+
+    test('returns null when capsule-created payload is malformed', () {
+      final root = <String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 'CapsuleCreated',
+            'payload': <int>[1],
+          },
+        ],
+      };
+
+      expect(support.inferGenesisFromLedgerRoot(root), isNull);
+    });
+
+    test('returns null when ledger has no capsule-created event', () {
+      final root = <String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 'InvitationSent',
+            'payload': <int>[0, 1]
+          },
+        ],
+      };
+
+      expect(support.inferGenesisFromLedgerRoot(root), isNull);
+    });
+  });
 }
