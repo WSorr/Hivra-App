@@ -411,6 +411,14 @@ Scope:
   - host API
   - execution boundaries
 - Only introduce execution after the shell and safety model are explicit.
+- Current progress:
+  - Added deterministic pre-host test-contract service for `temperature_tomorrow_liechtenstein` with manifest parsing and consensus-signable execution gate (`TemperatureTomorrowContractService`).
+  - Added regression coverage for:
+    - manifest validation
+    - deterministic settlement hash
+    - proposer/counterparty/draw outcomes
+    - blocked execution when consensus is unresolved
+  - Added plugin draft documentation for the first test smart-contract package (`docs/plugins/temperature_tomorrow_liechtenstein_test_plugin.md`).
 
 Definition of done:
 - Plugins extend transport capabilities without bypassing core rules or rewriting local truth.

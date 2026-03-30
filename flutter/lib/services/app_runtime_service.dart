@@ -12,6 +12,7 @@ import 'manual_consensus_check_service.dart';
 import 'plugin_execution_guard_service.dart';
 import 'relationship_service.dart';
 import 'settings_service.dart';
+import 'temperature_tomorrow_contract_service.dart';
 
 class AppRuntimeService {
   final HivraBindings _hivra;
@@ -70,6 +71,13 @@ class AppRuntimeService {
   ManualConsensusCheckService buildManualConsensusCheckService() {
     return ManualConsensusCheckService(
       consensus: buildConsensusRuntimeService(),
+    );
+  }
+
+  TemperatureTomorrowContractService buildTemperatureTomorrowContractService() {
+    final consensus = buildConsensusRuntimeService();
+    return TemperatureTomorrowContractService(
+      readSignable: consensus.signable,
     );
   }
 
