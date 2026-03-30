@@ -57,10 +57,12 @@ class CapsuleRuntimeBootstrapService {
         source: _LedgerSource.backup,
       );
     }
-    final ledgerJson = _selectPreferredLedgerCandidate(
+    final orderedCandidates = _orderedLedgerCandidates(
       ledgerCandidate,
       backupCandidate,
-    )?.json;
+    );
+    final ledgerJson =
+        orderedCandidates.isNotEmpty ? orderedCandidates.first.json : null;
 
     return CapsuleRuntimeBootstrap(
       pubKeyHex: pubKeyHex,
@@ -69,6 +71,8 @@ class CapsuleRuntimeBootstrapService {
       isNeste: isNeste,
       identityMode: identityMode,
       ledgerJson: ledgerJson,
+      ledgerImportCandidates:
+          orderedCandidates.map((candidate) => candidate.json).toList(),
     );
   }
 
@@ -109,6 +113,9 @@ class CapsuleRuntimeBootstrapService {
       identityMode: identityMode,
       ledgerJson:
           (ledgerJson != null && ledgerJson.isNotEmpty) ? ledgerJson : null,
+      ledgerImportCandidates: (ledgerJson != null && ledgerJson.isNotEmpty)
+          ? <String>[ledgerJson]
+          : const <String>[],
     );
   }
 
@@ -169,13 +176,16 @@ class CapsuleRuntimeBootstrapService {
         source: _LedgerSource.backup,
       );
     }
-    final preferred = _selectPreferredLedgerCandidate(
+    final orderedCandidates = _orderedLedgerCandidates(
       ledgerCandidate,
       backupCandidate,
     );
-    if (preferred != null) {
-      if (!hivra.importLedger(preferred.json)) return false;
+    for (final candidate in orderedCandidates) {
+      if (!hivra.importLedger(candidate.json)) {
+        continue;
+      }
       importedHistory = true;
+      break;
     }
     if (hasStoredHistory && !importedHistory) return false;
 
@@ -265,6 +275,22 @@ class CapsuleRuntimeBootstrapService {
     }
     // Deterministic tie-breaker: prefer ledger.json on equal history length.
     return ledger.source == _LedgerSource.ledger ? ledger : backup;
+  }
+
+  List<_LedgerCandidate> _orderedLedgerCandidates(
+    _LedgerCandidate? ledger,
+    _LedgerCandidate? backup,
+  ) {
+    final primary = _selectPreferredLedgerCandidate(ledger, backup);
+    if (primary == null) return const <_LedgerCandidate>[];
+
+    final secondary = identical(primary, ledger)
+        ? backup
+        : identical(primary, backup)
+            ? ledger
+            : null;
+    if (secondary == null) return <_LedgerCandidate>[primary];
+    return <_LedgerCandidate>[primary, secondary];
   }
 
   int? _extractTailTimestamp(List<dynamic> events) {

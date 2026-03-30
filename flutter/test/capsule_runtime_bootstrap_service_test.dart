@@ -82,8 +82,10 @@ void main() {
 
     test('prefers ledger.json when both ledger and backup exist', () async {
       final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
+      final backupLedger =
+          ledgerWithOwnerByte(0xaa, kind: 'InvitationRejected');
       final backup = CapsuleBackupCodec.encodeBackupEnvelope(
-        ledgerJson: ledgerWithOwnerByte(0xaa, kind: 'InvitationRejected'),
+        ledgerJson: backupLedger,
         isGenesis: false,
         isNeste: true,
       );
@@ -106,6 +108,10 @@ void main() {
 
       expect(bootstrap, isNotNull);
       expect(bootstrap!.ledgerJson, equals(ledger));
+      expect(
+        bootstrap.ledgerImportCandidates,
+        equals(<String>[ledger, backupLedger]),
+      );
       expect(bootstrap.isGenesis, isTrue);
       expect(bootstrap.isNeste, isFalse);
     });
@@ -149,6 +155,10 @@ void main() {
 
       expect(bootstrap, isNotNull);
       expect(bootstrap!.ledgerJson, equals(longLedger));
+      expect(
+        bootstrap.ledgerImportCandidates,
+        equals(<String>[longLedger, shortLedger]),
+      );
     });
 
     test(
@@ -186,6 +196,10 @@ void main() {
 
       expect(bootstrap, isNotNull);
       expect(bootstrap!.ledgerJson, equals(newerBackupLedger));
+      expect(
+        bootstrap.ledgerImportCandidates,
+        equals(<String>[newerBackupLedger, olderLedger]),
+      );
     });
 
     test('falls back to backup envelope when ledger.json is missing', () async {
@@ -215,6 +229,10 @@ void main() {
 
       expect(bootstrap, isNotNull);
       expect(bootstrap!.ledgerJson, equals(ledgerFromBackup));
+      expect(
+        bootstrap.ledgerImportCandidates,
+        equals(<String>[ledgerFromBackup]),
+      );
       expect(bootstrap.isGenesis, isFalse);
       expect(bootstrap.isNeste, isTrue);
     });
@@ -269,6 +287,7 @@ void main() {
 
       expect(bootstrap, isNotNull);
       expect(bootstrap!.ledgerJson, isNotNull);
+      expect(bootstrap.ledgerImportCandidates, isNotEmpty);
       final decoded = jsonDecode(bootstrap.ledgerJson!) as Map<String, dynamic>;
       expect(decoded['owner'], equals(List<int>.filled(32, 0xaa)));
       expect((decoded['events'] as List).first['kind'], 'RelationshipBroken');
@@ -305,6 +324,7 @@ void main() {
 
       expect(bootstrap, isNotNull);
       expect(bootstrap!.ledgerJson, isNull);
+      expect(bootstrap.ledgerImportCandidates, isEmpty);
     });
   });
 }

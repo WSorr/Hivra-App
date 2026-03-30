@@ -298,9 +298,7 @@ class CapsulePersistenceService {
       return false;
     }
 
-    if (bootstrap.ledgerJson != null &&
-        bootstrap.ledgerJson!.isNotEmpty &&
-        !hivra.importLedger(bootstrap.ledgerJson!)) {
+    if (!_importBootstrapLedgerCandidates(hivra, bootstrap)) {
       return false;
     }
 
@@ -343,10 +341,7 @@ class CapsulePersistenceService {
       return 'Seed/pubkey mismatch: expected $activeHex, got ${runtimeHex ?? 'none'}';
     }
 
-    final ledgerJson = bootstrap.ledgerJson;
-    if (ledgerJson != null &&
-        ledgerJson.isNotEmpty &&
-        !hivra.importLedger(ledgerJson)) {
+    if (!_importBootstrapLedgerCandidates(hivra, bootstrap)) {
       return 'Failed to import ledger for capsule $activeHex';
     }
 
@@ -454,10 +449,28 @@ class CapsulePersistenceService {
       ledgerFileExists: ledgerFileExists,
       backupFileExists: backupFileExists,
       workerBootstrapAvailable: workerBootstrap != null,
-      ledgerImportable:
-          bootstrap?.ledgerJson != null && bootstrap!.ledgerJson!.isNotEmpty,
+      ledgerImportable: bootstrap?.ledgerImportCandidates.isNotEmpty == true,
       issue: issue,
     );
+  }
+
+  bool _importBootstrapLedgerCandidates(
+    HivraBindings hivra,
+    CapsuleRuntimeBootstrap bootstrap,
+  ) {
+    final candidates = bootstrap.ledgerImportCandidates
+        .where((candidate) => candidate.trim().isNotEmpty)
+        .toList(growable: false);
+    if (candidates.isEmpty) {
+      return true;
+    }
+
+    for (final candidate in candidates) {
+      if (hivra.importLedger(candidate)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<CapsuleTraceReport> diagnoseCapsuleTraces(HivraBindings hivra) async {

@@ -73,6 +73,7 @@ class CapsuleRuntimeBootstrap {
   final bool isNeste;
   final String identityMode;
   final String? ledgerJson;
+  final List<String> ledgerImportCandidates;
 
   CapsuleRuntimeBootstrap({
     required this.pubKeyHex,
@@ -81,7 +82,13 @@ class CapsuleRuntimeBootstrap {
     required this.isNeste,
     required this.identityMode,
     required this.ledgerJson,
-  });
+    List<String>? ledgerImportCandidates,
+  }) : ledgerImportCandidates = List<String>.unmodifiable(
+          ledgerImportCandidates ??
+              ((ledgerJson != null && ledgerJson.isNotEmpty)
+                  ? <String>[ledgerJson]
+                  : const <String>[]),
+        );
 }
 
 class CapsuleTraceReport {
