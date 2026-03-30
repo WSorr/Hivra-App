@@ -97,8 +97,9 @@ class CapsuleAddressService {
     final cards = await _readCards();
     final result = <CapsuleAddressCard>[];
     for (final entry in cards.values) {
-      if (entry is! Map<String, dynamic>) continue;
-      final card = CapsuleAddressCard.fromJsonMap(entry);
+      final entryMap = _coerceJsonMap(entry);
+      if (entryMap == null) continue;
+      final card = CapsuleAddressCard.fromJsonMap(entryMap);
       if (card != null) {
         result.add(card);
       }
@@ -108,8 +109,8 @@ class CapsuleAddressService {
   }
 
   Future<void> importCardJson(String raw) async {
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map<String, dynamic>) {
+    final decoded = _parseJsonMap(raw);
+    if (decoded == null) {
       throw const FormatException('Contact card must be a JSON object');
     }
     final version = decoded['version'];
@@ -166,8 +167,8 @@ class CapsuleAddressService {
     final rootBytes = decodeRootKey(value);
     if (rootBytes == null) return null;
     final cards = await _readCards();
-    final cardMap = cards[_toHex(rootBytes)];
-    if (cardMap is! Map<String, dynamic>) return null;
+    final cardMap = _coerceJsonMap(cards[_toHex(rootBytes)]);
+    if (cardMap == null) return null;
     final card = CapsuleAddressCard.fromJsonMap(cardMap);
     if (card == null) return null;
     return _decodeHex32(card.nostrHex);
@@ -287,12 +288,22 @@ class CapsuleAddressService {
   Future<Map<String, dynamic>> _readCards() async {
     final file = await _cardsFile();
     final raw = await file.readAsString();
-    final decoded = jsonDecode(raw);
-    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    return _parseJsonMap(raw) ?? <String, dynamic>{};
   }
 
   Future<void> _writeCards(Map<String, dynamic> cards) async {
     final file = await _cardsFile();
     await file.writeAsString(const JsonEncoder.withIndent('  ').convert(cards));
+  }
+
+  Map<String, dynamic>? _parseJsonMap(String rawJson) {
+    final decoded = jsonDecode(rawJson);
+    return _coerceJsonMap(decoded);
+  }
+
+  Map<String, dynamic>? _coerceJsonMap(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
   }
 }

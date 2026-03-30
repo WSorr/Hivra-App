@@ -326,6 +326,7 @@ Scope:
   - Capsule index store now reuses shared JSON-map parse/coerce helpers for top-level and nested index entries instead of local decode branches.
   - Backup envelope extraction now reuses shared JSON-map decode/coerce helpers in `CapsuleBackupCodec.tryExtractLedgerJson` instead of per-branch map conversions.
   - Capsule file-store state loading now reuses a shared JSON-map parser in `CapsuleFileStore.readState`, with regression tests covering missing/valid/non-map state files.
+  - Capsule address-card import/read/projection paths now reuse shared JSON-map parse/coerce helpers in `CapsuleAddressService`, with regression tests for card roundtrip and malformed contact-card file shape.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.
