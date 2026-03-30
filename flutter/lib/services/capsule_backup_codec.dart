@@ -35,22 +35,17 @@ class CapsuleBackupCodec {
     final trimmed = inputJson.trim();
     if (trimmed.isEmpty) return null;
 
-    final decoded = jsonDecode(trimmed);
-    if (decoded is! Map) return null;
-
-    final obj = Map<String, dynamic>.from(decoded);
+    final obj = _decodeJsonMap(trimmed);
+    if (obj == null) return null;
 
     // v1 envelope
     if (obj['schema'] == schema && obj['version'] == version) {
-      final ledger = obj['ledger'];
-      if (ledger is Map) {
-        final normalized = Map<String, dynamic>.from(ledger);
-        if (!_isLedgerShape(normalized)) {
-          return null;
-        }
-        return jsonEncode(normalized);
+      final normalized = _coerceJsonMap(obj['ledger']);
+      if (normalized == null) return null;
+      if (!_isLedgerShape(normalized)) {
+        return null;
       }
-      return null;
+      return jsonEncode(normalized);
     }
 
     // Legacy raw ledger JSON
@@ -73,5 +68,16 @@ class CapsuleBackupCodec {
     final ownerBytes = _support.payloadBytes(raw);
     if (ownerBytes.length != 32) return null;
     return ownerBytes;
+  }
+
+  static Map<String, dynamic>? _decodeJsonMap(String rawJson) {
+    final decoded = jsonDecode(rawJson);
+    return _coerceJsonMap(decoded);
+  }
+
+  static Map<String, dynamic>? _coerceJsonMap(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
   }
 }
