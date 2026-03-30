@@ -315,6 +315,7 @@ Scope:
   - Runtime bootstrap owner-field decoding now reuses shared `CapsuleLedgerSummaryParser.parseBytesField` instead of a duplicated bytes32 parser inside bootstrap service.
   - Runtime bootstrap ledger candidate parsing now reuses shared `LedgerViewSupport` root/events helpers instead of local decode/event-list extraction logic.
   - Capsule persistence stale-check/owner extraction and legacy-ledger cleanup paths now reuse shared ledger-root helpers (`LedgerViewSupport.exportLedgerRoot` + common owner extraction) instead of repeated per-method decode logic.
+  - Backup envelope ledger-shape validation now reuses shared byte decoding (`LedgerViewSupport.payloadBytes`) for owner parsing instead of maintaining another owner parser copy in `CapsuleBackupCodec`.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.
