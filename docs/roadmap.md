@@ -76,6 +76,10 @@ Scope:
     - `events` must be a valid list
     - mismatched/corrupt `ledger.json` falls back to compatible backup ledger when available
     - refresh rejects incompatible stored history instead of importing ambiguous state
+  - Backup ledger extraction now enforces baseline ledger shape before import:
+    - valid 32-byte owner field (bytes/hex/base64)
+    - `events` field must be a list
+    - malformed envelopes/raw ledgers are rejected before persistence/index updates
 
 Definition of done:
 - A user can restore a capsule on a new machine without manual container surgery or hidden-path knowledge.
