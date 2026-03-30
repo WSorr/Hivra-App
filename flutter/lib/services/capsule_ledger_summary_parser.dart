@@ -105,31 +105,14 @@ class CapsuleLedgerSummaryParser {
 
   List<int>? parseBytesField(dynamic raw) {
     if (raw is List) {
-      final out = <int>[];
-      for (final item in raw) {
-        if (item is! num) return null;
-        final value = item.toInt();
-        if (value < 0 || value > 255) return null;
-        out.add(value);
-      }
-      return out;
+      final bytes = _support.payloadBytes(raw);
+      if (bytes.isEmpty && raw.isNotEmpty) return null;
+      return bytes;
     }
     if (raw is String) {
-      final trimmed = raw.trim();
-      if (trimmed.isEmpty) return null;
-      final isHex = RegExp(r'^[0-9a-fA-F]+$').hasMatch(trimmed);
-      if (isHex && trimmed.length.isEven) {
-        final out = <int>[];
-        for (int i = 0; i < trimmed.length; i += 2) {
-          out.add(int.parse(trimmed.substring(i, i + 2), radix: 16));
-        }
-        return out;
-      }
-      try {
-        return base64Decode(trimmed);
-      } catch (_) {
-        return null;
-      }
+      final bytes = _support.payloadBytes(raw);
+      if (bytes.isEmpty) return null;
+      return bytes;
     }
     return null;
   }

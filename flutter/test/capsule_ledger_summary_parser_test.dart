@@ -151,5 +151,17 @@ void main() {
       final summary = parser.parse(ledger, toHex);
       expect(summary.pendingInvitations, equals(1));
     });
+
+    test('parseBytesField decodes hex and base64 payload strings', () {
+      expect(parser.parseBytesField('0a0b0c'), equals(<int>[10, 11, 12]));
+      expect(parser.parseBytesField('AQID'), equals(<int>[1, 2, 3]));
+    });
+
+    test('parseBytesField preserves empty list and rejects invalid values', () {
+      expect(parser.parseBytesField(<int>[]), equals(<int>[]));
+      expect(parser.parseBytesField(<dynamic>[1, 300]), isNull);
+      expect(parser.parseBytesField(''), isNull);
+      expect(parser.parseBytesField(42), isNull);
+    });
   });
 }
