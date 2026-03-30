@@ -7,17 +7,23 @@ import '../models/starter.dart';
 import 'ledger_view_support.dart';
 
 class InvitationProjectionService {
-  final HivraBindings _hivra;
+  final Uint8List? Function() _runtimeOwnerPublicKey;
   final LedgerViewSupport _support;
 
-  const InvitationProjectionService(this._hivra, this._support);
+  InvitationProjectionService(HivraBindings hivra, this._support)
+      : _runtimeOwnerPublicKey = hivra.capsuleRuntimeOwnerPublicKey;
+
+  InvitationProjectionService.withOwnerKeyProvider(
+    Uint8List? Function() runtimeOwnerPublicKey,
+    this._support,
+  ) : _runtimeOwnerPublicKey = runtimeOwnerPublicKey;
 
   List<Invitation> loadInvitations(
     Map<String, dynamic> root, {
     List<Uint8List?> starterIds = const <Uint8List?>[],
   }) {
     final events = _support.events(root);
-    final self = _hivra.capsuleRuntimeOwnerPublicKey();
+    final self = _runtimeOwnerPublicKey();
     if (self == null) return <Invitation>[];
 
     final starterKinds = <String, StarterKind>{};
@@ -46,7 +52,8 @@ class InvitationProjectionService {
       final payload = _support.payloadBytes(e['payload']);
       final signer = _support.bytes32(e['signer']);
 
-      if ((kind == 1 || kind == 9) && (payload.length == 96 || payload.length == 97)) {
+      if ((kind == 1 || kind == 9) &&
+          (payload.length == 96 || payload.length == 97)) {
         final invitationId = payload.sublist(0, 32);
         final starterId = payload.sublist(32, 64);
         final toPubkey = payload.sublist(64, 96);
@@ -60,8 +67,8 @@ class InvitationProjectionService {
         final starterSlot =
             _support.slotForStarterId(starterId, ownStarterBySlot);
         final isIncomingByAddress = _support.eq32(toPubkey, self);
-        final isIncoming =
-            kind == 9 || isIncomingByAddress || (current?.isIncoming ?? false);
+        final signerIsSelf = _support.eq32(signer, self);
+        final isIncoming = kind == 9 || (isIncomingByAddress && !signerIsSelf);
 
         final expiresAt = timestamp.add(const Duration(hours: 24));
         InvitationStatus status = InvitationStatus.pending;
@@ -86,12 +93,14 @@ class InvitationProjectionService {
         byId[id] = Invitation(
           id: id,
           fromPubkey: base64.encode(signer),
-          toPubkey:
-              isIncoming ? null : (current?.toPubkey ?? base64.encode(toPubkey)),
+          toPubkey: isIncoming
+              ? null
+              : (current?.toPubkey ?? base64.encode(toPubkey)),
           kind: kindFromPayload ??
               starterKinds[base64.encode(starterId)] ??
               StarterKind.juice,
-          starterSlot: isIncoming ? null : (current?.starterSlot ?? starterSlot),
+          starterSlot:
+              isIncoming ? null : (current?.starterSlot ?? starterSlot),
           status: status,
           sentAt: timestamp,
           expiresAt: expiresAt,
@@ -117,8 +126,13 @@ class InvitationProjectionService {
         }
       } else if (kind == 3 && payload.length == 33) {
         final id = base64.encode(payload.sublist(0, 32));
-        final reason =
-            payload[32] == 0 ? RejectionReason.emptySlot : RejectionReason.other;
+        if (acceptedAtById.containsKey(id)) {
+          // Accepted has higher precedence than rejected.
+          continue;
+        }
+        final reason = payload[32] == 0
+            ? RejectionReason.emptySlot
+            : RejectionReason.other;
         rejectedById[id] = (at: timestamp, reason: reason);
         final current = byId[id];
         if (current != null) {
@@ -137,6 +151,10 @@ class InvitationProjectionService {
         }
       } else if (kind == 4 && payload.length == 32) {
         final id = base64.encode(payload.sublist(0, 32));
+        if (acceptedAtById.containsKey(id) || rejectedById.containsKey(id)) {
+          // Expired has lower precedence than accepted/rejected.
+          continue;
+        }
         expiredAtById[id] = timestamp;
         final current = byId[id];
         if (current != null) {

@@ -77,7 +77,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   Future<void> _fetchInvitationDeliveries({bool silent = false}) async {
-    if (_isFetchingDeliveries) return;
+    if (_isFetchingDeliveries || _processingId != null) return;
 
     setState(() => _isFetchingDeliveries = true);
     InvitationIntentResult result = const InvitationIntentResult(
@@ -164,6 +164,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   Future<void> _rejectInvitation(Invitation invitation) async {
+    if (_processingId != null) return;
+    if (_locallyResolvedIncomingIds.contains(invitation.id)) return;
+
     // Show confirmation dialog for empty slot case
     final bool? confirm = await showDialog<bool>(
       context: context,
@@ -278,6 +281,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   Future<void> _cancelInvitation(Invitation invitation) async {
+    if (_processingId != null) return;
+
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -610,7 +615,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                   onAccept: _locallyResolvedIncomingIds.contains(inv.id)
                       ? null
                       : () => _acceptInvitation(inv),
-                  onReject: () => _rejectInvitation(inv),
+                  onReject: _locallyResolvedIncomingIds.contains(inv.id)
+                      ? null
+                      : () => _rejectInvitation(inv),
                   isLoading: _processingId == inv.id,
                   loadingAction:
                       _processingId == inv.id ? _processingAction : null,

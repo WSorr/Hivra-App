@@ -120,6 +120,9 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
 }
 
 pub fn invitation_status(ledger: &Ledger, invitation_id: [u8; 32]) -> InvitationStatus {
+    let mut rejected: Option<RejectReason> = None;
+    let mut expired = false;
+
     for event in ledger.events() {
         match event.kind() {
             EventKind::InvitationAccepted => {
@@ -138,9 +141,7 @@ pub fn invitation_status(ledger: &Ledger, invitation_id: [u8; 32]) -> Invitation
                     continue;
                 };
                 if payload.invitation_id == invitation_id {
-                    return InvitationStatus::Rejected {
-                        reason: payload.reason,
-                    };
+                    rejected.get_or_insert(payload.reason);
                 }
             }
             EventKind::InvitationExpired => {
@@ -148,13 +149,19 @@ pub fn invitation_status(ledger: &Ledger, invitation_id: [u8; 32]) -> Invitation
                     continue;
                 };
                 if payload.invitation_id == invitation_id {
-                    return InvitationStatus::Expired;
+                    expired = true;
                 }
             }
             _ => {}
         }
     }
 
+    if let Some(reason) = rejected {
+        return InvitationStatus::Rejected { reason };
+    }
+    if expired {
+        return InvitationStatus::Expired;
+    }
     InvitationStatus::Pending
 }
 
@@ -251,6 +258,98 @@ mod tests {
         assert_eq!(pending_invitation_count(&ledger), 0);
         assert_eq!(
             invitation_status(&ledger, [9u8; 32]),
+            InvitationStatus::Rejected {
+                reason: RejectReason::Other,
+            }
+        );
+    }
+
+    #[test]
+    fn invitation_status_prefers_accepted_over_rejected() {
+        let owner = PubKey::from([7u8; 32]);
+        let peer = PubKey::from([8u8; 32]);
+        let invitation_id = [42u8; 32];
+        let mut ledger = Ledger::new(owner);
+
+        append_event(
+            &mut ledger,
+            EventKind::InvitationSent,
+            &InvitationSentPayload {
+                invitation_id,
+                starter_id: StarterId::from([9u8; 32]),
+                to_pubkey: peer,
+            }
+            .to_bytes(),
+            1,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationRejected,
+            &InvitationRejectedPayload {
+                invitation_id,
+                reason: RejectReason::EmptySlot,
+            }
+            .to_bytes(),
+            2,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationAccepted,
+            &InvitationAcceptedPayload {
+                invitation_id,
+                created_starter_id: StarterId::from([10u8; 32]),
+                from_pubkey: peer,
+            }
+            .to_bytes(),
+            3,
+        );
+
+        assert_eq!(
+            invitation_status(&ledger, invitation_id),
+            InvitationStatus::Accepted {
+                created_starter_id: StarterId::from([10u8; 32]),
+                from_pubkey: peer,
+            }
+        );
+    }
+
+    #[test]
+    fn invitation_status_prefers_rejected_over_expired_without_accepted() {
+        let owner = PubKey::from([11u8; 32]);
+        let peer = PubKey::from([12u8; 32]);
+        let invitation_id = [43u8; 32];
+        let mut ledger = Ledger::new(owner);
+
+        append_event(
+            &mut ledger,
+            EventKind::InvitationSent,
+            &InvitationSentPayload {
+                invitation_id,
+                starter_id: StarterId::from([13u8; 32]),
+                to_pubkey: peer,
+            }
+            .to_bytes(),
+            1,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationExpired,
+            &InvitationExpiredPayload { invitation_id }.to_bytes(),
+            2,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationRejected,
+            &InvitationRejectedPayload {
+                invitation_id,
+                reason: RejectReason::Other,
+            }
+            .to_bytes(),
+            3,
+        );
+
+        assert_eq!(
+            invitation_status(&ledger, invitation_id),
             InvitationStatus::Rejected {
                 reason: RejectReason::Other,
             }
