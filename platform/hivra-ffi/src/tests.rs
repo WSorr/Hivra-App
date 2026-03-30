@@ -13,11 +13,22 @@ fn derived_pubkey(seed: &Seed) -> PubKey {
 }
 
 fn set_runtime_capsule(owner: PubKey, network: Network) {
+    let mut ledger = Ledger::new(owner);
+    ledger
+        .append(Event::new(
+            EventKind::CapsuleCreated,
+            CapsuleCreatedPayload::new(network.to_byte(), CapsuleType::Leaf as u8, [0u8; 32])
+                .to_bytes(),
+            Timestamp::from(0),
+            Signature::from([0u8; 64]),
+            owner,
+        ))
+        .unwrap();
     let capsule = Capsule {
         pubkey: owner,
         capsule_type: CapsuleType::Leaf,
         network,
-        ledger: Ledger::new(owner),
+        ledger,
     };
 
     let mut runtime = RUNTIME.lock().unwrap();
@@ -880,7 +891,6 @@ fn exported_ledger_roundtrips_same_event_count() {
     let owner = derived_pubkey(&seed);
     set_runtime_capsule(owner, Network::Neste);
 
-    append_runtime_event(EventKind::CapsuleCreated, &[]).unwrap();
     append_runtime_event(
         EventKind::StarterCreated,
         &StarterCreatedPayload {
@@ -979,7 +989,7 @@ fn import_runtime_ledger_rejects_inconsistent_hash_chain() {
 }
 
 #[test]
-fn import_runtime_ledger_allows_legacy_history_without_capsule_birth() {
+fn import_runtime_ledger_rejects_history_without_capsule_birth() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
 
@@ -1007,7 +1017,8 @@ fn import_runtime_ledger_allows_legacy_history_without_capsule_birth() {
         .unwrap();
 
     let imported_json = serde_json::to_string(&imported).unwrap();
-    import_runtime_ledger(&imported_json).unwrap();
+    let err = import_runtime_ledger(&imported_json).unwrap_err();
+    assert_eq!(err, "ledger missing capsule birth");
 }
 
 #[test]
@@ -1081,7 +1092,7 @@ fn import_runtime_ledger_rejects_misplaced_capsule_birth() {
 
     let imported_json = serde_json::to_string(&imported).unwrap();
     let err = import_runtime_ledger(&imported_json).unwrap_err();
-    assert_eq!(err, "capsule birth misplaced");
+    assert_eq!(err, "ledger missing capsule birth");
 }
 
 #[test]

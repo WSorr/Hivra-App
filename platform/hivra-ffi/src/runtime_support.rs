@@ -316,6 +316,17 @@ pub(crate) fn import_runtime_ledger(json: &str) -> Result<(), &'static str> {
     if !parsed.verify() {
         return Err("ledger inconsistent");
     }
+    if !parsed.events().is_empty() {
+        let Some(first) = parsed.events().first() else {
+            return Err("ledger missing capsule birth");
+        };
+        if first.kind() != EventKind::CapsuleCreated {
+            return Err("ledger missing capsule birth");
+        }
+        if first.signer() != parsed.owner() {
+            return Err("capsule birth signer mismatch");
+        }
+    }
     let mut capsule_birth_index: Option<usize> = None;
     for (index, event) in parsed.events().iter().enumerate() {
         if event.kind() != EventKind::CapsuleCreated {

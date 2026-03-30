@@ -59,7 +59,7 @@ Scope:
     - reverse-direction pending invitation offers survive export/import
   - Runtime ledger import now rejects inconsistent histories before bootstrap restore:
     - invalid hash chain (`ledger.verify` failure)
-    - malformed capsule birth anchor when present (`CapsuleCreated` must be first, owner-signed, and unique)
+    - missing or malformed capsule birth anchor (`CapsuleCreated` must exist for non-empty history, be first, owner-signed, and unique)
 
 Definition of done:
 - If an event is present in persisted ledger state, it survives restart and reconstructs the same projections.
