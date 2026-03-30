@@ -79,10 +79,7 @@ class CapsuleFileStore {
     if (!await file.exists()) return null;
     try {
       final raw = await file.readAsString();
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      return null;
+      return _parseJsonMap(raw);
     } catch (_) {
       return null;
     }
@@ -146,4 +143,11 @@ class CapsuleFileStore {
   File legacyLedgerFile(Directory docs) => File('${docs.path}/$ledgerFileName');
 
   File legacyBackupFile(Directory docs) => File('${docs.path}/$backupFileName');
+
+  Map<String, dynamic>? _parseJsonMap(String rawJson) {
+    final decoded = jsonDecode(rawJson);
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    return null;
+  }
 }
