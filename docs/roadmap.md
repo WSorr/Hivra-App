@@ -312,6 +312,7 @@ Scope:
 - Current progress:
   - Recovery flow ledger decoding now reuses shared `LedgerViewSupport` (`kindCode` / `payloadBytes`) instead of maintaining a duplicate decoder path.
   - Recovery `isGenesis` fallback and starter-occupancy checks now reuse shared projection helpers (`LedgerViewSupport.inferGenesisFromLedgerRoot`, `CapsuleLedgerSummaryParser`) instead of local event-walk policy code.
+  - Runtime bootstrap owner-field decoding now reuses shared `CapsuleLedgerSummaryParser.parseBytesField` instead of a duplicated bytes32 parser inside bootstrap service.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.

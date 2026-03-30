@@ -80,6 +80,18 @@ void main() {
       });
     }
 
+    String ledgerWithBase64Owner({
+      required int ownerByte,
+      required String kind,
+    }) {
+      return jsonEncode(<String, dynamic>{
+        'owner': base64Encode(List<int>.filled(32, ownerByte)),
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{'kind': kind},
+        ],
+      });
+    }
+
     test('prefers ledger.json when both ledger and backup exist', () async {
       final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
       final backupLedger =
@@ -235,6 +247,32 @@ void main() {
       );
       expect(bootstrap.isGenesis, isFalse);
       expect(bootstrap.isNeste, isTrue);
+    });
+
+    test('accepts base64 owner field in stored ledger candidate', () async {
+      final ledger = ledgerWithBase64Owner(
+        ownerByte: 0xaa,
+        kind: 'InvitationSent',
+      );
+      final service = CapsuleRuntimeBootstrapService(
+        _FakeCapsuleFileStore(
+          state: <String, dynamic>{
+            'isGenesis': false,
+            'isNeste': true,
+          },
+          ledgerJson: ledger,
+        ),
+        _FakeCapsuleSeedStore(seed),
+      );
+
+      final bootstrap = await service.loadRuntimeBootstrap(
+        pubKeyHex,
+        bytesToHex: bytesToHex,
+      );
+
+      expect(bootstrap, isNotNull);
+      expect(bootstrap!.ledgerJson, equals(ledger));
+      expect(bootstrap.ledgerImportCandidates, equals(<String>[ledger]));
     });
 
     test('returns null when no seed is available', () async {

@@ -4,14 +4,21 @@ import 'dart:typed_data';
 import '../ffi/hivra_bindings.dart';
 import 'capsule_backup_codec.dart';
 import 'capsule_file_store.dart';
+import 'capsule_ledger_summary_parser.dart';
 import 'capsule_persistence_models.dart';
 import 'capsule_seed_store.dart';
 
 class CapsuleRuntimeBootstrapService {
   final CapsuleFileStore _fileStore;
   final CapsuleSeedStore _seedStore;
+  final CapsuleLedgerSummaryParser _summaryParser;
 
-  const CapsuleRuntimeBootstrapService(this._fileStore, this._seedStore);
+  const CapsuleRuntimeBootstrapService(
+    this._fileStore,
+    this._seedStore, {
+    CapsuleLedgerSummaryParser summaryParser =
+        const CapsuleLedgerSummaryParser(),
+  }) : _summaryParser = summaryParser;
 
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrap(
     String pubKeyHex, {
@@ -241,8 +248,8 @@ class CapsuleRuntimeBootstrapService {
       final ledger = Map<String, dynamic>.from(decoded);
       final events = ledger['events'];
       if (events is! List) return null;
-      final owner = _parseBytes32Field(ledger['owner']);
-      if (owner == null) return null;
+      final owner = _summaryParser.parseBytesField(ledger['owner']);
+      if (owner == null || owner.length != 32) return null;
       if (bytesToHex(Uint8List.fromList(owner)) != pubKeyHex) return null;
       return _LedgerCandidate(
         source: source,
@@ -320,38 +327,6 @@ class CapsuleRuntimeBootstrapService {
         return int.tryParse(text.substring(2), radix: 16);
       }
       return int.tryParse(text);
-    }
-    return null;
-  }
-
-  List<int>? _parseBytes32Field(dynamic raw) {
-    if (raw is List) {
-      if (raw.length != 32) return null;
-      final out = <int>[];
-      for (final item in raw) {
-        if (item is! num) return null;
-        final value = item.toInt();
-        if (value < 0 || value > 255) return null;
-        out.add(value);
-      }
-      return out;
-    }
-    if (raw is String) {
-      final trimmed = raw.trim();
-      if (trimmed.isEmpty) return null;
-      if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(trimmed)) {
-        final out = <int>[];
-        for (var i = 0; i < trimmed.length; i += 2) {
-          out.add(int.parse(trimmed.substring(i, i + 2), radix: 16));
-        }
-        return out;
-      }
-      try {
-        final bytes = base64Decode(trimmed);
-        return bytes.length == 32 ? bytes : null;
-      } catch (_) {
-        return null;
-      }
     }
     return null;
   }
