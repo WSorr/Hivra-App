@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../services/app_runtime_service.dart';
 import '../services/consensus_processor.dart';
+import '../services/plugin_demo_contract_runner_service.dart';
 import '../services/plugin_execution_guard_service.dart';
+import '../services/temperature_tomorrow_contract_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
 
 class WasmPluginsScreen extends StatefulWidget {
@@ -22,6 +24,8 @@ class WasmPluginsScreen extends StatefulWidget {
 
 class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   final WasmPluginRegistryService _registry = const WasmPluginRegistryService();
+  final PluginDemoContractRunnerService _demoRunner =
+      AppRuntimeService().buildPluginDemoContractRunnerService();
   final PluginExecutionGuardService _guard =
       AppRuntimeService().buildPluginExecutionGuardService();
   List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
@@ -34,6 +38,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   );
   bool _loading = true;
   bool _installing = false;
+  bool _runningDemo = false;
+  PluginDemoRunResult? _lastDemoResult;
 
   static const List<_CatalogPlugin> _transportPlugins = <_CatalogPlugin>[
     _CatalogPlugin(
@@ -159,6 +165,78 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     );
   }
 
+  Future<void> _runTemperatureDemo() async {
+    if (_runningDemo) return;
+    setState(() {
+      _runningDemo = true;
+    });
+
+    try {
+      final tomorrow = DateTime.now().toUtc().add(const Duration(days: 1));
+      final targetDateUtc = _dateOnlyUtc(tomorrow);
+      final result = _demoRunner.runTemperatureTomorrowDemo(
+        contract: TemperatureTomorrowContractSpec(
+          pluginId: 'hivra.contract.temperature-li.tomorrow.v1',
+          locationCode: 'LI',
+          targetDateUtc: targetDateUtc,
+          thresholdDeciCelsius: 85,
+          proposerRule: TemperatureOutcomeRule.above,
+          drawOnEqual: true,
+        ),
+        observation: TemperatureOracleObservation(
+          sourceId: 'oracle.mock.weather.v1',
+          eventId: 'demo-${DateTime.now().millisecondsSinceEpoch}',
+          locationCode: 'LI',
+          targetDateUtc: targetDateUtc,
+          recordedAtUtc: DateTime.now().toUtc().toIso8601String(),
+          observedDeciCelsius: 90,
+        ),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _lastDemoResult = result;
+      });
+
+      final messenger = ScaffoldMessenger.of(context);
+      switch (result.state) {
+        case PluginDemoRunState.noPairwisePaths:
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No pairwise consensus paths yet. Create at least one relationship first.',
+              ),
+            ),
+          );
+          break;
+        case PluginDemoRunState.blocked:
+          final reason = result.blockingFacts.isEmpty
+              ? 'Consensus guard blocked execution.'
+              : result.blockingFacts.first.label;
+          messenger.showSnackBar(
+            SnackBar(content: Text('Demo blocked: $reason')),
+          );
+          break;
+        case PluginDemoRunState.executed:
+          final settlement = result.settlement!;
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                'Demo settled (${settlement.outcome.name}) for ${result.peerLabel ?? result.peerHex}',
+              ),
+            ),
+          );
+          break;
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _runningDemo = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -182,6 +260,18 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         ),
         const SizedBox(height: 10),
         _HostPanel(snapshot: _guardSnapshot),
+        const SizedBox(height: 20),
+        _SectionTitle(
+          title: 'Contract Demo',
+          subtitle:
+              'Manual dry-run for the first test smart-contract (no wasm execution yet).',
+        ),
+        const SizedBox(height: 10),
+        _ContractDemoPanel(
+          running: _runningDemo,
+          lastResult: _lastDemoResult,
+          onRunPressed: _runTemperatureDemo,
+        ),
         const SizedBox(height: 20),
         _SectionTitle(
           title: 'Transport Plugins',
@@ -711,6 +801,113 @@ class _HostPanel extends StatelessWidget {
   }
 }
 
+class _ContractDemoPanel extends StatelessWidget {
+  final bool running;
+  final PluginDemoRunResult? lastResult;
+  final Future<void> Function() onRunPressed;
+
+  const _ContractDemoPanel({
+    required this.running,
+    required this.lastResult,
+    required this.onRunPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final result = lastResult;
+    final accent = switch (result?.state) {
+      PluginDemoRunState.executed => const Color(0xFF75D98A),
+      PluginDemoRunState.blocked => const Color(0xFFFF8A7A),
+      PluginDemoRunState.noPairwisePaths => const Color(0xFF75D2FF),
+      null => const Color(0xFF7F92A8),
+    };
+    final title = switch (result?.state) {
+      PluginDemoRunState.executed => 'Last run settled',
+      PluginDemoRunState.blocked => 'Last run blocked by guard',
+      PluginDemoRunState.noPairwisePaths => 'No pairwise paths yet',
+      null => 'Not run yet',
+    };
+    final summary = switch (result?.state) {
+      PluginDemoRunState.executed =>
+        'Outcome: ${result!.settlement!.outcome.name}. Settlement hash: ${result.settlement!.settlementHashHex.substring(0, 12)}..',
+      PluginDemoRunState.blocked => result!.blockingFacts.isEmpty
+          ? 'Consensus guard blocked execution.'
+          : 'Blocking reason: ${result.blockingFacts.first.label}',
+      PluginDemoRunState.noPairwisePaths =>
+        'Create at least one relationship so consensus checks can derive a pairwise path.',
+      null =>
+        'Runs a deterministic temperature dispute demo for tomorrow in Liechtenstein. Execution remains gated by consensus guard.',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121821),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF2B3846)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _PluginIconPlate(
+                icon: Icons.science_outlined,
+                accent: accent,
+                glow: accent.withAlpha(24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      summary,
+                      style: const TextStyle(
+                        color: Color(0xFF9FAABA),
+                        height: 1.4,
+                      ),
+                    ),
+                    if (result?.peerLabel != null ||
+                        result?.peerHex != null) ...[
+                      const SizedBox(height: 10),
+                      _InfoChip(
+                        icon: Icons.people_alt_outlined,
+                        label: 'Peer: ${result!.peerLabel ?? result.peerHex}',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: running ? null : onRunPressed,
+            icon: running
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.play_arrow_rounded),
+            label: Text(running ? 'Running demo' : 'Run Demo Settlement'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PluginGrid extends StatelessWidget {
   final List<Widget> children;
 
@@ -984,4 +1181,11 @@ class _BoundaryRule {
     required this.icon,
     required this.accent,
   });
+}
+
+String _dateOnlyUtc(DateTime utcDateTime) {
+  final year = utcDateTime.year.toString().padLeft(4, '0');
+  final month = utcDateTime.month.toString().padLeft(2, '0');
+  final day = utcDateTime.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
 }

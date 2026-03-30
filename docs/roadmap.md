@@ -419,6 +419,7 @@ Scope:
     - proposer/counterparty/draw outcomes
     - blocked execution when consensus is unresolved
   - Added plugin draft documentation for the first test smart-contract package (`docs/plugins/temperature_tomorrow_liechtenstein_test_plugin.md`).
+  - Added `PluginDemoContractRunnerService` + WASM Plugins screen `Run Demo Settlement` dry-run action so test-contract execution can be manually exercised via consensus guard without introducing wasm runtime execution yet.
 
 Definition of done:
 - Plugins extend transport capabilities without bypassing core rules or rewriting local truth.

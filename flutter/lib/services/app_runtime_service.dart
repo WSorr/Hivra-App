@@ -10,6 +10,7 @@ import 'invitation_intent_handler.dart';
 import 'ledger_view_service.dart';
 import 'manual_consensus_check_service.dart';
 import 'plugin_execution_guard_service.dart';
+import 'plugin_demo_contract_runner_service.dart';
 import 'relationship_service.dart';
 import 'settings_service.dart';
 import 'temperature_tomorrow_contract_service.dart';
@@ -78,6 +79,17 @@ class AppRuntimeService {
     final consensus = buildConsensusRuntimeService();
     return TemperatureTomorrowContractService(
       readSignable: consensus.signable,
+    );
+  }
+
+  PluginDemoContractRunnerService buildPluginDemoContractRunnerService() {
+    final consensus = buildConsensusRuntimeService();
+    final contract = TemperatureTomorrowContractService(
+      readSignable: consensus.signable,
+    );
+    return PluginDemoContractRunnerService(
+      readChecks: consensus.checks,
+      contractService: contract,
     );
   }
 
