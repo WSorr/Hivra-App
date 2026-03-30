@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'user_visible_data_directory_service.dart';
+import 'wasm_plugin_package_preflight_service.dart';
 
 class WasmPluginRecord {
   final String id;
@@ -46,11 +47,15 @@ class WasmPluginRecord {
 class WasmPluginRegistryService {
   static const String _registryFileName = 'registry.json';
   final UserVisibleDataDirectoryService _dataDirs;
+  final WasmPluginPackagePreflightService _preflight;
 
   const WasmPluginRegistryService({
     UserVisibleDataDirectoryService dataDirs =
         const UserVisibleDataDirectoryService(),
-  }) : _dataDirs = dataDirs;
+    WasmPluginPackagePreflightService preflight =
+        const WasmPluginPackagePreflightService(),
+  })  : _dataDirs = dataDirs,
+        _preflight = preflight;
 
   Future<Directory> pluginsDirectory({bool create = false}) async {
     return _dataDirs.pluginsDirectory(create: create);
@@ -92,6 +97,7 @@ class WasmPluginRegistryService {
       throw const FormatException(
           'Only .wasm or .zip plugin packages are supported');
     }
+    await _preflight.inspect(sourceFile);
 
     final pluginsDir = await pluginsDirectory(create: true);
     final id = DateTime.now().microsecondsSinceEpoch.toString();

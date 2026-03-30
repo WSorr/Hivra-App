@@ -88,7 +88,10 @@ void main() {
 
   test('install and remove plugin keeps registry and files in sync', () async {
     final sourceFile = File('${tempDocsDir.path}/demo_plugin.wasm');
-    await sourceFile.writeAsBytes(const <int>[0, 97, 115, 109], flush: true);
+    await sourceFile.writeAsBytes(
+      const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+      flush: true,
+    );
 
     final installed = await service.installPluginFromFile(sourceFile);
     expect(installed.originalFileName, 'demo_plugin.wasm');
