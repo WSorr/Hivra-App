@@ -92,7 +92,8 @@ Scope:
     - malformed envelopes/raw ledgers are rejected before persistence/index updates
   - Bootstrap source selection between `ledger.json` and backup is now deterministic by completeness:
     - when both sources are valid and owner-matching, the source with greater event count is selected
-    - equal event counts preserve `ledger.json` preference as stable tie-breaker
+    - when event counts are equal, newer tail timestamp is preferred
+    - if timestamp tie-break is unavailable/equal, `ledger.json` remains the stable fallback
 
 Definition of done:
 - A user can restore a capsule on a new machine without manual container surgery or hidden-path knowledge.

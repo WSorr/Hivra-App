@@ -238,6 +238,7 @@ class CapsuleRuntimeBootstrapService {
         source: source,
         json: jsonEncode(ledger),
         eventCount: events.length,
+        tailTimestamp: _extractTailTimestamp(events),
       );
     } catch (_) {
       return null;
@@ -257,8 +258,44 @@ class CapsuleRuntimeBootstrapService {
     if (ledger.eventCount > backup.eventCount) {
       return ledger;
     }
+    if (ledger.tailTimestamp != null &&
+        backup.tailTimestamp != null &&
+        ledger.tailTimestamp != backup.tailTimestamp) {
+      return (backup.tailTimestamp! > ledger.tailTimestamp!) ? backup : ledger;
+    }
     // Deterministic tie-breaker: prefer ledger.json on equal history length.
     return ledger.source == _LedgerSource.ledger ? ledger : backup;
+  }
+
+  int? _extractTailTimestamp(List<dynamic> events) {
+    int? tail;
+    for (final raw in events) {
+      if (raw is! Map) continue;
+      final event = Map<String, dynamic>.from(raw);
+      final ts = _parseTimestamp(event['timestamp']);
+      if (ts == null) continue;
+      if (tail == null || ts > tail) {
+        tail = ts;
+      }
+    }
+    return tail;
+  }
+
+  int? _parseTimestamp(dynamic raw) {
+    if (raw is int) return raw >= 0 ? raw : null;
+    if (raw is num) {
+      final value = raw.toInt();
+      return value >= 0 ? value : null;
+    }
+    if (raw is String) {
+      final text = raw.trim();
+      if (text.isEmpty) return null;
+      if (text.startsWith('0x') || text.startsWith('0X')) {
+        return int.tryParse(text.substring(2), radix: 16);
+      }
+      return int.tryParse(text);
+    }
+    return null;
   }
 
   List<int>? _parseBytes32Field(dynamic raw) {
@@ -300,10 +337,12 @@ class _LedgerCandidate {
   final _LedgerSource source;
   final String json;
   final int eventCount;
+  final int? tailTimestamp;
 
   const _LedgerCandidate({
     required this.source,
     required this.json,
     required this.eventCount,
+    required this.tailTimestamp,
   });
 }

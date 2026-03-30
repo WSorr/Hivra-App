@@ -70,6 +70,16 @@ void main() {
       });
     }
 
+    String ledgerWithEvents(
+      int ownerByte,
+      List<Map<String, dynamic>> events,
+    ) {
+      return jsonEncode(<String, dynamic>{
+        'owner': List<int>.filled(32, ownerByte),
+        'events': events,
+      });
+    }
+
     test('prefers ledger.json when both ledger and backup exist', () async {
       final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
       final backup = CapsuleBackupCodec.encodeBackupEnvelope(
@@ -139,6 +149,43 @@ void main() {
 
       expect(bootstrap, isNotNull);
       expect(bootstrap!.ledgerJson, equals(longLedger));
+    });
+
+    test(
+        'prefers newer tail timestamp when event counts are equal across ledger and backup',
+        () async {
+      final olderLedger = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+        <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+        <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
+      ]);
+      final newerBackupLedger = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+        <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+        <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 400},
+      ]);
+      final backup = CapsuleBackupCodec.encodeBackupEnvelope(
+        ledgerJson: newerBackupLedger,
+        isGenesis: false,
+        isNeste: true,
+      );
+      final service = CapsuleRuntimeBootstrapService(
+        _FakeCapsuleFileStore(
+          state: <String, dynamic>{
+            'isGenesis': true,
+            'isNeste': false,
+          },
+          ledgerJson: olderLedger,
+          backupJson: backup,
+        ),
+        _FakeCapsuleSeedStore(seed),
+      );
+
+      final bootstrap = await service.loadRuntimeBootstrap(
+        pubKeyHex,
+        bytesToHex: bytesToHex,
+      );
+
+      expect(bootstrap, isNotNull);
+      expect(bootstrap!.ledgerJson, equals(newerBackupLedger));
     });
 
     test('falls back to backup envelope when ledger.json is missing', () async {
