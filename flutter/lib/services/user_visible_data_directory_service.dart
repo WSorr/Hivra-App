@@ -127,15 +127,8 @@ class UserVisibleDataDirectoryService {
     try {
       final legacyRaw = await legacyFlatCards.readAsString();
       final canonicalRaw = await canonicalCards.readAsString();
-      final legacyDecoded = jsonDecode(legacyRaw);
-      final canonicalDecoded = jsonDecode(canonicalRaw);
-
-      final legacyMap = legacyDecoded is Map
-          ? Map<String, dynamic>.from(legacyDecoded)
-          : <String, dynamic>{};
-      final canonicalMap = canonicalDecoded is Map
-          ? Map<String, dynamic>.from(canonicalDecoded)
-          : <String, dynamic>{};
+      final legacyMap = _parseJsonMap(legacyRaw) ?? <String, dynamic>{};
+      final canonicalMap = _parseJsonMap(canonicalRaw) ?? <String, dynamic>{};
 
       for (final entry in legacyMap.entries) {
         canonicalMap.putIfAbsent(entry.key, () => entry.value);
@@ -152,6 +145,17 @@ class UserVisibleDataDirectoryService {
     return Directory(
       '$home/Library/Containers/$_legacyContainerBundleId/Data/Documents',
     );
+  }
+
+  Map<String, dynamic>? _parseJsonMap(String rawJson) {
+    try {
+      final decoded = jsonDecode(rawJson);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _mergeDirectory(Directory source, Directory target) async {
