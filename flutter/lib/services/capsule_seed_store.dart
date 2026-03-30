@@ -71,9 +71,8 @@ class CapsuleSeedStore {
     try {
       final raw = await file.readAsString();
       if (raw.trim().isEmpty) return;
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return;
-      final map = Map<String, dynamic>.from(decoded);
+      final map = _parseJsonMap(raw);
+      if (map == null) return;
       map.remove(pubKeyHex);
       await file.writeAsString(jsonEncode(map), flush: true);
     } catch (_) {
@@ -113,10 +112,7 @@ class CapsuleSeedStore {
       try {
         final raw = await file.readAsString();
         if (raw.trim().isNotEmpty) {
-          final decoded = jsonDecode(raw);
-          if (decoded is Map) {
-            map = Map<String, dynamic>.from(decoded);
-          }
+          map = _parseJsonMap(raw) ?? <String, dynamic>{};
         }
       } catch (_) {
         map = {};
@@ -133,10 +129,20 @@ class CapsuleSeedStore {
     try {
       final raw = await file.readAsString();
       if (raw.trim().isEmpty) return null;
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return null;
-      final map = Map<String, dynamic>.from(decoded);
+      final map = _parseJsonMap(raw);
+      if (map == null) return null;
       return map[pubKeyHex]?.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? _parseJsonMap(String rawJson) {
+    try {
+      final decoded = jsonDecode(rawJson);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      return null;
     } catch (_) {
       return null;
     }

@@ -322,6 +322,7 @@ Scope:
   - Recovery owner extraction now reuses shared ledger-root parsing (`LedgerViewSupport.exportLedgerRoot`) instead of local JSON decode branches.
   - Capsule persistence service now reuses a single JSON-map parse helper for index/seeds/contact-cards cleanup and backup-meta extraction instead of repeating per-call decode branches.
   - User-visible data migration path now reuses a shared JSON-map parser for legacy/canonical contact-card merge instead of duplicate decode branches.
+  - Capsule seed fallback storage now reuses a shared JSON-map parser for read/write/delete paths instead of repeated decode branches.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.
