@@ -221,6 +221,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     );
 
     if (confirm != true) return;
+    if (!mounted) return;
 
     final rejectDiagnostics = _buildRejectDiagnostics(invitation);
     unawaited(_uiLog.log('invitations.reject.plan', rejectDiagnostics));
@@ -302,6 +303,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     );
 
     if (confirm != true) return;
+    if (!mounted) return;
 
     setState(() {
       _processingId = invitation.id;
