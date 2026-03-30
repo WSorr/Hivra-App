@@ -11,6 +11,7 @@ import 'capsule_ledger_summary_parser.dart';
 import 'capsule_persistence_models.dart';
 import 'capsule_runtime_bootstrap_service.dart';
 import 'capsule_seed_store.dart';
+import 'ledger_view_support.dart';
 import 'user_visible_data_directory_service.dart';
 
 class CapsulePersistenceService {
@@ -28,6 +29,7 @@ class CapsulePersistenceService {
   final CapsuleIndexStore _indexStore = const CapsuleIndexStore();
   final CapsuleLedgerSummaryParser _summaryParser =
       const CapsuleLedgerSummaryParser();
+  final LedgerViewSupport _support = const LedgerViewSupport();
   final CapsuleSeedStore _seedStore = const CapsuleSeedStore();
   final UserVisibleDataDirectoryService _userVisibleDirs =
       const UserVisibleDataDirectoryService();
@@ -853,12 +855,9 @@ class CapsulePersistenceService {
     if (!await legacyLedger.exists()) return;
     try {
       final raw = await legacyLedger.readAsString();
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return;
-      final ledger = Map<String, dynamic>.from(decoded);
-      final ownerBytes = _summaryParser.parseBytesField(ledger['owner']);
-      if (ownerBytes == null) return;
-      final ownerHex = _bytesToHex(Uint8List.fromList(ownerBytes));
+      final ledger = _parseLedgerRoot(raw);
+      if (ledger == null) return;
+      final ownerHex = _ownerHexFromLedgerRoot(ledger);
       if (ownerHex != pubKeyHex) return;
     } catch (_) {
       return;
@@ -885,12 +884,9 @@ class CapsulePersistenceService {
 
     try {
       final raw = await legacyLedger.readAsString();
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return;
-      final ledger = Map<String, dynamic>.from(decoded);
-      final ownerBytes = _summaryParser.parseBytesField(ledger['owner']);
-      if (ownerBytes == null) return;
-      final ownerHex = _bytesToHex(Uint8List.fromList(ownerBytes));
+      final ledger = _parseLedgerRoot(raw);
+      if (ledger == null) return;
+      final ownerHex = _ownerHexFromLedgerRoot(ledger);
       if (ownerHex != pubKeyHex) return;
     } catch (_) {
       return;
@@ -1279,43 +1275,21 @@ class CapsulePersistenceService {
   }
 
   String? _extractOwnerHex(String ledgerJson) {
-    try {
-      final decoded = jsonDecode(ledgerJson);
-      if (decoded is! Map) return null;
-      final ledger = Map<String, dynamic>.from(decoded);
-      final ownerBytes = _summaryParser.parseBytesField(ledger['owner']);
-      if (ownerBytes == null || ownerBytes.length != 32) return null;
-      return _bytesToHex(Uint8List.fromList(ownerBytes));
-    } catch (_) {
-      return null;
-    }
+    final ledger = _parseLedgerRoot(ledgerJson);
+    if (ledger == null) return null;
+    return _ownerHexFromLedgerRoot(ledger);
   }
 
   int? _extractLedgerEventCount(String? ledgerJson) {
-    if (ledgerJson == null || ledgerJson.trim().isEmpty) return null;
-    try {
-      final decoded = jsonDecode(ledgerJson);
-      if (decoded is! Map) return null;
-      final root = Map<String, dynamic>.from(decoded);
-      final events = root['events'];
-      if (events is! List) return null;
-      return events.length;
-    } catch (_) {
-      return null;
-    }
+    final root = _parseLedgerRoot(ledgerJson);
+    if (root == null) return null;
+    return _support.events(root).length;
   }
 
   String? _extractLedgerHash(String? ledgerJson) {
-    if (ledgerJson == null || ledgerJson.trim().isEmpty) return null;
-    try {
-      final decoded = jsonDecode(ledgerJson);
-      if (decoded is! Map) return null;
-      final root = Map<String, dynamic>.from(decoded);
-      final hash = root['last_hash'];
-      return hash?.toString();
-    } catch (_) {
-      return null;
-    }
+    final root = _parseLedgerRoot(ledgerJson);
+    if (root == null) return null;
+    return root['last_hash']?.toString();
   }
 
   bool _isIncomingLedgerStale({
@@ -1367,6 +1341,16 @@ class CapsulePersistenceService {
     } catch (_) {
       return null;
     }
+  }
+
+  Map<String, dynamic>? _parseLedgerRoot(String? ledgerJson) {
+    return _support.exportLedgerRoot(ledgerJson);
+  }
+
+  String? _ownerHexFromLedgerRoot(Map<String, dynamic> ledger) {
+    final ownerBytes = _summaryParser.parseBytesField(ledger['owner']);
+    if (ownerBytes == null || ownerBytes.length != 32) return null;
+    return _bytesToHex(Uint8List.fromList(ownerBytes));
   }
 }
 
