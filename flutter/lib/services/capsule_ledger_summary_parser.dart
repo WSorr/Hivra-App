@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'capsule_persistence_models.dart';
@@ -17,11 +16,9 @@ class CapsuleLedgerSummaryParser {
       String json, String Function(Uint8List bytes) toHex) {
     if (json.trim().isEmpty) return CapsuleLedgerSummary.empty();
     try {
-      final decoded = jsonDecode(json);
-      if (decoded is! Map) return CapsuleLedgerSummary.empty();
-      final ledger = Map<String, dynamic>.from(decoded);
-      final eventsRaw = ledger['events'];
-      final events = eventsRaw is List ? eventsRaw : const [];
+      final ledger = _support.exportLedgerRoot(json);
+      if (ledger == null) return CapsuleLedgerSummary.empty();
+      final events = _support.events(ledger);
 
       final activeStartersById = <String, int>{};
       final activeRelationshipsByKey = <String, String>{};
