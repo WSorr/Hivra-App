@@ -2,7 +2,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/invitation.dart';
 import 'package:hivra_app/services/capsule_ledger_summary_parser.dart';
+import 'package:hivra_app/services/invitation_projection_service.dart';
+import 'package:hivra_app/services/ledger_view_support.dart';
+import 'package:hivra_app/services/relationship_projection_service.dart';
 
 void main() {
   group('CapsuleLedgerSummaryParser', () {
@@ -53,6 +57,55 @@ void main() {
       required int invitationByte,
     }) {
       return rep(invitationByte);
+    }
+
+    List<int> starterCreatedPayload({
+      required int starterByte,
+      required int kindByte,
+    }) {
+      return <int>[
+        ...rep(starterByte),
+        ...rep(0xee),
+        kindByte,
+        0,
+      ];
+    }
+
+    List<int> starterBurnedPayload({
+      required int starterByte,
+    }) {
+      return rep(starterByte);
+    }
+
+    List<int> relationshipEstablishedPayload({
+      required int peerByte,
+      required int ownStarterByte,
+      required int peerStarterByte,
+      required int kindByte,
+      required int invitationByte,
+      required int senderByte,
+      required int senderStarterByte,
+    }) {
+      return <int>[
+        ...rep(peerByte),
+        ...rep(ownStarterByte),
+        ...rep(peerStarterByte),
+        kindByte,
+        ...rep(invitationByte),
+        ...rep(senderByte),
+        kindByte,
+        ...rep(senderStarterByte),
+      ];
+    }
+
+    List<int> relationshipBrokenPayload({
+      required int peerByte,
+      required int ownStarterByte,
+    }) {
+      return <int>[
+        ...rep(peerByte),
+        ...rep(ownStarterByte),
+      ];
     }
 
     Map<String, dynamic> event({
@@ -162,6 +215,273 @@ void main() {
       expect(parser.parseBytesField(<dynamic>[1, 300]), isNull);
       expect(parser.parseBytesField(''), isNull);
       expect(parser.parseBytesField(42), isNull);
+    });
+
+    test(
+        'update safety fixture keeps counters stable and aligned with projections',
+        () {
+      const support = LedgerViewSupport();
+      const relationshipProjection = RelationshipProjectionService(support);
+      final self = rep(0xaa);
+      final peerA = rep(0xbb);
+      final peerB = rep(0xcc);
+      const t0 = 1890000000000;
+
+      final ledger = jsonEncode(<String, dynamic>{
+        'owner': self,
+        'last_hash': '0xabc123',
+        'events': <Map<String, dynamic>>[
+          event(
+            kind: 'StarterCreated',
+            payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
+            timestamp: t0 + 1,
+            signer: self,
+          ),
+          event(
+            kind: 'StarterCreated',
+            payload: starterCreatedPayload(starterByte: 0x22, kindByte: 2),
+            timestamp: t0 + 2,
+            signer: self,
+          ),
+          event(
+            kind: 'StarterCreated',
+            payload: starterCreatedPayload(starterByte: 0x23, kindByte: 3),
+            timestamp: t0 + 3,
+            signer: self,
+          ),
+          event(
+            kind: 'StarterCreated',
+            payload: starterCreatedPayload(starterByte: 0x24, kindByte: 4),
+            timestamp: t0 + 4,
+            signer: self,
+          ),
+          event(
+            kind: 'StarterBurned',
+            payload: starterBurnedPayload(starterByte: 0x22),
+            timestamp: t0 + 5,
+            signer: self,
+          ),
+          event(
+            kind: 'RelationshipEstablished',
+            payload: relationshipEstablishedPayload(
+              peerByte: 0xbb,
+              ownStarterByte: 0x21,
+              peerStarterByte: 0x31,
+              kindByte: 1,
+              invitationByte: 0x41,
+              senderByte: 0xbb,
+              senderStarterByte: 0x61,
+            ),
+            timestamp: t0 + 6,
+            signer: self,
+          ),
+          event(
+            kind: 'RelationshipEstablished',
+            payload: relationshipEstablishedPayload(
+              peerByte: 0xcc,
+              ownStarterByte: 0x23,
+              peerStarterByte: 0x32,
+              kindByte: 2,
+              invitationByte: 0x42,
+              senderByte: 0xcc,
+              senderStarterByte: 0x62,
+            ),
+            timestamp: t0 + 7,
+            signer: self,
+          ),
+          event(
+            kind: 'RelationshipBroken',
+            payload:
+                relationshipBrokenPayload(peerByte: 0xbb, ownStarterByte: 0x21),
+            timestamp: t0 + 8,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationSent',
+            payload: invitationSentPayload(
+              invitationByte: 0x51,
+              starterByte: 0x21,
+              toPubkey: peerA,
+              starterKindByte: 1,
+            ),
+            timestamp: t0 + 9,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationReceived',
+            payload: invitationSentPayload(
+              invitationByte: 0x52,
+              starterByte: 0x31,
+              toPubkey: self,
+              starterKindByte: 2,
+            ),
+            timestamp: t0 + 10,
+            signer: peerA,
+          ),
+          event(
+            kind: 'InvitationSent',
+            payload: invitationSentPayload(
+              invitationByte: 0x53,
+              starterByte: 0x23,
+              toPubkey: peerB,
+              starterKindByte: 3,
+            ),
+            timestamp: t0 + 11,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationAccepted',
+            payload: invitationAcceptedPayload(
+              invitationByte: 0x53,
+              fromByte: 0xcc,
+              createdStarterByte: 0x73,
+            ),
+            timestamp: t0 + 12,
+            signer: peerB,
+          ),
+          event(
+            kind: 'InvitationReceived',
+            payload: invitationSentPayload(
+              invitationByte: 0x54,
+              starterByte: 0x32,
+              toPubkey: self,
+              starterKindByte: 4,
+            ),
+            timestamp: t0 + 13,
+            signer: peerB,
+          ),
+          event(
+            kind: 'InvitationRejected',
+            payload: invitationRejectedPayload(invitationByte: 0x54, reason: 0),
+            timestamp: t0 + 14,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationSent',
+            payload: invitationSentPayload(
+              invitationByte: 0x55,
+              starterByte: 0x24,
+              toPubkey: peerA,
+            ),
+            timestamp: t0 + 15,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationExpired',
+            payload: invitationExpiredPayload(invitationByte: 0x55),
+            timestamp: t0 + 16,
+            signer: self,
+          ),
+        ],
+      });
+
+      final summaryA = parser.parse(ledger, toHex);
+      final summaryB = parser.parse(ledger, toHex);
+      final root = support.exportLedgerRoot(ledger)!;
+      final invitationProjection =
+          InvitationProjectionService.withOwnerKeyProvider(
+        () => Uint8List.fromList(self),
+        support,
+      );
+      final pendingFromProjection = invitationProjection
+          .loadInvitations(root)
+          .where((invitation) => invitation.status == InvitationStatus.pending)
+          .length;
+      final relationshipCountFromProjection = relationshipProjection
+          .loadRelationshipGroups(root)
+          .where((group) => group.isActive)
+          .length;
+
+      expect(summaryA.starterCount, equals(3));
+      expect(summaryA.relationshipCount, equals(1));
+      expect(summaryA.pendingInvitations, equals(2));
+      expect(summaryA.ledgerVersion, equals(16));
+      expect(summaryA.ledgerHashHex, equals('abc123'));
+
+      expect(summaryB.starterCount, equals(summaryA.starterCount));
+      expect(summaryB.relationshipCount, equals(summaryA.relationshipCount));
+      expect(summaryB.pendingInvitations, equals(summaryA.pendingInvitations));
+      expect(summaryB.ledgerVersion, equals(summaryA.ledgerVersion));
+      expect(summaryB.ledgerHashHex, equals(summaryA.ledgerHashHex));
+
+      expect(summaryA.pendingInvitations, equals(pendingFromProjection));
+      expect(
+        summaryA.relationshipCount,
+        equals(relationshipCountFromProjection),
+      );
+    });
+
+    test(
+        'resolved invitations do not resurrect as pending after replayed offer events',
+        () {
+      final self = rep(0xaa);
+      final peer = rep(0xbb);
+      const t0 = 1890001000000;
+
+      final ledger = jsonEncode(<String, dynamic>{
+        'owner': self,
+        'events': <Map<String, dynamic>>[
+          event(
+            kind: 'InvitationSent',
+            payload: invitationSentPayload(
+              invitationByte: 0x61,
+              starterByte: 0x21,
+              toPubkey: peer,
+            ),
+            timestamp: t0 + 1,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationAccepted',
+            payload: invitationAcceptedPayload(
+              invitationByte: 0x61,
+              fromByte: 0xbb,
+              createdStarterByte: 0x71,
+            ),
+            timestamp: t0 + 2,
+            signer: peer,
+          ),
+          event(
+            kind: 'InvitationSent',
+            payload: invitationSentPayload(
+              invitationByte: 0x61,
+              starterByte: 0x21,
+              toPubkey: peer,
+            ),
+            timestamp: t0 + 3,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationReceived',
+            payload: invitationSentPayload(
+              invitationByte: 0x62,
+              starterByte: 0x31,
+              toPubkey: self,
+            ),
+            timestamp: t0 + 4,
+            signer: peer,
+          ),
+          event(
+            kind: 'InvitationRejected',
+            payload: invitationRejectedPayload(invitationByte: 0x62),
+            timestamp: t0 + 5,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationReceived',
+            payload: invitationSentPayload(
+              invitationByte: 0x62,
+              starterByte: 0x31,
+              toPubkey: self,
+            ),
+            timestamp: t0 + 6,
+            signer: peer,
+          ),
+        ],
+      });
+
+      final summary = parser.parse(ledger, toHex);
+      expect(summary.pendingInvitations, equals(0));
     });
   });
 }

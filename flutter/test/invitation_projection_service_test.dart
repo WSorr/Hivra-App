@@ -59,6 +59,9 @@ Map<String, dynamic> _event({
   };
 }
 
+int _futureBaseTimestampMs() =>
+    DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch;
+
 void main() {
   group('InvitationProjectionService', () {
     const support = LedgerViewSupport();
@@ -77,6 +80,7 @@ void main() {
         () {
       final invitationId = _bytes32(11);
       final starterId = _bytes32(31);
+      final t0 = _futureBaseTimestampMs();
       final service = serviceForSelf(self);
 
       final invitations = service.loadInvitations(<String, dynamic>{
@@ -90,7 +94,7 @@ void main() {
               kindByte: 0,
             ),
             signer: self,
-            timestamp: 1774827000000,
+            timestamp: t0 + 1,
           ),
         ],
       });
@@ -105,6 +109,7 @@ void main() {
         () {
       final invitationId = _bytes32(12);
       final starterId = _bytes32(32);
+      final t0 = _futureBaseTimestampMs();
       final service = serviceForSelf(self);
 
       final invitations = service.loadInvitations(<String, dynamic>{
@@ -118,7 +123,7 @@ void main() {
               kindByte: 1,
             ),
             signer: peer,
-            timestamp: 1774827001000,
+            timestamp: t0 + 1,
           ),
         ],
       });
@@ -132,6 +137,7 @@ void main() {
     test('keeps invitation rejected after duplicate incoming offer replay', () {
       final invitationId = _bytes32(13);
       final starterId = _bytes32(33);
+      final t0 = _futureBaseTimestampMs();
       final service = serviceForSelf(self);
 
       final invitations = service.loadInvitations(<String, dynamic>{
@@ -145,13 +151,13 @@ void main() {
               kindByte: 2,
             ),
             signer: peer,
-            timestamp: 1774827002000,
+            timestamp: t0 + 1,
           ),
           _event(
             kind: 'InvitationRejected',
             payload: _rejectedPayload(invitationId: invitationId, reason: 0),
             signer: self,
-            timestamp: 1774827003000,
+            timestamp: t0 + 2,
           ),
           _event(
             kind: 'InvitationReceived',
@@ -162,7 +168,7 @@ void main() {
               kindByte: 2,
             ),
             signer: peer,
-            timestamp: 1774827004000,
+            timestamp: t0 + 3,
           ),
         ],
       });
@@ -177,6 +183,7 @@ void main() {
       final invitationId = _bytes32(14);
       final starterId = _bytes32(34);
       final createdStarterId = _bytes32(54);
+      final t0 = _futureBaseTimestampMs();
       final service = serviceForSelf(self);
 
       final invitations = service.loadInvitations(<String, dynamic>{
@@ -190,7 +197,7 @@ void main() {
               kindByte: 3,
             ),
             signer: peer,
-            timestamp: 1774827005000,
+            timestamp: t0 + 1,
           ),
           _event(
             kind: 'InvitationAccepted',
@@ -200,13 +207,13 @@ void main() {
               fromPubkey: peer,
             ),
             signer: self,
-            timestamp: 1774827006000,
+            timestamp: t0 + 2,
           ),
           _event(
             kind: 'InvitationRejected',
             payload: _rejectedPayload(invitationId: invitationId, reason: 0),
             signer: self,
-            timestamp: 1774827007000,
+            timestamp: t0 + 3,
           ),
         ],
       });
@@ -219,6 +226,7 @@ void main() {
       final invitationId = _bytes32(15);
       final starterId = _bytes32(35);
       final createdStarterId = _bytes32(55);
+      final t0 = _futureBaseTimestampMs();
       final service = serviceForSelf(self);
 
       final invitations = service.loadInvitations(<String, dynamic>{
@@ -232,7 +240,7 @@ void main() {
               kindByte: 4,
             ),
             signer: self,
-            timestamp: 1774827008000,
+            timestamp: t0 + 1,
           ),
           _event(
             kind: 'InvitationAccepted',
@@ -242,7 +250,7 @@ void main() {
               fromPubkey: peer,
             ),
             signer: peer,
-            timestamp: 1774827009000,
+            timestamp: t0 + 2,
           ),
         ],
       });

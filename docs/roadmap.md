@@ -235,6 +235,10 @@ Current progress:
 - Added persistence safety coverage for capsule index active-selection:
   - active capsule survives index write/read roundtrip
   - stale `active` pointers are sanitized when the referenced capsule entry is absent
+- Added update-safety projection fixture coverage for the same-ledger reconstruction path:
+  - repeated parse of the same `ledger.json` keeps starter/relationship/pending counters stable
+  - summary pending/relationship counters stay aligned with shared invitation/relationship projection services
+  - replayed offer events after terminal accept/reject remain non-pending (no pending resurrection)
 
 Required conditions before treating updates as safe:
 - The same persisted `ledger.json` reconstructs the same:
