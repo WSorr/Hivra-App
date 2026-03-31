@@ -22,6 +22,28 @@ WIDGET_IMPORTS="$(
 UTIL_IMPORTS="$(
   rg -n "import .*ffi/hivra_bindings.dart" "$ROOT/flutter/lib/utils" -S || true
 )"
+SERVICE_IMPORTS="$(
+  rg -n "import .*ffi/hivra_bindings.dart" "$ROOT/flutter/lib/services" -S || true
+)"
+
+declare -a SERVICE_ALLOWLIST=(
+  "$ROOT/flutter/lib/services/app_runtime_service.dart"
+  "$ROOT/flutter/lib/services/backup_service.dart"
+  "$ROOT/flutter/lib/services/capsule_address_service.dart"
+  "$ROOT/flutter/lib/services/capsule_file_store.dart"
+  "$ROOT/flutter/lib/services/capsule_persistence_service.dart"
+  "$ROOT/flutter/lib/services/capsule_runtime_bootstrap_service.dart"
+  "$ROOT/flutter/lib/services/capsule_selector_service.dart"
+  "$ROOT/flutter/lib/services/capsule_state_manager.dart"
+  "$ROOT/flutter/lib/services/first_launch_service.dart"
+  "$ROOT/flutter/lib/services/invitation_actions_service.dart"
+  "$ROOT/flutter/lib/services/invitation_projection_service.dart"
+  "$ROOT/flutter/lib/services/ledger_view_service.dart"
+  "$ROOT/flutter/lib/services/recovery_service.dart"
+  "$ROOT/flutter/lib/services/relationship_service.dart"
+  "$ROOT/flutter/lib/services/settings_service.dart"
+)
+MAX_SERVICE_IMPORTS=15
 
 if [ -n "$SCREEN_IMPORTS" ]; then
   fail "screens must not import ffi/hivra_bindings.dart directly"
@@ -49,6 +71,38 @@ if [ -n "$UTIL_IMPORTS" ]; then
   echo "$UTIL_IMPORTS"
 else
   pass "no direct HivraBindings imports in flutter/lib/utils"
+fi
+
+if [ -n "$SERVICE_IMPORTS" ]; then
+  SERVICE_IMPORT_COUNT="$(printf '%s\n' "$SERVICE_IMPORTS" | sed '/^\s*$/d' | wc -l | tr -d ' ')"
+  if [ "${SERVICE_IMPORT_COUNT}" -gt "${MAX_SERVICE_IMPORTS}" ]; then
+    fail "services exceeded direct HivraBindings import budget (${SERVICE_IMPORT_COUNT} > ${MAX_SERVICE_IMPORTS})"
+    printf '%s\n' "$SERVICE_IMPORTS"
+  else
+    pass "service-layer direct HivraBindings imports stay within budget (${SERVICE_IMPORT_COUNT}/${MAX_SERVICE_IMPORTS})"
+  fi
+
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    path_part="${line%%:*}"
+    if [[ "$path_part" = /* ]]; then
+      full_path="$path_part"
+    else
+      full_path="$ROOT/$path_part"
+    fi
+    allowed=0
+    for item in "${SERVICE_ALLOWLIST[@]}"; do
+      if [ "$full_path" = "$item" ]; then
+        allowed=1
+        break
+      fi
+    done
+    if [ "$allowed" -ne 1 ]; then
+      fail "service has direct HivraBindings import outside allowlist: $path_part"
+    fi
+  done <<< "$SERVICE_IMPORTS"
+else
+  pass "no direct HivraBindings imports in flutter/lib/services"
 fi
 
 exit "$STATUS"
