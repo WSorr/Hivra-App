@@ -109,6 +109,31 @@ void main() {
     );
   });
 
+  test('rejects unknown capability in manifest', () async {
+    final file = File('${tempDir.path}/unknown_capability.zip');
+    await file.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'capabilities': ['oracle.read.untrusted_source'],
+            },
+          ),
+          'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+        },
+      ),
+      flush: true,
+    );
+
+    expect(
+      () => service.inspect(file),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
   test('rejects zip package without manifest', () async {
     final file = File('${tempDir.path}/missing_manifest.zip');
     await file.writeAsBytes(

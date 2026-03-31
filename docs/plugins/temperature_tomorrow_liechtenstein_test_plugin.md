@@ -44,6 +44,15 @@ Status:
   - `recorded_at_utc` (ISO UTC)
   - `observed_deci_celsius` (integer)
 
+## Capability Model (v1 Allowlist)
+
+Current install-time capability allowlist:
+- `consensus_guard.read`
+- `oracle.read.mock_weather`
+- `oracle.read.temperature.li`
+
+Unknown capabilities are rejected during package preflight.
+
 ## Settlement Rule
 
 Given:

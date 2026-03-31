@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 
+import 'wasm_plugin_capability_policy_service.dart';
+
 class WasmPluginPackagePreflight {
   final String packageKind;
   final String? pluginId;
@@ -19,7 +21,12 @@ class WasmPluginPackagePreflight {
 }
 
 class WasmPluginPackagePreflightService {
-  const WasmPluginPackagePreflightService();
+  final WasmPluginCapabilityPolicyService _capabilityPolicy;
+
+  const WasmPluginPackagePreflightService({
+    WasmPluginCapabilityPolicyService capabilityPolicy =
+        const WasmPluginCapabilityPolicyService(),
+  }) : _capabilityPolicy = capabilityPolicy;
 
   Future<WasmPluginPackagePreflight> inspect(File sourceFile) async {
     final fileName = _fileNameOnly(sourceFile.path);
@@ -132,7 +139,7 @@ class WasmPluginPackagePreflightService {
       unique.add(value);
     }
     final normalized = unique.toList()..sort();
-    return normalized;
+    return _capabilityPolicy.normalizeAndValidate(normalized);
   }
 
   List<int> _archiveFileBytes(ArchiveFile file) {
