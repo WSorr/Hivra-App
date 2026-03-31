@@ -52,6 +52,7 @@ INSPECTOR="$ROOT/flutter/lib/screens/ledger_inspector_screen.dart"
 PAIRWISE="$ROOT/flutter/lib/services/pairwise_snapshot_service.dart"
 SUPPORT="$ROOT/flutter/lib/services/ledger_view_support.dart"
 CONSENSUS="$ROOT/flutter/lib/services/consensus_processor.dart"
+BINDINGS="$ROOT/flutter/lib/ffi/hivra_bindings.dart"
 
 # 1) Dependency law for transport adapter.
 require_absent "$TRANSPORT_TOML" 'hivra-core' \
@@ -141,5 +142,11 @@ require_present "$SERVICES/consensus_processor.dart" 'class ConsensusProcessor' 
   "consensus processor boundary exists"
 require_present "$SERVICES/consensus_runtime_service.dart" 'class ConsensusRuntimeService' \
   "consensus runtime facade exists"
+
+# 9) Ledger-derived slot projection contract: no legacy per-slot FFI probes in Flutter.
+require_absent "$BINDINGS" 'starterExists|getStarterId|getStarterType' \
+  "flutter bindings do not expose legacy per-slot starter probes"
+require_absent "$BINDINGS" 'hivra_starter_get_id|hivra_starter_get_type|hivra_starter_exists' \
+  "flutter bindings do not bind legacy starter FFI symbols"
 
 exit "$STATUS"

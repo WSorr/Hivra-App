@@ -475,6 +475,8 @@ When tradeoffs are unclear, prefer:
   - Core already provides deterministic slot projection via `SlotLayout::from_ledger` and `CapsuleState::from_capsule`.
   - Legacy per-slot Flutter FFI probes (`starterExists/getStarterId/getStarterType`) have been removed from the active read-path and bindings surface.
   - Keep slot projection sourced from the same ledger-derived capsule state path used by core.
+  - Current progress:
+    - Architecture contract gate now enforces absence of legacy per-slot starter probes in Flutter bindings (`starterExists/getStarterId/getStarterType` and `hivra_starter_get_*` symbols), preventing accidental rollback to slot-side FFI reads.
 
 - `9.7 Local Relationship Sovereignty And Pairwise Consensus`
   - Each capsule remains sovereign over its own relationship truth: one side may append `RelationshipBroken` locally without waiting for remote approval.
