@@ -35,7 +35,6 @@ declare -a SERVICE_ALLOWLIST=(
   "$ROOT/flutter/lib/services/capsule_runtime_bootstrap_service.dart"
   "$ROOT/flutter/lib/services/capsule_selector_service.dart"
   "$ROOT/flutter/lib/services/capsule_state_manager.dart"
-  "$ROOT/flutter/lib/services/first_launch_service.dart"
   "$ROOT/flutter/lib/services/invitation_actions_service.dart"
   "$ROOT/flutter/lib/services/invitation_projection_service.dart"
   "$ROOT/flutter/lib/services/ledger_view_service.dart"
@@ -43,7 +42,7 @@ declare -a SERVICE_ALLOWLIST=(
   "$ROOT/flutter/lib/services/relationship_service.dart"
   "$ROOT/flutter/lib/services/settings_service.dart"
 )
-MAX_SERVICE_IMPORTS=15
+MAX_SERVICE_IMPORTS=14
 
 if [ -n "$SCREEN_IMPORTS" ]; then
   fail "screens must not import ffi/hivra_bindings.dart directly"

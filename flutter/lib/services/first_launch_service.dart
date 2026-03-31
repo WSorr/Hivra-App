@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import '../ffi/hivra_bindings.dart';
+import '../ffi/capsule_draft_runtime.dart';
 
 class CreateCapsuleDraftResult {
   final bool isSuccess;
@@ -34,19 +34,19 @@ class CreateCapsuleDraftResult {
 }
 
 class FirstLaunchService {
-  final HivraBindings _hivra;
+  final CapsuleDraftRuntime _runtime;
 
-  FirstLaunchService([HivraBindings? hivra]) : _hivra = hivra ?? HivraBindings();
+  FirstLaunchService([CapsuleDraftRuntime? runtime])
+      : _runtime = runtime ?? HivraCapsuleDraftRuntime();
 
   CreateCapsuleDraftResult createCapsuleDraft(String type) {
     try {
-      final seed = _hivra.generateRandomSeed();
+      final seed = _runtime.generateRandomSeed();
       final isGenesis = type == 'genesis';
-      final error = _hivra.createCapsuleError(
+      final error = _runtime.createCapsuleError(
         seed,
         isNeste: true,
         isGenesis: isGenesis,
-        ownerMode: HivraBindings.rootOwnerMode,
       );
       if (error != null) {
         return CreateCapsuleDraftResult.failure(error);

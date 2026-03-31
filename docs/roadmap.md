@@ -532,7 +532,8 @@ When tradeoffs are unclear, prefer:
     - `7` services import `HivraBindings` directly
   - Current snapshot:
     - `0` screens import `HivraBindings` directly
-    - `15` services import `HivraBindings` directly (frozen as explicit allowlist for current boundary)
+    - `14` services import `HivraBindings` directly (explicit allowlist in review gate)
+    - `FirstLaunchService` no longer imports `HivraBindings`; it now consumes `CapsuleDraftRuntime` boundary with `HivraCapsuleDraftRuntime` adapter at FFI layer
     - UI entrypoint `main.dart` no longer imports `HivraBindings` directly
     - review gate also protects `widgets/` and `utils/` from direct `HivraBindings` imports
     - `tools/review/ui_ffi_boundary_gate.sh` now enforces a service-level import budget and fails if new service files add direct `HivraBindings` ownership outside the allowlist
