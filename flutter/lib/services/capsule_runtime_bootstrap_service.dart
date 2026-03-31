@@ -48,8 +48,8 @@ class CapsuleRuntimeBootstrapService {
 
     final dir = await _fileStore.capsuleDirForHex(pubKeyHex, create: true);
     final state = await _fileStore.readState(dir);
-    final isGenesis = state?['isGenesis'] == true;
-    final isNeste = state?['isNeste'] != false;
+    final stateGenesis = _stateGenesis(state);
+    final stateNeste = _stateNeste(state);
 
     final ledgerCandidate = _ledgerCandidateForCapsule(
       await _fileStore.readLedger(dir),
@@ -72,8 +72,18 @@ class CapsuleRuntimeBootstrapService {
       ledgerCandidate,
       backupCandidate,
     );
+    final primaryLedgerRoot = orderedCandidates.isNotEmpty
+        ? _parseLedgerRoot(orderedCandidates.first.json)
+        : null;
     final ledgerJson =
         orderedCandidates.isNotEmpty ? orderedCandidates.first.json : null;
+    final isGenesis =
+        _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
+            stateGenesis ??
+            false;
+    final isNeste = _support.inferNesteFromLedgerRoot(primaryLedgerRoot) ??
+        stateNeste ??
+        true;
 
     return CapsuleRuntimeBootstrap(
       pubKeyHex: pubKeyHex,
@@ -101,9 +111,15 @@ class CapsuleRuntimeBootstrapService {
       create: false,
     );
     final state = await _fileStore.readState(dir);
-    final isGenesis = state?['isGenesis'] == true;
-    final isNeste = state?['isNeste'] != false;
+    final stateGenesis = _stateGenesis(state);
+    final stateNeste = _stateNeste(state);
     final ledgerJson = hivra.exportLedger();
+    final ledgerRoot = _parseLedgerRoot(ledgerJson);
+    final isGenesis = _support.inferGenesisFromLedgerRoot(ledgerRoot) ??
+        stateGenesis ??
+        false;
+    final isNeste =
+        _support.inferNesteFromLedgerRoot(ledgerRoot) ?? stateNeste ?? true;
     final runtimeOwner = hivra.capsuleRuntimeOwnerPublicKey();
     final rootPubKey = hivra.capsuleRootPublicKey();
     final runtimeHex = runtimeOwner != null && runtimeOwner.length == 32
@@ -152,19 +168,6 @@ class CapsuleRuntimeBootstrapService {
 
     final dir = await _fileStore.capsuleDirForHex(pubKeyHex, create: true);
     final state = await _fileStore.readState(dir);
-    final isGenesis = state?['isGenesis'] == true;
-    final isNeste = state?['isNeste'] != false;
-    if (!hivra.createCapsule(
-      seed,
-      isGenesis: isGenesis,
-      isNeste: isNeste,
-      ownerMode: identityMode == 'legacy_nostr_owner'
-          ? HivraBindings.legacyNostrOwnerMode
-          : HivraBindings.rootOwnerMode,
-    )) {
-      return false;
-    }
-
     final storedLedgerJson = await _fileStore.readLedger(dir);
     final ledgerCandidate = _ledgerCandidateForCapsule(
       storedLedgerJson,
@@ -191,6 +194,27 @@ class CapsuleRuntimeBootstrapService {
       ledgerCandidate,
       backupCandidate,
     );
+    final primaryLedgerRoot = orderedCandidates.isNotEmpty
+        ? _parseLedgerRoot(orderedCandidates.first.json)
+        : null;
+    final isGenesis =
+        _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
+            _stateGenesis(state) ??
+            false;
+    final isNeste = _support.inferNesteFromLedgerRoot(primaryLedgerRoot) ??
+        _stateNeste(state) ??
+        true;
+    if (!hivra.createCapsule(
+      seed,
+      isGenesis: isGenesis,
+      isNeste: isNeste,
+      ownerMode: identityMode == 'legacy_nostr_owner'
+          ? HivraBindings.legacyNostrOwnerMode
+          : HivraBindings.rootOwnerMode,
+    )) {
+      return false;
+    }
+
     for (final candidate in orderedCandidates) {
       if (!hivra.importLedger(candidate.json)) {
         continue;
@@ -330,6 +354,16 @@ class CapsuleRuntimeBootstrapService {
 
   Map<String, dynamic>? _parseLedgerRoot(String? ledgerJson) {
     return _support.exportLedgerRoot(ledgerJson);
+  }
+
+  bool? _stateGenesis(Map<String, dynamic>? state) {
+    final raw = state?['isGenesis'];
+    return raw is bool ? raw : null;
+  }
+
+  bool? _stateNeste(Map<String, dynamic>? state) {
+    final raw = state?['isNeste'];
+    return raw is bool ? raw : null;
   }
 }
 

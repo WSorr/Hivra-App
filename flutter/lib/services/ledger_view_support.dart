@@ -18,6 +18,28 @@ class LedgerViewSupport {
   }
 
   bool? inferGenesisFromLedgerRoot(Map<String, dynamic>? root) {
+    final capsuleCreatedPayload = _capsuleCreatedPayload(root);
+    if (capsuleCreatedPayload == null || capsuleCreatedPayload.length < 2) {
+      return null;
+    }
+    final capsuleType = capsuleCreatedPayload[1];
+    if (capsuleType == 1) return true;
+    if (capsuleType == 0) return false;
+    return null;
+  }
+
+  bool? inferNesteFromLedgerRoot(Map<String, dynamic>? root) {
+    final capsuleCreatedPayload = _capsuleCreatedPayload(root);
+    if (capsuleCreatedPayload == null || capsuleCreatedPayload.isEmpty) {
+      return null;
+    }
+    final network = capsuleCreatedPayload[0];
+    if (network == 1) return true;
+    if (network == 0) return false;
+    return null;
+  }
+
+  Uint8List? _capsuleCreatedPayload(Map<String, dynamic>? root) {
     if (root == null) return null;
     for (final eventRaw in events(root)) {
       if (eventRaw is! Map) continue;
@@ -25,11 +47,8 @@ class LedgerViewSupport {
       if (kindCode(event['kind']) != 0) continue;
 
       final payload = payloadBytes(event['payload']);
-      if (payload.length < 2) return null;
-
-      final capsuleType = payload[1];
-      if (capsuleType == 1) return true;
-      if (capsuleType == 0) return false;
+      if (payload.isEmpty) return null;
+      return payload;
     }
     return null;
   }

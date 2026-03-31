@@ -92,6 +92,23 @@ void main() {
       });
     }
 
+    String ledgerWithCapsuleCreated({
+      required int ownerByte,
+      required int network,
+      required int capsuleType,
+    }) {
+      return jsonEncode(<String, dynamic>{
+        'owner': List<int>.filled(32, ownerByte),
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 'CapsuleCreated',
+            'payload': <int>[network, capsuleType],
+          },
+          <String, dynamic>{'kind': 'InvitationSent'},
+        ],
+      });
+    }
+
     test('prefers ledger.json when both ledger and backup exist', () async {
       final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
       final backupLedger =
@@ -273,6 +290,58 @@ void main() {
       expect(bootstrap, isNotNull);
       expect(bootstrap!.ledgerJson, equals(ledger));
       expect(bootstrap.ledgerImportCandidates, equals(<String>[ledger]));
+    });
+
+    test('derives capsule flags from ledger when state flags are missing',
+        () async {
+      final ledger = ledgerWithCapsuleCreated(
+        ownerByte: 0xaa,
+        network: 1,
+        capsuleType: 1,
+      );
+      final service = CapsuleRuntimeBootstrapService(
+        _FakeCapsuleFileStore(
+          state: const <String, dynamic>{},
+          ledgerJson: ledger,
+        ),
+        _FakeCapsuleSeedStore(seed),
+      );
+
+      final bootstrap = await service.loadRuntimeBootstrap(
+        pubKeyHex,
+        bytesToHex: bytesToHex,
+      );
+
+      expect(bootstrap, isNotNull);
+      expect(bootstrap!.isGenesis, isTrue);
+      expect(bootstrap.isNeste, isTrue);
+    });
+
+    test('prefers ledger capsule-created flags over conflicting state', () async {
+      final ledger = ledgerWithCapsuleCreated(
+        ownerByte: 0xaa,
+        network: 0,
+        capsuleType: 0,
+      );
+      final service = CapsuleRuntimeBootstrapService(
+        _FakeCapsuleFileStore(
+          state: <String, dynamic>{
+            'isGenesis': true,
+            'isNeste': true,
+          },
+          ledgerJson: ledger,
+        ),
+        _FakeCapsuleSeedStore(seed),
+      );
+
+      final bootstrap = await service.loadRuntimeBootstrap(
+        pubKeyHex,
+        bytesToHex: bytesToHex,
+      );
+
+      expect(bootstrap, isNotNull);
+      expect(bootstrap!.isGenesis, isFalse);
+      expect(bootstrap.isNeste, isFalse);
     });
 
     test('returns null when no seed is available', () async {

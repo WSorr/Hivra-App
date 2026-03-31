@@ -114,6 +114,62 @@ void main() {
     });
   });
 
+  group('LedgerViewSupport.inferNesteFromLedgerRoot', () {
+    const support = LedgerViewSupport();
+
+    test('returns true when CapsuleCreated payload marks NESTE network', () {
+      final root = <String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 'CapsuleCreated',
+            'payload': <int>[1, 1],
+          },
+        ],
+      };
+
+      expect(support.inferNesteFromLedgerRoot(root), isTrue);
+    });
+
+    test('returns false when CapsuleCreated payload marks HOOD network', () {
+      final root = <String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 0,
+            'payload': <int>[0, 1],
+          },
+        ],
+      };
+
+      expect(support.inferNesteFromLedgerRoot(root), isFalse);
+    });
+
+    test('returns null when capsule-created payload is malformed', () {
+      final root = <String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 'CapsuleCreated',
+            'payload': <int>[],
+          },
+        ],
+      };
+
+      expect(support.inferNesteFromLedgerRoot(root), isNull);
+    });
+
+    test('returns null when ledger has no capsule-created event', () {
+      final root = <String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 'InvitationSent',
+            'payload': <int>[1, 1]
+          },
+        ],
+      };
+
+      expect(support.inferNesteFromLedgerRoot(root), isNull);
+    });
+  });
+
   group('LedgerViewSupport.relationship payload compatibility', () {
     const support = LedgerViewSupport();
 
