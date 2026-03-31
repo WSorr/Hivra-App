@@ -14,6 +14,7 @@ import 'plugin_demo_contract_runner_service.dart';
 import 'relationship_service.dart';
 import 'settings_service.dart';
 import 'temperature_tomorrow_contract_service.dart';
+import 'plugin_host_api_service.dart';
 
 class AppRuntimeService {
   final HivraBindings _hivra;
@@ -90,6 +91,13 @@ class AppRuntimeService {
     return PluginDemoContractRunnerService(
       readChecks: consensus.checks,
       contractService: contract,
+    );
+  }
+
+  PluginHostApiService buildPluginHostApiService() {
+    final demoRunner = buildPluginDemoContractRunnerService();
+    return PluginHostApiService(
+      runTemperatureDemo: demoRunner.runTemperatureTomorrowDemo,
     );
   }
 

@@ -423,6 +423,8 @@ Scope:
   - Added package-install preflight validation (`WasmPluginPackagePreflightService`) for `.wasm` magic/version and `.zip` manifest/module shape, wired into `WasmPluginRegistryService.installPluginFromFile` with regression coverage for malformed packages.
   - Plugin install path now carries manifest metadata (`pluginId`, `contractKind`, `capabilities`) into the local registry model so capability/contract inspection is available before wasm runtime execution exists.
   - Added capability policy boundary (`WasmPluginCapabilityPolicyService`) and wired preflight to reject unknown manifest capabilities at install-time.
+  - Added deterministic `PluginHostApiService` request/response boundary (`executed` / `blocked` / `rejected`) with response hashing and guard-gated temperature contract execution as Host API v1 (no wasm runtime execution yet).
+  - Added host API v1 documentation (`docs/plugins/plugin_host_api_v1.md`) and regression coverage for deterministic hash, blocked guard path, unsupported plugin/method, and invalid-args rejection.
 
 Definition of done:
 - Plugins extend transport capabilities without bypassing core rules or rewriting local truth.
