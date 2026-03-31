@@ -373,5 +373,121 @@ void main() {
       expect(previews.first.peerHex, equals(hex(peerRoot)));
       expect(previews.first.canonicalJson.contains(hex(peerRoot)), isTrue);
     });
+
+    test(
+        'relationship break blocks only affected pair while other pairs stay signable',
+        () {
+      final localTransport = Uint8List.fromList(bytes32(90));
+
+      final invitationA = Uint8List.fromList(bytes32(91));
+      final ownStarterA = Uint8List.fromList(bytes32(92));
+      final peerTransportA = Uint8List.fromList(bytes32(93));
+      final peerRootA = Uint8List.fromList(bytes32(94));
+      final peerStarterA = Uint8List.fromList(bytes32(95));
+      final senderA = Uint8List.fromList(bytes32(96));
+      final senderStarterA = Uint8List.fromList(bytes32(97));
+
+      final invitationB = Uint8List.fromList(bytes32(101));
+      final ownStarterB = Uint8List.fromList(bytes32(102));
+      final peerTransportB = Uint8List.fromList(bytes32(103));
+      final peerRootB = Uint8List.fromList(bytes32(104));
+      final peerStarterB = Uint8List.fromList(bytes32(105));
+      final senderB = Uint8List.fromList(bytes32(106));
+      final senderStarterB = Uint8List.fromList(bytes32(107));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationA,
+            ...ownStarterA,
+            ...peerTransportA,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransportA,
+            ...ownStarterA,
+            ...peerStarterA,
+            1,
+            ...invitationA,
+            ...senderA,
+            1,
+            ...senderStarterA,
+            ...peerRootA,
+            ...bytes32(98),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationA,
+            ...bytes32(99),
+            ...bytes32(100),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationB,
+            ...ownStarterB,
+            ...peerTransportB,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransportB,
+            ...ownStarterB,
+            ...peerStarterB,
+            1,
+            ...invitationB,
+            ...senderB,
+            1,
+            ...senderStarterB,
+            ...peerRootB,
+            ...bytes32(108),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationB,
+            ...bytes32(109),
+            ...bytes32(110),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...peerTransportA,
+            ...ownStarterA,
+            ...peerRootA,
+          ],
+        },
+      ];
+
+      final signableA = processor.signable(
+        events,
+        localTransport,
+        peerHex: hex(peerRootA),
+      );
+      final signableB = processor.signable(
+        events,
+        localTransport,
+        peerHex: hex(peerRootB),
+      );
+
+      expect(signableA.isSignable, isFalse);
+      expect(
+        signableA.blockingFacts.map((fact) => fact.code),
+        contains('relationship_broken'),
+      );
+      expect(signableB.isSignable, isTrue);
+      expect(signableB.blockingFacts, isEmpty);
+    });
   });
 }

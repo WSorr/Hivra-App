@@ -497,6 +497,8 @@ When tradeoffs are unclear, prefer:
     - invitation events record transit/history and terminal responses
     - starter events record local anatomy only
     - relationship events remain the pairwise truth anchors used for explicit relationship mutation and future smart-contract gating
+  - Current progress:
+    - Added `consensus_processor_test.dart` coverage that `RelationshipBroken` blocks only the affected pairwise path (`relationship_broken` fact) while other peer paths remain signable.
 
 - `9.8 Consensus Processor Module`
   - Keep consensus logic out of screen flows and invitation form orchestration.
