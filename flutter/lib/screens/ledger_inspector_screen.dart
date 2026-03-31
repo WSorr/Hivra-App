@@ -5,8 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
-import '../services/consensus_runtime_service.dart';
 import '../services/ledger_view_support.dart';
+import '../services/manual_consensus_check_service.dart';
 import '../utils/hivra_id_format.dart';
 
 class LedgerInspectorScreen extends StatefulWidget {
@@ -31,7 +31,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   String _ledgerOwnerKey = 'No key';
   String _rootDisplayKey = 'No key';
   List<_LedgerEventRow> _recentEvents = const <_LedgerEventRow>[];
-  List<ConsensusCheck> _consensusChecks = const <ConsensusCheck>[];
+  List<ManualConsensusCheck> _consensusChecks = const <ManualConsensusCheck>[];
   Map<String, int> _eventCounts = const <String, int>{};
   List<String> _integrityHints = const <String>[];
   final LedgerViewSupport _support = const LedgerViewSupport();
@@ -68,7 +68,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
           _rootDisplayKey = rootDisplayKey;
           _rawLedgerJson = '';
           _recentEvents = const <_LedgerEventRow>[];
-          _consensusChecks = const <ConsensusCheck>[];
+          _consensusChecks = const <ManualConsensusCheck>[];
           _eventCounts = const <String, int>{};
           _integrityHints = const <String>[];
           _error = 'Ledger export returned empty result';
@@ -85,7 +85,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
           _rootDisplayKey = rootDisplayKey;
           _rawLedgerJson = raw;
           _recentEvents = const <_LedgerEventRow>[];
-          _consensusChecks = const <ConsensusCheck>[];
+          _consensusChecks = const <ManualConsensusCheck>[];
           _eventCounts = const <String, int>{};
           _integrityHints = const <String>[];
           _error = 'Ledger JSON has unsupported shape';
@@ -593,8 +593,8 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                                       _detailChip(check.isSignable
                                           ? 'signable'
                                           : 'blocked'),
-                                      ...check.blockingFacts
-                                          .map((fact) => _detailChip(fact.label)),
+                                      ...check.blockingFacts.map(
+                                          (fact) => _detailChip(fact.label)),
                                     ],
                                   ),
                                   const SizedBox(height: 10),

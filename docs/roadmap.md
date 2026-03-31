@@ -511,6 +511,7 @@ When tradeoffs are unclear, prefer:
     - Added `flutter/lib/services/consensus_runtime_service.dart` as a read-only runtime facade that feeds the processor from exported ledger truth plus local transport identity.
     - Added `flutter/lib/services/plugin_execution_guard_service.dart` so the future plugin host can read pairwise signability as a guard input without taking on execution or screen-owned consensus logic.
     - Added `flutter/lib/services/manual_consensus_check_service.dart` so Ledger Inspector can consume a read-only manual consensus-check use case instead of building pairwise preview state directly.
+    - Ledger Inspector screen no longer imports `consensus_runtime_service.dart` directly; consensus rows are typed/read through `ManualConsensusCheckService` boundary.
     - Removed the legacy `PairwiseSnapshotService` wrapper after moving inspector/guard readers onto shared consensus boundaries.
     - Added processor regression coverage for canonical hash derivation, pending-invitation blocking facts, and verification mismatch reporting.
   - Consensus must be computed on demand, not continuously in UI/runtime background.

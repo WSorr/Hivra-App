@@ -1,5 +1,7 @@
 import 'consensus_runtime_service.dart';
 
+typedef ManualConsensusCheck = ConsensusCheck;
+
 class ManualConsensusCheckService {
   final ConsensusRuntimeService _consensus;
 
@@ -7,7 +9,7 @@ class ManualConsensusCheckService {
     required ConsensusRuntimeService consensus,
   }) : _consensus = consensus;
 
-  List<ConsensusCheck> loadChecks() {
+  List<ManualConsensusCheck> loadChecks() {
     return _consensus.checks();
   }
 }

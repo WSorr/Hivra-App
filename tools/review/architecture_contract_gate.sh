@@ -93,6 +93,8 @@ require_present "$RUNTIME" 'InvitationIntentHandler get invitationIntents' \
   "runtime exposes invitation intent boundary"
 require_absent "$SCREENS" "import '../services/invitation_actions_service.dart';" \
   "screens do not import invitation_actions_service directly"
+require_absent "$SCREENS" "import '../services/consensus_runtime_service.dart';" \
+  "screens do not import consensus_runtime_service directly"
 
 # 5) WASM plugin boundaries and readiness guard.
 require_present "$WASM_REGISTRY" 'class WasmPluginRegistryService' \
