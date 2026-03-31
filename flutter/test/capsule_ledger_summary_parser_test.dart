@@ -108,6 +108,32 @@ void main() {
       ];
     }
 
+    List<int> relationshipEstablishedPayloadWithRoots({
+      required int peerByte,
+      required int ownStarterByte,
+      required int peerStarterByte,
+      required int kindByte,
+      required int invitationByte,
+      required int senderByte,
+      required int senderStarterByte,
+      required int peerRootByte,
+      required int senderRootByte,
+    }) {
+      return <int>[
+        ...relationshipEstablishedPayload(
+          peerByte: peerByte,
+          ownStarterByte: ownStarterByte,
+          peerStarterByte: peerStarterByte,
+          kindByte: kindByte,
+          invitationByte: invitationByte,
+          senderByte: senderByte,
+          senderStarterByte: senderStarterByte,
+        ),
+        ...rep(peerRootByte),
+        ...rep(senderRootByte),
+      ];
+    }
+
     Map<String, dynamic> event({
       required String kind,
       required List<int> payload,
@@ -482,6 +508,37 @@ void main() {
 
       final summary = parser.parse(ledger, toHex);
       expect(summary.pendingInvitations, equals(0));
+    });
+
+    test(
+        'relationship count supports root-augmented RelationshipEstablished payload',
+        () {
+      final self = rep(0xaa);
+      const t0 = 1890002000000;
+      final ledger = jsonEncode(<String, dynamic>{
+        'owner': self,
+        'events': <Map<String, dynamic>>[
+          event(
+            kind: 'RelationshipEstablished',
+            payload: relationshipEstablishedPayloadWithRoots(
+              peerByte: 0xbb,
+              ownStarterByte: 0x21,
+              peerStarterByte: 0x31,
+              kindByte: 1,
+              invitationByte: 0x41,
+              senderByte: 0xbb,
+              senderStarterByte: 0x61,
+              peerRootByte: 0xcc,
+              senderRootByte: 0xaa,
+            ),
+            timestamp: t0 + 1,
+            signer: self,
+          ),
+        ],
+      });
+
+      final summary = parser.parse(ledger, toHex);
+      expect(summary.relationshipCount, equals(1));
     });
   });
 }

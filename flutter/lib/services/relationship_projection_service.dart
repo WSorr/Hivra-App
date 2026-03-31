@@ -53,11 +53,13 @@ class RelationshipProjectionService {
     return list;
   }
 
-  List<RelationshipPeerGroup> loadRelationshipGroups(Map<String, dynamic> root) {
+  List<RelationshipPeerGroup> loadRelationshipGroups(
+      Map<String, dynamic> root) {
     final relationships = loadRelationships(root);
     final byPeer = <String, List<Relationship>>{};
     for (final relationship in relationships) {
-      byPeer.putIfAbsent(relationship.peerPubkey, () => <Relationship>[])
+      byPeer
+          .putIfAbsent(relationship.peerPubkey, () => <Relationship>[])
           .add(relationship);
     }
 
@@ -69,7 +71,8 @@ class RelationshipProjectionService {
           ),
         )
         .toList();
-    groups.sort((a, b) => b.latestEstablishedAt.compareTo(a.latestEstablishedAt));
+    groups
+        .sort((a, b) => b.latestEstablishedAt.compareTo(a.latestEstablishedAt));
     return groups;
   }
 
@@ -78,7 +81,9 @@ class RelationshipProjectionService {
     //   peer(32) + ownStarter(32) + peerStarter(32) + kind(1) = 97 bytes
     // Current payload adds provenance after the first 97 bytes:
     //   + invitationId(32) + senderPubkey(32) + senderStarterType(1) + senderStarterId(32)
-    if (payload.length != 97 && payload.length != 194) {
+    // Future payload revisions may append additional root-aware fields, but
+    // projection keeps using the stable first 97 bytes for relationship anatomy.
+    if (payload.length < 97) {
       return null;
     }
 

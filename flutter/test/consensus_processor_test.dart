@@ -9,6 +9,8 @@ void main() {
     const processor = ConsensusProcessor();
 
     List<int> bytes32(int value) => List<int>.filled(32, value);
+    String hex(List<int> bytes) =>
+        bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
     test('preview derives canonical hash from shared ledger projections', () {
       final invitationId = Uint8List.fromList(List<int>.filled(32, 1));
@@ -315,6 +317,61 @@ void main() {
           isFalse);
       expect(previews.first.canonicalJson.contains('"status": "expired"'),
           isFalse);
+    });
+
+    test(
+        'preview prefers root-augmented relationship anchor when payload carries peer_root_pubkey',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(61));
+      final ownStarter = Uint8List.fromList(bytes32(62));
+      final peerTransport = Uint8List.fromList(bytes32(63));
+      final peerRoot = Uint8List.fromList(bytes32(64));
+      final peerStarter = Uint8List.fromList(bytes32(65));
+      final senderTransport = Uint8List.fromList(bytes32(66));
+      final senderStarter = Uint8List.fromList(bytes32(67));
+      final senderRoot = Uint8List.fromList(bytes32(68));
+      final localTransport = Uint8List.fromList(bytes32(69));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...senderTransport,
+            1,
+            ...senderStarter,
+            ...peerRoot,
+            ...senderRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...bytes32(70),
+            ...bytes32(71),
+          ],
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, hasLength(1));
+      expect(previews.first.peerHex, equals(hex(peerRoot)));
+      expect(previews.first.canonicalJson.contains(hex(peerRoot)), isTrue);
     });
   });
 }

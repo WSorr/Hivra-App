@@ -452,8 +452,12 @@ When tradeoffs are unclear, prefer:
   - Relationship events then become the root-aware pair anchor:
     - extend `RelationshipEstablished` with `peer_root_pubkey` and `sender_root_pubkey`
     - extend `RelationshipBroken` with `peer_root_pubkey` so break operates on the same root-scoped pair truth
-  - Keep invitation transport payloads delivery-oriented where possible, but stop losing root provenance in the shared lineage.
-  - Keep current inspector snapshot explicitly transport-scoped until ledger truth is expanded.
+- Keep invitation transport payloads delivery-oriented where possible, but stop losing root provenance in the shared lineage.
+- Keep current inspector snapshot explicitly transport-scoped until ledger truth is expanded.
+- Current progress:
+  - Flutter relationship projection decoders now accept root-augmented relationship payloads (`RelationshipEstablished` payloads longer than 194 bytes and `RelationshipBroken` payloads longer than 64 bytes) while keeping backward compatibility with existing payload layout.
+  - Consensus processor now prefers `peer_root_pubkey` from root-augmented `RelationshipEstablished`/`RelationshipBroken` payloads when present, and falls back to legacy transport-key mapping otherwise.
+  - Added regression coverage for root-augmented relationship payload handling in `ledger_view_support_test.dart`, `relationship_projection_service_test.dart`, `capsule_ledger_summary_parser_test.dart`, and `consensus_processor_test.dart`.
 
 - `9.5 Ledger-Gated Capsule UI`
   - Capsule UI should treat the local ledger as the primary source of domain truth once any ledger history exists.

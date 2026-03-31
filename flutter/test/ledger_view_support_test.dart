@@ -113,4 +113,58 @@ void main() {
       expect(support.inferGenesisFromLedgerRoot(root), isNull);
     });
   });
+
+  group('LedgerViewSupport.relationship payload compatibility', () {
+    const support = LedgerViewSupport();
+
+    List<int> rep(int value) => List<int>.filled(32, value);
+    String hex(Uint8List bytes) =>
+        bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+    test('accepts root-augmented relationship established payload', () {
+      final peer = rep(1);
+      final ownStarter = rep(2);
+      final payload = Uint8List.fromList(<int>[
+        ...peer,
+        ...ownStarter,
+        ...rep(3),
+        1,
+        ...rep(4),
+        ...rep(5),
+        1,
+        ...rep(6),
+        ...rep(7), // peer_root_pubkey (future extension)
+        ...rep(8), // sender_root_pubkey (future extension)
+      ]);
+
+      final key =
+          support.relationshipKeyFromEstablishedPayload(payload, encode32: hex);
+      final peerProjected = support
+          .relationshipPeerFromEstablishedPayload(payload, encode32: hex);
+
+      expect(
+          key,
+          equals(
+              '${hex(Uint8List.fromList(peer))}:${hex(Uint8List.fromList(ownStarter))}'));
+      expect(peerProjected, equals(hex(Uint8List.fromList(peer))));
+    });
+
+    test('accepts root-augmented relationship broken payload', () {
+      final peer = rep(9);
+      final ownStarter = rep(10);
+      final payload = Uint8List.fromList(<int>[
+        ...peer,
+        ...ownStarter,
+        ...rep(11), // peer_root_pubkey (future extension)
+      ]);
+
+      final key =
+          support.relationshipKeyFromBrokenPayload(payload, encode32: hex);
+
+      expect(
+          key,
+          equals(
+              '${hex(Uint8List.fromList(peer))}:${hex(Uint8List.fromList(ownStarter))}'));
+    });
+  });
 }

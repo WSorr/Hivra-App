@@ -160,13 +160,18 @@ class ConsensusProcessor {
         if (starterKind != null) {
           fact.starterKinds.add(starterKind);
         }
-      } else if (kind == 'RelationshipEstablished' && payload.length == 194) {
-        final peerRootHex = _hex(payload.sublist(0, 32));
+      } else if (kind == 'RelationshipEstablished' && payload.length >= 194) {
+        final peerTransportHex = _hex(payload.sublist(0, 32));
+        final peerRootHex = payload.length >= 226
+            ? _hex(payload.sublist(194, 226))
+            : peerTransportHex;
         final invitationId = _hex(payload.sublist(97, 129));
         inviteRootPeerById[invitationId] = peerRootHex;
-        final transportPeerHex = inviteTransportPeerById[invitationId];
-        if (transportPeerHex != null) {
-          transportPeerToRootPeer[transportPeerHex] = peerRootHex;
+        transportPeerToRootPeer[peerTransportHex] = peerRootHex;
+        final transportPeerHexFromInvite =
+            inviteTransportPeerById[invitationId];
+        if (transportPeerHexFromInvite != null) {
+          transportPeerToRootPeer[transportPeerHexFromInvite] = peerRootHex;
         }
         relationshipFactsByPeer
             .putIfAbsent(peerRootHex, () => <_PairwiseRelationshipFact>[])
@@ -181,8 +186,9 @@ class ConsensusProcessor {
               ),
             );
       } else if (kind == 'RelationshipBroken' && payload.length >= 64) {
-        final peerTransportHex = _hex(payload.sublist(0, 32));
-        final peerRootHex = transportPeerToRootPeer[peerTransportHex];
+        final peerRootHex = payload.length >= 96
+            ? _hex(payload.sublist(64, 96))
+            : transportPeerToRootPeer[_hex(payload.sublist(0, 32))];
         if (peerRootHex != null && peerRootHex.isNotEmpty) {
           brokenRelationshipIdsByPeer
               .putIfAbsent(peerRootHex, () => <String>{})
