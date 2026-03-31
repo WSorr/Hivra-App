@@ -394,6 +394,9 @@ Scope:
   - local `active/inactive`
   because those remain capsule-local rather than pairwise-consensus facts.
 - Treat richer lineage or starter-state checks as future snapshot/schema revisions rather than overloading v1.
+- Current progress:
+  - Added regression coverage in `consensus_processor_test.dart` to lock terminal invitation precedence in snapshot projection (`accepted > rejected > expired`).
+  - Added regression coverage that local starter-only events (`StarterCreated` / `StarterBurned`) do not affect pairwise snapshot canonical JSON/hash when pairwise facts are unchanged.
 
 Definition of done:
 - A fresh pair of capsules can derive the same `pairwise consensus snapshot v1` hash from local ledger truth.
