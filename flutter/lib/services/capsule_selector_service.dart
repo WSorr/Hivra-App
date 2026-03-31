@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+
 import '../ffi/hivra_bindings.dart';
 import 'capsule_persistence_service.dart';
 
@@ -102,7 +104,81 @@ class CapsuleSelectorService {
       );
     }
 
-    return capsules;
+    return collapseDisplayDuplicates(
+      capsules,
+      hasSeedByPubKey: seedByHex,
+      identityModeByPubKey: {
+        for (final entry in filteredEntries)
+          entry.pubKeyHex: entry.identityMode,
+      },
+    );
+  }
+
+  @visibleForTesting
+  static List<CapsuleSelectorItem> collapseDisplayDuplicates(
+    List<CapsuleSelectorItem> items, {
+    required Map<String, bool> hasSeedByPubKey,
+    required Map<String, String> identityModeByPubKey,
+  }) {
+    final byDisplay = <String, CapsuleSelectorItem>{};
+
+    for (final item in items) {
+      final key = '${item.network}|${item.displayKeyText}';
+      final current = byDisplay[key];
+      if (current == null ||
+          _preferForDisplay(
+            candidate: item,
+            current: current,
+            hasSeedByPubKey: hasSeedByPubKey,
+            identityModeByPubKey: identityModeByPubKey,
+          )) {
+        byDisplay[key] = item;
+      }
+    }
+
+    final collapsed = byDisplay.values.toList()
+      ..sort((a, b) => b.lastActive.compareTo(a.lastActive));
+    return collapsed;
+  }
+
+  static bool _preferForDisplay({
+    required CapsuleSelectorItem candidate,
+    required CapsuleSelectorItem current,
+    required Map<String, bool> hasSeedByPubKey,
+    required Map<String, String> identityModeByPubKey,
+  }) {
+    final candidateSeed = hasSeedByPubKey[candidate.publicKeyHex] == true;
+    final currentSeed = hasSeedByPubKey[current.publicKeyHex] == true;
+    if (candidateSeed != currentSeed) return candidateSeed;
+
+    final candidateMode = identityModeByPubKey[candidate.publicKeyHex] ?? '';
+    final currentMode = identityModeByPubKey[current.publicKeyHex] ?? '';
+    final candidateModeScore = _identityModeScore(candidateMode);
+    final currentModeScore = _identityModeScore(currentMode);
+    if (candidateModeScore != currentModeScore) {
+      return candidateModeScore > currentModeScore;
+    }
+
+    if (candidate.ledgerVersion != current.ledgerVersion) {
+      return candidate.ledgerVersion > current.ledgerVersion;
+    }
+
+    if (candidate.lastActive != current.lastActive) {
+      return candidate.lastActive.isAfter(current.lastActive);
+    }
+
+    return candidate.publicKeyHex.compareTo(current.publicKeyHex) < 0;
+  }
+
+  static int _identityModeScore(String mode) {
+    switch (mode) {
+      case 'root_owner':
+        return 2;
+      case 'legacy_nostr_owner':
+        return 1;
+      default:
+        return 0;
+    }
   }
 
   bool seedExists() => _hivra.seedExists();

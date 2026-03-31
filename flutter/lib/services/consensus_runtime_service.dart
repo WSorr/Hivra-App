@@ -5,6 +5,7 @@ import 'ledger_view_support.dart';
 
 typedef LedgerExporter = String? Function();
 typedef TransportKeyReader = Uint8List? Function();
+typedef RootKeyReader = Uint8List? Function();
 
 class ConsensusCheck {
   final String peerHex;
@@ -31,23 +32,30 @@ class ConsensusCheck {
 class ConsensusRuntimeService {
   final LedgerExporter _exportLedger;
   final TransportKeyReader _readLocalTransportKey;
+  final RootKeyReader _readLocalRootKey;
   final LedgerViewSupport _support;
   final ConsensusProcessor _processor;
 
   const ConsensusRuntimeService({
     required LedgerExporter exportLedger,
     required TransportKeyReader readLocalTransportKey,
+    RootKeyReader? readLocalRootKey,
     LedgerViewSupport support = const LedgerViewSupport(),
     ConsensusProcessor processor = const ConsensusProcessor(),
   })  : _exportLedger = exportLedger,
         _readLocalTransportKey = readLocalTransportKey,
+        _readLocalRootKey = readLocalRootKey ?? _nullKeyReader,
         _support = support,
         _processor = processor;
 
   List<ConsensusPreview> preview() {
     final inputs = _runtimeInputs();
     if (inputs == null) return const <ConsensusPreview>[];
-    return _processor.preview(inputs.events, inputs.localTransportKey);
+    return _processor.preview(
+      inputs.events,
+      inputs.localTransportKey ?? Uint8List(0),
+      localRootKey: inputs.localRootKey,
+    );
   }
 
   List<ConsensusCheck> checks() {
@@ -79,8 +87,9 @@ class ConsensusRuntimeService {
     }
     return _processor.signable(
       inputs.events,
-      inputs.localTransportKey,
+      inputs.localTransportKey ?? Uint8List(0),
       peerHex: peerHex,
+      localRootKey: inputs.localRootKey,
     );
   }
 
@@ -97,9 +106,11 @@ class ConsensusRuntimeService {
   _ConsensusRuntimeInputs? _runtimeInputs() {
     final ledgerRoot = _support.exportLedgerRoot(_exportLedger());
     final localTransportKey = _readLocalTransportKey();
-    if (ledgerRoot == null ||
-        localTransportKey == null ||
-        localTransportKey.length != 32) {
+    final localRootKey = _readLocalRootKey();
+    final hasTransport =
+        localTransportKey != null && localTransportKey.length == 32;
+    final hasRoot = localRootKey != null && localRootKey.length == 32;
+    if (ledgerRoot == null || (!hasTransport && !hasRoot)) {
       return null;
     }
 
@@ -113,17 +124,22 @@ class ConsensusRuntimeService {
 
     return _ConsensusRuntimeInputs(
       events: List<Map<String, dynamic>>.unmodifiable(events),
-      localTransportKey: localTransportKey,
+      localTransportKey: hasTransport ? localTransportKey : null,
+      localRootKey: hasRoot ? localRootKey : null,
     );
   }
 }
 
 class _ConsensusRuntimeInputs {
   final List<Map<String, dynamic>> events;
-  final Uint8List localTransportKey;
+  final Uint8List? localTransportKey;
+  final Uint8List? localRootKey;
 
   const _ConsensusRuntimeInputs({
     required this.events,
     required this.localTransportKey,
+    required this.localRootKey,
   });
 }
+
+Uint8List? _nullKeyReader() => null;

@@ -125,17 +125,23 @@ class ConsensusProcessor {
 
   List<ConsensusPreview> preview(
     List<Map<String, dynamic>> events,
-    Uint8List localTransportKey,
-  ) {
-    if (localTransportKey.length != 32) {
+    Uint8List localTransportKey, {
+    Uint8List? localRootKey,
+  }) {
+    final localTransportHex =
+        localTransportKey.length == 32 ? _hex(localTransportKey) : null;
+    final localRootHex = localRootKey != null && localRootKey.length == 32
+        ? _hex(localRootKey)
+        : null;
+    if (localTransportHex == null && localRootHex == null) {
       return const <ConsensusPreview>[];
     }
 
-    final localTransportHex = _hex(localTransportKey);
     final inviteFactsById = <String, _PairwiseInviteFact>{};
     final inviteTransportPeerById = <String, String>{};
     final inviteRootPeerById = <String, String>{};
     final transportPeerToRootPeer = <String, String>{};
+    final rootAnchoredPeers = <String>{};
     final relationshipFactsByPeer = <String, List<_PairwiseRelationshipFact>>{};
     final pendingInvitationIdsByPeer = <String, Set<String>>{};
     final brokenRelationshipIdsByPeer = <String, Set<String>>{};
@@ -165,6 +171,9 @@ class ConsensusProcessor {
         final peerRootHex = payload.length >= 226
             ? _hex(payload.sublist(194, 226))
             : peerTransportHex;
+        if (payload.length >= 226) {
+          rootAnchoredPeers.add(peerRootHex);
+        }
         final invitationId = _hex(payload.sublist(97, 129));
         inviteRootPeerById[invitationId] = peerRootHex;
         transportPeerToRootPeer[peerTransportHex] = peerRootHex;
@@ -257,7 +266,11 @@ class ConsensusProcessor {
       ..sort();
 
     for (final peerRootHex in peers) {
-      final pairRoots = <String>[localTransportHex, peerRootHex]..sort();
+      final useRootScopedLocalKey = rootAnchoredPeers.contains(peerRootHex);
+      final localParticipantHex = useRootScopedLocalKey
+          ? (localRootHex ?? localTransportHex)!
+          : (localTransportHex ?? localRootHex)!;
+      final pairRoots = <String>[localParticipantHex, peerRootHex]..sort();
       final finalizedInvitations = (inviteFactsByPeer[peerRootHex] ??
           <_PairwiseInviteFact>[])
         ..sort((a, b) => a.invitationId.compareTo(b.invitationId));
@@ -342,8 +355,11 @@ class ConsensusProcessor {
     List<Map<String, dynamic>> events,
     Uint8List localTransportKey, {
     required String peerHex,
+    Uint8List? localRootKey,
   }) {
-    if (localTransportKey.length != 32) {
+    final hasTransport = localTransportKey.length == 32;
+    final hasRoot = localRootKey != null && localRootKey.length == 32;
+    if (!hasTransport && !hasRoot) {
       return const ConsensusSignableResult(
         preview: null,
         blockingFacts: <ConsensusBlockingFact>[
@@ -352,7 +368,11 @@ class ConsensusProcessor {
       );
     }
 
-    final previewRow = preview(events, localTransportKey).firstWhere(
+    final previewRow = preview(
+      events,
+      localTransportKey,
+      localRootKey: localRootKey,
+    ).firstWhere(
       (row) => row.peerHex == peerHex,
       orElse: () => const ConsensusPreview(
         peerHex: '',

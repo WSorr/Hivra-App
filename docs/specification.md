@@ -554,6 +554,24 @@ The sender MUST record the newly created or selected recipient-side starter as a
 This does NOT create a sender-local starter entity owned by the recipient.
 It creates a relationship-level reference to a remote starter entity owned by the recipient capsule.
 
+### 8.1.3 Invitation Ingress and Projection Contract
+
+Incoming invitation handling MUST be layered and deterministic:
+
+1. Transport ingress validates delivery envelope only (addressing/routing, basic dedupe by event payload/signer).
+2. Domain ingress gate validates ledger semantics before append:
+   - `InvitationAccepted`, `InvitationRejected`, and `InvitationExpired` MUST resolve an existing invitation lifecycle in local ledger context.
+   - Terminal events without a matching invitation offer MUST be discarded as orphan terminal deliveries.
+3. Only accepted ingress events are appended to ledger.
+4. Invitation projection is rebuilt from ledger events by `invitation_id` with deterministic precedence:
+   - `accepted > rejected > expired > pending`
+5. UI action queues MUST be projection-driven:
+   - actionable incoming queue: incoming invitations with `pending` status only
+   - actionable outgoing queue: outgoing invitations with `pending` status only
+   - terminal invitations (`accepted`/`rejected`/`expired`) belong to history views, not actionable queues
+
+The application MAY keep local transient UX flags (loading/spinner), but those flags MUST NOT become a second truth source for invitation lifecycle state.
+
 ### 8.2 Burn Rule (Critical)
 
 A starter is burned ONLY at the sender and only when ALL conditions are met:

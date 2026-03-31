@@ -95,5 +95,75 @@ void main() {
         contains('consensus_runtime_unavailable'),
       );
     });
+
+    test('accepts root key when transport key is unavailable', () {
+      final invitationId = Uint8List.fromList(List<int>.filled(32, 1));
+      final ownStarter = Uint8List.fromList(List<int>.filled(32, 2));
+      final peerTransport = Uint8List.fromList(List<int>.filled(32, 3));
+      final peerRoot = Uint8List.fromList(List<int>.filled(32, 4));
+      final peerStarter = Uint8List.fromList(List<int>.filled(32, 5));
+      final sender = Uint8List.fromList(List<int>.filled(32, 6));
+      final senderStarter = Uint8List.fromList(List<int>.filled(32, 7));
+      final acceptedFrom = Uint8List.fromList(List<int>.filled(32, 8));
+      final acceptedCreated = Uint8List.fromList(List<int>.filled(32, 9));
+      final localRoot = Uint8List.fromList(List<int>.filled(32, 12));
+      final peerHex = List<int>.filled(32, 4)
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
+
+      final ledgerJson = jsonEncode(<String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 1,
+            'payload': <int>[
+              ...invitationId,
+              ...ownStarter,
+              ...peerTransport,
+              1,
+            ],
+          },
+          <String, dynamic>{
+            'kind': 7,
+            'payload': <int>[
+              ...peerTransport,
+              ...ownStarter,
+              ...peerStarter,
+              1,
+              ...invitationId,
+              ...sender,
+              1,
+              ...senderStarter,
+              ...peerRoot,
+              ...List<int>.filled(32, 13),
+            ],
+          },
+          <String, dynamic>{
+            'kind': 2,
+            'payload': <int>[
+              ...invitationId,
+              ...acceptedFrom,
+              ...acceptedCreated,
+            ],
+          },
+        ],
+      });
+
+      final service = ConsensusRuntimeService(
+        exportLedger: () => ledgerJson,
+        readLocalTransportKey: () => null,
+        readLocalRootKey: () => localRoot,
+      );
+
+      final previews = service.preview();
+      final signable = service.signable(peerHex);
+
+      expect(previews, hasLength(1));
+      expect(signable.isSignable, isTrue);
+      expect(
+          previews.first.canonicalJson.contains(
+            localRoot.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
+          ),
+          isTrue);
+    });
   });
 }

@@ -92,6 +92,15 @@ pub(crate) fn should_skip_incoming_delivery_append(
         if invitation_is_resolved_in_runtime(&invitation_id) {
             return true;
         }
+        if (local_kind == EventKind::InvitationAccepted
+            || local_kind == EventKind::InvitationRejected)
+            && find_invitation_sent_in_runtime_with_direction(&invitation_id, Some(false)).is_none()
+        {
+            // Terminal delivery must resolve an existing outgoing offer.
+            // Otherwise we can append orphan accepted/rejected events that
+            // inflate local projection without a matching InvitationSent.
+            return true;
+        }
     }
 
     event_exists_in_runtime_with_signer(local_kind, payload, signer)

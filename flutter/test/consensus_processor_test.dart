@@ -489,5 +489,124 @@ void main() {
       expect(signableB.isSignable, isTrue);
       expect(signableB.blockingFacts, isEmpty);
     });
+
+    test(
+        'uses local root key for root-anchored pair when root key is available',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(121));
+      final ownStarter = Uint8List.fromList(bytes32(122));
+      final peerTransport = Uint8List.fromList(bytes32(123));
+      final peerRoot = Uint8List.fromList(bytes32(124));
+      final peerStarter = Uint8List.fromList(bytes32(125));
+      final sender = Uint8List.fromList(bytes32(126));
+      final senderStarter = Uint8List.fromList(bytes32(127));
+      final localTransport = Uint8List.fromList(bytes32(128));
+      final localRoot = Uint8List.fromList(bytes32(129));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...sender,
+            1,
+            ...senderStarter,
+            ...peerRoot,
+            ...bytes32(130),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...bytes32(131),
+            ...bytes32(132),
+          ],
+        },
+      ];
+
+      final previews = processor.preview(
+        events,
+        localTransport,
+        localRootKey: localRoot,
+      );
+
+      expect(previews, hasLength(1));
+      expect(previews.first.canonicalJson.contains(hex(localRoot)), isTrue);
+      expect(
+        previews.first.canonicalJson.contains(hex(localTransport)),
+        isFalse,
+      );
+    });
+
+    test(
+        'falls back to local transport key for legacy pair without root anchor',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(141));
+      final ownStarter = Uint8List.fromList(bytes32(142));
+      final peerTransport = Uint8List.fromList(bytes32(143));
+      final peerStarter = Uint8List.fromList(bytes32(145));
+      final sender = Uint8List.fromList(bytes32(146));
+      final senderStarter = Uint8List.fromList(bytes32(147));
+      final localTransport = Uint8List.fromList(bytes32(148));
+      final localRoot = Uint8List.fromList(bytes32(149));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...sender,
+            1,
+            ...senderStarter,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...bytes32(150),
+            ...bytes32(151),
+          ],
+        },
+      ];
+
+      final previews = processor.preview(
+        events,
+        localTransport,
+        localRootKey: localRoot,
+      );
+
+      expect(previews, hasLength(1));
+      expect(
+          previews.first.canonicalJson.contains(hex(localTransport)), isTrue);
+      expect(previews.first.canonicalJson.contains(hex(localRoot)), isFalse);
+    });
   });
 }

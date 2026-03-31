@@ -150,6 +150,7 @@ Scope:
   - Added `LedgerViewSupport` mapping invariant test coverage (`kindCode <-> kindLabel`) for canonical event kinds to prevent projection dictionary drift.
   - Added architecture contract review gate coverage to prevent reintroduction of local kind dictionaries in key projection readers.
   - `CapsuleLedgerSummaryParser` pending-invitation count now uses `InvitationProjectionService` terminal-precedence semantics (instead of `InvitationSent - resolved` arithmetic), aligning capsule selector counters with runtime invitation projections.
+  - Invitations UI queue bucketing is now centralized via `bucketInvitationsForUi` (`incoming pending`, `outgoing pending`, `history`) with regression tests, so actionable queues cannot regress to showing terminal invitation states as pending work.
 
 Definition of done:
 - Header counts, list screens, and detail views use the same underlying projection semantics.
@@ -235,6 +236,10 @@ Current progress:
 - Added persistence safety coverage for capsule index active-selection:
   - active capsule survives index write/read roundtrip
   - stale `active` pointers are sanitized when the referenced capsule entry is absent
+- Capsule selector now collapses duplicate visual aliases deterministically per `(network, display-key)`:
+  - prefers seeded entries over unseeded aliases
+  - prefers `root_owner` over `legacy_nostr_owner` when both map to the same display capsule identity
+  - falls back to higher ledger version / newer activity for stable tie-breaks
 - Added update-safety projection fixture coverage for the same-ledger reconstruction path:
   - repeated parse of the same `ledger.json` keeps starter/relationship/pending counters stable
   - summary pending/relationship counters stay aligned with shared invitation/relationship projection services
@@ -509,6 +514,7 @@ When tradeoffs are unclear, prefer:
   - Current progress:
     - Added `flutter/lib/services/consensus_processor.dart` with on-demand `preview`, `signable`, and `verify` APIs over ledger-derived pairwise projections.
     - Added `flutter/lib/services/consensus_runtime_service.dart` as a read-only runtime facade that feeds the processor from exported ledger truth plus local transport identity.
+    - Runtime consensus identity now prefers local root key when a peer path is root-anchored (root-augmented `RelationshipEstablished` payload) and falls back to local transport key for legacy non-root paths, avoiding transport-coupling for modern paths while preserving legacy determinism.
     - Added `flutter/lib/services/plugin_execution_guard_service.dart` so the future plugin host can read pairwise signability as a guard input without taking on execution or screen-owned consensus logic.
     - Added `flutter/lib/services/manual_consensus_check_service.dart` so Ledger Inspector can consume a read-only manual consensus-check use case instead of building pairwise preview state directly.
     - Ledger Inspector screen no longer imports `consensus_runtime_service.dart` directly; consensus rows are typed/read through `ManualConsensusCheckService` boundary.

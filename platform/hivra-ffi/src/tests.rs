@@ -625,6 +625,32 @@ fn replay_policy_allows_first_terminal_event_for_unresolved_invitation() {
 }
 
 #[test]
+fn replay_policy_skips_terminal_event_without_matching_outgoing_offer() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(141);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [126u8; 32];
+    let invitation_id = [148u8; 32];
+    let peer_created_starter_id = derive_starter_id(&test_seed(142), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_created_starter_id),
+    };
+
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationAccepted,
+        &accepted.to_bytes(),
+        PubKey::from(peer_pubkey),
+    ));
+}
+
+#[test]
 fn replayed_invitation_accepted_is_skipped_after_export_import() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

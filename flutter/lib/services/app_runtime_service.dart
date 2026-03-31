@@ -62,6 +62,7 @@ class AppRuntimeService {
     return ConsensusRuntimeService(
       exportLedger: _hivra.exportLedger,
       readLocalTransportKey: _hivra.capsuleNostrPublicKey,
+      readLocalRootKey: _hivra.capsuleRootPublicKey,
     );
   }
 

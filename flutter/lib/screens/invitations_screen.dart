@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -9,6 +10,45 @@ import '../services/invitation_delivery_service.dart';
 import '../services/invitation_intent_handler.dart';
 import '../services/ui_event_log_service.dart';
 import '../services/ui_feedback_service.dart';
+
+class InvitationUiBuckets {
+  final List<Invitation> incomingPending;
+  final List<Invitation> outgoingPending;
+  final List<Invitation> history;
+
+  const InvitationUiBuckets({
+    required this.incomingPending,
+    required this.outgoingPending,
+    required this.history,
+  });
+}
+
+@visibleForTesting
+InvitationUiBuckets bucketInvitationsForUi(
+  List<Invitation> invitations,
+  Set<String> locallyResolvedIncomingIds,
+) {
+  final incomingPending = invitations
+      .where((inv) =>
+          inv.isIncoming &&
+          inv.status == InvitationStatus.pending &&
+          !locallyResolvedIncomingIds.contains(inv.id))
+      .toList();
+
+  final outgoingPending = invitations
+      .where((inv) => inv.isOutgoing && inv.status == InvitationStatus.pending)
+      .toList();
+
+  final history = invitations
+      .where((inv) => inv.status != InvitationStatus.pending)
+      .toList();
+
+  return InvitationUiBuckets(
+    incomingPending: incomingPending,
+    outgoingPending: outgoingPending,
+    history: history,
+  );
+}
 
 class InvitationsScreen extends StatefulWidget {
   final AppRuntimeService runtime;
@@ -580,13 +620,11 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final incoming = _invitations
-        .where((inv) =>
-            inv.isIncoming &&
-            !(inv.status == InvitationStatus.pending &&
-                _locallyResolvedIncomingIds.contains(inv.id)))
-        .toList();
-    final outgoing = _invitations.where((inv) => inv.isOutgoing).toList();
+    final buckets =
+        bucketInvitationsForUi(_invitations, _locallyResolvedIncomingIds);
+    final incomingPending = buckets.incomingPending;
+    final outgoingPending = buckets.outgoingPending;
+    final history = buckets.history;
 
     return RefreshIndicator(
       onRefresh: _fetchInvitationDeliveries,
@@ -603,16 +641,16 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
               ),
             ],
           ),
-          _sectionHeader('Incoming', incoming.length),
+          _sectionHeader('Incoming', incomingPending.length),
           const SizedBox(height: 8),
-          if (incoming.isEmpty)
+          if (incomingPending.isEmpty)
             _emptySectionCard(
               icon: Icons.inbox_outlined,
               title: 'No incoming invitations',
               subtitle: 'Incoming requests will appear here.',
             )
           else
-            ...incoming.map((inv) => InvitationCard(
+            ...incomingPending.map((inv) => InvitationCard(
                   invitation: inv,
                   onAccept: _locallyResolvedIncomingIds.contains(inv.id)
                       ? null
@@ -625,9 +663,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                       _processingId == inv.id ? _processingAction : null,
                 )),
           const SizedBox(height: 20),
-          _sectionHeader('Outgoing', outgoing.length),
+          _sectionHeader('Outgoing', outgoingPending.length),
           const SizedBox(height: 8),
-          if (outgoing.isEmpty)
+          if (outgoingPending.isEmpty)
             _emptySectionCard(
               icon: Icons.outbox_outlined,
               title: 'No outgoing invitations',
@@ -636,9 +674,26 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
               onTap: _showSendInvitationDialog,
             )
           else
-            ...outgoing.map((inv) => InvitationCard(
+            ...outgoingPending.map((inv) => InvitationCard(
                   invitation: inv,
                   onCancel: () => _cancelInvitation(inv),
+                  isLoading: _processingId == inv.id,
+                  loadingAction:
+                      _processingId == inv.id ? _processingAction : null,
+                )),
+          const SizedBox(height: 20),
+          _sectionHeader('History', history.length),
+          const SizedBox(height: 8),
+          if (history.isEmpty)
+            _emptySectionCard(
+              icon: Icons.history,
+              title: 'No invitation history',
+              subtitle:
+                  'Accepted, rejected, and expired invitations appear here.',
+            )
+          else
+            ...history.map((inv) => InvitationCard(
+                  invitation: inv,
                   isLoading: _processingId == inv.id,
                   loadingAction:
                       _processingId == inv.id ? _processingAction : null,
