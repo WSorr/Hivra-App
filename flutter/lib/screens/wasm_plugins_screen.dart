@@ -516,6 +516,26 @@ class _InstalledPluginTile extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
+              if (record.pluginId != null && record.pluginId!.isNotEmpty)
+                _InfoChip(
+                  icon: Icons.badge_outlined,
+                  label: record.pluginId!,
+                ),
+              if (record.contractKind != null &&
+                  record.contractKind!.isNotEmpty)
+                _InfoChip(
+                  icon: Icons.gavel_outlined,
+                  label: record.contractKind!,
+                ),
+              if (record.capabilities.isNotEmpty)
+                _InfoChip(
+                  icon: Icons.verified_user_outlined,
+                  label: '${record.capabilities.length} capabilities',
+                ),
+              _InfoChip(
+                icon: Icons.inventory_2_outlined,
+                label: record.packageKind.toUpperCase(),
+              ),
               _InfoChip(
                 icon: Icons.memory_rounded,
                 label: _formatBytes(record.sizeBytes),

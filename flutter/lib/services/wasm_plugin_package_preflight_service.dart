@@ -8,11 +8,13 @@ class WasmPluginPackagePreflight {
   final String packageKind;
   final String? pluginId;
   final String? contractKind;
+  final List<String> capabilities;
 
   const WasmPluginPackagePreflight({
     required this.packageKind,
     this.pluginId,
     this.contractKind,
+    this.capabilities = const <String>[],
   });
 }
 
@@ -24,7 +26,10 @@ class WasmPluginPackagePreflightService {
     final extension = _fileExtension(fileName).toLowerCase();
     if (extension == '.wasm') {
       await _validateWasmBinary(sourceFile);
-      return const WasmPluginPackagePreflight(packageKind: 'wasm');
+      return const WasmPluginPackagePreflight(
+        packageKind: 'wasm',
+        capabilities: <String>[],
+      );
     }
     if (extension == '.zip') {
       return _validateZipPackage(sourceFile);
@@ -100,12 +105,34 @@ class WasmPluginPackagePreflightService {
     if (contract is Map) {
       contractKind = contract['kind']?.toString();
     }
+    final capabilities = _parseCapabilities(manifest['capabilities']);
 
     return WasmPluginPackagePreflight(
       packageKind: 'zip',
       pluginId: pluginId,
       contractKind: contractKind,
+      capabilities: capabilities,
     );
+  }
+
+  List<String> _parseCapabilities(Object? raw) {
+    if (raw == null) return const <String>[];
+    if (raw is! List) {
+      throw const FormatException(
+          'Plugin manifest capabilities must be a list');
+    }
+    final unique = <String>{};
+    for (final entry in raw) {
+      final value = entry?.toString().trim() ?? '';
+      if (value.isEmpty) {
+        throw const FormatException(
+          'Plugin manifest capabilities entries must be non-empty strings',
+        );
+      }
+      unique.add(value);
+    }
+    final normalized = unique.toList()..sort();
+    return normalized;
   }
 
   List<int> _archiveFileBytes(ArchiveFile file) {

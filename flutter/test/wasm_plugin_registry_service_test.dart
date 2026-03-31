@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
@@ -110,4 +111,61 @@ void main() {
       isFalse,
     );
   });
+
+  test('stores manifest metadata for zip package install', () async {
+    final sourceFile = File('${tempDocsDir.path}/demo_contract.zip');
+    await sourceFile.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'contract': {'kind': 'temperature_tomorrow_liechtenstein'},
+              'capabilities': [
+                'consensus_guard.read',
+                'oracle.read.mock_weather'
+              ],
+            },
+          ),
+          'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+        },
+      ),
+      flush: true,
+    );
+
+    final installed = await service.installPluginFromFile(sourceFile);
+
+    expect(installed.packageKind, 'zip');
+    expect(installed.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
+    expect(installed.contractKind, 'temperature_tomorrow_liechtenstein');
+    expect(
+      installed.capabilities,
+      ['consensus_guard.read', 'oracle.read.mock_weather'],
+    );
+
+    final loaded = await service.loadPlugins();
+    expect(loaded, isNotEmpty);
+    expect(loaded.first.packageKind, 'zip');
+    expect(loaded.first.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
+  });
+}
+
+List<int> _zipBytes({required Map<String, Object> files}) {
+  final archive = Archive();
+  for (final entry in files.entries) {
+    final content = entry.value;
+    final bytes = switch (content) {
+      List<int> _ => content,
+      String _ => utf8.encode(content),
+      _ => throw ArgumentError('Unsupported zip content type for ${entry.key}'),
+    };
+    archive.addFile(ArchiveFile(entry.key, bytes.length, bytes));
+  }
+  final encoded = ZipEncoder().encode(archive);
+  if (encoded == null) {
+    throw StateError('Failed to encode zip test archive');
+  }
+  return encoded;
 }

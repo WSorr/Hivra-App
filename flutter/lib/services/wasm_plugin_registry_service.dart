@@ -11,6 +11,10 @@ class WasmPluginRecord {
   final String storedFileName;
   final int sizeBytes;
   final String installedAtIso;
+  final String packageKind;
+  final String? pluginId;
+  final String? contractKind;
+  final List<String> capabilities;
 
   const WasmPluginRecord({
     required this.id,
@@ -19,9 +23,23 @@ class WasmPluginRecord {
     required this.storedFileName,
     required this.sizeBytes,
     required this.installedAtIso,
+    required this.packageKind,
+    required this.pluginId,
+    required this.contractKind,
+    required this.capabilities,
   });
 
   factory WasmPluginRecord.fromJson(Map<String, dynamic> json) {
+    final rawCapabilities = json['capabilities'];
+    final capabilities = <String>{};
+    if (rawCapabilities is List) {
+      for (final value in rawCapabilities) {
+        final normalized = value?.toString().trim() ?? '';
+        if (normalized.isNotEmpty) {
+          capabilities.add(normalized);
+        }
+      }
+    }
     return WasmPluginRecord(
       id: json['id'] as String? ?? '',
       displayName: json['displayName'] as String? ?? 'Unknown plugin',
@@ -29,6 +47,10 @@ class WasmPluginRecord {
       storedFileName: json['storedFileName'] as String? ?? 'unknown.wasm',
       sizeBytes: json['sizeBytes'] as int? ?? 0,
       installedAtIso: json['installedAtIso'] as String? ?? '',
+      packageKind: json['packageKind'] as String? ?? 'unknown',
+      pluginId: json['pluginId'] as String?,
+      contractKind: json['contractKind'] as String?,
+      capabilities: (capabilities.toList()..sort()),
     );
   }
 
@@ -40,6 +62,10 @@ class WasmPluginRecord {
       'storedFileName': storedFileName,
       'sizeBytes': sizeBytes,
       'installedAtIso': installedAtIso,
+      'packageKind': packageKind,
+      'pluginId': pluginId,
+      'contractKind': contractKind,
+      'capabilities': capabilities,
     };
   }
 }
@@ -97,7 +123,7 @@ class WasmPluginRegistryService {
       throw const FormatException(
           'Only .wasm or .zip plugin packages are supported');
     }
-    await _preflight.inspect(sourceFile);
+    final preflight = await _preflight.inspect(sourceFile);
 
     final pluginsDir = await pluginsDirectory(create: true);
     final id = DateTime.now().microsecondsSinceEpoch.toString();
@@ -108,11 +134,19 @@ class WasmPluginRegistryService {
 
     final record = WasmPluginRecord(
       id: id,
-      displayName: _displayNameFromFile(sourceName),
+      displayName: _displayNameFromFile(
+        preflight.pluginId?.isNotEmpty == true
+            ? preflight.pluginId!
+            : sourceName,
+      ),
       originalFileName: sourceName,
       storedFileName: storedFileName,
       sizeBytes: sizeBytes,
       installedAtIso: DateTime.now().toUtc().toIso8601String(),
+      packageKind: preflight.packageKind,
+      pluginId: preflight.pluginId,
+      contractKind: preflight.contractKind,
+      capabilities: preflight.capabilities,
     );
 
     final existing = await loadPlugins();

@@ -34,6 +34,7 @@ void main() {
 
     expect(preflight.packageKind, 'wasm');
     expect(preflight.pluginId, isNull);
+    expect(preflight.capabilities, isEmpty);
   });
 
   test('rejects wasm package with invalid header', () async {
@@ -60,6 +61,10 @@ void main() {
               'version': 1,
               'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
               'contract': {'kind': 'temperature_tomorrow_liechtenstein'},
+              'capabilities': [
+                'oracle.read.mock_weather',
+                'consensus_guard.read'
+              ],
             },
           ),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
@@ -73,6 +78,35 @@ void main() {
     expect(preflight.packageKind, 'zip');
     expect(preflight.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
     expect(preflight.contractKind, 'temperature_tomorrow_liechtenstein');
+    expect(
+      preflight.capabilities,
+      ['consensus_guard.read', 'oracle.read.mock_weather'],
+    );
+  });
+
+  test('rejects non-list capabilities field in manifest', () async {
+    final file = File('${tempDir.path}/bad_capabilities.zip');
+    await file.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'capabilities': 'not-a-list',
+            },
+          ),
+          'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+        },
+      ),
+      flush: true,
+    );
+
+    expect(
+      () => service.inspect(file),
+      throwsA(isA<FormatException>()),
+    );
   });
 
   test('rejects zip package without manifest', () async {

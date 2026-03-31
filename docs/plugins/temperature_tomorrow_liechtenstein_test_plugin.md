@@ -17,6 +17,10 @@ Status:
   "schema": "hivra.plugin.manifest",
   "version": 1,
   "plugin_id": "hivra.contract.temperature-li.tomorrow.v1",
+  "capabilities": [
+    "consensus_guard.read",
+    "oracle.read.mock_weather"
+  ],
   "contract": {
     "kind": "temperature_tomorrow_liechtenstein",
     "location_code": "LI",
