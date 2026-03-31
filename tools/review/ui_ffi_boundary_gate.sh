@@ -40,9 +40,8 @@ declare -a SERVICE_ALLOWLIST=(
   "$ROOT/flutter/lib/services/ledger_view_service.dart"
   "$ROOT/flutter/lib/services/recovery_service.dart"
   "$ROOT/flutter/lib/services/relationship_service.dart"
-  "$ROOT/flutter/lib/services/settings_service.dart"
 )
-MAX_SERVICE_IMPORTS=14
+MAX_SERVICE_IMPORTS=13
 
 if [ -n "$SCREEN_IMPORTS" ]; then
   fail "screens must not import ffi/hivra_bindings.dart directly"

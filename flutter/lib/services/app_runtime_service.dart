@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../ffi/hivra_bindings.dart';
+import 'capsule_address_service.dart';
 import 'capsule_persistence_service.dart';
 import 'capsule_state_manager.dart';
 import 'consensus_runtime_service.dart';
@@ -106,6 +107,16 @@ class AppRuntimeService {
   }
 
   SettingsService buildSettingsService() {
-    return SettingsService(_hivra);
+    final contactCards = const CapsuleAddressService();
+    return SettingsService(
+      loadIsNeste: () => _stateManager.state.isNeste,
+      loadSeed: _hivra.loadSeed,
+      diagnoseCapsuleTraces: () => _persistence.diagnoseCapsuleTraces(_hivra),
+      diagnoseBootstrapReport: () =>
+          _persistence.diagnoseBootstrapReport(_hivra),
+      buildOwnCard: () => contactCards.buildOwnCard(_hivra),
+      exportOwnCardJson: () => contactCards.exportOwnCardJson(_hivra),
+      contactCards: contactCards,
+    );
   }
 }

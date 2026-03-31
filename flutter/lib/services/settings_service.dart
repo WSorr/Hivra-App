@@ -1,42 +1,52 @@
 import 'dart:typed_data';
 
-import '../ffi/hivra_bindings.dart';
 import 'capsule_address_service.dart';
 import 'capsule_persistence_models.dart';
-import 'capsule_persistence_service.dart';
-import 'capsule_state_manager.dart';
 
 class SettingsService {
-  final HivraBindings _hivra;
-  final CapsulePersistenceService _persistence;
+  final bool Function() _loadIsNeste;
+  final Uint8List? Function() _loadSeed;
+  final Future<CapsuleTraceReport> Function() _diagnoseCapsuleTraces;
+  final Future<CapsuleBootstrapReport> Function() _diagnoseBootstrapReport;
+  final Future<CapsuleAddressCard?> Function() _buildOwnCard;
+  final Future<String?> Function() _exportOwnCardJson;
   final CapsuleAddressService _contactCards;
 
-  SettingsService(
-    this._hivra, {
-    CapsulePersistenceService? persistence,
+  SettingsService({
+    required bool Function() loadIsNeste,
+    required Uint8List? Function() loadSeed,
+    required Future<CapsuleTraceReport> Function() diagnoseCapsuleTraces,
+    required Future<CapsuleBootstrapReport> Function() diagnoseBootstrapReport,
+    required Future<CapsuleAddressCard?> Function() buildOwnCard,
+    required Future<String?> Function() exportOwnCardJson,
     CapsuleAddressService contactCards = const CapsuleAddressService(),
-  })  : _persistence = persistence ?? CapsulePersistenceService(),
+  })  : _loadIsNeste = loadIsNeste,
+        _loadSeed = loadSeed,
+        _diagnoseCapsuleTraces = diagnoseCapsuleTraces,
+        _diagnoseBootstrapReport = diagnoseBootstrapReport,
+        _buildOwnCard = buildOwnCard,
+        _exportOwnCardJson = exportOwnCardJson,
         _contactCards = contactCards;
 
   bool loadIsNeste() {
-    return CapsuleStateManager(_hivra).state.isNeste;
+    return _loadIsNeste();
   }
 
-  Uint8List? loadSeed() => _hivra.loadSeed();
+  Uint8List? loadSeed() => _loadSeed();
 
   Future<CapsuleTraceReport> diagnoseCapsuleTraces() {
-    return _persistence.diagnoseCapsuleTraces(_hivra);
+    return _diagnoseCapsuleTraces();
   }
 
   Future<CapsuleBootstrapReport> diagnoseBootstrapReport() {
-    return _persistence.diagnoseBootstrapReport(_hivra);
+    return _diagnoseBootstrapReport();
   }
 
   Future<int> contactCount() => _contactCards.contactCount();
 
-  Future<CapsuleAddressCard?> buildOwnCard() => _contactCards.buildOwnCard(_hivra);
+  Future<CapsuleAddressCard?> buildOwnCard() => _buildOwnCard();
 
-  Future<String?> exportOwnCardJson() => _contactCards.exportOwnCardJson(_hivra);
+  Future<String?> exportOwnCardJson() => _exportOwnCardJson();
 
   Future<void> importCardJson(String raw) => _contactCards.importCardJson(raw);
 
