@@ -10,14 +10,40 @@ import 'invitation_projection_service.dart';
 import 'ledger_view_support.dart';
 import 'relationship_projection_service.dart';
 
+typedef LedgerExporter = String? Function();
+typedef CapsuleStateExporter = String? Function();
+typedef RuntimeOwnerKeyReader = Uint8List? Function();
+
 class LedgerViewService {
-  final HivraBindings _hivra;
+  final LedgerExporter _exportLedger;
+  final CapsuleStateExporter _exportCapsuleState;
+  final RuntimeOwnerKeyReader _readRuntimeOwnerPublicKey;
   final LedgerViewSupport _support;
   late final InvitationProjectionService _invitationProjection;
   late final RelationshipProjectionService _relationshipProjection;
 
-  LedgerViewService(this._hivra) : _support = const LedgerViewSupport() {
-    _invitationProjection = InvitationProjectionService(_hivra, _support);
+  LedgerViewService(HivraBindings hivra)
+      : _exportLedger = hivra.exportLedger,
+        _exportCapsuleState = hivra.exportCapsuleStateJson,
+        _readRuntimeOwnerPublicKey = hivra.capsuleRuntimeOwnerPublicKey,
+        _support = const LedgerViewSupport() {
+    _invitationProjection = InvitationProjectionService(hivra, _support);
+    _relationshipProjection = RelationshipProjectionService(_support);
+  }
+
+  LedgerViewService.withSources({
+    required LedgerExporter exportLedger,
+    required CapsuleStateExporter exportCapsuleState,
+    required RuntimeOwnerKeyReader readRuntimeOwnerPublicKey,
+    LedgerViewSupport support = const LedgerViewSupport(),
+  })  : _exportLedger = exportLedger,
+        _exportCapsuleState = exportCapsuleState,
+        _readRuntimeOwnerPublicKey = readRuntimeOwnerPublicKey,
+        _support = support {
+    _invitationProjection = InvitationProjectionService.withOwnerKeyProvider(
+      _readRuntimeOwnerPublicKey,
+      _support,
+    );
     _relationshipProjection = RelationshipProjectionService(_support);
   }
 
@@ -25,10 +51,25 @@ class LedgerViewService {
     final root = _exportLedgerRoot();
     final capsuleState = _exportCapsuleStateRoot();
     final pubKey = _bytes32List(capsuleState?['public_key']) ??
-        _hivra.capsuleRuntimeOwnerPublicKey() ??
+        _readRuntimeOwnerPublicKey() ??
         Uint8List(0);
 
     if (root == null) {
+      return CapsuleLedgerSnapshot(
+        publicKey: pubKey,
+        starterCount: 0,
+        relationshipCount: 0,
+        pendingInvitations: 0,
+        version: 0,
+        ledgerHashHex: '0',
+        hasLedgerHistory: false,
+        starterIds: List<Uint8List?>.filled(5, null),
+        starterKinds: List<String?>.filled(5, null),
+        lockedStarterSlots: const <int>{},
+      );
+    }
+    final events = _support.events(root);
+    if (events.isEmpty) {
       return CapsuleLedgerSnapshot(
         publicKey: pubKey,
         starterCount: 0,
@@ -49,7 +90,7 @@ class LedgerViewService {
 
     final version = capsuleState?['version'] is num
         ? (capsuleState!['version'] as num).toInt()
-        : _support.events(root).length;
+        : events.length;
     final rawHash = capsuleState?['ledger_hash'] ?? root['last_hash'];
     final hashHex = rawHash == null ? '0' : rawHash.toString();
 
@@ -88,7 +129,8 @@ class LedgerViewService {
     if (ledgerRoot == null) return <Invitation>[];
     return _invitationProjection.loadInvitations(
       ledgerRoot,
-      starterIds: starterIds ?? _starterIdsFromCapsuleState(_exportCapsuleStateRoot()),
+      starterIds:
+          starterIds ?? _starterIdsFromCapsuleState(_exportCapsuleStateRoot()),
     );
   }
 
@@ -98,18 +140,19 @@ class LedgerViewService {
     return _relationshipProjection.loadRelationships(ledgerRoot);
   }
 
-  List<RelationshipPeerGroup> loadRelationshipGroups({Map<String, dynamic>? root}) {
+  List<RelationshipPeerGroup> loadRelationshipGroups(
+      {Map<String, dynamic>? root}) {
     final ledgerRoot = root ?? _exportLedgerRoot();
     if (ledgerRoot == null) return <RelationshipPeerGroup>[];
     return _relationshipProjection.loadRelationshipGroups(ledgerRoot);
   }
 
   Map<String, dynamic>? _exportLedgerRoot() {
-    return _support.exportLedgerRoot(_hivra.exportLedger());
+    return _support.exportLedgerRoot(_exportLedger());
   }
 
   Map<String, dynamic>? _exportCapsuleStateRoot() {
-    return _support.exportLedgerRoot(_hivra.exportCapsuleStateJson());
+    return _support.exportLedgerRoot(_exportCapsuleState());
   }
 
   Uint8List? _bytes32List(dynamic raw) {
@@ -157,4 +200,3 @@ class LedgerViewService {
     });
   }
 }
-

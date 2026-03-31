@@ -465,6 +465,11 @@ When tradeoffs are unclear, prefer:
   - Rebuild UI state immediately after any ledger mutation source: local create/init, JSON import, backup restore, or transport-delivered events.
   - Keep invitation UI simple: block only clearly invalid cases such as self-invite, and avoid embedding pairwise-consensus policy directly into send forms.
   - Keep bootstrap/runtime fallback only for truly empty-ledger birth state, not as the normal steady-state source of capsule truth.
+  - Current progress:
+    - `LedgerViewService.loadCapsuleSnapshot` now keeps `hasLedgerHistory=false` when ledger exists but has zero events, preventing slot/state projection from bypassing the explicit awaiting-history UI state.
+    - Added `ledger_view_service_test.dart` coverage for both branches:
+      - empty-ledger snapshot stays awaiting-history and ignores capsule-state slot occupancy
+      - non-empty ledger enables normal history-backed snapshot projection
 
 - `9.6 Ledger-Derived Slot Projection In Flutter`
   - Core already provides deterministic slot projection via `SlotLayout::from_ledger` and `CapsuleState::from_capsule`.
