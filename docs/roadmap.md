@@ -32,6 +32,9 @@ Scope:
     - first terminal event still accepted for unresolved invitation
     - `InvitationRejected` replay skipped when no matching outgoing offer exists
     - `InvitationRejected` replay skipped when invitation lineage is already terminal-accepted
+    - `InvitationExpired` replay skipped when no matching outgoing offer exists
+    - `InvitationExpired` replay skipped when invitation lineage is already terminal-accepted
+  - Replay policy now also requires `InvitationExpired` delivery to resolve an existing outgoing offer, preventing orphan terminal append without local lineage anchor.
 
 Definition of done:
 - Replayed transport events are either safely ignored or appended as genuinely new facts.
