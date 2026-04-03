@@ -301,7 +301,11 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
                       group: group,
                       displayPeerName: _peerDisplayName(group),
                       peerIdentityHint: _peerIdentityHint(group),
-                      isBreaking: _breakingPeerPubkey == group.peerPubkey,
+                      isBreaking: _breakingPeerPubkey != null &&
+                          group.relationships.any(
+                            (relationship) =>
+                                relationship.peerPubkey == _breakingPeerPubkey,
+                          ),
                       onBreak: group.activeRelationships.isEmpty
                           ? null
                           : () => _actOnGroup(group),

@@ -482,6 +482,7 @@ When tradeoffs are unclear, prefer:
   - `InvitationSentPayload` core codec now carries optional `sender_root_pubkey` (`96/97` legacy, `128/129` root-augmented), and engine `prepare_invitation_sent` now emits sender-root lineage by default; FFI send path keeps compatibility without double-appending root bytes.
   - Sender-side relationship projection from incoming `InvitationAccepted` now anchors peer root from `accepter_root_pubkey`, and local acceptance projection now anchors sender root when incoming offer carries sender-root provenance.
   - Break-relationship delivery now carries optional `peer_root_pubkey` in `RelationshipBroken` payloads when root anchor is known from established lineage.
+  - Relationship peer grouping now collapses mixed transport links under the same root anchor (when root provenance exists), reducing transport-key fragmentation in relationship counters and peer cards while preserving per-link transport payloads for operations.
 
 - `9.5 Ledger-Gated Capsule UI`
   - Capsule UI should treat the local ledger as the primary source of domain truth once any ledger history exists.

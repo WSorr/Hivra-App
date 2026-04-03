@@ -282,5 +282,53 @@ void main() {
         expect(projected.single.hasPendingRemoteBreak, isFalse);
       },
     );
+
+    test(
+      'groups mixed transport links under one peer when root anchor matches',
+      () {
+        const t0 = 1890003220000;
+        final root = <String, dynamic>{
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xb1,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x41,
+                senderByte: 0xb1,
+                senderStarterByte: 0x61,
+                peerRootByte: 0xcc,
+                senderRootByte: 0xaa,
+              ),
+              timestamp: t0 + 1,
+            ),
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xb2,
+                ownStarterByte: 0x22,
+                peerStarterByte: 0x32,
+                kindByte: 1,
+                invitationByte: 0x42,
+                senderByte: 0xb2,
+                senderStarterByte: 0x62,
+                peerRootByte: 0xcc,
+                senderRootByte: 0xaa,
+              ),
+              timestamp: t0 + 2,
+            ),
+          ],
+        };
+
+        final groups = service.loadRelationshipGroups(root);
+
+        expect(groups, hasLength(1));
+        expect(groups.single.relationships, hasLength(2));
+        expect(groups.single.preferredPeerRootPubkey, base64.encode(rep(0xcc)));
+        expect(groups.single.peerPubkey, base64.encode(rep(0xb2)));
+      },
+    );
   });
 }

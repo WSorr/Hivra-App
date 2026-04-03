@@ -546,6 +546,54 @@ void main() {
     });
 
     test(
+      'relationship count collapses mixed transport links with the same peer root',
+      () {
+        final self = rep(0xaa);
+        const t0 = 1890002010000;
+        final ledger = jsonEncode(<String, dynamic>{
+          'owner': self,
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayloadWithRoots(
+                peerByte: 0xb1,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x41,
+                senderByte: 0xb1,
+                senderStarterByte: 0x61,
+                peerRootByte: 0xcc,
+                senderRootByte: 0xaa,
+              ),
+              timestamp: t0 + 1,
+              signer: self,
+            ),
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayloadWithRoots(
+                peerByte: 0xb2,
+                ownStarterByte: 0x22,
+                peerStarterByte: 0x32,
+                kindByte: 1,
+                invitationByte: 0x42,
+                senderByte: 0xb2,
+                senderStarterByte: 0x62,
+                peerRootByte: 0xcc,
+                senderRootByte: 0xaa,
+              ),
+              timestamp: t0 + 2,
+              signer: self,
+            ),
+          ],
+        });
+
+        final summary = parser.parse(ledger, toHex);
+        expect(summary.relationshipCount, equals(1));
+      },
+    );
+
+    test(
       'remote RelationshipBroken notification keeps relationship active in summary count',
       () {
         final self = rep(0xaa);

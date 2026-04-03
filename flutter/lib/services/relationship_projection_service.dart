@@ -97,17 +97,38 @@ class RelationshipProjectionService {
   List<RelationshipPeerGroup> loadRelationshipGroups(
       Map<String, dynamic> root) {
     final relationships = loadRelationships(root);
-    final byPeer = <String, List<Relationship>>{};
+    final transportPeerToRootPeer = <String, String>{};
     for (final relationship in relationships) {
-      byPeer
-          .putIfAbsent(relationship.peerPubkey, () => <Relationship>[])
-          .add(relationship);
+      final peerRoot = relationship.peerRootPubkey;
+      if (peerRoot != null && peerRoot.isNotEmpty) {
+        transportPeerToRootPeer[relationship.peerPubkey] = peerRoot;
+      }
+    }
+
+    final byPeer = <String, List<Relationship>>{};
+    final representativeByPeer = <String, Relationship>{};
+    for (final relationship in relationships) {
+      final peerIdentityKey = _canonicalPeerIdentityKey(
+        relationship,
+        transportPeerToRootPeer,
+      );
+      byPeer.putIfAbsent(peerIdentityKey, () => <Relationship>[]).add(
+            relationship,
+          );
+      final currentRepresentative = representativeByPeer[peerIdentityKey];
+      if (currentRepresentative == null ||
+          relationship.establishedAt.isAfter(
+            currentRepresentative.establishedAt,
+          )) {
+        representativeByPeer[peerIdentityKey] = relationship;
+      }
     }
 
     final groups = byPeer.entries
         .map(
           (entry) => RelationshipPeerGroup(
-            peerPubkey: entry.key,
+            peerPubkey: representativeByPeer[entry.key]?.peerPubkey ??
+                entry.value.first.peerPubkey,
             relationships: entry.value,
           ),
         )
@@ -115,6 +136,21 @@ class RelationshipProjectionService {
     groups
         .sort((a, b) => b.latestEstablishedAt.compareTo(a.latestEstablishedAt));
     return groups;
+  }
+
+  String _canonicalPeerIdentityKey(
+    Relationship relationship,
+    Map<String, String> transportPeerToRootPeer,
+  ) {
+    final peerRoot = relationship.peerRootPubkey;
+    if (peerRoot != null && peerRoot.isNotEmpty) {
+      return peerRoot;
+    }
+    final mappedRoot = transportPeerToRootPeer[relationship.peerPubkey];
+    if (mappedRoot != null && mappedRoot.isNotEmpty) {
+      return mappedRoot;
+    }
+    return relationship.peerPubkey;
   }
 
   _ProjectedRelationship? _parseRelationshipEstablished(List<int> payload) {
