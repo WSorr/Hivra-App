@@ -74,6 +74,15 @@ Contains:
 - update truth-preservation checks
 - pending invitation stability checks
 
+### 8) `architecture-execution-discipline.md` (architecture execution standard)
+Use this when introducing/refactoring modules and async flows.
+
+Contains:
+- the three non-negotiable architecture laws
+- execution-path contract (`intent -> effect -> ledger -> projection`)
+- effect and async resolution discipline
+- module creation checklist and refactor acceptance criteria
+
 ## Recommended Reading Order
 
 1. `specification.md`
@@ -83,6 +92,7 @@ Contains:
 5. `identity-decoupling-migration.md` when touching root identity or transport key derivation
 6. `capsule-addressing-model.md` when touching invitation addressing or peer endpoint resolution
 7. `checklists/user-lifetime-safety-pack.md` when preparing release candidates
+8. `architecture-execution-discipline.md` when designing/refactoring module boundaries and async behavior
 
 ## Update Rules
 

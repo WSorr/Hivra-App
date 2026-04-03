@@ -594,6 +594,23 @@ When tradeoffs are unclear, prefer:
     - review gate also protects `widgets/` and `utils/` from direct `HivraBindings` imports
     - `tools/review/ui_ffi_boundary_gate.sh` now enforces a service-level import budget and fails if new service files add direct `HivraBindings` ownership outside the allowlist
   - Prioritize extracting read-only screens and backup/recovery orchestration first.
-  - Definition of done for this slice:
-    - screens depend on application services/facades, not raw FFI bindings
-    - FFI access is concentrated in a smaller boundary layer with explicit ownership
+- Definition of done for this slice:
+  - screens depend on application services/facades, not raw FFI bindings
+  - FFI access is concentrated in a smaller boundary layer with explicit ownership
+
+- `9.10 Execution Discipline Standard`
+  - Codify one internal execution discipline for new modules and refactors.
+  - Scope:
+    - explicit action path (`intent -> effect -> ledger -> projection`)
+    - isolated effect boundaries for network/filesystem/keys/time
+    - async resolve-once discipline with stale-completion drop
+    - shared projection ownership (no screen-local reinterpretation)
+  - Current progress:
+    - Added `docs/architecture-execution-discipline.md` as internal architecture standard.
+    - Added module-creation and refactor acceptance checklists aligned to:
+      - modular ownership
+      - deterministic replay/projection behavior
+      - strict downward dependencies
+  - Definition of done:
+    - New architectural work uses one documented execution discipline.
+    - Review and implementation discussions reference internal Hivra rules instead of ad hoc patterns.
