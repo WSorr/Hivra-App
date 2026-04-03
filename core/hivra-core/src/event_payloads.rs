@@ -392,6 +392,29 @@ mod tests {
     }
 
     #[test]
+    fn test_invitation_sent_accepts_root_augmented_payload_variants() {
+        let invitation_id = [10u8; 32];
+        let starter_id = [11u8; 32];
+        let to_pubkey = [12u8; 32];
+        let sender_root = [13u8; 32];
+
+        let base = InvitationSentPayload {
+            invitation_id,
+            starter_id: StarterId::from(starter_id),
+            to_pubkey: PubKey::from(to_pubkey),
+        };
+        let mut bytes_128 = base.to_bytes();
+        bytes_128.extend_from_slice(&sender_root);
+        let parsed_128 = InvitationSentPayload::from_bytes(&bytes_128).unwrap();
+        assert_eq!(parsed_128, base);
+
+        let mut bytes_129 = bytes_128.clone();
+        bytes_129.push(2);
+        let parsed_129 = InvitationSentPayload::from_bytes(&bytes_129).unwrap();
+        assert_eq!(parsed_129, base);
+    }
+
+    #[test]
     fn test_relationship_established_roundtrip() {
         let payload = RelationshipEstablishedPayload {
             peer_pubkey: PubKey::from([1u8; 32]),

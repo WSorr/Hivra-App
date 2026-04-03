@@ -98,6 +98,42 @@ fn append_invitation_sent_for_test(
 }
 
 #[test]
+fn lookup_reads_sender_root_from_root_augmented_incoming_offer() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(95);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [41u8; 32];
+    let peer_root_pubkey = [42u8; 32];
+    let invitation_id = [43u8; 32];
+    let peer_starter_id = derive_starter_id(&test_seed(96), 1);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    let payload = InvitationSentPayload {
+        invitation_id,
+        starter_id: StarterId::from(peer_starter_id),
+        to_pubkey: local_pubkey,
+    };
+    let mut payload_bytes = payload.to_bytes();
+    payload_bytes.extend_from_slice(&peer_root_pubkey);
+    payload_bytes.push(1);
+    append_runtime_event_with_signer(
+        EventKind::InvitationReceived,
+        &payload_bytes,
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+
+    let record = find_invitation_sent_in_runtime(&invitation_id).expect("lookup record");
+    assert!(record.is_incoming);
+    assert_eq!(record.peer_pubkey, PubKey::from(peer_pubkey));
+    assert_eq!(record.starter_id, StarterId::from(peer_starter_id));
+    assert_eq!(record.starter_kind, StarterKind::Spark);
+    assert_eq!(record.sender_root_pubkey, Some(PubKey::from(peer_root_pubkey)));
+}
+
+#[test]
 fn finalize_local_acceptance_creates_starter_and_relationship() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
