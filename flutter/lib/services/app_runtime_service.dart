@@ -1,11 +1,7 @@
 import 'dart:typed_data';
 
-import '../ffi/capsule_address_runtime.dart';
-import '../ffi/hivra_bindings.dart';
-import '../ffi/invitation_actions_runtime.dart';
-import '../ffi/ledger_view_runtime.dart';
+import '../ffi/app_runtime_runtime.dart';
 import 'capsule_address_service.dart';
-import 'capsule_persistence_service.dart';
 import 'capsule_state_manager.dart';
 import 'consensus_runtime_service.dart';
 import 'invitation_actions_service.dart';
@@ -21,25 +17,19 @@ import 'temperature_tomorrow_contract_service.dart';
 import 'plugin_host_api_service.dart';
 
 class AppRuntimeService {
-  final HivraBindings _hivra;
-  final CapsulePersistenceService _persistence;
+  final AppRuntimeRuntime _runtime;
   late final CapsuleStateManager _stateManager;
   late final InvitationActionsService _invitationActions;
   late final InvitationIntentHandler _invitationIntents;
   late final LedgerViewService _ledgerView;
 
   AppRuntimeService({
-    HivraBindings? hivra,
-    CapsulePersistenceService? persistence,
-  })  : _hivra = hivra ?? HivraBindings(),
-        _persistence = persistence ?? CapsulePersistenceService() {
-    _ledgerView = LedgerViewService(runtime: HivraLedgerViewRuntime(_hivra));
+    AppRuntimeRuntime? runtime,
+  }) : _runtime = runtime ?? HivraAppRuntimeRuntime() {
+    _ledgerView = LedgerViewService(runtime: _runtime.ledgerViewRuntime);
     _stateManager = CapsuleStateManager(_ledgerView);
     _invitationActions = InvitationActionsService(
-      runtime: HivraInvitationActionsRuntime(
-        hivra: _hivra,
-        persistence: _persistence,
-      ),
+      runtime: _runtime.invitationActionsRuntime,
     );
     _invitationIntents = InvitationIntentHandler(
       actions: _invitationActions,
@@ -54,22 +44,22 @@ class AppRuntimeService {
   LedgerViewService get ledgerView => _ledgerView;
 
   Future<bool> bootstrapActiveCapsuleRuntime() {
-    return _persistence.bootstrapActiveCapsuleRuntime(_hivra);
+    return _runtime.bootstrapActiveCapsuleRuntime();
   }
 
   Future<void> persistLedgerSnapshot() {
-    return _persistence.persistLedgerSnapshot(_hivra);
+    return _runtime.persistLedgerSnapshot();
   }
 
-  Uint8List? capsuleRootPublicKey() => _hivra.capsuleRootPublicKey();
-  Uint8List? capsuleNostrPublicKey() => _hivra.capsuleNostrPublicKey();
-  String? exportLedger() => _hivra.exportLedger();
+  Uint8List? capsuleRootPublicKey() => _runtime.capsuleRootPublicKey();
+  Uint8List? capsuleNostrPublicKey() => _runtime.capsuleNostrPublicKey();
+  String? exportLedger() => _runtime.exportLedger();
 
   ConsensusRuntimeService buildConsensusRuntimeService() {
     return ConsensusRuntimeService(
-      exportLedger: _hivra.exportLedger,
-      readLocalTransportKey: _hivra.capsuleNostrPublicKey,
-      readLocalRootKey: _hivra.capsuleRootPublicKey,
+      exportLedger: _runtime.exportLedger,
+      readLocalTransportKey: _runtime.capsuleNostrPublicKey,
+      readLocalRootKey: _runtime.capsuleRootPublicKey,
     );
   }
 
@@ -113,21 +103,20 @@ class AppRuntimeService {
   RelationshipService buildRelationshipService() {
     return RelationshipService(
       loadRelationshipGroups: _ledgerView.loadRelationshipGroups,
-      breakRelationship: _hivra.breakRelationship,
-      persistLedgerSnapshot: () => _persistence.persistLedgerSnapshot(_hivra),
+      breakRelationship: _runtime.breakRelationship,
+      persistLedgerSnapshot: _runtime.persistLedgerSnapshot,
     );
   }
 
   SettingsService buildSettingsService() {
     final contactCards = CapsuleAddressService(
-      runtime: HivraCapsuleAddressRuntime(_hivra),
+      runtime: _runtime.capsuleAddressRuntime,
     );
     return SettingsService(
       loadIsNeste: () => _stateManager.state.isNeste,
-      loadSeed: _hivra.loadSeed,
-      diagnoseCapsuleTraces: () => _persistence.diagnoseCapsuleTraces(_hivra),
-      diagnoseBootstrapReport: () =>
-          _persistence.diagnoseBootstrapReport(_hivra),
+      loadSeed: _runtime.loadSeed,
+      diagnoseCapsuleTraces: _runtime.diagnoseCapsuleTraces,
+      diagnoseBootstrapReport: _runtime.diagnoseBootstrapReport,
       buildOwnCard: contactCards.buildOwnCard,
       exportOwnCardJson: contactCards.exportOwnCardJson,
       contactCards: contactCards,

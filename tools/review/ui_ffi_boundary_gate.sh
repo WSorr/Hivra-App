@@ -26,11 +26,8 @@ SERVICE_IMPORTS="$(
   rg -n "import .*ffi/hivra_bindings.dart" "$ROOT/flutter/lib/services" -S || true
 )"
 
-declare -a SERVICE_ALLOWLIST=(
-  "$ROOT/flutter/lib/services/app_runtime_service.dart"
-  "$ROOT/flutter/lib/services/capsule_persistence_service.dart"
-)
-MAX_SERVICE_IMPORTS=4
+declare -a SERVICE_ALLOWLIST=()
+MAX_SERVICE_IMPORTS=2
 
 if [ -n "$SCREEN_IMPORTS" ]; then
   fail "screens must not import ffi/hivra_bindings.dart directly"

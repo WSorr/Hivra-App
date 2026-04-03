@@ -549,7 +549,7 @@ When tradeoffs are unclear, prefer:
     - `7` services import `HivraBindings` directly
   - Current snapshot:
     - `0` screens import `HivraBindings` directly
-    - `2` services import `HivraBindings` directly (explicit allowlist in review gate)
+    - `0` services import `HivraBindings` directly (explicit allowlist in review gate)
     - `FirstLaunchService` no longer imports `HivraBindings`; it now consumes `CapsuleDraftRuntime` boundary with `HivraCapsuleDraftRuntime` adapter at FFI layer
     - `BackupService` no longer imports `HivraBindings`; it now consumes `BackupRuntime` boundary with `HivraBackupRuntime` adapter at FFI layer
     - `CapsuleAddressService` no longer imports `HivraBindings`; it now consumes `CapsuleAddressRuntime` boundary with `HivraCapsuleAddressRuntime` adapter at FFI layer
@@ -563,6 +563,8 @@ When tradeoffs are unclear, prefer:
     - `LedgerViewService` no longer imports `HivraBindings`; it now consumes `LedgerViewRuntime` boundary with `HivraLedgerViewRuntime` adapter at FFI layer
     - `CapsuleRuntimeBootstrapService` no longer imports `HivraBindings`; it now consumes `CapsuleRuntimeBootstrapRuntime` boundary with `HivraCapsuleRuntimeBootstrapRuntime` adapter at FFI layer
     - `InvitationActionsService` no longer imports `HivraBindings`; worker entrypoints and persistence/FFI operations now flow through `InvitationActionsRuntime` boundary with `HivraInvitationActionsRuntime` adapter at FFI layer
+    - `AppRuntimeService` no longer imports `HivraBindings`; it now consumes `AppRuntimeRuntime` boundary with `HivraAppRuntimeRuntime` adapter at FFI layer
+    - `CapsulePersistenceService` no longer imports `HivraBindings` directly; it now consumes `CapsulePersistenceBindings` boundary from FFI layer
     - UI entrypoint `main.dart` no longer imports `HivraBindings` directly
     - review gate also protects `widgets/` and `utils/` from direct `HivraBindings` imports
     - `tools/review/ui_ffi_boundary_gate.sh` now enforces a service-level import budget and fails if new service files add direct `HivraBindings` ownership outside the allowlist
