@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/relationship.dart';
 import 'package:hivra_app/models/starter.dart';
+import 'package:hivra_app/services/capsule_address_service.dart';
 import 'package:hivra_app/services/relationship_service.dart';
 
 void main() {
@@ -82,4 +85,83 @@ void main() {
     expect(breakCalls, equals(1));
     expect(persistCalls, equals(1));
   });
+
+  test('loadPeerRootKeysByTransportBase64 resolves via normalized transport hex',
+      () async {
+    final peerBytes = List<int>.filled(32, 0x11);
+    final rootBytes = List<int>.filled(32, 0x22);
+    final peerBase64 = base64.encode(peerBytes);
+    final rootHex = rootBytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    final nostrHex = peerBytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join()
+        .toUpperCase()
+        .replaceAllMapped(RegExp(r'..'), (m) => '${m.group(0)}:')
+        .replaceFirst(RegExp(r':$'), '');
+
+    final service = RelationshipService(
+      loadRelationshipGroups: () => const [],
+      breakRelationship: (_, __, ___) => true,
+      persistLedgerSnapshot: () async {},
+      addressService: _FakeCapsuleAddressService(
+        cards: <CapsuleAddressCard>[
+          CapsuleAddressCard(
+            rootKey: 'h1testroot',
+            rootHex: rootHex,
+            nostrNpub: 'npub1test',
+            nostrHex: nostrHex,
+          ),
+        ],
+      ),
+    );
+
+    final resolved = await service.loadPeerRootKeysByTransportBase64(
+      <String>[peerBase64],
+    );
+
+    expect(resolved[peerBase64], 'h1testroot');
+  });
+
+  test('loadPeerRootKeysByTransportBase64 resolves when peer key is root key',
+      () async {
+    final rootBytes = List<int>.filled(32, 0x33);
+    final rootBase64 = base64.encode(rootBytes);
+    final rootHex = rootBytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+
+    final service = RelationshipService(
+      loadRelationshipGroups: () => const [],
+      breakRelationship: (_, __, ___) => true,
+      persistLedgerSnapshot: () async {},
+      addressService: _FakeCapsuleAddressService(
+        cards: <CapsuleAddressCard>[
+          CapsuleAddressCard(
+            rootKey: 'h1rootcapsule',
+            rootHex: rootHex,
+            nostrNpub: 'npub1rootcapsule',
+            nostrHex:
+                '4444444444444444444444444444444444444444444444444444444444444444',
+          ),
+        ],
+      ),
+    );
+
+    final resolved = await service.loadPeerRootKeysByTransportBase64(
+      <String>[rootBase64],
+    );
+
+    expect(resolved[rootBase64], 'h1rootcapsule');
+  });
+}
+
+class _FakeCapsuleAddressService extends CapsuleAddressService {
+  final List<CapsuleAddressCard> cards;
+
+  const _FakeCapsuleAddressService({required this.cards});
+
+  @override
+  Future<List<CapsuleAddressCard>> listTrustedCards() async => cards;
 }

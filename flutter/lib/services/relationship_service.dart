@@ -41,8 +41,14 @@ class RelationshipService {
     final rootByTransportHex = <String, String>{};
 
     for (final card in cards) {
-      rootByHex[card.rootHex] = card.rootKey;
-      rootByTransportHex[card.nostrHex] = card.rootKey;
+      final rootHex = _normalizeHex32(card.rootHex);
+      if (rootHex != null) {
+        rootByHex[rootHex] = card.rootKey;
+      }
+      final nostrHex = _normalizeHex32(card.nostrHex);
+      if (nostrHex != null) {
+        rootByTransportHex[nostrHex] = card.rootKey;
+      }
     }
 
     final result = <String, String>{};
@@ -87,4 +93,18 @@ class RelationshipService {
 
   String _hex(Uint8List bytes) =>
       bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+
+  String? _normalizeHex32(String value) {
+    final normalized = value
+        .trim()
+        .toLowerCase()
+        .replaceAll(':', '')
+        .replaceAll('-', '')
+        .replaceAll(' ', '');
+    final hex32 = RegExp(r'^[0-9a-f]{64}$');
+    if (!hex32.hasMatch(normalized)) {
+      return null;
+    }
+    return normalized;
+  }
 }
