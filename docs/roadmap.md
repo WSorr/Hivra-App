@@ -616,6 +616,11 @@ When tradeoffs are unclear, prefer:
       - modular ownership
       - deterministic replay/projection behavior
       - strict downward dependencies
+    - `tools/review/architecture_contract_gate.sh` now enforces baseline execution-discipline sync across:
+      - `docs/architecture-execution-discipline.md`
+      - `docs/README.md` index reference
+      - roadmap tracking (`9.10`)
+      - architecture checklist section and canonical action-path review item
   - Definition of done:
     - New architectural work uses one documented execution discipline.
     - Review and implementation discussions reference internal Hivra rules instead of ad hoc patterns.

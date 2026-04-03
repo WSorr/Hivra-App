@@ -47,6 +47,14 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Pair-scoped plugin execution is gated by consensus guard readiness.
 - [ ] Plugin inputs/outputs are deterministic for identical inputs.
 
+## Execution Discipline v1
+
+- [ ] Action path follows `UI intent -> use-case boundary -> runtime/FFI call -> ledger append -> projection rebuild -> UI render`.
+- [ ] Effectful operations (network, filesystem, keys, time) stay behind runtime boundaries.
+- [ ] Async flows resolve once and ignore stale completions from superseded operations.
+- [ ] UI action surfaces close immediately on submit, then show short result status.
+- [ ] Screens consume shared projection services and do not reinterpret terminal states locally.
+
 ## Review Gates
 
 - [ ] `tools/review/review_all.sh` passes.

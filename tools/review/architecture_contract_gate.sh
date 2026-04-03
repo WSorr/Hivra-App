@@ -40,7 +40,10 @@ TRANSPORT_SRC="$ROOT/adapters/hivra-transport/src"
 DEP_CHECK="$ROOT/tools/review/dependency_check.sh"
 SPEC="$ROOT/docs/specification.md"
 README="$ROOT/README.md"
+DOCS_README="$ROOT/docs/README.md"
 CHECKLIST="$ROOT/docs/checklists/architecture-review.md"
+ROADMAP="$ROOT/docs/roadmap.md"
+EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
 
 RUNTIME="$ROOT/flutter/lib/services/app_runtime_service.dart"
 INV_INTENT="$ROOT/flutter/lib/services/invitation_intent_handler.dart"
@@ -85,6 +88,24 @@ require_present "$CHECKLIST" '## Engine Integrity' \
   "architecture checklist includes engine integrity section"
 require_present "$CHECKLIST" '## WASM Plugin Host' \
   "architecture checklist includes wasm plugin-host section"
+require_present "$EXEC_DISCIPLINE" '^# Hivra Architecture Execution Discipline v1' \
+  "execution discipline doc exists"
+require_present "$EXEC_DISCIPLINE" '^## 1\. Three Non-Negotiable Laws' \
+  "execution discipline defines three non-negotiable laws"
+require_present "$EXEC_DISCIPLINE" 'UI intent -> use-case boundary -> runtime/FFI call -> ledger append -> projection rebuild -> UI render' \
+  "execution discipline defines canonical action path"
+require_present "$EXEC_DISCIPLINE" '^## 4\. Async Resolution Discipline' \
+  "execution discipline defines async resolution rules"
+require_present "$DOCS_README" 'architecture-execution-discipline\.md' \
+  "docs index references execution discipline standard"
+require_present "$ROADMAP" '`9\.10 Execution Discipline Standard`' \
+  "roadmap tracks execution discipline standard"
+require_present "$CHECKLIST" '## Execution Discipline v1' \
+  "architecture checklist includes execution discipline section"
+require_present "$CHECKLIST" 'UI intent -> use-case boundary -> runtime/FFI call -> ledger append -> projection rebuild -> UI render' \
+  "architecture checklist enforces canonical action path review"
+require_present "$CHECKLIST" 'Async flows resolve once and ignore stale completions' \
+  "architecture checklist enforces async resolve-once review"
 
 # 4) Flutter invitation flow application boundary.
 require_present "$INV_INTENT" 'class InvitationIntentHandler' \
