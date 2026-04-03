@@ -128,6 +128,8 @@ mod tests {
                     sender_pubkey: PubKey::from([6u8; 32]),
                     sender_starter_type: StarterKind::Juice,
                     sender_starter_id: StarterId::from([7u8; 32]),
+                    peer_root_pubkey: None,
+                    sender_root_pubkey: None,
                 }
                 .to_bytes(),
                 Timestamp::from(1),
@@ -142,6 +144,7 @@ mod tests {
                 RelationshipBrokenPayload {
                     peer_pubkey: PubKey::from([2u8; 32]),
                     own_starter_id: StarterId::from([3u8; 32]),
+                    peer_root_pubkey: None,
                 }
                 .to_bytes(),
                 Timestamp::from(2),

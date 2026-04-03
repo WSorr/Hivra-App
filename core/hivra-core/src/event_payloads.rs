@@ -85,7 +85,7 @@ impl EventPayload for InvitationSentPayload {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
-        if bytes.len() != 96 {
+        if bytes.len() != 96 && bytes.len() != 97 && bytes.len() != 128 && bytes.len() != 129 {
             return Err("invalid invitation_sent payload length");
         }
         Ok(Self {
@@ -101,6 +101,7 @@ pub struct InvitationAcceptedPayload {
     pub invitation_id: [u8; 32],
     pub from_pubkey: PubKey,
     pub created_starter_id: StarterId,
+    pub accepter_root_pubkey: Option<PubKey>,
 }
 
 impl EventPayload for InvitationAcceptedPayload {
@@ -109,21 +110,33 @@ impl EventPayload for InvitationAcceptedPayload {
     }
 
     fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(96);
+        let mut out = Vec::with_capacity(if self.accepter_root_pubkey.is_some() {
+            128
+        } else {
+            96
+        });
         out.extend_from_slice(&self.invitation_id);
         out.extend_from_slice(self.from_pubkey.as_bytes());
         out.extend_from_slice(self.created_starter_id.as_bytes());
+        if let Some(accepter_root_pubkey) = self.accepter_root_pubkey {
+            out.extend_from_slice(accepter_root_pubkey.as_bytes());
+        }
         out
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
-        if bytes.len() != 96 {
+        if bytes.len() != 96 && bytes.len() != 128 {
             return Err("invalid invitation_accepted payload length");
         }
         Ok(Self {
             invitation_id: read_fixed_32(bytes, 0),
             from_pubkey: PubKey::from(read_fixed_32(bytes, 32)),
             created_starter_id: StarterId::from(read_fixed_32(bytes, 64)),
+            accepter_root_pubkey: if bytes.len() >= 128 {
+                Some(PubKey::from(read_fixed_32(bytes, 96)))
+            } else {
+                None
+            },
         })
     }
 }
@@ -256,6 +269,8 @@ pub struct RelationshipEstablishedPayload {
     pub sender_pubkey: PubKey,
     pub sender_starter_type: StarterKind,
     pub sender_starter_id: StarterId,
+    pub peer_root_pubkey: Option<PubKey>,
+    pub sender_root_pubkey: Option<PubKey>,
 }
 
 impl EventPayload for RelationshipEstablishedPayload {
@@ -273,11 +288,17 @@ impl EventPayload for RelationshipEstablishedPayload {
         out.extend_from_slice(self.sender_pubkey.as_bytes());
         out.push(self.sender_starter_type as u8);
         out.extend_from_slice(self.sender_starter_id.as_bytes());
+        if let Some(peer_root_pubkey) = self.peer_root_pubkey {
+            out.extend_from_slice(peer_root_pubkey.as_bytes());
+            if let Some(sender_root_pubkey) = self.sender_root_pubkey {
+                out.extend_from_slice(sender_root_pubkey.as_bytes());
+            }
+        }
         out
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
-        if bytes.len() != 194 {
+        if bytes.len() != 194 && bytes.len() != 226 && bytes.len() != 258 {
             return Err("invalid relationship_established payload length");
         }
         let kind = StarterKind::from_u8(bytes[96]).ok_or("invalid starter kind")?;
@@ -292,6 +313,16 @@ impl EventPayload for RelationshipEstablishedPayload {
             sender_pubkey: PubKey::from(read_fixed_32(bytes, 129)),
             sender_starter_type,
             sender_starter_id: StarterId::from(read_fixed_32(bytes, 162)),
+            peer_root_pubkey: if bytes.len() >= 226 {
+                Some(PubKey::from(read_fixed_32(bytes, 194)))
+            } else {
+                None
+            },
+            sender_root_pubkey: if bytes.len() >= 258 {
+                Some(PubKey::from(read_fixed_32(bytes, 226)))
+            } else {
+                None
+            },
         })
     }
 }
@@ -300,6 +331,7 @@ impl EventPayload for RelationshipEstablishedPayload {
 pub struct RelationshipBrokenPayload {
     pub peer_pubkey: PubKey,
     pub own_starter_id: StarterId,
+    pub peer_root_pubkey: Option<PubKey>,
 }
 
 impl EventPayload for RelationshipBrokenPayload {
@@ -308,19 +340,31 @@ impl EventPayload for RelationshipBrokenPayload {
     }
 
     fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(64);
+        let mut out = Vec::with_capacity(if self.peer_root_pubkey.is_some() {
+            96
+        } else {
+            64
+        });
         out.extend_from_slice(self.peer_pubkey.as_bytes());
         out.extend_from_slice(self.own_starter_id.as_bytes());
+        if let Some(peer_root_pubkey) = self.peer_root_pubkey {
+            out.extend_from_slice(peer_root_pubkey.as_bytes());
+        }
         out
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
-        if bytes.len() != 64 {
+        if bytes.len() != 64 && bytes.len() != 96 {
             return Err("invalid relationship_broken payload length");
         }
         Ok(Self {
             peer_pubkey: PubKey::from(read_fixed_32(bytes, 0)),
             own_starter_id: StarterId::from(read_fixed_32(bytes, 32)),
+            peer_root_pubkey: if bytes.len() >= 96 {
+                Some(PubKey::from(read_fixed_32(bytes, 64)))
+            } else {
+                None
+            },
         })
     }
 }
@@ -358,10 +402,39 @@ mod tests {
             sender_pubkey: PubKey::from([5u8; 32]),
             sender_starter_type: StarterKind::Juice,
             sender_starter_id: StarterId::from([6u8; 32]),
+            peer_root_pubkey: Some(PubKey::from([7u8; 32])),
+            sender_root_pubkey: Some(PubKey::from([8u8; 32])),
         };
 
         let bytes = payload.to_bytes();
         let parsed = RelationshipEstablishedPayload::from_bytes(&bytes).unwrap();
+        assert_eq!(parsed, payload);
+    }
+
+    #[test]
+    fn test_invitation_accepted_with_root_roundtrip() {
+        let payload = InvitationAcceptedPayload {
+            invitation_id: [1u8; 32],
+            from_pubkey: PubKey::from([2u8; 32]),
+            created_starter_id: StarterId::from([3u8; 32]),
+            accepter_root_pubkey: Some(PubKey::from([4u8; 32])),
+        };
+
+        let bytes = payload.to_bytes();
+        let parsed = InvitationAcceptedPayload::from_bytes(&bytes).unwrap();
+        assert_eq!(parsed, payload);
+    }
+
+    #[test]
+    fn test_relationship_broken_with_peer_root_roundtrip() {
+        let payload = RelationshipBrokenPayload {
+            peer_pubkey: PubKey::from([5u8; 32]),
+            own_starter_id: StarterId::from([6u8; 32]),
+            peer_root_pubkey: Some(PubKey::from([7u8; 32])),
+        };
+
+        let bytes = payload.to_bytes();
+        let parsed = RelationshipBrokenPayload::from_bytes(&bytes).unwrap();
         assert_eq!(parsed, payload);
     }
 }

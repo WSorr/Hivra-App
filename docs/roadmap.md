@@ -464,6 +464,13 @@ When tradeoffs are unclear, prefer:
   - Flutter relationship projection decoders now accept root-augmented relationship payloads (`RelationshipEstablished` payloads longer than 194 bytes and `RelationshipBroken` payloads longer than 64 bytes) while keeping backward compatibility with existing payload layout.
   - Consensus processor now prefers `peer_root_pubkey` from root-augmented `RelationshipEstablished`/`RelationshipBroken` payloads when present, and falls back to legacy transport-key mapping otherwise.
   - Added regression coverage for root-augmented relationship payload handling in `ledger_view_support_test.dart`, `relationship_projection_service_test.dart`, `capsule_ledger_summary_parser_test.dart`, and `consensus_processor_test.dart`.
+  - Core payload codecs now support root-augmented lineage/event shapes with backward-compatible parsing:
+    - `InvitationAccepted`: `96` (legacy) or `128` bytes (`accepter_root_pubkey`)
+    - `RelationshipEstablished`: `194` (legacy), `226` (`peer_root_pubkey`), or `258` bytes (`peer_root_pubkey + sender_root_pubkey`)
+    - `RelationshipBroken`: `64` (legacy) or `96` bytes (`peer_root_pubkey`)
+  - FFI invitation send path now appends sender root provenance into offer payload (`InvitationSent` extended variants `128/129`), while keeping legacy `96/97` offer parsing support in runtime lookup/projection paths.
+  - Sender-side relationship projection from incoming `InvitationAccepted` now anchors peer root from `accepter_root_pubkey`, and local acceptance projection now anchors sender root when incoming offer carries sender-root provenance.
+  - Break-relationship delivery now carries optional `peer_root_pubkey` in `RelationshipBroken` payloads when root anchor is known from established lineage.
 
 - `9.5 Ledger-Gated Capsule UI`
   - Capsule UI should treat the local ledger as the primary source of domain truth once any ledger history exists.

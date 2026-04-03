@@ -299,6 +299,7 @@ mod tests {
                 invitation_id,
                 created_starter_id: StarterId::from([10u8; 32]),
                 from_pubkey: peer,
+                accepter_root_pubkey: None,
             }
             .to_bytes(),
             3,

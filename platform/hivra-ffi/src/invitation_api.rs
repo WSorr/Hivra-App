@@ -118,6 +118,9 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
     };
     let invitation_id = payload.invitation_id;
     let mut payload_bytes = prepared.event.payload().to_vec();
+    if let Ok(sender_root_pubkey) = derive_root_public_key(&seed) {
+        payload_bytes.extend_from_slice(&sender_root_pubkey);
+    }
     // Include starter kind byte so receiver can render correct kind for incoming invitation.
     payload_bytes.push(starter_kind.to_byte());
 
@@ -282,7 +285,9 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
             }
         }
 
-        if kind == EventKind::InvitationAccepted && message.payload.len() == 96 {
+        if kind == EventKind::InvitationAccepted
+            && (message.payload.len() == 96 || message.payload.len() == 128)
+        {
             let Ok(payload) = InvitationAcceptedPayload::from_bytes(&message.payload) else {
                 continue;
             };
@@ -541,7 +546,7 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
 
     let engine = build_engine(&seed);
     let peer_pubkey = match find_invitation_sent_in_runtime(&invitation_id) {
-        Some((_, _, peer_pubkey, _)) => peer_pubkey,
+        Some(record) => record.peer_pubkey,
         None => return -4,
     };
     let prepared =

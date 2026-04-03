@@ -3,9 +3,42 @@ use crate::runtime_support::{
     derive_starter_id, derive_starter_nonce, starter_is_active_in_runtime,
 };
 
+#[derive(Clone, Copy)]
+pub(crate) struct InvitationLookupRecord {
+    pub(crate) starter_id: StarterId,
+    pub(crate) starter_kind: StarterKind,
+    pub(crate) peer_pubkey: PubKey,
+    pub(crate) is_incoming: bool,
+    pub(crate) sender_root_pubkey: Option<PubKey>,
+}
+
+fn invitation_payload_has_known_shape(payload: &[u8]) -> bool {
+    payload.len() == 96 || payload.len() == 97 || payload.len() == 128 || payload.len() == 129
+}
+
+fn invitation_payload_sender_root(payload: &[u8]) -> Option<PubKey> {
+    if payload.len() >= 128 {
+        let mut root = [0u8; 32];
+        root.copy_from_slice(&payload[96..128]);
+        Some(PubKey::from(root))
+    } else {
+        None
+    }
+}
+
+fn invitation_payload_starter_kind(payload: &[u8]) -> Option<StarterKind> {
+    if payload.len() == 97 {
+        return starter_kind_from_slot(payload[96]);
+    }
+    if payload.len() == 129 {
+        return starter_kind_from_slot(payload[128]);
+    }
+    None
+}
+
 pub(crate) fn find_invitation_sent_in_runtime(
     invitation_id: &[u8; 32],
-) -> Option<(StarterId, StarterKind, PubKey, bool)> {
+) -> Option<InvitationLookupRecord> {
     find_invitation_sent_in_runtime_with_direction(invitation_id, None)
 }
 
@@ -24,7 +57,7 @@ pub(crate) fn invitation_offer_exists_in_runtime(
             return false;
         }
         let payload = event.payload();
-        if payload.len() != 96 && payload.len() != 97 {
+        if !invitation_payload_has_known_shape(payload) {
             return false;
         }
         &payload[..32] == invitation_id
@@ -40,7 +73,9 @@ pub(crate) fn invitation_is_resolved_in_runtime(invitation_id: &[u8; 32]) -> boo
     capsule.ledger.events().iter().any(|event| {
         let payload = event.payload();
         match event.kind() {
-            EventKind::InvitationAccepted if payload.len() == 96 => &payload[..32] == invitation_id,
+            EventKind::InvitationAccepted if payload.len() == 96 || payload.len() == 128 => {
+                &payload[..32] == invitation_id
+            }
             EventKind::InvitationRejected if payload.len() == 33 => &payload[..32] == invitation_id,
             EventKind::InvitationExpired if payload.len() == 32 => payload == invitation_id,
             _ => false,
@@ -53,7 +88,7 @@ pub(crate) fn invitation_id_from_terminal_payload(
     payload: &[u8],
 ) -> Option<[u8; 32]> {
     match kind {
-        EventKind::InvitationAccepted if payload.len() == 96 => {
+        EventKind::InvitationAccepted if payload.len() == 96 || payload.len() == 128 => {
             let mut invitation_id = [0u8; 32];
             invitation_id.copy_from_slice(&payload[..32]);
             Some(invitation_id)
@@ -109,11 +144,11 @@ pub(crate) fn should_skip_incoming_delivery_append(
 pub(crate) fn find_invitation_sent_in_runtime_with_direction(
     invitation_id: &[u8; 32],
     expect_incoming: Option<bool>,
-) -> Option<(StarterId, StarterKind, PubKey, bool)> {
+) -> Option<InvitationLookupRecord> {
     let runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_ref()?;
     let local_pubkey = capsule.pubkey;
-    let mut fallback: Option<(StarterId, StarterKind, PubKey, bool)> = None;
+    let mut fallback: Option<InvitationLookupRecord> = None;
 
     for event in capsule.ledger.events() {
         let event_kind = event.kind();
@@ -122,7 +157,7 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
         }
 
         let payload = event.payload();
-        if payload.len() != 96 && payload.len() != 97 {
+        if !invitation_payload_has_known_shape(payload) {
             continue;
         }
 
@@ -150,18 +185,16 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
             peer_pubkey.copy_from_slice(&addressed_to);
         }
 
-        let kind = if payload.len() == 97 {
-            starter_kind_from_slot(payload[96]).unwrap_or(StarterKind::Juice)
-        } else {
+        let kind = invitation_payload_starter_kind(payload).unwrap_or_else(|| {
             find_starter_kind_by_id_in_runtime(&starter_id).unwrap_or(StarterKind::Juice)
-        };
-
-        let candidate = (
-            StarterId::from(starter_id),
-            kind,
-            PubKey::from(peer_pubkey),
+        });
+        let candidate = InvitationLookupRecord {
+            starter_id: StarterId::from(starter_id),
+            starter_kind: kind,
+            peer_pubkey: PubKey::from(peer_pubkey),
             is_incoming,
-        );
+            sender_root_pubkey: invitation_payload_sender_root(payload),
+        };
         match expect_incoming {
             Some(expected) if expected == is_incoming => return Some(candidate),
             Some(_) => {
@@ -198,7 +231,7 @@ pub(crate) fn debug_log_invitation_sent_candidates(label: &str, target_invitatio
         }
 
         let payload = event.payload();
-        if payload.len() != 96 && payload.len() != 97 {
+        if !invitation_payload_has_known_shape(payload) {
             continue;
         }
 
@@ -250,6 +283,8 @@ fn append_relationship_established_if_missing(
     sender_pubkey: PubKey,
     sender_starter_type: StarterKind,
     sender_starter_id: StarterId,
+    peer_root_pubkey: Option<PubKey>,
+    sender_root_pubkey: Option<PubKey>,
 ) -> Result<(), &'static str> {
     let prepared = engine
         .prepare_relationship_established(
@@ -261,6 +296,8 @@ fn append_relationship_established_if_missing(
             sender_pubkey,
             sender_starter_type,
             sender_starter_id,
+            peer_root_pubkey,
+            sender_root_pubkey,
         )
         .map_err(|_| "prepare failed")?;
     let payload_bytes = prepared.event.payload().to_vec();
@@ -287,22 +324,28 @@ pub(crate) fn project_relationship_from_invitation_accepted(
     }
 
     debug_log_invitation_sent_candidates("incoming_accept", &payload.invitation_id);
-    let Some((own_starter_id, kind, _, false)) =
+    let Some(record) =
         find_invitation_sent_in_runtime_with_direction(&payload.invitation_id, Some(false))
     else {
         return Err("matching outgoing invitation not found");
     };
+    if record.is_incoming {
+        return Err("matching outgoing invitation not found");
+    }
+    let local_root_pubkey = engine.public_key().map_err(|_| "prepare failed")?;
 
     append_relationship_established_if_missing(
         engine,
         PubKey::from(message_from),
-        own_starter_id,
+        record.starter_id,
         payload.created_starter_id,
-        kind,
+        record.starter_kind,
         payload.invitation_id,
         payload.from_pubkey,
-        kind,
-        own_starter_id,
+        record.starter_kind,
+        record.starter_id,
+        payload.accepter_root_pubkey,
+        Some(local_root_pubkey),
     )
 }
 
@@ -310,20 +353,23 @@ pub(crate) fn project_effects_from_invitation_rejected(
     engine: &FfiEngine,
     payload: &InvitationRejectedPayload,
 ) -> Result<(), &'static str> {
-    let Some((starter_id, _, _, false)) =
+    let Some(record) =
         find_invitation_sent_in_runtime_with_direction(&payload.invitation_id, Some(false))
     else {
         return Err("matching outgoing invitation not found");
     };
+    if record.is_incoming {
+        return Err("matching outgoing invitation not found");
+    }
 
     match payload.reason {
         RejectReason::EmptySlot => {
-            if !starter_is_active_in_runtime(starter_id) {
+            if !starter_is_active_in_runtime(record.starter_id) {
                 return Ok(());
             }
 
             let prepared = engine
-                .prepare_starter_burned(starter_id, payload.reason as u8)
+                .prepare_starter_burned(record.starter_id, payload.reason as u8)
                 .map_err(|_| "prepare failed")?;
 
             append_prepared_event(prepared)
@@ -335,6 +381,7 @@ pub(crate) fn project_effects_from_invitation_rejected(
 pub(crate) struct LocalAcceptancePlan {
     pub(crate) invitation_id: [u8; 32],
     pub(crate) sender_pubkey: PubKey,
+    pub(crate) sender_root_pubkey: Option<PubKey>,
     pub(crate) sender_starter_id: StarterId,
     pub(crate) sender_starter_type: StarterKind,
     pub(crate) relationship_starter_id: StarterId,
@@ -347,8 +394,7 @@ pub(crate) fn resolve_local_acceptance_plan(
     seed: &Seed,
     invitation_id: [u8; 32],
 ) -> Result<LocalAcceptancePlan, &'static str> {
-    let Some((peer_starter_id, invited_kind, sender_pubkey, true)) =
-        find_invitation_sent_in_runtime_with_direction(&invitation_id, Some(true))
+    let Some(record) = find_invitation_sent_in_runtime_with_direction(&invitation_id, Some(true))
     else {
         eprintln!(
             "[Accept] resolve plan failed: invitation {:02x?} not found as incoming",
@@ -356,6 +402,13 @@ pub(crate) fn resolve_local_acceptance_plan(
         );
         return Err("matching incoming invitation not found");
     };
+    if !record.is_incoming {
+        return Err("matching incoming invitation not found");
+    }
+    let peer_starter_id = record.starter_id;
+    let invited_kind = record.starter_kind;
+    let sender_pubkey = record.peer_pubkey;
+    let sender_root_pubkey = record.sender_root_pubkey;
 
     let runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_ref().ok_or("no capsule")?;
@@ -388,6 +441,7 @@ pub(crate) fn resolve_local_acceptance_plan(
             Ok(LocalAcceptancePlan {
                 invitation_id,
                 sender_pubkey,
+                sender_root_pubkey,
                 sender_starter_id: peer_starter_id,
                 sender_starter_type: invited_kind,
                 relationship_starter_id,
@@ -402,6 +456,7 @@ pub(crate) fn resolve_local_acceptance_plan(
             Ok(LocalAcceptancePlan {
                 invitation_id,
                 sender_pubkey,
+                sender_root_pubkey,
                 sender_starter_id: peer_starter_id,
                 sender_starter_type: invited_kind,
                 relationship_starter_id: created_starter_id,
@@ -460,6 +515,8 @@ pub(crate) fn finalize_local_acceptance(
         plan.sender_pubkey,
         plan.sender_starter_type,
         plan.sender_starter_id,
+        plan.sender_root_pubkey,
+        Some(engine.public_key().map_err(|_| "prepare failed")?),
     )?;
     eprintln!("[Accept] RelationshipEstablished append ok");
     Ok(())

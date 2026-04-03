@@ -162,7 +162,9 @@ class ConsensusProcessor {
             ? _hex(signer)
             : _hex(payload.sublist(64, 96));
         inviteTransportPeerById[invitationId] = transportPeerHex;
-        final starterKind = payload.length >= 97 ? payload[96] : null;
+        final starterKind = (payload.length == 97 || payload.length == 129)
+            ? payload[payload.length - 1]
+            : null;
         if (starterKind != null) {
           fact.starterKinds.add(starterKind);
         }

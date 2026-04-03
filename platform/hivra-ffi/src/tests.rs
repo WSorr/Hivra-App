@@ -105,19 +105,27 @@ fn finalize_local_acceptance_creates_starter_and_relationship() {
     let seed = test_seed(7);
     let local_pubkey = derived_pubkey(&seed);
     let inviter_pubkey = [3u8; 32];
+    let inviter_root_pubkey = [13u8; 32];
     let invitation_id = [5u8; 32];
     let inviter_slot = 1u8;
     let peer_starter_id = derive_starter_id(&test_seed(11), inviter_slot);
 
     set_runtime_capsule(local_pubkey, Network::Neste);
 
-    append_invitation_sent_for_test(
+    let invitation_payload = InvitationSentPayload {
         invitation_id,
-        peer_starter_id,
-        local_pubkey.as_bytes().to_owned(),
-        Some(inviter_slot),
-        Some(inviter_pubkey),
-    );
+        starter_id: StarterId::from(peer_starter_id),
+        to_pubkey: local_pubkey,
+    };
+    let mut invitation_bytes = invitation_payload.to_bytes();
+    invitation_bytes.extend_from_slice(&inviter_root_pubkey);
+    invitation_bytes.push(inviter_slot);
+    append_runtime_event_with_signer(
+        EventKind::InvitationReceived,
+        &invitation_bytes,
+        PubKey::from(inviter_pubkey),
+    )
+    .unwrap();
 
     let engine = build_engine(&seed);
     let acceptance_plan = resolve_local_acceptance_plan(&seed, invitation_id).unwrap();
@@ -141,6 +149,8 @@ fn finalize_local_acceptance_creates_starter_and_relationship() {
                     && payload.sender_pubkey == PubKey::from(inviter_pubkey)
                     && payload.sender_starter_type == StarterKind::Spark
                     && payload.sender_starter_id.as_bytes() == &peer_starter_id
+                    && payload.peer_root_pubkey == Some(PubKey::from(inviter_root_pubkey))
+                    && payload.sender_root_pubkey == Some(local_pubkey)
             })
     }));
 }
@@ -153,6 +163,7 @@ fn incoming_invitation_accepted_projects_outgoing_relationship() {
     let local_seed = test_seed(12);
     let local_pubkey = derived_pubkey(&local_seed);
     let peer_pubkey = [8u8; 32];
+    let peer_root_pubkey = [18u8; 32];
     let invitation_id = [4u8; 32];
     let own_starter_id = derive_starter_id(&test_seed(12), 0);
     let peer_starter_id = derive_starter_id(&test_seed(13), 0);
@@ -164,6 +175,7 @@ fn incoming_invitation_accepted_projects_outgoing_relationship() {
         invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_starter_id),
+        accepter_root_pubkey: Some(PubKey::from(peer_root_pubkey)),
     };
 
     let engine = build_engine(&local_seed);
@@ -181,6 +193,8 @@ fn incoming_invitation_accepted_projects_outgoing_relationship() {
                     && projected.sender_pubkey == local_pubkey
                     && projected.sender_starter_type == StarterKind::Juice
                     && projected.sender_starter_id.as_bytes() == &own_starter_id
+                    && projected.peer_root_pubkey == Some(PubKey::from(peer_root_pubkey))
+                    && projected.sender_root_pubkey == Some(local_pubkey)
             })
     }));
 }
@@ -204,6 +218,7 @@ fn incoming_invitation_accepted_projection_is_idempotent() {
         invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_starter_id),
+        accepter_root_pubkey: None,
     };
 
     let engine = build_engine(&local_seed);
@@ -232,6 +247,7 @@ fn incoming_invitation_accepted_from_self_is_rejected() {
         invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_starter_id),
+        accepter_root_pubkey: None,
     };
 
     let engine = build_engine(&local_seed);
@@ -498,6 +514,7 @@ fn relationship_broken_payload_tracks_specific_local_starter() {
     let payload = RelationshipBrokenPayload {
         peer_pubkey: PubKey::from([9u8; 32]),
         own_starter_id: StarterId::from([7u8; 32]),
+        peer_root_pubkey: None,
     };
 
     let parsed = RelationshipBrokenPayload::from_bytes(&payload.to_bytes()).unwrap();
@@ -542,6 +559,7 @@ fn resolved_invitation_blocks_replayed_incoming_offer() {
         invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(derive_starter_id(&local_seed, 0)),
+        accepter_root_pubkey: None,
     };
     append_runtime_event(EventKind::InvitationAccepted, &accepted.to_bytes()).unwrap();
 
@@ -587,6 +605,7 @@ fn replay_policy_skips_conflicting_terminal_event_for_resolved_invitation() {
         invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(derive_starter_id(&local_seed, 0)),
+        accepter_root_pubkey: None,
     };
 
     assert!(should_skip_incoming_delivery_append(
@@ -615,6 +634,7 @@ fn replay_policy_allows_first_terminal_event_for_unresolved_invitation() {
         invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_created_starter_id),
+        accepter_root_pubkey: None,
     };
 
     assert!(!should_skip_incoming_delivery_append(
@@ -641,6 +661,7 @@ fn replay_policy_skips_terminal_event_without_matching_outgoing_offer() {
         invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_created_starter_id),
+        accepter_root_pubkey: None,
     };
 
     assert!(should_skip_incoming_delivery_append(
@@ -669,6 +690,7 @@ fn replayed_invitation_accepted_is_skipped_after_export_import() {
         invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_created_starter_id),
+        accepter_root_pubkey: None,
     };
     let accepted_bytes = accepted.to_bytes();
 
@@ -807,6 +829,8 @@ fn replayed_relationship_established_is_skipped_after_export_import() {
         sender_pubkey: PubKey::from(peer_pubkey),
         sender_starter_type: StarterKind::Juice,
         sender_starter_id: StarterId::from(peer_starter_id),
+        peer_root_pubkey: None,
+        sender_root_pubkey: None,
     };
     let established_bytes = established.to_bytes();
 
@@ -863,6 +887,8 @@ fn replayed_relationship_broken_is_skipped_after_export_import() {
         sender_pubkey: PubKey::from(peer_pubkey),
         sender_starter_type: StarterKind::Juice,
         sender_starter_id: StarterId::from(peer_starter_id),
+        peer_root_pubkey: None,
+        sender_root_pubkey: None,
     };
     append_runtime_event_with_signer(
         EventKind::RelationshipEstablished,
@@ -874,6 +900,7 @@ fn replayed_relationship_broken_is_skipped_after_export_import() {
     let broken = RelationshipBrokenPayload {
         peer_pubkey: PubKey::from(peer_pubkey),
         own_starter_id: StarterId::from(own_starter_id),
+        peer_root_pubkey: None,
     };
     let broken_bytes = broken.to_bytes();
     append_runtime_event_with_signer(
@@ -1235,6 +1262,8 @@ fn broken_relationship_survives_export_import() {
             sender_pubkey: PubKey::from(peer_pubkey),
             sender_starter_type: StarterKind::Juice,
             sender_starter_id: StarterId::from(peer_starter_id),
+            peer_root_pubkey: None,
+            sender_root_pubkey: None,
         }
         .to_bytes(),
     )
@@ -1244,6 +1273,7 @@ fn broken_relationship_survives_export_import() {
         &RelationshipBrokenPayload {
             peer_pubkey: PubKey::from(peer_pubkey),
             own_starter_id: StarterId::from(own_starter_id),
+            peer_root_pubkey: None,
         }
         .to_bytes(),
     )
@@ -1304,6 +1334,7 @@ fn reinvite_same_starter_type_survives_export_import() {
         invitation_id: first_invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_first_starter_id),
+        accepter_root_pubkey: None,
     };
     append_runtime_event_with_signer(
         EventKind::InvitationAccepted,
@@ -1319,6 +1350,7 @@ fn reinvite_same_starter_type_survives_export_import() {
         &RelationshipBrokenPayload {
             peer_pubkey: PubKey::from(peer_pubkey),
             own_starter_id: StarterId::from(local_starter_id),
+            peer_root_pubkey: None,
         }
         .to_bytes(),
     )
@@ -1335,6 +1367,7 @@ fn reinvite_same_starter_type_survives_export_import() {
         invitation_id: second_invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_second_starter_id),
+        accepter_root_pubkey: None,
     };
     append_runtime_event_with_signer(
         EventKind::InvitationAccepted,
@@ -1424,6 +1457,7 @@ fn reinvite_different_starter_type_survives_export_import() {
         invitation_id: first_invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_first_starter_id),
+        accepter_root_pubkey: None,
     };
     append_runtime_event_with_signer(
         EventKind::InvitationAccepted,
@@ -1439,6 +1473,7 @@ fn reinvite_different_starter_type_survives_export_import() {
         &RelationshipBrokenPayload {
             peer_pubkey: PubKey::from(peer_pubkey),
             own_starter_id: StarterId::from(local_starter_id_juice),
+            peer_root_pubkey: None,
         }
         .to_bytes(),
     )
@@ -1455,6 +1490,7 @@ fn reinvite_different_starter_type_survives_export_import() {
         invitation_id: second_invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(peer_second_starter_id),
+        accepter_root_pubkey: None,
     };
     append_runtime_event_with_signer(
         EventKind::InvitationAccepted,
@@ -1577,6 +1613,7 @@ fn resolved_invitation_stays_resolved_after_export_import() {
         invitation_id,
         from_pubkey: local_pubkey,
         created_starter_id: StarterId::from(derive_starter_id(&local_seed, 0)),
+        accepter_root_pubkey: None,
     };
     append_runtime_event(EventKind::InvitationAccepted, &accepted.to_bytes()).unwrap();
 

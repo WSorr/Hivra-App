@@ -49,14 +49,18 @@ class InvitationProjectionService {
       final signer = _support.bytes32(e['signer']);
 
       if ((kind == 1 || kind == 9) &&
-          (payload.length == 96 || payload.length == 97)) {
+          (payload.length == 96 ||
+              payload.length == 97 ||
+              payload.length == 128 ||
+              payload.length == 129)) {
         final invitationId = payload.sublist(0, 32);
         final starterId = payload.sublist(32, 64);
         final toPubkey = payload.sublist(64, 96);
 
-        final hasKindByte = payload.length == 97;
-        final kindFromPayload =
-            hasKindByte ? _support.starterKindFromByte(payload[96]) : null;
+        final hasKindByte = payload.length == 97 || payload.length == 129;
+        final kindFromPayload = hasKindByte
+            ? _support.starterKindFromByte(payload[payload.length - 1])
+            : null;
 
         final id = base64.encode(invitationId);
         final current = byId[id];
@@ -103,7 +107,7 @@ class InvitationProjectionService {
           respondedAt: respondedAt,
           rejectionReason: rejectionReason,
         );
-      } else if (kind == 2 && payload.length == 96) {
+      } else if (kind == 2 && (payload.length == 96 || payload.length == 128)) {
         final id = base64.encode(payload.sublist(0, 32));
         acceptedAtById[id] = timestamp;
         final current = byId[id];

@@ -129,6 +129,7 @@ fn invitation_flow_locks_unlocks_and_burns_starter_deterministically() {
             invitation_id: invitation_a,
             from_pubkey: peer,
             created_starter_id: StarterId::from([12u8; 32]),
+            accepter_root_pubkey: None,
         }
         .to_bytes(),
         3,

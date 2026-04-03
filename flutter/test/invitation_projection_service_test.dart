@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/models/invitation.dart';
+import 'package:hivra_app/models/starter.dart';
 import 'package:hivra_app/services/invitation_projection_service.dart';
 import 'package:hivra_app/services/ledger_view_support.dart';
 
@@ -13,13 +14,15 @@ List<int> _offerPayload({
   required List<int> invitationId,
   required List<int> starterId,
   required List<int> toPubkey,
-  int kindByte = 0,
+  List<int>? senderRootPubkey,
+  int? kindByte = 0,
 }) {
   return <int>[
     ...invitationId,
     ...starterId,
     ...toPubkey,
-    kindByte,
+    if (senderRootPubkey != null) ...senderRootPubkey,
+    if (kindByte != null) kindByte,
   ];
 }
 
@@ -27,11 +30,13 @@ List<int> _acceptedPayload({
   required List<int> invitationId,
   required List<int> createdStarterId,
   required List<int> fromPubkey,
+  List<int>? accepterRootPubkey,
 }) {
   return <int>[
     ...invitationId,
     ...createdStarterId,
     ...fromPubkey,
+    if (accepterRootPubkey != null) ...accepterRootPubkey,
   ];
 }
 
@@ -259,6 +264,48 @@ void main() {
       final invitation = invitations.single;
       expect(invitation.isOutgoing, isTrue);
       expect(invitation.status, InvitationStatus.accepted);
+    });
+
+    test('supports root-augmented invitation payload variants', () {
+      final invitationId = _bytes32(16);
+      final starterId = _bytes32(36);
+      final createdStarterId = _bytes32(56);
+      final senderRoot = _bytes32(66);
+      final accepterRoot = _bytes32(76);
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceForSelf(self);
+
+      final invitations = service.loadInvitations(<String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          _event(
+            kind: 'InvitationSent',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: peer,
+              senderRootPubkey: senderRoot,
+              kindByte: 4,
+            ),
+            signer: self,
+            timestamp: t0 + 1,
+          ),
+          _event(
+            kind: 'InvitationAccepted',
+            payload: _acceptedPayload(
+              invitationId: invitationId,
+              createdStarterId: createdStarterId,
+              fromPubkey: peer,
+              accepterRootPubkey: accepterRoot,
+            ),
+            signer: peer,
+            timestamp: t0 + 2,
+          ),
+        ],
+      });
+
+      expect(invitations, hasLength(1));
+      expect(invitations.single.status, InvitationStatus.accepted);
+      expect(invitations.single.kind, StarterKind.kick);
     });
   });
 }

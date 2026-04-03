@@ -273,10 +273,12 @@ where
         from_pubkey: PubKey,
         created_starter_id: StarterId,
     ) -> Result<PreparedEvent, EngineError<K::Error>> {
+        let accepter_root_pubkey = self.public_key().map_err(EngineError::Keystore)?;
         let payload = InvitationAcceptedPayload {
             invitation_id,
             from_pubkey,
             created_starter_id,
+            accepter_root_pubkey: Some(accepter_root_pubkey),
         };
 
         self.prepare_event(
@@ -347,6 +349,8 @@ where
         sender_pubkey: PubKey,
         sender_starter_type: StarterKind,
         sender_starter_id: StarterId,
+        peer_root_pubkey: Option<PubKey>,
+        sender_root_pubkey: Option<PubKey>,
     ) -> Result<PreparedEvent, EngineError<K::Error>> {
         let payload = RelationshipEstablishedPayload {
             peer_pubkey,
@@ -357,6 +361,8 @@ where
             sender_pubkey,
             sender_starter_type,
             sender_starter_id,
+            peer_root_pubkey,
+            sender_root_pubkey,
         };
         self.prepare_event(EventKind::RelationshipEstablished, payload.to_bytes(), None)
     }
@@ -365,10 +371,12 @@ where
         &self,
         peer_pubkey: PubKey,
         own_starter_id: StarterId,
+        peer_root_pubkey: Option<PubKey>,
     ) -> Result<PreparedEvent, EngineError<K::Error>> {
         let payload = RelationshipBrokenPayload {
             peer_pubkey,
             own_starter_id,
+            peer_root_pubkey,
         };
         self.prepare_event(EventKind::RelationshipBroken, payload.to_bytes(), None)
     }
@@ -399,6 +407,7 @@ where
         let kind = self
             .starter_kind_for_id(ledger, invitation.starter_id)
             .ok_or(EngineError::MatchingInvitationNotFound)?;
+        let local_root_pubkey = self.public_key().map_err(EngineError::Keystore)?;
 
         let relationship = self.prepare_relationship_established(
             accepter_pubkey,
@@ -406,9 +415,11 @@ where
             payload.created_starter_id,
             kind,
             payload.invitation_id,
-            self.public_key().map_err(EngineError::Keystore)?,
+            local_root_pubkey,
             kind,
             invitation.starter_id,
+            payload.accepter_root_pubkey,
+            Some(local_root_pubkey),
         )?;
 
         Ok(vec![IncomingEffect::Append(relationship.event)])
@@ -697,6 +708,7 @@ mod tests {
                     invitation_id: [7; 32],
                     from_pubkey: PubKey::from([1; 32]),
                     created_starter_id: StarterId::from([6; 32]),
+                    accepter_root_pubkey: None,
                 },
             )
             .unwrap();
