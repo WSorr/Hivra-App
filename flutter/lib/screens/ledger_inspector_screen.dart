@@ -32,6 +32,9 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   String _rootDisplayKey = 'No key';
   List<_LedgerEventRow> _recentEvents = const <_LedgerEventRow>[];
   List<ManualConsensusCheck> _consensusChecks = const <ManualConsensusCheck>[];
+  bool _consensusChecksLoaded = false;
+  bool _consensusChecksLoading = false;
+  String? _consensusChecksError;
   Map<String, int> _eventCounts = const <String, int>{};
   List<String> _integrityHints = const <String>[];
   final LedgerViewSupport _support = const LedgerViewSupport();
@@ -69,6 +72,9 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
           _rawLedgerJson = '';
           _recentEvents = const <_LedgerEventRow>[];
           _consensusChecks = const <ManualConsensusCheck>[];
+          _consensusChecksLoaded = false;
+          _consensusChecksLoading = false;
+          _consensusChecksError = null;
           _eventCounts = const <String, int>{};
           _integrityHints = const <String>[];
           _error = 'Ledger export returned empty result';
@@ -86,6 +92,9 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
           _rawLedgerJson = raw;
           _recentEvents = const <_LedgerEventRow>[];
           _consensusChecks = const <ManualConsensusCheck>[];
+          _consensusChecksLoaded = false;
+          _consensusChecksLoading = false;
+          _consensusChecksError = null;
           _eventCounts = const <String, int>{};
           _integrityHints = const <String>[];
           _error = 'Ledger JSON has unsupported shape';
@@ -121,8 +130,6 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
       }
 
       final recent = rows.reversed.take(40).toList(growable: false);
-      final consensusChecks =
-          widget.runtime.buildManualConsensusCheckService().loadChecks();
       final ledgerOwnerKey = _ownerKeyFromLedger(decoded) ?? ownerKey;
       final integrityHints = _buildIntegrityHints(events, rows);
 
@@ -132,7 +139,10 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
         _rootDisplayKey = rootDisplayKey;
         _rawLedgerJson = raw;
         _recentEvents = recent;
-        _consensusChecks = consensusChecks;
+        _consensusChecks = const <ManualConsensusCheck>[];
+        _consensusChecksLoaded = false;
+        _consensusChecksLoading = false;
+        _consensusChecksError = null;
         _eventCounts = counts;
         _integrityHints = integrityHints;
         _isLoading = false;
@@ -432,6 +442,37 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
         .showSnackBar(SnackBar(content: Text('$label copied')));
   }
 
+  Future<void> _runManualConsensusChecks() async {
+    if (_consensusChecksLoading) return;
+    setState(() {
+      _consensusChecksLoading = true;
+      _consensusChecksError = null;
+    });
+
+    try {
+      final checks =
+          widget.runtime.buildManualConsensusCheckService().loadChecks();
+      if (!mounted) return;
+      setState(() {
+        _consensusChecks = checks;
+        _consensusChecksLoaded = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _consensusChecks = const <ManualConsensusCheck>[];
+        _consensusChecksLoaded = false;
+        _consensusChecksError = 'Consensus check failed: $error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _consensusChecksLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = _capsuleState;
@@ -542,9 +583,47 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
                             .map<Widget>((hint) => _kv('Hint', hint))
                             .toList(growable: false),
                       ),
+                      const SizedBox(height: 16),
+                      _sectionTitle('Manual Consensus Check'),
+                      _infoCard(
+                        children: [
+                          _kv(
+                            'Mode',
+                            _consensusChecksLoaded
+                                ? 'On-demand snapshot'
+                                : 'Not calculated',
+                          ),
+                          _kv(
+                            'Pairs',
+                            _consensusChecksLoaded
+                                ? _consensusChecks.length.toString()
+                                : 'n/a',
+                          ),
+                          if (_consensusChecksError != null)
+                            _kv('Error', _consensusChecksError!),
+                          const SizedBox(height: 8),
+                          FilledButton.icon(
+                            onPressed: _consensusChecksLoading
+                                ? null
+                                : _runManualConsensusChecks,
+                            icon: _consensusChecksLoading
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.rule),
+                            label: Text(
+                              _consensusChecksLoading
+                                  ? 'Checking'
+                                  : 'Run consensus checks',
+                            ),
+                          ),
+                        ],
+                      ),
                       if (_consensusChecks.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        _sectionTitle('Manual Consensus Check'),
+                        const SizedBox(height: 12),
                         ..._consensusChecks.map(
                           (check) => Card(
                             child: Padding(
