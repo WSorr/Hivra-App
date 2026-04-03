@@ -485,6 +485,7 @@ When tradeoffs are unclear, prefer:
   - Relationship peer grouping now collapses mixed transport links under the same root anchor (when root provenance exists), reducing transport-key fragmentation in relationship counters and peer cards while preserving per-link transport payloads for operations.
   - Relationship projection now infers peer root for legacy `RelationshipEstablished` payloads from root-augmented invitation lineage (`InvitationReceived`/`InvitationAccepted`) by `invitation_id`, reducing legacy transport-only peer identity drift in mixed ledgers.
   - Invitations and Relationships screens now share root-first identity formatting (`root as primary, transport as hint`) with fallback to transport label when root anchor is unknown.
+  - Relationships screen root fallback now resolves imported contact-card root identity across all transport keys inside a peer group (not only the representative transport key), reducing false `npub` fallback in mixed-link groups.
 
 - `9.5 Ledger-Gated Capsule UI`
   - Capsule UI should treat the local ledger as the primary source of domain truth once any ledger history exists.

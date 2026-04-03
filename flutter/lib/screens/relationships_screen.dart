@@ -37,8 +37,19 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
 
   Future<void> _loadRelationships() async {
     final groups = widget.service.loadRelationshipGroups();
+    final lookupPeerPubkeys = <String>{};
+    for (final group in groups) {
+      if (group.peerPubkey.isNotEmpty) {
+        lookupPeerPubkeys.add(group.peerPubkey);
+      }
+      for (final relationship in group.relationships) {
+        if (relationship.peerPubkey.isNotEmpty) {
+          lookupPeerPubkeys.add(relationship.peerPubkey);
+        }
+      }
+    }
     final peerRootKeys = await widget.service.loadPeerRootKeysByTransportBase64(
-      groups.map((group) => group.peerPubkey),
+      lookupPeerPubkeys,
     );
     if (!mounted) return;
     setState(() {
@@ -343,6 +354,14 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     final importedRootKey = _peerRootKeyByTransportB64[group.peerPubkey];
     if (importedRootKey != null && importedRootKey.isNotEmpty) {
       return importedRootKey;
+    }
+    final relationships = group.relationships.toList()
+      ..sort((a, b) => b.establishedAt.compareTo(a.establishedAt));
+    for (final relationship in relationships) {
+      final rootKey = _peerRootKeyByTransportB64[relationship.peerPubkey];
+      if (rootKey != null && rootKey.isNotEmpty) {
+        return rootKey;
+      }
     }
     return null;
   }
