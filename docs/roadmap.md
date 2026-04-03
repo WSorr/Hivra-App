@@ -34,6 +34,7 @@ Scope:
     - `InvitationRejected` replay skipped when invitation lineage is already terminal-accepted
     - `InvitationExpired` replay skipped when no matching outgoing offer exists
     - `InvitationExpired` replay skipped when invitation lineage is already terminal-accepted
+    - out-of-order `InvitationAccepted` delivery (before local outgoing offer exists) is skipped and does not create relationship side effects
   - Replay policy now also requires `InvitationExpired` delivery to resolve an existing outgoing offer, preventing orphan terminal append without local lineage anchor.
 
 Definition of done:

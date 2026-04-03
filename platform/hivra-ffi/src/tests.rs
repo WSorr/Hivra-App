@@ -945,6 +945,60 @@ fn replay_policy_skips_conflicting_expired_after_accepted_resolution() {
 }
 
 #[test]
+fn replay_policy_skips_out_of_order_accepted_before_outgoing_offer() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(148);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [132u8; 32];
+    let invitation_id = [154u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_created_starter_id = derive_starter_id(&test_seed(149), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_created_starter_id),
+        accepter_root_pubkey: None,
+    };
+    let accepted_bytes = accepted.to_bytes();
+
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationAccepted,
+        &accepted_bytes,
+        PubKey::from(peer_pubkey),
+    ));
+    if !should_skip_incoming_delivery_append(
+        EventKind::InvitationAccepted,
+        &accepted_bytes,
+        PubKey::from(peer_pubkey),
+    ) {
+        append_runtime_event_with_signer(
+            EventKind::InvitationAccepted,
+            &accepted_bytes,
+            PubKey::from(peer_pubkey),
+        )
+        .unwrap();
+        let engine = build_engine(&local_seed);
+        project_relationship_from_invitation_accepted(&engine, peer_pubkey, &accepted).unwrap();
+    }
+
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    assert_eq!(invitation_accepted_count(), 0);
+    assert_eq!(relationship_established_count(), 0);
+    assert!(!invitation_is_resolved_in_runtime(&invitation_id));
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationSent,
+        &invitation_id,
+        local_pubkey,
+    ));
+}
+
+#[test]
 fn replayed_invitation_accepted_is_skipped_after_export_import() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
