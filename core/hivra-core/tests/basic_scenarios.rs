@@ -106,6 +106,7 @@ fn invitation_flow_locks_unlocks_and_burns_starter_deterministically() {
             invitation_id: invitation_a,
             starter_id: starter,
             to_pubkey: peer,
+            sender_root_pubkey: None,
         }
         .to_bytes(),
         2,
@@ -153,6 +154,7 @@ fn invitation_flow_locks_unlocks_and_burns_starter_deterministically() {
             invitation_id: invitation_b,
             starter_id: starter,
             to_pubkey: peer,
+            sender_root_pubkey: None,
         }
         .to_bytes(),
         4,

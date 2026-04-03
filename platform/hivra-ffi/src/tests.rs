@@ -83,6 +83,7 @@ fn append_invitation_sent_for_test(
         invitation_id,
         starter_id: StarterId::from(starter_id),
         to_pubkey: PubKey::from(to_pubkey),
+        sender_root_pubkey: None,
     };
 
     let mut bytes = payload.to_bytes();
@@ -114,6 +115,7 @@ fn lookup_reads_sender_root_from_root_augmented_incoming_offer() {
         invitation_id,
         starter_id: StarterId::from(peer_starter_id),
         to_pubkey: local_pubkey,
+        sender_root_pubkey: None,
     };
     let mut payload_bytes = payload.to_bytes();
     payload_bytes.extend_from_slice(&peer_root_pubkey);
@@ -130,7 +132,10 @@ fn lookup_reads_sender_root_from_root_augmented_incoming_offer() {
     assert_eq!(record.peer_pubkey, PubKey::from(peer_pubkey));
     assert_eq!(record.starter_id, StarterId::from(peer_starter_id));
     assert_eq!(record.starter_kind, StarterKind::Spark);
-    assert_eq!(record.sender_root_pubkey, Some(PubKey::from(peer_root_pubkey)));
+    assert_eq!(
+        record.sender_root_pubkey,
+        Some(PubKey::from(peer_root_pubkey))
+    );
 }
 
 #[test]
@@ -152,6 +157,7 @@ fn finalize_local_acceptance_creates_starter_and_relationship() {
         invitation_id,
         starter_id: StarterId::from(peer_starter_id),
         to_pubkey: local_pubkey,
+        sender_root_pubkey: None,
     };
     let mut invitation_bytes = invitation_payload.to_bytes();
     invitation_bytes.extend_from_slice(&inviter_root_pubkey);
@@ -1092,6 +1098,7 @@ fn import_runtime_ledger_rejects_history_without_capsule_birth() {
         invitation_id: [55u8; 32],
         starter_id,
         to_pubkey,
+        sender_root_pubkey: None,
     };
 
     let mut imported = Ledger::new(owner);
@@ -1157,6 +1164,7 @@ fn import_runtime_ledger_rejects_misplaced_capsule_birth() {
                 invitation_id: [1u8; 32],
                 starter_id: StarterId::from(derive_starter_id(&seed, 1)),
                 to_pubkey: PubKey::from([2u8; 32]),
+                sender_root_pubkey: None,
             }
             .to_bytes(),
             Timestamp::from(1),

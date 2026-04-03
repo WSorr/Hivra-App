@@ -118,8 +118,10 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
     };
     let invitation_id = payload.invitation_id;
     let mut payload_bytes = prepared.event.payload().to_vec();
-    if let Ok(sender_root_pubkey) = derive_root_public_key(&seed) {
-        payload_bytes.extend_from_slice(&sender_root_pubkey);
+    if payload_bytes.len() == 96 {
+        if let Ok(sender_root_pubkey) = derive_root_public_key(&seed) {
+            payload_bytes.extend_from_slice(&sender_root_pubkey);
+        }
     }
     // Include starter kind byte so receiver can render correct kind for incoming invitation.
     payload_bytes.push(starter_kind.to_byte());

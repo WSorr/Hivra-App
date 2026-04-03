@@ -233,6 +233,7 @@ mod tests {
                 invitation_id: [9u8; 32],
                 starter_id: StarterId::from([3u8; 32]),
                 to_pubkey: peer,
+                sender_root_pubkey: None,
             }
             .to_bytes(),
             1,
@@ -278,6 +279,7 @@ mod tests {
                 invitation_id,
                 starter_id: StarterId::from([9u8; 32]),
                 to_pubkey: peer,
+                sender_root_pubkey: None,
             }
             .to_bytes(),
             1,
@@ -328,6 +330,7 @@ mod tests {
                 invitation_id,
                 starter_id: StarterId::from([13u8; 32]),
                 to_pubkey: peer,
+                sender_root_pubkey: None,
             }
             .to_bytes(),
             1,

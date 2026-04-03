@@ -69,6 +69,7 @@ pub struct InvitationSentPayload {
     pub invitation_id: [u8; 32],
     pub starter_id: StarterId,
     pub to_pubkey: PubKey,
+    pub sender_root_pubkey: Option<PubKey>,
 }
 
 impl EventPayload for InvitationSentPayload {
@@ -77,10 +78,17 @@ impl EventPayload for InvitationSentPayload {
     }
 
     fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(96);
+        let mut out = Vec::with_capacity(if self.sender_root_pubkey.is_some() {
+            128
+        } else {
+            96
+        });
         out.extend_from_slice(&self.invitation_id);
         out.extend_from_slice(self.starter_id.as_bytes());
         out.extend_from_slice(self.to_pubkey.as_bytes());
+        if let Some(sender_root_pubkey) = self.sender_root_pubkey {
+            out.extend_from_slice(sender_root_pubkey.as_bytes());
+        }
         out
     }
 
@@ -92,6 +100,11 @@ impl EventPayload for InvitationSentPayload {
             invitation_id: read_fixed_32(bytes, 0),
             starter_id: StarterId::from(read_fixed_32(bytes, 32)),
             to_pubkey: PubKey::from(read_fixed_32(bytes, 64)),
+            sender_root_pubkey: if bytes.len() >= 128 {
+                Some(PubKey::from(read_fixed_32(bytes, 96)))
+            } else {
+                None
+            },
         })
     }
 }
@@ -402,9 +415,9 @@ mod tests {
             invitation_id,
             starter_id: StarterId::from(starter_id),
             to_pubkey: PubKey::from(to_pubkey),
+            sender_root_pubkey: Some(PubKey::from(sender_root)),
         };
-        let mut bytes_128 = base.to_bytes();
-        bytes_128.extend_from_slice(&sender_root);
+        let bytes_128 = base.to_bytes();
         let parsed_128 = InvitationSentPayload::from_bytes(&bytes_128).unwrap();
         assert_eq!(parsed_128, base);
 

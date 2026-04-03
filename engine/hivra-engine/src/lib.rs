@@ -254,10 +254,12 @@ where
         starter_id: StarterId,
         to_pubkey: PubKey,
     ) -> Result<PreparedEvent, EngineError<K::Error>> {
+        let sender_root_pubkey = self.public_key().map_err(EngineError::Keystore)?;
         let payload = InvitationSentPayload {
             invitation_id: self.random_id(),
             starter_id,
             to_pubkey,
+            sender_root_pubkey: Some(sender_root_pubkey),
         };
 
         self.prepare_event(
@@ -603,6 +605,7 @@ mod tests {
         assert_eq!(payload.invitation_id, [42; 32]);
         assert_eq!(payload.starter_id, StarterId::from([9; 32]));
         assert_eq!(payload.to_pubkey, PubKey::from([2; 32]));
+        assert_eq!(payload.sender_root_pubkey, Some(PubKey::from([1; 32])));
     }
 
     #[test]
@@ -638,6 +641,7 @@ mod tests {
                     invitation_id: [8; 32],
                     starter_id: StarterId::from([4; 32]),
                     to_pubkey: PubKey::from([9; 32]),
+                    sender_root_pubkey: None,
                 }
                 .to_bytes(),
                 Timestamp::from(2),
@@ -692,6 +696,7 @@ mod tests {
                     invitation_id: [7; 32],
                     starter_id: StarterId::from([3; 32]),
                     to_pubkey: PubKey::from([2; 32]),
+                    sender_root_pubkey: None,
                 }
                 .to_bytes(),
                 Timestamp::from(2),
@@ -740,6 +745,7 @@ mod tests {
                     invitation_id: [7; 32],
                     starter_id: StarterId::from([3; 32]),
                     to_pubkey: PubKey::from([2; 32]),
+                    sender_root_pubkey: None,
                 }
                 .to_bytes(),
                 Timestamp::from(2),

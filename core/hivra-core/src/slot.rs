@@ -417,6 +417,7 @@ mod tests {
                 invitation_id: [9u8; 32],
                 starter_id: StarterId::from([1u8; 32]),
                 to_pubkey: peer,
+                sender_root_pubkey: None,
             }
             .to_bytes(),
             2,
@@ -465,6 +466,7 @@ mod tests {
                 invitation_id: [9u8; 32],
                 starter_id: StarterId::from([42u8; 32]),
                 to_pubkey: owner,
+                sender_root_pubkey: None,
             }
             .to_bytes(),
             2,

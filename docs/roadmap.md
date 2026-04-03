@@ -469,6 +469,7 @@ When tradeoffs are unclear, prefer:
     - `RelationshipEstablished`: `194` (legacy), `226` (`peer_root_pubkey`), or `258` bytes (`peer_root_pubkey + sender_root_pubkey`)
     - `RelationshipBroken`: `64` (legacy) or `96` bytes (`peer_root_pubkey`)
   - FFI invitation send path now appends sender root provenance into offer payload (`InvitationSent` extended variants `128/129`), while keeping legacy `96/97` offer parsing support in runtime lookup/projection paths.
+  - `InvitationSentPayload` core codec now carries optional `sender_root_pubkey` (`96/97` legacy, `128/129` root-augmented), and engine `prepare_invitation_sent` now emits sender-root lineage by default; FFI send path keeps compatibility without double-appending root bytes.
   - Sender-side relationship projection from incoming `InvitationAccepted` now anchors peer root from `accepter_root_pubkey`, and local acceptance projection now anchors sender root when incoming offer carries sender-root provenance.
   - Break-relationship delivery now carries optional `peer_root_pubkey` in `RelationshipBroken` payloads when root anchor is known from established lineage.
 
