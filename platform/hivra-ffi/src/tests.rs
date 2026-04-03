@@ -999,6 +999,108 @@ fn replay_policy_skips_out_of_order_accepted_before_outgoing_offer() {
 }
 
 #[test]
+fn replay_policy_skips_out_of_order_rejected_before_outgoing_offer() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(149);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [133u8; 32];
+    let invitation_id = [155u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(own_starter_id),
+            nonce: derive_starter_nonce(&local_seed, 0),
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    let rejected = InvitationRejectedPayload {
+        invitation_id,
+        reason: RejectReason::EmptySlot,
+    };
+    let rejected_bytes = rejected.to_bytes();
+
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationRejected,
+        &rejected_bytes,
+        PubKey::from(peer_pubkey),
+    ));
+    if !should_skip_incoming_delivery_append(
+        EventKind::InvitationRejected,
+        &rejected_bytes,
+        PubKey::from(peer_pubkey),
+    ) {
+        append_runtime_event_with_signer(
+            EventKind::InvitationRejected,
+            &rejected_bytes,
+            PubKey::from(peer_pubkey),
+        )
+        .unwrap();
+        let engine = build_engine(&local_seed);
+        project_effects_from_invitation_rejected(&engine, &rejected).unwrap();
+    }
+
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    assert_eq!(starter_burned_count(), 0);
+    assert!(!invitation_is_resolved_in_runtime(&invitation_id));
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationSent,
+        &invitation_id,
+        local_pubkey,
+    ));
+}
+
+#[test]
+fn replay_policy_skips_out_of_order_expired_before_outgoing_offer() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(150);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [134u8; 32];
+    let invitation_id = [156u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationExpired,
+        &invitation_id,
+        PubKey::from(peer_pubkey),
+    ));
+    if !should_skip_incoming_delivery_append(
+        EventKind::InvitationExpired,
+        &invitation_id,
+        PubKey::from(peer_pubkey),
+    ) {
+        append_runtime_event_with_signer(
+            EventKind::InvitationExpired,
+            &invitation_id,
+            PubKey::from(peer_pubkey),
+        )
+        .unwrap();
+    }
+
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    assert!(!invitation_is_resolved_in_runtime(&invitation_id));
+    assert!(invitation_offer_exists_in_runtime(
+        EventKind::InvitationSent,
+        &invitation_id,
+        local_pubkey,
+    ));
+}
+
+#[test]
 fn replayed_invitation_accepted_is_skipped_after_export_import() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
