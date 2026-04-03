@@ -30,6 +30,7 @@ class InvitationIntentHandler {
   final InvitationDeliveryService _delivery;
   final CapsuleStateManager? _stateManager;
   final LedgerViewService? _ledgerView;
+  final List<Invitation> Function()? _invitationsLoader;
   final Future<InvitationWorkerResult> Function()? _fetchInvitationsAction;
   final Future<InvitationWorkerResult> Function()? _fetchInvitationsQuickAction;
   final String Function()? _activeCapsuleHexResolver;
@@ -39,6 +40,7 @@ class InvitationIntentHandler {
     required InvitationDeliveryService delivery,
     CapsuleStateManager? stateManager,
     LedgerViewService? ledgerView,
+    List<Invitation> Function()? invitationsLoader,
     Future<InvitationWorkerResult> Function()? fetchInvitationsAction,
     Future<InvitationWorkerResult> Function()? fetchInvitationsQuickAction,
     String Function()? activeCapsuleHexResolver,
@@ -46,12 +48,15 @@ class InvitationIntentHandler {
         _delivery = delivery,
         _stateManager = stateManager,
         _ledgerView = ledgerView,
+        _invitationsLoader = invitationsLoader,
         _fetchInvitationsAction = fetchInvitationsAction,
         _fetchInvitationsQuickAction = fetchInvitationsQuickAction,
         _activeCapsuleHexResolver = activeCapsuleHexResolver;
 
   List<Invitation> loadInvitations() =>
-      _ledgerView?.loadInvitations() ?? const <Invitation>[];
+      _invitationsLoader?.call() ??
+      _ledgerView?.loadInvitations() ??
+      const <Invitation>[];
 
   Future<InvitationIntentResult> sendInvitation(
     Uint8List toPubkey,
@@ -76,6 +81,7 @@ class InvitationIntentHandler {
     final workerResult = await (_fetchInvitationsAction?.call() ??
         _requireActions().fetchInvitations());
     final code = workerResult.code;
+    await _expireOverdueOutgoingInvitationsIfNeeded();
     return InvitationIntentResult(
       code: code,
       message: code >= 0
@@ -115,6 +121,7 @@ class InvitationIntentHandler {
     final workerResult = await (_fetchInvitationsQuickAction?.call() ??
         _requireActions().fetchInvitationsQuick());
     final code = workerResult.code;
+    await _expireOverdueOutgoingInvitationsIfNeeded();
     return InvitationIntentResult(
       code: code,
       message: code >= 0
@@ -219,5 +226,33 @@ class InvitationIntentHandler {
     final actions = _actions;
     if (actions != null) return actions;
     throw StateError('Invitation actions are not configured');
+  }
+
+  Future<void> _expireOverdueOutgoingInvitationsIfNeeded() async {
+    final actions = _actions;
+    if (actions == null) {
+      return;
+    }
+
+    final overdueOutgoingPending = loadInvitations()
+        .where(
+          (invitation) =>
+              invitation.isOutgoing &&
+              invitation.status == InvitationStatus.pending &&
+              invitation.isExpired,
+        )
+        .toList(growable: false);
+    if (overdueOutgoingPending.isEmpty) {
+      return;
+    }
+
+    for (final invitation in overdueOutgoingPending) {
+      final invitationId = _decodeB64_32(invitation.id);
+      if (invitationId == null) {
+        continue;
+      }
+      final ok = await actions.cancelInvitation(invitationId);
+      if (!ok) continue;
+    }
   }
 }

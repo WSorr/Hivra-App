@@ -488,7 +488,9 @@ When tradeoffs are unclear, prefer:
       - quick receive timeout reduced to 8s (`InvitationActionsService`) to avoid long startup stalls under relay-connect degradation
       - quick receive dedupe is capsule-scoped in `InvitationIntentHandler` (in-flight coalescing + cooldown), so repeated screen/runtime reopen cycles do not trigger redundant receive workers for the same active capsule
       - added `invitation_intent_handler_test.dart` coverage for concurrent coalescing, cooldown skip, and per-capsule cooldown isolation
-      - FFI now reuses per-capsule Nostr transport sessions (default + quick profiles) across send/receive/accept/reject/break paths instead of recreating transport on each action, reducing relay re-handshake churn during capsule switches and periodic refreshes
+    - FFI now reuses per-capsule Nostr transport sessions (default + quick profiles) across send/receive/accept/reject/break paths instead of recreating transport on each action, reducing relay re-handshake churn during capsule switches and periodic refreshes
+    - Added deterministic overdue-invitation sweep in `InvitationIntentHandler` for outgoing `pending` rows past 24h, appending `InvitationExpired` through existing `cancelInvitation/expire` path so local slot locks are released even when transport fetch returns no new events
+    - Added `invitation_intent_handler_test.dart` coverage that auto-expiry sweep only applies to overdue outgoing `pending` invitations (does not touch incoming, fresh pending, or already terminal invitations)
 
 - `9.6 Ledger-Derived Slot Projection In Flutter`
   - Core already provides deterministic slot projection via `SlotLayout::from_ledger` and `CapsuleState::from_capsule`.
