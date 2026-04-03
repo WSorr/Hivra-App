@@ -454,14 +454,14 @@ struct Event {
 
 Event | Fields
 --- | ---
-InvitationSent | invitation_id, starter_id, to_pubkey, target_root_pubkey? (optional until root-aware lineage becomes canonical)
+InvitationSent | invitation_id, starter_id, to_pubkey, sender_root_pubkey? (optional root provenance carried with invitation lineage)
 InvitationAccepted | invitation_id, from_pubkey, created_starter_id (recipient starter used for the relationship; if accept created a new invited starter, this is that starter ID), accepter_root_pubkey? (optional until root-aware lineage becomes canonical)
 InvitationRejected | invitation_id, reason (EmptySlot | Other)
 InvitationExpired | invitation_id
 StarterCreated | starter_id, nonce, kind, network
 StarterBurned | starter_id, reason
-RelationshipEstablished | peer_pubkey, own_starter_id, peer_starter_id, kind, invitation_id, sender_pubkey, sender_starter_type, sender_starter_id
-RelationshipBroken | peer_pubkey, own_starter_id
+RelationshipEstablished | peer_pubkey, own_starter_id, peer_starter_id, kind, invitation_id, sender_pubkey, sender_starter_type, sender_starter_id, peer_root_pubkey?, sender_root_pubkey? (optional root-aware pair anchor fields)
+RelationshipBroken | peer_pubkey, own_starter_id, peer_root_pubkey? (optional root-aware pair anchor field)
 
 Event layers are intentionally distinct:
 
@@ -480,6 +480,19 @@ Event layers are intentionally distinct:
   - `RelationshipBroken`
 
 These layers MUST NOT be treated as interchangeable. Invitation history records intent and response, starter events record local capsule anatomy, and relationship events anchor pairwise truth used for relationship management and future pair-scoped consensus checks.
+
+### 7.3 Binary Payload Compatibility Matrix
+
+To preserve deterministic replay across upgrades, payload parsers MUST accept legacy and root-augmented variants listed below.
+
+Event | Allowed payload lengths | Notes
+--- | --- | ---
+InvitationSent / InvitationReceived | 96, 97, 128, 129 bytes | `97/129` include starter-kind hint byte; `128/129` include `sender_root_pubkey` at bytes `[96..128]`
+InvitationAccepted | 96, 128 bytes | `128` includes `accepter_root_pubkey` at bytes `[96..128]`
+RelationshipEstablished | 194, 226, 258 bytes | `226` adds `peer_root_pubkey`; `258` adds both `peer_root_pubkey` and `sender_root_pubkey`
+RelationshipBroken | 64, 96 bytes | `96` adds `peer_root_pubkey`
+
+Root-aware fields are lineage/pairwise provenance facts. They are not transport routing fields.
 
 ---
 
@@ -529,7 +542,7 @@ At minimum, relationship history MUST preserve:
 
 To support future root-scoped pairwise consensus, invitation lineage SHOULD also preserve root identity once known:
 
-- `InvitationSent.target_root_pubkey` when the sender knows the peer root identity
+- `InvitationSent.sender_root_pubkey` so incoming invitation lineage can carry sender-root provenance
 - `InvitationAccepted.accepter_root_pubkey` so the sender can anchor the accepting capsule at root level
 
 These fields are lineage provenance, not delivery routing. Transport delivery may remain transport-key based even when root provenance is preserved in ledger history.
@@ -587,6 +600,7 @@ A starter is burned ONLY at the sender and only when ALL conditions are met:
 - Recorded in both ledgers.
 - Relationship history MUST preserve both local and remote starter references.
 - Relationship history MUST preserve invitation provenance sufficient to reconstruct which sender starter originated the relationship.
+- When available, relationship history SHOULD preserve root-aware pair anchor fields (`peer_root_pubkey`, `sender_root_pubkey`) so pairwise consensus can remain root-scoped across transport adapters.
 - Either side can break at any time (RelationshipBroken).
 - Starters are not burned on break.
 
