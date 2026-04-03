@@ -154,6 +154,54 @@ void main() {
       expect(
           actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
     });
+
+    test('runs expiry sweep even when quick fetch is skipped by cooldown',
+        () async {
+      String idForByte(int value) =>
+          base64.encode(Uint8List.fromList(List<int>.filled(32, value)));
+
+      final now = DateTime.now();
+      final candidate = Invitation(
+        id: idForByte(51),
+        fromPubkey: idForByte(61),
+        toPubkey: idForByte(71),
+        kind: StarterKind.kick,
+        status: InvitationStatus.pending,
+        sentAt: now.subtract(const Duration(hours: 20)),
+        expiresAt: now.add(const Duration(hours: 4)),
+      );
+      var invitations = <Invitation>[candidate];
+
+      final actions = _FakeInvitationActionsService();
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+        activeCapsuleHexResolver: () => 'capsule-expiry-cooldown',
+        invitationsLoader: () => invitations,
+        fetchInvitationsQuickAction: () async =>
+            const InvitationWorkerResult(code: 0),
+      );
+
+      final first = await handler.fetchInvitationsQuick();
+      expect(first.message, 'Fetched invitation deliveries: 0 new event(s)');
+      expect(actions.canceledInvitationIds, isEmpty);
+
+      invitations = <Invitation>[
+        Invitation(
+          id: candidate.id,
+          fromPubkey: candidate.fromPubkey,
+          toPubkey: candidate.toPubkey,
+          kind: candidate.kind,
+          status: candidate.status,
+          sentAt: candidate.sentAt,
+          expiresAt: now.subtract(const Duration(hours: 1)),
+        ),
+      ];
+
+      final second = await handler.fetchInvitationsQuick();
+      expect(second.message, 'Skipped duplicate quick fetch');
+      expect(actions.canceledInvitationIds, <String>[candidate.id]);
+    });
   });
 }
 

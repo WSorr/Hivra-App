@@ -100,6 +100,7 @@ class InvitationIntentHandler {
     final lastQuickFetchAt = _lastQuickFetchAtByCapsule[capsuleHex];
     if (lastQuickFetchAt != null &&
         DateTime.now().difference(lastQuickFetchAt) < _quickFetchCooldown) {
+      await _expireOverdueOutgoingInvitationsIfNeeded();
       return const InvitationIntentResult(
         code: 0,
         message: 'Skipped duplicate quick fetch',
