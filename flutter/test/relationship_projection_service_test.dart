@@ -178,6 +178,52 @@ void main() {
     );
 
     test(
+      'uses ledger owner fallback to preserve pending remote break semantics',
+      () {
+        const t0 = 1890003205000;
+        final local = rep(0xaa);
+        final peer = rep(0xbb);
+        final root = <String, dynamic>{
+          'owner': local,
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xbb,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x41,
+                senderByte: 0xbb,
+                senderStarterByte: 0x61,
+                peerRootByte: 0xcc,
+                senderRootByte: 0xaa,
+              ),
+              timestamp: t0 + 1,
+              signer: local,
+            ),
+            event(
+              kind: 'RelationshipBroken',
+              payload: <int>[
+                ...rep(0xbb),
+                ...rep(0x21),
+                ...rep(0xcc),
+              ],
+              timestamp: t0 + 2,
+              signer: peer,
+            ),
+          ],
+        };
+
+        final projected = service.loadRelationships(root);
+
+        expect(projected, hasLength(1));
+        expect(projected.single.isActive, isTrue);
+        expect(projected.single.hasPendingRemoteBreak, isTrue);
+      },
+    );
+
+    test(
       'does not reopen pending break after local break was finalized',
       () {
         const t0 = 1890003210000;

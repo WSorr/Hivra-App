@@ -23,7 +23,7 @@ class RelationshipProjectionService {
   List<Relationship> loadRelationships(Map<String, dynamic> root) {
     final events = _support.events(root);
     final byKey = <String, Relationship>{};
-    final localOwner = _runtimeOwnerPublicKey?.call();
+    final localOwner = _resolveLocalOwner(root);
 
     for (final e in events) {
       final kind = _support.kindCode(e['kind']);
@@ -80,6 +80,18 @@ class RelationshipProjectionService {
     final list = byKey.values.toList();
     list.sort((a, b) => b.establishedAt.compareTo(a.establishedAt));
     return list;
+  }
+
+  Uint8List? _resolveLocalOwner(Map<String, dynamic> root) {
+    final runtimeOwner = _runtimeOwnerPublicKey?.call();
+    if (runtimeOwner != null && runtimeOwner.length == 32) {
+      return Uint8List.fromList(runtimeOwner);
+    }
+    final ledgerOwner = _support.bytes32(root['owner']);
+    if (ledgerOwner.length == 32) {
+      return Uint8List.fromList(ledgerOwner);
+    }
+    return null;
   }
 
   List<RelationshipPeerGroup> loadRelationshipGroups(
