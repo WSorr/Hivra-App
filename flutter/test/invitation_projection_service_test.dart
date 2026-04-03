@@ -80,6 +80,13 @@ void main() {
       );
     }
 
+    InvitationProjectionService serviceWithoutRuntimeOwner() {
+      return InvitationProjectionService.withOwnerKeyProvider(
+        () => null,
+        support,
+      );
+    }
+
     test(
         'does not classify self-addressed self-signed sent invitation as incoming',
         () {
@@ -136,6 +143,34 @@ void main() {
       expect(invitations, hasLength(1));
       expect(invitations.single.isIncoming, isTrue);
       expect(invitations.single.toPubkey, isNull);
+      expect(invitations.single.status, InvitationStatus.pending);
+    });
+
+    test('falls back to ledger owner when runtime owner is unavailable', () {
+      final invitationId = _bytes32(122);
+      final starterId = _bytes32(142);
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceWithoutRuntimeOwner();
+
+      final invitations = service.loadInvitations(<String, dynamic>{
+        'owner': self.toList(),
+        'events': <Map<String, dynamic>>[
+          _event(
+            kind: 'InvitationSent',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: self,
+              kindByte: 1,
+            ),
+            signer: peer,
+            timestamp: t0 + 1,
+          ),
+        ],
+      });
+
+      expect(invitations, hasLength(1));
+      expect(invitations.single.isIncoming, isTrue);
       expect(invitations.single.status, InvitationStatus.pending);
     });
 

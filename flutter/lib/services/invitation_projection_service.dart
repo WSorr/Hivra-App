@@ -19,7 +19,7 @@ class InvitationProjectionService {
     List<Uint8List?> starterIds = const <Uint8List?>[],
   }) {
     final events = _support.events(root);
-    final self = _runtimeOwnerPublicKey();
+    final self = _resolveLocalOwner(root);
     if (self == null) return <Invitation>[];
 
     final starterKinds = <String, StarterKind>{};
@@ -176,5 +176,17 @@ class InvitationProjectionService {
     final list = byId.values.toList();
     list.sort((a, b) => b.sentAt.compareTo(a.sentAt));
     return list;
+  }
+
+  Uint8List? _resolveLocalOwner(Map<String, dynamic> root) {
+    final runtimeOwner = _runtimeOwnerPublicKey();
+    if (runtimeOwner != null && runtimeOwner.length == 32) {
+      return runtimeOwner;
+    }
+    final ledgerOwner = _support.bytes32(root['owner']);
+    if (ledgerOwner.length == 32) {
+      return Uint8List.fromList(ledgerOwner);
+    }
+    return null;
   }
 }
