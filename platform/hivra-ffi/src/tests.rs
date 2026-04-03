@@ -350,6 +350,93 @@ fn incoming_empty_slot_reject_burns_sender_starter() {
 }
 
 #[test]
+fn incoming_empty_slot_reject_burns_sender_starter_for_root_augmented_offer() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(121);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [54u8; 32];
+    let invitation_id = [55u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 4);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(own_starter_id),
+            nonce: derive_starter_nonce(&local_seed, 4),
+            kind: StarterKind::Kick,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    let payload = InvitationSentPayload {
+        invitation_id,
+        starter_id: StarterId::from(own_starter_id),
+        to_pubkey: PubKey::from(peer_pubkey),
+        sender_root_pubkey: Some(local_pubkey),
+    };
+    let mut bytes = payload.to_bytes();
+    bytes.push(4);
+    append_runtime_event(EventKind::InvitationSent, &bytes).unwrap();
+
+    let engine = build_engine(&local_seed);
+    project_effects_from_invitation_rejected(
+        &engine,
+        &InvitationRejectedPayload {
+            invitation_id,
+            reason: RejectReason::EmptySlot,
+        },
+    )
+    .unwrap();
+
+    let events = runtime_events();
+    assert!(events.iter().any(|event| {
+        event.kind() == EventKind::StarterBurned
+            && StarterBurnedPayload::from_bytes(event.payload()).is_ok_and(|payload| {
+                payload.starter_id.as_bytes() == &own_starter_id
+                    && payload.reason == RejectReason::EmptySlot as u8
+            })
+    }));
+}
+
+#[test]
+fn outgoing_direction_lookup_does_not_fallback_to_incoming_offer() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(122);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [56u8; 32];
+    let invitation_id = [57u8; 32];
+    let peer_starter_id = derive_starter_id(&test_seed(123), 1);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(1),
+        Some(peer_pubkey),
+    );
+
+    let outgoing = crate::invitation_support::find_invitation_sent_in_runtime_with_direction(
+        &invitation_id,
+        Some(false),
+    );
+    let incoming = crate::invitation_support::find_invitation_sent_in_runtime_with_direction(
+        &invitation_id,
+        Some(true),
+    );
+
+    assert!(outgoing.is_none());
+    assert!(incoming.is_some_and(|record| record.is_incoming));
+}
+
+#[test]
 fn burned_starter_id_is_reused_on_later_accept() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

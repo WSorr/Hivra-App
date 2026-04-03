@@ -148,7 +148,6 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
     let runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_ref()?;
     let local_pubkey = capsule.pubkey;
-    let mut fallback: Option<InvitationLookupRecord> = None;
 
     for event in capsule.ledger.events() {
         let event_kind = event.kind();
@@ -197,16 +196,12 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
         };
         match expect_incoming {
             Some(expected) if expected == is_incoming => return Some(candidate),
-            Some(_) => {
-                if fallback.is_none() {
-                    fallback = Some(candidate);
-                }
-            }
+            Some(_) => {}
             None => return Some(candidate),
         }
     }
 
-    fallback
+    None
 }
 
 pub(crate) fn debug_log_invitation_sent_candidates(label: &str, target_invitation_id: &[u8; 32]) {
