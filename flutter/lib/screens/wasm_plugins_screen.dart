@@ -214,15 +214,27 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               ? 'Consensus guard blocked execution.'
               : result.blockingFacts.first.label;
           messenger.showSnackBar(
-            SnackBar(content: Text('Demo blocked: $reason')),
+            SnackBar(
+              content: Text(
+                'Demo blocked for ${result.blockedPairCount} pair(s): $reason',
+              ),
+            ),
           );
           break;
-        case PluginDemoRunState.executed:
-          final settlement = result.settlement!;
+        case PluginDemoRunState.partial:
           messenger.showSnackBar(
             SnackBar(
               content: Text(
-                'Demo settled (${settlement.outcome.name}) for ${result.peerLabel ?? result.peerHex}',
+                'Demo partial: executed ${result.readyPairCount}, blocked ${result.blockedPairCount}.',
+              ),
+            ),
+          );
+          break;
+        case PluginDemoRunState.executed:
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                'Demo settled for ${result.readyPairCount} pair(s).',
               ),
             ),
           );
@@ -835,24 +847,39 @@ class _ContractDemoPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final result = lastResult;
+    final firstExecuted = result?.firstExecutedPair;
+    PluginDemoPairRunResult? firstBlocked;
+    if (result != null) {
+      for (final pair in result.pairResults) {
+        if (!pair.isExecuted) {
+          firstBlocked = pair;
+          break;
+        }
+      }
+    }
     final accent = switch (result?.state) {
       PluginDemoRunState.executed => const Color(0xFF75D98A),
+      PluginDemoRunState.partial => const Color(0xFFFFC76A),
       PluginDemoRunState.blocked => const Color(0xFFFF8A7A),
       PluginDemoRunState.noPairwisePaths => const Color(0xFF75D2FF),
       null => const Color(0xFF7F92A8),
     };
     final title = switch (result?.state) {
       PluginDemoRunState.executed => 'Last run settled',
+      PluginDemoRunState.partial => 'Last run mixed',
       PluginDemoRunState.blocked => 'Last run blocked by guard',
       PluginDemoRunState.noPairwisePaths => 'No pairwise paths yet',
       null => 'Not run yet',
     };
     final summary = switch (result?.state) {
-      PluginDemoRunState.executed =>
-        'Outcome: ${result!.settlement!.outcome.name}. Settlement hash: ${result.settlement!.settlementHashHex.substring(0, 12)}..',
-      PluginDemoRunState.blocked => result!.blockingFacts.isEmpty
+      PluginDemoRunState.executed => firstExecuted == null
+          ? 'Demo reported executed.'
+          : 'Settled ${result!.readyPairCount} pair(s). Example: ${firstExecuted.settlement!.outcome.name}, hash ${firstExecuted.settlement!.settlementHashHex.substring(0, 12)}..',
+      PluginDemoRunState.partial =>
+        'Settled ${result!.readyPairCount} pair(s), blocked ${result.blockedPairCount} pair(s).',
+      PluginDemoRunState.blocked => firstBlocked == null
           ? 'Consensus guard blocked execution.'
-          : 'Blocking reason: ${result.blockingFacts.first.label}',
+          : 'Blocking reason: ${firstBlocked.blockingFacts.isEmpty ? 'unknown' : firstBlocked.blockingFacts.first.label}',
       PluginDemoRunState.noPairwisePaths =>
         'Create at least one relationship so consensus checks can derive a pairwise path.',
       null =>
@@ -897,12 +924,22 @@ class _ContractDemoPanel extends StatelessWidget {
                         height: 1.4,
                       ),
                     ),
-                    if (result?.peerLabel != null ||
-                        result?.peerHex != null) ...[
+                    if (result != null &&
+                        result.state != PluginDemoRunState.noPairwisePaths) ...[
                       const SizedBox(height: 10),
-                      _InfoChip(
-                        icon: Icons.people_alt_outlined,
-                        label: 'Peer: ${result!.peerLabel ?? result.peerHex}',
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _InfoChip(
+                            icon: Icons.verified_outlined,
+                            label: 'Ready: ${result.readyPairCount}',
+                          ),
+                          _InfoChip(
+                            icon: Icons.block_outlined,
+                            label: 'Blocked: ${result.blockedPairCount}',
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -910,6 +947,20 @@ class _ContractDemoPanel extends StatelessWidget {
               ),
             ],
           ),
+          if (result != null && result.pairResults.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Pairwise results',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFCFD7E2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...result.pairResults.map(
+              (pair) => _DemoPairRunRow(pair: pair),
+            ),
+          ],
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: running ? null : onRunPressed,
@@ -921,6 +972,55 @@ class _ContractDemoPanel extends StatelessWidget {
                   )
                 : const Icon(Icons.play_arrow_rounded),
             label: Text(running ? 'Running demo' : 'Run Demo Settlement'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DemoPairRunRow extends StatelessWidget {
+  final PluginDemoPairRunResult pair;
+
+  const _DemoPairRunRow({required this.pair});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = pair.isExecuted
+        ? const Color(0xFF75D98A)
+        : const Color(0xFFFF8A7A);
+    final title = pair.peerLabel ?? pair.peerHex;
+    final detail = pair.isExecuted
+        ? 'Settled: ${pair.settlement!.outcome.name} · ${pair.settlement!.settlementHashHex.substring(0, 10)}..'
+        : pair.blockingFacts.isEmpty
+            ? 'Blocked'
+            : 'Blocked: ${pair.blockingFacts.first.label}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E141D),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withAlpha(90)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            pair.isExecuted ? Icons.check_circle_outline : Icons.block_outlined,
+            size: 16,
+            color: accent,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$title\n$detail',
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: Color(0xFFC8D2DF),
+              ),
+            ),
           ),
         ],
       ),

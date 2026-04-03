@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../models/relationship_peer_group.dart';
 import '../models/relationship.dart';
@@ -7,12 +8,22 @@ import 'ledger_view_support.dart';
 
 class RelationshipProjectionService {
   final LedgerViewSupport _support;
+  final Uint8List? Function()? _runtimeOwnerPublicKey;
 
-  const RelationshipProjectionService(this._support);
+  const RelationshipProjectionService(
+    this._support, {
+    Uint8List? Function()? runtimeOwnerPublicKey,
+  }) : _runtimeOwnerPublicKey = runtimeOwnerPublicKey;
+
+  RelationshipProjectionService.withOwnerKeyProvider(
+    Uint8List? Function() runtimeOwnerPublicKey,
+    this._support,
+  ) : _runtimeOwnerPublicKey = runtimeOwnerPublicKey;
 
   List<Relationship> loadRelationships(Map<String, dynamic> root) {
     final events = _support.events(root);
     final byKey = <String, Relationship>{};
+    final localOwner = _runtimeOwnerPublicKey?.call();
 
     for (final e in events) {
       final kind = _support.kindCode(e['kind']);
@@ -30,19 +41,35 @@ class RelationshipProjectionService {
           peerStarterId: established.peerStarterId,
           establishedAt: timestamp,
           isActive: true,
+          hasPendingRemoteBreak: false,
         );
       } else if (kind == 8) {
         final key = _support.relationshipKeyFromBrokenPayload(payload);
         if (key == null) continue;
         final current = byKey[key];
         if (current != null) {
+          final signer = _support.bytes32(e['signer']);
+          final hasLocalOwner = localOwner != null && localOwner.length == 32;
+          final signerMatchesLocal = hasLocalOwner &&
+              signer.length == 32 &&
+              _support.eq32(signer, localOwner);
+          final isPendingRemoteBreak =
+              hasLocalOwner && signer.length == 32 && !signerMatchesLocal;
+          if (isPendingRemoteBreak &&
+              !current.isActive &&
+              !current.hasPendingRemoteBreak) {
+            // Local break finalization has higher precedence than replayed
+            // remote break notifications.
+            continue;
+          }
           byKey[key] = Relationship(
             peerPubkey: current.peerPubkey,
             kind: current.kind,
             ownStarterId: current.ownStarterId,
             peerStarterId: current.peerStarterId,
             establishedAt: current.establishedAt,
-            isActive: false,
+            isActive: isPendingRemoteBreak ? true : false,
+            hasPendingRemoteBreak: isPendingRemoteBreak,
           );
         }
       }

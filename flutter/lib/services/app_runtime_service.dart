@@ -1,6 +1,9 @@
 import 'dart:typed_data';
 
+import '../ffi/capsule_address_runtime.dart';
 import '../ffi/hivra_bindings.dart';
+import '../ffi/invitation_actions_runtime.dart';
+import '../ffi/ledger_view_runtime.dart';
 import 'capsule_address_service.dart';
 import 'capsule_persistence_service.dart';
 import 'capsule_state_manager.dart';
@@ -30,10 +33,14 @@ class AppRuntimeService {
     CapsulePersistenceService? persistence,
   })  : _hivra = hivra ?? HivraBindings(),
         _persistence = persistence ?? CapsulePersistenceService() {
-    _stateManager = CapsuleStateManager(_hivra);
-    _invitationActions =
-        InvitationActionsService(_hivra, persistence: _persistence);
-    _ledgerView = LedgerViewService(_hivra);
+    _ledgerView = LedgerViewService(runtime: HivraLedgerViewRuntime(_hivra));
+    _stateManager = CapsuleStateManager(_ledgerView);
+    _invitationActions = InvitationActionsService(
+      runtime: HivraInvitationActionsRuntime(
+        hivra: _hivra,
+        persistence: _persistence,
+      ),
+    );
     _invitationIntents = InvitationIntentHandler(
       actions: _invitationActions,
       delivery: const InvitationDeliveryService(),
@@ -104,19 +111,25 @@ class AppRuntimeService {
   }
 
   RelationshipService buildRelationshipService() {
-    return RelationshipService(_hivra);
+    return RelationshipService(
+      loadRelationshipGroups: _ledgerView.loadRelationshipGroups,
+      breakRelationship: _hivra.breakRelationship,
+      persistLedgerSnapshot: () => _persistence.persistLedgerSnapshot(_hivra),
+    );
   }
 
   SettingsService buildSettingsService() {
-    final contactCards = const CapsuleAddressService();
+    final contactCards = CapsuleAddressService(
+      runtime: HivraCapsuleAddressRuntime(_hivra),
+    );
     return SettingsService(
       loadIsNeste: () => _stateManager.state.isNeste,
       loadSeed: _hivra.loadSeed,
       diagnoseCapsuleTraces: () => _persistence.diagnoseCapsuleTraces(_hivra),
       diagnoseBootstrapReport: () =>
           _persistence.diagnoseBootstrapReport(_hivra),
-      buildOwnCard: () => contactCards.buildOwnCard(_hivra),
-      exportOwnCardJson: () => contactCards.exportOwnCardJson(_hivra),
+      buildOwnCard: contactCards.buildOwnCard,
+      exportOwnCardJson: contactCards.exportOwnCardJson,
       contactCards: contactCards,
     );
   }

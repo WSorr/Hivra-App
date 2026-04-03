@@ -108,21 +108,28 @@ class PluginHostApiService {
       observation: parse.observation!,
     );
 
+    if (runResult.settlement != null) {
+      return _executed(
+        pluginId: request.pluginId,
+        method: request.method,
+        result: <String, dynamic>{
+          'peer_hex': runResult.peerHex,
+          'peer_label': runResult.peerLabel,
+          'outcome': runResult.settlement!.outcome.name,
+          'winner_role': runResult.settlement!.winnerRole,
+          'settlement_hash_hex': runResult.settlement!.settlementHashHex,
+          'canonical_settlement_json': runResult.settlement!.canonicalJson,
+          'ready_pair_count': runResult.readyPairCount,
+          'blocked_pair_count': runResult.blockedPairCount,
+        },
+      );
+    }
+
     return switch (runResult.state) {
-      PluginDemoRunState.executed => _executed(
-          pluginId: request.pluginId,
-          method: request.method,
-          result: <String, dynamic>{
-            'peer_hex': runResult.peerHex,
-            'peer_label': runResult.peerLabel,
-            'outcome': runResult.settlement!.outcome.name,
-            'winner_role': runResult.settlement!.winnerRole,
-            'settlement_hash_hex': runResult.settlement!.settlementHashHex,
-            'canonical_settlement_json': runResult.settlement!.canonicalJson,
-          },
-        ),
       PluginDemoRunState.blocked ||
-      PluginDemoRunState.noPairwisePaths =>
+      PluginDemoRunState.noPairwisePaths ||
+      PluginDemoRunState.partial ||
+      PluginDemoRunState.executed =>
         _blocked(
           pluginId: request.pluginId,
           method: request.method,

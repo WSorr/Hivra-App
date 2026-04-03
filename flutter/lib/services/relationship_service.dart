@@ -1,23 +1,61 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import '../ffi/hivra_bindings.dart';
 import '../models/relationship.dart';
 import '../models/relationship_peer_group.dart';
-import 'capsule_persistence_service.dart';
-import 'ledger_view_service.dart';
+import 'capsule_address_service.dart';
+
+typedef RelationshipGroupsLoader = List<RelationshipPeerGroup> Function();
+typedef RelationshipBreaker = bool Function(
+  Uint8List peerPubkey,
+  Uint8List ownStarterId,
+  Uint8List peerStarterId,
+);
+typedef LedgerSnapshotPersister = Future<void> Function();
 
 class RelationshipService {
-  final HivraBindings _hivra;
-  final CapsulePersistenceService _persistence;
+  final RelationshipGroupsLoader _loadRelationshipGroups;
+  final RelationshipBreaker _breakRelationship;
+  final LedgerSnapshotPersister _persistLedgerSnapshot;
+  final CapsuleAddressService _addressService;
 
-  RelationshipService(
-    this._hivra, {
-    CapsulePersistenceService? persistence,
-  }) : _persistence = persistence ?? CapsulePersistenceService();
+  RelationshipService({
+    required RelationshipGroupsLoader loadRelationshipGroups,
+    required RelationshipBreaker breakRelationship,
+    required LedgerSnapshotPersister persistLedgerSnapshot,
+    CapsuleAddressService? addressService,
+  })  : _loadRelationshipGroups = loadRelationshipGroups,
+        _breakRelationship = breakRelationship,
+        _persistLedgerSnapshot = persistLedgerSnapshot,
+        _addressService = addressService ?? const CapsuleAddressService();
 
   List<RelationshipPeerGroup> loadRelationshipGroups() {
-    return LedgerViewService(_hivra).loadRelationshipGroups();
+    return _loadRelationshipGroups();
+  }
+
+  Future<Map<String, String>> loadPeerRootKeysByTransportBase64(
+    Iterable<String> peerPubkeys,
+  ) async {
+    final cards = await _addressService.listTrustedCards();
+    final rootByHex = <String, String>{};
+    final rootByTransportHex = <String, String>{};
+
+    for (final card in cards) {
+      rootByHex[card.rootHex] = card.rootKey;
+      rootByTransportHex[card.nostrHex] = card.rootKey;
+    }
+
+    final result = <String, String>{};
+    for (final peerPubkey in peerPubkeys) {
+      final bytes = _decodeB64_32(peerPubkey);
+      if (bytes == null) continue;
+      final hex = _hex(bytes);
+      final rootKey = rootByHex[hex] ?? rootByTransportHex[hex];
+      if (rootKey != null && rootKey.isNotEmpty) {
+        result[peerPubkey] = rootKey;
+      }
+    }
+    return result;
   }
 
   Future<bool> breakRelationship(Relationship relationship) async {
@@ -28,10 +66,14 @@ class RelationshipService {
       return false;
     }
 
-    final ok = _hivra.breakRelationship(peer, own, peerStarter);
+    final ok = _breakRelationship(peer, own, peerStarter);
     if (!ok) return false;
-    await _persistence.persistLedgerSnapshot(_hivra);
+    await _persistLedgerSnapshot();
     return true;
+  }
+
+  Future<bool> confirmRemoteBreak(Relationship relationship) {
+    return breakRelationship(relationship);
   }
 
   Uint8List? _decodeB64_32(String value) {
@@ -42,4 +84,7 @@ class RelationshipService {
       return null;
     }
   }
+
+  String _hex(Uint8List bytes) =>
+      bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 }

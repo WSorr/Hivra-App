@@ -165,5 +165,61 @@ void main() {
           ),
           isTrue);
     });
+
+    test('checks computes readiness from a single preview pass', () {
+      var exportLedgerCalls = 0;
+      var readTransportCalls = 0;
+      final localTransport = Uint8List.fromList(List<int>.filled(32, 11));
+      final service = ConsensusRuntimeService(
+        exportLedger: () {
+          exportLedgerCalls += 1;
+          return jsonEncode(<String, dynamic>{
+            'events': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'kind': 1,
+                'payload': <int>[
+                  ...List<int>.filled(32, 1),
+                  ...List<int>.filled(32, 2),
+                  ...List<int>.filled(32, 3),
+                  1,
+                ],
+              },
+              <String, dynamic>{
+                'kind': 7,
+                'payload': <int>[
+                  ...List<int>.filled(32, 4),
+                  ...List<int>.filled(32, 2),
+                  ...List<int>.filled(32, 5),
+                  1,
+                  ...List<int>.filled(32, 1),
+                  ...List<int>.filled(32, 6),
+                  1,
+                  ...List<int>.filled(32, 7),
+                ],
+              },
+              <String, dynamic>{
+                'kind': 2,
+                'payload': <int>[
+                  ...List<int>.filled(32, 1),
+                  ...List<int>.filled(32, 8),
+                  ...List<int>.filled(32, 9),
+                ],
+              },
+            ],
+          });
+        },
+        readLocalTransportKey: () {
+          readTransportCalls += 1;
+          return localTransport;
+        },
+      );
+
+      final checks = service.checks();
+
+      expect(checks, hasLength(1));
+      expect(checks.first.isSignable, isTrue);
+      expect(exportLedgerCalls, equals(1));
+      expect(readTransportCalls, equals(1));
+    });
   });
 }

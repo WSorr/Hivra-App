@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:bech32/bech32.dart';
 
-import '../ffi/hivra_bindings.dart';
+import '../ffi/capsule_address_runtime.dart';
 import '../utils/hivra_id_format.dart';
 import 'user_visible_data_directory_service.dart';
 
@@ -58,14 +58,17 @@ class CapsuleAddressCard {
 
 class CapsuleAddressService {
   final UserVisibleDataDirectoryService _dirs;
+  final CapsuleAddressRuntime? _runtime;
 
   const CapsuleAddressService({
     UserVisibleDataDirectoryService? dirs,
-  }) : _dirs = dirs ?? const UserVisibleDataDirectoryService();
+    CapsuleAddressRuntime? runtime,
+  })  : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+        _runtime = runtime;
 
-  Future<CapsuleAddressCard?> buildOwnCard(HivraBindings hivra) async {
-    final root = hivra.capsuleRootPublicKey();
-    final nostr = hivra.capsuleNostrPublicKey();
+  Future<CapsuleAddressCard?> buildOwnCard() async {
+    final root = _runtime?.capsuleRootPublicKey();
+    final nostr = _runtime?.capsuleNostrPublicKey();
     if (root == null ||
         root.length != 32 ||
         nostr == null ||
@@ -83,8 +86,8 @@ class CapsuleAddressService {
     );
   }
 
-  Future<String?> exportOwnCardJson(HivraBindings hivra) async {
-    final card = await buildOwnCard(hivra);
+  Future<String?> exportOwnCardJson() async {
+    final card = await buildOwnCard();
     return card?.toPrettyJson();
   }
 

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import '../ffi/hivra_bindings.dart';
 import '../models/invitation.dart';
 import '../models/starter.dart';
 import 'ledger_view_support.dart';
@@ -9,9 +8,6 @@ import 'ledger_view_support.dart';
 class InvitationProjectionService {
   final Uint8List? Function() _runtimeOwnerPublicKey;
   final LedgerViewSupport _support;
-
-  InvitationProjectionService(HivraBindings hivra, this._support)
-      : _runtimeOwnerPublicKey = hivra.capsuleRuntimeOwnerPublicKey;
 
   InvitationProjectionService.withOwnerKeyProvider(
     Uint8List? Function() runtimeOwnerPublicKey,

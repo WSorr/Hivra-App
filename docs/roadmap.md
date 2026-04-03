@@ -476,6 +476,11 @@ When tradeoffs are unclear, prefer:
     - Added `ledger_view_service_test.dart` coverage for both branches:
       - empty-ledger snapshot stays awaiting-history and ignores capsule-state slot occupancy
       - non-empty ledger enables normal history-backed snapshot projection
+    - Launch/resume invitation receive path now keeps ledger-first UX by running lightweight quick receive after first frame, with bounded quick timeout and dedupe guards:
+      - quick receive timeout reduced to 8s (`InvitationActionsService`) to avoid long startup stalls under relay-connect degradation
+      - quick receive dedupe is capsule-scoped in `InvitationIntentHandler` (in-flight coalescing + cooldown), so repeated screen/runtime reopen cycles do not trigger redundant receive workers for the same active capsule
+      - added `invitation_intent_handler_test.dart` coverage for concurrent coalescing, cooldown skip, and per-capsule cooldown isolation
+      - FFI now reuses per-capsule Nostr transport sessions (default + quick profiles) across send/receive/accept/reject/break paths instead of recreating transport on each action, reducing relay re-handshake churn during capsule switches and periodic refreshes
 
 - `9.6 Ledger-Derived Slot Projection In Flutter`
   - Core already provides deterministic slot projection via `SlotLayout::from_ledger` and `CapsuleState::from_capsule`.
@@ -505,6 +510,10 @@ When tradeoffs are unclear, prefer:
     - relationship events remain the pairwise truth anchors used for explicit relationship mutation and future smart-contract gating
   - Current progress:
     - Added `consensus_processor_test.dart` coverage that `RelationshipBroken` blocks only the affected pairwise path (`relationship_broken` fact) while other peer paths remain signable.
+    - Relationship projection now treats remote-signed `RelationshipBroken` as a pending remote-break signal (keeps link active until local confirmation), while local-signed break events still finalize break immediately.
+    - Projection now preserves `local break > remote pending` precedence, so late/replayed remote break notifications cannot re-open a pending state after a local break was already finalized.
+    - Capsule summary relationship counts now reuse `RelationshipProjectionService` so header/list counters stay aligned with pending remote-break semantics instead of diverging on direct payload walks.
+    - Relationships screen now exposes explicit pending-break confirmation action (single or chooser flow) so peer break notifications are finalized by deliberate user action instead of passive badge-only state.
 
 - `9.8 Consensus Processor Module`
   - Keep consensus logic out of screen flows and invitation form orchestration.
@@ -515,6 +524,7 @@ When tradeoffs are unclear, prefer:
   - Current progress:
     - Added `flutter/lib/services/consensus_processor.dart` with on-demand `preview`, `signable`, and `verify` APIs over ledger-derived pairwise projections.
     - Added `flutter/lib/services/consensus_runtime_service.dart` as a read-only runtime facade that feeds the processor from exported ledger truth plus local transport identity.
+    - `ConsensusRuntimeService.checks()` now derives readiness from a single runtime-input + preview pass (instead of per-peer `signable` re-entry), keeping manual checks on-demand and avoiding repeated ledger/key reads inside one check cycle.
     - Runtime consensus identity now prefers local root key when a peer path is root-anchored (root-augmented `RelationshipEstablished` payload) and falls back to local transport key for legacy non-root paths, avoiding transport-coupling for modern paths while preserving legacy determinism.
     - Added `flutter/lib/services/plugin_execution_guard_service.dart` so the future plugin host can read pairwise signability as a guard input without taking on execution or screen-owned consensus logic.
     - Added `flutter/lib/services/manual_consensus_check_service.dart` so Ledger Inspector can consume a read-only manual consensus-check use case instead of building pairwise preview state directly.
@@ -539,9 +549,20 @@ When tradeoffs are unclear, prefer:
     - `7` services import `HivraBindings` directly
   - Current snapshot:
     - `0` screens import `HivraBindings` directly
-    - `13` services import `HivraBindings` directly (explicit allowlist in review gate)
+    - `2` services import `HivraBindings` directly (explicit allowlist in review gate)
     - `FirstLaunchService` no longer imports `HivraBindings`; it now consumes `CapsuleDraftRuntime` boundary with `HivraCapsuleDraftRuntime` adapter at FFI layer
+    - `BackupService` no longer imports `HivraBindings`; it now consumes `BackupRuntime` boundary with `HivraBackupRuntime` adapter at FFI layer
+    - `CapsuleAddressService` no longer imports `HivraBindings`; it now consumes `CapsuleAddressRuntime` boundary with `HivraCapsuleAddressRuntime` adapter at FFI layer
+    - `CapsuleSelectorService` no longer imports `HivraBindings`; it now consumes `CapsuleSelectorRuntime` boundary with `HivraCapsuleSelectorRuntime` adapter at FFI layer
+    - `RecoveryService` no longer imports `HivraBindings`; it now consumes `RecoveryRuntime` boundary with `HivraRecoveryRuntime` adapter at FFI layer
     - `SettingsService` no longer imports `HivraBindings`; it now consumes read-only runtime boundaries injected from `AppRuntimeService`
+    - `InvitationProjectionService` no longer imports `HivraBindings`; runtime owner key is now injected via provider boundary from `LedgerViewService`
+    - `RelationshipService` no longer imports `HivraBindings`; it now consumes injected callbacks for `load groups`, `break relationship`, and `persist snapshot`
+    - `CapsuleStateManager` no longer imports `HivraBindings`; it now consumes ledger snapshot projection through `LedgerViewService` boundary
+    - `CapsuleFileStore` no longer imports `HivraBindings`; runtime capsule directory resolution now consumes runtime-owner callback boundary
+    - `LedgerViewService` no longer imports `HivraBindings`; it now consumes `LedgerViewRuntime` boundary with `HivraLedgerViewRuntime` adapter at FFI layer
+    - `CapsuleRuntimeBootstrapService` no longer imports `HivraBindings`; it now consumes `CapsuleRuntimeBootstrapRuntime` boundary with `HivraCapsuleRuntimeBootstrapRuntime` adapter at FFI layer
+    - `InvitationActionsService` no longer imports `HivraBindings`; worker entrypoints and persistence/FFI operations now flow through `InvitationActionsRuntime` boundary with `HivraInvitationActionsRuntime` adapter at FFI layer
     - UI entrypoint `main.dart` no longer imports `HivraBindings` directly
     - review gate also protects `widgets/` and `utils/` from direct `HivraBindings` imports
     - `tools/review/ui_ffi_boundary_gate.sh` now enforces a service-level import budget and fails if new service files add direct `HivraBindings` ownership outside the allowlist

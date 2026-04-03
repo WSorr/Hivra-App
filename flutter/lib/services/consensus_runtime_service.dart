@@ -59,9 +59,14 @@ class ConsensusRuntimeService {
   }
 
   List<ConsensusCheck> checks() {
-    final previews = preview();
+    final inputs = _runtimeInputs();
+    if (inputs == null) return const <ConsensusCheck>[];
+    final previews = _processor.preview(
+      inputs.events,
+      inputs.localTransportKey ?? Uint8List(0),
+      localRootKey: inputs.localRootKey,
+    );
     return previews.map((preview) {
-      final signableResult = signable(preview.peerHex);
       return ConsensusCheck(
         peerHex: preview.peerHex,
         peerLabel: preview.peerLabel,
@@ -69,8 +74,8 @@ class ConsensusRuntimeService {
         relationshipCount: preview.relationshipCount,
         hashHex: preview.hashHex,
         canonicalJson: preview.canonicalJson,
-        isSignable: signableResult.isSignable,
-        blockingFacts: signableResult.blockingFacts,
+        isSignable: preview.isSignable,
+        blockingFacts: preview.blockingFacts,
       );
     }).toList(growable: false);
   }

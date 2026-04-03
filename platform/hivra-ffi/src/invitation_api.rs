@@ -18,7 +18,7 @@ fn map_delivery_error(err: TransportError, default_code: i32) -> i32 {
     }
 }
 
-fn load_invitation_delivery_context(seed: &Seed) -> Result<(NostrTransport, [u8; 32]), i32> {
+fn load_invitation_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32]), i32> {
     let sender_secret = match derive_nostr_keypair(&seed) {
         Ok(key) => key,
         Err(_) => return Err(-3),
@@ -29,12 +29,7 @@ fn load_invitation_delivery_context(seed: &Seed) -> Result<(NostrTransport, [u8;
         Err(_) => return Err(-3),
     };
 
-    let transport = match NostrTransport::new(NostrConfig::default(), &sender_secret) {
-        Ok(transport) => transport,
-        Err(_) => return Err(-5),
-    };
-
-    Ok((transport, sender_pubkey))
+    Ok((sender_secret, sender_pubkey))
 }
 
 fn send_delivery_message(
@@ -83,7 +78,7 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
         }
     }
 
-    let (transport, sender_pubkey) = match load_invitation_delivery_context(&seed) {
+    let (sender_secret, sender_pubkey) = match load_invitation_delivery_context(&seed) {
         Ok(context) => context,
         Err(code) => {
             set_last_error(format!(
@@ -152,7 +147,11 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
         }
     };
 
-    if let Err(code) = send_delivery_message(&transport, message, -7, "InvitationSent") {
+    if let Err(code) =
+        with_cached_nostr_transport(sender_secret, TransportProfile::Default, -5, |transport| {
+            send_delivery_message(transport, message, -7, "InvitationSent")
+        })
+    {
         set_last_error(format!(
             "Send invitation failed: delivery transport rejected message (code {code})"
         ));
@@ -169,15 +168,15 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
 /// - negative value on failure
 #[no_mangle]
 pub unsafe extern "C" fn hivra_transport_receive() -> i32 {
-    hivra_transport_receive_with_config(NostrConfig::default())
+    hivra_transport_receive_with_profile(TransportProfile::Default)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn hivra_transport_receive_quick() -> i32 {
-    hivra_transport_receive_with_config(NostrConfig::quick_launch())
+    hivra_transport_receive_with_profile(TransportProfile::Quick)
 }
 
-fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
+fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
     let seed = match load_seed() {
         Ok(seed) => seed,
         Err(_) => return -1,
@@ -200,14 +199,11 @@ fn hivra_transport_receive_with_config(config: NostrConfig) -> i32 {
         }
     }
 
-    let transport = match NostrTransport::new(config, &sender_secret) {
-        Ok(transport) => transport,
-        Err(_) => return -4,
-    };
-
-    let received = match transport.receive() {
+    let received = match with_cached_nostr_transport(sender_secret, profile, -4, |transport| {
+        transport.receive().map_err(|_| -5)
+    }) {
         Ok(messages) => messages,
-        Err(_) => return -5,
+        Err(code) => return code,
     };
 
     let mut appended: i32 = 0;
@@ -361,15 +357,11 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         }
     }
 
-    let (transport, sender_pubkey) = match load_invitation_delivery_context(&seed) {
+    let (sender_secret, sender_pubkey) = match load_invitation_delivery_context(&seed) {
         Ok(context) => context,
         Err(-3) => {
             set_last_error("Accept invitation failed: sender key derivation failed");
             return -4;
-        }
-        Err(-5) => {
-            set_last_error("Accept invitation failed: delivery transport is unavailable");
-            return -6;
         }
         Err(_) => {
             set_last_error("Accept invitation failed: delivery context initialization failed");
@@ -463,7 +455,11 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         &invitation_id[..4]
     );
 
-    if let Err(code) = send_delivery_message(&transport, message, -7, "InvitationAccepted") {
+    if let Err(code) =
+        with_cached_nostr_transport(sender_secret, TransportProfile::Default, -6, |transport| {
+            send_delivery_message(transport, message, -7, "InvitationAccepted")
+        })
+    {
         eprintln!(
             "[Accept] delivery send failed invitation={:02x?}: code {}",
             &invitation_id[..4],
@@ -537,10 +533,9 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
         }
     }
 
-    let (transport, sender_pubkey) = match load_invitation_delivery_context(&seed) {
+    let (sender_secret, sender_pubkey) = match load_invitation_delivery_context(&seed) {
         Ok(context) => context,
         Err(-3) => return -4,
-        Err(-5) => return -5,
         Err(_) => return -5,
     };
 
@@ -570,7 +565,11 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
         invitation_id: Some(invitation_id),
     };
 
-    if let Err(code) = send_delivery_message(&transport, message, -6, "InvitationRejected") {
+    if let Err(code) =
+        with_cached_nostr_transport(sender_secret, TransportProfile::Default, -5, |transport| {
+            send_delivery_message(transport, message, -6, "InvitationRejected")
+        })
+    {
         return code;
     }
 

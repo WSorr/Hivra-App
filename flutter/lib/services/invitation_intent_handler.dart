@@ -20,28 +20,45 @@ class InvitationIntentResult {
 }
 
 class InvitationIntentHandler {
-  final InvitationActionsService _actions;
+  static const Duration _quickFetchCooldown = Duration(seconds: 8);
+  static final Map<String, Future<InvitationIntentResult>>
+      _quickFetchInFlightByCapsule = <String, Future<InvitationIntentResult>>{};
+  static final Map<String, DateTime> _lastQuickFetchAtByCapsule =
+      <String, DateTime>{};
+
+  final InvitationActionsService? _actions;
   final InvitationDeliveryService _delivery;
-  final CapsuleStateManager _stateManager;
-  final LedgerViewService _ledgerView;
+  final CapsuleStateManager? _stateManager;
+  final LedgerViewService? _ledgerView;
+  final Future<InvitationWorkerResult> Function()? _fetchInvitationsAction;
+  final Future<InvitationWorkerResult> Function()? _fetchInvitationsQuickAction;
+  final String Function()? _activeCapsuleHexResolver;
 
   InvitationIntentHandler({
-    required InvitationActionsService actions,
+    InvitationActionsService? actions,
     required InvitationDeliveryService delivery,
-    required CapsuleStateManager stateManager,
-    required LedgerViewService ledgerView,
+    CapsuleStateManager? stateManager,
+    LedgerViewService? ledgerView,
+    Future<InvitationWorkerResult> Function()? fetchInvitationsAction,
+    Future<InvitationWorkerResult> Function()? fetchInvitationsQuickAction,
+    String Function()? activeCapsuleHexResolver,
   })  : _actions = actions,
         _delivery = delivery,
         _stateManager = stateManager,
-        _ledgerView = ledgerView;
+        _ledgerView = ledgerView,
+        _fetchInvitationsAction = fetchInvitationsAction,
+        _fetchInvitationsQuickAction = fetchInvitationsQuickAction,
+        _activeCapsuleHexResolver = activeCapsuleHexResolver;
 
-  List<Invitation> loadInvitations() => _ledgerView.loadInvitations();
+  List<Invitation> loadInvitations() =>
+      _ledgerView?.loadInvitations() ?? const <Invitation>[];
 
   Future<InvitationIntentResult> sendInvitation(
     Uint8List toPubkey,
     int starterSlot,
   ) async {
-    final workerResult = await _actions.sendInvitation(toPubkey, starterSlot);
+    final workerResult =
+        await _requireActions().sendInvitation(toPubkey, starterSlot);
     final code = workerResult.code;
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
@@ -56,7 +73,8 @@ class InvitationIntentHandler {
   }
 
   Future<InvitationIntentResult> fetchInvitations() async {
-    final workerResult = await _actions.fetchInvitations();
+    final workerResult = await (_fetchInvitationsAction?.call() ??
+        _requireActions().fetchInvitations());
     final code = workerResult.code;
     return InvitationIntentResult(
       code: code,
@@ -67,7 +85,35 @@ class InvitationIntentHandler {
   }
 
   Future<InvitationIntentResult> fetchInvitationsQuick() async {
-    final workerResult = await _actions.fetchInvitationsQuick();
+    final capsuleHex = _activeCapsuleHex();
+    final inFlight = _quickFetchInFlightByCapsule[capsuleHex];
+    if (inFlight != null) {
+      return inFlight;
+    }
+
+    final lastQuickFetchAt = _lastQuickFetchAtByCapsule[capsuleHex];
+    if (lastQuickFetchAt != null &&
+        DateTime.now().difference(lastQuickFetchAt) < _quickFetchCooldown) {
+      return const InvitationIntentResult(
+        code: 0,
+        message: 'Skipped duplicate quick fetch',
+      );
+    }
+
+    final operation = _fetchInvitationsQuickUncached();
+    _quickFetchInFlightByCapsule[capsuleHex] = operation;
+    try {
+      final result = await operation;
+      _lastQuickFetchAtByCapsule[capsuleHex] = DateTime.now();
+      return result;
+    } finally {
+      _quickFetchInFlightByCapsule.remove(capsuleHex);
+    }
+  }
+
+  Future<InvitationIntentResult> _fetchInvitationsQuickUncached() async {
+    final workerResult = await (_fetchInvitationsQuickAction?.call() ??
+        _requireActions().fetchInvitationsQuick());
     final code = workerResult.code;
     return InvitationIntentResult(
       code: code,
@@ -82,7 +128,7 @@ class InvitationIntentHandler {
     Uint8List fromPubkey,
   ) async {
     final workerResult =
-        await _actions.acceptInvitation(invitationId, fromPubkey);
+        await _requireActions().acceptInvitation(invitationId, fromPubkey);
     final code = workerResult.code;
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
@@ -106,7 +152,8 @@ class InvitationIntentHandler {
     }
 
     final reason = _rejectReasonForInvitation(invitation);
-    final workerResult = await _actions.rejectInvitation(invitationId, reason);
+    final workerResult =
+        await _requireActions().rejectInvitation(invitationId, reason);
     final code = workerResult.code;
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
@@ -130,7 +177,7 @@ class InvitationIntentHandler {
       );
     }
 
-    final ok = await _actions.cancelInvitation(invitationId);
+    final ok = await _requireActions().cancelInvitation(invitationId);
     return InvitationIntentResult(
       code: ok ? 0 : -1,
       message: ok ? 'Invitation canceled' : 'Failed to cancel invitation',
@@ -147,9 +194,30 @@ class InvitationIntentHandler {
   }
 
   int _rejectReasonForInvitation(Invitation invitation) {
-    _stateManager.refreshWithFullState();
-    final state = _stateManager.state;
+    final manager = _stateManager;
+    if (manager == null) return 1;
+    manager.refreshWithFullState();
+    final state = manager.state;
     final hasEmptySlot = state.starterSlots.any((slot) => !slot.occupied);
     return hasEmptySlot ? 0 : 1;
+  }
+
+  String _activeCapsuleHex() {
+    final resolved = _activeCapsuleHexResolver?.call();
+    if (resolved != null && resolved.isNotEmpty) {
+      return resolved;
+    }
+    final manager = _stateManager;
+    if (manager == null) return 'unknown';
+    manager.refreshWithFullState();
+    final bytes = manager.state.publicKey;
+    if (bytes.isEmpty) return 'unknown';
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  InvitationActionsService _requireActions() {
+    final actions = _actions;
+    if (actions != null) return actions;
+    throw StateError('Invitation actions are not configured');
   }
 }

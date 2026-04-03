@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../ffi/hivra_bindings.dart';
-import 'capsule_persistence_service.dart';
+import '../ffi/invitation_actions_runtime.dart';
 
 const Duration _sendWorkerTimeout = Duration(seconds: 35);
 const Duration _receiveWorkerTimeout = Duration(seconds: 20);
+const Duration _receiveQuickWorkerTimeout = Duration(seconds: 8);
 const Duration _acceptWorkerTimeout = Duration(seconds: 35);
 const Duration _rejectWorkerTimeout = Duration(seconds: 35);
 
@@ -24,120 +24,12 @@ class InvitationWorkerResult {
   bool get isSuccess => code == 0;
 }
 
-bool _bootstrapWorkerRuntime(HivraBindings hivra, Map<String, Object?> args) {
-  final seed = args['seed'] as Uint8List;
-  final isGenesis = args['isGenesis'] as bool;
-  final isNeste = args['isNeste'] as bool;
-  final identityMode = args['identityMode'] as String? ?? 'root_owner';
-  final ledgerJson = args['ledgerJson'] as String?;
-
-  if (!hivra.saveSeed(seed)) return false;
-  if (!hivra.createCapsule(
-    seed,
-    isGenesis: isGenesis,
-    isNeste: isNeste,
-    ownerMode: identityMode == 'legacy_nostr_owner'
-        ? HivraBindings.legacyNostrOwnerMode
-        : HivraBindings.rootOwnerMode,
-  )) {
-    return false;
-  }
-  if (ledgerJson != null &&
-      ledgerJson.isNotEmpty &&
-      !hivra.importLedger(ledgerJson)) {
-    return false;
-  }
-  return true;
-}
-
-Map<String, Object?> _sendInvitationInWorker(Map<String, Object?> args) {
-  final hivra = HivraBindings();
-  if (!_bootstrapWorkerRuntime(hivra, args)) {
-    return <String, Object?>{'result': -1004};
-  }
-
-  final toPubkey = args['toPubkey'] as Uint8List;
-  final starterSlot = args['starterSlot'] as int;
-  final result = hivra.deliverInvitationCode(toPubkey, starterSlot);
-  final lastError = hivra.lastErrorMessage();
-  return <String, Object?>{
-    'result': result,
-    'ledgerJson': result == 0 ? hivra.exportLedger() : null,
-    'lastError': lastError,
-  };
-}
-
-Map<String, Object?> _receiveInvitationsInWorker(Map<String, Object?> args) {
-  final hivra = HivraBindings();
-  if (!_bootstrapWorkerRuntime(hivra, args)) {
-    return <String, Object?>{'result': -1004};
-  }
-  final result = hivra.fetchInvitationDeliveries();
-  return <String, Object?>{
-    'result': result,
-    'ledgerJson': hivra.exportLedger(),
-  };
-}
-
-Map<String, Object?> _receiveInvitationsQuickInWorker(
-  Map<String, Object?> args,
-) {
-  final hivra = HivraBindings();
-  if (!_bootstrapWorkerRuntime(hivra, args)) {
-    return <String, Object?>{'result': -1004};
-  }
-  final result = hivra.fetchInvitationDeliveriesQuick();
-  return <String, Object?>{
-    'result': result,
-    'ledgerJson': hivra.exportLedger(),
-  };
-}
-
-Map<String, Object?> _acceptInvitationInWorker(Map<String, Object?> args) {
-  final hivra = HivraBindings();
-  if (!_bootstrapWorkerRuntime(hivra, args)) {
-    return <String, Object?>{'result': -1004};
-  }
-
-  final invitationId = args['invitationId'] as Uint8List;
-  final fromPubkey = args['fromPubkey'] as Uint8List;
-  final placeholderStarterId = Uint8List(32);
-  final result = hivra.acceptInvitationCode(
-      invitationId, fromPubkey, placeholderStarterId);
-  final lastError = hivra.lastErrorMessage();
-  return <String, Object?>{
-    'result': result,
-    'ledgerJson': result == 0 ? hivra.exportLedger() : null,
-    'lastError': lastError,
-  };
-}
-
-Map<String, Object?> _rejectInvitationInWorker(Map<String, Object?> args) {
-  final hivra = HivraBindings();
-  if (!_bootstrapWorkerRuntime(hivra, args)) {
-    return <String, Object?>{'result': -1004};
-  }
-
-  final invitationId = args['invitationId'] as Uint8List;
-  final reason = args['reason'] as int;
-  final ok = hivra.rejectInvitation(invitationId, reason);
-  final lastError = hivra.lastErrorMessage();
-  return <String, Object?>{
-    'result': ok ? 0 : -1,
-    'ledgerJson': ok ? hivra.exportLedger() : null,
-    'lastError': lastError,
-  };
-}
-
 class InvitationActionsService {
-  final HivraBindings _hivra;
-  final CapsulePersistenceService _persistence;
+  final InvitationActionsRuntime _runtime;
   Future<void> _operationChain = Future<void>.value();
 
-  InvitationActionsService(
-    this._hivra, {
-    CapsulePersistenceService? persistence,
-  }) : _persistence = persistence ?? CapsulePersistenceService();
+  InvitationActionsService({InvitationActionsRuntime? runtime})
+      : _runtime = runtime ?? HivraInvitationActionsRuntime();
 
   Future<T> _serialize<T>(Future<T> Function() operation) {
     final completer = Completer<T>();
@@ -161,7 +53,7 @@ class InvitationActionsService {
         ledgerJson.isEmpty) {
       return;
     }
-    await _persistence.persistLedgerSnapshotForCapsuleHex(
+    await _runtime.persistLedgerSnapshotForCapsuleHex(
       bootstrapActiveHex,
       ledgerJson,
     );
@@ -172,7 +64,7 @@ class InvitationActionsService {
     int starterSlot,
   ) async {
     return _serialize(() async {
-      final bootstrap = await _persistence.loadWorkerBootstrapArgs(_hivra);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs();
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -180,7 +72,7 @@ class InvitationActionsService {
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
       final workerResult =
           await compute<Map<String, Object?>, Map<String, Object?>>(
-        _sendInvitationInWorker,
+        sendInvitationInWorker,
         <String, Object?>{
           ...bootstrap,
           'toPubkey': toPubkey,
@@ -195,7 +87,7 @@ class InvitationActionsService {
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
       if (code == 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _persistence.resolveActiveCapsuleHex(_hivra);
+        final activeNow = await _runtime.resolveActiveCapsuleHex();
         if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
           await _persistWorkerLedgerForBootstrapCapsule(
             bootstrapActiveHex: bootstrapActiveHex,
@@ -207,7 +99,7 @@ class InvitationActionsService {
             lastError: lastError,
           );
         }
-        await _persistence.applyLedgerSnapshotIfNotStale(_hivra, ledgerJson);
+        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
       }
       return InvitationWorkerResult(
         code: code,
@@ -219,7 +111,7 @@ class InvitationActionsService {
 
   Future<InvitationWorkerResult> fetchInvitations() async {
     return _serialize(() async {
-      final bootstrap = await _persistence.loadWorkerBootstrapArgs(_hivra);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs();
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -227,7 +119,7 @@ class InvitationActionsService {
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
       final workerResult =
           await compute<Map<String, Object?>, Map<String, Object?>>(
-        _receiveInvitationsInWorker,
+        receiveInvitationsInWorker,
         bootstrap,
       ).timeout(
         _receiveWorkerTimeout,
@@ -237,7 +129,7 @@ class InvitationActionsService {
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       if (code >= 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _persistence.resolveActiveCapsuleHex(_hivra);
+        final activeNow = await _runtime.resolveActiveCapsuleHex();
         if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
           await _persistWorkerLedgerForBootstrapCapsule(
             bootstrapActiveHex: bootstrapActiveHex,
@@ -245,7 +137,7 @@ class InvitationActionsService {
           );
           return InvitationWorkerResult(code: code, ledgerJson: ledgerJson);
         }
-        await _persistence.applyLedgerSnapshotIfNotStale(_hivra, ledgerJson);
+        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
       }
       return InvitationWorkerResult(code: code, ledgerJson: ledgerJson);
     });
@@ -253,7 +145,7 @@ class InvitationActionsService {
 
   Future<InvitationWorkerResult> fetchInvitationsQuick() async {
     return _serialize(() async {
-      final bootstrap = await _persistence.loadWorkerBootstrapArgs(_hivra);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs();
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -261,17 +153,17 @@ class InvitationActionsService {
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
       final workerResult =
           await compute<Map<String, Object?>, Map<String, Object?>>(
-        _receiveInvitationsQuickInWorker,
+        receiveInvitationsQuickInWorker,
         bootstrap,
       ).timeout(
-        _receiveWorkerTimeout,
+        _receiveQuickWorkerTimeout,
         onTimeout: () => <String, Object?>{'result': -1003},
       );
 
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       if (code >= 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _persistence.resolveActiveCapsuleHex(_hivra);
+        final activeNow = await _runtime.resolveActiveCapsuleHex();
         if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
           await _persistWorkerLedgerForBootstrapCapsule(
             bootstrapActiveHex: bootstrapActiveHex,
@@ -279,7 +171,7 @@ class InvitationActionsService {
           );
           return InvitationWorkerResult(code: code, ledgerJson: ledgerJson);
         }
-        await _persistence.applyLedgerSnapshotIfNotStale(_hivra, ledgerJson);
+        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
       }
       return InvitationWorkerResult(code: code, ledgerJson: ledgerJson);
     });
@@ -290,7 +182,7 @@ class InvitationActionsService {
     Uint8List fromPubkey,
   ) async {
     return _serialize(() async {
-      final bootstrap = await _persistence.loadWorkerBootstrapArgs(_hivra);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs();
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -298,7 +190,7 @@ class InvitationActionsService {
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
       final workerResult =
           await compute<Map<String, Object?>, Map<String, Object?>>(
-        _acceptInvitationInWorker,
+        acceptInvitationInWorker,
         <String, Object?>{
           ...bootstrap,
           'invitationId': invitationId,
@@ -313,7 +205,7 @@ class InvitationActionsService {
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
       if (code == 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _persistence.resolveActiveCapsuleHex(_hivra);
+        final activeNow = await _runtime.resolveActiveCapsuleHex();
         if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
           await _persistWorkerLedgerForBootstrapCapsule(
             bootstrapActiveHex: bootstrapActiveHex,
@@ -325,7 +217,7 @@ class InvitationActionsService {
             lastError: lastError,
           );
         }
-        await _persistence.applyLedgerSnapshotIfNotStale(_hivra, ledgerJson);
+        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
       }
       return InvitationWorkerResult(
         code: code,
@@ -340,7 +232,7 @@ class InvitationActionsService {
     int reason,
   ) async {
     return _serialize(() async {
-      final bootstrap = await _persistence.loadWorkerBootstrapArgs(_hivra);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs();
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -348,7 +240,7 @@ class InvitationActionsService {
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
       final workerResult =
           await compute<Map<String, Object?>, Map<String, Object?>>(
-        _rejectInvitationInWorker,
+        rejectInvitationInWorker,
         <String, Object?>{
           ...bootstrap,
           'invitationId': invitationId,
@@ -363,7 +255,7 @@ class InvitationActionsService {
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
       if (code == 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _persistence.resolveActiveCapsuleHex(_hivra);
+        final activeNow = await _runtime.resolveActiveCapsuleHex();
         if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
           await _persistWorkerLedgerForBootstrapCapsule(
             bootstrapActiveHex: bootstrapActiveHex,
@@ -375,7 +267,7 @@ class InvitationActionsService {
             lastError: lastError,
           );
         }
-        await _persistence.applyLedgerSnapshotIfNotStale(_hivra, ledgerJson);
+        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
       }
       return InvitationWorkerResult(
         code: code,
@@ -387,9 +279,9 @@ class InvitationActionsService {
 
   Future<bool> cancelInvitation(Uint8List invitationId) async {
     return _serialize(() async {
-      final ok = _hivra.expireInvitation(invitationId);
+      final ok = _runtime.expireInvitation(invitationId);
       if (!ok) return false;
-      await _persistence.persistLedgerSnapshot(_hivra);
+      await _runtime.persistLedgerSnapshot();
       return true;
     });
   }

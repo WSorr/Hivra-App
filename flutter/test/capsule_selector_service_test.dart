@@ -24,6 +24,24 @@ CapsuleSelectorItem _item({
 }
 
 void main() {
+  test('prefers bootstrap-derived network label over stale index value', () {
+    final label = CapsuleSelectorService.networkLabelForCapsule(
+      indexIsNeste: true,
+      bootstrapIsNeste: false,
+    );
+
+    expect(label, equals('HOOD'));
+  });
+
+  test('falls back to index network label when bootstrap is unavailable', () {
+    final label = CapsuleSelectorService.networkLabelForCapsule(
+      indexIsNeste: true,
+      bootstrapIsNeste: null,
+    );
+
+    expect(label, equals('NESTE'));
+  });
+
   test('collapses duplicate display entries and prefers seeded root_owner', () {
     final now = DateTime.utc(2026, 3, 31, 10, 0, 0);
     final rootHex = List.filled(32, 'aa').join();

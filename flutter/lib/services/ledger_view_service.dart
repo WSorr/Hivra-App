@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import '../ffi/hivra_bindings.dart';
+import '../ffi/ledger_view_runtime.dart';
 import '../models/invitation.dart';
 import '../models/relationship.dart';
 import '../models/relationship_peer_group.dart';
@@ -22,13 +22,20 @@ class LedgerViewService {
   late final InvitationProjectionService _invitationProjection;
   late final RelationshipProjectionService _relationshipProjection;
 
-  LedgerViewService(HivraBindings hivra)
-      : _exportLedger = hivra.exportLedger,
-        _exportCapsuleState = hivra.exportCapsuleStateJson,
-        _readRuntimeOwnerPublicKey = hivra.capsuleRuntimeOwnerPublicKey,
+  LedgerViewService({required LedgerViewRuntime runtime})
+      : _exportLedger = runtime.exportLedger,
+        _exportCapsuleState = runtime.exportCapsuleStateJson,
+        _readRuntimeOwnerPublicKey = runtime.capsuleRuntimeOwnerPublicKey,
         _support = const LedgerViewSupport() {
-    _invitationProjection = InvitationProjectionService(hivra, _support);
-    _relationshipProjection = RelationshipProjectionService(_support);
+    _invitationProjection = InvitationProjectionService.withOwnerKeyProvider(
+      _readRuntimeOwnerPublicKey,
+      _support,
+    );
+    _relationshipProjection =
+        RelationshipProjectionService.withOwnerKeyProvider(
+      _readRuntimeOwnerPublicKey,
+      _support,
+    );
   }
 
   LedgerViewService.withSources({
@@ -44,7 +51,11 @@ class LedgerViewService {
       _readRuntimeOwnerPublicKey,
       _support,
     );
-    _relationshipProjection = RelationshipProjectionService(_support);
+    _relationshipProjection =
+        RelationshipProjectionService.withOwnerKeyProvider(
+      _readRuntimeOwnerPublicKey,
+      _support,
+    );
   }
 
   CapsuleLedgerSnapshot loadCapsuleSnapshot() {

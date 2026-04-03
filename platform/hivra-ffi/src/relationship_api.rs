@@ -1,6 +1,6 @@
 use super::*;
 
-fn load_relationship_delivery_context(seed: &Seed) -> Result<(NostrTransport, PubKey), i32> {
+fn load_relationship_delivery_context(seed: &Seed) -> Result<([u8; 32], PubKey), i32> {
     let sender_secret = match derive_nostr_keypair(seed) {
         Ok(key) => key,
         Err(_) => return Err(-3),
@@ -10,12 +10,7 @@ fn load_relationship_delivery_context(seed: &Seed) -> Result<(NostrTransport, Pu
         Err(_) => return Err(-3),
     };
 
-    let transport = match NostrTransport::new(NostrConfig::default(), &sender_secret) {
-        Ok(transport) => transport,
-        Err(_) => return Err(-5),
-    };
-
-    Ok((transport, sender_pubkey))
+    Ok((sender_secret, sender_pubkey))
 }
 
 #[no_mangle]
@@ -49,7 +44,7 @@ pub unsafe extern "C" fn hivra_break_relationship(
         Err(_) => return -2,
     };
 
-    let (transport, sender_pubkey) = match load_relationship_delivery_context(&seed) {
+    let (sender_secret, sender_pubkey) = match load_relationship_delivery_context(&seed) {
         Ok(context) => context,
         Err(code) => return code,
     };
@@ -73,12 +68,18 @@ pub unsafe extern "C" fn hivra_break_relationship(
         invitation_id: None,
     };
 
-    if let Err(err) = transport.send(message) {
-        eprintln!(
-            "[Delivery/Nostr] RelationshipBroken delivery failed: {:?}",
-            err
-        );
-        return -6;
+    let delivered =
+        with_cached_nostr_transport(sender_secret, TransportProfile::Default, -5, |transport| {
+            transport.send(message).map_err(|err| {
+                eprintln!(
+                    "[Delivery/Nostr] RelationshipBroken delivery failed: {:?}",
+                    err
+                );
+                -6
+            })
+        });
+    if let Err(code) = delivered {
+        return code;
     }
 
     if append_prepared_event(local_prepared).is_err() {

@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import '../ffi/hivra_bindings.dart';
 import 'user_visible_data_directory_service.dart';
 
 class CapsuleFileStore {
@@ -42,7 +41,7 @@ class CapsuleFileStore {
   }
 
   Future<Directory> currentCapsuleDir(
-    HivraBindings? hivra, {
+    Uint8List? Function()? runtimeOwnerPublicKey, {
     required String Function(Uint8List bytes) bytesToHex,
     bool create = false,
   }) async {
@@ -50,8 +49,8 @@ class CapsuleFileStore {
     final root = await capsulesRoot(create: create);
 
     String? capsuleId;
-    if (hivra != null) {
-      final pubKey = hivra.capsuleRuntimeOwnerPublicKey();
+    if (runtimeOwnerPublicKey != null) {
+      final pubKey = runtimeOwnerPublicKey();
       if (pubKey != null && pubKey.length == 32) {
         capsuleId = bytesToHex(pubKey);
       }

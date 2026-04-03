@@ -21,11 +21,12 @@ void main() {
       );
 
       expect(result.state, PluginDemoRunState.noPairwisePaths);
+      expect(result.pairResults, isEmpty);
       expect(result.peerHex, isNull);
       expect(result.settlement, isNull);
     });
 
-    test('uses signable peer when available and executes settlement', () {
+    test('returns partial when some peers execute and some are blocked', () {
       final runner = PluginDemoContractRunnerService(
         readChecks: () => const <ConsensusCheck>[
           ConsensusCheck(
@@ -68,13 +69,47 @@ void main() {
         observation: _observation(observedDeciCelsius: 90),
       );
 
-      expect(result.state, PluginDemoRunState.executed);
+      expect(result.state, PluginDemoRunState.partial);
+      expect(result.readyPairCount, 1);
+      expect(result.blockedPairCount, 1);
+      expect(result.pairResults, hasLength(2));
       expect(result.peerHex, _readyPeer);
       expect(result.settlement, isNotNull);
       expect(
         result.settlement!.outcome,
         TemperatureContractOutcome.proposerWins,
       );
+    });
+
+    test('returns executed when all peers are signable', () {
+      final runner = PluginDemoContractRunnerService(
+        readChecks: () => const <ConsensusCheck>[
+          ConsensusCheck(
+            peerHex: _readyPeer,
+            peerLabel: 'ready',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex: 'b',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ],
+        contractService: TemperatureTomorrowContractService(
+          readSignable: (_) => _signable(),
+        ),
+      );
+
+      final result = runner.runTemperatureTomorrowDemo(
+        contract: _contract(),
+        observation: _observation(observedDeciCelsius: 90),
+      );
+
+      expect(result.state, PluginDemoRunState.executed);
+      expect(result.readyPairCount, 1);
+      expect(result.blockedPairCount, 0);
+      expect(result.pairResults, hasLength(1));
+      expect(result.pairResults.single.isExecuted, isTrue);
     });
 
     test('returns blocked when only blocked peer exists', () {
@@ -109,6 +144,8 @@ void main() {
       );
 
       expect(result.state, PluginDemoRunState.blocked);
+      expect(result.readyPairCount, 0);
+      expect(result.blockedPairCount, 1);
       expect(result.peerHex, _blockedPeer);
       expect(result.settlement, isNull);
       expect(result.blockingFacts.map((f) => f.code),

@@ -5,6 +5,7 @@ import '../models/relationship_peer_group.dart';
 import '../models/starter.dart';
 import '../services/relationship_service.dart';
 import '../services/ui_feedback_service.dart';
+import '../utils/hivra_id_format.dart';
 
 class RelationshipsScreen extends StatefulWidget {
   final RelationshipService service;
@@ -25,6 +26,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   bool _isLoading = true;
   String? _filterKind;
   String? _breakingPeerPubkey;
+  Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
 
   @override
   void initState() {
@@ -33,30 +35,56 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   }
 
   Future<void> _loadRelationships() async {
+    final groups = widget.service.loadRelationshipGroups();
+    final peerRootKeys = await widget.service.loadPeerRootKeysByTransportBase64(
+      groups.map((group) => group.peerPubkey),
+    );
+    if (!mounted) return;
     setState(() {
-      _relationshipGroups = widget.service.loadRelationshipGroups();
+      _relationshipGroups = groups;
+      _peerRootKeyByTransportB64 = peerRootKeys;
       _isLoading = false;
     });
   }
 
-  Future<void> _confirmBreakRelationship(Relationship relationship) async {
+  Future<void> _confirmRelationshipTransition(
+    Relationship relationship, {
+    required bool remoteBreakPending,
+    String? peerLabel,
+  }) async {
+    final displayPeer = peerLabel ?? relationship.peerDisplayName;
+    final title =
+        remoteBreakPending ? 'Confirm Break Request?' : 'Break Relationship?';
+    final message = remoteBreakPending
+        ? 'Peer requested to break relationship with $displayPeer. '
+            'Confirm to append your local break fact and converge pairwise state. '
+            'Your starter will NOT be burned.'
+        : 'This will break your relationship with $displayPeer. '
+            'Your starter will NOT be burned.';
+    final confirmLabel = remoteBreakPending ? 'Confirm break' : 'Break';
+    final confirmColor = remoteBreakPending ? Colors.orange : Colors.red;
+    final failureMessage = remoteBreakPending
+        ? 'Failed to confirm break request'
+        : 'Failed to break relationship';
+    final successMessage =
+        remoteBreakPending ? 'Break request confirmed' : 'Relationship broken';
+    final source = remoteBreakPending
+        ? 'relationships.break.confirm_remote'
+        : 'relationships.break';
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Break Relationship?'),
-        content: Text(
-          'This will break your relationship with ${relationship.peerDisplayName}. '
-          'Your starter will NOT be burned.',
-        ),
+        title: Text(title),
+        content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: confirmColor),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Break'),
+            child: Text(confirmLabel),
           ),
         ],
       ),
@@ -66,15 +94,17 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     if (!mounted) return;
     setState(() => _breakingPeerPubkey = relationship.peerPubkey);
     UiFeedbackService.dismissCurrent(context);
-    final ok = await widget.service.breakRelationship(relationship);
+    final ok = remoteBreakPending
+        ? await widget.service.confirmRemoteBreak(relationship)
+        : await widget.service.breakRelationship(relationship);
     if (!mounted) return;
     setState(() => _breakingPeerPubkey = null);
 
     if (!ok) {
       UiFeedbackService.showSnackBar(
         context,
-        'Failed to break relationship',
-        source: 'relationships.break',
+        failureMessage,
+        source: source,
         duration: const Duration(seconds: 3),
         enableCopy: false,
       );
@@ -85,21 +115,37 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     if (!mounted) return;
     UiFeedbackService.showSnackBar(
       context,
-      'Relationship broken',
-      source: 'relationships.break',
+      successMessage,
+      source: source,
       duration: const Duration(seconds: 2),
       enableCopy: false,
     );
   }
 
-  Future<void> _breakGroup(RelationshipPeerGroup group) async {
-    final active = group.activeRelationships;
-    if (active.isEmpty) return;
-
-    if (active.length == 1) {
-      await _confirmBreakRelationship(active.first);
+  Future<void> _chooseRelationshipAndApply({
+    required RelationshipPeerGroup group,
+    required List<Relationship> candidates,
+    required bool remoteBreakPending,
+  }) async {
+    if (candidates.isEmpty) return;
+    if (candidates.length == 1) {
+      await _confirmRelationshipTransition(
+        candidates.first,
+        remoteBreakPending: remoteBreakPending,
+        peerLabel: _peerDisplayName(group),
+      );
       return;
     }
+
+    final title = remoteBreakPending
+        ? 'Confirm break with ${_peerDisplayName(group)}'
+        : 'Break link with ${_peerDisplayName(group)}';
+    final subtitle = remoteBreakPending
+        ? 'Choose which pending remote break to confirm'
+        : 'Choose which starter relationship to break';
+    final trailingIcon = remoteBreakPending
+        ? const Icon(Icons.check_circle_outline, color: Colors.orange)
+        : const Icon(Icons.link_off, color: Colors.red);
 
     await showModalBottomSheet<void>(
       context: context,
@@ -108,10 +154,10 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              title: Text('Break link with ${group.peerDisplayName}'),
-              subtitle: const Text('Choose which starter relationship to break'),
+              title: Text(title),
+              subtitle: Text(subtitle),
             ),
-            ...active.map(
+            ...candidates.map(
               (relationship) => ListTile(
                 leading: CircleAvatar(
                   backgroundColor: relationship.kind.color.withAlpha(40),
@@ -124,17 +170,38 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
                 subtitle: Text(
                   'Own ${_shortId(relationship.ownStarterDisplayId)} · Peer ${_shortId(relationship.peerStarterDisplayId)}',
                 ),
-                trailing: const Icon(Icons.link_off, color: Colors.red),
+                trailing: trailingIcon,
                 onTap: () async {
                   if (_breakingPeerPubkey != null) return;
                   Navigator.pop(context);
-                  await _confirmBreakRelationship(relationship);
+                  await _confirmRelationshipTransition(
+                    relationship,
+                    remoteBreakPending: remoteBreakPending,
+                    peerLabel: _peerDisplayName(group),
+                  );
                 },
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _actOnGroup(RelationshipPeerGroup group) async {
+    if (_breakingPeerPubkey != null) return;
+    if (group.pendingRemoteBreakRelationships.isNotEmpty) {
+      await _chooseRelationshipAndApply(
+        group: group,
+        candidates: group.pendingRemoteBreakRelationships,
+        remoteBreakPending: true,
+      );
+      return;
+    }
+    await _chooseRelationshipAndApply(
+      group: group,
+      candidates: group.activeRelationships,
+      remoteBreakPending: false,
     );
   }
 
@@ -232,11 +299,12 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
                     final group = _groupedRelationships[index];
                     return _RelationshipPeerCard(
                       group: group,
+                      displayPeerName: _peerDisplayName(group),
+                      peerIdentityHint: _peerIdentityHint(group),
                       isBreaking: _breakingPeerPubkey == group.peerPubkey,
                       onBreak: group.activeRelationships.isEmpty
-                          || _breakingPeerPubkey != null
                           ? null
-                          : () => _breakGroup(group),
+                          : () => _actOnGroup(group),
                     );
                   },
                 ),
@@ -247,15 +315,38 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     if (value.length <= 10) return value;
     return '${value.substring(0, 6)}...${value.substring(value.length - 4)}';
   }
+
+  String _peerDisplayName(RelationshipPeerGroup group) {
+    final rootKey = _peerRootKeyByTransportB64[group.peerPubkey];
+    if (rootKey != null && rootKey.isNotEmpty) {
+      return HivraIdFormat.short(rootKey);
+    }
+    return group.peerDisplayName;
+  }
+
+  String _peerIdentityHint(RelationshipPeerGroup group) {
+    final transportNpub = HivraIdFormat.short(
+      HivraIdFormat.formatNostrKeyFromBase64(group.peerPubkey),
+    );
+    final rootKey = _peerRootKeyByTransportB64[group.peerPubkey];
+    if (rootKey != null && rootKey.isNotEmpty) {
+      return 'Root ${HivraIdFormat.short(rootKey)} · transport $transportNpub';
+    }
+    return 'Unknown root · transport $transportNpub';
+  }
 }
 
 class _RelationshipPeerCard extends StatelessWidget {
   final RelationshipPeerGroup group;
+  final String displayPeerName;
+  final String peerIdentityHint;
   final VoidCallback? onBreak;
   final bool isBreaking;
 
   const _RelationshipPeerCard({
     required this.group,
+    required this.displayPeerName,
+    required this.peerIdentityHint,
     this.onBreak,
     this.isBreaking = false,
   });
@@ -290,10 +381,11 @@ class _RelationshipPeerCard extends StatelessWidget {
               ),
               child: Center(
                 child: Text(
-                  group.peerDisplayName[0],
+                  displayPeerName[0],
                   style: TextStyle(
-                    color:
-                        activeKinds.isEmpty ? Colors.grey : activeKinds.first.color,
+                    color: activeKinds.isEmpty
+                        ? Colors.grey
+                        : activeKinds.first.color,
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),
@@ -309,7 +401,7 @@ class _RelationshipPeerCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          group.peerDisplayName,
+                          displayPeerName,
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -335,6 +427,11 @@ class _RelationshipPeerCard extends StatelessWidget {
                           ),
                         ),
                     ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    peerIdentityHint,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                   const SizedBox(height: 6),
                   Wrap(
@@ -394,6 +491,25 @@ class _RelationshipPeerCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                      if (group.pendingRemoteBreakRelationships.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withAlpha(30),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${group.pendingRemoteBreakRelationships.length} break pending',
+                            style: const TextStyle(
+                              color: Colors.orange,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -404,6 +520,13 @@ class _RelationshipPeerCard extends StatelessWidget {
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const SizedBox(height: 4),
+                  if (group.pendingRemoteBreakRelationships.isNotEmpty)
+                    const Text(
+                      'Peer requested break. Confirm from this screen to converge pairwise state.',
+                      style: TextStyle(fontSize: 12, color: Colors.orange),
+                    ),
+                  if (group.pendingRemoteBreakRelationships.isNotEmpty)
+                    const SizedBox(height: 4),
                   Text(
                     'Since ${_formatDate(group.latestEstablishedAt)}',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
@@ -419,11 +542,22 @@ class _RelationshipPeerCard extends StatelessWidget {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.link_off, color: Colors.red),
+                    : Icon(
+                        group.pendingRemoteBreakRelationships.isNotEmpty
+                            ? Icons.check_circle_outline
+                            : Icons.link_off,
+                        color: group.pendingRemoteBreakRelationships.isNotEmpty
+                            ? Colors.orange
+                            : Colors.red,
+                      ),
                 onPressed: onBreak,
-                tooltip: group.activeRelationships.length == 1
-                    ? 'Break relationship'
-                    : 'Choose relationship to break',
+                tooltip: group.pendingRemoteBreakRelationships.isNotEmpty
+                    ? (group.pendingRemoteBreakRelationships.length == 1
+                        ? 'Confirm break request'
+                        : 'Choose break request to confirm')
+                    : (group.activeRelationships.length == 1
+                        ? 'Break relationship'
+                        : 'Choose relationship to break'),
               ),
           ],
         ),

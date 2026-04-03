@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import '../ffi/hivra_bindings.dart';
+import '../ffi/recovery_runtime.dart';
 import 'capsule_ledger_summary_parser.dart';
-import 'capsule_persistence_service.dart';
 import 'ledger_view_support.dart';
 
 class RecoveryExecutionResult {
@@ -22,22 +21,22 @@ class RecoveryExecutionResult {
 }
 
 class RecoveryService {
-  final HivraBindings _hivra;
+  final RecoveryRuntime _runtime;
   final LedgerViewSupport _support;
   final CapsuleLedgerSummaryParser _summaryParser;
 
   RecoveryService([
-    HivraBindings? hivra,
+    RecoveryRuntime? runtime,
     LedgerViewSupport? support,
     CapsuleLedgerSummaryParser? summaryParser,
-  ])  : _hivra = hivra ?? HivraBindings(),
+  ])  : _runtime = runtime ?? HivraRecoveryRuntime(),
         _support = support ?? const LedgerViewSupport(),
         _summaryParser = summaryParser ?? const CapsuleLedgerSummaryParser();
 
   bool validateMnemonic(String phrase) {
     final trimmed = phrase.trim();
     if (trimmed.isEmpty) return false;
-    return _hivra.validateMnemonic(trimmed);
+    return _runtime.validateMnemonic(trimmed);
   }
 
   bool? extractGenesisHintFromBackupJson(String rawJson) {
@@ -61,13 +60,12 @@ class RecoveryService {
     required bool? selectedBackupIsGenesis,
   }) async {
     try {
-      final seed = _hivra.mnemonicToSeed(phrase.trim());
+      final seed = _runtime.mnemonicToSeed(phrase.trim());
       bool isGenesisRecovered = selectedBackupIsGenesis ?? false;
 
-      final createError = _hivra.createCapsuleError(
+      final createError = _runtime.createCapsuleError(
         seed,
         isGenesis: isGenesisRecovered,
-        ownerMode: HivraBindings.rootOwnerMode,
       );
       if (createError != null) {
         return RecoveryExecutionResult.failure(createError);
@@ -76,7 +74,7 @@ class RecoveryService {
       if (selectedBackupLedgerJson != null) {
         final expectedOwner =
             _extractOwnerHexFromLedger(selectedBackupLedgerJson);
-        final currentPubKey = _hivra.capsuleRuntimeOwnerPublicKey();
+        final currentPubKey = _runtime.capsuleRuntimeOwnerPublicKey();
         final currentOwner =
             currentPubKey == null ? null : _bytesToHex(currentPubKey);
         if (expectedOwner != null &&
@@ -88,10 +86,9 @@ class RecoveryService {
         }
       }
 
-      final persistence = CapsulePersistenceService();
       final importedLedger = selectedBackupLedgerJson != null
-          ? _hivra.importLedger(selectedBackupLedgerJson)
-          : await persistence.importLedgerIfExists(_hivra);
+          ? _runtime.importLedger(selectedBackupLedgerJson)
+          : await _runtime.importLedgerIfExists();
 
       if (selectedBackupLedgerJson != null && !importedLedger) {
         return const RecoveryExecutionResult.failure(
@@ -100,33 +97,31 @@ class RecoveryService {
       }
 
       if (importedLedger) {
-        final exportedLedger = _hivra.exportLedger();
+        final exportedLedger = _runtime.exportLedger();
         final inferredFromLedger = _inferGenesisFromLedgerJson(exportedLedger);
         isGenesisRecovered =
             inferredFromLedger ?? (_countOccupiedStarters(exportedLedger) > 0);
 
-        final recreateError = _hivra.createCapsuleError(
+        final recreateError = _runtime.createCapsuleError(
           seed,
           isGenesis: isGenesisRecovered,
-          ownerMode: HivraBindings.rootOwnerMode,
         );
         if (recreateError != null) {
           return RecoveryExecutionResult.failure(recreateError);
         }
 
         if (selectedBackupLedgerJson != null) {
-          if (!_hivra.importLedger(selectedBackupLedgerJson)) {
+          if (!_runtime.importLedger(selectedBackupLedgerJson)) {
             return const RecoveryExecutionResult.failure(
               'Failed to import selected backup',
             );
           }
         } else {
-          await persistence.importLedgerIfExists(_hivra);
+          await _runtime.importLedgerIfExists();
         }
       }
 
-      await persistence.persistAfterCreate(
-        hivra: _hivra,
+      await _runtime.persistAfterCreate(
         seed: seed,
         isGenesis: isGenesisRecovered,
         isNeste: true,

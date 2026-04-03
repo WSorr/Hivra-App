@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import '../ffi/hivra_bindings.dart';
+import '../ffi/capsule_runtime_bootstrap_runtime.dart';
 import 'capsule_backup_codec.dart';
 import 'capsule_file_store.dart';
 import 'capsule_ledger_summary_parser.dart';
@@ -27,15 +27,15 @@ class CapsuleRuntimeBootstrapService {
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrap(
     String pubKeyHex, {
     String identityMode = 'root_owner',
-    HivraBindings? hivra,
+    CapsuleRuntimeBootstrapRuntime? runtime,
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
-    final seed = hivra == null
+    final seed = runtime == null
         ? await _seedStore.loadSeed(pubKeyHex)
         : await _seedStore.loadValidatedSeed(
             pubKeyHex,
             isValidSeed: (seed) => _seedMatchesCapsule(
-              hivra,
+              runtime,
               seed,
               pubKeyHex,
               bytesToHex,
@@ -77,10 +77,9 @@ class CapsuleRuntimeBootstrapService {
         : null;
     final ledgerJson =
         orderedCandidates.isNotEmpty ? orderedCandidates.first.json : null;
-    final isGenesis =
-        _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
-            stateGenesis ??
-            false;
+    final isGenesis = _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
+        stateGenesis ??
+        false;
     final isNeste = _support.inferNesteFromLedgerRoot(primaryLedgerRoot) ??
         stateNeste ??
         true;
@@ -98,30 +97,30 @@ class CapsuleRuntimeBootstrapService {
   }
 
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrapForCurrent(
-    HivraBindings hivra, {
+    CapsuleRuntimeBootstrapRuntime runtime, {
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
-    final pubKey = hivra.capsuleRuntimeOwnerPublicKey();
-    final seed = hivra.loadSeed();
+    final pubKey = runtime.capsuleRuntimeOwnerPublicKey();
+    final seed = runtime.loadSeed();
     if (pubKey == null || pubKey.length != 32 || seed == null) return null;
 
     final dir = await _fileStore.currentCapsuleDir(
-      hivra,
+      runtime.capsuleRuntimeOwnerPublicKey,
       bytesToHex: bytesToHex,
       create: false,
     );
     final state = await _fileStore.readState(dir);
     final stateGenesis = _stateGenesis(state);
     final stateNeste = _stateNeste(state);
-    final ledgerJson = hivra.exportLedger();
+    final ledgerJson = runtime.exportLedger();
     final ledgerRoot = _parseLedgerRoot(ledgerJson);
     final isGenesis = _support.inferGenesisFromLedgerRoot(ledgerRoot) ??
         stateGenesis ??
         false;
     final isNeste =
         _support.inferNesteFromLedgerRoot(ledgerRoot) ?? stateNeste ?? true;
-    final runtimeOwner = hivra.capsuleRuntimeOwnerPublicKey();
-    final rootPubKey = hivra.capsuleRootPublicKey();
+    final runtimeOwner = runtime.capsuleRuntimeOwnerPublicKey();
+    final rootPubKey = runtime.capsuleRootPublicKey();
     final runtimeHex = runtimeOwner != null && runtimeOwner.length == 32
         ? bytesToHex(runtimeOwner)
         : null;
@@ -147,7 +146,7 @@ class CapsuleRuntimeBootstrapService {
   }
 
   Future<bool> refreshCapsuleSnapshot(
-    HivraBindings hivra,
+    CapsuleRuntimeBootstrapRuntime runtime,
     String pubKeyHex, {
     String identityMode = 'root_owner',
     required String Function(Uint8List bytes) bytesToHex,
@@ -155,7 +154,7 @@ class CapsuleRuntimeBootstrapService {
     final seed = await _seedStore.loadValidatedSeed(
       pubKeyHex,
       isValidSeed: (seed) => _seedMatchesCapsule(
-        hivra,
+        runtime,
         seed,
         pubKeyHex,
         bytesToHex,
@@ -164,7 +163,7 @@ class CapsuleRuntimeBootstrapService {
       persistValidatedSeed: (seed) => _seedStore.storeSeed(pubKeyHex, seed),
     );
     if (seed == null) return false;
-    if (!hivra.saveSeed(seed)) return false;
+    if (!runtime.saveSeed(seed)) return false;
 
     final dir = await _fileStore.capsuleDirForHex(pubKeyHex, create: true);
     final state = await _fileStore.readState(dir);
@@ -197,26 +196,25 @@ class CapsuleRuntimeBootstrapService {
     final primaryLedgerRoot = orderedCandidates.isNotEmpty
         ? _parseLedgerRoot(orderedCandidates.first.json)
         : null;
-    final isGenesis =
-        _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
-            _stateGenesis(state) ??
-            false;
+    final isGenesis = _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
+        _stateGenesis(state) ??
+        false;
     final isNeste = _support.inferNesteFromLedgerRoot(primaryLedgerRoot) ??
         _stateNeste(state) ??
         true;
-    if (!hivra.createCapsule(
+    if (!runtime.createCapsule(
       seed,
       isGenesis: isGenesis,
       isNeste: isNeste,
       ownerMode: identityMode == 'legacy_nostr_owner'
-          ? HivraBindings.legacyNostrOwnerMode
-          : HivraBindings.rootOwnerMode,
+          ? runtime.legacyNostrOwnerMode
+          : runtime.rootOwnerMode,
     )) {
       return false;
     }
 
     for (final candidate in orderedCandidates) {
-      if (!hivra.importLedger(candidate.json)) {
+      if (!runtime.importLedger(candidate.json)) {
         continue;
       }
       importedHistory = true;
@@ -224,39 +222,39 @@ class CapsuleRuntimeBootstrapService {
     }
     if (hasStoredHistory && !importedHistory) return false;
 
-    final exported = hivra.exportLedger();
+    final exported = runtime.exportLedger();
     if (exported == null || exported.isEmpty) return false;
     await _fileStore.writeLedger(dir, exported);
     return true;
   }
 
   Future<bool> _seedMatchesCapsule(
-    HivraBindings hivra,
+    CapsuleRuntimeBootstrapRuntime runtime,
     Uint8List seed,
     String pubKeyHex,
     String Function(Uint8List bytes) bytesToHex, {
     required String identityMode,
   }) async {
     if (identityMode == 'root_owner') {
-      final derivedPubKey = hivra.seedRootPublicKey(seed);
+      final derivedPubKey = runtime.seedRootPublicKey(seed);
       if (derivedPubKey == null || derivedPubKey.length != 32) return false;
       return bytesToHex(derivedPubKey) == pubKeyHex;
     }
 
     if (identityMode == 'legacy_nostr_owner') {
-      final derivedPubKey = hivra.seedNostrPublicKey(seed);
+      final derivedPubKey = runtime.seedNostrPublicKey(seed);
       if (derivedPubKey == null || derivedPubKey.length != 32) return false;
       return bytesToHex(derivedPubKey) == pubKeyHex;
     }
 
-    final rootPubKey = hivra.seedRootPublicKey(seed);
+    final rootPubKey = runtime.seedRootPublicKey(seed);
     if (rootPubKey != null &&
         rootPubKey.length == 32 &&
         bytesToHex(rootPubKey) == pubKeyHex) {
       return true;
     }
 
-    final nostrPubKey = hivra.seedNostrPublicKey(seed);
+    final nostrPubKey = runtime.seedNostrPublicKey(seed);
     if (nostrPubKey != null &&
         nostrPubKey.length == 32 &&
         bytesToHex(nostrPubKey) == pubKeyHex) {

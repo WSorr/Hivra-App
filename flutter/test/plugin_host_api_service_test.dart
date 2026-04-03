@@ -15,25 +15,30 @@ void main() {
         }) {
           return PluginDemoRunResult(
             state: PluginDemoRunState.executed,
-            peerHex: _peerHex,
-            peerLabel: 'peer',
-            settlement: const TemperatureContractSettlement(
-              pluginId: PluginHostApiService.temperaturePluginId,
-              peerHex: _peerHex,
-              locationCode: 'LI',
-              targetDateUtc: '2026-04-01',
-              thresholdDeciCelsius: 85,
-              observedDeciCelsius: 90,
-              proposerRule: TemperatureOutcomeRule.above,
-              outcome: TemperatureContractOutcome.proposerWins,
-              winnerRole: 'proposer',
-              canonicalJson: '{"demo":"settlement"}',
-              settlementHashHex:
-                  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-              oracleSourceId: 'oracle.mock.weather.v1',
-              oracleEventId: 'evt-1',
-              oracleRecordedAtUtc: '2026-04-01T12:00:00Z',
-            ),
+            pairResults: const <PluginDemoPairRunResult>[
+              PluginDemoPairRunResult(
+                peerHex: _peerHex,
+                peerLabel: 'peer',
+                settlement: TemperatureContractSettlement(
+                  pluginId: PluginHostApiService.temperaturePluginId,
+                  peerHex: _peerHex,
+                  locationCode: 'LI',
+                  targetDateUtc: '2026-04-01',
+                  thresholdDeciCelsius: 85,
+                  observedDeciCelsius: 90,
+                  proposerRule: TemperatureOutcomeRule.above,
+                  outcome: TemperatureContractOutcome.proposerWins,
+                  winnerRole: 'proposer',
+                  canonicalJson: '{"demo":"settlement"}',
+                  settlementHashHex:
+                      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                  oracleSourceId: 'oracle.mock.weather.v1',
+                  oracleEventId: 'evt-1',
+                  oracleRecordedAtUtc: '2026-04-01T12:00:00Z',
+                ),
+                blockingFacts: <ConsensusBlockingFact>[],
+              ),
+            ],
             blockingFacts: const <ConsensusBlockingFact>[],
           );
         },
@@ -65,9 +70,19 @@ void main() {
         }) {
           return const PluginDemoRunResult(
             state: PluginDemoRunState.blocked,
-            peerHex: _peerHex,
-            peerLabel: 'peer',
-            settlement: null,
+            pairResults: <PluginDemoPairRunResult>[
+              PluginDemoPairRunResult(
+                peerHex: _peerHex,
+                peerLabel: 'peer',
+                settlement: null,
+                blockingFacts: <ConsensusBlockingFact>[
+                  ConsensusBlockingFact(
+                    code: 'pending_invitation',
+                    subjectId: 'deadbeef',
+                  ),
+                ],
+              ),
+            ],
             blockingFacts: <ConsensusBlockingFact>[
               ConsensusBlockingFact(
                 code: 'pending_invitation',
@@ -99,9 +114,7 @@ void main() {
         runTemperatureDemo: ({required contract, required observation}) =>
             const PluginDemoRunResult(
           state: PluginDemoRunState.noPairwisePaths,
-          peerHex: null,
-          peerLabel: null,
-          settlement: null,
+          pairResults: <PluginDemoPairRunResult>[],
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       );
@@ -125,9 +138,7 @@ void main() {
         runTemperatureDemo: ({required contract, required observation}) =>
             const PluginDemoRunResult(
           state: PluginDemoRunState.noPairwisePaths,
-          peerHex: null,
-          peerLabel: null,
-          settlement: null,
+          pairResults: <PluginDemoPairRunResult>[],
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       );

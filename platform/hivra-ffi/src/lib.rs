@@ -51,6 +51,7 @@ mod relationship_api;
 mod runtime_support;
 mod seed_api;
 mod selfcheck_api;
+mod transport_cache;
 
 pub use ffi_support::FfiBytes;
 #[cfg(test)]
@@ -70,6 +71,9 @@ pub(crate) use runtime_support::{
 };
 #[cfg(test)]
 pub(crate) use runtime_support::{derive_starter_id, derive_starter_nonce};
+pub(crate) use transport_cache::{
+    clear_cached_nostr_transports, with_cached_nostr_transport, TransportProfile,
+};
 
 #[cfg(test)]
 mod tests;

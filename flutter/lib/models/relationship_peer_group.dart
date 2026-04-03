@@ -19,14 +19,23 @@ class RelationshipPeerGroup {
       relationships.where((relationship) => !relationship.isActive).toList()
         ..sort((a, b) => b.establishedAt.compareTo(a.establishedAt));
 
-  DateTime get latestEstablishedAt =>
-      relationships
-          .map((relationship) => relationship.establishedAt)
-          .reduce((left, right) => left.isAfter(right) ? left : right);
+  List<Relationship> get pendingRemoteBreakRelationships => relationships
+      .where(
+        (relationship) =>
+            relationship.isActive && relationship.hasPendingRemoteBreak,
+      )
+      .toList()
+    ..sort((a, b) => b.establishedAt.compareTo(a.establishedAt));
+
+  DateTime get latestEstablishedAt => relationships
+      .map((relationship) => relationship.establishedAt)
+      .reduce((left, right) => left.isAfter(right) ? left : right);
 
   String get peerDisplayName {
     if (peerPubkey.isEmpty) return 'Unknown';
-    return HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyFromBase64(peerPubkey));
+    return HivraIdFormat.short(
+      HivraIdFormat.formatNostrKeyFromBase64(peerPubkey),
+    );
   }
 
   List<StarterKind> get activeKinds {

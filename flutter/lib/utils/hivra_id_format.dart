@@ -7,11 +7,17 @@ class HivraIdFormat {
   static String formatCapsuleKeyBytes(Uint8List bytes) =>
       _format32(bytes, hrp: 'h');
 
+  static String formatNostrKeyBytes(Uint8List bytes) =>
+      _format32(bytes, hrp: 'npub');
+
   static String formatStarterIdBytes(Uint8List bytes) =>
       _format32(bytes, hrp: 'hs');
 
   static String formatCapsuleKeyFromBase64(String raw) =>
       _formatFromBase64(raw, hrp: 'h');
+
+  static String formatNostrKeyFromBase64(String raw) =>
+      _formatFromBase64(raw, hrp: 'npub');
 
   static String formatStarterIdFromBase64(String raw) =>
       _formatFromBase64(raw, hrp: 'hs');

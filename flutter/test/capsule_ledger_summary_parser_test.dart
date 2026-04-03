@@ -247,8 +247,12 @@ void main() {
         'update safety fixture keeps counters stable and aligned with projections',
         () {
       const support = LedgerViewSupport();
-      const relationshipProjection = RelationshipProjectionService(support);
       final self = rep(0xaa);
+      final relationshipProjection =
+          RelationshipProjectionService.withOwnerKeyProvider(
+        () => Uint8List.fromList(self),
+        support,
+      );
       final peerA = rep(0xbb);
       final peerB = rep(0xcc);
       const t0 = 1890000000000;
@@ -540,5 +544,45 @@ void main() {
       final summary = parser.parse(ledger, toHex);
       expect(summary.relationshipCount, equals(1));
     });
+
+    test(
+      'remote RelationshipBroken notification keeps relationship active in summary count',
+      () {
+        final self = rep(0xaa);
+        final peer = rep(0xbb);
+        const t0 = 1890003300000;
+        final ledger = jsonEncode(<String, dynamic>{
+          'owner': self,
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayloadWithRoots(
+                peerByte: 0xbb,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x41,
+                senderByte: 0xbb,
+                senderStarterByte: 0x61,
+                peerRootByte: 0xcc,
+                senderRootByte: 0xaa,
+              ),
+              timestamp: t0 + 1,
+              signer: self,
+            ),
+            event(
+              kind: 'RelationshipBroken',
+              payload: relationshipBrokenPayload(
+                  peerByte: 0xbb, ownStarterByte: 0x21),
+              timestamp: t0 + 2,
+              signer: peer,
+            ),
+          ],
+        });
+
+        final summary = parser.parse(ledger, toHex);
+        expect(summary.relationshipCount, equals(1));
+      },
+    );
   });
 }

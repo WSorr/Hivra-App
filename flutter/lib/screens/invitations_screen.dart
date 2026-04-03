@@ -79,7 +79,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     super.initState();
     _intents = widget.runtime.invitationIntents;
     _loadInvitations();
-    unawaited(_fetchInvitationDeliveries(silent: true));
+    unawaited(_fetchInvitationDeliveries(silent: true, quick: true));
   }
 
   Future<void> _loadInvitations({bool showLoading = true}) async {
@@ -116,7 +116,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     }
   }
 
-  Future<void> _fetchInvitationDeliveries({bool silent = false}) async {
+  Future<void> _fetchInvitationDeliveries({
+    bool silent = false,
+    bool quick = false,
+  }) async {
     if (_isFetchingDeliveries || _processingId != null) return;
 
     setState(() => _isFetchingDeliveries = true);
@@ -126,7 +129,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     );
 
     try {
-      result = await _intents.fetchInvitations();
+      result = quick
+          ? await _intents.fetchInvitationsQuick()
+          : await _intents.fetchInvitations();
     } finally {
       if (mounted) {
         setState(() => _isFetchingDeliveries = false);

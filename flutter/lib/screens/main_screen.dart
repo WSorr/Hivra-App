@@ -26,6 +26,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   bool _bootstrapping = true;
   Stopwatch? _launchStopwatch;
+  bool _transportQuickSyncInFlight = false;
+  DateTime? _lastTransportQuickSyncAt;
 
   String _publicKeyText = '';
   int _starterCount = 0;
@@ -95,23 +97,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final startedAtMs = _launchStopwatch?.elapsedMilliseconds;
 
     try {
-      // Relay propagation is eventually consistent; do a short bounded retry
-      // window so sender receives Accept/Reject after capsule switch.
-      const retries = 3;
-      for (var attempt = 0; attempt < retries; attempt++) {
-        final result = await _invitationIntents.fetchInvitations();
-        if (result.code > 0) {
-          break;
-        }
-        if (result.code < 0) {
-          debugPrint(
-            '[StartupTiming] launch_receive_attempt_${attempt + 1}_failed='
-            '${result.code}',
-          );
-        }
-        if (attempt < retries - 1) {
-          await Future<void>.delayed(const Duration(seconds: 3));
-        }
+      // Launch-time receive must stay lightweight so UI projection from ledger
+      // remains responsive; full sync is still available via manual refresh.
+      final result = await _runQuickTransportSync(reason: 'launch');
+      if (result.code < 0) {
+        debugPrint(
+          '[StartupTiming] launch_receive_failed_code=${result.code}',
+        );
       }
       debugPrint(
         '[StartupTiming] launch_receive_done_ms='
@@ -130,13 +122,40 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _syncInvitationsOnResume() async {
     try {
-      final result = await _invitationIntents.fetchInvitationsQuick();
+      final result = await _runQuickTransportSync(reason: 'resume');
       if (!mounted) return;
       if (result.code >= 0) {
         _loadCapsuleData();
       }
     } catch (_) {
       // Resume sync is best-effort only.
+    }
+  }
+
+  bool _shouldSkipQuickTransportSync() {
+    if (_transportQuickSyncInFlight) return true;
+    final last = _lastTransportQuickSyncAt;
+    if (last == null) return false;
+    return DateTime.now().difference(last) < const Duration(seconds: 4);
+  }
+
+  Future<InvitationIntentResult> _runQuickTransportSync({
+    required String reason,
+  }) async {
+    if (_shouldSkipQuickTransportSync()) {
+      debugPrint('[StartupTiming] quick_sync_skipped_reason=$reason');
+      return const InvitationIntentResult(
+        code: 0,
+        message: 'Skipped duplicate quick sync',
+      );
+    }
+
+    _transportQuickSyncInFlight = true;
+    try {
+      return await _invitationIntents.fetchInvitationsQuick();
+    } finally {
+      _transportQuickSyncInFlight = false;
+      _lastTransportQuickSyncAt = DateTime.now();
     }
   }
 

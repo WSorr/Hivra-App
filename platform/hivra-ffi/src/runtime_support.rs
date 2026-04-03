@@ -220,6 +220,7 @@ pub(crate) fn init_runtime_state(
 }
 
 pub(crate) fn clear_runtime_state() {
+    clear_cached_nostr_transports();
     let mut runtime = RUNTIME.lock().unwrap();
     runtime.capsule = None;
 }

@@ -9,6 +9,7 @@ class Relationship {
   final String peerStarterId;
   final DateTime establishedAt;
   final bool isActive;
+  final bool hasPendingRemoteBreak;
 
   Relationship({
     required this.peerPubkey,
@@ -17,19 +18,22 @@ class Relationship {
     required this.peerStarterId,
     required this.establishedAt,
     this.isActive = true,
+    this.hasPendingRemoteBreak = false,
   });
 
   /// Get display name for peer (safe short preview)
   String get peerDisplayName {
     if (peerPubkey.isEmpty) return 'Unknown';
-    return HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyFromBase64(peerPubkey));
+    return HivraIdFormat.short(
+      HivraIdFormat.formatNostrKeyFromBase64(peerPubkey),
+    );
   }
 
-  String get ownStarterDisplayId =>
-      HivraIdFormat.short(HivraIdFormat.formatStarterIdFromBase64(ownStarterId));
+  String get ownStarterDisplayId => HivraIdFormat.short(
+      HivraIdFormat.formatStarterIdFromBase64(ownStarterId));
 
-  String get peerStarterDisplayId =>
-      HivraIdFormat.short(HivraIdFormat.formatStarterIdFromBase64(peerStarterId));
+  String get peerStarterDisplayId => HivraIdFormat.short(
+      HivraIdFormat.formatStarterIdFromBase64(peerStarterId));
 
   /// For mock data
   static Relationship mock(int index) {
@@ -41,6 +45,7 @@ class Relationship {
       peerStarterId: 'peer_starter_$index',
       establishedAt: DateTime.now().subtract(Duration(days: index)),
       isActive: index % 3 != 0, // every 3rd is broken
+      hasPendingRemoteBreak: false,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'capsule_persistence_models.dart';
 import 'invitation_projection_service.dart';
 import 'ledger_view_support.dart';
+import 'relationship_projection_service.dart';
 import '../models/invitation.dart';
 
 class CapsuleLedgerSummaryParser {
@@ -21,7 +22,6 @@ class CapsuleLedgerSummaryParser {
       final events = _support.events(ledger);
 
       final activeStartersById = <String, int>{};
-      final activeRelationshipsByKey = <String, String>{};
 
       for (final eventRaw in events) {
         if (eventRaw is! Map) continue;
@@ -43,43 +43,34 @@ class CapsuleLedgerSummaryParser {
               activeStartersById.remove(toHex(Uint8List.fromList(burnedId)));
             }
             break;
-          case 7:
-            final key = _support.relationshipKeyFromEstablishedPayload(
-              payload,
-              encode32: toHex,
-            );
-            final peer = _support.relationshipPeerFromEstablishedPayload(
-              payload,
-              encode32: toHex,
-            );
-            if (key != null && peer != null) {
-              activeRelationshipsByKey[key] = peer;
-            }
-            break;
-          case 8:
-            final relationshipKey = _support.relationshipKeyFromBrokenPayload(
-              payload,
-              encode32: toHex,
-            );
-            if (relationshipKey != null) {
-              activeRelationshipsByKey.remove(relationshipKey);
-            }
-            break;
           default:
             break;
         }
       }
 
       final starterCount = activeStartersById.length.clamp(0, 5);
-      final relationshipCount =
-          activeRelationshipsByKey.values.toSet().length.clamp(0, 9999);
       final ownerBytes = parseBytesField(ledger['owner']);
+      Uint8List? readOwner() {
+        if (ownerBytes != null && ownerBytes.length == 32) {
+          return Uint8List.fromList(ownerBytes);
+        }
+        return null;
+      }
+
       final projection = InvitationProjectionService.withOwnerKeyProvider(
-        () => ownerBytes != null && ownerBytes.length == 32
-            ? Uint8List.fromList(ownerBytes)
-            : null,
+        readOwner,
         _support,
       );
+      final relationshipProjection =
+          RelationshipProjectionService.withOwnerKeyProvider(
+        readOwner,
+        _support,
+      );
+      final relationshipCount = relationshipProjection
+          .loadRelationshipGroups(ledger)
+          .where((group) => group.isActive)
+          .length
+          .clamp(0, 9999);
       final pendingInvitations = projection
           .loadInvitations(ledger)
           .where((invitation) => invitation.status == InvitationStatus.pending)

@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import '../ffi/hivra_bindings.dart';
+
 import 'ledger_view_service.dart';
 
 class CapsuleState {
@@ -41,24 +41,6 @@ class CapsuleState {
       );
     });
   }
-
-  factory CapsuleState.fromHivra(HivraBindings hivra) {
-    final snapshot = LedgerViewService(hivra).loadCapsuleSnapshot();
-
-    return CapsuleState(
-      publicKey: snapshot.publicKey,
-      starterCount: snapshot.starterCount,
-      relationshipCount: snapshot.relationshipCount,
-      pendingInvitations: snapshot.pendingInvitations,
-      version: snapshot.version,
-      ledgerHashHex: snapshot.ledgerHashHex,
-      hasLedgerHistory: snapshot.hasLedgerHistory,
-      isNeste: true, // Will come from settings
-      starterIds: snapshot.starterIds,
-      starterKinds: snapshot.starterKinds,
-      lockedStarterSlots: snapshot.lockedStarterSlots,
-    );
-  }
 }
 
 class StarterSlotState {
@@ -76,22 +58,39 @@ class StarterSlotState {
 }
 
 class CapsuleStateManager {
-  final HivraBindings _hivra;
+  final LedgerViewService _ledgerView;
   CapsuleState? _currentState;
 
-  CapsuleStateManager(this._hivra);
+  CapsuleStateManager(this._ledgerView);
 
   CapsuleState get state {
-    _currentState ??= CapsuleState.fromHivra(_hivra);
+    _currentState ??= _loadState();
     return _currentState!;
   }
 
   void refresh() {
-    _currentState = CapsuleState.fromHivra(_hivra);
+    _currentState = _loadState();
   }
 
   // Will be used by our new FFI function
   void refreshWithFullState() {
     refresh();
+  }
+
+  CapsuleState _loadState() {
+    final snapshot = _ledgerView.loadCapsuleSnapshot();
+    return CapsuleState(
+      publicKey: snapshot.publicKey,
+      starterCount: snapshot.starterCount,
+      relationshipCount: snapshot.relationshipCount,
+      pendingInvitations: snapshot.pendingInvitations,
+      version: snapshot.version,
+      ledgerHashHex: snapshot.ledgerHashHex,
+      hasLedgerHistory: snapshot.hasLedgerHistory,
+      isNeste: true, // Will come from settings
+      starterIds: snapshot.starterIds,
+      starterKinds: snapshot.starterKinds,
+      lockedStarterSlots: snapshot.lockedStarterSlots,
+    );
   }
 }

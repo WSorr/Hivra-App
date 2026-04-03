@@ -1,24 +1,19 @@
 import 'dart:typed_data';
 
-import '../ffi/hivra_bindings.dart';
-import 'capsule_persistence_service.dart';
+import '../ffi/backup_runtime.dart';
 
 class BackupService {
-  final HivraBindings _hivra;
-  final CapsulePersistenceService _persistence;
+  final BackupRuntime _runtime;
 
-  BackupService({
-    HivraBindings? hivra,
-    CapsulePersistenceService? persistence,
-  })  : _hivra = hivra ?? HivraBindings(),
-        _persistence = persistence ?? CapsulePersistenceService();
+  BackupService([BackupRuntime? runtime])
+      : _runtime = runtime ?? HivraBackupRuntime();
 
   String mnemonicFromSeed(Uint8List seed, {int wordCount = 24}) {
-    return _hivra.seedToMnemonic(seed, wordCount: wordCount);
+    return _runtime.mnemonicFromSeed(seed, wordCount: wordCount);
   }
 
   Future<String?> exportBackupEnvelopeToPath(String targetPath) {
-    return _persistence.exportBackupEnvelopeToPath(_hivra, targetPath);
+    return _runtime.exportBackupEnvelopeToPath(targetPath);
   }
 
   Future<void> persistAfterCreate({
@@ -26,8 +21,7 @@ class BackupService {
     required bool isGenesis,
     bool isNeste = true,
   }) {
-    return _persistence.persistAfterCreate(
-      hivra: _hivra,
+    return _runtime.persistAfterCreate(
       seed: seed,
       isGenesis: isGenesis,
       isNeste: isNeste,

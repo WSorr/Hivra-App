@@ -3,9 +3,11 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:bech32/bech32.dart';
 
+import '../ffi/capsule_runtime_bootstrap_runtime.dart';
 import '../ffi/hivra_bindings.dart';
 import 'capsule_backup_codec.dart';
 import 'capsule_file_store.dart';
+import 'capsule_identity_reconciler_service.dart';
 import 'capsule_index_store.dart';
 import 'capsule_ledger_summary_parser.dart';
 import 'capsule_persistence_models.dart';
@@ -29,6 +31,8 @@ class CapsulePersistenceService {
   final CapsuleIndexStore _indexStore = const CapsuleIndexStore();
   final CapsuleLedgerSummaryParser _summaryParser =
       const CapsuleLedgerSummaryParser();
+  final CapsuleIdentityReconcilerService _identityReconciler =
+      const CapsuleIdentityReconcilerService();
   final LedgerViewSupport _support = const LedgerViewSupport();
   final CapsuleSeedStore _seedStore = const CapsuleSeedStore();
   final UserVisibleDataDirectoryService _userVisibleDirs =
@@ -43,6 +47,26 @@ class CapsulePersistenceService {
   }) async {
     final pubKey = hivra.capsuleRuntimeOwnerPublicKey();
     final pubKeyHex = pubKey != null ? _bytesToHex(pubKey) : null;
+    final index = await _readIndex();
+    final duplicateSeedPubKeyHex = await _findCapsuleForSeed(
+      index,
+      seed,
+      excludePubKeyHex: pubKeyHex,
+    );
+    if (duplicateSeedPubKeyHex != null) {
+      final existingEntry = index.capsules[duplicateSeedPubKeyHex];
+      await _storeSeedForCapsule(duplicateSeedPubKeyHex, seed);
+      await _upsertCapsuleIndex(
+        duplicateSeedPubKeyHex,
+        isGenesis: existingEntry?.isGenesis,
+        isNeste: existingEntry?.isNeste,
+        identityMode: existingEntry?.identityMode ?? 'root_owner',
+      );
+      await _setActiveCapsule(duplicateSeedPubKeyHex);
+      await _syncLocalCapsuleContactCards(hivra);
+      return;
+    }
+
     final dir = await _currentCapsuleDir(hivra, create: true);
 
     final state = <String, dynamic>{
@@ -75,6 +99,7 @@ class CapsulePersistenceService {
         identityMode: identityMode,
       );
       await _setActiveCapsule(pubKeyHex);
+      await _syncLocalCapsuleContactCards(hivra);
     }
   }
 
@@ -233,6 +258,7 @@ class CapsulePersistenceService {
   }
 
   Future<String?> resolveActiveCapsuleHex(HivraBindings hivra) async {
+    await _reconcileCapsuleIdentityIndex(hivra);
     final index = await _readIndex();
     final activeHex = index.activePubKeyHex;
     if (activeHex != null && activeHex.isNotEmpty) {
@@ -305,6 +331,7 @@ class CapsulePersistenceService {
     }
 
     await _setActiveCapsule(activeHex);
+    await _syncLocalCapsuleContactCards(hivra);
     return true;
   }
 
@@ -546,6 +573,7 @@ class CapsulePersistenceService {
   Future<List<CapsuleIndexEntry>> listCapsules({HivraBindings? hivra}) async {
     if (hivra != null) {
       await _ensureIndexFromCurrentSeed(hivra);
+      await _reconcileCapsuleIdentityIndex(hivra);
     }
     final index = await _readIndex();
     final entries = <CapsuleIndexEntry>[];
@@ -607,7 +635,8 @@ class CapsulePersistenceService {
       pubKeyHex,
       identityMode:
           _identityModeForCapsule(indexEntry: index.capsules[pubKeyHex]),
-      hivra: hivra,
+      runtime:
+          hivra != null ? HivraCapsuleRuntimeBootstrapRuntime(hivra) : null,
       bytesToHex: _bytesToHex,
     );
   }
@@ -615,7 +644,7 @@ class CapsulePersistenceService {
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrapForCurrent(
       HivraBindings hivra) async {
     return _runtimeBootstrapService.loadRuntimeBootstrapForCurrent(
-      hivra,
+      HivraCapsuleRuntimeBootstrapRuntime(hivra),
       bytesToHex: _bytesToHex,
     );
   }
@@ -658,7 +687,7 @@ class CapsulePersistenceService {
       HivraBindings hivra, String pubKeyHex) async {
     final index = await _readIndex();
     return _runtimeBootstrapService.refreshCapsuleSnapshot(
-      hivra,
+      HivraCapsuleRuntimeBootstrapRuntime(hivra),
       pubKeyHex,
       identityMode:
           _identityModeForCapsule(indexEntry: index.capsules[pubKeyHex]),
@@ -782,8 +811,32 @@ class CapsulePersistenceService {
   }
 
   Future<void> activateCapsule(HivraBindings hivra, String pubKeyHex) async {
+    await _reconcileCapsuleIdentityIndex(hivra);
+    final index = await _readIndex();
+    final targetEntry = index.capsules[pubKeyHex];
+    final targetIdentityMode = _identityModeForCapsule(indexEntry: targetEntry);
     final storedSeed = await _loadSeedForCapsule(pubKeyHex);
     if (storedSeed != null) {
+      final seedMatchesTarget = await seedMatchesCapsule(
+        hivra,
+        storedSeed,
+        pubKeyHex,
+        identityMode: targetIdentityMode,
+      );
+      if (!seedMatchesTarget) {
+        final seedOwner = await _findOwnerForSeed(
+          hivra,
+          index,
+          storedSeed,
+          excludePubKeyHex: pubKeyHex,
+        );
+        final ownerSuffix = seedOwner == null
+            ? ''
+            : ' Seed belongs to another capsule: $seedOwner.';
+        throw Exception(
+          'Stored seed does not match selected capsule.$ownerSuffix Restore this capsule from its seed phrase.',
+        );
+      }
       if (!hivra.saveSeed(storedSeed)) {
         throw Exception('Failed to save seed into runtime');
       }
@@ -798,10 +851,22 @@ class CapsulePersistenceService {
       }
       final currentSeed = hivra.loadSeed();
       if (currentSeed != null) {
+        final seedMatchesTarget = await seedMatchesCapsule(
+          hivra,
+          currentSeed,
+          pubKeyHex,
+          identityMode: targetIdentityMode,
+        );
+        if (!seedMatchesTarget) {
+          throw Exception(
+            'Runtime seed does not match selected capsule. Restore this capsule from its seed phrase.',
+          );
+        }
         await _storeSeedForCapsule(pubKeyHex, currentSeed);
       }
     }
     await _setActiveCapsule(pubKeyHex);
+    await _syncLocalCapsuleContactCards(hivra);
   }
 
   Future<Map<String, dynamic>?> _readStateForCurrentCapsule(
@@ -1076,6 +1141,179 @@ class CapsulePersistenceService {
     return _extractOwnerHex(ledgerJson);
   }
 
+  Future<void> _reconcileCapsuleIdentityIndex(HivraBindings hivra) async {
+    final index = await _readIndex();
+    if (index.capsules.length < 2) return;
+
+    final bindingsByPubKey = <String, CapsuleIdentityBinding>{};
+    for (final entry in index.capsules.values) {
+      final pubKeyHex = entry.pubKeyHex;
+      if (pubKeyHex.isEmpty) continue;
+      final seed = await _loadSeedForCapsule(pubKeyHex);
+      if (seed == null) continue;
+
+      bindingsByPubKey[pubKeyHex] = CapsuleIdentityBinding(
+        seedFingerprint: base64.encode(seed),
+        rootPubKeyHex: _hexFromKey(hivra.seedRootPublicKey(seed)),
+        nostrPubKeyHex: _hexFromKey(hivra.seedNostrPublicKey(seed)),
+      );
+    }
+
+    final reconciled = _identityReconciler.reconcile(
+      index: index,
+      bindingsByPubKey: bindingsByPubKey,
+    );
+    final resultIndex = reconciled.index;
+    if (reconciled.seedAliasToCanonical.isEmpty &&
+        _sameIndexState(index, resultIndex)) {
+      return;
+    }
+
+    for (final move in reconciled.seedAliasToCanonical.entries) {
+      final aliasPubKeyHex = move.key;
+      final canonicalPubKeyHex = move.value;
+      final aliasSeed = await _loadSeedForCapsule(aliasPubKeyHex);
+      if (aliasSeed != null) {
+        await _storeSeedForCapsule(canonicalPubKeyHex, aliasSeed);
+      }
+    }
+    for (final aliasPubKeyHex in reconciled.seedAliasToCanonical.keys) {
+      await _seedStore.deleteSeed(aliasPubKeyHex);
+    }
+
+    await _writeIndex(resultIndex);
+  }
+
+  Future<void> _syncLocalCapsuleContactCards(HivraBindings hivra) async {
+    final index = await _readIndex();
+    if (index.capsules.isEmpty) return;
+
+    final cardsFile = await _contactCardsFile();
+    final cards = await _readContactCards(cardsFile);
+    var changed = false;
+
+    for (final entry in index.capsules.values) {
+      final seed = await _loadSeedForCapsule(entry.pubKeyHex);
+      if (seed == null) continue;
+
+      final root = hivra.seedRootPublicKey(seed);
+      final nostr = hivra.seedNostrPublicKey(seed);
+      if (root == null ||
+          root.length != 32 ||
+          nostr == null ||
+          nostr.length != 32) {
+        continue;
+      }
+
+      final rootBytes = Uint8List.fromList(root);
+      final nostrBytes = Uint8List.fromList(nostr);
+      final rootHex = _bytesToHex(rootBytes);
+      final expected = <String, dynamic>{
+        'version': 1,
+        'rootKey': _encodeCapsuleKey(rootBytes),
+        'rootHex': rootHex,
+        'transports': {
+          'nostr': {
+            'npub': _encodeBech32Key('npub', nostrBytes),
+            'hex': _bytesToHex(nostrBytes),
+          },
+        },
+      };
+
+      final existing = cards[rootHex];
+      if (_normalizedJson(existing) != _normalizedJson(expected)) {
+        cards[rootHex] = expected;
+        changed = true;
+      }
+    }
+
+    if (!changed) return;
+    await cardsFile.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(cards),
+      flush: true,
+    );
+  }
+
+  Future<File> _contactCardsFile() async {
+    final root = await _userVisibleDirs.rootDirectory(create: true);
+    final file = File('${root.path}/capsule_contact_cards.json');
+    if (!await file.exists()) {
+      await file.writeAsString('{}', flush: true);
+    }
+    return file;
+  }
+
+  Future<Map<String, dynamic>> _readContactCards(File file) async {
+    try {
+      final raw = await file.readAsString();
+      return _parseJsonMap(raw) ?? <String, dynamic>{};
+    } catch (_) {
+      return <String, dynamic>{};
+    }
+  }
+
+  String _normalizedJson(Object? value) {
+    if (value is Map<String, dynamic>) return jsonEncode(value);
+    if (value is Map) return jsonEncode(Map<String, dynamic>.from(value));
+    return '';
+  }
+
+  bool _sameIndexState(CapsulesIndex a, CapsulesIndex b) {
+    if (a.activePubKeyHex != b.activePubKeyHex) return false;
+    if (a.capsules.length != b.capsules.length) return false;
+    for (final entry in a.capsules.entries) {
+      final other = b.capsules[entry.key];
+      if (other == null) return false;
+      final current = entry.value;
+      if (current.pubKeyHex != other.pubKeyHex) return false;
+      if (current.createdAt != other.createdAt) return false;
+      if (current.lastActive != other.lastActive) return false;
+      if (current.isGenesis != other.isGenesis) return false;
+      if (current.isNeste != other.isNeste) return false;
+      if (current.identityMode != other.identityMode) return false;
+    }
+    return true;
+  }
+
+  Future<String?> _findCapsuleForSeed(
+    CapsulesIndex index,
+    Uint8List seed, {
+    String? excludePubKeyHex,
+  }) async {
+    for (final entry in index.capsules.values) {
+      final pubKeyHex = entry.pubKeyHex;
+      if (pubKeyHex.isEmpty || pubKeyHex == excludePubKeyHex) continue;
+      final storedSeed = await _loadSeedForCapsule(pubKeyHex);
+      if (storedSeed == null) continue;
+      if (_sameBytes(seed, storedSeed)) {
+        return pubKeyHex;
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _findOwnerForSeed(
+    HivraBindings hivra,
+    CapsulesIndex index,
+    Uint8List seed, {
+    String? excludePubKeyHex,
+  }) async {
+    for (final entry in index.capsules.values) {
+      final pubKeyHex = entry.pubKeyHex;
+      if (pubKeyHex.isEmpty || pubKeyHex == excludePubKeyHex) continue;
+      final matches = await seedMatchesCapsule(
+        hivra,
+        seed,
+        pubKeyHex,
+        identityMode: _identityModeForCapsule(indexEntry: entry),
+      );
+      if (matches) {
+        return pubKeyHex;
+      }
+    }
+    return null;
+  }
+
   bool _sameBytes(Uint8List a, Uint8List b) {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
@@ -1143,6 +1381,7 @@ class CapsulePersistenceService {
       identityMode: _detectIdentityMode(hivra, pubKeyHex),
     );
     await _setActiveCapsule(pubKeyHex);
+    await _reconcileCapsuleIdentityIndex(hivra);
   }
 
   Future<void> _upsertCapsuleIndex(
@@ -1238,8 +1477,12 @@ class CapsulePersistenceService {
   }
 
   String _encodeCapsuleKey(Uint8List bytes) {
+    return _encodeBech32Key('h', bytes);
+  }
+
+  String _encodeBech32Key(String hrp, Uint8List bytes) {
     final words = _convertBits(bytes, 8, 5, true);
-    return bech32.encode(Bech32('h', words));
+    return bech32.encode(Bech32(hrp, words));
   }
 
   List<int> _convertBits(List<int> data, int from, int to, bool pad) {

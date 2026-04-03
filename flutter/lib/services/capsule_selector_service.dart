@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-import '../ffi/hivra_bindings.dart';
-import 'capsule_persistence_service.dart';
+import '../ffi/capsule_selector_runtime.dart';
 
 class CapsuleSelectorItem {
   final String id;
@@ -32,25 +31,27 @@ class CapsuleSelectorItem {
 }
 
 class CapsuleSelectorService {
-  final HivraBindings _hivra;
-  final CapsulePersistenceService _persistence;
+  final CapsuleSelectorRuntime _runtime;
 
-  CapsuleSelectorService({
-    HivraBindings? hivra,
-    CapsulePersistenceService? persistence,
-  })  : _hivra = hivra ?? HivraBindings(),
-        _persistence = persistence ?? CapsulePersistenceService();
+  CapsuleSelectorService([CapsuleSelectorRuntime? runtime])
+      : _runtime = runtime ?? HivraCapsuleSelectorRuntime();
 
   Future<List<CapsuleSelectorItem>> loadCapsules() async {
-    final entries = await _persistence.listCapsules(hivra: _hivra);
+    final entries = await _runtime.listCapsules();
     final seedByHex = <String, bool>{};
     final ownerByHex = <String, String?>{};
+    final bootstrapNesteByHex = <String, bool?>{};
 
     for (final entry in entries) {
       seedByHex[entry.pubKeyHex] =
-          await _persistence.hasStoredSeed(entry.pubKeyHex);
+          await _runtime.hasStoredSeed(entry.pubKeyHex);
       ownerByHex[entry.pubKeyHex] =
-          await _persistence.loadCapsuleLedgerOwnerHex(entry.pubKeyHex);
+          await _runtime.loadCapsuleLedgerOwnerHex(entry.pubKeyHex);
+      bootstrapNesteByHex[entry.pubKeyHex] = null;
+      if (seedByHex[entry.pubKeyHex] == true) {
+        final bootstrap = await _runtime.loadRuntimeBootstrap(entry.pubKeyHex);
+        bootstrapNesteByHex[entry.pubKeyHex] = bootstrap?.isNeste;
+      }
     }
 
     final filteredEntries = entries.where((entry) {
@@ -70,16 +71,14 @@ class CapsuleSelectorService {
     final capsules = <CapsuleSelectorItem>[];
 
     for (final entry in filteredEntries) {
-      var summary = await _persistence.loadCapsuleSummary(entry.pubKeyHex);
+      var summary = await _runtime.loadCapsuleSummary(entry.pubKeyHex);
       if (summary.ledgerHashHex == '7fffffffffffffff') {
-        final hasSeed = await _persistence.hasStoredSeed(entry.pubKeyHex);
+        final hasSeed = await _runtime.hasStoredSeed(entry.pubKeyHex);
         if (hasSeed) {
-          final refreshed = await _persistence.refreshCapsuleSnapshot(
-            _hivra,
-            entry.pubKeyHex,
-          );
+          final refreshed =
+              await _runtime.refreshCapsuleSnapshot(entry.pubKeyHex);
           if (refreshed) {
-            summary = await _persistence.loadCapsuleSummary(entry.pubKeyHex);
+            summary = await _runtime.loadCapsuleSummary(entry.pubKeyHex);
           }
         }
       }
@@ -88,9 +87,12 @@ class CapsuleSelectorService {
         CapsuleSelectorItem(
           id: entry.pubKeyHex,
           publicKeyHex: entry.pubKeyHex,
-          displayKeyText: await _persistence.resolveDisplayCapsuleKey(
-              _hivra, entry.pubKeyHex),
-          network: entry.isNeste ? 'NESTE' : 'HOOD',
+          displayKeyText:
+              await _runtime.resolveDisplayCapsuleKey(entry.pubKeyHex),
+          network: networkLabelForCapsule(
+            indexIsNeste: entry.isNeste,
+            bootstrapIsNeste: bootstrapNesteByHex[entry.pubKeyHex],
+          ),
           starterCount: summary.starterCount,
           relationshipCount: summary.relationshipCount,
           pendingInvitations: summary.pendingInvitations,
@@ -179,48 +181,49 @@ class CapsuleSelectorService {
     }
   }
 
-  bool seedExists() => _hivra.seedExists();
+  @visibleForTesting
+  static String networkLabelForCapsule({
+    required bool indexIsNeste,
+    required bool? bootstrapIsNeste,
+  }) {
+    final isNeste = bootstrapIsNeste ?? indexIsNeste;
+    return isNeste ? 'NESTE' : 'HOOD';
+  }
+
+  bool seedExists() => _runtime.seedExists();
 
   Future<void> activateCapsule(String pubKeyHex) {
-    return _persistence.activateCapsule(_hivra, pubKeyHex);
+    return _runtime.activateCapsule(pubKeyHex);
   }
 
   Future<String?> importCapsuleFromBackupJson(String raw) {
-    return _persistence.importCapsuleFromBackupJson(raw);
+    return _runtime.importCapsuleFromBackupJson(raw);
   }
 
   Future<bool> hasStoredSeed(String pubKeyHex) {
-    return _persistence.hasStoredSeed(pubKeyHex);
+    return _runtime.hasStoredSeed(pubKeyHex);
   }
 
   Future<String?> exportCapsuleBackupToPath(
     String pubKeyHex,
     String targetPath,
   ) {
-    return _persistence.exportCapsuleBackupToPath(pubKeyHex, targetPath);
+    return _runtime.exportCapsuleBackupToPath(pubKeyHex, targetPath);
   }
 
   Future<void> deleteCapsule(String pubKeyHex) {
-    return _persistence.deleteCapsule(
-      pubKeyHex,
-      deleteLocalData: true,
-      hivra: _hivra,
-    );
+    return _runtime.deleteCapsule(pubKeyHex);
   }
 
-  bool validateMnemonic(String phrase) => _hivra.validateMnemonic(phrase);
+  bool validateMnemonic(String phrase) => _runtime.validateMnemonic(phrase);
 
-  Uint8List mnemonicToSeed(String phrase) => _hivra.mnemonicToSeed(phrase);
+  Uint8List mnemonicToSeed(String phrase) => _runtime.mnemonicToSeed(phrase);
 
   Future<bool> seedMatchesCapsule(Uint8List seed, String pubKeyHex) {
-    return _persistence.seedMatchesCapsule(
-      _hivra,
-      seed,
-      pubKeyHex,
-    );
+    return _runtime.seedMatchesCapsule(seed, pubKeyHex);
   }
 
   Future<void> saveSeedForCapsule(String pubKeyHex, Uint8List seed) {
-    return _persistence.saveSeedForCapsule(pubKeyHex, seed);
+    return _runtime.saveSeedForCapsule(pubKeyHex, seed);
   }
 }
