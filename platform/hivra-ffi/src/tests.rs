@@ -65,6 +65,13 @@ fn invitation_accepted_count() -> usize {
         .count()
 }
 
+fn invitation_expired_count() -> usize {
+    runtime_events()
+        .into_iter()
+        .filter(|event| event.kind() == EventKind::InvitationExpired)
+        .count()
+}
+
 fn invitation_sent_count() -> usize {
     runtime_events()
         .into_iter()
@@ -945,6 +952,37 @@ fn replay_policy_skips_conflicting_expired_after_accepted_resolution() {
 }
 
 #[test]
+fn replay_policy_skips_conflicting_accepted_after_expired_resolution() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(151);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [135u8; 32];
+    let invitation_id = [157u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_created_starter_id = derive_starter_id(&test_seed(152), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+    append_runtime_event(EventKind::InvitationExpired, &invitation_id).unwrap();
+
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_created_starter_id),
+        accepter_root_pubkey: None,
+    };
+
+    assert!(invitation_is_resolved_in_runtime(&invitation_id));
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationAccepted,
+        &accepted.to_bytes(),
+        PubKey::from(peer_pubkey),
+    ));
+}
+
+#[test]
 fn replay_policy_skips_out_of_order_accepted_before_outgoing_offer() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
@@ -1234,6 +1272,57 @@ fn replayed_invitation_rejected_is_skipped_after_export_import() {
     }
 
     assert_eq!(starter_burned_count(), 1);
+}
+
+#[test]
+fn replayed_invitation_expired_is_skipped_after_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(153);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [136u8; 32];
+    let invitation_id = [158u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    append_runtime_event_with_signer(
+        EventKind::InvitationExpired,
+        &invitation_id,
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+
+    assert_eq!(invitation_expired_count(), 1);
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert!(event_exists_in_runtime_with_signer(
+        EventKind::InvitationExpired,
+        &invitation_id,
+        PubKey::from(peer_pubkey),
+    ));
+
+    // Mimic delivery replay guard path: duplicate expired message must be ignored.
+    if !event_exists_in_runtime_with_signer(
+        EventKind::InvitationExpired,
+        &invitation_id,
+        PubKey::from(peer_pubkey),
+    ) {
+        append_runtime_event_with_signer(
+            EventKind::InvitationExpired,
+            &invitation_id,
+            PubKey::from(peer_pubkey),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(invitation_expired_count(), 1);
 }
 
 #[test]

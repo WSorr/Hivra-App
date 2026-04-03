@@ -37,6 +37,8 @@ Scope:
     - out-of-order `InvitationAccepted` delivery (before local outgoing offer exists) is skipped and does not create relationship side effects
     - out-of-order `InvitationRejected` delivery (before local outgoing offer exists) is skipped and does not pre-burn local starter state
     - out-of-order `InvitationExpired` delivery (before local outgoing offer exists) is skipped and does not pre-resolve invitation lineage
+    - conflicting `InvitationAccepted` replay skipped when invitation lineage is already terminal-expired
+    - duplicated `InvitationExpired` delivery remains idempotent after export/import replay
   - Replay policy now also requires `InvitationExpired` delivery to resolve an existing outgoing offer, preventing orphan terminal append without local lineage anchor.
 
 Definition of done:
