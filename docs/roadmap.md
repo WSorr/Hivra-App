@@ -30,6 +30,8 @@ Scope:
   - Added regression coverage for:
     - conflicting terminal replay skipped for resolved invitation
     - first terminal event still accepted for unresolved invitation
+    - `InvitationRejected` replay skipped when no matching outgoing offer exists
+    - `InvitationRejected` replay skipped when invitation lineage is already terminal-accepted
 
 Definition of done:
 - Replayed transport events are either safely ignored or appended as genuinely new facts.
