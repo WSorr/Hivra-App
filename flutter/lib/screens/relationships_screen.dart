@@ -6,6 +6,7 @@ import '../models/starter.dart';
 import '../services/relationship_service.dart';
 import '../services/ui_feedback_service.dart';
 import '../utils/hivra_id_format.dart';
+import '../utils/peer_identity_format.dart';
 
 class RelationshipsScreen extends StatefulWidget {
   final RelationshipService service;
@@ -321,22 +322,17 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   }
 
   String _peerDisplayName(RelationshipPeerGroup group) {
-    final rootKey = _resolvedRootKey(group);
-    if (rootKey != null && rootKey.isNotEmpty) {
-      return HivraIdFormat.short(rootKey);
-    }
-    return group.peerDisplayName;
+    return PeerIdentityFormat.displayName(
+      transportPubkeyB64: group.peerPubkey,
+      rootCapsuleKey: _resolvedRootKey(group),
+    );
   }
 
   String _peerIdentityHint(RelationshipPeerGroup group) {
-    final transportNpub = HivraIdFormat.short(
-      HivraIdFormat.formatNostrKeyFromBase64(group.peerPubkey),
+    return PeerIdentityFormat.identityHint(
+      transportPubkeyB64: group.peerPubkey,
+      rootCapsuleKey: _resolvedRootKey(group),
     );
-    final rootKey = _resolvedRootKey(group);
-    if (rootKey != null && rootKey.isNotEmpty) {
-      return 'Root ${HivraIdFormat.short(rootKey)} · transport $transportNpub';
-    }
-    return 'Unknown root · transport $transportNpub';
   }
 
   String? _resolvedRootKey(RelationshipPeerGroup group) {

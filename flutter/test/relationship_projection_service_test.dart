@@ -330,5 +330,46 @@ void main() {
         expect(groups.single.peerPubkey, base64.encode(rep(0xb2)));
       },
     );
+
+    test(
+      'infers peer root from root-augmented invitation lineage for legacy relationship payload',
+      () {
+        const t0 = 1890003230000;
+        final root = <String, dynamic>{
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'InvitationReceived',
+              payload: <int>[
+                ...rep(0x51), // invitation id
+                ...rep(0x21), // starter id
+                ...rep(0xaa), // to pubkey (self)
+                ...rep(0xcc), // sender_root_pubkey
+                1, // starter kind
+              ],
+              timestamp: t0 + 1,
+              signer: rep(0xb1),
+            ),
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xb1,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x51,
+                senderByte: 0xb1,
+                senderStarterByte: 0x61,
+              ),
+              timestamp: t0 + 2,
+            ),
+          ],
+        };
+
+        final projected = service.loadRelationships(root);
+
+        expect(projected, hasLength(1));
+        expect(projected.single.peerRootPubkey, base64.encode(rep(0xcc)));
+      },
+    );
   });
 }

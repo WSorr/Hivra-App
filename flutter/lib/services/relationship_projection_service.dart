@@ -22,6 +22,7 @@ class RelationshipProjectionService {
 
   List<Relationship> loadRelationships(Map<String, dynamic> root) {
     final events = _support.events(root);
+    final peerRootByInvitationId = _collectPeerRootsByInvitationId(events);
     final byKey = <String, Relationship>{};
     final localOwner = _resolveLocalOwner(root);
 
@@ -32,11 +33,15 @@ class RelationshipProjectionService {
       if (kind == 7) {
         final established = _parseRelationshipEstablished(payload);
         if (established == null) continue;
+        final resolvedPeerRoot = established.peerRootPubkey ??
+            (established.invitationId == null
+                ? null
+                : peerRootByInvitationId[established.invitationId!]);
         final key = _support.relationshipKeyFromEstablishedPayload(payload);
         if (key == null) continue;
         byKey[key] = Relationship(
           peerPubkey: established.peerPubkey,
-          peerRootPubkey: established.peerRootPubkey,
+          peerRootPubkey: resolvedPeerRoot,
           kind: established.kind,
           ownStarterId: established.ownStarterId,
           peerStarterId: established.peerStarterId,
@@ -80,6 +85,38 @@ class RelationshipProjectionService {
     final list = byKey.values.toList();
     list.sort((a, b) => b.establishedAt.compareTo(a.establishedAt));
     return list;
+  }
+
+  Map<String, String> _collectPeerRootsByInvitationId(List<dynamic> events) {
+    final map = <String, String>{};
+    for (final eventRaw in events) {
+      if (eventRaw is! Map) continue;
+      final event = Map<String, dynamic>.from(eventRaw);
+      final kind = _support.kindCode(event['kind']);
+      final payload = _support.payloadBytes(event['payload']);
+
+      if ((kind == 1 || kind == 9) &&
+          (payload.length == 128 || payload.length == 129)) {
+        final invitationId = base64.encode(payload.sublist(0, 32));
+        final senderRoot = base64.encode(payload.sublist(96, 128));
+        map[invitationId] = senderRoot;
+        continue;
+      }
+
+      if (kind == 2 && payload.length == 128) {
+        final invitationId = base64.encode(payload.sublist(0, 32));
+        final accepterRoot = base64.encode(payload.sublist(96, 128));
+        map[invitationId] = accepterRoot;
+        continue;
+      }
+
+      if (kind == 7 && payload.length >= 226) {
+        final invitationId = base64.encode(payload.sublist(97, 129));
+        final peerRoot = base64.encode(payload.sublist(194, 226));
+        map[invitationId] = peerRoot;
+      }
+    }
+    return map;
   }
 
   Uint8List? _resolveLocalOwner(Map<String, dynamic> root) {
@@ -166,6 +203,9 @@ class RelationshipProjectionService {
 
     return _ProjectedRelationship(
       peerPubkey: base64.encode(payload.sublist(0, 32)),
+      invitationId: payload.length >= 129
+          ? base64.encode(payload.sublist(97, 129))
+          : null,
       peerRootPubkey: payload.length >= 226
           ? base64.encode(payload.sublist(194, 226))
           : null,
@@ -178,6 +218,7 @@ class RelationshipProjectionService {
 
 class _ProjectedRelationship {
   final String peerPubkey;
+  final String? invitationId;
   final String? peerRootPubkey;
   final String ownStarterId;
   final String peerStarterId;
@@ -185,6 +226,7 @@ class _ProjectedRelationship {
 
   const _ProjectedRelationship({
     required this.peerPubkey,
+    this.invitationId,
     this.peerRootPubkey,
     required this.ownStarterId,
     required this.peerStarterId,

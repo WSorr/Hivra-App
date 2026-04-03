@@ -8,6 +8,8 @@ class InvitationCard extends StatelessWidget {
   final VoidCallback? onCancel;
   final bool isLoading;
   final String? loadingAction;
+  final String? peerDisplayOverride;
+  final String? peerIdentityHint;
 
   const InvitationCard({
     super.key,
@@ -17,6 +19,8 @@ class InvitationCard extends StatelessWidget {
     this.onCancel,
     this.isLoading = false,
     this.loadingAction,
+    this.peerDisplayOverride,
+    this.peerIdentityHint,
   });
 
   @override
@@ -126,7 +130,7 @@ class InvitationCard extends StatelessWidget {
               children: [
                 _chip(
                   label: invitation.isIncoming ? 'From' : 'To',
-                  value: invitation.peerKeyDisplay,
+                  value: peerDisplayOverride ?? invitation.peerKeyDisplay,
                 ),
                 if (invitation.starterSlot != null)
                   _chip(
@@ -137,6 +141,15 @@ class InvitationCard extends StatelessWidget {
                   ),
               ],
             ),
+
+            if (peerIdentityHint != null && peerIdentityHint!.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  peerIdentityHint!,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ),
 
             const SizedBox(height: 8),
 
@@ -181,7 +194,8 @@ class InvitationCard extends StatelessWidget {
             if (invitation.rejectionReason != null) ...[
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   color: const Color(0xFF31262A),
                   borderRadius: BorderRadius.circular(8),
@@ -208,9 +222,10 @@ class InvitationCard extends StatelessWidget {
                 ),
               ),
             ],
-            
+
             // Actions
-            if (invitation.status == InvitationStatus.pending && !invitation.isExpired) ...[
+            if (invitation.status == InvitationStatus.pending &&
+                !invitation.isExpired) ...[
               const SizedBox(height: 16),
               if (invitation.isIncoming)
                 Row(

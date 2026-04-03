@@ -8,8 +8,11 @@ import '../widgets/invitation_card.dart';
 import '../services/app_runtime_service.dart';
 import '../services/invitation_delivery_service.dart';
 import '../services/invitation_intent_handler.dart';
+import '../services/relationship_service.dart';
 import '../services/ui_event_log_service.dart';
 import '../services/ui_feedback_service.dart';
+import '../utils/hivra_id_format.dart';
+import '../utils/peer_identity_format.dart';
 
 class InvitationUiBuckets {
   final List<Invitation> incomingPending;
@@ -68,22 +71,26 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   final InvitationDeliveryService _delivery = const InvitationDeliveryService();
   final UiEventLogService _uiLog = const UiEventLogService();
   late final InvitationIntentHandler _intents;
+  late final RelationshipService _relationships;
   List<Invitation> _invitations = [];
   bool _isFetchingDeliveries = false;
   String? _processingId;
   String? _processingAction;
   final Set<String> _locallyResolvedIncomingIds = <String>{};
+  Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
 
   @override
   void initState() {
     super.initState();
     _intents = widget.runtime.invitationIntents;
+    _relationships = widget.runtime.buildRelationshipService();
     _loadInvitations();
     unawaited(_fetchInvitationDeliveries(silent: true, quick: true));
   }
 
   Future<void> _loadInvitations({bool showLoading = true}) async {
     final invitations = _intents.loadInvitations();
+    final peerRoots = await _loadPeerRootKeys(invitations);
     final stillPendingIncoming = invitations
         .where(
             (inv) => inv.isIncoming && inv.status == InvitationStatus.pending)
@@ -92,10 +99,69 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     if (!mounted) return;
     setState(() {
       _invitations = invitations;
+      _peerRootKeyByTransportB64 = peerRoots;
       _locallyResolvedIncomingIds.removeWhere(
         (id) => !stillPendingIncoming.contains(id),
       );
     });
+  }
+
+  Future<Map<String, String>> _loadPeerRootKeys(
+    List<Invitation> invitations,
+  ) async {
+    final transportKeys = invitations
+        .map((inv) => inv.isIncoming ? inv.fromPubkey : (inv.toPubkey ?? ''))
+        .where((key) => key.isNotEmpty)
+        .toSet();
+    if (transportKeys.isEmpty) return const <String, String>{};
+
+    final fromCards =
+        await _relationships.loadPeerRootKeysByTransportBase64(transportKeys);
+    final fromLedger = _projectedPeerRootsByTransport();
+    return <String, String>{
+      ...fromCards,
+      ...fromLedger,
+    };
+  }
+
+  Map<String, String> _projectedPeerRootsByTransport() {
+    final groups = widget.runtime.ledgerView.loadRelationshipGroups();
+    final map = <String, String>{};
+    for (final group in groups) {
+      for (final relationship in group.relationships) {
+        final peerRoot = relationship.peerRootPubkey;
+        if (peerRoot == null || peerRoot.isEmpty) continue;
+        map[relationship.peerPubkey] =
+            HivraIdFormat.formatCapsuleKeyFromBase64(peerRoot);
+      }
+    }
+    return map;
+  }
+
+  String _peerTransportB64(Invitation invitation) => invitation.isIncoming
+      ? invitation.fromPubkey
+      : (invitation.toPubkey ?? '');
+
+  String? _peerRootKey(Invitation invitation) {
+    final peerTransport = _peerTransportB64(invitation);
+    if (peerTransport.isEmpty) return null;
+    final root = _peerRootKeyByTransportB64[peerTransport];
+    if (root == null || root.isEmpty) return null;
+    return root;
+  }
+
+  String _peerDisplayName(Invitation invitation) {
+    return PeerIdentityFormat.displayName(
+      transportPubkeyB64: _peerTransportB64(invitation),
+      rootCapsuleKey: _peerRootKey(invitation),
+    );
+  }
+
+  String _peerIdentityHint(Invitation invitation) {
+    return PeerIdentityFormat.identityHint(
+      transportPubkeyB64: _peerTransportB64(invitation),
+      rootCapsuleKey: _peerRootKey(invitation),
+    );
   }
 
   Future<void> _refreshAfterLedgerMutation() async {
@@ -657,6 +723,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           else
             ...incomingPending.map((inv) => InvitationCard(
                   invitation: inv,
+                  peerDisplayOverride: _peerDisplayName(inv),
+                  peerIdentityHint: _peerIdentityHint(inv),
                   onAccept: _locallyResolvedIncomingIds.contains(inv.id)
                       ? null
                       : () => _acceptInvitation(inv),
@@ -681,6 +749,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           else
             ...outgoingPending.map((inv) => InvitationCard(
                   invitation: inv,
+                  peerDisplayOverride: _peerDisplayName(inv),
+                  peerIdentityHint: _peerIdentityHint(inv),
                   onCancel: () => _cancelInvitation(inv),
                   isLoading: _processingId == inv.id,
                   loadingAction:
@@ -699,6 +769,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           else
             ...history.map((inv) => InvitationCard(
                   invitation: inv,
+                  peerDisplayOverride: _peerDisplayName(inv),
+                  peerIdentityHint: _peerIdentityHint(inv),
                   isLoading: _processingId == inv.id,
                   loadingAction:
                       _processingId == inv.id ? _processingAction : null,
