@@ -499,9 +499,10 @@ When tradeoffs are unclear, prefer:
       - non-empty ledger enables normal history-backed snapshot projection
     - Launch/resume invitation receive path now keeps ledger-first UX by running lightweight quick receive after first frame, with bounded quick timeout and dedupe guards:
       - quick receive timeout reduced to 8s (`InvitationActionsService`) to avoid long startup stalls under relay-connect degradation
-      - quick receive dedupe is capsule-scoped in `InvitationIntentHandler` (in-flight coalescing + cooldown), so repeated screen/runtime reopen cycles do not trigger redundant receive workers for the same active capsule
+    - quick receive dedupe is capsule-scoped in `InvitationIntentHandler` (in-flight coalescing + cooldown), so repeated screen/runtime reopen cycles do not trigger redundant receive workers for the same active capsule
       - added `invitation_intent_handler_test.dart` coverage for concurrent coalescing, cooldown skip, and per-capsule cooldown isolation
     - FFI now reuses per-capsule Nostr transport sessions (default + quick profiles) across send/receive/accept/reject/break paths instead of recreating transport on each action, reducing relay re-handshake churn during capsule switches and periodic refreshes
+    - `hivra_reject_invitation` is now ledger-first: local `InvitationRejected` append occurs before/beside transport delivery so UI projections do not re-surface the same invitation as actionable pending during relay timeout/degradation windows; outbound reject delivery remains best-effort.
     - Added deterministic overdue-invitation sweep in `InvitationIntentHandler` for outgoing `pending` rows past 24h, appending `InvitationExpired` through existing `cancelInvitation/expire` path so local slot locks are released even when transport fetch returns no new events
     - Added `invitation_intent_handler_test.dart` coverage that auto-expiry sweep only applies to overdue outgoing `pending` invitations (does not touch incoming, fresh pending, or already terminal invitations)
     - Invitation projection now falls back to ledger `owner` when runtime owner key is temporarily unavailable, preserving incoming/outgoing classification from ledger truth instead of dropping invitation rows to empty.
@@ -552,6 +553,7 @@ When tradeoffs are unclear, prefer:
     - Added `flutter/lib/services/consensus_processor.dart` with on-demand `preview`, `signable`, and `verify` APIs over ledger-derived pairwise projections.
     - Added `flutter/lib/services/consensus_runtime_service.dart` as a read-only runtime facade that feeds the processor from exported ledger truth plus local transport identity.
     - `ConsensusRuntimeService.checks()` now derives readiness from a single runtime-input + preview pass (instead of per-peer `signable` re-entry), keeping manual checks on-demand and avoiding repeated ledger/key reads inside one check cycle.
+    - `ConsensusProcessor` now adds an explicit `no_active_relationship` blocking fact for peer paths with zero active relationship anchors, so pair-scoped contract execution stays blocked even when invitation history exists without a live link.
     - Runtime consensus identity now prefers local root key when a peer path is root-anchored (root-augmented `RelationshipEstablished` payload) and falls back to local transport key for legacy non-root paths, avoiding transport-coupling for modern paths while preserving legacy determinism.
     - Added `flutter/lib/services/plugin_execution_guard_service.dart` so the future plugin host can read pairwise signability as a guard input without taking on execution or screen-owned consensus logic.
     - Added `flutter/lib/services/manual_consensus_check_service.dart` so Ledger Inspector can consume a read-only manual consensus-check use case instead of building pairwise preview state directly.

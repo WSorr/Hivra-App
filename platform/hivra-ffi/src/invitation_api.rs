@@ -540,12 +540,6 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
         }
     }
 
-    let (sender_secret, sender_pubkey) = match load_invitation_delivery_context(&seed) {
-        Ok(context) => context,
-        Err(-3) => return -4,
-        Err(_) => return -5,
-    };
-
     let engine = build_engine(&seed);
     let peer_pubkey = match find_invitation_sent_in_runtime(&invitation_id) {
         Some(record) => record.peer_pubkey,
@@ -563,25 +557,48 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
         return 0;
     }
 
-    let message = Message {
-        from: sender_pubkey,
-        to: *peer_pubkey.as_bytes(),
-        kind: EventKind::InvitationRejected as u32,
-        payload: payload_bytes,
-        timestamp: prepared.event.timestamp().as_u64(),
-        invitation_id: Some(invitation_id),
-    };
-
-    if let Err(code) =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Default, -5, |transport| {
-            send_delivery_message(transport, message, -6, "InvitationRejected")
-        })
-    {
-        return code;
-    }
+    let delivery_payload = payload_bytes.clone();
+    let delivery_timestamp = prepared.event.timestamp().as_u64();
+    let delivery_to = *peer_pubkey.as_bytes();
 
     match append_prepared_event(prepared) {
-        Ok(_) => 0,
+        Ok(_) => {
+            // Local truth is ledger-first: once rejected is appended, UI projection
+            // must not return invitation to actionable pending queues. Transport
+            // delivery stays best-effort and must not roll back local reject.
+            match load_invitation_delivery_context(&seed) {
+                Ok((sender_secret, sender_pubkey)) => {
+                    let message = Message {
+                        from: sender_pubkey,
+                        to: delivery_to,
+                        kind: EventKind::InvitationRejected as u32,
+                        payload: delivery_payload,
+                        timestamp: delivery_timestamp,
+                        invitation_id: Some(invitation_id),
+                    };
+                    if let Err(code) = with_cached_nostr_transport(
+                        sender_secret,
+                        TransportProfile::Default,
+                        -5,
+                        |transport| {
+                            send_delivery_message(transport, message, -6, "InvitationRejected")
+                        },
+                    ) {
+                        eprintln!(
+                            "[Delivery/Nostr] InvitationRejected local append ok; delivery failed ({})",
+                            code
+                        );
+                    }
+                }
+                Err(code) => {
+                    eprintln!(
+                        "[Delivery/Nostr] InvitationRejected local append ok; delivery context unavailable ({})",
+                        code
+                    );
+                }
+            }
+            0
+        }
         Err(_) => -4,
     }
 }

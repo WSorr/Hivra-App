@@ -24,6 +24,9 @@ class ConsensusBlockingFact {
         'relationship_broken' => subjectId == null
             ? 'Relationship broken'
             : 'Relationship broken ${_shortId(subjectId!)}',
+        'no_active_relationship' => subjectId == null
+            ? 'No active relationship'
+            : 'No active relationship with ${_shortId(subjectId!)}',
         'consensus_runtime_unavailable' => 'Consensus runtime unavailable',
         'invalid_local_transport_key' => 'Invalid local transport key',
         'consensus_peer_not_found' => 'Consensus peer not found',
@@ -316,6 +319,14 @@ class ConsensusProcessor {
           ),
         ),
       ];
+      if (relationships.isEmpty) {
+        blockingFacts.add(
+          ConsensusBlockingFact(
+            code: 'no_active_relationship',
+            subjectId: peerRootHex,
+          ),
+        );
+      }
 
       final snapshot = <String, dynamic>{
         'schema_version': 1,

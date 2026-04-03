@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:bech32/bech32.dart';
+import 'package:flutter/foundation.dart';
 
 import '../ffi/capsule_runtime_bootstrap_runtime.dart';
 import '../ffi/capsule_persistence_bindings.dart';
@@ -15,6 +15,46 @@ import 'capsule_runtime_bootstrap_service.dart';
 import 'capsule_seed_store.dart';
 import 'ledger_view_support.dart';
 import 'user_visible_data_directory_service.dart';
+
+@visibleForTesting
+bool shouldRemoveCapsuleContactCardEntry({
+  required String entryKey,
+  required Object? entryValue,
+  required String deleteKeyHex,
+}) {
+  final normalizedDeleteKey = _normalizeHex32ForCleanup(deleteKeyHex);
+  if (normalizedDeleteKey == null) return false;
+
+  final normalizedEntryKey = _normalizeHex32ForCleanup(entryKey);
+  if (normalizedEntryKey == normalizedDeleteKey) return true;
+
+  if (entryValue is! Map) return false;
+  final map = Map<String, dynamic>.from(entryValue);
+
+  final rootHex = _normalizeHex32ForCleanup(map['rootHex']?.toString());
+  if (rootHex == normalizedDeleteKey) return true;
+
+  final transports = map['transports'];
+  if (transports is! Map) return false;
+  final nostr = transports['nostr'];
+  if (nostr is! Map) return false;
+  final nostrHex = _normalizeHex32ForCleanup(
+      Map<String, dynamic>.from(nostr)['hex']?.toString());
+  return nostrHex == normalizedDeleteKey;
+}
+
+String? _normalizeHex32ForCleanup(String? value) {
+  if (value == null) return null;
+  final normalized = value
+      .trim()
+      .toLowerCase()
+      .replaceAll(':', '')
+      .replaceAll('-', '')
+      .replaceAll(' ', '');
+  final hex32 = RegExp(r'^[0-9a-f]{64}$');
+  if (!hex32.hasMatch(normalized)) return null;
+  return normalized;
+}
 
 class CapsulePersistenceService {
   static final CapsulePersistenceService _instance =
@@ -1065,7 +1105,19 @@ class CapsulePersistenceService {
       final raw = await cardsFile.readAsString();
       final cards = _parseJsonMap(raw);
       if (cards == null) return;
-      cards.remove(pubKeyHex);
+      final keysToRemove = <String>[];
+      for (final entry in cards.entries) {
+        if (shouldRemoveCapsuleContactCardEntry(
+          entryKey: entry.key,
+          entryValue: entry.value,
+          deleteKeyHex: pubKeyHex,
+        )) {
+          keysToRemove.add(entry.key);
+        }
+      }
+      for (final key in keysToRemove) {
+        cards.remove(key);
+      }
       await cardsFile.writeAsString(
         const JsonEncoder.withIndent('  ').convert(cards),
         flush: true,

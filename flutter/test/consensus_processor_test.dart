@@ -142,6 +142,52 @@ void main() {
       );
     });
 
+    test('signable is blocked when there is no active relationship', () {
+      final invitationId = Uint8List.fromList(List<int>.filled(32, 31));
+      final peerStarter = Uint8List.fromList(List<int>.filled(32, 32));
+      final localTransport = Uint8List.fromList(List<int>.filled(32, 33));
+      final peerTransport = Uint8List.fromList(List<int>.filled(32, 34));
+      final peerRoot = Uint8List.fromList(List<int>.filled(32, 35));
+      final peerHex = List<int>.filled(32, 35)
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...invitationId,
+            ...peerStarter,
+            ...localTransport,
+            ...peerRoot,
+            1,
+          ],
+          'signer': peerTransport,
+        },
+        <String, dynamic>{
+          'kind': 3,
+          'payload': <int>[
+            ...invitationId,
+            0,
+          ],
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        peerHex: peerHex,
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.preview!.relationshipCount, equals(0));
+      expect(signable.isSignable, isFalse);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        contains('no_active_relationship'),
+      );
+    });
+
     test('verify checks hash equality and signature set shape', () {
       final result = processor.verify(
         expectedHashHex: 'a' * 64,
