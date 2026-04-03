@@ -375,6 +375,39 @@ void main() {
     });
 
     test(
+        'preview maps incoming invitation to peer root from root-augmented offer payload',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(72));
+      final peerStarter = Uint8List.fromList(bytes32(73));
+      final localTransport = Uint8List.fromList(bytes32(74));
+      final peerTransport = Uint8List.fromList(bytes32(75));
+      final peerRoot = Uint8List.fromList(bytes32(76));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...invitationId,
+            ...peerStarter,
+            ...localTransport,
+            ...peerRoot,
+            2,
+          ],
+          'signer': peerTransport,
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, hasLength(1));
+      expect(previews.first.peerHex, equals(hex(peerRoot)));
+      expect(
+        previews.first.blockingFacts.map((fact) => fact.code),
+        contains('pending_invitation'),
+      );
+    });
+
+    test(
         'relationship break blocks only affected pair while other pairs stay signable',
         () {
       final localTransport = Uint8List.fromList(bytes32(90));

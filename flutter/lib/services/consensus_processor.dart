@@ -168,6 +168,9 @@ class ConsensusProcessor {
         if (starterKind != null) {
           fact.starterKinds.add(starterKind);
         }
+        if (kind == 'InvitationReceived' && payload.length >= 128) {
+          inviteRootPeerById[invitationId] = _hex(payload.sublist(96, 128));
+        }
       } else if (kind == 'RelationshipEstablished' && payload.length >= 194) {
         final peerTransportHex = _hex(payload.sublist(0, 32));
         final peerRootHex = payload.length >= 226
@@ -219,6 +222,7 @@ class ConsensusProcessor {
     for (final event in events) {
       final kind = _support.kindLabel(event['kind']);
       final payload = _payloadBytes(event['payload']);
+      final signer = _bytes32(event['signer']);
       if (payload.length < 32) continue;
 
       final invitationId = _hex(payload.sublist(0, 32));
@@ -228,6 +232,13 @@ class ConsensusProcessor {
       switch (kind) {
         case 'InvitationAccepted':
           fact.accepted = true;
+          if (payload.length >= 128 &&
+              signer != null &&
+              localTransportHex != null &&
+              _hex(payload.sublist(32, 64)) == localTransportHex &&
+              _hex(signer) != localTransportHex) {
+            inviteRootPeerById[invitationId] = _hex(payload.sublist(96, 128));
+          }
           break;
         case 'InvitationRejected':
           if (payload.length >= 33) {
