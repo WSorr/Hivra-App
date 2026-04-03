@@ -31,6 +31,21 @@ class RelationshipPeerGroup {
       .map((relationship) => relationship.establishedAt)
       .reduce((left, right) => left.isAfter(right) ? left : right);
 
+  String? get preferredPeerRootPubkey {
+    String? latestRoot;
+    DateTime? latestTimestamp;
+    for (final relationship in relationships) {
+      final root = relationship.peerRootPubkey;
+      if (root == null || root.isEmpty) continue;
+      if (latestTimestamp == null ||
+          relationship.establishedAt.isAfter(latestTimestamp)) {
+        latestRoot = root;
+        latestTimestamp = relationship.establishedAt;
+      }
+    }
+    return latestRoot;
+  }
+
   String get peerDisplayName {
     if (peerPubkey.isEmpty) return 'Unknown';
     return HivraIdFormat.short(

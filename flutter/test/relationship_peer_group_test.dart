@@ -8,9 +8,11 @@ void main() {
     required bool isActive,
     required bool hasPendingRemoteBreak,
     required DateTime establishedAt,
+    String? peerRootPubkey,
   }) {
     return Relationship(
       peerPubkey: '',
+      peerRootPubkey: peerRootPubkey,
       kind: StarterKind.juice,
       ownStarterId: '',
       peerStarterId: '',
@@ -48,5 +50,28 @@ void main() {
     expect(group.pendingRemoteBreakRelationships.length, 1);
     expect(group.pendingRemoteBreakRelationships.single.hasPendingRemoteBreak,
         isTrue);
+  });
+
+  test('prefers latest relationship root identity when available', () {
+    final now = DateTime.now();
+    final group = RelationshipPeerGroup(
+      peerPubkey: '',
+      relationships: <Relationship>[
+        relationship(
+          isActive: true,
+          hasPendingRemoteBreak: false,
+          establishedAt: now.subtract(const Duration(minutes: 3)),
+          peerRootPubkey: 'old-root',
+        ),
+        relationship(
+          isActive: true,
+          hasPendingRemoteBreak: false,
+          establishedAt: now.subtract(const Duration(minutes: 1)),
+          peerRootPubkey: 'new-root',
+        ),
+      ],
+    );
+
+    expect(group.preferredPeerRootPubkey, 'new-root');
   });
 }

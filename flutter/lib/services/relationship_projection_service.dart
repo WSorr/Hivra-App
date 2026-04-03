@@ -36,6 +36,7 @@ class RelationshipProjectionService {
         if (key == null) continue;
         byKey[key] = Relationship(
           peerPubkey: established.peerPubkey,
+          peerRootPubkey: established.peerRootPubkey,
           kind: established.kind,
           ownStarterId: established.ownStarterId,
           peerStarterId: established.peerStarterId,
@@ -64,6 +65,7 @@ class RelationshipProjectionService {
           }
           byKey[key] = Relationship(
             peerPubkey: current.peerPubkey,
+            peerRootPubkey: current.peerRootPubkey,
             kind: current.kind,
             ownStarterId: current.ownStarterId,
             peerStarterId: current.peerStarterId,
@@ -108,14 +110,17 @@ class RelationshipProjectionService {
     //   peer(32) + ownStarter(32) + peerStarter(32) + kind(1) = 97 bytes
     // Current payload adds provenance after the first 97 bytes:
     //   + invitationId(32) + senderPubkey(32) + senderStarterType(1) + senderStarterId(32)
-    // Future payload revisions may append additional root-aware fields, but
-    // projection keeps using the stable first 97 bytes for relationship anatomy.
+    // Root-augmented payloads append:
+    //   + peerRootPubkey(32) + senderRootPubkey(32)
     if (payload.length < 97) {
       return null;
     }
 
     return _ProjectedRelationship(
       peerPubkey: base64.encode(payload.sublist(0, 32)),
+      peerRootPubkey: payload.length >= 226
+          ? base64.encode(payload.sublist(194, 226))
+          : null,
       ownStarterId: base64.encode(payload.sublist(32, 64)),
       peerStarterId: base64.encode(payload.sublist(64, 96)),
       kind: _support.starterKindFromByte(payload[96]),
@@ -125,12 +130,14 @@ class RelationshipProjectionService {
 
 class _ProjectedRelationship {
   final String peerPubkey;
+  final String? peerRootPubkey;
   final String ownStarterId;
   final String peerStarterId;
   final StarterKind kind;
 
   const _ProjectedRelationship({
     required this.peerPubkey,
+    this.peerRootPubkey,
     required this.ownStarterId,
     required this.peerStarterId,
     required this.kind,

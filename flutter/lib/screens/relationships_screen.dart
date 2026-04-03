@@ -317,7 +317,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   }
 
   String _peerDisplayName(RelationshipPeerGroup group) {
-    final rootKey = _peerRootKeyByTransportB64[group.peerPubkey];
+    final rootKey = _resolvedRootKey(group);
     if (rootKey != null && rootKey.isNotEmpty) {
       return HivraIdFormat.short(rootKey);
     }
@@ -328,11 +328,23 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     final transportNpub = HivraIdFormat.short(
       HivraIdFormat.formatNostrKeyFromBase64(group.peerPubkey),
     );
-    final rootKey = _peerRootKeyByTransportB64[group.peerPubkey];
+    final rootKey = _resolvedRootKey(group);
     if (rootKey != null && rootKey.isNotEmpty) {
       return 'Root ${HivraIdFormat.short(rootKey)} · transport $transportNpub';
     }
     return 'Unknown root · transport $transportNpub';
+  }
+
+  String? _resolvedRootKey(RelationshipPeerGroup group) {
+    final projectedRootB64 = group.preferredPeerRootPubkey;
+    if (projectedRootB64 != null && projectedRootB64.isNotEmpty) {
+      return HivraIdFormat.formatCapsuleKeyFromBase64(projectedRootB64);
+    }
+    final importedRootKey = _peerRootKeyByTransportB64[group.peerPubkey];
+    if (importedRootKey != null && importedRootKey.isNotEmpty) {
+      return importedRootKey;
+    }
+    return null;
   }
 }
 

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -86,6 +87,7 @@ void main() {
 
       expect(projected, hasLength(1));
       expect(projected.single.isActive, isTrue);
+      expect(projected.single.peerRootPubkey, base64.encode(rep(0xcc)));
     });
 
     test('marks relationship broken with root-augmented break payload', () {

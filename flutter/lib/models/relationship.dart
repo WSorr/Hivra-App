@@ -4,6 +4,7 @@ import '../utils/hivra_id_format.dart';
 /// Relationship between two capsules
 class Relationship {
   final String peerPubkey;
+  final String? peerRootPubkey;
   final StarterKind kind;
   final String ownStarterId;
   final String peerStarterId;
@@ -13,6 +14,7 @@ class Relationship {
 
   Relationship({
     required this.peerPubkey,
+    this.peerRootPubkey,
     required this.kind,
     required this.ownStarterId,
     required this.peerStarterId,
