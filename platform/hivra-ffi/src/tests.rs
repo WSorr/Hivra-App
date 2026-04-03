@@ -65,6 +65,13 @@ fn invitation_accepted_count() -> usize {
         .count()
 }
 
+fn invitation_sent_count() -> usize {
+    runtime_events()
+        .into_iter()
+        .filter(|event| event.kind() == EventKind::InvitationSent)
+        .count()
+}
+
 fn starter_burned_count() -> usize {
     runtime_events()
         .into_iter()
@@ -1659,6 +1666,66 @@ fn reinvite_different_starter_type_survives_export_import() {
                     && payload.kind == StarterKind::Spark
             })
     }));
+}
+
+#[test]
+fn sending_reinvite_to_active_peer_does_not_append_hidden_break_events() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(171);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [71u8; 32];
+    let invitation_id = [72u8; 32];
+    let local_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_starter_id = derive_starter_id(&test_seed(172), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(local_starter_id),
+            nonce: derive_starter_nonce(&local_seed, 0),
+            kind: StarterKind::Juice,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+    append_runtime_event(
+        EventKind::RelationshipEstablished,
+        &RelationshipEstablishedPayload {
+            peer_pubkey: PubKey::from(peer_pubkey),
+            own_starter_id: StarterId::from(local_starter_id),
+            peer_starter_id: StarterId::from(peer_starter_id),
+            kind: StarterKind::Juice,
+            invitation_id,
+            sender_pubkey: PubKey::from(peer_pubkey),
+            sender_starter_type: StarterKind::Juice,
+            sender_starter_id: StarterId::from(peer_starter_id),
+            peer_root_pubkey: None,
+            sender_root_pubkey: Some(local_pubkey),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    let baseline_relationship_count = runtime_capsule_state().relationships_count;
+    let baseline_broken_count = relationship_broken_count();
+    let baseline_invitation_sent_count = invitation_sent_count();
+
+    let engine = build_engine(&local_seed);
+    let prepared = engine
+        .prepare_invitation_sent(StarterId::from(local_starter_id), PubKey::from(peer_pubkey))
+        .unwrap();
+    append_prepared_event(prepared).unwrap();
+
+    assert_eq!(relationship_broken_count(), baseline_broken_count);
+    assert_eq!(
+        runtime_capsule_state().relationships_count,
+        baseline_relationship_count
+    );
+    assert_eq!(invitation_sent_count(), baseline_invitation_sent_count + 1);
 }
 
 #[test]

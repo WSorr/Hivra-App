@@ -527,6 +527,7 @@ When tradeoffs are unclear, prefer:
     - `RelationshipService` peer root resolution now normalizes contact-card hex fields (case/separator tolerant), so relationship identity hints continue resolving `transport -> root` for cards created/imported under older formatting variants.
     - Capsule summary relationship counts now reuse `RelationshipProjectionService` so header/list counters stay aligned with pending remote-break semantics instead of diverging on direct payload walks.
     - Relationships screen now exposes explicit pending-break confirmation action (single or chooser flow) so peer break notifications are finalized by deliberate user action instead of passive badge-only state.
+    - Added `hivra-ffi` regression coverage that a repeated `InvitationSent` toward an already active peer appends only invitation lineage (no implicit `RelationshipBroken` or hidden relationship-state mutation).
 
 - `9.8 Consensus Processor Module`
   - Keep consensus logic out of screen flows and invitation form orchestration.
