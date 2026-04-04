@@ -427,5 +427,90 @@ void main() {
         expect(projected.single.peerRootPubkey, base64.encode(rep(0xcc)));
       },
     );
+
+    test(
+      'does not infer peer root from local root-augmented InvitationSent lineage',
+      () {
+        const t0 = 1890003240000;
+        final localOwner = rep(0xaa);
+        final root = <String, dynamic>{
+          'owner': localOwner,
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'InvitationSent',
+              payload: <int>[
+                ...rep(0x61), // invitation id
+                ...rep(0x21), // starter id
+                ...rep(0xb1), // to_pubkey (peer transport)
+                ...rep(0xaa), // sender_root_pubkey (local owner root)
+                1, // starter kind
+              ],
+              timestamp: t0 + 1,
+              signer: localOwner,
+            ),
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xb1,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x61,
+                senderByte: 0xb1,
+                senderStarterByte: 0x61,
+              ),
+              timestamp: t0 + 2,
+            ),
+          ],
+        };
+
+        final projected = service.loadRelationships(root);
+
+        expect(projected, hasLength(1));
+        expect(projected.single.peerRootPubkey, isNull);
+      },
+    );
+
+    test(
+      'does not infer peer root from local InvitationAccepted accepter_root lineage',
+      () {
+        const t0 = 1890003250000;
+        final localOwner = rep(0xaa);
+        final root = <String, dynamic>{
+          'owner': localOwner,
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'InvitationAccepted',
+              payload: <int>[
+                ...rep(0x62), // invitation id
+                ...rep(0xaa), // from_pubkey (local)
+                ...rep(0x31), // created_starter_id
+                ...rep(0xaa), // accepter_root_pubkey (local owner root)
+              ],
+              timestamp: t0 + 1,
+              signer: localOwner,
+            ),
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xb2,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x62,
+                senderByte: 0xb2,
+                senderStarterByte: 0x61,
+              ),
+              timestamp: t0 + 2,
+            ),
+          ],
+        };
+
+        final projected = service.loadRelationships(root);
+
+        expect(projected, hasLength(1));
+        expect(projected.single.peerRootPubkey, isNull);
+      },
+    );
   });
 }

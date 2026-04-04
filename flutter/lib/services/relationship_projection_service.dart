@@ -22,9 +22,10 @@ class RelationshipProjectionService {
 
   List<Relationship> loadRelationships(Map<String, dynamic> root) {
     final events = _support.events(root);
-    final peerRootByInvitationId = _collectPeerRootsByInvitationId(events);
-    final byKey = <String, Relationship>{};
     final localOwner = _resolveLocalOwner(root);
+    final peerRootByInvitationId =
+        _collectPeerRootsByInvitationId(events, localOwner);
+    final byKey = <String, Relationship>{};
 
     for (final e in events) {
       final kind = _support.kindCode(e['kind']);
@@ -87,16 +88,26 @@ class RelationshipProjectionService {
     return list;
   }
 
-  Map<String, String> _collectPeerRootsByInvitationId(List<dynamic> events) {
+  Map<String, String> _collectPeerRootsByInvitationId(
+    List<dynamic> events,
+    Uint8List? localOwner,
+  ) {
     final map = <String, String>{};
+    final hasLocalOwner = localOwner != null && localOwner.length == 32;
     for (final eventRaw in events) {
       if (eventRaw is! Map) continue;
       final event = Map<String, dynamic>.from(eventRaw);
       final kind = _support.kindCode(event['kind']);
       final payload = _support.payloadBytes(event['payload']);
+      final signer = _support.bytes32(event['signer']);
+      final signerMatchesLocal = hasLocalOwner &&
+          signer.length == 32 &&
+          _support.eq32(signer, localOwner);
 
-      if ((kind == 1 || kind == 9) &&
-          (payload.length == 128 || payload.length == 129)) {
+      if (kind == 9 && (payload.length == 128 || payload.length == 129)) {
+        if (signerMatchesLocal) {
+          continue;
+        }
         final invitationId = base64.encode(payload.sublist(0, 32));
         final senderRoot = base64.encode(payload.sublist(96, 128));
         map[invitationId] = senderRoot;
@@ -104,6 +115,9 @@ class RelationshipProjectionService {
       }
 
       if (kind == 2 && payload.length == 128) {
+        if (!(hasLocalOwner && signer.length == 32 && !signerMatchesLocal)) {
+          continue;
+        }
         final invitationId = base64.encode(payload.sublist(0, 32));
         final accepterRoot = base64.encode(payload.sublist(96, 128));
         map[invitationId] = accepterRoot;
