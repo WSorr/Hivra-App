@@ -202,6 +202,38 @@ void main() {
       expect(second.message, 'Skipped duplicate quick fetch');
       expect(actions.canceledInvitationIds, <String>[candidate.id]);
     });
+
+    test('runs expiry sweep even when full fetch returns receive failure',
+        () async {
+      String idForByte(int value) =>
+          base64.encode(Uint8List.fromList(List<int>.filled(32, value)));
+
+      final now = DateTime.now();
+      final overdueOutgoingPending = Invitation(
+        id: idForByte(81),
+        fromPubkey: idForByte(91),
+        toPubkey: idForByte(101),
+        kind: StarterKind.spark,
+        status: InvitationStatus.pending,
+        sentAt: now.subtract(const Duration(hours: 30)),
+        expiresAt: now.subtract(const Duration(hours: 6)),
+      );
+
+      final actions = _FakeInvitationActionsService();
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+        invitationsLoader: () => <Invitation>[overdueOutgoingPending],
+        fetchInvitationsAction: () async =>
+            const InvitationWorkerResult(code: -5),
+      );
+
+      final result = await handler.fetchInvitations();
+
+      expect(result.code, -5);
+      expect(result.message, 'Failed to fetch invitation deliveries');
+      expect(actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
+    });
   });
 }
 

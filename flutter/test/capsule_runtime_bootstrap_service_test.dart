@@ -231,6 +231,46 @@ void main() {
       );
     });
 
+    test('prefers ledger.json when event counts and tail timestamps are equal',
+        () async {
+      final ledgerJson = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+        <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+        <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
+      ]);
+      final backupLedgerJson = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+        <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+        <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
+      ]);
+      final backup = CapsuleBackupCodec.encodeBackupEnvelope(
+        ledgerJson: backupLedgerJson,
+        isGenesis: false,
+        isNeste: true,
+      );
+      final service = CapsuleRuntimeBootstrapService(
+        _FakeCapsuleFileStore(
+          state: <String, dynamic>{
+            'isGenesis': true,
+            'isNeste': false,
+          },
+          ledgerJson: ledgerJson,
+          backupJson: backup,
+        ),
+        _FakeCapsuleSeedStore(seed),
+      );
+
+      final bootstrap = await service.loadRuntimeBootstrap(
+        pubKeyHex,
+        bytesToHex: bytesToHex,
+      );
+
+      expect(bootstrap, isNotNull);
+      expect(bootstrap!.ledgerJson, equals(ledgerJson));
+      expect(
+        bootstrap.ledgerImportCandidates,
+        equals(<String>[ledgerJson, backupLedgerJson]),
+      );
+    });
+
     test('falls back to backup envelope when ledger.json is missing', () async {
       final ledgerFromBackup =
           ledgerWithOwnerByte(0xaa, kind: 'RelationshipEstablished');
@@ -317,7 +357,8 @@ void main() {
       expect(bootstrap.isNeste, isTrue);
     });
 
-    test('prefers ledger capsule-created flags over conflicting state', () async {
+    test('prefers ledger capsule-created flags over conflicting state',
+        () async {
       final ledger = ledgerWithCapsuleCreated(
         ownerByte: 0xaa,
         network: 0,

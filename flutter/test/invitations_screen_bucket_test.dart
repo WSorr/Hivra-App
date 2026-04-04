@@ -77,4 +77,27 @@ void main() {
     expect(buckets.outgoingPending, isEmpty);
     expect(buckets.history, isEmpty);
   });
+
+  test(
+      'bucketInvitationsForUi keeps terminal invites in history even when local resolved set contains same ids',
+      () {
+    final buckets = bucketInvitationsForUi(
+      <Invitation>[
+        _invitation(
+            id: 'acc', status: InvitationStatus.accepted, incoming: true),
+        _invitation(
+            id: 'rej', status: InvitationStatus.rejected, incoming: true),
+        _invitation(
+            id: 'exp', status: InvitationStatus.expired, incoming: false),
+      ],
+      const <String>{'acc', 'rej', 'exp'},
+    );
+
+    expect(buckets.incomingPending, isEmpty);
+    expect(buckets.outgoingPending, isEmpty);
+    expect(
+      buckets.history.map((inv) => inv.id).toSet(),
+      equals(<String>{'acc', 'rej', 'exp'}),
+    );
+  });
 }

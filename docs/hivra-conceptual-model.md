@@ -251,7 +251,7 @@ B receives invitation and checks:
 
 Case A: No own X + empty slot + ACCEPT
 
-- B activates local starter of type X in an empty slot (new or reactivated for that slot)
+- B activates local starter of type X in an empty slot as the next slot lineage instance (new lifecycle ID)
 - B creates InvitationAccepted
 - B creates RelationshipEstablished with A
 - A receives confirmation, unlocks their starter
@@ -269,7 +269,7 @@ Case B: Empty slot + REJECT (BURN)
 Case C: Own X exists + empty slot + ACCEPT
 
 - B keeps using their existing X for the relationship
-- B activates one missing starter type in the empty slot (new or reactivated for that slot)
+- B activates one missing starter type in the empty slot as the next slot lineage instance (new lifecycle ID)
 - B creates InvitationAccepted
 - B creates RelationshipEstablished
 - A receives, unlocks their starter
@@ -306,8 +306,9 @@ A starter is burned ONLY when ALL conditions are met:
 Burn invariants:
 
 - Burn applies to the current active lifecycle, not to slot capacity.
-- A burned starter ID may be reactivated later when the same slot is accepted again.
-- The slot remains available for future accepts, and the same slot-local identity can cycle active → burned → active deterministically.
+- A burned starter ID is terminal and is never reactivated.
+- The slot remains available for future accepts, but each new activation creates the next linear starter generation with a new ID.
+- Lineage ancestry (invitation and inviter provenance) is preserved in ledger history, not by reusing burned IDs.
 
 ### 3.3 Relationships
 

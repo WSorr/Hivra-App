@@ -507,6 +507,32 @@ void main() {
             timestamp: t0 + 6,
             signer: peer,
           ),
+          event(
+            kind: 'InvitationSent',
+            payload: invitationSentPayload(
+              invitationByte: 0x63,
+              starterByte: 0x22,
+              toPubkey: peer,
+            ),
+            timestamp: t0 + 7,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationExpired',
+            payload: invitationExpiredPayload(invitationByte: 0x63),
+            timestamp: t0 + 8,
+            signer: self,
+          ),
+          event(
+            kind: 'InvitationSent',
+            payload: invitationSentPayload(
+              invitationByte: 0x63,
+              starterByte: 0x22,
+              toPubkey: peer,
+            ),
+            timestamp: t0 + 9,
+            signer: self,
+          ),
         ],
       });
 

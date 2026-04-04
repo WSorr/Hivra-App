@@ -126,6 +126,42 @@ pub(crate) fn derive_starter_nonce(seed: &Seed, slot: u8) -> [u8; 32] {
     out
 }
 
+pub(crate) fn derive_starter_id_lineage(
+    seed: &Seed,
+    slot: u8,
+    invitation_id: &[u8; 32],
+    inviter_anchor: &PubKey,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(seed.as_bytes());
+    hasher.update([slot]);
+    hasher.update(invitation_id);
+    hasher.update(inviter_anchor.as_bytes());
+    hasher.update(b"starter_v2_lineage");
+    let digest = hasher.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
+}
+
+pub(crate) fn derive_starter_nonce_lineage(
+    seed: &Seed,
+    slot: u8,
+    invitation_id: &[u8; 32],
+    inviter_anchor: &PubKey,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(seed.as_bytes());
+    hasher.update([slot]);
+    hasher.update(invitation_id);
+    hasher.update(inviter_anchor.as_bytes());
+    hasher.update(b"starter_nonce_v2_lineage");
+    let digest = hasher.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
+}
+
 pub(crate) fn derive_nostr_public_key(seed: &Seed) -> Result<[u8; 32], ()> {
     let secret_bytes = derive_nostr_keypair(seed).map_err(|_| ())?;
     let secret = SecretKey::from_slice(&secret_bytes).map_err(|_| ())?;

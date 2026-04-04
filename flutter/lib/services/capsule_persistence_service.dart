@@ -27,20 +27,87 @@ bool shouldRemoveCapsuleContactCardEntry({
 
   final normalizedEntryKey = _normalizeHex32ForCleanup(entryKey);
   if (normalizedEntryKey == normalizedDeleteKey) return true;
+  final entryRootKeyHex =
+      _decodeBech32Hex32ForCleanup(entryKey, expectedHrp: 'h');
+  if (entryRootKeyHex == normalizedDeleteKey) return true;
+  final entryNpubHex =
+      _decodeBech32Hex32ForCleanup(entryKey, expectedHrp: 'npub');
+  if (entryNpubHex == normalizedDeleteKey) return true;
 
   if (entryValue is! Map) return false;
   final map = Map<String, dynamic>.from(entryValue);
 
   final rootHex = _normalizeHex32ForCleanup(map['rootHex']?.toString());
   if (rootHex == normalizedDeleteKey) return true;
+  final rootKeyHex = _decodeBech32Hex32ForCleanup(
+    map['rootKey']?.toString(),
+    expectedHrp: 'h',
+  );
+  if (rootKeyHex == normalizedDeleteKey) return true;
 
   final transports = map['transports'];
   if (transports is! Map) return false;
   final nostr = transports['nostr'];
   if (nostr is! Map) return false;
-  final nostrHex = _normalizeHex32ForCleanup(
-      Map<String, dynamic>.from(nostr)['hex']?.toString());
-  return nostrHex == normalizedDeleteKey;
+  final nostrMap = Map<String, dynamic>.from(nostr);
+  final nostrHex = _normalizeHex32ForCleanup(nostrMap['hex']?.toString());
+  if (nostrHex == normalizedDeleteKey) return true;
+  final nostrNpubHex = _decodeBech32Hex32ForCleanup(
+    nostrMap['npub']?.toString(),
+    expectedHrp: 'npub',
+  );
+  if (nostrNpubHex == normalizedDeleteKey) return true;
+  return false;
+}
+
+String? _decodeBech32Hex32ForCleanup(
+  String? value, {
+  required String expectedHrp,
+}) {
+  if (value == null) return null;
+  final input = value.trim();
+  if (input.isEmpty) return null;
+  try {
+    final decoded = bech32.decode(input);
+    if (decoded.hrp != expectedHrp) return null;
+    final bytes = _convertBitsForCleanup(decoded.data, 5, 8, false);
+    if (bytes == null || bytes.length != 32) return null;
+    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+  } catch (_) {
+    return null;
+  }
+}
+
+List<int>? _convertBitsForCleanup(
+  List<int> data,
+  int fromBits,
+  int toBits,
+  bool pad,
+) {
+  var acc = 0;
+  var bits = 0;
+  final result = <int>[];
+  final maxValue = (1 << toBits) - 1;
+
+  for (final value in data) {
+    if (value < 0 || (value >> fromBits) != 0) return null;
+    acc = (acc << fromBits) | value;
+    bits += fromBits;
+    while (bits >= toBits) {
+      bits -= toBits;
+      result.add((acc >> bits) & maxValue);
+    }
+  }
+
+  if (pad) {
+    if (bits > 0) {
+      result.add((acc << (toBits - bits)) & maxValue);
+    }
+  } else if (bits >= fromBits || ((acc << (toBits - bits)) & maxValue) != 0) {
+    return null;
+  }
+
+  return result;
 }
 
 String? _normalizeHex32ForCleanup(String? value) {

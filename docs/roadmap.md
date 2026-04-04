@@ -67,6 +67,7 @@ Scope:
     - re-invite with same starter type survives export/import
     - re-invite with different starter type survives export/import
     - reverse-direction pending invitation offers survive export/import
+    - repeated import of the same exported ledger remains idempotent (no projection drift, no event duplication, same ledger JSON on re-export)
   - Runtime ledger import now rejects inconsistent histories before bootstrap restore:
     - invalid hash chain (`ledger.verify` failure)
     - missing or malformed capsule birth anchor (`CapsuleCreated` must exist for non-empty history, be first, owner-signed, and unique)
@@ -105,6 +106,8 @@ Scope:
     - when event counts are equal, newer tail timestamp is preferred
     - if timestamp tie-break is unavailable/equal, `ledger.json` remains the stable fallback
   - Bootstrap/import path now carries ordered ledger candidates (`primary`, `fallback`) and attempts import sequentially, so a single stale/corrupt source does not abort restore when another valid source exists.
+  - Capsule-delete artifact cleanup now removes legacy contact-card references by either hex (`rootHex`/`nostr hex`) or bech32 (`rootKey h1`/`nostr npub`) forms, reducing stale peer-card leftovers after restore/test cleanup cycles.
+  - Added `invitation_projection_service_test.dart` coverage for restore fallback (`owner` from ledger when runtime owner is unavailable): replayed offer events after terminal `InvitationAccepted`/`InvitationRejected`/`InvitationExpired` remain terminal and do not return to pending projection.
 
 Definition of done:
 - A user can restore a capsule on a new machine without manual container surgery or hidden-path knowledge.
@@ -160,7 +163,7 @@ Scope:
   - Added `LedgerViewSupport` mapping invariant test coverage (`kindCode <-> kindLabel`) for canonical event kinds to prevent projection dictionary drift.
   - Added architecture contract review gate coverage to prevent reintroduction of local kind dictionaries in key projection readers.
   - `CapsuleLedgerSummaryParser` pending-invitation count now uses `InvitationProjectionService` terminal-precedence semantics (instead of `InvitationSent - resolved` arithmetic), aligning capsule selector counters with runtime invitation projections.
-  - Invitations UI queue bucketing is now centralized via `bucketInvitationsForUi` (`incoming pending`, `outgoing pending`, `history`) with regression tests, so actionable queues cannot regress to showing terminal invitation states as pending work.
+  - Invitations UI queue bucketing is now centralized via `bucketInvitationsForUi` (`incoming pending`, `outgoing pending`, `history`) with regression tests, so actionable queues cannot regress to showing terminal invitation states as pending work; locally resolved-id suppression now also has explicit coverage that terminal rows stay visible in history.
 
 Definition of done:
 - Header counts, list screens, and detail views use the same underlying projection semantics.
@@ -253,7 +256,7 @@ Current progress:
 - Added update-safety projection fixture coverage for the same-ledger reconstruction path:
   - repeated parse of the same `ledger.json` keeps starter/relationship/pending counters stable
   - summary pending/relationship counters stay aligned with shared invitation/relationship projection services
-  - replayed offer events after terminal accept/reject remain non-pending (no pending resurrection)
+  - replayed offer events after terminal accept/reject/expire remain non-pending (no pending resurrection)
 
 Required conditions before treating updates as safe:
 - The same persisted `ledger.json` reconstructs the same:
@@ -370,22 +373,20 @@ Definition of done:
 ### 9.2 Lineage-Derived Starter Identity
 
 Goal:
-- Move starter identity from slot-only derivation to lineage-derived derivation.
+- Move starter lifecycle from slot-only reactivation to linear lineage with immutable starter IDs.
 
 Scope:
-- Replace `starter_id = H(seed || slot)` as the long-term model.
-- Design and adopt a `starter_v2` derivation anchored in:
-  - local seed
-  - slot
-  - `invitation_id`
-  - `sender_pubkey`
-- Keep starter birth reconstructible from ledger truth rather than hidden runtime state.
-- Ensure repeated use of the same slot after burn can produce a genuinely new lineage-born starter identity.
-- Define how legacy slot-only starters remain readable during migration.
+- Replace slot-stable reactivation (`active -> burned -> active` for the same ID) with per-slot linear generations.
+- Adopt `starter_v2` lifecycle rules where:
+  - every burned starter identity is terminal and never reused;
+  - next activation in the same slot yields a new `starter_id` for the next generation;
+  - lineage provenance is preserved in ledger events (`source_invitation_id`, `source_sender_root_pubkey`, `source_sender_starter_id`) instead of creating hash-level branching by transport era fields.
+- Keep starter generations reconstructible from ledger truth only (no hidden runtime counters).
+- Define migration so legacy slot-only starters remain readable and can continue in `starter_v2` as the next linear generation.
 
 Definition of done:
-- New starter identity reflects both local capsule structure and invitation lineage.
-- Reconstructing a capsule from ledger preserves starter ancestry without relying on transport-era shortcuts.
+- Starter IDs are immutable per lifecycle episode and are not reanimated.
+- Reconstructing from ledger preserves linear per-slot ancestry and inviter provenance without introducing branch explosions.
 
 ### 9.3 Pairwise Consensus Snapshot v1
 
@@ -413,6 +414,8 @@ Scope:
 - Current progress:
   - Added regression coverage in `consensus_processor_test.dart` to lock terminal invitation precedence in snapshot projection (`accepted > rejected > expired`).
   - Added regression coverage that local starter-only events (`StarterCreated` / `StarterBurned`) do not affect pairwise snapshot canonical JSON/hash when pairwise facts are unchanged.
+  - Added regression coverage that pairwise snapshot canonical JSON/hash remains stable under event-order permutations and sender-metadata noise when pairwise facts are equivalent.
+  - Added regression coverage that symmetric A/B ledger perspectives derive the same pairwise snapshot canonical JSON/hash for equivalent pairwise facts.
 
 Definition of done:
 - A fresh pair of capsules can derive the same `pairwise consensus snapshot v1` hash from local ledger truth.
@@ -505,7 +508,7 @@ When tradeoffs are unclear, prefer:
     - FFI now reuses per-capsule Nostr transport sessions (default + quick profiles) across send/receive/accept/reject/break paths instead of recreating transport on each action, reducing relay re-handshake churn during capsule switches and periodic refreshes
     - `hivra_reject_invitation` is now ledger-first: local `InvitationRejected` append occurs before/beside transport delivery so UI projections do not re-surface the same invitation as actionable pending during relay timeout/degradation windows; outbound reject delivery remains best-effort.
     - Added deterministic overdue-invitation sweep in `InvitationIntentHandler` for outgoing `pending` rows past 24h, appending `InvitationExpired` through existing `cancelInvitation/expire` path so local slot locks are released even when transport fetch returns no new events
-    - Added `invitation_intent_handler_test.dart` coverage that auto-expiry sweep only applies to overdue outgoing `pending` invitations (does not touch incoming, fresh pending, or already terminal invitations)
+    - Added `invitation_intent_handler_test.dart` coverage that auto-expiry sweep only applies to overdue outgoing `pending` invitations (does not touch incoming, fresh pending, or already terminal invitations) and still runs on both quick-fetch cooldown skips and receive-failure fetch cycles.
     - Invitation projection now falls back to ledger `owner` when runtime owner key is temporarily unavailable, preserving incoming/outgoing classification from ledger truth instead of dropping invitation rows to empty.
 
 - `9.6 Ledger-Derived Slot Projection In Flutter`
@@ -539,6 +542,7 @@ When tradeoffs are unclear, prefer:
     - Relationship projection now treats remote-signed `RelationshipBroken` as a pending remote-break signal (keeps link active until local confirmation), while local-signed break events still finalize break immediately.
     - Relationship projection now falls back to ledger `owner` when runtime owner key is temporarily unavailable, preventing remote break notifications from being auto-projected as finalized local breaks.
     - Projection now preserves `local break > remote pending` precedence, so late/replayed remote break notifications cannot re-open a pending state after a local break was already finalized.
+    - Added `relationship_projection_service_test.dart` coverage that this `local break > remote pending` precedence also holds when local owner is resolved via ledger fallback (restore/runtime-owner-unavailable path).
     - `RelationshipService` peer root resolution now normalizes contact-card hex fields (case/separator tolerant), so relationship identity hints continue resolving `transport -> root` for cards created/imported under older formatting variants.
     - Capsule summary relationship counts now reuse `RelationshipProjectionService` so header/list counters stay aligned with pending remote-break semantics instead of diverging on direct payload walks.
     - Relationships screen now exposes explicit pending-break confirmation action (single or chooser flow) so peer break notifications are finalized by deliberate user action instead of passive badge-only state.

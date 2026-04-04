@@ -295,6 +295,209 @@ void main() {
     });
 
     test(
+        'preview hash is stable across event order and sender metadata noise',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(31));
+      final ownStarter = Uint8List.fromList(bytes32(32));
+      final peerTransport = Uint8List.fromList(bytes32(33));
+      final peerRoot = Uint8List.fromList(bytes32(34));
+      final peerStarter = Uint8List.fromList(bytes32(35));
+      final localTransport = Uint8List.fromList(bytes32(36));
+
+      final baselineEvents = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...bytes32(37),
+            1,
+            ...bytes32(38),
+            ...peerRoot,
+            ...bytes32(39),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...bytes32(40),
+            ...bytes32(41),
+          ],
+        },
+      ];
+
+      final reorderedWithSenderNoise = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...bytes32(52),
+            ...bytes32(53),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 5,
+          'payload': <int>[
+            ...bytes32(54),
+            ...bytes32(55),
+            2,
+            0,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...bytes32(56),
+            1,
+            ...bytes32(57),
+            ...peerRoot,
+            ...bytes32(58),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+      ];
+
+      final baselinePreview = processor.preview(baselineEvents, localTransport);
+      final variantPreview =
+          processor.preview(reorderedWithSenderNoise, localTransport);
+
+      expect(baselinePreview, hasLength(1));
+      expect(variantPreview, hasLength(1));
+      expect(variantPreview.first.blockingFacts, isEmpty);
+      expect(variantPreview.first.hashHex, equals(baselinePreview.first.hashHex));
+      expect(
+        variantPreview.first.canonicalJson,
+        equals(baselinePreview.first.canonicalJson),
+      );
+    });
+
+    test('preview yields same hash for symmetric A/B pair perspectives', () {
+      final invitationId = Uint8List.fromList(bytes32(71));
+      final rootA = Uint8List.fromList(bytes32(72));
+      final rootB = Uint8List.fromList(bytes32(73));
+      final transportA = Uint8List.fromList(bytes32(74));
+      final transportB = Uint8List.fromList(bytes32(75));
+      final starterA = Uint8List.fromList(bytes32(76));
+      final starterB = Uint8List.fromList(bytes32(77));
+
+      final eventsFromA = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...starterA,
+            ...transportB,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...transportB,
+            ...starterB,
+            ...rootB,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...transportB,
+            ...starterA,
+            ...starterB,
+            1,
+            ...invitationId,
+            ...transportA,
+            1,
+            ...starterA,
+            ...rootB,
+            ...rootA,
+          ],
+        },
+      ];
+
+      final eventsFromB = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...starterB,
+            ...transportA,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...transportA,
+            ...starterA,
+            ...rootA,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...transportA,
+            ...starterB,
+            ...starterA,
+            1,
+            ...invitationId,
+            ...transportB,
+            1,
+            ...starterB,
+            ...rootA,
+            ...rootB,
+          ],
+        },
+      ];
+
+      final previewA = processor.preview(
+        eventsFromA,
+        transportA,
+        localRootKey: rootA,
+      );
+      final previewB = processor.preview(
+        eventsFromB,
+        transportB,
+        localRootKey: rootB,
+      );
+
+      expect(previewA, hasLength(1));
+      expect(previewB, hasLength(1));
+      expect(previewA.first.blockingFacts, isEmpty);
+      expect(previewB.first.blockingFacts, isEmpty);
+      expect(previewA.first.hashHex, equals(previewB.first.hashHex));
+      expect(previewA.first.canonicalJson, equals(previewB.first.canonicalJson));
+    });
+
+    test(
         'preview applies terminal invitation precedence accepted over rejected and expired',
         () {
       final invitationId = Uint8List.fromList(bytes32(41));

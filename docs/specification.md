@@ -516,8 +516,8 @@ B receives invitation. Check:
 
 Situation | B Action | Result
 --- | --- | ---
-No own X + empty slot + Accept | Create or reactivate local starter of type X + InvitationAccepted + RelationshipEstablished | Relationship uses the local X active after acceptance
-Own X exists + empty slot + Accept | Create or reactivate one missing starter type + InvitationAccepted + RelationshipEstablished | Relationship uses existing X; additional local capacity is restored
+No own X + empty slot + Accept | Create next local starter lineage instance of type X + InvitationAccepted + RelationshipEstablished | Relationship uses the local X active after acceptance
+Own X exists + empty slot + Accept | Create next local lineage instance for one missing starter type + InvitationAccepted + RelationshipEstablished | Relationship uses existing X; additional local capacity is restored
 Own X exists + no empty slot + Accept | InvitationAccepted + RelationshipEstablished | Relationship uses existing X; no new starter is created
 No own X + no empty slot + Accept | Accept is impossible | No acceptance without capacity for invited type
 Empty slot + Reject | InvitationRejected(EmptySlot) | A's starter is burned
@@ -527,8 +527,9 @@ Timeout (24h) | - | A's starter unlocked
 Burn and slot identity rules:
 
 - `StarterBurned` finalizes the current active lifecycle of that starter identity.
-- A burned slot can be accepted again and deterministically reactivate the same local `starter_id`.
-- If reactivated starter is later rejected under EmptySlot conditions again, it can be burned again in a new lifecycle episode.
+- Burned starter IDs are terminal and MUST NOT be reactivated.
+- A slot can be accepted again, but it MUST create the next linear starter generation with a new `starter_id`.
+- Repeated reject/accept cycles operate over successive starter generations, not over revived IDs.
 
 ### 8.1.1 Acceptance Provenance
 
@@ -554,13 +555,22 @@ This provenance is required so that both ledgers can reconstruct how the relatio
 
 ### 8.1.2 Starter Identity vs Provenance
 
-A recipient-side starter does NOT derive its identity hash from the sender starter.
+A recipient-side starter identity remains local to the receiving capsule and MUST be deterministic from local capsule state.
 
-Starter identity remains local to the receiving capsule.
-Starter derivation for acceptance-created starters MUST be deterministic from local capsule state
-and MUST remain slot-stable for reactivation semantics.
+The model is linear per slot:
 
-Cross-capsule lineage MUST remain recoverable from ledger history, not embedded into the recipient starter hash.
+- each lifecycle episode has a unique `starter_id`;
+- burning ends that episode permanently;
+- next activation in that slot creates the next generation with a new `starter_id`.
+
+Cross-capsule lineage MUST remain recoverable from ledger history rather than by reviving prior IDs.
+Acceptance lineage MUST preserve at least:
+
+- `invitation_id`
+- `sender_pubkey`
+- `sender_starter_type`
+- `sender_starter_id`
+- `sender_root_pubkey` when available
 
 The sender MUST record the newly created or selected recipient-side starter as a remote starter reference in relationship history.
 

@@ -1,6 +1,6 @@
 use super::*;
 use crate::runtime_support::{
-    derive_starter_id, derive_starter_nonce, starter_is_active_in_runtime,
+    derive_starter_id_lineage, derive_starter_nonce_lineage, starter_is_active_in_runtime,
 };
 
 #[derive(Clone, Copy)]
@@ -405,6 +405,7 @@ pub(crate) fn resolve_local_acceptance_plan(
     let invited_kind = record.starter_kind;
     let sender_pubkey = record.peer_pubkey;
     let sender_root_pubkey = record.sender_root_pubkey;
+    let inviter_anchor = sender_root_pubkey.unwrap_or(sender_pubkey);
 
     let runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_ref().ok_or("no capsule")?;
@@ -428,9 +429,14 @@ pub(crate) fn resolve_local_acceptance_plan(
             let created_starter = created_starter.map(|planned| {
                 let slot = planned.slot.as_u8();
                 (
-                    StarterId::from(derive_starter_id(seed, slot)),
+                    StarterId::from(derive_starter_id_lineage(
+                        seed,
+                        slot,
+                        &invitation_id,
+                        &inviter_anchor,
+                    )),
                     planned.kind,
-                    derive_starter_nonce(seed, slot),
+                    derive_starter_nonce_lineage(seed, slot, &invitation_id, &inviter_anchor),
                 )
             });
 
@@ -448,7 +454,12 @@ pub(crate) fn resolve_local_acceptance_plan(
         }
         hivra_core::AcceptPlan::CreateStarterInEmptySlot { slot, kind } => {
             let slot_u8 = slot.as_u8();
-            let created_starter_id = StarterId::from(derive_starter_id(seed, slot_u8));
+            let created_starter_id = StarterId::from(derive_starter_id_lineage(
+                seed,
+                slot_u8,
+                &invitation_id,
+                &inviter_anchor,
+            ));
             Ok(LocalAcceptancePlan {
                 invitation_id,
                 sender_pubkey,
@@ -461,7 +472,12 @@ pub(crate) fn resolve_local_acceptance_plan(
                 created_starter: Some((
                     created_starter_id,
                     kind,
-                    derive_starter_nonce(seed, slot_u8),
+                    derive_starter_nonce_lineage(
+                        seed,
+                        slot_u8,
+                        &invitation_id,
+                        &inviter_anchor,
+                    ),
                 )),
             })
         }

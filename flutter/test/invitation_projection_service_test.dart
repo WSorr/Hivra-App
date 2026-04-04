@@ -301,6 +301,156 @@ void main() {
       expect(invitation.status, InvitationStatus.accepted);
     });
 
+    test(
+        'restore fallback keeps resolved outgoing invitation accepted after replayed offer',
+        () {
+      final invitationId = _bytes32(115);
+      final starterId = _bytes32(135);
+      final createdStarterId = _bytes32(155);
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceWithoutRuntimeOwner();
+
+      final invitations = service.loadInvitations(<String, dynamic>{
+        'owner': self.toList(),
+        'events': <Map<String, dynamic>>[
+          _event(
+            kind: 'InvitationSent',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: peer,
+              kindByte: 4,
+            ),
+            signer: self,
+            timestamp: t0 + 1,
+          ),
+          _event(
+            kind: 'InvitationAccepted',
+            payload: _acceptedPayload(
+              invitationId: invitationId,
+              createdStarterId: createdStarterId,
+              fromPubkey: peer,
+            ),
+            signer: peer,
+            timestamp: t0 + 2,
+          ),
+          _event(
+            kind: 'InvitationSent',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: peer,
+              kindByte: 4,
+            ),
+            signer: self,
+            timestamp: t0 + 3,
+          ),
+        ],
+      });
+
+      expect(invitations, hasLength(1));
+      final invitation = invitations.single;
+      expect(invitation.isOutgoing, isTrue);
+      expect(invitation.status, InvitationStatus.accepted);
+    });
+
+    test(
+        'restore fallback keeps rejected incoming invitation rejected after replayed offer',
+        () {
+      final invitationId = _bytes32(116);
+      final starterId = _bytes32(136);
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceWithoutRuntimeOwner();
+
+      final invitations = service.loadInvitations(<String, dynamic>{
+        'owner': self.toList(),
+        'events': <Map<String, dynamic>>[
+          _event(
+            kind: 'InvitationReceived',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: self,
+              kindByte: 2,
+            ),
+            signer: peer,
+            timestamp: t0 + 1,
+          ),
+          _event(
+            kind: 'InvitationRejected',
+            payload: _rejectedPayload(invitationId: invitationId, reason: 0),
+            signer: self,
+            timestamp: t0 + 2,
+          ),
+          _event(
+            kind: 'InvitationReceived',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: self,
+              kindByte: 2,
+            ),
+            signer: peer,
+            timestamp: t0 + 3,
+          ),
+        ],
+      });
+
+      expect(invitations, hasLength(1));
+      final invitation = invitations.single;
+      expect(invitation.isIncoming, isTrue);
+      expect(invitation.status, InvitationStatus.rejected);
+      expect(invitation.rejectionReason, RejectionReason.emptySlot);
+    });
+
+    test(
+        'restore fallback keeps expired outgoing invitation expired after replayed offer',
+        () {
+      final invitationId = _bytes32(117);
+      final starterId = _bytes32(137);
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceWithoutRuntimeOwner();
+
+      final invitations = service.loadInvitations(<String, dynamic>{
+        'owner': self.toList(),
+        'events': <Map<String, dynamic>>[
+          _event(
+            kind: 'InvitationSent',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: peer,
+              kindByte: 1,
+            ),
+            signer: self,
+            timestamp: t0 + 1,
+          ),
+          _event(
+            kind: 'InvitationExpired',
+            payload: invitationId,
+            signer: self,
+            timestamp: t0 + 2,
+          ),
+          _event(
+            kind: 'InvitationSent',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: peer,
+              kindByte: 1,
+            ),
+            signer: self,
+            timestamp: t0 + 3,
+          ),
+        ],
+      });
+
+      expect(invitations, hasLength(1));
+      final invitation = invitations.single;
+      expect(invitation.isOutgoing, isTrue);
+      expect(invitation.status, InvitationStatus.expired);
+    });
+
     test('supports root-augmented invitation payload variants', () {
       final invitationId = _bytes32(16);
       final starterId = _bytes32(36);

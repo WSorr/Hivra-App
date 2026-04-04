@@ -451,7 +451,7 @@ fn outgoing_direction_lookup_does_not_fallback_to_incoming_offer() {
 }
 
 #[test]
-fn burned_starter_id_is_reused_on_later_accept() {
+fn burned_starter_id_is_not_reused_on_later_accept() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
 
@@ -505,7 +505,7 @@ fn burned_starter_id_is_reused_on_later_accept() {
     );
 
     let acceptance_plan = resolve_local_acceptance_plan(&local_seed, second_invitation_id).unwrap();
-    assert_eq!(
+    assert_ne!(
         acceptance_plan.relationship_starter_id.as_bytes(),
         &local_starter_id,
     );
@@ -513,7 +513,7 @@ fn burned_starter_id_is_reused_on_later_accept() {
 
     finalize_local_acceptance(&engine, &acceptance_plan, inviter_pubkey).unwrap();
 
-    let reused_count = runtime_events()
+    let created_with_old_id = runtime_events()
         .into_iter()
         .filter(|event| {
             event.kind() == EventKind::StarterCreated
@@ -522,11 +522,11 @@ fn burned_starter_id_is_reused_on_later_accept() {
         })
         .count();
 
-    assert_eq!(reused_count, 2);
+    assert_eq!(created_with_old_id, 1);
 }
 
 #[test]
-fn active_slot_starter_identity_tracks_reactivated_starter_after_burn() {
+fn active_slot_starter_identity_tracks_new_starter_after_burn() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
 
@@ -559,11 +559,14 @@ fn active_slot_starter_identity_tracks_reactivated_starter_after_burn() {
     )
     .unwrap();
 
+    let next_cycle_id = StarterId::from(derive_starter_id(&test_seed(193), slot));
+    let next_cycle_nonce = derive_starter_nonce(&test_seed(193), slot);
+
     append_runtime_event(
         EventKind::StarterCreated,
         &StarterCreatedPayload {
-            starter_id: burned_id,
-            nonce: burned_nonce,
+            starter_id: next_cycle_id,
+            nonce: next_cycle_nonce,
             kind: StarterKind::Spark,
             network: Network::Neste.to_byte(),
         }
@@ -571,11 +574,11 @@ fn active_slot_starter_identity_tracks_reactivated_starter_after_burn() {
     )
     .unwrap();
 
-    assert_eq!(active_starter_id_for_slot(slot), Some(burned_id));
+    assert_eq!(active_starter_id_for_slot(slot), Some(next_cycle_id));
 }
 
 #[test]
-fn reactivated_starter_can_burn_again_in_new_invitation_cycle() {
+fn next_cycle_starter_can_burn_again_in_new_invitation_cycle() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
 
@@ -618,11 +621,14 @@ fn reactivated_starter_can_burn_again_in_new_invitation_cycle() {
     .unwrap();
     assert_eq!(starter_burned_count(), 1);
 
+    let next_cycle_starter_id = derive_starter_id(&test_seed(194), slot);
+    let next_cycle_nonce = derive_starter_nonce(&test_seed(194), slot);
+
     append_runtime_event(
         EventKind::StarterCreated,
         &StarterCreatedPayload {
-            starter_id: StarterId::from(local_starter_id),
-            nonce: derive_starter_nonce(&local_seed, slot),
+            starter_id: StarterId::from(next_cycle_starter_id),
+            nonce: next_cycle_nonce,
             kind: StarterKind::Juice,
             network: Network::Neste.to_byte(),
         }
@@ -631,12 +637,12 @@ fn reactivated_starter_can_burn_again_in_new_invitation_cycle() {
     .unwrap();
     assert_eq!(
         active_starter_id_for_slot(slot),
-        Some(StarterId::from(local_starter_id))
+        Some(StarterId::from(next_cycle_starter_id))
     );
 
     append_invitation_sent_for_test(
         second_invitation_id,
-        local_starter_id,
+        next_cycle_starter_id,
         peer_pubkey,
         Some(slot),
         None,
@@ -979,6 +985,157 @@ fn replay_policy_skips_conflicting_accepted_after_expired_resolution() {
         EventKind::InvitationAccepted,
         &accepted.to_bytes(),
         PubKey::from(peer_pubkey),
+    ));
+}
+
+#[test]
+fn replay_policy_stays_stable_on_long_lived_history_after_export_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(173);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let local_starter_id = derive_starter_id(&local_seed, 0);
+    let accepted_id = [180u8; 32];
+    let rejected_id = [181u8; 32];
+    let expired_id = [182u8; 32];
+    let pending_id = [183u8; 32];
+    let accepted_peer = [84u8; 32];
+    let rejected_peer = [85u8; 32];
+    let expired_peer = [86u8; 32];
+    let pending_peer = [87u8; 32];
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+
+    append_invitation_sent_for_test(accepted_id, local_starter_id, accepted_peer, Some(0), None);
+    append_invitation_sent_for_test(rejected_id, local_starter_id, rejected_peer, Some(0), None);
+    append_invitation_sent_for_test(expired_id, local_starter_id, expired_peer, Some(0), None);
+    append_invitation_sent_for_test(pending_id, local_starter_id, pending_peer, Some(0), None);
+
+    let accepted_payload = InvitationAcceptedPayload {
+        invitation_id: accepted_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(derive_starter_id(&test_seed(174), 0)),
+        accepter_root_pubkey: None,
+    };
+    append_runtime_event_with_signer(
+        EventKind::InvitationAccepted,
+        &accepted_payload.to_bytes(),
+        PubKey::from(accepted_peer),
+    )
+    .unwrap();
+
+    let rejected_payload = InvitationRejectedPayload {
+        invitation_id: rejected_id,
+        reason: RejectReason::Other,
+    };
+    append_runtime_event(EventKind::InvitationRejected, &rejected_payload.to_bytes()).unwrap();
+    append_runtime_event(EventKind::InvitationExpired, &expired_id).unwrap();
+
+    for offset in 0u8..20u8 {
+        let invitation_id = [190u8.wrapping_add(offset); 32];
+        let peer_pubkey = [100u8.wrapping_add(offset); 32];
+        append_invitation_sent_for_test(
+            invitation_id,
+            local_starter_id,
+            peer_pubkey,
+            Some(0),
+            None,
+        );
+        match offset % 4 {
+            0 => {
+                let payload = InvitationAcceptedPayload {
+                    invitation_id,
+                    from_pubkey: local_pubkey,
+                    created_starter_id: StarterId::from(derive_starter_id(
+                        &test_seed(200u8.wrapping_add(offset)),
+                        0,
+                    )),
+                    accepter_root_pubkey: None,
+                };
+                append_runtime_event_with_signer(
+                    EventKind::InvitationAccepted,
+                    &payload.to_bytes(),
+                    PubKey::from(peer_pubkey),
+                )
+                .unwrap();
+            }
+            1 => {
+                append_runtime_event(
+                    EventKind::InvitationRejected,
+                    &InvitationRejectedPayload {
+                        invitation_id,
+                        reason: RejectReason::Other,
+                    }
+                    .to_bytes(),
+                )
+                .unwrap();
+            }
+            2 => {
+                append_runtime_event(EventKind::InvitationExpired, &invitation_id).unwrap();
+            }
+            _ => {}
+        }
+    }
+
+    let exported = export_runtime_ledger().unwrap();
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    assert!(invitation_is_resolved_in_runtime(&accepted_id));
+    assert!(invitation_is_resolved_in_runtime(&rejected_id));
+    assert!(invitation_is_resolved_in_runtime(&expired_id));
+    assert!(!invitation_is_resolved_in_runtime(&pending_id));
+
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationAccepted,
+        &accepted_payload.to_bytes(),
+        PubKey::from(accepted_peer),
+    ));
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationRejected,
+        &rejected_payload.to_bytes(),
+        PubKey::from(rejected_peer),
+    ));
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationExpired,
+        &expired_id,
+        PubKey::from(expired_peer),
+    ));
+
+    let conflicting_accepted_for_rejected = InvitationAcceptedPayload {
+        invitation_id: rejected_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(derive_starter_id(&test_seed(175), 0)),
+        accepter_root_pubkey: None,
+    };
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationAccepted,
+        &conflicting_accepted_for_rejected.to_bytes(),
+        PubKey::from(rejected_peer),
+    ));
+
+    let conflicting_rejected_for_accepted = InvitationRejectedPayload {
+        invitation_id: accepted_id,
+        reason: RejectReason::Other,
+    };
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationRejected,
+        &conflicting_rejected_for_accepted.to_bytes(),
+        PubKey::from(accepted_peer),
+    ));
+
+    let first_terminal_for_pending = InvitationAcceptedPayload {
+        invitation_id: pending_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(derive_starter_id(&test_seed(176), 0)),
+        accepter_root_pubkey: None,
+    };
+    assert!(!should_skip_incoming_delivery_append(
+        EventKind::InvitationAccepted,
+        &first_terminal_for_pending.to_bytes(),
+        PubKey::from(pending_peer),
     ));
 }
 
@@ -1487,6 +1644,88 @@ fn exported_ledger_roundtrips_same_event_count() {
         after.last().map(|event| event.kind()),
         before.last().map(|event| event.kind())
     );
+}
+
+#[test]
+fn repeated_import_of_same_ledger_keeps_projection_stable() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(201);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let first_peer_pubkey = [141u8; 32];
+    let second_peer_pubkey = [142u8; 32];
+    let resolved_invitation_id = [171u8; 32];
+    let pending_invitation_id = [172u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_runtime_event(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id: StarterId::from(own_starter_id),
+            nonce: derive_starter_nonce(&local_seed, 0),
+            kind: StarterKind::Kick,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+    append_invitation_sent_for_test(
+        resolved_invitation_id,
+        own_starter_id,
+        first_peer_pubkey,
+        Some(0),
+        None,
+    );
+    append_runtime_event_with_signer(
+        EventKind::InvitationRejected,
+        &InvitationRejectedPayload {
+            invitation_id: resolved_invitation_id,
+            reason: RejectReason::Other,
+        }
+        .to_bytes(),
+        PubKey::from(first_peer_pubkey),
+    )
+    .unwrap();
+    append_invitation_sent_for_test(
+        pending_invitation_id,
+        own_starter_id,
+        second_peer_pubkey,
+        Some(0),
+        None,
+    );
+
+    let exported = export_runtime_ledger().unwrap();
+
+    clear_runtime_state();
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    let first_import_events = runtime_events();
+    let first_import_state = runtime_capsule_state();
+    assert!(invitation_is_resolved_in_runtime(&resolved_invitation_id));
+    assert!(!invitation_is_resolved_in_runtime(&pending_invitation_id));
+
+    import_runtime_ledger(&exported).unwrap();
+
+    let second_import_events = runtime_events();
+    let second_import_state = runtime_capsule_state();
+    assert_eq!(second_import_events.len(), first_import_events.len());
+    assert_eq!(second_import_state.version, first_import_state.version);
+    assert_eq!(second_import_state.ledger_hash, first_import_state.ledger_hash);
+    assert_eq!(
+        second_import_state.relationships_count,
+        first_import_state.relationships_count
+    );
+    assert_eq!(second_import_state.slots, first_import_state.slots);
+    assert!(invitation_is_resolved_in_runtime(&resolved_invitation_id));
+    assert!(!invitation_is_resolved_in_runtime(&pending_invitation_id));
+
+    let re_exported = export_runtime_ledger().unwrap();
+    let exported_value: serde_json::Value = serde_json::from_str(&exported).unwrap();
+    let re_exported_value: serde_json::Value = serde_json::from_str(&re_exported).unwrap();
+    assert_eq!(re_exported_value, exported_value);
 }
 
 #[test]
