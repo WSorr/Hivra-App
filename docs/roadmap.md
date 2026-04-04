@@ -581,6 +581,7 @@ When tradeoffs are unclear, prefer:
     - Removed the legacy `PairwiseSnapshotService` wrapper after moving inspector/guard readers onto shared consensus boundaries.
     - Added processor regression coverage for canonical hash derivation, pending-invitation blocking facts, and verification mismatch reporting.
     - `ConsensusProcessor.verify()` now treats duplicate participant IDs in a signature set as an explicit blocking fact (`duplicate_participant`), with regression coverage to prevent ambiguous/replayed signature bundles from being treated as valid match input.
+    - Consensus preview now ignores self-addressed outgoing invitations and self-signed incoming invitations, preventing self-loop delivery artifacts from appearing as pairwise peers or pending blockers in manual/plugin guard checks.
   - Consensus must be computed on demand, not continuously in UI/runtime background.
   - Recalculation triggers are explicit:
     - smart-contract precondition check

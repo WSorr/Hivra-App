@@ -160,9 +160,20 @@ class ConsensusProcessor {
       if ((kind == 'InvitationSent' || kind == 'InvitationReceived') &&
           payload.length >= 96) {
         final isIncoming = kind == 'InvitationReceived';
+        if (!isIncoming &&
+            localTransportHex != null &&
+            _hex(payload.sublist(64, 96)) == localTransportHex) {
+          continue;
+        }
         if (isIncoming &&
             localTransportHex != null &&
             _hex(payload.sublist(64, 96)) != localTransportHex) {
+          continue;
+        }
+        if (isIncoming &&
+            localTransportHex != null &&
+            signer != null &&
+            _hex(signer) == localTransportHex) {
           continue;
         }
         final invitationId = _hex(payload.sublist(0, 32));

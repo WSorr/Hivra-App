@@ -717,6 +717,53 @@ void main() {
       expect(previews, isEmpty);
     });
 
+    test('preview ignores self-addressed outgoing invitation events', () {
+      final invitationId = Uint8List.fromList(bytes32(98));
+      final ownStarter = Uint8List.fromList(bytes32(99));
+      final localTransport = Uint8List.fromList(bytes32(100));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...localTransport,
+            1,
+          ],
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, isEmpty);
+    });
+
+    test('preview ignores self-signed incoming invitation events', () {
+      final invitationId = Uint8List.fromList(bytes32(101));
+      final peerStarter = Uint8List.fromList(bytes32(102));
+      final localTransport = Uint8List.fromList(bytes32(103));
+      final peerRoot = Uint8List.fromList(bytes32(104));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...invitationId,
+            ...peerStarter,
+            ...localTransport,
+            ...peerRoot,
+            1,
+          ],
+          'signer': localTransport,
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, isEmpty);
+    });
+
     test(
         'preview maps remote acceptance root anchor even when signer is absent in imported event',
         () {
