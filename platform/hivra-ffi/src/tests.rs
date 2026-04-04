@@ -112,6 +112,27 @@ fn append_invitation_sent_for_test(
     }
 }
 
+fn append_incoming_invitation_with_root_for_test(
+    invitation_id: [u8; 32],
+    starter_id: [u8; 32],
+    to_pubkey: PubKey,
+    starter_slot: u8,
+    from_pubkey: [u8; 32],
+    sender_root_pubkey: [u8; 32],
+) {
+    let payload = InvitationSentPayload {
+        invitation_id,
+        starter_id: StarterId::from(starter_id),
+        to_pubkey,
+        sender_root_pubkey: None,
+    };
+    let mut bytes = payload.to_bytes();
+    bytes.extend_from_slice(&sender_root_pubkey);
+    bytes.push(starter_slot);
+    append_runtime_event_with_signer(EventKind::InvitationReceived, &bytes, PubKey::from(from_pubkey))
+        .unwrap();
+}
+
 #[test]
 fn lookup_reads_sender_root_from_root_augmented_incoming_offer() {
     let _guard = TEST_GUARD.lock().unwrap();
@@ -209,6 +230,132 @@ fn finalize_local_acceptance_creates_starter_and_relationship() {
                     && payload.sender_root_pubkey == Some(local_pubkey)
             })
     }));
+}
+
+#[test]
+fn acceptance_plan_lineage_id_depends_on_invitation_id() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(207);
+    let local_pubkey = derived_pubkey(&seed);
+    let inviter_pubkey = [31u8; 32];
+    let inviter_root_pubkey = [41u8; 32];
+    let first_invitation_id = [51u8; 32];
+    let second_invitation_id = [52u8; 32];
+    let inviter_slot = 1u8;
+    let peer_starter_id = derive_starter_id(&test_seed(208), inviter_slot);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_incoming_invitation_with_root_for_test(
+        first_invitation_id,
+        peer_starter_id,
+        local_pubkey,
+        inviter_slot,
+        inviter_pubkey,
+        inviter_root_pubkey,
+    );
+    append_incoming_invitation_with_root_for_test(
+        second_invitation_id,
+        peer_starter_id,
+        local_pubkey,
+        inviter_slot,
+        inviter_pubkey,
+        inviter_root_pubkey,
+    );
+
+    let first_plan = resolve_local_acceptance_plan(&seed, first_invitation_id).unwrap();
+    let second_plan = resolve_local_acceptance_plan(&seed, second_invitation_id).unwrap();
+    assert_ne!(
+        first_plan.relationship_starter_id,
+        second_plan.relationship_starter_id
+    );
+
+    let expected_first = StarterId::from(crate::runtime_support::derive_starter_id_lineage(
+        &seed,
+        0,
+        &first_invitation_id,
+        &PubKey::from(inviter_root_pubkey),
+    ));
+    let expected_second = StarterId::from(crate::runtime_support::derive_starter_id_lineage(
+        &seed,
+        0,
+        &second_invitation_id,
+        &PubKey::from(inviter_root_pubkey),
+    ));
+    assert_eq!(first_plan.relationship_starter_id, expected_first);
+    assert_eq!(second_plan.relationship_starter_id, expected_second);
+}
+
+#[test]
+fn acceptance_plan_lineage_id_falls_back_to_sender_transport_pubkey_without_root() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(209);
+    let local_pubkey = derived_pubkey(&seed);
+    let inviter_pubkey = [32u8; 32];
+    let invitation_id = [53u8; 32];
+    let inviter_slot = 2u8;
+    let peer_starter_id = derive_starter_id(&test_seed(210), inviter_slot);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(inviter_slot),
+        Some(inviter_pubkey),
+    );
+
+    let plan = resolve_local_acceptance_plan(&seed, invitation_id).unwrap();
+    let expected = StarterId::from(crate::runtime_support::derive_starter_id_lineage(
+        &seed,
+        0,
+        &invitation_id,
+        &PubKey::from(inviter_pubkey),
+    ));
+    assert_eq!(plan.relationship_starter_id, expected);
+}
+
+#[test]
+fn acceptance_plan_lineage_id_prefers_sender_root_over_transport_pubkey() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(211);
+    let local_pubkey = derived_pubkey(&seed);
+    let inviter_pubkey = [33u8; 32];
+    let inviter_root_pubkey = [43u8; 32];
+    let invitation_id = [54u8; 32];
+    let inviter_slot = 3u8;
+    let peer_starter_id = derive_starter_id(&test_seed(212), inviter_slot);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_incoming_invitation_with_root_for_test(
+        invitation_id,
+        peer_starter_id,
+        local_pubkey,
+        inviter_slot,
+        inviter_pubkey,
+        inviter_root_pubkey,
+    );
+
+    let plan = resolve_local_acceptance_plan(&seed, invitation_id).unwrap();
+    let expected_with_root = StarterId::from(crate::runtime_support::derive_starter_id_lineage(
+        &seed,
+        0,
+        &invitation_id,
+        &PubKey::from(inviter_root_pubkey),
+    ));
+    let fallback_transport = StarterId::from(crate::runtime_support::derive_starter_id_lineage(
+        &seed,
+        0,
+        &invitation_id,
+        &PubKey::from(inviter_pubkey),
+    ));
+    assert_eq!(plan.relationship_starter_id, expected_with_root);
+    assert_ne!(plan.relationship_starter_id, fallback_transport);
 }
 
 #[test]

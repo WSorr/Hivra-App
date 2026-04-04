@@ -384,6 +384,15 @@ Scope:
 - Keep starter generations reconstructible from ledger truth only (no hidden runtime counters).
 - Define migration so legacy slot-only starters remain readable and can continue in `starter_v2` as the next linear generation.
 
+Current progress:
+- FFI acceptance planning now derives acceptance-created starter identity/nonce from lineage inputs (`seed + slot + invitation_id + inviter anchor`) via dedicated `starter_v2_lineage` derivation helpers, instead of slot-only reactivation derivation.
+- Inviter anchor selection now prefers sender root provenance from invitation lineage and falls back to sender transport key when root provenance is unavailable.
+- Added regression coverage in `platform/hivra-ffi/src/tests.rs` for:
+  - invitation-id-sensitive lineage derivation (same slot, different invitation IDs -> different starter IDs),
+  - fallback anchor behavior without sender root provenance,
+  - root-anchor precedence over transport-key fallback.
+- Legacy reactivation expectations in FFI tests were replaced with linear-generation invariants (burned starter IDs are not reused, next cycle uses a distinct ID).
+
 Definition of done:
 - Starter IDs are immutable per lifecycle episode and are not reanimated.
 - Reconstructing from ledger preserves linear per-slot ancestry and inviter provenance without introducing branch explosions.
