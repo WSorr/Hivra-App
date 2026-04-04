@@ -196,6 +196,73 @@ void main() {
       );
     });
 
+    test('signable accepts uppercase peer hex input', () {
+      final invitationId = Uint8List.fromList(bytes32(36));
+      final ownStarter = Uint8List.fromList(bytes32(37));
+      final peerTransport = Uint8List.fromList(bytes32(38));
+      final peerRoot = Uint8List.fromList(bytes32(39));
+      final peerStarter = Uint8List.fromList(bytes32(40));
+      final sender = Uint8List.fromList(bytes32(41));
+      final senderStarter = Uint8List.fromList(bytes32(42));
+      final localTransport = Uint8List.fromList(bytes32(43));
+      final peerHexUpper = hex(peerRoot).toUpperCase();
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...sender,
+            1,
+            ...senderStarter,
+            ...peerRoot,
+            ...bytes32(44),
+          ],
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        peerHex: peerHexUpper,
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.preview!.peerHex, equals(hex(peerRoot)));
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        contains('pending_invitation'),
+      );
+    });
+
+    test('signable rejects malformed peer hex input', () {
+      final localTransport = Uint8List.fromList(bytes32(45));
+      final signable = processor.signable(
+        const <Map<String, dynamic>>[],
+        localTransport,
+        peerHex: 'zz-not-hex',
+      );
+
+      expect(signable.preview, isNull);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        contains('invalid_peer_id'),
+      );
+    });
+
     test('verify checks hash equality and signature set shape', () {
       final result = processor.verify(
         expectedHashHex: 'a' * 64,

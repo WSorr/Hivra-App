@@ -30,6 +30,7 @@ class ConsensusBlockingFact {
         'consensus_runtime_unavailable' => 'Consensus runtime unavailable',
         'invalid_local_transport_key' => 'Invalid local transport key',
         'consensus_peer_not_found' => 'Consensus peer not found',
+        'invalid_peer_id' => 'Invalid peer id',
         'invalid_expected_hash' => 'Invalid expected hash',
         'empty_signature_set' => 'Empty signature set',
         'duplicate_participant' => subjectId == null
@@ -405,6 +406,16 @@ class ConsensusProcessor {
     required String peerHex,
     Uint8List? localRootKey,
   }) {
+    final normalizedPeerHex = _normalizedHex(peerHex);
+    if (normalizedPeerHex == null || normalizedPeerHex.length != 64) {
+      return const ConsensusSignableResult(
+        preview: null,
+        blockingFacts: <ConsensusBlockingFact>[
+          ConsensusBlockingFact(code: 'invalid_peer_id'),
+        ],
+      );
+    }
+
     final hasTransport = localTransportKey.length == 32;
     final hasRoot = localRootKey != null && localRootKey.length == 32;
     if (!hasTransport && !hasRoot) {
@@ -421,7 +432,7 @@ class ConsensusProcessor {
       localTransportKey,
       localRootKey: localRootKey,
     ).firstWhere(
-      (row) => row.peerHex == peerHex,
+      (row) => row.peerHex == normalizedPeerHex,
       orElse: () => const ConsensusPreview(
         peerHex: '',
         peerLabel: '',
