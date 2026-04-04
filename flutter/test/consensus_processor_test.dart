@@ -665,6 +665,35 @@ void main() {
     });
 
     test(
+        'preview ignores incoming invitation events not addressed to local transport key',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(92));
+      final peerStarter = Uint8List.fromList(bytes32(93));
+      final localTransport = Uint8List.fromList(bytes32(94));
+      final foreignTransport = Uint8List.fromList(bytes32(95));
+      final senderTransport = Uint8List.fromList(bytes32(96));
+      final peerRoot = Uint8List.fromList(bytes32(97));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...invitationId,
+            ...peerStarter,
+            ...foreignTransport,
+            ...peerRoot,
+            1,
+          ],
+          'signer': senderTransport,
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, isEmpty);
+    });
+
+    test(
         'preview maps remote acceptance root anchor even when signer is absent in imported event',
         () {
       final invitationId = Uint8List.fromList(bytes32(86));
