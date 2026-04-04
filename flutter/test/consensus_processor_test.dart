@@ -224,6 +224,30 @@ void main() {
       );
     });
 
+    test('verify blocks duplicate participant entries', () {
+      final result = processor.verify(
+        expectedHashHex: 'a' * 64,
+        participants: <ConsensusVerifyParticipant>[
+          ConsensusVerifyParticipant(
+            participantId: 'peer',
+            hashHex: 'a' * 64,
+            signatureHex: 'b' * 128,
+          ),
+          ConsensusVerifyParticipant(
+            participantId: 'peer',
+            hashHex: 'a' * 64,
+            signatureHex: 'c' * 128,
+          ),
+        ],
+      );
+
+      expect(result.state, ConsensusVerifyState.mismatch);
+      expect(
+        result.blockingFacts.map((fact) => fact.key),
+        contains('duplicate_participant:peer'),
+      );
+    });
+
     test(
         'preview ignores local starter-state events when pairwise facts are unchanged',
         () {

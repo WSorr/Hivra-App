@@ -580,6 +580,7 @@ When tradeoffs are unclear, prefer:
     - Ledger Inspector consensus checks are now explicit on-demand (`Run consensus checks`) and no longer auto-run during generic ledger refresh/reload, keeping consensus recomputation tied to deliberate user action.
     - Removed the legacy `PairwiseSnapshotService` wrapper after moving inspector/guard readers onto shared consensus boundaries.
     - Added processor regression coverage for canonical hash derivation, pending-invitation blocking facts, and verification mismatch reporting.
+    - `ConsensusProcessor.verify()` now treats duplicate participant IDs in a signature set as an explicit blocking fact (`duplicate_participant`), with regression coverage to prevent ambiguous/replayed signature bundles from being treated as valid match input.
   - Consensus must be computed on demand, not continuously in UI/runtime background.
   - Recalculation triggers are explicit:
     - smart-contract precondition check

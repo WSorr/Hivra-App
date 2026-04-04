@@ -32,6 +32,9 @@ class ConsensusBlockingFact {
         'consensus_peer_not_found' => 'Consensus peer not found',
         'invalid_expected_hash' => 'Invalid expected hash',
         'empty_signature_set' => 'Empty signature set',
+        'duplicate_participant' => subjectId == null
+            ? 'Duplicate participant'
+            : 'Duplicate participant ${_shortId(subjectId!)}',
         'invalid_hash' => subjectId == null
             ? 'Invalid participant hash'
             : 'Invalid participant hash ${_shortId(subjectId!)}',
@@ -449,7 +452,17 @@ class ConsensusProcessor {
           .add(const ConsensusBlockingFact(code: 'empty_signature_set'));
     }
 
+    final seenParticipantIds = <String>{};
     for (final participant in participants) {
+      if (!seenParticipantIds.add(participant.participantId)) {
+        blockingFacts.add(
+          ConsensusBlockingFact(
+            code: 'duplicate_participant',
+            subjectId: participant.participantId,
+          ),
+        );
+      }
+
       final participantHash = _normalizedHex(participant.hashHex);
       if (participantHash == null || participantHash.length != 64) {
         blockingFacts.add(
