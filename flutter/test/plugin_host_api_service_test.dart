@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/services/consensus_processor.dart';
+import 'package:hivra_app/services/capsule_chat_contract_service.dart';
 import 'package:hivra_app/services/plugin_demo_contract_runner_service.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/services/temperature_tomorrow_contract_service.dart';
@@ -42,6 +43,16 @@ void main() {
             blockingFacts: const <ConsensusBlockingFact>[],
           );
         },
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
       );
 
       final request = PluginHostApiRequest(
@@ -91,6 +102,16 @@ void main() {
             ],
           );
         },
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
       );
 
       final response = service.execute(
@@ -117,6 +138,16 @@ void main() {
           pairResults: <PluginDemoPairRunResult>[],
           blockingFacts: <ConsensusBlockingFact>[],
         ),
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
       );
 
       final response = service.execute(
@@ -141,6 +172,16 @@ void main() {
           pairResults: <PluginDemoPairRunResult>[],
           blockingFacts: <ConsensusBlockingFact>[],
         ),
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
       );
 
       final response = service.execute(
@@ -151,6 +192,146 @@ void main() {
           args: <String, dynamic>{
             ..._validArgs(),
             'target_date_utc': '2026/04/01',
+          },
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'invalid_args');
+    });
+
+    test(
+        'executes capsule chat plugin request with deterministic envelope hash',
+        () {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({required contract, required observation}) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) {
+          return CapsuleChatExecutionResult(
+            envelope: const CapsuleChatEnvelope(
+              pluginId: CapsuleChatContractService.pluginId,
+              peerHex: _peerHex,
+              clientMessageId: 'm1',
+              messageText: 'hello',
+              createdAtUtc: '2026-04-04T10:00:00Z',
+              canonicalJson: '{"chat":"envelope"}',
+              envelopeHashHex:
+                  'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+            ),
+            blockingFacts: const <ConsensusBlockingFact>[],
+          );
+        },
+      );
+
+      final request = PluginHostApiRequest(
+        schemaVersion: 1,
+        pluginId: PluginHostApiService.capsuleChatPluginId,
+        method: PluginHostApiService.postCapsuleChatMethod,
+        args: <String, dynamic>{
+          'peer_hex': _peerHex,
+          'client_message_id': 'm1',
+          'message_text': 'hello',
+          'created_at_utc': '2026-04-04T10:00:00Z',
+        },
+      );
+
+      final first = service.execute(request);
+      final second = service.execute(request);
+
+      expect(first.status, PluginHostApiStatus.executed);
+      expect(first.result!['envelope_hash_hex'],
+          contains('cccccccccccccccccccccccccccccccc'));
+      expect(first.responseHashHex, second.responseHashHex);
+      expect(first.canonicalJson, second.canonicalJson);
+    });
+
+    test('returns blocked response for capsule chat when guard blocks', () {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({required contract, required observation}) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[
+            ConsensusBlockingFact(
+              code: 'pending_invitation',
+              subjectId: 'deadbeef',
+            ),
+          ],
+        ),
+      );
+
+      final response = service.execute(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.capsuleChatPluginId,
+          method: PluginHostApiService.postCapsuleChatMethod,
+          args: <String, dynamic>{
+            'peer_hex': _peerHex,
+            'client_message_id': 'm2',
+            'message_text': 'hello blocked',
+            'created_at_utc': '2026-04-04T10:00:00Z',
+          },
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.blocked);
+      expect(response.errorCode, isNull);
+      expect(response.result, isNull);
+      expect(
+        response.blockingFacts.map((fact) => fact.code),
+        contains('pending_invitation'),
+      );
+    });
+
+    test('returns rejected response for capsule chat invalid args', () {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({required contract, required observation}) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      );
+
+      final response = service.execute(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.capsuleChatPluginId,
+          method: PluginHostApiService.postCapsuleChatMethod,
+          args: <String, dynamic>{
+            'peer_hex': 'bad-peer',
+            'client_message_id': 'm3',
+            'message_text': 'hello',
+            'created_at_utc': '2026-04-04T10:00:00Z',
           },
         ),
       );

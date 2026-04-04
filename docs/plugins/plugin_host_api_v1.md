@@ -9,6 +9,13 @@ This document defines the first deterministic host API boundary used before wasm
 - Guard-first behavior:
   - pair-scoped calls are blocked when consensus is not signable.
 
+## Supported Contracts (v1)
+
+- `hivra.contract.temperature-li.tomorrow.v1`
+  - method: `settle_temperature_tomorrow`
+- `hivra.contract.capsule-chat.v1`
+  - method: `post_capsule_chat_message`
+
 ## Request Shape
 
 ```json
@@ -26,6 +33,20 @@ This document defines the first deterministic host API boundary used before wasm
     "oracle_source_id": "oracle.mock.weather.v1",
     "oracle_event_id": "evt-1",
     "oracle_recorded_at_utc": "2026-04-01T12:00:00Z"
+  }
+}
+```
+
+```json
+{
+  "schema_version": 1,
+  "plugin_id": "hivra.contract.capsule-chat.v1",
+  "method": "post_capsule_chat_message",
+  "args": {
+    "peer_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "client_message_id": "msg-1",
+    "message_text": "hello",
+    "created_at_utc": "2026-04-04T10:00:00Z"
   }
 }
 ```
@@ -50,3 +71,4 @@ This document defines the first deterministic host API boundary used before wasm
 
 - This API is an application-layer boundary and does not grant plugin storage or ledger-write privileges.
 - It exists to lock deterministic host semantics before introducing wasm runtime execution.
+- `post_capsule_chat_message` currently returns a deterministic envelope hash only; transport delivery remains outside this host API boundary.

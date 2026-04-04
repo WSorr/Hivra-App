@@ -76,8 +76,10 @@ typedef HivraCapsuleCreateDart = int Function(
   int ownerMode,
 );
 
-typedef HivraCapsuleRuntimeOwnerPublicKeyC = Int32 Function(Pointer<Uint8> outKey);
-typedef HivraCapsuleRuntimeOwnerPublicKeyDart = int Function(Pointer<Uint8> outKey);
+typedef HivraCapsuleRuntimeOwnerPublicKeyC = Int32 Function(
+    Pointer<Uint8> outKey);
+typedef HivraCapsuleRuntimeOwnerPublicKeyDart = int Function(
+    Pointer<Uint8> outKey);
 
 typedef HivraCapsuleRootPublicKeyC = Int32 Function(Pointer<Uint8> outKey);
 typedef HivraCapsuleRootPublicKeyDart = int Function(Pointer<Uint8> outKey);
@@ -101,6 +103,22 @@ typedef HivraTransportReceiveC = Int32 Function();
 typedef HivraTransportReceiveDart = int Function();
 typedef HivraTransportReceiveQuickC = Int32 Function();
 typedef HivraTransportReceiveQuickDart = int Function();
+
+typedef HivraSendCapsuleChatC = Int32 Function(
+  Pointer<Uint8> toPubkey,
+  Pointer<Int8> payloadJson,
+);
+typedef HivraSendCapsuleChatDart = int Function(
+  Pointer<Uint8> toPubkey,
+  Pointer<Int8> payloadJson,
+);
+
+typedef HivraReceiveCapsuleChatJsonC = Int32 Function(
+  Pointer<Pointer<Int8>> outJson,
+);
+typedef HivraReceiveCapsuleChatJsonDart = int Function(
+  Pointer<Pointer<Int8>> outJson,
+);
 
 typedef HivraAcceptInvitationC = Int32 Function(
   Pointer<Uint8> invitationId,
@@ -139,8 +157,10 @@ typedef HivraBreakRelationshipDart = int Function(
 typedef HivraDeliveryPreparedSelfCheckC = Int32 Function();
 typedef HivraDeliveryPreparedSelfCheckDart = int Function();
 
-typedef HivraExportCapsuleStateJsonC = Int32 Function(Pointer<Pointer<Int8>> outJson);
-typedef HivraExportCapsuleStateJsonDart = int Function(Pointer<Pointer<Int8>> outJson);
+typedef HivraExportCapsuleStateJsonC = Int32 Function(
+    Pointer<Pointer<Int8>> outJson);
+typedef HivraExportCapsuleStateJsonDart = int Function(
+    Pointer<Pointer<Int8>> outJson);
 
 typedef HivraExportLedgerC = Int32 Function(Pointer<Pointer<Int8>> outJson);
 typedef HivraExportLedgerDart = int Function(Pointer<Pointer<Int8>> outJson);
@@ -161,7 +181,7 @@ typedef HivraLedgerAppendEventDart = int Function(
 
 class HivraBindings {
   static final HivraBindings _instance = HivraBindings._internal();
-  
+
   factory HivraBindings() => _instance;
   static HivraBindings load() => _instance;
 
@@ -209,13 +229,16 @@ class HivraBindings {
   late final HivraSeedLoadDart _seedLoad;
   late final HivraSeedDeleteDart _seedDelete;
   late final HivraCapsuleCreateDart _capsuleCreate;
-  late final HivraCapsuleRuntimeOwnerPublicKeyDart _capsuleRuntimeOwnerPublicKey;
+  late final HivraCapsuleRuntimeOwnerPublicKeyDart
+      _capsuleRuntimeOwnerPublicKey;
   late final HivraCapsuleRootPublicKeyDart _capsuleRootPublicKey;
   late final HivraCapsuleNostrPublicKeyDart _capsuleNostrPublicKey;
   late final HivraCapsuleResetDart _capsuleReset;
   HivraSendInvitationDart? _sendInvitation;
   HivraTransportReceiveDart? _transportReceive;
   HivraTransportReceiveQuickDart? _transportReceiveQuick;
+  HivraSendCapsuleChatDart? _sendCapsuleChat;
+  HivraReceiveCapsuleChatJsonDart? _receiveCapsuleChatJson;
   HivraAcceptInvitationDart? _acceptInvitation;
   HivraRejectInvitationDart? _rejectInvitation;
   HivraExpireInvitationDart? _expireInvitation;
@@ -230,29 +253,33 @@ class HivraBindings {
     _seedToMnemonic = _lib
         .lookup<NativeFunction<HivraSeedToMnemonicC>>('hivra_seed_to_mnemonic')
         .asFunction();
-    
+
     _mnemonicToSeed = _lib
         .lookup<NativeFunction<HivraMnemonicToSeedC>>('hivra_mnemonic_to_seed')
         .asFunction();
-    
+
     _generateRandomSeed = _lib
-        .lookup<NativeFunction<HivraGenerateRandomSeedC>>('hivra_generate_random_seed')
+        .lookup<NativeFunction<HivraGenerateRandomSeedC>>(
+            'hivra_generate_random_seed')
         .asFunction();
 
     _seedRootPublicKey = _lib
-        .lookup<NativeFunction<HivraSeedRootPublicKeyC>>('hivra_seed_root_public_key')
+        .lookup<NativeFunction<HivraSeedRootPublicKeyC>>(
+            'hivra_seed_root_public_key')
         .asFunction();
 
     _seedNostrPublicKey = _lib
-        .lookup<NativeFunction<HivraSeedNostrPublicKeyC>>('hivra_seed_nostr_public_key')
+        .lookup<NativeFunction<HivraSeedNostrPublicKeyC>>(
+            'hivra_seed_nostr_public_key')
         .asFunction();
-    
+
     _freeString = _lib
         .lookup<NativeFunction<HivraFreeStringC>>('hivra_free_string')
         .asFunction();
 
     _lastErrorMessage = _lib
-        .lookup<NativeFunction<HivraLastErrorMessageC>>('hivra_last_error_message')
+        .lookup<NativeFunction<HivraLastErrorMessageC>>(
+            'hivra_last_error_message')
         .asFunction();
 
     _seedExists = _lib
@@ -276,15 +303,18 @@ class HivraBindings {
         .asFunction();
 
     _capsuleRuntimeOwnerPublicKey = _lib
-        .lookup<NativeFunction<HivraCapsuleRuntimeOwnerPublicKeyC>>('hivra_capsule_runtime_owner_public_key')
+        .lookup<NativeFunction<HivraCapsuleRuntimeOwnerPublicKeyC>>(
+            'hivra_capsule_runtime_owner_public_key')
         .asFunction();
 
     _capsuleRootPublicKey = _lib
-        .lookup<NativeFunction<HivraCapsuleRootPublicKeyC>>('hivra_capsule_root_public_key')
+        .lookup<NativeFunction<HivraCapsuleRootPublicKeyC>>(
+            'hivra_capsule_root_public_key')
         .asFunction();
 
     _capsuleNostrPublicKey = _lib
-        .lookup<NativeFunction<HivraCapsuleNostrPublicKeyC>>('hivra_capsule_nostr_public_key')
+        .lookup<NativeFunction<HivraCapsuleNostrPublicKeyC>>(
+            'hivra_capsule_nostr_public_key')
         .asFunction();
 
     _capsuleReset = _lib
@@ -301,7 +331,8 @@ class HivraBindings {
 
     try {
       _transportReceive = _lib
-          .lookup<NativeFunction<HivraTransportReceiveC>>('hivra_transport_receive')
+          .lookup<NativeFunction<HivraTransportReceiveC>>(
+              'hivra_transport_receive')
           .asFunction();
     } catch (_) {
       _transportReceive = null;
@@ -317,8 +348,27 @@ class HivraBindings {
     }
 
     try {
+      _sendCapsuleChat = _lib
+          .lookup<NativeFunction<HivraSendCapsuleChatC>>(
+              'hivra_send_capsule_chat')
+          .asFunction();
+    } catch (_) {
+      _sendCapsuleChat = null;
+    }
+
+    try {
+      _receiveCapsuleChatJson = _lib
+          .lookup<NativeFunction<HivraReceiveCapsuleChatJsonC>>(
+              'hivra_receive_capsule_chat_json')
+          .asFunction();
+    } catch (_) {
+      _receiveCapsuleChatJson = null;
+    }
+
+    try {
       _acceptInvitation = _lib
-          .lookup<NativeFunction<HivraAcceptInvitationC>>('hivra_accept_invitation')
+          .lookup<NativeFunction<HivraAcceptInvitationC>>(
+              'hivra_accept_invitation')
           .asFunction();
     } catch (_) {
       _acceptInvitation = null;
@@ -326,7 +376,8 @@ class HivraBindings {
 
     try {
       _rejectInvitation = _lib
-          .lookup<NativeFunction<HivraRejectInvitationC>>('hivra_reject_invitation')
+          .lookup<NativeFunction<HivraRejectInvitationC>>(
+              'hivra_reject_invitation')
           .asFunction();
     } catch (_) {
       _rejectInvitation = null;
@@ -334,7 +385,8 @@ class HivraBindings {
 
     try {
       _expireInvitation = _lib
-          .lookup<NativeFunction<HivraExpireInvitationC>>('hivra_expire_invitation')
+          .lookup<NativeFunction<HivraExpireInvitationC>>(
+              'hivra_expire_invitation')
           .asFunction();
     } catch (_) {
       _expireInvitation = null;
@@ -342,14 +394,16 @@ class HivraBindings {
 
     try {
       _breakRelationship = _lib
-          .lookup<NativeFunction<HivraBreakRelationshipC>>('hivra_break_relationship')
+          .lookup<NativeFunction<HivraBreakRelationshipC>>(
+              'hivra_break_relationship')
           .asFunction();
     } catch (_) {
       _breakRelationship = null;
     }
 
     _exportCapsuleStateJson = _lib
-        .lookup<NativeFunction<HivraExportCapsuleStateJsonC>>('hivra_export_capsule_state_json')
+        .lookup<NativeFunction<HivraExportCapsuleStateJsonC>>(
+            'hivra_export_capsule_state_json')
         .asFunction();
 
     _exportLedger = _lib
@@ -361,12 +415,14 @@ class HivraBindings {
         .asFunction();
 
     _ledgerAppendEvent = _lib
-        .lookup<NativeFunction<HivraLedgerAppendEventC>>('hivra_ledger_append_event')
+        .lookup<NativeFunction<HivraLedgerAppendEventC>>(
+            'hivra_ledger_append_event')
         .asFunction();
 
     try {
       _deliveryPreparedSelfCheck = _lib
-          .lookup<NativeFunction<HivraDeliveryPreparedSelfCheckC>>('hivra_nostr_send_prepared_self_check')
+          .lookup<NativeFunction<HivraDeliveryPreparedSelfCheckC>>(
+              'hivra_nostr_send_prepared_self_check')
           .asFunction();
     } catch (_) {
       _deliveryPreparedSelfCheck = null;
@@ -375,7 +431,7 @@ class HivraBindings {
 
   // Alias for seedExists for compatibility
   bool initSeed() => _seedExists() != 0;
-  
+
   static const int legacyNostrOwnerMode = 0;
   static const int rootOwnerMode = 1;
 
@@ -390,7 +446,7 @@ class HivraBindings {
       _freeString(ptr);
     }
   }
-  
+
   bool saveSeed(Uint8List seed) {
     if (seed.length != 32) return false;
     final seedPtr = calloc<Uint8>(32);
@@ -556,8 +612,50 @@ class HivraBindings {
   int fetchInvitationDeliveriesQuick() =>
       _transportReceiveQuick?.call() ?? -1002;
 
-  int acceptInvitationCode(Uint8List invitationId, Uint8List fromPubkey, Uint8List createdStarterId) {
-    if (invitationId.length != 32 || fromPubkey.length != 32 || createdStarterId.length != 32) {
+  int sendCapsuleChatCode(Uint8List toPubkey, String payloadJson) {
+    if (toPubkey.length != 32 || payloadJson.trim().isEmpty) {
+      return -1;
+    }
+    final sendCapsuleChatFn = _sendCapsuleChat;
+    if (sendCapsuleChatFn == null) {
+      return -1002;
+    }
+    final toPtr = calloc<Uint8>(32);
+    final payloadPtr = payloadJson.toNativeUtf8();
+    try {
+      toPtr.asTypedList(32).setAll(0, toPubkey);
+      return sendCapsuleChatFn(toPtr, payloadPtr.cast<Int8>());
+    } finally {
+      calloc.free(toPtr);
+      calloc.free(payloadPtr);
+    }
+  }
+
+  ({int code, String? json}) receiveCapsuleChatJson() {
+    final receiveCapsuleChatFn = _receiveCapsuleChatJson;
+    if (receiveCapsuleChatFn == null) {
+      return (code: -1002, json: null);
+    }
+    final outPtr = calloc<Pointer<Int8>>();
+    try {
+      final code = receiveCapsuleChatFn(outPtr);
+      final cstr = outPtr.value;
+      if (cstr == nullptr) {
+        return (code: code, json: null);
+      }
+      final json = cstr.cast<Utf8>().toDartString();
+      _freeString(cstr);
+      return (code: code, json: json);
+    } finally {
+      calloc.free(outPtr);
+    }
+  }
+
+  int acceptInvitationCode(Uint8List invitationId, Uint8List fromPubkey,
+      Uint8List createdStarterId) {
+    if (invitationId.length != 32 ||
+        fromPubkey.length != 32 ||
+        createdStarterId.length != 32) {
       return -1;
     }
     final invitationIdPtr = calloc<Uint8>(32);
@@ -571,7 +669,8 @@ class HivraBindings {
       invitationIdPtr.asTypedList(32).setAll(0, invitationId);
       fromPubkeyPtr.asTypedList(32).setAll(0, fromPubkey);
       createdStarterIdPtr.asTypedList(32).setAll(0, createdStarterId);
-      return acceptInvitationFn(invitationIdPtr, fromPubkeyPtr, createdStarterIdPtr);
+      return acceptInvitationFn(
+          invitationIdPtr, fromPubkeyPtr, createdStarterIdPtr);
     } finally {
       calloc.free(invitationIdPtr);
       calloc.free(fromPubkeyPtr);
@@ -579,8 +678,10 @@ class HivraBindings {
     }
   }
 
-  bool acceptInvitation(Uint8List invitationId, Uint8List fromPubkey, Uint8List createdStarterId) {
-    return acceptInvitationCode(invitationId, fromPubkey, createdStarterId) == 0;
+  bool acceptInvitation(Uint8List invitationId, Uint8List fromPubkey,
+      Uint8List createdStarterId) {
+    return acceptInvitationCode(invitationId, fromPubkey, createdStarterId) ==
+        0;
   }
 
   bool rejectInvitation(Uint8List invitationId, int reason) {
@@ -642,7 +743,8 @@ class HivraBindings {
     }
   }
 
-  int deliveryPreparedSelfCheck() => _deliveryPreparedSelfCheck?.call() ?? -1001;
+  int deliveryPreparedSelfCheck() =>
+      _deliveryPreparedSelfCheck?.call() ?? -1001;
 
   String? exportCapsuleStateJson() {
     final outPtr = calloc<Pointer<Int8>>();
@@ -701,7 +803,9 @@ class HivraBindings {
       final seedNative = seedPtr.asTypedList(32);
       seedNative.setAll(0, seed);
       final result = _seedToMnemonic(seedPtr, wordCount, outPhrasePtr);
-      if (result != 0) throw Exception('Failed to convert seed (code: $result)');
+      if (result != 0) {
+        throw Exception('Failed to convert seed (code: $result)');
+      }
       final phraseCStr = outPhrasePtr.value;
       if (phraseCStr == nullptr) throw Exception('Null phrase');
       final phrase = phraseCStr.cast<Utf8>().toDartString();
@@ -718,7 +822,9 @@ class HivraBindings {
     final seedPtr = calloc<Uint8>(32);
     try {
       final result = _mnemonicToSeed(phraseCStr as Pointer<Int8>, seedPtr);
-      if (result != 0) throw Exception('Failed to convert mnemonic (code: $result)');
+      if (result != 0) {
+        throw Exception('Failed to convert mnemonic (code: $result)');
+      }
       final seed = Uint8List(32);
       final seedNative = seedPtr.asTypedList(32);
       seed.setAll(0, seedNative);
@@ -742,7 +848,9 @@ class HivraBindings {
     final seedPtr = calloc<Uint8>(32);
     try {
       final result = _generateRandomSeed(seedPtr);
-      if (result != 0) throw Exception('Failed to generate seed (code: $result)');
+      if (result != 0) {
+        throw Exception('Failed to generate seed (code: $result)');
+      }
       final seed = Uint8List(32);
       final seedNative = seedPtr.asTypedList(32);
       seed.setAll(0, seedNative);

@@ -228,6 +228,14 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
             continue;
         }
 
+        // Route chat messages before invitation kind parsing.
+        // Chat uses app-level kind=4097 inside DM payload, which does not map to core EventKind.
+        // If we parse EventKind first, chat messages are dropped as "unsupported kind"
+        // after already being marked as seen by transport receive.
+        if crate::chat_api::queue_incoming_chat_if_match(&message, local_pubkey) {
+            continue;
+        }
+
         let to_matches = message.to == local_pubkey;
 
         let kind_u8 = match u8::try_from(message.kind) {

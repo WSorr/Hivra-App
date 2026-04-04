@@ -4,10 +4,14 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../services/app_runtime_service.dart';
+import '../services/capsule_chat_delivery_service.dart';
 import '../services/consensus_processor.dart';
+import '../services/manual_consensus_check_service.dart';
 import '../services/plugin_demo_contract_runner_service.dart';
 import '../services/plugin_execution_guard_service.dart';
+import '../services/plugin_host_api_service.dart';
 import '../services/temperature_tomorrow_contract_service.dart';
+import '../services/ui_event_log_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
 
 class WasmPluginsScreen extends StatefulWidget {
@@ -28,6 +32,16 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       AppRuntimeService().buildPluginDemoContractRunnerService();
   final PluginExecutionGuardService _guard =
       AppRuntimeService().buildPluginExecutionGuardService();
+  final ManualConsensusCheckService _manualChecks =
+      AppRuntimeService().buildManualConsensusCheckService();
+  final PluginHostApiService _pluginHostApi =
+      AppRuntimeService().buildPluginHostApiService();
+  final CapsuleChatDeliveryService _chatDelivery =
+      AppRuntimeService().buildCapsuleChatDeliveryService();
+  final UiEventLogService _uiLog = const UiEventLogService();
+  final TextEditingController _chatPeerController = TextEditingController();
+  final TextEditingController _chatMessageController =
+      TextEditingController(text: 'hello from capsule chat');
   List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
   PluginExecutionGuardSnapshot _guardSnapshot =
       const PluginExecutionGuardSnapshot(
@@ -39,7 +53,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   bool _loading = true;
   bool _installing = false;
   bool _runningDemo = false;
+  bool _runningChat = false;
   PluginDemoRunResult? _lastDemoResult;
+  PluginHostApiResponse? _lastChatResponse;
+  List<CapsuleChatInboxMessage> _chatInbox = const <CapsuleChatInboxMessage>[];
+  int _chatDroppedByConsensus = 0;
 
   static const List<_CatalogPlugin> _transportPlugins = <_CatalogPlugin>[
     _CatalogPlugin(
@@ -81,6 +99,13 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   void initState() {
     super.initState();
     _reload();
+  }
+
+  @override
+  void dispose() {
+    _chatPeerController.dispose();
+    _chatMessageController.dispose();
+    super.dispose();
   }
 
   Future<void> _reload() async {
@@ -249,6 +274,207 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     }
   }
 
+  Future<void> _fillPeerFromConsensus() async {
+    final checks = _manualChecks.loadChecks();
+    if (checks.isEmpty) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No consensus peers yet. Create at least one relationship first.',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final preferred = checks.firstWhere(
+      (check) => check.isSignable,
+      orElse: () => checks.first,
+    );
+    if (!mounted) return;
+    setState(() {
+      _chatPeerController.text = preferred.peerHex;
+    });
+  }
+
+  Future<void> _runCapsuleChat() async {
+    if (_runningChat) return;
+    if (!mounted) return;
+
+    final peerHex = _chatPeerController.text.trim().toLowerCase();
+    final messageText = _chatMessageController.text;
+    final createdAtUtc = DateTime.now().toUtc().toIso8601String();
+    final clientMessageId = 'ui-${DateTime.now().microsecondsSinceEpoch}';
+
+    setState(() {
+      _runningChat = true;
+    });
+
+    try {
+      await _uiLog.log(
+        'chat.send.request',
+        'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} textBytes=${messageText.length}',
+      );
+      final response = _pluginHostApi.execute(
+        PluginHostApiRequest(
+          schemaVersion: PluginHostApiService.schemaVersion,
+          pluginId: PluginHostApiService.capsuleChatPluginId,
+          method: PluginHostApiService.postCapsuleChatMethod,
+          args: <String, dynamic>{
+            'peer_hex': peerHex,
+            'client_message_id': clientMessageId,
+            'message_text': messageText,
+            'created_at_utc': createdAtUtc,
+          },
+        ),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _lastChatResponse = response;
+      });
+
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      switch (response.status) {
+        case PluginHostApiStatus.executed:
+          final envelopeHash =
+              response.result?['envelope_hash_hex']?.toString() ?? '';
+          final shortHash = envelopeHash.length >= 12
+              ? '${envelopeHash.substring(0, 12)}..'
+              : envelopeHash;
+          final canonicalEnvelopeJson =
+              response.result?['canonical_envelope_json']?.toString() ?? '';
+          final sendResult = await _chatDelivery.sendCanonicalEnvelope(
+            peerHex: peerHex,
+            canonicalEnvelopeJson: canonicalEnvelopeJson,
+          );
+          if (!sendResult.isSuccess) {
+            await _uiLog.log(
+              'chat.send.transport.error',
+              'code=${sendResult.code} blocked=${sendResult.blockedByConsensus} deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} message=${sendResult.errorMessage ?? "unknown"}',
+            );
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text(
+                  sendResult.errorMessage ??
+                      'Chat transport failed (code ${sendResult.code})',
+                ),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+            break;
+          }
+          await _uiLog.log(
+            'chat.send.success',
+            'peer=${peerHex.substring(0, 8)}.. deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} hash=${shortHash.isEmpty ? "none" : shortHash}',
+          );
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                'Chat message sent: $shortHash',
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          await _refreshCapsuleChatInbox(silentWhenEmpty: true);
+          break;
+        case PluginHostApiStatus.blocked:
+          final reason = response.blockingFacts.isEmpty
+              ? 'Consensus guard blocked execution.'
+              : response.blockingFacts.first.label;
+          await _uiLog.log(
+            'chat.send.blocked',
+            reason,
+          );
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(reason),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          break;
+        case PluginHostApiStatus.rejected:
+          await _uiLog.log(
+            'chat.send.rejected',
+            response.errorMessage ?? 'Chat request rejected',
+          );
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                response.errorMessage ?? 'Chat request rejected',
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          break;
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _runningChat = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshCapsuleChatInbox({bool silentWhenEmpty = false}) async {
+    if (!mounted) return;
+    final result = await _chatDelivery.receiveAndFilter();
+    await _uiLog.log(
+      'chat.fetch.result',
+      'code=${result.code} received=${result.messages.length} dropped=${result.droppedByConsensus}'
+          '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
+    );
+    if (!mounted) return;
+    if (result.code < 0) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            result.errorMessage ?? 'Chat receive failed (code ${result.code})',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      final byId = <String, CapsuleChatInboxMessage>{
+        for (final message in _chatInbox) message.id: message,
+      };
+      for (final message in result.messages) {
+        byId[message.id] = message;
+      }
+      final merged = byId.values.toList()
+        ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+      _chatDroppedByConsensus = result.droppedByConsensus;
+      _chatInbox = List<CapsuleChatInboxMessage>.unmodifiable(merged);
+    });
+
+    if (result.messages.isEmpty && silentWhenEmpty) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    final droppedNote = result.droppedByConsensus > 0
+        ? ' · dropped ${result.droppedByConsensus} by consensus'
+        : '';
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Chat inbox +${result.messages.length}$droppedNote'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -283,6 +509,24 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           running: _runningDemo,
           lastResult: _lastDemoResult,
           onRunPressed: _runTemperatureDemo,
+        ),
+        const SizedBox(height: 20),
+        _SectionTitle(
+          title: 'Capsule Chat',
+          subtitle:
+              'Pre-host deterministic envelope call over plugin API boundary.',
+        ),
+        const SizedBox(height: 10),
+        _CapsuleChatPanel(
+          running: _runningChat,
+          lastResponse: _lastChatResponse,
+          inbox: _chatInbox,
+          droppedByConsensus: _chatDroppedByConsensus,
+          peerController: _chatPeerController,
+          messageController: _chatMessageController,
+          onUsePeerPressed: _fillPeerFromConsensus,
+          onRefreshInboxPressed: _refreshCapsuleChatInbox,
+          onRunPressed: _runCapsuleChat,
         ),
         const SizedBox(height: 20),
         _SectionTitle(
@@ -986,9 +1230,8 @@ class _DemoPairRunRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = pair.isExecuted
-        ? const Color(0xFF75D98A)
-        : const Color(0xFFFF8A7A);
+    final accent =
+        pair.isExecuted ? const Color(0xFF75D98A) : const Color(0xFFFF8A7A);
     final title = pair.peerLabel ?? pair.peerHex;
     final detail = pair.isExecuted
         ? 'Settled: ${pair.settlement!.outcome.name} · ${pair.settlement!.settlementHashHex.substring(0, 10)}..'
@@ -1020,6 +1263,261 @@ class _DemoPairRunRow extends StatelessWidget {
                 height: 1.35,
                 color: Color(0xFFC8D2DF),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CapsuleChatPanel extends StatelessWidget {
+  final bool running;
+  final PluginHostApiResponse? lastResponse;
+  final List<CapsuleChatInboxMessage> inbox;
+  final int droppedByConsensus;
+  final TextEditingController peerController;
+  final TextEditingController messageController;
+  final Future<void> Function() onUsePeerPressed;
+  final Future<void> Function() onRefreshInboxPressed;
+  final Future<void> Function() onRunPressed;
+
+  const _CapsuleChatPanel({
+    required this.running,
+    required this.lastResponse,
+    required this.inbox,
+    required this.droppedByConsensus,
+    required this.peerController,
+    required this.messageController,
+    required this.onUsePeerPressed,
+    required this.onRefreshInboxPressed,
+    required this.onRunPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final response = lastResponse;
+    final status = response?.status;
+    final accent = switch (status) {
+      PluginHostApiStatus.executed => const Color(0xFF75D98A),
+      PluginHostApiStatus.blocked => const Color(0xFFFFC76A),
+      PluginHostApiStatus.rejected => const Color(0xFFFF8A7A),
+      null => const Color(0xFF7F92A8),
+    };
+    final title = switch (status) {
+      PluginHostApiStatus.executed => 'Envelope prepared',
+      PluginHostApiStatus.blocked => 'Blocked by guard',
+      PluginHostApiStatus.rejected => 'Request rejected',
+      null => 'Ready',
+    };
+    final details = switch (status) {
+      PluginHostApiStatus.executed => () {
+          final hash = response?.result?['envelope_hash_hex']?.toString() ?? '';
+          return hash.isEmpty
+              ? 'Deterministic envelope created.'
+              : 'Envelope hash: ${hash.substring(0, hash.length < 16 ? hash.length : 16)}..';
+        }(),
+      PluginHostApiStatus.blocked => response!.blockingFacts.isEmpty
+          ? 'Consensus guard blocked execution.'
+          : response.blockingFacts.first.label,
+      PluginHostApiStatus.rejected =>
+        response?.errorMessage ?? 'Input rejected by host API.',
+      null =>
+        'Deterministic host envelope + transport send, guarded by pairwise consensus.',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121821),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF2B3846)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _PluginIconPlate(
+                icon: Icons.chat_bubble_outline_rounded,
+                accent: accent,
+                glow: accent.withAlpha(24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      details,
+                      style: const TextStyle(
+                        color: Color(0xFF9FAABA),
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: peerController,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: InputDecoration(
+              labelText: 'Peer hex (64 lowercase chars)',
+              hintText: 'bbbb...bbbb',
+              filled: true,
+              fillColor: const Color(0xFF0F141C),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: messageController,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 1024,
+            decoration: InputDecoration(
+              labelText: 'Message text',
+              filled: true,
+              fillColor: const Color(0xFF0F141C),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: running ? null : onUsePeerPressed,
+                icon: const Icon(Icons.group_outlined),
+                label: const Text('Use Consensus Peer'),
+              ),
+              OutlinedButton.icon(
+                onPressed: running ? null : onRefreshInboxPressed,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Fetch Inbox'),
+              ),
+              FilledButton.icon(
+                onPressed: running ? null : onRunPressed,
+                icon: running
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send_rounded),
+                label: Text(running ? 'Preparing' : 'Run Capsule Chat'),
+              ),
+            ],
+          ),
+          if (response != null) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _InfoChip(
+                  icon: Icons.flag_outlined,
+                  label: 'Status: ${response.status.name}',
+                ),
+                _InfoChip(
+                  icon: Icons.tag_outlined,
+                  label: 'Method: ${response.method}',
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _InfoChip(
+                icon: Icons.mail_outline,
+                label: 'Inbox: ${inbox.length}',
+              ),
+              _InfoChip(
+                icon: Icons.shield_outlined,
+                label: 'Dropped: $droppedByConsensus',
+              ),
+            ],
+          ),
+          if (inbox.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'Incoming',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFCFD7E2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...inbox.reversed.take(8).map(
+                  (message) => _ChatInboxRow(message: message),
+                ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatInboxRow extends StatelessWidget {
+  final CapsuleChatInboxMessage message;
+
+  const _ChatInboxRow({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final shortPeer = message.fromHex.length >= 12
+        ? '${message.fromHex.substring(0, 6)}...${message.fromHex.substring(message.fromHex.length - 4)}'
+        : message.fromHex;
+    final shortHash = message.envelopeHashHex.length >= 12
+        ? '${message.envelopeHashHex.substring(0, 12)}..'
+        : message.envelopeHashHex;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E141D),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF4A5E74)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            message.messageText,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFFE0E6EE),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'from $shortPeer · ${message.createdAtUtc}${shortHash.isEmpty ? '' : ' · $shortHash'}',
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF95A5B7),
             ),
           ),
         ],

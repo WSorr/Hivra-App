@@ -1,8 +1,10 @@
 import 'dart:typed_data';
 
 import '../ffi/app_runtime_runtime.dart';
+import 'capsule_chat_contract_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_state_manager.dart';
+import 'capsule_chat_delivery_service.dart';
 import 'consensus_runtime_service.dart';
 import 'invitation_actions_service.dart';
 import 'invitation_delivery_service.dart';
@@ -75,6 +77,18 @@ class AppRuntimeService {
     );
   }
 
+  CapsuleChatDeliveryService buildCapsuleChatDeliveryService() {
+    final addressService = CapsuleAddressService(
+      runtime: _runtime.capsuleAddressRuntime,
+    );
+    return CapsuleChatDeliveryService(
+      runtime: _runtime,
+      manualChecks: buildManualConsensusCheckService(),
+      loadRelationships: _ledgerView.loadRelationships,
+      listTrustedCards: addressService.listTrustedCards,
+    );
+  }
+
   TemperatureTomorrowContractService buildTemperatureTomorrowContractService() {
     final consensus = buildConsensusRuntimeService();
     return TemperatureTomorrowContractService(
@@ -94,9 +108,14 @@ class AppRuntimeService {
   }
 
   PluginHostApiService buildPluginHostApiService() {
+    final consensus = buildConsensusRuntimeService();
     final demoRunner = buildPluginDemoContractRunnerService();
+    final chat = CapsuleChatContractService(
+      readSignable: consensus.signable,
+    );
     return PluginHostApiService(
       runTemperatureDemo: demoRunner.runTemperatureTomorrowDemo,
+      runCapsuleChat: chat.execute,
     );
   }
 

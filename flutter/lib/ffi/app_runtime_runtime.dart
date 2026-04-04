@@ -26,6 +26,8 @@ abstract class AppRuntimeRuntime {
 
   String? exportLedger();
 
+  Future<Map<String, Object?>?> loadWorkerBootstrapArgs();
+
   bool breakRelationship(
     Uint8List peerPubkey,
     Uint8List ownStarterId,
@@ -83,6 +85,11 @@ class HivraAppRuntimeRuntime implements AppRuntimeRuntime {
 
   @override
   String? exportLedger() => _hivra.exportLedger();
+
+  @override
+  Future<Map<String, Object?>?> loadWorkerBootstrapArgs() {
+    return _persistence.loadWorkerBootstrapArgs(_hivra);
+  }
 
   @override
   bool breakRelationship(

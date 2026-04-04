@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import 'capsule_chat_contract_service.dart';
 import 'consensus_processor.dart';
 import 'plugin_demo_contract_runner_service.dart';
 import 'temperature_tomorrow_contract_service.dart';
@@ -54,18 +55,29 @@ typedef TemperatureDemoRunner = PluginDemoRunResult Function({
   required TemperatureTomorrowContractSpec contract,
   required TemperatureOracleObservation observation,
 });
+typedef CapsuleChatRunner = CapsuleChatExecutionResult Function({
+  required String peerHex,
+  required String clientMessageId,
+  required String messageText,
+  required String createdAtUtc,
+});
 
 class PluginHostApiService {
   static const int schemaVersion = 1;
   static const String temperaturePluginId =
       'hivra.contract.temperature-li.tomorrow.v1';
   static const String settleTemperatureMethod = 'settle_temperature_tomorrow';
+  static const String capsuleChatPluginId = CapsuleChatContractService.pluginId;
+  static const String postCapsuleChatMethod = 'post_capsule_chat_message';
 
   final TemperatureDemoRunner _runTemperatureDemo;
+  final CapsuleChatRunner _runCapsuleChat;
 
   const PluginHostApiService({
     required TemperatureDemoRunner runTemperatureDemo,
-  }) : _runTemperatureDemo = runTemperatureDemo;
+    required CapsuleChatRunner runCapsuleChat,
+  })  : _runTemperatureDemo = runTemperatureDemo,
+        _runCapsuleChat = runCapsuleChat;
 
   PluginHostApiResponse execute(PluginHostApiRequest request) {
     if (request.schemaVersion != schemaVersion) {
@@ -76,14 +88,21 @@ class PluginHostApiService {
         message: 'Plugin host API schema version mismatch',
       );
     }
-    if (request.pluginId != temperaturePluginId) {
-      return _rejected(
-        pluginId: request.pluginId,
-        method: request.method,
-        code: 'unsupported_plugin',
-        message: 'Unsupported plugin id',
-      );
+    if (request.pluginId == temperaturePluginId) {
+      return _executeTemperature(request);
     }
+    if (request.pluginId == capsuleChatPluginId) {
+      return _executeCapsuleChat(request);
+    }
+    return _rejected(
+      pluginId: request.pluginId,
+      method: request.method,
+      code: 'unsupported_plugin',
+      message: 'Unsupported plugin id',
+    );
+  }
+
+  PluginHostApiResponse _executeTemperature(PluginHostApiRequest request) {
     if (request.method != settleTemperatureMethod) {
       return _rejected(
         pluginId: request.pluginId,
@@ -136,6 +155,78 @@ class PluginHostApiService {
           blockingFacts: runResult.blockingFacts,
         ),
     };
+  }
+
+  PluginHostApiResponse _executeCapsuleChat(PluginHostApiRequest request) {
+    if (request.method != postCapsuleChatMethod) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'unsupported_method',
+        message: 'Unsupported plugin method',
+      );
+    }
+
+    final peerHex = request.args['peer_hex']?.toString().trim().toLowerCase();
+    final clientMessageId =
+        request.args['client_message_id']?.toString().trim();
+    final messageText = request.args['message_text']?.toString();
+    final createdAtUtc = request.args['created_at_utc']?.toString().trim();
+
+    if (peerHex == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex) ||
+        clientMessageId == null ||
+        clientMessageId.isEmpty ||
+        messageText == null ||
+        messageText.trim().isEmpty ||
+        createdAtUtc == null ||
+        createdAtUtc.isEmpty) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'invalid_args',
+        message:
+            'peer_hex/client_message_id/message_text/created_at_utc are required',
+      );
+    }
+
+    late final CapsuleChatExecutionResult runResult;
+    try {
+      runResult = _runCapsuleChat(
+        peerHex: peerHex,
+        clientMessageId: clientMessageId,
+        messageText: messageText,
+        createdAtUtc: createdAtUtc,
+      );
+    } on FormatException catch (error) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'invalid_args',
+        message: error.message,
+      );
+    }
+
+    if (runResult.envelope != null) {
+      return _executed(
+        pluginId: request.pluginId,
+        method: request.method,
+        result: <String, dynamic>{
+          'peer_hex': runResult.envelope!.peerHex,
+          'client_message_id': runResult.envelope!.clientMessageId,
+          'message_text': runResult.envelope!.messageText,
+          'created_at_utc': runResult.envelope!.createdAtUtc,
+          'envelope_hash_hex': runResult.envelope!.envelopeHashHex,
+          'canonical_envelope_json': runResult.envelope!.canonicalJson,
+        },
+      );
+    }
+
+    return _blocked(
+      pluginId: request.pluginId,
+      method: request.method,
+      blockingFacts: runResult.blockingFacts,
+    );
   }
 
   _TemperatureParseResult _parseTemperatureArgs(Map<String, dynamic> args) {
