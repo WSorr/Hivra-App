@@ -55,13 +55,22 @@ class RelationshipProjectionService {
         if (key == null) continue;
         final current = byKey[key];
         if (current != null) {
-          final signer = _support.bytes32(e['signer']);
+          final signerBytes = _support.payloadBytes(e['signer']);
+          final signerIsValid = signerBytes.length == 32;
+          final signer = signerIsValid
+              ? Uint8List.fromList(signerBytes)
+              : Uint8List(0);
           final hasLocalOwner = localOwner != null && localOwner.length == 32;
+          if (hasLocalOwner && !signerIsValid) {
+            // Without signer we cannot deterministically classify this break as
+            // local-finalized vs remote-pending.
+            continue;
+          }
           final signerMatchesLocal = hasLocalOwner &&
-              signer.length == 32 &&
+              signerIsValid &&
               _support.eq32(signer, localOwner);
           final isPendingRemoteBreak =
-              hasLocalOwner && signer.length == 32 && !signerMatchesLocal;
+              hasLocalOwner && signerIsValid && !signerMatchesLocal;
           if (isPendingRemoteBreak &&
               !current.isActive &&
               !current.hasPendingRemoteBreak) {
@@ -138,7 +147,7 @@ class RelationshipProjectionService {
     if (runtimeOwner != null && runtimeOwner.length == 32) {
       return Uint8List.fromList(runtimeOwner);
     }
-    final ledgerOwner = _support.bytes32(root['owner']);
+    final ledgerOwner = _support.payloadBytes(root['owner']);
     if (ledgerOwner.length == 32) {
       return Uint8List.fromList(ledgerOwner);
     }
