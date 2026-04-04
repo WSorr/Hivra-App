@@ -161,17 +161,23 @@ class ConsensusProcessor {
           invitationId,
           () => _PairwiseInviteFact(invitationId),
         );
-        final transportPeerHex = kind == 'InvitationReceived' && signer != null
-            ? _hex(signer)
+        final transportPeerHex = kind == 'InvitationReceived'
+            ? (signer == null ? null : _hex(signer))
             : _hex(payload.sublist(64, 96));
-        inviteTransportPeerById[invitationId] = transportPeerHex;
+        if (transportPeerHex != null && transportPeerHex.isNotEmpty) {
+          inviteTransportPeerById[invitationId] = transportPeerHex;
+        }
         final starterKind = (payload.length == 97 || payload.length == 129)
             ? payload[payload.length - 1]
             : null;
         if (starterKind != null) {
           fact.starterKinds.add(starterKind);
         }
-        if (kind == 'InvitationReceived' && payload.length >= 128) {
+        final invitationReceivedTargetsLocal = localTransportHex == null ||
+            _hex(payload.sublist(64, 96)) == localTransportHex;
+        if (kind == 'InvitationReceived' &&
+            payload.length >= 128 &&
+            invitationReceivedTargetsLocal) {
           inviteRootPeerById[invitationId] = _hex(payload.sublist(96, 128));
         }
       } else if (kind == 'RelationshipEstablished' && payload.length >= 194) {
@@ -236,10 +242,9 @@ class ConsensusProcessor {
         case 'InvitationAccepted':
           fact.accepted = true;
           if (payload.length >= 128 &&
-              signer != null &&
               localTransportHex != null &&
               _hex(payload.sublist(32, 64)) == localTransportHex &&
-              _hex(signer) != localTransportHex) {
+              (signer == null || _hex(signer) != localTransportHex)) {
             inviteRootPeerById[invitationId] = _hex(payload.sublist(96, 128));
           }
           break;

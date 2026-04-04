@@ -657,6 +657,45 @@ void main() {
     });
 
     test(
+        'preview maps remote acceptance root anchor even when signer is absent in imported event',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(86));
+      final ownStarter = Uint8List.fromList(bytes32(87));
+      final peerTransport = Uint8List.fromList(bytes32(88));
+      final peerRoot = Uint8List.fromList(bytes32(89));
+      final localTransport = Uint8List.fromList(bytes32(90));
+      final createdStarter = Uint8List.fromList(bytes32(91));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...localTransport,
+            ...createdStarter,
+            ...peerRoot,
+          ],
+          // signer intentionally omitted to mimic legacy/imported records.
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, hasLength(1));
+      expect(previews.first.peerHex, equals(hex(peerRoot)));
+      expect(previews.first.peerHex, isNot(equals(hex(peerTransport))));
+    });
+
+    test(
         'preview does not infer peer root from local invitation lineage root fields',
         () {
       final invitationId = Uint8List.fromList(bytes32(77));

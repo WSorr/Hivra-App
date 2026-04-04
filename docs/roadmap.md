@@ -498,6 +498,7 @@ When tradeoffs are unclear, prefer:
   - Relationship projection now infers peer root for legacy `RelationshipEstablished` payloads from root-augmented invitation lineage (`InvitationReceived`/`InvitationAccepted`) by `invitation_id`, reducing legacy transport-only peer identity drift in mixed ledgers.
   - Relationship projection invitation-lineage fallback is now direction-aware: local `InvitationSent` and local-signed `InvitationAccepted` root fields are excluded from peer-root inference, preventing local-root leakage into peer identity (`npub/self-root` drift) for legacy relationship payloads.
   - Added `consensus_processor_test.dart` regression coverage that local invitation-lineage root fields (`InvitationSent.sender_root_pubkey`, local-signed `InvitationAccepted.accepter_root_pubkey`) are not treated as peer-root anchors during consensus peer mapping.
+  - Consensus peer-root inference from `InvitationAccepted.accepter_root_pubkey` now remains available for imported/legacy records even when event `signer` is absent, while still enforcing remote-accept direction (`from_pubkey == local transport`) to avoid local-root leakage.
   - Invitations and Relationships screens now share root-first identity formatting (`root as primary, transport as hint`) with fallback to transport label when root anchor is unknown.
   - Relationships screen root fallback now resolves imported contact-card root identity across all transport keys inside a peer group (not only the representative transport key), reducing false `npub` fallback in mixed-link groups.
 
