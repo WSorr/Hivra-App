@@ -657,6 +657,62 @@ void main() {
     });
 
     test(
+        'preview does not infer peer root from local invitation lineage root fields',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(77));
+      final ownStarter = Uint8List.fromList(bytes32(78));
+      final peerTransport = Uint8List.fromList(bytes32(79));
+      final peerStarter = Uint8List.fromList(bytes32(80));
+      final senderTransport = Uint8List.fromList(bytes32(81));
+      final senderStarter = Uint8List.fromList(bytes32(82));
+      final localTransport = Uint8List.fromList(bytes32(83));
+      final localRoot = Uint8List.fromList(bytes32(84));
+      final acceptedCreated = Uint8List.fromList(bytes32(85));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            ...localRoot,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...localTransport,
+            ...acceptedCreated,
+            ...localRoot,
+          ],
+          'signer': localTransport,
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...senderTransport,
+            1,
+            ...senderStarter,
+          ],
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, hasLength(1));
+      expect(previews.first.peerHex, equals(hex(peerTransport)));
+      expect(previews.first.peerHex, isNot(equals(hex(localRoot))));
+    });
+
+    test(
         'relationship break blocks only affected pair while other pairs stay signable',
         () {
       final localTransport = Uint8List.fromList(bytes32(90));
