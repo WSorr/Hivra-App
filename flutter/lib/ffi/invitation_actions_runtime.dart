@@ -41,7 +41,7 @@ Map<String, Object?> sendInvitationInWorker(Map<String, Object?> args) {
   final lastError = hivra.lastErrorMessage();
   return <String, Object?>{
     'result': result,
-    'ledgerJson': result == 0 ? hivra.exportLedger() : null,
+    'ledgerJson': hivra.exportLedger(),
     'lastError': lastError,
   };
 }
@@ -85,7 +85,7 @@ Map<String, Object?> acceptInvitationInWorker(Map<String, Object?> args) {
   final lastError = hivra.lastErrorMessage();
   return <String, Object?>{
     'result': result,
-    'ledgerJson': result == 0 ? hivra.exportLedger() : null,
+    'ledgerJson': hivra.exportLedger(),
     'lastError': lastError,
   };
 }

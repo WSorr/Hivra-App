@@ -94,19 +94,19 @@ class InvitationDeliveryService {
       case -4:
         return 'Capsule is not initialized';
       case -5:
-        return 'Delivery transport is unavailable';
+        return 'Delivery transport is unavailable (local invitation is recorded)';
       case -6:
         return 'Failed to prepare local invitation state';
       case -7:
         return 'Failed to deliver invitation (local invitation is still recorded)';
       case -11:
-        return 'No connected delivery relays available';
+        return 'No connected delivery relays available (local invitation is recorded)';
       case -12:
-        return 'Invitation delivery timed out';
+        return 'Invitation delivery timed out (local invitation is recorded)';
       case -13:
-        return 'Delivery relay rejected the invitation';
+        return 'Delivery relay rejected the invitation (local invitation is recorded)';
       case -14:
-        return 'Delivery relay requires or rejected authentication';
+        return 'Delivery relay requires or rejected authentication (local invitation is recorded)';
       case -1002:
         return 'Invitation delivery API is not available';
       case -1003:
@@ -182,8 +182,9 @@ class InvitationDeliveryService {
     }
   }
 
-  String fetchSuccessMessage(int count) =>
-      'Fetched invitation deliveries: $count new event(s)';
+  String fetchSuccessMessage(int count) => count == 0
+      ? 'No new invitation deliveries'
+      : 'Fetched invitation deliveries: $count new event(s)';
 
   String invitationSentMessage() => 'Invitation sent';
 

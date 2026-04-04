@@ -21,6 +21,14 @@ class InvitationIntentResult {
 
 class InvitationIntentHandler {
   static const Duration _quickFetchCooldown = Duration(seconds: 8);
+  static const Set<int> _softSendDeliveryCodes = <int>{
+    -5,
+    -7,
+    -11,
+    -12,
+    -13,
+    -14,
+  };
   static final Map<String, Future<InvitationIntentResult>>
       _quickFetchInFlightByCapsule = <String, Future<InvitationIntentResult>>{};
   static final Map<String, DateTime> _lastQuickFetchAtByCapsule =
@@ -65,15 +73,29 @@ class InvitationIntentHandler {
     final workerResult =
         await _requireActions().sendInvitation(toPubkey, starterSlot);
     final code = workerResult.code;
+    final hasWorkerLedger = (workerResult.ledgerJson?.isNotEmpty ?? false);
+    final localPendingRecorded =
+        hasWorkerLedger && _softSendDeliveryCodes.contains(code);
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
         ? ' [code: $code; ffi: $lastError]'
         : ' [code: $code]';
+    if (code == 0) {
+      return InvitationIntentResult(
+        code: 0,
+        message: _delivery.invitationSentMessage(),
+      );
+    }
+    if (localPendingRecorded) {
+      return InvitationIntentResult(
+        code: 0,
+        message:
+            '${_delivery.sendFailureMessage(code)} Local pending invitation is recorded.$diagnostics',
+      );
+    }
     return InvitationIntentResult(
       code: code,
-      message: code == 0
-          ? _delivery.invitationSentMessage()
-          : '${_delivery.sendFailureMessage(code)}$diagnostics',
+      message: '${_delivery.sendFailureMessage(code)}$diagnostics',
     );
   }
 

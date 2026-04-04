@@ -61,7 +61,7 @@ void main() {
 
       expect(calls, 1);
       expect(first.code, 0);
-      expect(first.message, 'Fetched invitation deliveries: 0 new event(s)');
+      expect(first.message, 'No new invitation deliveries');
       expect(second.code, 0);
       expect(second.message, 'Skipped duplicate quick fetch');
     });
@@ -85,8 +85,7 @@ void main() {
       final firstCapsuleRepeatResult = await handler.fetchInvitationsQuick();
 
       expect(calls, 2);
-      expect(secondCapsuleResult.message,
-          'Fetched invitation deliveries: 0 new event(s)');
+      expect(secondCapsuleResult.message, 'No new invitation deliveries');
       expect(firstCapsuleRepeatResult.message, 'Skipped duplicate quick fetch');
     });
   });
@@ -183,7 +182,7 @@ void main() {
       );
 
       final first = await handler.fetchInvitationsQuick();
-      expect(first.message, 'Fetched invitation deliveries: 0 new event(s)');
+      expect(first.message, 'No new invitation deliveries');
       expect(actions.canceledInvitationIds, isEmpty);
 
       invitations = <Invitation>[
@@ -232,7 +231,49 @@ void main() {
 
       expect(result.code, -5);
       expect(result.message, 'Failed to fetch invitation deliveries');
-      expect(actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
+      expect(
+          actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
+    });
+  });
+
+  group('InvitationIntentHandler send semantics', () {
+    test('treats timeout with local ledger as recorded pending', () async {
+      final actions = _FakeInvitationActionsService()
+        ..sendResult = const InvitationWorkerResult(
+          code: -12,
+          ledgerJson: '{"owner":"x","events":[]}',
+          lastError:
+              'Send invitation failed: delivery transport rejected message (code -12)',
+        );
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+      );
+
+      final result = await handler.sendInvitation(Uint8List(32), 0);
+      expect(result.code, 0);
+      expect(result.message, contains('timed out'));
+      expect(result.message, contains('Local pending invitation is recorded'));
+    });
+
+    test('keeps timeout as failure when worker ledger is missing', () async {
+      final actions = _FakeInvitationActionsService()
+        ..sendResult = const InvitationWorkerResult(
+          code: -12,
+          ledgerJson: null,
+          lastError:
+              'Send invitation failed: delivery transport rejected message (code -12)',
+        );
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+      );
+
+      final result = await handler.sendInvitation(Uint8List(32), 0);
+      expect(result.code, -12);
+      expect(result.message, contains('timed out'));
+      expect(result.message,
+          isNot(contains('Local pending invitation is recorded')));
     });
   });
 }
@@ -242,6 +283,15 @@ class _FakeInvitationActionsService extends InvitationActionsService {
       : super(runtime: _NoopInvitationActionsRuntime());
 
   final List<String> canceledInvitationIds = <String>[];
+  InvitationWorkerResult sendResult = const InvitationWorkerResult(code: 0);
+
+  @override
+  Future<InvitationWorkerResult> sendInvitation(
+    Uint8List toPubkey,
+    int starterSlot,
+  ) async {
+    return sendResult;
+  }
 
   @override
   Future<bool> cancelInvitation(Uint8List invitationId) async {
