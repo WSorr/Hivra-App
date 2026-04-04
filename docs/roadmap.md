@@ -421,6 +421,7 @@ Scope:
   because those remain capsule-local rather than pairwise-consensus facts.
 - Treat richer lineage or starter-state checks as future snapshot/schema revisions rather than overloading v1.
 - Current progress:
+  - Canonical consensus snapshot key naming now matches spec/roadmap contract (`pair_roots_sorted`), and legacy `pair_transport_keys_sorted` key emission was removed from `ConsensusProcessor`.
   - Added regression coverage in `consensus_processor_test.dart` to lock terminal invitation precedence in snapshot projection (`accepted > rejected > expired`).
   - Added regression coverage that local starter-only events (`StarterCreated` / `StarterBurned`) do not affect pairwise snapshot canonical JSON/hash when pairwise facts are unchanged.
   - Added regression coverage that pairwise snapshot canonical JSON/hash remains stable under event-order permutations and sender-metadata noise when pairwise facts are equivalent.

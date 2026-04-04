@@ -335,7 +335,7 @@ class ConsensusProcessor {
 
       final snapshot = <String, dynamic>{
         'schema_version': 1,
-        'pair_transport_keys_sorted': pairRoots,
+        'pair_roots_sorted': pairRoots,
         'finalized_invitations': finalizedInvitations.map((fact) {
           final item = <String, dynamic>{
             'invitation_id': fact.invitationId,

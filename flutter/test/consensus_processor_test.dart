@@ -64,6 +64,14 @@ void main() {
       expect(previews.first.relationshipCount, 1);
       expect(previews.first.blockingFacts, isEmpty);
       expect(previews.first.hashHex, hasLength(64));
+      expect(
+        previews.first.canonicalJson.contains('"pair_roots_sorted"'),
+        isTrue,
+      );
+      expect(
+        previews.first.canonicalJson.contains('"pair_transport_keys_sorted"'),
+        isFalse,
+      );
       expect(previews.first.canonicalJson.contains('"status": "accepted"'),
           isTrue);
     });
