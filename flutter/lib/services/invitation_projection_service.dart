@@ -46,13 +46,17 @@ class InvitationProjectionService {
       final kind = _support.kindCode(e['kind']);
       final timestamp = _support.eventTime(e['timestamp']);
       final payload = _support.payloadBytes(e['payload']);
-      final signer = _support.bytes32(e['signer']);
 
       if ((kind == 1 || kind == 9) &&
           (payload.length == 96 ||
               payload.length == 97 ||
               payload.length == 128 ||
               payload.length == 129)) {
+        final signerBytes = _support.payloadBytes(e['signer']);
+        if (signerBytes.length != 32) {
+          continue;
+        }
+        final signer = Uint8List.fromList(signerBytes);
         final invitationId = payload.sublist(0, 32);
         final starterId = payload.sublist(32, 64);
         final toPubkey = payload.sublist(64, 96);
@@ -183,7 +187,7 @@ class InvitationProjectionService {
     if (runtimeOwner != null && runtimeOwner.length == 32) {
       return runtimeOwner;
     }
-    final ledgerOwner = _support.bytes32(root['owner']);
+    final ledgerOwner = _support.payloadBytes(root['owner']);
     if (ledgerOwner.length == 32) {
       return Uint8List.fromList(ledgerOwner);
     }

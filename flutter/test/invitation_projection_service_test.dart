@@ -174,6 +174,60 @@ void main() {
       expect(invitations.single.status, InvitationStatus.pending);
     });
 
+    test('ignores offer events with malformed or missing signer', () {
+      final invitationId = _bytes32(123);
+      final starterId = _bytes32(143);
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceForSelf(self);
+
+      final invitations = service.loadInvitations(<String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 'InvitationReceived',
+            'payload': _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: self,
+              kindByte: 1,
+            ),
+            // signer intentionally omitted
+            'timestamp': t0 + 1,
+          },
+        ],
+      });
+
+      expect(invitations, isEmpty);
+    });
+
+    test(
+      'does not project invitations when runtime owner unavailable and ledger owner is malformed',
+      () {
+        final invitationId = _bytes32(124);
+        final starterId = _bytes32(144);
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceWithoutRuntimeOwner();
+
+        final invitations = service.loadInvitations(<String, dynamic>{
+          'owner': 'not-a-valid-32-byte-owner',
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: self,
+                kindByte: 1,
+              ),
+              signer: peer,
+              timestamp: t0 + 1,
+            ),
+          ],
+        });
+
+        expect(invitations, isEmpty);
+      },
+    );
+
     test('keeps invitation rejected after duplicate incoming offer replay', () {
       final invitationId = _bytes32(13);
       final starterId = _bytes32(33);
