@@ -1509,5 +1509,144 @@ void main() {
           previews.first.canonicalJson.contains(hex(localTransport)), isTrue);
       expect(previews.first.canonicalJson.contains(hex(localRoot)), isFalse);
     });
+
+    test(
+        'legacy relationship keeps invitation-derived root anchor and uses local root key',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(201));
+      final ownStarter = Uint8List.fromList(bytes32(202));
+      final peerStarter = Uint8List.fromList(bytes32(203));
+      final peerTransport = Uint8List.fromList(bytes32(204));
+      final peerRoot = Uint8List.fromList(bytes32(205));
+      final senderTransport = Uint8List.fromList(bytes32(206));
+      final senderStarter = Uint8List.fromList(bytes32(207));
+      final localTransport = Uint8List.fromList(bytes32(208));
+      final localRoot = Uint8List.fromList(bytes32(209));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...invitationId,
+            ...peerStarter,
+            ...localTransport,
+            ...peerRoot,
+            1,
+          ],
+          'signer': peerTransport,
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...senderTransport,
+            1,
+            ...senderStarter,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...localTransport,
+            ...bytes32(210),
+          ],
+        },
+      ];
+
+      final previews = processor.preview(
+        events,
+        localTransport,
+        localRootKey: localRoot,
+      );
+
+      expect(previews, hasLength(1));
+      expect(previews.first.peerHex, equals(hex(peerRoot)));
+      expect(previews.first.canonicalJson.contains(hex(peerRoot)), isTrue);
+      expect(previews.first.canonicalJson.contains(hex(localRoot)), isTrue);
+      expect(
+          previews.first.canonicalJson.contains(hex(localTransport)), isFalse);
+    });
+
+    test(
+        'legacy relationship root anchor is stable regardless of invite/relationship order',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(211));
+      final ownStarter = Uint8List.fromList(bytes32(212));
+      final peerStarter = Uint8List.fromList(bytes32(213));
+      final peerTransport = Uint8List.fromList(bytes32(214));
+      final peerRoot = Uint8List.fromList(bytes32(215));
+      final senderTransport = Uint8List.fromList(bytes32(216));
+      final senderStarter = Uint8List.fromList(bytes32(217));
+      final localTransport = Uint8List.fromList(bytes32(218));
+      final localRoot = Uint8List.fromList(bytes32(219));
+
+      final invitationReceived = <String, dynamic>{
+        'kind': 9,
+        'payload': <int>[
+          ...invitationId,
+          ...peerStarter,
+          ...localTransport,
+          ...peerRoot,
+          1,
+        ],
+        'signer': peerTransport,
+      };
+      final relationshipEstablishedLegacy = <String, dynamic>{
+        'kind': 7,
+        'payload': <int>[
+          ...peerTransport,
+          ...ownStarter,
+          ...peerStarter,
+          1,
+          ...invitationId,
+          ...senderTransport,
+          1,
+          ...senderStarter,
+        ],
+      };
+      final accepted = <String, dynamic>{
+        'kind': 2,
+        'payload': <int>[
+          ...invitationId,
+          ...localTransport,
+          ...bytes32(220),
+        ],
+      };
+
+      final orderA = <Map<String, dynamic>>[
+        invitationReceived,
+        relationshipEstablishedLegacy,
+        accepted,
+      ];
+      final orderB = <Map<String, dynamic>>[
+        relationshipEstablishedLegacy,
+        invitationReceived,
+        accepted,
+      ];
+
+      final previewsA = processor.preview(
+        orderA,
+        localTransport,
+        localRootKey: localRoot,
+      );
+      final previewsB = processor.preview(
+        orderB,
+        localTransport,
+        localRootKey: localRoot,
+      );
+
+      expect(previewsA, hasLength(1));
+      expect(previewsB, hasLength(1));
+      expect(previewsA.first.peerHex, equals(hex(peerRoot)));
+      expect(previewsB.first.peerHex, equals(hex(peerRoot)));
+      expect(previewsA.first.hashHex, equals(previewsB.first.hashHex));
+      expect(
+          previewsA.first.canonicalJson, equals(previewsB.first.canonicalJson));
+    });
   });
 }
