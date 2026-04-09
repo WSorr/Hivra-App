@@ -132,6 +132,26 @@ void main() {
         sentAt: now.subtract(const Duration(hours: 30)),
         expiresAt: now.subtract(const Duration(hours: 6)),
       );
+      final overdueOutgoingProjectionExpired = Invitation(
+        id: idForByte(15),
+        fromPubkey: idForByte(25),
+        toPubkey: idForByte(35),
+        kind: StarterKind.kick,
+        status: InvitationStatus.expired,
+        sentAt: now.subtract(const Duration(hours: 30)),
+        expiresAt: now.subtract(const Duration(hours: 6)),
+        respondedAt: now.subtract(const Duration(hours: 6)),
+      );
+      final overdueOutgoingLedgerExpired = Invitation(
+        id: idForByte(16),
+        fromPubkey: idForByte(26),
+        toPubkey: idForByte(36),
+        kind: StarterKind.seed,
+        status: InvitationStatus.expired,
+        sentAt: now.subtract(const Duration(hours: 30)),
+        expiresAt: now.subtract(const Duration(hours: 6)),
+        respondedAt: now.subtract(const Duration(hours: 5)),
+      );
 
       final actions = _FakeInvitationActionsService();
       final handler = InvitationIntentHandler(
@@ -142,6 +162,8 @@ void main() {
           freshOutgoingPending,
           overdueIncomingPending,
           overdueOutgoingAccepted,
+          overdueOutgoingProjectionExpired,
+          overdueOutgoingLedgerExpired,
         ],
         fetchInvitationsQuickAction: () async =>
             const InvitationWorkerResult(code: 0),
@@ -150,8 +172,10 @@ void main() {
       final result = await handler.fetchInvitationsQuick();
 
       expect(result.code, 0);
-      expect(
-          actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
+      expect(actions.canceledInvitationIds, <String>[
+        overdueOutgoingPending.id,
+        overdueOutgoingProjectionExpired.id,
+      ]);
     });
 
     test('runs expiry sweep even when quick fetch is skipped by cooldown',
@@ -276,6 +300,51 @@ void main() {
           isNot(contains('Local pending invitation is recorded')));
     });
   });
+
+  group('InvitationIntentHandler accept semantics', () {
+    test('treats transport timeout with local ledger as recorded acceptance',
+        () async {
+      final actions = _FakeInvitationActionsService()
+        ..acceptResult = const InvitationWorkerResult(
+          code: -12,
+          ledgerJson: '{"owner":"x","events":[]}',
+          lastError:
+              'Accept invitation delivery failed but local acceptance is recorded (code -12)',
+        );
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+      );
+
+      final result =
+          await handler.acceptInvitation(Uint8List(32), Uint8List(32));
+      expect(result.code, 0);
+      expect(result.message, contains('timed out'));
+      expect(result.message, contains('Local acceptance is recorded'));
+    });
+
+    test(
+        'keeps transport timeout as failure when worker ledger payload is missing',
+        () async {
+      final actions = _FakeInvitationActionsService()
+        ..acceptResult = const InvitationWorkerResult(
+          code: -12,
+          ledgerJson: null,
+          lastError:
+              'Accept invitation delivery failed but local acceptance is recorded (code -12)',
+        );
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+      );
+
+      final result =
+          await handler.acceptInvitation(Uint8List(32), Uint8List(32));
+      expect(result.code, -12);
+      expect(result.message, contains('timed out'));
+      expect(result.message, isNot(contains('Local acceptance is recorded')));
+    });
+  });
 }
 
 class _FakeInvitationActionsService extends InvitationActionsService {
@@ -284,6 +353,7 @@ class _FakeInvitationActionsService extends InvitationActionsService {
 
   final List<String> canceledInvitationIds = <String>[];
   InvitationWorkerResult sendResult = const InvitationWorkerResult(code: 0);
+  InvitationWorkerResult acceptResult = const InvitationWorkerResult(code: 0);
 
   @override
   Future<InvitationWorkerResult> sendInvitation(
@@ -291,6 +361,14 @@ class _FakeInvitationActionsService extends InvitationActionsService {
     int starterSlot,
   ) async {
     return sendResult;
+  }
+
+  @override
+  Future<InvitationWorkerResult> acceptInvitation(
+    Uint8List invitationId,
+    Uint8List fromPubkey,
+  ) async {
+    return acceptResult;
   }
 
   @override

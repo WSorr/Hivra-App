@@ -169,16 +169,36 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     await widget.onLedgerChanged?.call();
   }
 
-  Future<void> _sendInvitationAsync(Uint8List pubkey, int slot) async {
-    final result = await _intents.sendInvitation(pubkey, slot);
-    if (!mounted) return;
-    await _showUserMessage(result.message, source: 'invitations.send');
-
-    if (result.isSuccess) {
-      await Future<void>.delayed(const Duration(seconds: 1));
-      if (mounted) {
-        await _refreshAfterLedgerMutation();
+  Future<InvitationIntentResult> _sendInvitationAsync(
+    Uint8List pubkey,
+    int slot,
+  ) async {
+    try {
+      unawaited(_uiLog.log(
+        'invitations.send.request',
+        'slot=$slot peer=${HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(pubkey))}',
+      ));
+      final result = await _intents.sendInvitation(pubkey, slot);
+      unawaited(_uiLog.log(
+        'invitations.send.result',
+        'slot=$slot code=${result.code} message=${result.message}',
+      ));
+      if (result.isSuccess) {
+        if (mounted) {
+          await _refreshAfterLedgerMutation();
+        }
       }
+      if (mounted) {
+        await _showUserMessage(result.message, source: 'invitations.send');
+      }
+      return result;
+    } catch (error, stackTrace) {
+      final message = 'Failed to send invitation: $error';
+      unawaited(_uiLog.log('invitations.send.error', '$message\n$stackTrace'));
+      if (mounted) {
+        await _showUserMessage(message, source: 'invitations.send');
+      }
+      return InvitationIntentResult(code: -1, message: message);
     }
   }
 
@@ -227,9 +247,11 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   Future<void> _acceptInvitation(Invitation invitation) async {
     if (_processingId != null) return;
     if (_locallyResolvedIncomingIds.contains(invitation.id)) return;
+    var keepLocallyResolved = false;
     setState(() {
       _processingId = invitation.id;
       _processingAction = 'accept';
+      _locallyResolvedIncomingIds.add(invitation.id);
     });
     UiFeedbackService.dismissCurrent(context);
 
@@ -238,6 +260,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     try {
       if (invitationId == null || fromPubkey == null) {
         if (mounted) {
+          setState(() {
+            _locallyResolvedIncomingIds.remove(invitation.id);
+          });
           await _showUserMessage(
             _delivery.acceptFailureMessage(-1),
             source: 'invitations.accept',
@@ -250,25 +275,25 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         invitationId,
         fromPubkey,
       );
-
-      if (result.code != 0 && mounted) {
-        await _showUserMessage(result.message, source: 'invitations.accept');
-      }
-      if (result.isSuccess) {
-        _locallyResolvedIncomingIds.add(invitation.id);
-      }
-      if (mounted && _processingId == invitation.id) {
+      keepLocallyResolved = result.isSuccess;
+      if (!result.isSuccess && mounted) {
         setState(() {
-          _processingId = null;
-          _processingAction = null;
+          _locallyResolvedIncomingIds.remove(invitation.id);
         });
       }
+
       await _refreshAfterLedgerMutation();
+      if (mounted) {
+        await _showUserMessage(result.message, source: 'invitations.accept');
+      }
     } finally {
       if (mounted && _processingId == invitation.id) {
         setState(() {
           _processingId = null;
           _processingAction = null;
+          if (!keepLocallyResolved) {
+            _locallyResolvedIncomingIds.remove(invitation.id);
+          }
         });
       }
     }
@@ -277,6 +302,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   Future<void> _rejectInvitation(Invitation invitation) async {
     if (_processingId != null) return;
     if (_locallyResolvedIncomingIds.contains(invitation.id)) return;
+    var keepLocallyResolved = false;
 
     // Show confirmation dialog for empty slot case
     final bool? confirm = await showDialog<bool>(
@@ -340,23 +366,30 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     setState(() {
       _processingId = invitation.id;
       _processingAction = 'reject';
+      _locallyResolvedIncomingIds.add(invitation.id);
     });
     UiFeedbackService.dismissCurrent(context);
 
     try {
       final result = await _intents.rejectInvitation(invitation);
-      if (result.isSuccess) {
-        _locallyResolvedIncomingIds.add(invitation.id);
+      keepLocallyResolved = result.isSuccess;
+      if (!result.isSuccess && mounted) {
+        setState(() {
+          _locallyResolvedIncomingIds.remove(invitation.id);
+        });
       }
+      await _refreshAfterLedgerMutation();
       if (mounted) {
         await _showUserMessage(result.message, source: 'invitations.reject');
       }
-      await _refreshAfterLedgerMutation();
     } finally {
       if (mounted) {
         setState(() {
           _processingId = null;
           _processingAction = null;
+          if (!keepLocallyResolved) {
+            _locallyResolvedIncomingIds.remove(invitation.id);
+          }
         });
       }
     }
@@ -424,10 +457,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     try {
       final result = await _intents.cancelInvitation(invitation.id);
+      await _refreshAfterLedgerMutation();
       if (mounted) {
         await _showUserMessage(result.message, source: 'invitations.cancel');
       }
-      await _refreshAfterLedgerMutation();
     } finally {
       if (mounted) {
         setState(() {
@@ -452,6 +485,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     ];
     int? selectedSlot = availableSlots.isNotEmpty ? availableSlots.first : null;
     String? formError;
+    bool isSending = false;
 
     showModalBottomSheet(
       context: context,
@@ -579,9 +613,13 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: selectedSlot == null
+                    onPressed: selectedSlot == null || isSending
                         ? null
                         : () async {
+                            setModalState(() {
+                              isSending = true;
+                              formError = null;
+                            });
                             final input = controller.text.trim();
                             final selfRootKey =
                                 widget.runtime.capsuleRootPublicKey();
@@ -596,24 +634,37 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                             final slot = selectedSlot;
                             if (!resolution.isSuccess || slot == null) {
                               setModalState(
-                                () => formError = resolution.errorMessage ??
-                                    'Could not resolve recipient address',
+                                () {
+                                  formError = resolution.errorMessage ??
+                                      'Could not resolve recipient address';
+                                  isSending = false;
+                                },
                               );
                               return;
                             }
-
-                            if (sheetContext.mounted) {
-                              FocusScope.of(sheetContext).unfocus();
-                              Navigator.of(sheetContext).pop();
-                            }
-
-                            unawaited(_sendInvitationAsync(
+                            final result = await _sendInvitationAsync(
                               resolution.transportRecipient!,
                               slot,
-                            ));
+                            );
+                            if (!sheetContext.mounted) return;
+                            if (!result.isSuccess) {
+                              setModalState(() {
+                                formError = result.message;
+                                isSending = false;
+                              });
+                              return;
+                            }
+                            FocusScope.of(sheetContext).unfocus();
+                            Navigator.of(sheetContext).pop();
                           },
                     icon: const Icon(Icons.send),
-                    label: const Text('Send'),
+                    label: isSending
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Send'),
                   ),
                 ),
               ],

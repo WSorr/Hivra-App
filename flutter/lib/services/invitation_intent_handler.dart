@@ -29,6 +29,14 @@ class InvitationIntentHandler {
     -13,
     -14,
   };
+  static const Set<int> _softAcceptDeliveryCodes = <int>{
+    -6,
+    -7,
+    -11,
+    -12,
+    -13,
+    -14,
+  };
   static final Map<String, Future<InvitationIntentResult>>
       _quickFetchInFlightByCapsule = <String, Future<InvitationIntentResult>>{};
   static final Map<String, DateTime> _lastQuickFetchAtByCapsule =
@@ -160,15 +168,29 @@ class InvitationIntentHandler {
     final workerResult =
         await _requireActions().acceptInvitation(invitationId, fromPubkey);
     final code = workerResult.code;
+    final hasWorkerLedger = (workerResult.ledgerJson?.isNotEmpty ?? false);
+    final localAcceptanceRecorded =
+        hasWorkerLedger && _softAcceptDeliveryCodes.contains(code);
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
         ? ' [code: $code; ffi: $lastError]'
         : ' [code: $code]';
+    if (code == 0) {
+      return const InvitationIntentResult(
+        code: 0,
+        message: 'Invitation accepted',
+      );
+    }
+    if (localAcceptanceRecorded) {
+      return InvitationIntentResult(
+        code: 0,
+        message:
+            '${_delivery.acceptFailureMessage(code)} Local acceptance is recorded.$diagnostics',
+      );
+    }
     return InvitationIntentResult(
       code: code,
-      message: code == 0
-          ? 'Invitation accepted'
-          : '${_delivery.acceptFailureMessage(code)}$diagnostics',
+      message: '${_delivery.acceptFailureMessage(code)}$diagnostics',
     );
   }
 
@@ -257,13 +279,13 @@ class InvitationIntentHandler {
       return;
     }
 
+    final now = DateTime.now();
     final overdueOutgoingPending = loadInvitations()
-        .where(
-          (invitation) =>
-              invitation.isOutgoing &&
-              invitation.status == InvitationStatus.pending &&
-              invitation.isExpired,
-        )
+        .where((invitation) =>
+            invitation.isOutgoing &&
+            invitation.expiresAt != null &&
+            invitation.expiresAt!.isBefore(now) &&
+            _isLocallyOverdueButNotLedgerFinalized(invitation))
         .toList(growable: false);
     if (overdueOutgoingPending.isEmpty) {
       return;
@@ -277,5 +299,25 @@ class InvitationIntentHandler {
       final ok = await actions.cancelInvitation(invitationId);
       if (!ok) continue;
     }
+  }
+
+  bool _isLocallyOverdueButNotLedgerFinalized(Invitation invitation) {
+    if (invitation.status == InvitationStatus.pending) {
+      return true;
+    }
+
+    if (invitation.status != InvitationStatus.expired) {
+      return false;
+    }
+
+    // Projection marks overdue outgoing invitations as `expired` even before
+    // a ledger InvitationExpired event exists. In that synthetic state
+    // respondedAt equals expiresAt. We should append a real expiration event.
+    final respondedAt = invitation.respondedAt;
+    final expiresAt = invitation.expiresAt;
+    if (respondedAt == null || expiresAt == null) {
+      return false;
+    }
+    return respondedAt == expiresAt;
   }
 }

@@ -47,6 +47,56 @@ fn send_delivery_message(
     Ok(())
 }
 
+fn retry_pending_outgoing_invitations_over_transport(
+    transport: &NostrTransport,
+    sender_pubkey: [u8; 32],
+) -> Result<i32, i32> {
+    let pending = crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime(
+        PubKey::from(sender_pubkey),
+    );
+    if pending.is_empty() {
+        return Ok(0);
+    }
+
+    let mut delivered_count: i32 = 0;
+    let mut first_delivery_error: Option<i32> = None;
+    for pending_delivery in pending {
+        let message = Message {
+            from: sender_pubkey,
+            to: pending_delivery.to_pubkey,
+            kind: EventKind::InvitationSent as u32,
+            payload: pending_delivery.payload,
+            timestamp: pending_delivery.timestamp,
+            invitation_id: Some(pending_delivery.invitation_id),
+        };
+
+        match send_delivery_message(transport, message, -7, "InvitationSentRetry") {
+            Ok(_) => {
+                delivered_count += 1;
+            }
+            Err(delivery_code) => {
+                if first_delivery_error.is_none() {
+                    first_delivery_error = Some(delivery_code);
+                }
+            }
+        }
+    }
+
+    if delivered_count > 0 {
+        eprintln!(
+            "[Delivery/Nostr] InvitationSentRetry delivered count={}",
+            delivered_count
+        );
+        return Ok(delivered_count);
+    }
+
+    if let Some(code) = first_delivery_error {
+        return Err(code);
+    }
+
+    Ok(0)
+}
+
 /// Deliver an invitation and append `InvitationSent` to the local ledger.
 ///
 /// Exported symbol remains stable for existing bindings.
@@ -205,6 +255,14 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
     }
 
     let received = match with_cached_nostr_transport(sender_secret, profile, -4, |transport| {
+        if let Err(code) =
+            retry_pending_outgoing_invitations_over_transport(transport, local_pubkey)
+        {
+            eprintln!(
+                "[Delivery/Nostr] InvitationSentRetry pre-receive failed (code {})",
+                code
+            );
+        }
         transport.receive().map_err(|_| -5)
     }) {
         Ok(messages) => messages,
@@ -455,12 +513,45 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         return 0;
     }
 
+    let delivery_payload = payload_bytes.clone();
+    let delivery_timestamp = prepared.event.timestamp().as_u64();
+
+    if append_prepared_event(prepared).is_err() {
+        eprintln!(
+            "[Accept] local InvitationAccepted append failed invitation={:02x?}",
+            &invitation_id[..4]
+        );
+        set_last_error("Accept invitation failed: append InvitationAccepted");
+        return -3;
+    }
+    eprintln!(
+        "[Accept] local InvitationAccepted append ok invitation={:02x?}",
+        &invitation_id[..4]
+    );
+
+    if let Err(err) = finalize_local_acceptance(&engine, &acceptance_plan, from_pubkey) {
+        eprintln!(
+            "[Accept] finalize failed invitation={:02x?}: {}",
+            &invitation_id[..4],
+            err
+        );
+        set_last_error(format!(
+            "Accept invitation failed: finalize local acceptance failed ({err})"
+        ));
+        return -10;
+    }
+
+    eprintln!(
+        "[Accept] finalize ok invitation={:02x?}",
+        &invitation_id[..4]
+    );
+
     let message = Message {
         from: sender_pubkey,
         to: from_pubkey,
         kind: EventKind::InvitationAccepted as u32,
-        payload: payload_bytes.clone(),
-        timestamp: prepared.event.timestamp().as_u64(),
+        payload: delivery_payload,
+        timestamp: delivery_timestamp,
         invitation_id: Some(invitation_id),
     };
 
@@ -476,48 +567,16 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         })
     {
         eprintln!(
-            "[Accept] delivery send failed invitation={:02x?}: code {}",
-            &invitation_id[..4],
+            "[Delivery/Nostr] InvitationAccepted local append/finalize ok; delivery failed ({})",
             code
         );
         set_last_error(format!(
-            "Accept invitation failed: delivery transport rejected message (code {code})"
+            "Accept invitation delivery failed but local acceptance is recorded (code {code})"
         ));
         return code;
     }
 
-    if append_prepared_event(prepared).is_err() {
-        eprintln!(
-            "[Accept] local InvitationAccepted append failed invitation={:02x?}",
-            &invitation_id[..4]
-        );
-        set_last_error("Accept invitation failed: append InvitationAccepted");
-        return -3;
-    }
-    eprintln!(
-        "[Accept] local InvitationAccepted append ok invitation={:02x?}",
-        &invitation_id[..4]
-    );
-
-    finalize_local_acceptance(&engine, &acceptance_plan, from_pubkey)
-        .map(|_| {
-            eprintln!(
-                "[Accept] finalize ok invitation={:02x?}",
-                &invitation_id[..4]
-            );
-            0
-        })
-        .unwrap_or_else(|err| {
-            eprintln!(
-                "[Accept] finalize failed invitation={:02x?}: {}",
-                &invitation_id[..4],
-                err
-            );
-            set_last_error(format!(
-                "Accept invitation failed: finalize local acceptance failed ({err})"
-            ));
-            -10
-        })
+    0
 }
 
 /// Append InvitationRejected through Engine orchestration.
