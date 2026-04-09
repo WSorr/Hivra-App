@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../ffi/app_runtime_runtime.dart';
+import 'bingx_trading_contract_service.dart';
 import 'capsule_chat_contract_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_state_manager.dart';
@@ -17,6 +18,7 @@ import 'relationship_service.dart';
 import 'settings_service.dart';
 import 'temperature_tomorrow_contract_service.dart';
 import 'plugin_host_api_service.dart';
+import 'wasm_plugin_registry_service.dart';
 
 class AppRuntimeService {
   final AppRuntimeRuntime _runtime;
@@ -110,13 +112,47 @@ class AppRuntimeService {
   PluginHostApiService buildPluginHostApiService() {
     final consensus = buildConsensusRuntimeService();
     final demoRunner = buildPluginDemoContractRunnerService();
+    final bingx = BingxTradingContractService(
+      readSignable: consensus.signable,
+    );
     final chat = CapsuleChatContractService(
       readSignable: consensus.signable,
     );
     return PluginHostApiService(
       runTemperatureDemo: demoRunner.runTemperatureTomorrowDemo,
+      runBingxSpotOrder: bingx.execute,
       runCapsuleChat: chat.execute,
+      resolveRuntimeBinding: _resolvePluginRuntimeBinding,
     );
+  }
+
+  Future<PluginRuntimeBinding> _resolvePluginRuntimeBinding(
+    String pluginId,
+  ) async {
+    final normalizedPluginId = pluginId.trim();
+    if (normalizedPluginId.isEmpty) {
+      return const PluginRuntimeBinding.hostFallback();
+    }
+
+    final registry = const WasmPluginRegistryService();
+    final records = await registry.loadPlugins();
+    for (final record in records) {
+      final recordPluginId = record.pluginId?.trim();
+      if (recordPluginId == null || recordPluginId.isEmpty) {
+        continue;
+      }
+      if (recordPluginId != normalizedPluginId) {
+        continue;
+      }
+      return PluginRuntimeBinding.externalPackage(
+        packageId: record.id,
+        packageVersion: record.pluginVersion,
+        packageKind: record.packageKind,
+        contractKind: record.contractKind,
+      );
+    }
+
+    return const PluginRuntimeBinding.hostFallback();
   }
 
   RelationshipService buildRelationshipService() {

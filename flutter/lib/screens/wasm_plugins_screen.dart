@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -13,6 +14,7 @@ import '../services/plugin_host_api_service.dart';
 import '../services/temperature_tomorrow_contract_service.dart';
 import '../services/ui_event_log_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
+import '../services/wasm_plugin_source_catalog_service.dart';
 
 class WasmPluginsScreen extends StatefulWidget {
   final bool embedded;
@@ -28,6 +30,8 @@ class WasmPluginsScreen extends StatefulWidget {
 
 class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   final WasmPluginRegistryService _registry = const WasmPluginRegistryService();
+  final WasmPluginSourceCatalogService _sourceCatalog =
+      const WasmPluginSourceCatalogService();
   final PluginDemoContractRunnerService _demoRunner =
       AppRuntimeService().buildPluginDemoContractRunnerService();
   final PluginExecutionGuardService _guard =
@@ -42,7 +46,30 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   final TextEditingController _chatPeerController = TextEditingController();
   final TextEditingController _chatMessageController =
       TextEditingController(text: 'hello from capsule chat');
+  final TextEditingController _bingxPeerController = TextEditingController();
+  final TextEditingController _bingxSymbolController =
+      TextEditingController(text: 'BTC-USDT');
+  final TextEditingController _bingxQuantityController =
+      TextEditingController(text: '0.01');
+  final TextEditingController _bingxLimitPriceController =
+      TextEditingController(text: '60000');
+  final TextEditingController _bingxZoneLowController =
+      TextEditingController(text: '58000');
+  final TextEditingController _bingxZoneHighController =
+      TextEditingController(text: '60000');
+  final TextEditingController _bingxManualEntryPriceController =
+      TextEditingController();
+  final TextEditingController _bingxTriggerPriceController =
+      TextEditingController();
+  final TextEditingController _bingxStopLossController =
+      TextEditingController();
+  final TextEditingController _bingxTakeProfitController =
+      TextEditingController();
+  final TextEditingController _bingxStrategyTagController =
+      TextEditingController(text: 'demo');
   List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
+  WasmPluginSourceCatalog? _sourceCatalogSnapshot;
+  String? _sourceCatalogError;
   PluginExecutionGuardSnapshot _guardSnapshot =
       const PluginExecutionGuardSnapshot(
     state: ConsensusGuardState.pending,
@@ -51,13 +78,26 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     blockingFacts: <ConsensusBlockingFact>[],
   );
   bool _loading = true;
+  bool _loadingSourceCatalog = true;
   bool _installing = false;
   bool _runningDemo = false;
+  bool _runningBingx = false;
+  bool _broadcastingBingxSignal = false;
   bool _runningChat = false;
+  Set<String> _installingSourceEntryIds = <String>{};
   PluginDemoRunResult? _lastDemoResult;
+  PluginHostApiResponse? _lastBingxResponse;
   PluginHostApiResponse? _lastChatResponse;
   List<CapsuleChatInboxMessage> _chatInbox = const <CapsuleChatInboxMessage>[];
+  List<CapsuleTradeSignalInboxMessage> _tradeSignalInbox =
+      const <CapsuleTradeSignalInboxMessage>[];
   int _chatDroppedByConsensus = 0;
+  String _bingxSide = 'buy';
+  String _bingxOrderType = 'limit';
+  String _bingxTimeInForce = 'GTC';
+  String _bingxEntryMode = 'direct';
+  String _bingxZoneSide = 'buyside';
+  String _bingxZonePriceRule = 'zone_mid';
 
   static const List<_CatalogPlugin> _transportPlugins = <_CatalogPlugin>[
     _CatalogPlugin(
@@ -99,12 +139,24 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   void initState() {
     super.initState();
     _reload();
+    _reloadSourceCatalog();
   }
 
   @override
   void dispose() {
     _chatPeerController.dispose();
     _chatMessageController.dispose();
+    _bingxPeerController.dispose();
+    _bingxSymbolController.dispose();
+    _bingxQuantityController.dispose();
+    _bingxLimitPriceController.dispose();
+    _bingxZoneLowController.dispose();
+    _bingxZoneHighController.dispose();
+    _bingxManualEntryPriceController.dispose();
+    _bingxTriggerPriceController.dispose();
+    _bingxStopLossController.dispose();
+    _bingxTakeProfitController.dispose();
+    _bingxStrategyTagController.dispose();
     super.dispose();
   }
 
@@ -117,6 +169,31 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       _guardSnapshot = guardSnapshot;
       _loading = false;
     });
+  }
+
+  Future<void> _reloadSourceCatalog() async {
+    setState(() {
+      _loadingSourceCatalog = true;
+      _sourceCatalogError = null;
+    });
+    try {
+      final catalog = await _sourceCatalog.fetchCatalogWithFallback();
+      if (!mounted) return;
+      setState(() {
+        _sourceCatalogSnapshot = catalog;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _sourceCatalogError = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingSourceCatalog = false;
+        });
+      }
+    }
   }
 
   Future<void> _installPlugin() async {
@@ -188,6 +265,58 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Removed ${record.displayName}')),
     );
+  }
+
+  Future<void> _installFromSource(WasmPluginSourceCatalogEntry entry) async {
+    if (_installingSourceEntryIds.contains(entry.id)) return;
+    setState(() {
+      _installingSourceEntryIds = <String>{
+        ..._installingSourceEntryIds,
+        entry.id,
+      };
+    });
+
+    try {
+      final record = await _sourceCatalog.installFromSourceEntry(entry);
+      await _reload();
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Installed ${record.displayName} from source'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Failed to install ${entry.displayName} from source'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _installingSourceEntryIds = _installingSourceEntryIds
+              .where((value) => value != entry.id)
+              .toSet();
+        });
+      }
+    }
   }
 
   Future<void> _runTemperatureDemo() async {
@@ -274,10 +403,12 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     }
   }
 
-  Future<void> _fillPeerFromConsensus() async {
+  Future<String?> _selectConsensusPeer({
+    required String hint,
+  }) async {
     final checks = _manualChecks.loadChecks();
     if (checks.isEmpty) {
-      if (!mounted) return;
+      if (!mounted) return null;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
@@ -288,17 +419,399 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           duration: Duration(seconds: 2),
         ),
       );
+      return null;
+    }
+
+    final signableChecks = checks.where((check) => check.isSignable).toList();
+    final candidates = signableChecks.isNotEmpty ? signableChecks : checks;
+
+    if (candidates.length == 1) {
+      return candidates.first.peerHex;
+    }
+
+    final selectedPeerHex = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: Text(
+                  'Select consensus peer',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(hint),
+              ),
+              for (final check in candidates)
+                ListTile(
+                  leading: Icon(
+                    check.isSignable ? Icons.verified_rounded : Icons.warning,
+                    color: check.isSignable ? Colors.green : Colors.orange,
+                  ),
+                  title: Text(check.peerLabel),
+                  subtitle: Text(
+                    check.peerHex,
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                  trailing: check.isSignable
+                      ? const Text(
+                          'Signable',
+                          style: TextStyle(color: Colors.green),
+                        )
+                      : const Text(
+                          'Blocked',
+                          style: TextStyle(color: Colors.orange),
+                        ),
+                  onTap: () => Navigator.of(sheetContext).pop(check.peerHex),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    return selectedPeerHex;
+  }
+
+  Future<void> _fillPeerFromConsensus() async {
+    final selectedPeerHex = await _selectConsensusPeer(
+      hint: 'Choose exact capsule target for chat delivery.',
+    );
+    if (!mounted || selectedPeerHex == null || selectedPeerHex.isEmpty) return;
+    setState(() {
+      _chatPeerController.text = selectedPeerHex;
+    });
+  }
+
+  Future<void> _fillBingxPeerFromConsensus() async {
+    final selectedPeerHex = await _selectConsensusPeer(
+      hint: 'Choose consensus peer for BingX intent routing.',
+    );
+    if (!mounted || selectedPeerHex == null || selectedPeerHex.isEmpty) return;
+    setState(() {
+      _bingxPeerController.text = selectedPeerHex;
+    });
+  }
+
+  Future<void> _runBingxIntent() async {
+    if (_runningBingx) return;
+    if (!mounted) return;
+
+    final peerHex = _bingxPeerController.text.trim().toLowerCase();
+    final symbol = _bingxSymbolController.text.trim();
+    final quantityDecimal = _bingxQuantityController.text.trim();
+    final strategyTag = _bingxStrategyTagController.text.trim();
+    final zoneLowDecimal = _bingxZoneLowController.text.trim();
+    final zoneHighDecimal = _bingxZoneHighController.text.trim();
+    final manualEntryPriceDecimal =
+        _bingxManualEntryPriceController.text.trim();
+    final triggerPriceDecimal = _bingxTriggerPriceController.text.trim();
+    final stopLossDecimal = _bingxStopLossController.text.trim();
+    final takeProfitDecimal = _bingxTakeProfitController.text.trim();
+    final nowUtc = DateTime.now().toUtc().toIso8601String();
+    final clientOrderId = 'ui-ord-${DateTime.now().microsecondsSinceEpoch}';
+    final isZonePending = _bingxEntryMode == 'zone_pending';
+    final limitPriceDecimal = _bingxOrderType == 'limit' && !isZonePending
+        ? _bingxLimitPriceController.text.trim()
+        : null;
+    final timeInForce = _bingxOrderType == 'limit' ? _bingxTimeInForce : null;
+
+    setState(() {
+      _runningBingx = true;
+    });
+
+    try {
+      await _uiLog.log(
+        'bingx.intent.request',
+        'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} symbol=$symbol side=$_bingxSide type=$_bingxOrderType entry=$_bingxEntryMode qty=$quantityDecimal',
+      );
+
+      final response = await _pluginHostApi.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: PluginHostApiService.schemaVersion,
+          pluginId: PluginHostApiService.bingxTradingPluginId,
+          method: PluginHostApiService.placeBingxSpotOrderIntentMethod,
+          args: <String, dynamic>{
+            'peer_hex': peerHex,
+            'client_order_id': clientOrderId,
+            'symbol': symbol,
+            'side': _bingxSide,
+            'order_type': _bingxOrderType,
+            'quantity_decimal': quantityDecimal,
+            'limit_price_decimal': limitPriceDecimal,
+            'time_in_force': timeInForce,
+            'entry_mode': _bingxEntryMode,
+            'zone_side': isZonePending ? _bingxZoneSide : null,
+            'zone_low_decimal': isZonePending && zoneLowDecimal.isNotEmpty
+                ? zoneLowDecimal
+                : null,
+            'zone_high_decimal': isZonePending && zoneHighDecimal.isNotEmpty
+                ? zoneHighDecimal
+                : null,
+            'zone_price_rule': isZonePending ? _bingxZonePriceRule : null,
+            'manual_entry_price_decimal': isZonePending &&
+                    _bingxZonePriceRule == 'manual' &&
+                    manualEntryPriceDecimal.isNotEmpty
+                ? manualEntryPriceDecimal
+                : null,
+            'trigger_price_decimal':
+                isZonePending && triggerPriceDecimal.isNotEmpty
+                    ? triggerPriceDecimal
+                    : null,
+            'stop_loss_decimal': isZonePending && stopLossDecimal.isNotEmpty
+                ? stopLossDecimal
+                : null,
+            'take_profit_decimal': isZonePending && takeProfitDecimal.isNotEmpty
+                ? takeProfitDecimal
+                : null,
+            'created_at_utc': nowUtc,
+            'strategy_tag': strategyTag.isEmpty ? null : strategyTag,
+          },
+        ),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _lastBingxResponse = response;
+      });
+
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      switch (response.status) {
+        case PluginHostApiStatus.executed:
+          final hash = response.result?['intent_hash_hex']?.toString() ?? '';
+          final shortHash =
+              hash.length >= 12 ? '${hash.substring(0, 12)}..' : hash;
+          await _uiLog.log(
+            'bingx.intent.executed',
+            'peer=${peerHex.isEmpty ? "none" : peerHex.substring(0, 8)}.. hash=${shortHash.isEmpty ? "none" : shortHash}',
+          );
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('BingX intent prepared: $shortHash'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          break;
+        case PluginHostApiStatus.blocked:
+          final reason = response.blockingFacts.isEmpty
+              ? 'Consensus guard blocked execution.'
+              : response.blockingFacts.first.label;
+          await _uiLog.log(
+            'bingx.intent.blocked',
+            reason,
+          );
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(reason),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          break;
+        case PluginHostApiStatus.rejected:
+          await _uiLog.log(
+            'bingx.intent.rejected',
+            response.errorMessage ?? 'BingX request rejected',
+          );
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                response.errorMessage ?? 'BingX request rejected',
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          break;
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _runningBingx = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _broadcastLastBingxIntent() async {
+    if (_broadcastingBingxSignal) return;
+    final response = _lastBingxResponse;
+    final result = response?.result;
+    if (response?.status != PluginHostApiStatus.executed || result == null) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Run a BingX intent first, then broadcast it'),
+          duration: Duration(seconds: 2),
+        ),
+      );
       return;
     }
 
-    final preferred = checks.firstWhere(
-      (check) => check.isSignable,
-      orElse: () => checks.first,
-    );
+    final checks = _manualChecks.loadChecks();
+    final peers = checks
+        .where((check) => check.isSignable)
+        .map((check) => check.peerHex)
+        .toSet()
+        .toList()
+      ..sort();
+    if (peers.isEmpty) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('No signable consensus peers available'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final signalId = 'sig-${DateTime.now().microsecondsSinceEpoch}';
+    final payloadJson = jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'plugin_id': PluginHostApiService.bingxTradingPluginId,
+      'contract_kind': 'bingx_trade_signal_v1',
+      'signal_type': 'intent_prepared',
+      'signal_id': signalId,
+      'intent_hash_hex': result['intent_hash_hex']?.toString(),
+      'canonical_intent_json': result['canonical_intent_json']?.toString(),
+      'symbol': result['symbol']?.toString(),
+      'side': result['side']?.toString(),
+      'order_type': result['order_type']?.toString(),
+      'quantity_decimal': result['quantity_decimal']?.toString(),
+      'entry_mode': result['entry_mode']?.toString() ?? 'direct',
+      'strategy_tag': result['strategy_tag']?.toString(),
+      'created_at_utc': DateTime.now().toUtc().toIso8601String(),
+    });
+
     if (!mounted) return;
     setState(() {
-      _chatPeerController.text = preferred.peerHex;
+      _broadcastingBingxSignal = true;
     });
+
+    var sent = 0;
+    var blocked = 0;
+    var failed = 0;
+    try {
+      for (final peerHex in peers) {
+        final sendResult = await _chatDelivery.sendCanonicalEnvelope(
+          peerHex: peerHex,
+          canonicalEnvelopeJson: payloadJson,
+        );
+        if (sendResult.isSuccess) {
+          sent += 1;
+        } else if (sendResult.blockedByConsensus) {
+          blocked += 1;
+        } else {
+          failed += 1;
+        }
+      }
+      await _uiLog.log(
+        'bingx.signal.broadcast',
+        'signal=$signalId peers=${peers.length} sent=$sent blocked=$blocked failed=$failed',
+      );
+      await _refreshCapsuleChatInbox(silentWhenEmpty: true);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Signal broadcast: sent $sent/${peers.length}'
+            '${blocked > 0 ? ' · blocked $blocked' : ''}'
+            '${failed > 0 ? ' · failed $failed' : ''}',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _broadcastingBingxSignal = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _repeatTradeSignalAsDraft(
+      CapsuleTradeSignalInboxMessage signal) async {
+    final decoded = _tryDecodeJsonMap(signal.canonicalIntentJson);
+    if (decoded == null) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Signal intent payload is invalid'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _bingxPeerController.text = signal.fromHex;
+      _bingxSymbolController.text =
+          decoded['symbol']?.toString() ?? signal.symbol;
+      _bingxQuantityController.text =
+          decoded['quantity_decimal']?.toString() ?? signal.quantityDecimal;
+      _bingxSide = decoded['side']?.toString() ?? signal.side;
+      _bingxOrderType = decoded['order_type']?.toString() ?? signal.orderType;
+      _bingxTimeInForce = decoded['time_in_force']?.toString() ?? 'GTC';
+      _bingxEntryMode = decoded['entry_mode']?.toString() ?? signal.entryMode;
+      _bingxStrategyTagController.text =
+          decoded['strategy_tag']?.toString() ?? '';
+
+      if (_bingxEntryMode == 'zone_pending') {
+        _bingxZoneSide = decoded['zone_side']?.toString() ??
+            (_bingxSide == 'buy' ? 'buyside' : 'sellside');
+        _bingxZoneLowController.text =
+            decoded['zone_low_decimal']?.toString() ?? '';
+        _bingxZoneHighController.text =
+            decoded['zone_high_decimal']?.toString() ?? '';
+        _bingxZonePriceRule =
+            decoded['zone_price_rule']?.toString() ?? 'zone_mid';
+        _bingxManualEntryPriceController.text =
+            decoded['manual_entry_price_decimal']?.toString() ?? '';
+        _bingxTriggerPriceController.text =
+            decoded['trigger_price_decimal']?.toString() ?? '';
+        _bingxStopLossController.text =
+            decoded['stop_loss_decimal']?.toString() ?? '';
+        _bingxTakeProfitController.text =
+            decoded['take_profit_decimal']?.toString() ?? '';
+        _bingxLimitPriceController.text =
+            decoded['limit_price_decimal']?.toString() ?? '';
+      } else {
+        _bingxLimitPriceController.text =
+            decoded['limit_price_decimal']?.toString() ?? '';
+      }
+    });
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+            'Draft loaded from signal ${signal.signalId.substring(0, signal.signalId.length < 12 ? signal.signalId.length : 12)}..'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Map<String, dynamic>? _tryDecodeJsonMap(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _runCapsuleChat() async {
@@ -317,9 +830,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     try {
       await _uiLog.log(
         'chat.send.request',
-        'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} textBytes=${messageText.length}',
+        'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} fullPeer=$peerHex textBytes=${messageText.length}',
       );
-      final response = _pluginHostApi.execute(
+      final response = await _pluginHostApi.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: PluginHostApiService.schemaVersion,
           pluginId: PluginHostApiService.capsuleChatPluginId,
@@ -427,7 +940,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     final result = await _chatDelivery.receiveAndFilter();
     await _uiLog.log(
       'chat.fetch.result',
-      'code=${result.code} received=${result.messages.length} dropped=${result.droppedByConsensus}'
+      'code=${result.code} chat=${result.messages.length} trade=${result.tradeSignals.length} dropped=${result.droppedByConsensus}'
           '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
     );
     if (!mounted) return;
@@ -454,11 +967,25 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       }
       final merged = byId.values.toList()
         ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+
+      final tradeById = <String, CapsuleTradeSignalInboxMessage>{
+        for (final signal in _tradeSignalInbox) signal.id: signal,
+      };
+      for (final signal in result.tradeSignals) {
+        tradeById[signal.id] = signal;
+      }
+      final mergedSignals = tradeById.values.toList()
+        ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+
       _chatDroppedByConsensus = result.droppedByConsensus;
       _chatInbox = List<CapsuleChatInboxMessage>.unmodifiable(merged);
+      _tradeSignalInbox =
+          List<CapsuleTradeSignalInboxMessage>.unmodifiable(mergedSignals);
     });
 
-    if (result.messages.isEmpty && silentWhenEmpty) {
+    if (result.messages.isEmpty &&
+        result.tradeSignals.isEmpty &&
+        silentWhenEmpty) {
       return;
     }
 
@@ -469,7 +996,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         : '';
     messenger.showSnackBar(
       SnackBar(
-        content: Text('Chat inbox +${result.messages.length}$droppedNote'),
+        content: Text(
+          'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}$droppedNote',
+        ),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -491,6 +1020,18 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           onRemovePressed: _removePlugin,
         ),
         const SizedBox(height: 20),
+        _SourceCatalogSection(
+          loading: _loadingSourceCatalog,
+          sourceName: _sourceCatalogSnapshot?.sourceName,
+          sourceId: _sourceCatalogSnapshot?.sourceId,
+          sourceError: _sourceCatalogError,
+          entries: _sourceCatalogSnapshot?.entries ??
+              const <WasmPluginSourceCatalogEntry>[],
+          installingEntryIds: _installingSourceEntryIds,
+          onRefreshPressed: _reloadSourceCatalog,
+          onInstallPressed: _installFromSource,
+        ),
+        const SizedBox(height: 20),
         _SectionTitle(
           title: 'Plugin Host',
           subtitle:
@@ -509,6 +1050,89 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           running: _runningDemo,
           lastResult: _lastDemoResult,
           onRunPressed: _runTemperatureDemo,
+        ),
+        const SizedBox(height: 20),
+        _SectionTitle(
+          title: 'BingX Trading Intent',
+          subtitle:
+              'Deterministic spot-order intent over host API boundary (no live order execution in v1).',
+        ),
+        const SizedBox(height: 10),
+        _BingxIntentPanel(
+          running: _runningBingx,
+          broadcastingSignal: _broadcastingBingxSignal,
+          canBroadcastSignal:
+              _lastBingxResponse?.status == PluginHostApiStatus.executed,
+          lastResponse: _lastBingxResponse,
+          peerController: _bingxPeerController,
+          symbolController: _bingxSymbolController,
+          quantityController: _bingxQuantityController,
+          limitPriceController: _bingxLimitPriceController,
+          zoneLowController: _bingxZoneLowController,
+          zoneHighController: _bingxZoneHighController,
+          manualEntryPriceController: _bingxManualEntryPriceController,
+          triggerPriceController: _bingxTriggerPriceController,
+          stopLossController: _bingxStopLossController,
+          takeProfitController: _bingxTakeProfitController,
+          strategyTagController: _bingxStrategyTagController,
+          selectedSide: _bingxSide,
+          selectedOrderType: _bingxOrderType,
+          selectedTimeInForce: _bingxTimeInForce,
+          selectedEntryMode: _bingxEntryMode,
+          selectedZoneSide: _bingxZoneSide,
+          selectedZonePriceRule: _bingxZonePriceRule,
+          onUsePeerPressed: _fillBingxPeerFromConsensus,
+          onRunPressed: _runBingxIntent,
+          onBroadcastSignalPressed: _broadcastLastBingxIntent,
+          onSideChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _bingxSide = value;
+              if (_bingxEntryMode == 'zone_pending') {
+                _bingxZoneSide = value == 'buy' ? 'buyside' : 'sellside';
+              }
+            });
+          },
+          onOrderTypeChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _bingxOrderType = value;
+            });
+          },
+          onTimeInForceChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _bingxTimeInForce = value;
+            });
+          },
+          onEntryModeChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _bingxEntryMode = value;
+              if (_bingxEntryMode == 'zone_pending') {
+                _bingxOrderType = 'limit';
+                _bingxZoneSide = _bingxSide == 'buy' ? 'buyside' : 'sellside';
+              }
+            });
+          },
+          onZoneSideChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _bingxZoneSide = value;
+            });
+          },
+          onZonePriceRuleChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _bingxZonePriceRule = value;
+            });
+          },
+        ),
+        const SizedBox(height: 10),
+        _BingxSignalInboxPanel(
+          signals: _tradeSignalInbox,
+          onRefreshPressed: _refreshCapsuleChatInbox,
+          onRepeatPressed: _repeatTradeSignalAsDraft,
         ),
         const SizedBox(height: 20),
         _SectionTitle(
@@ -653,6 +1277,178 @@ class _InstalledSection extends StatelessWidget {
                     ),
                   )
                   .toList(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SourceCatalogSection extends StatelessWidget {
+  final bool loading;
+  final String? sourceName;
+  final String? sourceId;
+  final String? sourceError;
+  final List<WasmPluginSourceCatalogEntry> entries;
+  final Set<String> installingEntryIds;
+  final Future<void> Function() onRefreshPressed;
+  final Future<void> Function(WasmPluginSourceCatalogEntry entry)
+      onInstallPressed;
+
+  const _SourceCatalogSection({
+    required this.loading,
+    required this.sourceName,
+    required this.sourceId,
+    required this.sourceError,
+    required this.entries,
+    required this.installingEntryIds,
+    required this.onRefreshPressed,
+    required this.onInstallPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: <Color>[Color(0xFF151A23), Color(0xFF10151D)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF2A3340)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Source Catalog',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      sourceName == null
+                          ? 'External plugin source (separate repo).'
+                          : '$sourceName (${sourceId ?? '-'})',
+                      style: const TextStyle(
+                        color: Color(0xFF9CA7B5),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: loading ? null : onRefreshPressed,
+                tooltip: 'Refresh catalog',
+                icon: loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (sourceError != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2A1D1F),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF6B3A3F)),
+              ),
+              child: Text(
+                sourceError!,
+                style: const TextStyle(
+                  color: Color(0xFFFFA4A4),
+                  height: 1.35,
+                ),
+              ),
+            )
+          else if (loading)
+            const Center(child: CircularProgressIndicator())
+          else if (entries.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF11161D),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF262F3B)),
+              ),
+              child: const Text(
+                'Source catalog is empty.',
+                style: TextStyle(color: Color(0xFF93A0B1)),
+              ),
+            )
+          else
+            _PluginGrid(
+              children: entries.map((entry) {
+                final busy = installingEntryIds.contains(entry.id);
+                return Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF11161D),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF27313E)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        entry.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${entry.pluginId} · v${entry.version}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF93A0B1),
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          onPressed:
+                              busy ? null : () => onInstallPressed(entry),
+                          icon: busy
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.download_rounded),
+                          label: Text(busy ? 'Installing' : 'Install'),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
             ),
         ],
       ),
@@ -1271,6 +2067,719 @@ class _DemoPairRunRow extends StatelessWidget {
   }
 }
 
+class _BingxIntentPanel extends StatelessWidget {
+  final bool running;
+  final bool broadcastingSignal;
+  final bool canBroadcastSignal;
+  final PluginHostApiResponse? lastResponse;
+  final TextEditingController peerController;
+  final TextEditingController symbolController;
+  final TextEditingController quantityController;
+  final TextEditingController limitPriceController;
+  final TextEditingController zoneLowController;
+  final TextEditingController zoneHighController;
+  final TextEditingController manualEntryPriceController;
+  final TextEditingController triggerPriceController;
+  final TextEditingController stopLossController;
+  final TextEditingController takeProfitController;
+  final TextEditingController strategyTagController;
+  final String selectedSide;
+  final String selectedOrderType;
+  final String selectedTimeInForce;
+  final String selectedEntryMode;
+  final String selectedZoneSide;
+  final String selectedZonePriceRule;
+  final ValueChanged<String?> onSideChanged;
+  final ValueChanged<String?> onOrderTypeChanged;
+  final ValueChanged<String?> onTimeInForceChanged;
+  final ValueChanged<String?> onEntryModeChanged;
+  final ValueChanged<String?> onZoneSideChanged;
+  final ValueChanged<String?> onZonePriceRuleChanged;
+  final Future<void> Function() onUsePeerPressed;
+  final Future<void> Function() onRunPressed;
+  final Future<void> Function() onBroadcastSignalPressed;
+
+  const _BingxIntentPanel({
+    required this.running,
+    required this.broadcastingSignal,
+    required this.canBroadcastSignal,
+    required this.lastResponse,
+    required this.peerController,
+    required this.symbolController,
+    required this.quantityController,
+    required this.limitPriceController,
+    required this.zoneLowController,
+    required this.zoneHighController,
+    required this.manualEntryPriceController,
+    required this.triggerPriceController,
+    required this.stopLossController,
+    required this.takeProfitController,
+    required this.strategyTagController,
+    required this.selectedSide,
+    required this.selectedOrderType,
+    required this.selectedTimeInForce,
+    required this.selectedEntryMode,
+    required this.selectedZoneSide,
+    required this.selectedZonePriceRule,
+    required this.onSideChanged,
+    required this.onOrderTypeChanged,
+    required this.onTimeInForceChanged,
+    required this.onEntryModeChanged,
+    required this.onZoneSideChanged,
+    required this.onZonePriceRuleChanged,
+    required this.onUsePeerPressed,
+    required this.onRunPressed,
+    required this.onBroadcastSignalPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final response = lastResponse;
+    final isLimit = selectedOrderType == 'limit';
+    final isZonePending = selectedEntryMode == 'zone_pending';
+    final isZoneManual = selectedZonePriceRule == 'manual';
+    final status = response?.status;
+    final accent = switch (status) {
+      PluginHostApiStatus.executed => const Color(0xFF75D98A),
+      PluginHostApiStatus.blocked => const Color(0xFFFFC76A),
+      PluginHostApiStatus.rejected => const Color(0xFFFF8A7A),
+      null => const Color(0xFF7F92A8),
+    };
+    final title = switch (status) {
+      PluginHostApiStatus.executed => 'Intent prepared',
+      PluginHostApiStatus.blocked => 'Blocked by guard',
+      PluginHostApiStatus.rejected => 'Request rejected',
+      null => 'Ready',
+    };
+    final details = switch (status) {
+      PluginHostApiStatus.executed => () {
+          final hash = response?.result?['intent_hash_hex']?.toString() ?? '';
+          return hash.isEmpty
+              ? 'Deterministic BingX intent prepared.'
+              : 'Intent hash: ${hash.substring(0, hash.length < 16 ? hash.length : 16)}..';
+        }(),
+      PluginHostApiStatus.blocked => response!.blockingFacts.isEmpty
+          ? 'Consensus guard blocked execution.'
+          : response.blockingFacts.first.label,
+      PluginHostApiStatus.rejected =>
+        response?.errorMessage ?? 'Input rejected by host API.',
+      null =>
+        'Pre-trade deterministic intent envelope for spot execution planning. Supports direct and zone-based pending entries.',
+    };
+    final intentHash = response?.result?['intent_hash_hex']?.toString() ?? '';
+    final shortIntentHash = intentHash.isEmpty
+        ? 'n/a'
+        : intentHash.length < 10
+            ? intentHash
+            : '${intentHash.substring(0, 10)}..';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121821),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF2B3846)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _PluginIconPlate(
+                icon: Icons.candlestick_chart_rounded,
+                accent: accent,
+                glow: accent.withAlpha(24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      details,
+                      style: const TextStyle(
+                        color: Color(0xFF9FAABA),
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: peerController,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: InputDecoration(
+              labelText: 'Peer hex (64 lowercase chars)',
+              hintText: 'bbbb...bbbb',
+              filled: true,
+              fillColor: const Color(0xFF0F141C),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              SizedBox(
+                width: 180,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey<String>('bingx-entry-mode-$selectedEntryMode'),
+                  initialValue: selectedEntryMode,
+                  decoration: InputDecoration(
+                    labelText: 'Entry Mode',
+                    filled: true,
+                    fillColor: const Color(0xFF0F141C),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: const <DropdownMenuItem<String>>[
+                    DropdownMenuItem(value: 'direct', child: Text('Direct')),
+                    DropdownMenuItem(
+                      value: 'zone_pending',
+                      child: Text('Zone Pending'),
+                    ),
+                  ],
+                  onChanged: running ? null : onEntryModeChanged,
+                ),
+              ),
+              SizedBox(
+                width: 180,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey<String>('bingx-side-$selectedSide'),
+                  initialValue: selectedSide,
+                  decoration: InputDecoration(
+                    labelText: 'Side',
+                    filled: true,
+                    fillColor: const Color(0xFF0F141C),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: const <DropdownMenuItem<String>>[
+                    DropdownMenuItem(value: 'buy', child: Text('Buy')),
+                    DropdownMenuItem(value: 'sell', child: Text('Sell')),
+                  ],
+                  onChanged: running ? null : onSideChanged,
+                ),
+              ),
+              SizedBox(
+                width: 180,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey<String>('bingx-order-type-$selectedOrderType'),
+                  initialValue: selectedOrderType,
+                  decoration: InputDecoration(
+                    labelText: 'Order Type',
+                    filled: true,
+                    fillColor: const Color(0xFF0F141C),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: const <DropdownMenuItem<String>>[
+                    DropdownMenuItem(value: 'limit', child: Text('Limit')),
+                    DropdownMenuItem(value: 'market', child: Text('Market')),
+                  ],
+                  onChanged:
+                      running || isZonePending ? null : onOrderTypeChanged,
+                ),
+              ),
+              if (isLimit)
+                SizedBox(
+                  width: 180,
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey<String>('bingx-tif-$selectedTimeInForce'),
+                    initialValue: selectedTimeInForce,
+                    decoration: InputDecoration(
+                      labelText: 'Time In Force',
+                      filled: true,
+                      fillColor: const Color(0xFF0F141C),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    items: const <DropdownMenuItem<String>>[
+                      DropdownMenuItem(value: 'GTC', child: Text('GTC')),
+                      DropdownMenuItem(value: 'IOC', child: Text('IOC')),
+                      DropdownMenuItem(value: 'FOK', child: Text('FOK')),
+                    ],
+                    onChanged: running ? null : onTimeInForceChanged,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              SizedBox(
+                width: 220,
+                child: TextField(
+                  controller: symbolController,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: 'Symbol',
+                    hintText: 'BTC-USDT',
+                    filled: true,
+                    fillColor: const Color(0xFF0F141C),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 220,
+                child: TextField(
+                  controller: quantityController,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: false,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Quantity',
+                    hintText: '0.01',
+                    filled: true,
+                    fillColor: const Color(0xFF0F141C),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              if (isLimit && !isZonePending)
+                SizedBox(
+                  width: 220,
+                  child: TextField(
+                    controller: limitPriceController,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: false,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Limit Price',
+                      hintText: '60000',
+                      filled: true,
+                      fillColor: const Color(0xFF0F141C),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (isZonePending) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                SizedBox(
+                  width: 180,
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey<String>('bingx-zone-side-$selectedZoneSide'),
+                    initialValue: selectedZoneSide,
+                    decoration: InputDecoration(
+                      labelText: 'Zone Side',
+                      filled: true,
+                      fillColor: const Color(0xFF0F141C),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    items: const <DropdownMenuItem<String>>[
+                      DropdownMenuItem(
+                          value: 'buyside', child: Text('Buyside')),
+                      DropdownMenuItem(
+                          value: 'sellside', child: Text('Sellside')),
+                    ],
+                    onChanged: running ? null : onZoneSideChanged,
+                  ),
+                ),
+                SizedBox(
+                  width: 200,
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey<String>(
+                        'bingx-zone-price-rule-$selectedZonePriceRule'),
+                    initialValue: selectedZonePriceRule,
+                    decoration: InputDecoration(
+                      labelText: 'Zone Price Rule',
+                      filled: true,
+                      fillColor: const Color(0xFF0F141C),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    items: const <DropdownMenuItem<String>>[
+                      DropdownMenuItem(
+                          value: 'zone_low', child: Text('Zone Low')),
+                      DropdownMenuItem(
+                          value: 'zone_mid', child: Text('Zone Mid')),
+                      DropdownMenuItem(
+                          value: 'zone_high', child: Text('Zone High')),
+                      DropdownMenuItem(value: 'manual', child: Text('Manual')),
+                    ],
+                    onChanged: running ? null : onZonePriceRuleChanged,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: zoneLowController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: false,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Zone Low',
+                      hintText: '58000',
+                      filled: true,
+                      fillColor: const Color(0xFF0F141C),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: zoneHighController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: false,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Zone High',
+                      hintText: '60000',
+                      filled: true,
+                      fillColor: const Color(0xFF0F141C),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                if (isZoneManual)
+                  SizedBox(
+                    width: 220,
+                    child: TextField(
+                      controller: manualEntryPriceController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                        signed: false,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Manual Entry Price',
+                        hintText: '59000',
+                        filled: true,
+                        fillColor: const Color(0xFF0F141C),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: triggerPriceController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: false,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Trigger Price (opt)',
+                      hintText: '58900',
+                      filled: true,
+                      fillColor: const Color(0xFF0F141C),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: stopLossController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: false,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Stop Loss (opt)',
+                      hintText: '57500',
+                      filled: true,
+                      fillColor: const Color(0xFF0F141C),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: takeProfitController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: false,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Take Profit (opt)',
+                      hintText: '62000',
+                      filled: true,
+                      fillColor: const Color(0xFF0F141C),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          TextField(
+            controller: strategyTagController,
+            autocorrect: false,
+            enableSuggestions: false,
+            maxLength: 64,
+            decoration: InputDecoration(
+              labelText: 'Strategy tag (optional)',
+              hintText: 'demo',
+              filled: true,
+              fillColor: const Color(0xFF0F141C),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: running ? null : onUsePeerPressed,
+                icon: const Icon(Icons.group_outlined),
+                label: const Text('Choose Consensus Peer'),
+              ),
+              FilledButton.icon(
+                onPressed: running ? null : onRunPressed,
+                icon: running
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.bolt_rounded),
+                label: Text(running ? 'Preparing' : 'Run BingX Intent'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: running || broadcastingSignal || !canBroadcastSignal
+                    ? null
+                    : onBroadcastSignalPressed,
+                icon: broadcastingSignal
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.campaign_outlined),
+                label: Text(
+                  broadcastingSignal ? 'Broadcasting' : 'Broadcast Last Intent',
+                ),
+              ),
+            ],
+          ),
+          if (response != null) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _InfoChip(
+                  icon: Icons.flag_outlined,
+                  label: 'Status: ${response.status.name}',
+                ),
+                _InfoChip(
+                  icon: Icons.tag_outlined,
+                  label: 'Method: ${response.method}',
+                ),
+                _InfoChip(
+                  icon: Icons.currency_exchange_outlined,
+                  label: 'Intent: $shortIntentHash',
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BingxSignalInboxPanel extends StatelessWidget {
+  final List<CapsuleTradeSignalInboxMessage> signals;
+  final Future<void> Function({bool silentWhenEmpty}) onRefreshPressed;
+  final Future<void> Function(CapsuleTradeSignalInboxMessage signal)
+      onRepeatPressed;
+
+  const _BingxSignalInboxPanel({
+    required this.signals,
+    required this.onRefreshPressed,
+    required this.onRepeatPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111620),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF2A3342)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'BingX Signal Inbox',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => onRefreshPressed(silentWhenEmpty: false),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Refresh'),
+              ),
+            ],
+          ),
+          if (signals.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'No trade signals yet.',
+                style: TextStyle(color: Color(0xFF93A0B3)),
+              ),
+            )
+          else
+            ...signals.reversed.take(10).map(
+                  (signal) => Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: _BingxSignalInboxRow(
+                      signal: signal,
+                      onRepeatPressed: () => onRepeatPressed(signal),
+                    ),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BingxSignalInboxRow extends StatelessWidget {
+  final CapsuleTradeSignalInboxMessage signal;
+  final VoidCallback onRepeatPressed;
+
+  const _BingxSignalInboxRow({
+    required this.signal,
+    required this.onRepeatPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final shortSignalId = signal.signalId.length <= 14
+        ? signal.signalId
+        : '${signal.signalId.substring(0, 14)}..';
+    final shortIntentHash = signal.intentHashHex.length <= 12
+        ? signal.intentHashHex
+        : '${signal.intentHashHex.substring(0, 12)}..';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D131C),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF263244)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${signal.symbol} · ${signal.side.toUpperCase()} · ${signal.orderType.toUpperCase()}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Qty ${signal.quantityDecimal} · mode ${signal.entryMode} · from ${signal.fromHex.substring(0, 8)}..',
+            style: const TextStyle(color: Color(0xFF9AA7BA), fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Signal $shortSignalId · intent $shortIntentHash',
+            style: const TextStyle(color: Color(0xFF8093A9), fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: onRepeatPressed,
+              icon: const Icon(Icons.copy_all_rounded),
+              label: const Text('Repeat as draft'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CapsuleChatPanel extends StatelessWidget {
   final bool running;
   final PluginHostApiResponse? lastResponse;
@@ -1407,7 +2916,7 @@ class _CapsuleChatPanel extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: running ? null : onUsePeerPressed,
                 icon: const Icon(Icons.group_outlined),
-                label: const Text('Use Consensus Peer'),
+                label: const Text('Choose Consensus Peer'),
               ),
               OutlinedButton.icon(
                 onPressed: running ? null : onRefreshInboxPressed,

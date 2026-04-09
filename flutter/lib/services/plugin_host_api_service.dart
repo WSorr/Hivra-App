@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import 'bingx_trading_contract_service.dart';
 import 'capsule_chat_contract_service.dart';
 import 'consensus_processor.dart';
 import 'plugin_demo_contract_runner_service.dart';
@@ -31,6 +32,11 @@ class PluginHostApiResponse {
   final PluginHostApiStatus status;
   final String pluginId;
   final String method;
+  final String executionSource;
+  final String? executionPackageId;
+  final String? executionPackageVersion;
+  final String? executionPackageKind;
+  final String? executionContractKind;
   final String? errorCode;
   final String? errorMessage;
   final List<ConsensusBlockingFact> blockingFacts;
@@ -42,6 +48,11 @@ class PluginHostApiResponse {
     required this.status,
     required this.pluginId,
     required this.method,
+    required this.executionSource,
+    required this.executionPackageId,
+    required this.executionPackageVersion,
+    required this.executionPackageKind,
+    required this.executionContractKind,
     required this.errorCode,
     required this.errorMessage,
     required this.blockingFacts,
@@ -61,54 +72,150 @@ typedef CapsuleChatRunner = CapsuleChatExecutionResult Function({
   required String messageText,
   required String createdAtUtc,
 });
+typedef BingxSpotOrderRunner = BingxTradingExecutionResult Function({
+  required String peerHex,
+  required String clientOrderId,
+  required String symbol,
+  required String side,
+  required String orderType,
+  required String quantityDecimal,
+  required String? limitPriceDecimal,
+  required String? timeInForce,
+  required String? entryMode,
+  required String? zoneSide,
+  required String? zoneLowDecimal,
+  required String? zoneHighDecimal,
+  required String? zonePriceRule,
+  required String? manualEntryPriceDecimal,
+  required String? triggerPriceDecimal,
+  required String? stopLossDecimal,
+  required String? takeProfitDecimal,
+  required String createdAtUtc,
+  required String? strategyTag,
+});
+
+class PluginRuntimeBinding {
+  final String source;
+  final String? packageId;
+  final String? packageVersion;
+  final String? packageKind;
+  final String? contractKind;
+
+  const PluginRuntimeBinding({
+    required this.source,
+    required this.packageId,
+    required this.packageVersion,
+    required this.packageKind,
+    required this.contractKind,
+  });
+
+  const PluginRuntimeBinding.hostFallback()
+      : source = 'host_fallback',
+        packageId = null,
+        packageVersion = null,
+        packageKind = null,
+        contractKind = null;
+
+  const PluginRuntimeBinding.externalPackage({
+    required this.packageId,
+    required this.packageVersion,
+    required this.packageKind,
+    required this.contractKind,
+  })  : source = 'external_package',
+        assert(packageId != null),
+        assert(packageKind != null);
+}
+
+typedef PluginRuntimeBindingResolver = Future<PluginRuntimeBinding> Function(
+  String pluginId,
+);
 
 class PluginHostApiService {
   static const int schemaVersion = 1;
   static const String temperaturePluginId =
       'hivra.contract.temperature-li.tomorrow.v1';
   static const String settleTemperatureMethod = 'settle_temperature_tomorrow';
+  static const String bingxTradingPluginId =
+      BingxTradingContractService.pluginId;
+  static const String placeBingxSpotOrderIntentMethod =
+      'place_bingx_spot_order_intent';
   static const String capsuleChatPluginId = CapsuleChatContractService.pluginId;
   static const String postCapsuleChatMethod = 'post_capsule_chat_message';
 
   final TemperatureDemoRunner _runTemperatureDemo;
+  final BingxSpotOrderRunner _runBingxSpotOrder;
   final CapsuleChatRunner _runCapsuleChat;
+  final PluginRuntimeBindingResolver? _resolveRuntimeBinding;
 
   const PluginHostApiService({
     required TemperatureDemoRunner runTemperatureDemo,
+    required BingxSpotOrderRunner runBingxSpotOrder,
     required CapsuleChatRunner runCapsuleChat,
+    PluginRuntimeBindingResolver? resolveRuntimeBinding,
   })  : _runTemperatureDemo = runTemperatureDemo,
-        _runCapsuleChat = runCapsuleChat;
+        _runBingxSpotOrder = runBingxSpotOrder,
+        _runCapsuleChat = runCapsuleChat,
+        _resolveRuntimeBinding = resolveRuntimeBinding;
 
   PluginHostApiResponse execute(PluginHostApiRequest request) {
+    return _executeResolved(
+      request,
+      const PluginRuntimeBinding.hostFallback(),
+    );
+  }
+
+  Future<PluginHostApiResponse> executeWithRuntimeHook(
+    PluginHostApiRequest request,
+  ) async {
+    if (_resolveRuntimeBinding == null) {
+      return execute(request);
+    }
+    final runtimeBinding = await _resolveRuntimeBinding(request.pluginId);
+    return _executeResolved(request, runtimeBinding);
+  }
+
+  PluginHostApiResponse _executeResolved(
+    PluginHostApiRequest request,
+    PluginRuntimeBinding runtimeBinding,
+  ) {
     if (request.schemaVersion != schemaVersion) {
       return _rejected(
         pluginId: request.pluginId,
         method: request.method,
         code: 'invalid_schema_version',
         message: 'Plugin host API schema version mismatch',
+        runtimeBinding: runtimeBinding,
       );
     }
     if (request.pluginId == temperaturePluginId) {
-      return _executeTemperature(request);
+      return _executeTemperature(request, runtimeBinding);
+    }
+    if (request.pluginId == bingxTradingPluginId) {
+      return _executeBingx(request, runtimeBinding);
     }
     if (request.pluginId == capsuleChatPluginId) {
-      return _executeCapsuleChat(request);
+      return _executeCapsuleChat(request, runtimeBinding);
     }
     return _rejected(
       pluginId: request.pluginId,
       method: request.method,
       code: 'unsupported_plugin',
       message: 'Unsupported plugin id',
+      runtimeBinding: runtimeBinding,
     );
   }
 
-  PluginHostApiResponse _executeTemperature(PluginHostApiRequest request) {
+  PluginHostApiResponse _executeTemperature(
+    PluginHostApiRequest request,
+    PluginRuntimeBinding runtimeBinding,
+  ) {
     if (request.method != settleTemperatureMethod) {
       return _rejected(
         pluginId: request.pluginId,
         method: request.method,
         code: 'unsupported_method',
         message: 'Unsupported plugin method',
+        runtimeBinding: runtimeBinding,
       );
     }
 
@@ -119,6 +226,7 @@ class PluginHostApiService {
         method: request.method,
         code: 'invalid_args',
         message: parse.error!,
+        runtimeBinding: runtimeBinding,
       );
     }
 
@@ -131,6 +239,7 @@ class PluginHostApiService {
       return _executed(
         pluginId: request.pluginId,
         method: request.method,
+        runtimeBinding: runtimeBinding,
         result: <String, dynamic>{
           'peer_hex': runResult.peerHex,
           'peer_label': runResult.peerLabel,
@@ -153,17 +262,22 @@ class PluginHostApiService {
           pluginId: request.pluginId,
           method: request.method,
           blockingFacts: runResult.blockingFacts,
+          runtimeBinding: runtimeBinding,
         ),
     };
   }
 
-  PluginHostApiResponse _executeCapsuleChat(PluginHostApiRequest request) {
+  PluginHostApiResponse _executeCapsuleChat(
+    PluginHostApiRequest request,
+    PluginRuntimeBinding runtimeBinding,
+  ) {
     if (request.method != postCapsuleChatMethod) {
       return _rejected(
         pluginId: request.pluginId,
         method: request.method,
         code: 'unsupported_method',
         message: 'Unsupported plugin method',
+        runtimeBinding: runtimeBinding,
       );
     }
 
@@ -187,6 +301,7 @@ class PluginHostApiService {
         code: 'invalid_args',
         message:
             'peer_hex/client_message_id/message_text/created_at_utc are required',
+        runtimeBinding: runtimeBinding,
       );
     }
 
@@ -204,6 +319,7 @@ class PluginHostApiService {
         method: request.method,
         code: 'invalid_args',
         message: error.message,
+        runtimeBinding: runtimeBinding,
       );
     }
 
@@ -211,6 +327,7 @@ class PluginHostApiService {
       return _executed(
         pluginId: request.pluginId,
         method: request.method,
+        runtimeBinding: runtimeBinding,
         result: <String, dynamic>{
           'peer_hex': runResult.envelope!.peerHex,
           'client_message_id': runResult.envelope!.clientMessageId,
@@ -226,6 +343,151 @@ class PluginHostApiService {
       pluginId: request.pluginId,
       method: request.method,
       blockingFacts: runResult.blockingFacts,
+      runtimeBinding: runtimeBinding,
+    );
+  }
+
+  PluginHostApiResponse _executeBingx(
+    PluginHostApiRequest request,
+    PluginRuntimeBinding runtimeBinding,
+  ) {
+    if (request.method != placeBingxSpotOrderIntentMethod) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'unsupported_method',
+        message: 'Unsupported plugin method',
+        runtimeBinding: runtimeBinding,
+      );
+    }
+
+    final peerHex = request.args['peer_hex']?.toString().trim().toLowerCase();
+    final clientOrderId = request.args['client_order_id']?.toString().trim();
+    final symbol = request.args['symbol']?.toString().trim();
+    final side = request.args['side']?.toString().trim();
+    final orderType = request.args['order_type']?.toString().trim();
+    final quantityDecimal = request.args['quantity_decimal']?.toString().trim();
+    final limitPriceDecimal =
+        request.args['limit_price_decimal']?.toString().trim();
+    final timeInForce = request.args['time_in_force']?.toString().trim();
+    final entryMode = request.args['entry_mode']?.toString().trim();
+    final zoneSide = request.args['zone_side']?.toString().trim();
+    final zoneLowDecimal = request.args['zone_low_decimal']?.toString().trim();
+    final zoneHighDecimal =
+        request.args['zone_high_decimal']?.toString().trim();
+    final zonePriceRule = request.args['zone_price_rule']?.toString().trim();
+    final manualEntryPriceDecimal =
+        request.args['manual_entry_price_decimal']?.toString().trim();
+    final triggerPriceDecimal =
+        request.args['trigger_price_decimal']?.toString().trim();
+    final stopLossDecimal =
+        request.args['stop_loss_decimal']?.toString().trim();
+    final takeProfitDecimal =
+        request.args['take_profit_decimal']?.toString().trim();
+    final createdAtUtc = request.args['created_at_utc']?.toString().trim();
+    final strategyTag = request.args['strategy_tag']?.toString().trim();
+
+    if (peerHex == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex) ||
+        clientOrderId == null ||
+        clientOrderId.isEmpty ||
+        symbol == null ||
+        symbol.isEmpty ||
+        side == null ||
+        side.isEmpty ||
+        orderType == null ||
+        orderType.isEmpty ||
+        quantityDecimal == null ||
+        quantityDecimal.isEmpty ||
+        createdAtUtc == null ||
+        createdAtUtc.isEmpty) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'invalid_args',
+        message:
+            'peer_hex/client_order_id/symbol/side/order_type/quantity_decimal/created_at_utc are required',
+        runtimeBinding: runtimeBinding,
+      );
+    }
+
+    late final BingxTradingExecutionResult runResult;
+    try {
+      runResult = _runBingxSpotOrder(
+        peerHex: peerHex,
+        clientOrderId: clientOrderId,
+        symbol: symbol,
+        side: side,
+        orderType: orderType,
+        quantityDecimal: quantityDecimal,
+        limitPriceDecimal: limitPriceDecimal,
+        timeInForce: timeInForce,
+        entryMode: entryMode,
+        zoneSide: zoneSide,
+        zoneLowDecimal: zoneLowDecimal,
+        zoneHighDecimal: zoneHighDecimal,
+        zonePriceRule: zonePriceRule,
+        manualEntryPriceDecimal: manualEntryPriceDecimal,
+        triggerPriceDecimal: triggerPriceDecimal,
+        stopLossDecimal: stopLossDecimal,
+        takeProfitDecimal: takeProfitDecimal,
+        createdAtUtc: createdAtUtc,
+        strategyTag: strategyTag,
+      );
+    } on FormatException catch (error) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'invalid_args',
+        message: error.message,
+        runtimeBinding: runtimeBinding,
+      );
+    }
+
+    if (runResult.intent != null) {
+      return _executed(
+        pluginId: request.pluginId,
+        method: request.method,
+        runtimeBinding: runtimeBinding,
+        result: <String, dynamic>{
+          'peer_hex': runResult.intent!.peerHex,
+          'client_order_id': runResult.intent!.clientOrderId,
+          'symbol': runResult.intent!.symbol,
+          'side': runResult.intent!.side.name,
+          'order_type': runResult.intent!.orderType.name,
+          'quantity_decimal': runResult.intent!.quantityDecimal,
+          'limit_price_decimal': runResult.intent!.limitPriceDecimal,
+          'time_in_force': runResult.intent!.timeInForce,
+          'entry_mode':
+              runResult.intent!.entryMode == BingxEntryMode.zonePending
+                  ? 'zone_pending'
+                  : 'direct',
+          'zone_side': runResult.intent!.zoneSide?.name,
+          'zone_low_decimal': runResult.intent!.zoneLowDecimal,
+          'zone_high_decimal': runResult.intent!.zoneHighDecimal,
+          'zone_price_rule': switch (runResult.intent!.zonePriceRule) {
+            BingxZonePriceRule.zoneLow => 'zone_low',
+            BingxZonePriceRule.zoneMid => 'zone_mid',
+            BingxZonePriceRule.zoneHigh => 'zone_high',
+            BingxZonePriceRule.manual => 'manual',
+            null => null,
+          },
+          'trigger_price_decimal': runResult.intent!.triggerPriceDecimal,
+          'stop_loss_decimal': runResult.intent!.stopLossDecimal,
+          'take_profit_decimal': runResult.intent!.takeProfitDecimal,
+          'created_at_utc': runResult.intent!.createdAtUtc,
+          'strategy_tag': runResult.intent!.strategyTag,
+          'intent_hash_hex': runResult.intent!.intentHashHex,
+          'canonical_intent_json': runResult.intent!.canonicalJson,
+        },
+      );
+    }
+
+    return _blocked(
+      pluginId: request.pluginId,
+      method: request.method,
+      blockingFacts: runResult.blockingFacts,
+      runtimeBinding: runtimeBinding,
     );
   }
 
@@ -303,12 +565,14 @@ class PluginHostApiService {
   PluginHostApiResponse _executed({
     required String pluginId,
     required String method,
+    required PluginRuntimeBinding runtimeBinding,
     required Map<String, dynamic> result,
   }) {
     final canonical = _canonical(
       status: PluginHostApiStatus.executed,
       pluginId: pluginId,
       method: method,
+      runtimeBinding: runtimeBinding,
       errorCode: null,
       errorMessage: null,
       blockingFacts: const <ConsensusBlockingFact>[],
@@ -318,6 +582,7 @@ class PluginHostApiService {
       status: PluginHostApiStatus.executed,
       pluginId: pluginId,
       method: method,
+      runtimeBinding: runtimeBinding,
       errorCode: null,
       errorMessage: null,
       blockingFacts: const <ConsensusBlockingFact>[],
@@ -329,12 +594,14 @@ class PluginHostApiService {
   PluginHostApiResponse _blocked({
     required String pluginId,
     required String method,
+    required PluginRuntimeBinding runtimeBinding,
     required List<ConsensusBlockingFact> blockingFacts,
   }) {
     final canonical = _canonical(
       status: PluginHostApiStatus.blocked,
       pluginId: pluginId,
       method: method,
+      runtimeBinding: runtimeBinding,
       errorCode: null,
       errorMessage: null,
       blockingFacts: blockingFacts,
@@ -344,6 +611,7 @@ class PluginHostApiService {
       status: PluginHostApiStatus.blocked,
       pluginId: pluginId,
       method: method,
+      runtimeBinding: runtimeBinding,
       errorCode: null,
       errorMessage: null,
       blockingFacts: blockingFacts,
@@ -357,11 +625,13 @@ class PluginHostApiService {
     required String method,
     required String code,
     required String message,
+    required PluginRuntimeBinding runtimeBinding,
   }) {
     final canonical = _canonical(
       status: PluginHostApiStatus.rejected,
       pluginId: pluginId,
       method: method,
+      runtimeBinding: runtimeBinding,
       errorCode: code,
       errorMessage: message,
       blockingFacts: const <ConsensusBlockingFact>[],
@@ -371,6 +641,7 @@ class PluginHostApiService {
       status: PluginHostApiStatus.rejected,
       pluginId: pluginId,
       method: method,
+      runtimeBinding: runtimeBinding,
       errorCode: code,
       errorMessage: message,
       blockingFacts: const <ConsensusBlockingFact>[],
@@ -383,6 +654,7 @@ class PluginHostApiService {
     required PluginHostApiStatus status,
     required String pluginId,
     required String method,
+    required PluginRuntimeBinding runtimeBinding,
     required String? errorCode,
     required String? errorMessage,
     required List<ConsensusBlockingFact> blockingFacts,
@@ -394,6 +666,11 @@ class PluginHostApiService {
       status: status,
       pluginId: pluginId,
       method: method,
+      executionSource: runtimeBinding.source,
+      executionPackageId: runtimeBinding.packageId,
+      executionPackageVersion: runtimeBinding.packageVersion,
+      executionPackageKind: runtimeBinding.packageKind,
+      executionContractKind: runtimeBinding.contractKind,
       errorCode: errorCode,
       errorMessage: errorMessage,
       blockingFacts: (blockingFacts.toList()
@@ -408,6 +685,7 @@ class PluginHostApiService {
     required PluginHostApiStatus status,
     required String pluginId,
     required String method,
+    required PluginRuntimeBinding runtimeBinding,
     required String? errorCode,
     required String? errorMessage,
     required List<ConsensusBlockingFact> blockingFacts,
@@ -418,6 +696,11 @@ class PluginHostApiService {
       'status': status.name,
       'plugin_id': pluginId,
       'method': method,
+      'execution_source': runtimeBinding.source,
+      'execution_package_id': runtimeBinding.packageId,
+      'execution_package_version': runtimeBinding.packageVersion,
+      'execution_package_kind': runtimeBinding.packageKind,
+      'execution_contract_kind': runtimeBinding.contractKind,
       'error_code': errorCode,
       'error_message': errorMessage,
       'blocking_facts': (blockingFacts
