@@ -158,6 +158,33 @@ class ConsensusProcessor {
     final relationshipFactsByPeer = <String, List<_PairwiseRelationshipFact>>{};
     final pendingInvitationIdsByPeer = <String, Set<String>>{};
     final brokenRelationshipIdsByPeer = <String, Set<String>>{};
+    void remapTransportPeerToRoot({
+      required String transportPeerHex,
+      required String rootedPeerHex,
+    }) {
+      if (transportPeerHex.isEmpty || rootedPeerHex.isEmpty) {
+        return;
+      }
+      transportPeerToRootPeer[transportPeerHex] = rootedPeerHex;
+      if (transportPeerHex == rootedPeerHex) {
+        return;
+      }
+      rootAnchoredPeers.add(rootedPeerHex);
+      final relationshipFacts =
+          relationshipFactsByPeer.remove(transportPeerHex);
+      if (relationshipFacts != null && relationshipFacts.isNotEmpty) {
+        relationshipFactsByPeer
+            .putIfAbsent(rootedPeerHex, () => <_PairwiseRelationshipFact>[])
+            .addAll(relationshipFacts);
+      }
+      final brokenRelationshipIds =
+          brokenRelationshipIdsByPeer.remove(transportPeerHex);
+      if (brokenRelationshipIds != null && brokenRelationshipIds.isNotEmpty) {
+        brokenRelationshipIdsByPeer
+            .putIfAbsent(rootedPeerHex, () => <String>{})
+            .addAll(brokenRelationshipIds);
+      }
+    }
 
     for (final event in events) {
       final kind = _support.kindLabel(event['kind']);
@@ -207,25 +234,10 @@ class ConsensusProcessor {
           final rootedPeerHex = _hex(payload.sublist(96, 128));
           inviteRootPeerById[invitationId] = rootedPeerHex;
           if (transportPeerHex != null && transportPeerHex.isNotEmpty) {
-            transportPeerToRootPeer[transportPeerHex] = rootedPeerHex;
-            if (transportPeerHex != rootedPeerHex) {
-              final relationshipFacts =
-                  relationshipFactsByPeer.remove(transportPeerHex);
-              if (relationshipFacts != null && relationshipFacts.isNotEmpty) {
-                relationshipFactsByPeer
-                    .putIfAbsent(
-                        rootedPeerHex, () => <_PairwiseRelationshipFact>[])
-                    .addAll(relationshipFacts);
-              }
-              final brokenRelationshipIds =
-                  brokenRelationshipIdsByPeer.remove(transportPeerHex);
-              if (brokenRelationshipIds != null &&
-                  brokenRelationshipIds.isNotEmpty) {
-                brokenRelationshipIdsByPeer
-                    .putIfAbsent(rootedPeerHex, () => <String>{})
-                    .addAll(brokenRelationshipIds);
-              }
-            }
+            remapTransportPeerToRoot(
+              transportPeerHex: transportPeerHex,
+              rootedPeerHex: rootedPeerHex,
+            );
           }
           rootAnchoredPeers.add(rootedPeerHex);
         }
@@ -329,14 +341,6 @@ class ConsensusProcessor {
       }
     }
 
-    for (final entry in inviteTransportPeerById.entries) {
-      inviteRootPeerById.putIfAbsent(
-        entry.key,
-        () => transportPeerToRootPeer[entry.value] ?? '',
-      );
-    }
-    inviteRootPeerById.removeWhere((_, value) => value.isEmpty);
-
     for (final event in events) {
       final kind = _support.kindLabel(event['kind']);
       final payload = _payloadBytes(event['payload']);
@@ -368,6 +372,23 @@ class ConsensusProcessor {
           break;
       }
     }
+
+    for (final entry in inviteTransportPeerById.entries) {
+      final invitationId = entry.key;
+      final transportPeerHex = entry.value;
+      final rootedPeerHex = inviteRootPeerById[invitationId] ??
+          transportPeerToRootPeer[transportPeerHex] ??
+          '';
+      if (rootedPeerHex.isEmpty) {
+        continue;
+      }
+      inviteRootPeerById[invitationId] = rootedPeerHex;
+      remapTransportPeerToRoot(
+        transportPeerHex: transportPeerHex,
+        rootedPeerHex: rootedPeerHex,
+      );
+    }
+    inviteRootPeerById.removeWhere((_, value) => value.isEmpty);
 
     final inviteFactsByPeer = <String, List<_PairwiseInviteFact>>{};
     for (final entry in inviteFactsById.entries) {
