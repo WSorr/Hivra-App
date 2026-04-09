@@ -585,7 +585,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               hash.length >= 12 ? '${hash.substring(0, 12)}..' : hash;
           await _uiLog.log(
             'bingx.intent.executed',
-            'peer=${peerHex.isEmpty ? "none" : peerHex.substring(0, 8)}.. hash=${shortHash.isEmpty ? "none" : shortHash}',
+            'peer=${peerHex.isEmpty ? "none" : peerHex.substring(0, 8)}.. hash=${shortHash.isEmpty ? "none" : shortHash} source=${_executionSourceInfo(response)}',
           );
           messenger.showSnackBar(
             SnackBar(
@@ -600,7 +600,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               : response.blockingFacts.first.label;
           await _uiLog.log(
             'bingx.intent.blocked',
-            reason,
+            '$reason source=${_executionSourceInfo(response)}',
           );
           messenger.showSnackBar(
             SnackBar(
@@ -612,7 +612,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         case PluginHostApiStatus.rejected:
           await _uiLog.log(
             'bingx.intent.rejected',
-            response.errorMessage ?? 'BingX request rejected',
+            '${response.errorMessage ?? "BingX request rejected"} source=${_executionSourceInfo(response)}',
           );
           messenger.showSnackBar(
             SnackBar(
@@ -884,7 +884,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           }
           await _uiLog.log(
             'chat.send.success',
-            'peer=${peerHex.substring(0, 8)}.. deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} hash=${shortHash.isEmpty ? "none" : shortHash}',
+            'peer=${peerHex.substring(0, 8)}.. deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} hash=${shortHash.isEmpty ? "none" : shortHash} source=${_executionSourceInfo(response)}',
           );
           messenger.showSnackBar(
             SnackBar(
@@ -902,7 +902,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               : response.blockingFacts.first.label;
           await _uiLog.log(
             'chat.send.blocked',
-            reason,
+            '$reason source=${_executionSourceInfo(response)}',
           );
           messenger.showSnackBar(
             SnackBar(
@@ -914,7 +914,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         case PluginHostApiStatus.rejected:
           await _uiLog.log(
             'chat.send.rejected',
-            response.errorMessage ?? 'Chat request rejected',
+            '${response.errorMessage ?? "Chat request rejected"} source=${_executionSourceInfo(response)}',
           );
           messenger.showSnackBar(
             SnackBar(
@@ -2649,6 +2649,10 @@ class _BingxIntentPanel extends StatelessWidget {
                   icon: Icons.currency_exchange_outlined,
                   label: 'Intent: $shortIntentHash',
                 ),
+                _InfoChip(
+                  icon: Icons.memory_outlined,
+                  label: 'Source: ${_executionSourceInfo(response)}',
+                ),
               ],
             ),
           ],
@@ -2950,6 +2954,10 @@ class _CapsuleChatPanel extends StatelessWidget {
                   icon: Icons.tag_outlined,
                   label: 'Method: ${response.method}',
                 ),
+                _InfoChip(
+                  icon: Icons.memory_outlined,
+                  label: 'Source: ${_executionSourceInfo(response)}',
+                ),
               ],
             ),
           ],
@@ -3033,6 +3041,27 @@ class _ChatInboxRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String _executionSourceInfo(PluginHostApiResponse response) {
+  final source = response.executionSource.trim();
+  if (source.isEmpty) {
+    return 'unknown';
+  }
+
+  if (source != 'external_package') {
+    return source;
+  }
+
+  final packageId = response.executionPackageId?.trim() ?? '';
+  if (packageId.isEmpty) {
+    return source;
+  }
+
+  final shortPackageId = packageId.length <= 12
+      ? packageId
+      : '${packageId.substring(0, 12)}..';
+  return '$source:$shortPackageId';
 }
 
 class _PluginGrid extends StatelessWidget {
