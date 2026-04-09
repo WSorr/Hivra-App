@@ -248,6 +248,53 @@ void main() {
       );
     });
 
+    test(
+      'preview orients mirrored root-augmented relationship away from local self',
+      () {
+        final localTransport = Uint8List.fromList(bytes32(51));
+        final localRoot = Uint8List.fromList(bytes32(52));
+        final remoteTransport = Uint8List.fromList(bytes32(53));
+        final remoteRoot = Uint8List.fromList(bytes32(54));
+        final invitationId = Uint8List.fromList(bytes32(55));
+        final localStarter = Uint8List.fromList(bytes32(56));
+        final remoteStarter = Uint8List.fromList(bytes32(57));
+
+        final events = <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 7,
+            'payload': <int>[
+              // Mirrored payload: peer points to local side.
+              ...localTransport,
+              ...remoteStarter,
+              ...localStarter,
+              1,
+              ...invitationId,
+              ...remoteTransport,
+              1,
+              ...remoteStarter,
+              ...localRoot,
+              ...remoteRoot,
+            ],
+            'signer': remoteRoot,
+          },
+        ];
+
+        final previews = processor.preview(
+          events,
+          localTransport,
+          localRootKey: localRoot,
+        );
+
+        expect(previews, hasLength(1));
+        expect(previews.single.peerHex, equals(hex(remoteRoot)));
+        expect(previews.single.relationshipCount, equals(1));
+        expect(
+          previews.any((row) => row.peerHex == hex(localRoot)),
+          isFalse,
+        );
+      },
+    );
+
     test('signable rejects malformed peer hex input', () {
       final localTransport = Uint8List.fromList(bytes32(45));
       final signable = processor.signable(
@@ -312,6 +359,93 @@ void main() {
       expect(
         result.blockingFacts.map((fact) => fact.key),
         contains('duplicate_participant:peer'),
+      );
+    });
+
+    test(
+      'verify treats uppercase/lowercase hex participant ids as duplicates',
+      () {
+        final participantHexLower = 'b' * 64;
+        final participantHexUpper = participantHexLower.toUpperCase();
+        final result = processor.verify(
+          expectedHashHex: 'a' * 64,
+          participants: <ConsensusVerifyParticipant>[
+            ConsensusVerifyParticipant(
+              participantId: participantHexLower,
+              hashHex: 'a' * 64,
+              signatureHex: 'c' * 128,
+            ),
+            ConsensusVerifyParticipant(
+              participantId: participantHexUpper,
+              hashHex: 'a' * 64,
+              signatureHex: 'd' * 128,
+            ),
+          ],
+        );
+
+        expect(result.state, ConsensusVerifyState.mismatch);
+        expect(
+          result.blockingFacts.map((fact) => fact.key),
+          contains('duplicate_participant:$participantHexLower'),
+        );
+      },
+    );
+
+    test('verify calls signature verifier callback for matching hashes', () {
+      String? seenMessage;
+      String? seenParticipant;
+      String? seenSignature;
+      final result = processor.verify(
+        expectedHashHex: 'a' * 64,
+        participants: <ConsensusVerifyParticipant>[
+          ConsensusVerifyParticipant(
+            participantId: 'b' * 64,
+            hashHex: 'a' * 64,
+            signatureHex: 'c' * 128,
+          ),
+        ],
+        verifySignature: ({
+          required String messageHashHex,
+          required String participantIdHex,
+          required String signatureHex,
+        }) {
+          seenMessage = messageHashHex;
+          seenParticipant = participantIdHex;
+          seenSignature = signatureHex;
+          return true;
+        },
+      );
+
+      expect(result.state, ConsensusVerifyState.match);
+      expect(result.blockingFacts, isEmpty);
+      expect(seenMessage, equals('a' * 64));
+      expect(seenParticipant, equals('b' * 64));
+      expect(seenSignature, equals('c' * 128));
+    });
+
+    test('verify marks invalid_signature when callback rejects signature', () {
+      final participantHex = 'b' * 64;
+      final result = processor.verify(
+        expectedHashHex: 'a' * 64,
+        participants: <ConsensusVerifyParticipant>[
+          ConsensusVerifyParticipant(
+            participantId: participantHex,
+            hashHex: 'a' * 64,
+            signatureHex: 'c' * 128,
+          ),
+        ],
+        verifySignature: ({
+          required String messageHashHex,
+          required String participantIdHex,
+          required String signatureHex,
+        }) =>
+            false,
+      );
+
+      expect(result.state, ConsensusVerifyState.mismatch);
+      expect(
+        result.blockingFacts.map((fact) => fact.key),
+        contains('invalid_signature:$participantHex'),
       );
     });
 
@@ -393,8 +527,7 @@ void main() {
           equals(basePreview.first.canonicalJson));
     });
 
-    test(
-        'preview hash is stable across event order and sender metadata noise',
+    test('preview hash is stable across event order and sender metadata noise',
         () {
       final invitationId = Uint8List.fromList(bytes32(31));
       final ownStarter = Uint8List.fromList(bytes32(32));
@@ -489,7 +622,8 @@ void main() {
       expect(baselinePreview, hasLength(1));
       expect(variantPreview, hasLength(1));
       expect(variantPreview.first.blockingFacts, isEmpty);
-      expect(variantPreview.first.hashHex, equals(baselinePreview.first.hashHex));
+      expect(
+          variantPreview.first.hashHex, equals(baselinePreview.first.hashHex));
       expect(
         variantPreview.first.canonicalJson,
         equals(baselinePreview.first.canonicalJson),
@@ -593,7 +727,8 @@ void main() {
       expect(previewA.first.blockingFacts, isEmpty);
       expect(previewB.first.blockingFacts, isEmpty);
       expect(previewA.first.hashHex, equals(previewB.first.hashHex));
-      expect(previewA.first.canonicalJson, equals(previewB.first.canonicalJson));
+      expect(
+          previewA.first.canonicalJson, equals(previewB.first.canonicalJson));
     });
 
     test(
@@ -1040,6 +1175,220 @@ void main() {
       );
       expect(signableB.isSignable, isTrue);
       expect(signableB.blockingFacts, isEmpty);
+    });
+
+    test(
+        're-established relationship clears prior break block for same own starter',
+        () {
+      final localTransport = Uint8List.fromList(bytes32(161));
+      final invitationA = Uint8List.fromList(bytes32(162));
+      final invitationB = Uint8List.fromList(bytes32(163));
+      final ownStarter = Uint8List.fromList(bytes32(164));
+      final peerTransport = Uint8List.fromList(bytes32(165));
+      final peerRoot = Uint8List.fromList(bytes32(166));
+      final peerStarterA = Uint8List.fromList(bytes32(167));
+      final peerStarterB = Uint8List.fromList(bytes32(168));
+      final sender = Uint8List.fromList(bytes32(169));
+      final senderStarterA = Uint8List.fromList(bytes32(170));
+      final senderStarterB = Uint8List.fromList(bytes32(171));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationA,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarterA,
+            1,
+            ...invitationA,
+            ...sender,
+            1,
+            ...senderStarterA,
+            ...peerRoot,
+            ...bytes32(172),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationA,
+            ...bytes32(173),
+            ...bytes32(174),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationB,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarterB,
+            1,
+            ...invitationB,
+            ...sender,
+            1,
+            ...senderStarterB,
+            ...peerRoot,
+            ...bytes32(175),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationB,
+            ...bytes32(176),
+            ...bytes32(177),
+          ],
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        peerHex: hex(peerRoot),
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.isSignable, isTrue);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('relationship_broken')),
+      );
+    });
+
+    test(
+        'partial break keeps pair signable when another active relationship remains',
+        () {
+      final localTransport = Uint8List.fromList(bytes32(181));
+      final invitationA = Uint8List.fromList(bytes32(182));
+      final invitationB = Uint8List.fromList(bytes32(183));
+      final ownStarterA = Uint8List.fromList(bytes32(184));
+      final ownStarterB = Uint8List.fromList(bytes32(185));
+      final peerTransport = Uint8List.fromList(bytes32(186));
+      final peerRoot = Uint8List.fromList(bytes32(187));
+      final peerStarterA = Uint8List.fromList(bytes32(188));
+      final peerStarterB = Uint8List.fromList(bytes32(189));
+      final sender = Uint8List.fromList(bytes32(190));
+      final senderStarterA = Uint8List.fromList(bytes32(191));
+      final senderStarterB = Uint8List.fromList(bytes32(192));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationA,
+            ...ownStarterA,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarterA,
+            ...peerStarterA,
+            1,
+            ...invitationA,
+            ...sender,
+            1,
+            ...senderStarterA,
+            ...peerRoot,
+            ...bytes32(193),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationA,
+            ...bytes32(194),
+            ...bytes32(195),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationB,
+            ...ownStarterB,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarterB,
+            ...peerStarterB,
+            1,
+            ...invitationB,
+            ...sender,
+            1,
+            ...senderStarterB,
+            ...peerRoot,
+            ...bytes32(196),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationB,
+            ...bytes32(197),
+            ...bytes32(198),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarterA,
+            ...peerRoot,
+          ],
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        peerHex: hex(peerRoot),
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.preview!.relationshipCount, equals(1));
+      expect(signable.isSignable, isTrue);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('relationship_broken')),
+      );
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('no_active_relationship')),
+      );
     });
 
     test(

@@ -110,6 +110,12 @@ class ConsensusVerifyParticipant {
   });
 }
 
+typedef ConsensusSignatureVerifier = bool Function({
+  required String messageHashHex,
+  required String participantIdHex,
+  required String signatureHex,
+});
+
 class ConsensusVerifyResult {
   final ConsensusVerifyState state;
   final List<ConsensusBlockingFact> blockingFacts;
@@ -202,40 +208,84 @@ class ConsensusProcessor {
         }
       } else if (kind == 'RelationshipEstablished' && payload.length >= 194) {
         final peerTransportHex = _hex(payload.sublist(0, 32));
+        final senderTransportHex =
+            payload.length >= 161 ? _hex(payload.sublist(129, 161)) : null;
         final peerRootHex = payload.length >= 226
             ? _hex(payload.sublist(194, 226))
             : peerTransportHex;
+        final senderRootHex =
+            payload.length >= 258 ? _hex(payload.sublist(226, 258)) : null;
+        final mirroredToLocalByRoot = localRootHex != null &&
+            senderRootHex != null &&
+            peerRootHex == localRootHex &&
+            senderRootHex != localRootHex;
+        final mirroredToLocalByTransport = localTransportHex != null &&
+            senderTransportHex != null &&
+            peerTransportHex == localTransportHex &&
+            senderTransportHex != localTransportHex;
+        final effectivePeerRootHex =
+            mirroredToLocalByRoot ? senderRootHex : peerRootHex;
+        final effectivePeerTransportHex =
+            mirroredToLocalByTransport ? senderTransportHex : peerTransportHex;
+        if (localRootHex != null && effectivePeerRootHex == localRootHex) {
+          // Ignore mirrored self-looking records from remote payload orientation.
+          continue;
+        }
         if (payload.length >= 226) {
-          rootAnchoredPeers.add(peerRootHex);
+          rootAnchoredPeers.add(effectivePeerRootHex);
         }
         final invitationId = _hex(payload.sublist(97, 129));
-        inviteRootPeerById[invitationId] = peerRootHex;
-        transportPeerToRootPeer[peerTransportHex] = peerRootHex;
+        inviteRootPeerById[invitationId] = effectivePeerRootHex;
+        transportPeerToRootPeer[effectivePeerTransportHex] =
+            effectivePeerRootHex;
         final transportPeerHexFromInvite =
             inviteTransportPeerById[invitationId];
         if (transportPeerHexFromInvite != null) {
-          transportPeerToRootPeer[transportPeerHexFromInvite] = peerRootHex;
+          transportPeerToRootPeer[transportPeerHexFromInvite] =
+              effectivePeerRootHex;
         }
+        final ownStarterId = mirroredToLocalByRoot || mirroredToLocalByTransport
+            ? _hex(payload.sublist(64, 96))
+            : _hex(payload.sublist(32, 64));
         relationshipFactsByPeer
-            .putIfAbsent(peerRootHex, () => <_PairwiseRelationshipFact>[])
+            .putIfAbsent(
+                effectivePeerRootHex, () => <_PairwiseRelationshipFact>[])
             .add(
               _PairwiseRelationshipFact(
                 invitationId: invitationId,
                 relationshipKind: payload[96],
+                ownStarterId: ownStarterId,
                 starterPair: <String>[
                   _hex(payload.sublist(32, 64)),
                   _hex(payload.sublist(64, 96)),
                 ]..sort(),
               ),
             );
+        final brokenForPeer = brokenRelationshipIdsByPeer[effectivePeerRootHex];
+        if (brokenForPeer != null) {
+          brokenForPeer.remove(ownStarterId);
+          if (brokenForPeer.isEmpty) {
+            brokenRelationshipIdsByPeer.remove(effectivePeerRootHex);
+          }
+        }
       } else if (kind == 'RelationshipBroken' && payload.length >= 64) {
         final peerRootHex = payload.length >= 96
             ? _hex(payload.sublist(64, 96))
             : transportPeerToRootPeer[_hex(payload.sublist(0, 32))];
         if (peerRootHex != null && peerRootHex.isNotEmpty) {
+          final ownStarterId = _hex(payload.sublist(32, 64));
+          final relationships = relationshipFactsByPeer[peerRootHex];
+          if (relationships != null && relationships.isNotEmpty) {
+            relationships.removeWhere(
+              (relationship) => relationship.ownStarterId == ownStarterId,
+            );
+            if (relationships.isEmpty) {
+              relationshipFactsByPeer.remove(peerRootHex);
+            }
+          }
           brokenRelationshipIdsByPeer
               .putIfAbsent(peerRootHex, () => <String>{})
-              .add(_hex(payload.sublist(32, 64)));
+              .add(ownStarterId);
         }
       }
     }
@@ -305,6 +355,9 @@ class ConsensusProcessor {
       ...brokenRelationshipIdsByPeer.keys,
     }.toList()
       ..sort();
+    if (localRootHex != null) {
+      peers.removeWhere((peer) => peer == localRootHex);
+    }
 
     for (final peerRootHex in peers) {
       final useRootScopedLocalKey = rootAnchoredPeers.contains(peerRootHex);
@@ -334,16 +387,20 @@ class ConsensusProcessor {
             subjectId: id,
           ),
         ),
-        ...((brokenRelationshipIdsByPeer[peerRootHex] ?? const <String>{})
-                .toList()
-              ..sort())
-            .map(
-          (starterId) => ConsensusBlockingFact(
-            code: 'relationship_broken',
-            subjectId: starterId,
-          ),
-        ),
       ];
+      if (relationships.isEmpty) {
+        blockingFacts.addAll(
+          ((brokenRelationshipIdsByPeer[peerRootHex] ?? const <String>{})
+                  .toList()
+                ..sort())
+              .map(
+            (starterId) => ConsensusBlockingFact(
+              code: 'relationship_broken',
+              subjectId: starterId,
+            ),
+          ),
+        );
+      }
       if (relationships.isEmpty) {
         blockingFacts.add(
           ConsensusBlockingFact(
@@ -462,6 +519,7 @@ class ConsensusProcessor {
   ConsensusVerifyResult verify({
     required String expectedHashHex,
     required List<ConsensusVerifyParticipant> participants,
+    ConsensusSignatureVerifier? verifySignature,
   }) {
     final blockingFacts = <ConsensusBlockingFact>[];
     final normalizedExpected = _normalizedHex(expectedHashHex);
@@ -476,11 +534,13 @@ class ConsensusProcessor {
 
     final seenParticipantIds = <String>{};
     for (final participant in participants) {
-      if (!seenParticipantIds.add(participant.participantId)) {
+      final dedupeParticipantId =
+          _normalizedParticipantIdForVerify(participant.participantId);
+      if (!seenParticipantIds.add(dedupeParticipantId)) {
         blockingFacts.add(
           ConsensusBlockingFact(
             code: 'duplicate_participant',
-            subjectId: participant.participantId,
+            subjectId: dedupeParticipantId,
           ),
         );
       }
@@ -518,6 +578,33 @@ class ConsensusProcessor {
             subjectId: participant.participantId,
           ),
         );
+      } else if (verifySignature != null &&
+          normalizedExpected != null &&
+          participantHash != null &&
+          participantHash == normalizedExpected) {
+        final participantIdHex = _normalizedHex(participant.participantId);
+        if (participantIdHex == null || participantIdHex.length != 64) {
+          blockingFacts.add(
+            ConsensusBlockingFact(
+              code: 'invalid_signature',
+              subjectId: participant.participantId,
+            ),
+          );
+        } else {
+          final isValid = verifySignature(
+            messageHashHex: normalizedExpected,
+            participantIdHex: participantIdHex,
+            signatureHex: signature,
+          );
+          if (!isValid) {
+            blockingFacts.add(
+              ConsensusBlockingFact(
+                code: 'invalid_signature',
+                subjectId: participant.participantId,
+              ),
+            );
+          }
+        }
       }
     }
 
@@ -556,6 +643,15 @@ class ConsensusProcessor {
     }
     return normalized;
   }
+
+  String _normalizedParticipantIdForVerify(String value) {
+    final trimmed = value.trim();
+    final normalizedHex = _normalizedHex(trimmed);
+    if (normalizedHex != null && normalizedHex.length == 64) {
+      return normalizedHex;
+    }
+    return trimmed.toLowerCase();
+  }
 }
 
 class _PairwiseInviteFact {
@@ -579,11 +675,13 @@ class _PairwiseInviteFact {
 class _PairwiseRelationshipFact {
   final String invitationId;
   final int relationshipKind;
+  final String ownStarterId;
   final List<String> starterPair;
 
   const _PairwiseRelationshipFact({
     required this.invitationId,
     required this.relationshipKind,
+    required this.ownStarterId,
     required this.starterPair,
   });
 }
