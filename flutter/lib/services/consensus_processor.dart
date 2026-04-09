@@ -158,6 +158,7 @@ class ConsensusProcessor {
     final relationshipFactsByPeer = <String, List<_PairwiseRelationshipFact>>{};
     final pendingInvitationIdsByPeer = <String, Set<String>>{};
     final brokenRelationshipIdsByPeer = <String, Set<String>>{};
+    final unresolvedLegacyBreaks = <_PendingLegacyBreakFact>[];
     void remapTransportPeerToRoot({
       required String transportPeerHex,
       required String rootedPeerHex,
@@ -186,7 +187,39 @@ class ConsensusProcessor {
       }
     }
 
-    for (final event in events) {
+    void applyBreakForPeer({
+      required String peerRootHex,
+      required String ownStarterId,
+      required int breakEventIndex,
+    }) {
+      if (peerRootHex.isEmpty || ownStarterId.isEmpty) {
+        return;
+      }
+      final relationships = relationshipFactsByPeer[peerRootHex];
+      final hasLaterRelationship = relationships?.any(
+            (relationship) =>
+                relationship.ownStarterId == ownStarterId &&
+                relationship.eventIndex > breakEventIndex,
+          ) ??
+          false;
+      if (hasLaterRelationship) {
+        return;
+      }
+      if (relationships != null && relationships.isNotEmpty) {
+        relationships.removeWhere(
+          (relationship) => relationship.ownStarterId == ownStarterId,
+        );
+        if (relationships.isEmpty) {
+          relationshipFactsByPeer.remove(peerRootHex);
+        }
+      }
+      brokenRelationshipIdsByPeer
+          .putIfAbsent(peerRootHex, () => <String>{})
+          .add(ownStarterId);
+    }
+
+    for (var eventIndex = 0; eventIndex < events.length; eventIndex++) {
+      final event = events[eventIndex];
       final kind = _support.kindLabel(event['kind']);
       final payload = _payloadBytes(event['payload']);
       final signer = _bytes32(event['signer']);
@@ -306,6 +339,7 @@ class ConsensusProcessor {
                 invitationId: invitationId,
                 relationshipKind: payload[96],
                 ownStarterId: ownStarterId,
+                eventIndex: eventIndex,
                 starterPair: <String>[
                   _hex(payload.sublist(32, 64)),
                   _hex(payload.sublist(64, 96)),
@@ -325,18 +359,19 @@ class ConsensusProcessor {
             : transportPeerToRootPeer[_hex(payload.sublist(0, 32))];
         if (peerRootHex != null && peerRootHex.isNotEmpty) {
           final ownStarterId = _hex(payload.sublist(32, 64));
-          final relationships = relationshipFactsByPeer[peerRootHex];
-          if (relationships != null && relationships.isNotEmpty) {
-            relationships.removeWhere(
-              (relationship) => relationship.ownStarterId == ownStarterId,
-            );
-            if (relationships.isEmpty) {
-              relationshipFactsByPeer.remove(peerRootHex);
-            }
-          }
-          brokenRelationshipIdsByPeer
-              .putIfAbsent(peerRootHex, () => <String>{})
-              .add(ownStarterId);
+          applyBreakForPeer(
+            peerRootHex: peerRootHex,
+            ownStarterId: ownStarterId,
+            breakEventIndex: eventIndex,
+          );
+        } else {
+          unresolvedLegacyBreaks.add(
+            _PendingLegacyBreakFact(
+              peerTransportHex: _hex(payload.sublist(0, 32)),
+              ownStarterId: _hex(payload.sublist(32, 64)),
+              eventIndex: eventIndex,
+            ),
+          );
         }
       }
     }
@@ -386,6 +421,16 @@ class ConsensusProcessor {
       remapTransportPeerToRoot(
         transportPeerHex: transportPeerHex,
         rootedPeerHex: rootedPeerHex,
+      );
+    }
+    for (final pendingBreak in unresolvedLegacyBreaks) {
+      final peerRootHex =
+          transportPeerToRootPeer[pendingBreak.peerTransportHex] ??
+              pendingBreak.peerTransportHex;
+      applyBreakForPeer(
+        peerRootHex: peerRootHex,
+        ownStarterId: pendingBreak.ownStarterId,
+        breakEventIndex: pendingBreak.eventIndex,
       );
     }
     inviteRootPeerById.removeWhere((_, value) => value.isEmpty);
@@ -736,12 +781,26 @@ class _PairwiseRelationshipFact {
   final String invitationId;
   final int relationshipKind;
   final String ownStarterId;
+  final int eventIndex;
   final List<String> starterPair;
 
   const _PairwiseRelationshipFact({
     required this.invitationId,
     required this.relationshipKind,
     required this.ownStarterId,
+    required this.eventIndex,
     required this.starterPair,
+  });
+}
+
+class _PendingLegacyBreakFact {
+  final String peerTransportHex;
+  final String ownStarterId;
+  final int eventIndex;
+
+  const _PendingLegacyBreakFact({
+    required this.peerTransportHex,
+    required this.ownStarterId,
+    required this.eventIndex,
   });
 }

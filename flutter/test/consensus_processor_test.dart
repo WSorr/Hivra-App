@@ -1648,5 +1648,145 @@ void main() {
       expect(
           previewsA.first.canonicalJson, equals(previewsB.first.canonicalJson));
     });
+
+    test(
+        'unresolved legacy break does not override a later relationship establish',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(221));
+      final ownStarter = Uint8List.fromList(bytes32(222));
+      final peerStarter = Uint8List.fromList(bytes32(223));
+      final peerTransport = Uint8List.fromList(bytes32(224));
+      final peerRoot = Uint8List.fromList(bytes32(225));
+      final senderTransport = Uint8List.fromList(bytes32(226));
+      final senderStarter = Uint8List.fromList(bytes32(227));
+      final localTransport = Uint8List.fromList(bytes32(228));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...invitationId,
+            ...peerStarter,
+            ...localTransport,
+            ...peerRoot,
+            1,
+          ],
+          'signer': peerTransport,
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...senderTransport,
+            1,
+            ...senderStarter,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...localTransport,
+            ...bytes32(229),
+          ],
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        peerHex: hex(peerRoot),
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.preview!.peerHex, equals(hex(peerRoot)));
+      expect(signable.preview!.relationshipCount, equals(1));
+      expect(signable.isSignable, isTrue);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('relationship_broken')),
+      );
+    });
+
+    test(
+        'unresolved legacy break still applies when it is newer than relationship establish',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(231));
+      final ownStarter = Uint8List.fromList(bytes32(232));
+      final peerStarter = Uint8List.fromList(bytes32(233));
+      final peerTransport = Uint8List.fromList(bytes32(234));
+      final peerRoot = Uint8List.fromList(bytes32(235));
+      final senderTransport = Uint8List.fromList(bytes32(236));
+      final senderStarter = Uint8List.fromList(bytes32(237));
+      final localTransport = Uint8List.fromList(bytes32(238));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...senderTransport,
+            1,
+            ...senderStarter,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...invitationId,
+            ...peerStarter,
+            ...localTransport,
+            ...peerRoot,
+            1,
+          ],
+          'signer': peerTransport,
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...localTransport,
+            ...bytes32(239),
+          ],
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        peerHex: hex(peerRoot),
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.preview!.peerHex, equals(hex(peerRoot)));
+      expect(signable.preview!.relationshipCount, equals(0));
+      expect(signable.isSignable, isFalse);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        contains('relationship_broken'),
+      );
+    });
   });
 }
