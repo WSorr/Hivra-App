@@ -59,6 +59,39 @@ class InvitationActionsService {
     );
   }
 
+  Future<void> _applyWorkerLedgerResult({
+    required String? bootstrapActiveHex,
+    required String? ledgerJson,
+  }) async {
+    if (ledgerJson == null || ledgerJson.isEmpty) {
+      return;
+    }
+    final activeNow = await _runtime.resolveActiveCapsuleHex();
+    if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
+      await _persistWorkerLedgerForBootstrapCapsule(
+        bootstrapActiveHex: bootstrapActiveHex,
+        ledgerJson: ledgerJson,
+      );
+      return;
+    }
+    await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
+  }
+
+  void _scheduleLateWorkerLedgerApply({
+    required Future<Map<String, Object?>> workerFuture,
+    required String? bootstrapActiveHex,
+  }) {
+    unawaited(
+      workerFuture.then((lateResult) async {
+        final lateLedgerJson = lateResult['ledgerJson'] as String?;
+        await _applyWorkerLedgerResult(
+          bootstrapActiveHex: bootstrapActiveHex,
+          ledgerJson: lateLedgerJson,
+        );
+      }).catchError((_) {}),
+    );
+  }
+
   Future<InvitationWorkerResult> sendInvitation(
     Uint8List toPubkey,
     int starterSlot,
@@ -70,37 +103,32 @@ class InvitationActionsService {
       }
 
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
-      final workerResult =
-          await compute<Map<String, Object?>, Map<String, Object?>>(
+      final workerFuture = compute<Map<String, Object?>, Map<String, Object?>>(
         sendInvitationInWorker,
         <String, Object?>{
           ...bootstrap,
           'toPubkey': toPubkey,
           'starterSlot': starterSlot,
         },
-      ).timeout(
+      );
+      final workerResult = await workerFuture.timeout(
         _sendWorkerTimeout,
-        onTimeout: () => <String, Object?>{'result': -1003},
+        onTimeout: () {
+          _scheduleLateWorkerLedgerApply(
+            workerFuture: workerFuture,
+            bootstrapActiveHex: bootstrapActiveHex,
+          );
+          return <String, Object?>{'result': -1003};
+        },
       );
 
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
-      if (ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _runtime.resolveActiveCapsuleHex();
-        if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
-          await _persistWorkerLedgerForBootstrapCapsule(
-            bootstrapActiveHex: bootstrapActiveHex,
-            ledgerJson: ledgerJson,
-          );
-          return InvitationWorkerResult(
-            code: code,
-            ledgerJson: ledgerJson,
-            lastError: lastError,
-          );
-        }
-        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
-      }
+      await _applyWorkerLedgerResult(
+        bootstrapActiveHex: bootstrapActiveHex,
+        ledgerJson: ledgerJson,
+      );
       return InvitationWorkerResult(
         code: code,
         ledgerJson: ledgerJson,
@@ -188,37 +216,32 @@ class InvitationActionsService {
       }
 
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
-      final workerResult =
-          await compute<Map<String, Object?>, Map<String, Object?>>(
+      final workerFuture = compute<Map<String, Object?>, Map<String, Object?>>(
         acceptInvitationInWorker,
         <String, Object?>{
           ...bootstrap,
           'invitationId': invitationId,
           'fromPubkey': fromPubkey,
         },
-      ).timeout(
+      );
+      final workerResult = await workerFuture.timeout(
         _acceptWorkerTimeout,
-        onTimeout: () => <String, Object?>{'result': -1003},
+        onTimeout: () {
+          _scheduleLateWorkerLedgerApply(
+            workerFuture: workerFuture,
+            bootstrapActiveHex: bootstrapActiveHex,
+          );
+          return <String, Object?>{'result': -1003};
+        },
       );
 
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
-      if (ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _runtime.resolveActiveCapsuleHex();
-        if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
-          await _persistWorkerLedgerForBootstrapCapsule(
-            bootstrapActiveHex: bootstrapActiveHex,
-            ledgerJson: ledgerJson,
-          );
-          return InvitationWorkerResult(
-            code: code,
-            ledgerJson: ledgerJson,
-            lastError: lastError,
-          );
-        }
-        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
-      }
+      await _applyWorkerLedgerResult(
+        bootstrapActiveHex: bootstrapActiveHex,
+        ledgerJson: ledgerJson,
+      );
       return InvitationWorkerResult(
         code: code,
         ledgerJson: ledgerJson,
