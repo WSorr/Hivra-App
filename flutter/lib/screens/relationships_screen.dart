@@ -29,6 +29,29 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   String? _breakingPeerPubkey;
   Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
 
+  Future<void> _showBreakProgressDialog({required bool remoteBreakPending}) {
+    final message = remoteBreakPending
+        ? 'Confirming break request...'
+        : 'Breaking relationship...';
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -95,8 +118,8 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
 
     final affectedGroups = groups.where((group) {
       return group.pendingRemoteBreakRelationships.any(
-        (relationship) =>
-            newPendingBreakKeys.contains(_relationshipProjectionKey(relationship)),
+        (relationship) => newPendingBreakKeys
+            .contains(_relationshipProjectionKey(relationship)),
       );
     }).toList();
 
@@ -160,9 +183,17 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     if (!mounted) return;
     setState(() => _breakingPeerPubkey = relationship.peerPubkey);
     UiFeedbackService.dismissCurrent(context);
-    final ok = remoteBreakPending
-        ? await widget.service.confirmRemoteBreak(relationship)
-        : await widget.service.breakRelationship(relationship);
+    _showBreakProgressDialog(remoteBreakPending: remoteBreakPending);
+    bool ok = false;
+    try {
+      ok = remoteBreakPending
+          ? await widget.service.confirmRemoteBreak(relationship)
+          : await widget.service.breakRelationship(relationship);
+    } finally {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).maybePop();
+      }
+    }
     if (!mounted) return;
     setState(() => _breakingPeerPubkey = null);
 
@@ -635,7 +666,7 @@ class _RelationshipPeerCard extends StatelessWidget {
                             ? Colors.orange
                             : Colors.red,
                       ),
-                onPressed: onBreak,
+                onPressed: isBreaking ? null : onBreak,
                 tooltip: group.pendingRemoteBreakRelationships.isNotEmpty
                     ? (group.pendingRemoteBreakRelationships.length == 1
                         ? 'Confirm break request'
