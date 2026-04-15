@@ -108,6 +108,20 @@ flutter build macos
 
 For current local development, use macOS target only (`flutter run -d macos`).
 
+### Cleanup Local Build Artifacts
+
+Before release packaging, you can clear local build caches and stale dist artifacts:
+
+```bash
+tools/cleanup/clean_local_artifacts.sh
+```
+
+Safe preview without deletion:
+
+```bash
+tools/cleanup/clean_local_artifacts.sh --dry-run
+```
+
 ## License
 
 MIT

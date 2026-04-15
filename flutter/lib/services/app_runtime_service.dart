@@ -1,4 +1,7 @@
+import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart';
 
 import '../ffi/app_runtime_runtime.dart';
 import 'bingx_trading_contract_service.dart';
@@ -19,6 +22,7 @@ import 'settings_service.dart';
 import 'temperature_tomorrow_contract_service.dart';
 import 'plugin_host_api_service.dart';
 import 'wasm_plugin_registry_service.dart';
+import 'wasm_plugin_runtime_stub_service.dart';
 
 class AppRuntimeService {
   final AppRuntimeRuntime _runtime;
@@ -118,11 +122,16 @@ class AppRuntimeService {
     final chat = CapsuleChatContractService(
       readSignable: consensus.signable,
     );
+    final wasmRuntime = const WasmPluginRuntimeStubService();
     return PluginHostApiService(
       runTemperatureDemo: demoRunner.runTemperatureTomorrowDemo,
       runBingxSpotOrder: bingx.execute,
       runCapsuleChat: chat.execute,
       resolveRuntimeBinding: _resolvePluginRuntimeBinding,
+      resolveRuntimeInvoke: (request, binding) => wasmRuntime.invoke(
+        request: request,
+        binding: binding,
+      ),
     );
   }
 
@@ -136,6 +145,7 @@ class AppRuntimeService {
 
     final registry = const WasmPluginRegistryService();
     final records = await registry.loadPlugins();
+    final pluginsDir = await registry.pluginsDirectory();
     for (final record in records) {
       final recordPluginId = record.pluginId?.trim();
       if (recordPluginId == null || recordPluginId.isEmpty) {
@@ -144,15 +154,43 @@ class AppRuntimeService {
       if (recordPluginId != normalizedPluginId) {
         continue;
       }
+      final packageDigestHex = await _resolvePackageDigestHex(
+        registry: registry,
+        record: record,
+      );
+      final packagePath = '${pluginsDir.path}/${record.storedFileName}';
       return PluginRuntimeBinding.externalPackage(
         packageId: record.id,
         packageVersion: record.pluginVersion,
         packageKind: record.packageKind,
+        packageDigestHex: packageDigestHex,
+        packageFilePath: packagePath,
+        runtimeAbi: record.runtimeAbi,
+        runtimeEntryExport: record.runtimeEntryExport,
+        runtimeModulePath: record.runtimeModulePath,
         contractKind: record.contractKind,
+        capabilities: record.capabilities,
       );
     }
 
     return const PluginRuntimeBinding.hostFallback();
+  }
+
+  Future<String?> _resolvePackageDigestHex({
+    required WasmPluginRegistryService registry,
+    required WasmPluginRecord record,
+  }) async {
+    final pluginsDir = await registry.pluginsDirectory();
+    final packagePath = '${pluginsDir.path}/${record.storedFileName}';
+    final packageFile = File(packagePath);
+    if (!await packageFile.exists()) {
+      return null;
+    }
+    final bytes = await packageFile.readAsBytes();
+    if (bytes.isEmpty) {
+      return null;
+    }
+    return sha256.convert(bytes).toString();
   }
 
   RelationshipService buildRelationshipService() {

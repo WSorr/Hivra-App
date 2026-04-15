@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FLUTTER_DIR="$ROOT/flutter"
 APP_PATH="$FLUTTER_DIR/build/macos/Build/Products/Release/hivra_app.app"
 FFI_LIB="$APP_PATH/Contents/Frameworks/libhivra_ffi.dylib"
+ANDROID_APK="$FLUTTER_DIR/build/app/outputs/flutter-apk/app-release.apk"
 
 STATUS=0
 
@@ -58,6 +59,31 @@ check_release_bundle() {
   fi
 }
 
+check_android_release_bundle() {
+  if [ ! -f "$ANDROID_APK" ]; then
+    echo "WARN: Release APK not found at $ANDROID_APK"
+    echo "      Build it first with: flutter build apk --release"
+    return 0
+  fi
+
+  echo "Android APK: $ANDROID_APK"
+
+  if ! unzip -l "$ANDROID_APK" | rg -q "lib/arm64-v8a/libhivra_ffi\\.so"; then
+    echo "FAIL: Missing arm64-v8a libhivra_ffi.so in APK"
+    return 1
+  fi
+  if ! unzip -l "$ANDROID_APK" | rg -q "lib/armeabi-v7a/libhivra_ffi\\.so"; then
+    echo "FAIL: Missing armeabi-v7a libhivra_ffi.so in APK"
+    return 1
+  fi
+  if ! unzip -l "$ANDROID_APK" | rg -q "lib/x86_64/libhivra_ffi\\.so"; then
+    echo "FAIL: Missing x86_64 libhivra_ffi.so in APK"
+    return 1
+  fi
+
+  echo "PASS: Android APK contains libhivra_ffi.so for required ABIs"
+}
+
 main() {
   echo "Hivra release preflight"
   echo "Workspace: $ROOT"
@@ -79,6 +105,9 @@ main() {
 
   run_step "macOS Release Bundle Checks" \
     check_release_bundle
+
+  run_step "Android Release Bundle Checks" \
+    check_android_release_bundle
 
   printf '\n== Result ==\n'
   if [ "$STATUS" -eq 0 ]; then

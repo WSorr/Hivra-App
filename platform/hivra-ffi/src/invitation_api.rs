@@ -34,11 +34,11 @@ fn load_invitation_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32]),
 
 fn send_delivery_message(
     transport: &NostrTransport,
-    message: Message,
+    message: &Message,
     failure_code: i32,
     debug_label: &str,
 ) -> Result<(), i32> {
-    if let Err(err) = transport.send(message) {
+    if let Err(err) = transport.send(message.clone()) {
         eprintln!("[Delivery/Nostr] {} failed: {:?}", debug_label, err);
         return Err(map_delivery_error(err, failure_code));
     }
@@ -70,7 +70,7 @@ fn retry_pending_outgoing_invitations_over_transport(
             invitation_id: Some(pending_delivery.invitation_id),
         };
 
-        match send_delivery_message(transport, message, -7, "InvitationSentRetry") {
+        match send_delivery_message(transport, &message, -7, "InvitationSentRetry") {
             Ok(_) => {
                 delivered_count += 1;
             }
@@ -203,8 +203,8 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
     };
 
     if let Err(code) =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Default, -5, |transport| {
-            send_delivery_message(transport, message, -7, "InvitationSent")
+        with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
+            send_delivery_message(transport, &message, -7, "InvitationSent")
         })
     {
         set_last_error(format!(
@@ -562,8 +562,8 @@ pub unsafe extern "C" fn hivra_accept_invitation(
     );
 
     if let Err(code) =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Default, -6, |transport| {
-            send_delivery_message(transport, message, -7, "InvitationAccepted")
+        with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -6, |transport| {
+            send_delivery_message(transport, &message, -7, "InvitationAccepted")
         })
     {
         eprintln!(
@@ -645,10 +645,10 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
                     };
                     if let Err(code) = with_cached_nostr_transport(
                         sender_secret,
-                        TransportProfile::Default,
+                        TransportProfile::Quick,
                         -5,
                         |transport| {
-                            send_delivery_message(transport, message, -6, "InvitationRejected")
+                            send_delivery_message(transport, &message, -6, "InvitationRejected")
                         },
                     ) {
                         eprintln!(

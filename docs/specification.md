@@ -546,6 +546,11 @@ To support future root-scoped pairwise consensus, invitation lineage SHOULD also
 - `InvitationSent.sender_root_pubkey` so incoming invitation lineage can carry sender-root provenance
 - `InvitationAccepted.accepter_root_pubkey` so the sender can anchor the accepting capsule at root level
 
+Root-lineage trust rule:
+
+- `InvitationAccepted.accepter_root_pubkey` MUST influence peer-root anchoring only when `InvitationAccepted` has a valid remote signer.
+- Unsigned/imported `InvitationAccepted` rows MAY remain in ledger history but MUST NOT rewrite peer-root mapping for relationship projection or pairwise-consensus derivation.
+
 These fields are lineage provenance, not delivery routing. Transport delivery may remain transport-key based even when root provenance is preserved in ledger history.
 - `invitation_id`
 - `sender_starter_type`
@@ -555,7 +560,7 @@ This provenance is required so that both ledgers can reconstruct how the relatio
 
 ### 8.1.2 Starter Identity vs Provenance
 
-A recipient-side starter identity remains local to the receiving capsule and MUST be deterministic from local capsule state.
+A recipient-side starter identity remains local to the receiving capsule and MUST be deterministic from local capsule state plus acceptance-lineage inputs.
 
 The model is linear per slot:
 
@@ -571,6 +576,13 @@ Acceptance lineage MUST preserve at least:
 - `sender_starter_type`
 - `sender_starter_id`
 - `sender_root_pubkey` when available
+
+For `starter_v2` lineage, recipient-side starter derivation MUST include:
+
+- local recovery seed
+- target local slot
+- `invitation_id`
+- inviter anchor (`sender_root_pubkey` when available, otherwise sender transport key)
 
 The sender MUST record the newly created or selected recipient-side starter as a remote starter reference in relationship history.
 
@@ -588,6 +600,7 @@ Incoming invitation handling MUST be layered and deterministic:
 3. Only accepted ingress events are appended to ledger.
 4. Invitation projection is rebuilt from ledger events by `invitation_id` with deterministic precedence:
    - `accepted > rejected > expired > pending`
+   - terminal precedence MUST be order-invariant for anchored invitations: if an offer lineage exists in local ledger history, out-of-order terminal delivery still resolves to the same terminal status.
 5. UI action queues MUST be projection-driven:
    - actionable incoming queue: incoming invitations with `pending` status only
    - actionable outgoing queue: outgoing invitations with `pending` status only
@@ -674,7 +687,8 @@ SHA256(version || kind || payload_bytes)
 ```
 
 - Event ID is never computed from JSON, base64, or transport representation.
-- Starter ID is never derived from peer starter identity or invitation provenance.
+- Starter ID MUST NOT be copied/reused from peer starter identity.
+- Starter ID MAY include invitation provenance in deterministic lineage derivation (`starter_v2`) while remaining a local capsule-owned identity.
 
 ### 10.3 Identity Derivation Rule
 

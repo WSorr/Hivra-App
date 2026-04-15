@@ -40,6 +40,8 @@ require_present "$CHECKLIST" '^## Scenario 3: Recovery On New Device Path' \
   "covers recovery on clean runtime/device"
 require_present "$CHECKLIST" '^## Scenario 4: Update Truth Preservation' \
   "covers update truth preservation"
+require_present "$CHECKLIST" 'Deleting a capsule in canonical storage does not get silently undone by legacy-container migration on next launch' \
+  "covers legacy migration rehydration guard"
 require_present "$CHECKLIST" '^## Scenario 5: Long-Pending Invitation Stability' \
   "covers pending invitation stability"
 

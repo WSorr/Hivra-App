@@ -100,12 +100,14 @@ class CapsuleRuntimeBootstrapService {
     CapsuleRuntimeBootstrapRuntime runtime, {
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
-    final pubKey = runtime.capsuleRuntimeOwnerPublicKey();
+    final runtimeOwner = runtime.capsuleRuntimeOwnerPublicKey();
     final seed = runtime.loadSeed();
-    if (pubKey == null || pubKey.length != 32 || seed == null) return null;
+    if (runtimeOwner == null || runtimeOwner.length != 32 || seed == null) {
+      return null;
+    }
 
     final dir = await _fileStore.currentCapsuleDir(
-      runtime.capsuleRuntimeOwnerPublicKey,
+      () => runtimeOwner,
       bytesToHex: bytesToHex,
       create: false,
     );
@@ -119,20 +121,16 @@ class CapsuleRuntimeBootstrapService {
         false;
     final isNeste =
         _support.inferNesteFromLedgerRoot(ledgerRoot) ?? stateNeste ?? true;
-    final runtimeOwner = runtime.capsuleRuntimeOwnerPublicKey();
     final rootPubKey = runtime.capsuleRootPublicKey();
-    final runtimeHex = runtimeOwner != null && runtimeOwner.length == 32
-        ? bytesToHex(runtimeOwner)
-        : null;
+    final runtimeHex = bytesToHex(runtimeOwner);
     final rootHex = rootPubKey != null && rootPubKey.length == 32
         ? bytesToHex(rootPubKey)
         : null;
-    final identityMode = runtimeHex != null && runtimeHex == rootHex
-        ? 'root_owner'
-        : 'legacy_nostr_owner';
+    final identityMode =
+        runtimeHex == rootHex ? 'root_owner' : 'legacy_nostr_owner';
 
     return CapsuleRuntimeBootstrap(
-      pubKeyHex: bytesToHex(pubKey),
+      pubKeyHex: bytesToHex(runtimeOwner),
       seed: seed,
       isGenesis: isGenesis,
       isNeste: isNeste,

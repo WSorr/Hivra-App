@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/invitation.dart';
 import 'package:hivra_app/models/starter.dart';
 import 'package:hivra_app/screens/invitations_screen.dart';
+import 'package:hivra_app/services/invitation_intent_handler.dart';
 
 Invitation _invitation({
   required String id,
@@ -99,5 +100,101 @@ void main() {
       buckets.history.map((inv) => inv.id).toSet(),
       equals(<String>{'acc', 'rej', 'exp'}),
     );
+  });
+
+  test('shouldRetainLocalResolvedIncoming keeps local suppression on success',
+      () {
+    const result = InvitationIntentResult(code: 0, message: 'ok');
+    expect(shouldRetainLocalResolvedIncoming(result), isTrue);
+  });
+
+  test('shouldRetainLocalResolvedIncoming clears local suppression on failure',
+      () {
+    const result = InvitationIntentResult(code: -1, message: 'fail');
+    expect(shouldRetainLocalResolvedIncoming(result), isFalse);
+  });
+
+  test(
+      'mergeQueuedInvitationFetchRequest keeps quick+silent only when both requests are quick+silent',
+      () {
+    final merged = mergeQueuedInvitationFetchRequest(
+      queuedSilent: true,
+      queuedQuick: true,
+      incomingSilent: true,
+      incomingQuick: true,
+    );
+    expect(merged.silent, isTrue);
+    expect(merged.quick, isTrue);
+  });
+
+  test(
+      'mergeQueuedInvitationFetchRequest escalates to non-silent when any request is non-silent',
+      () {
+    final merged = mergeQueuedInvitationFetchRequest(
+      queuedSilent: true,
+      queuedQuick: true,
+      incomingSilent: false,
+      incomingQuick: true,
+    );
+    expect(merged.silent, isFalse);
+    expect(merged.quick, isTrue);
+  });
+
+  test(
+      'mergeQueuedInvitationFetchRequest escalates to full fetch when any request is non-quick',
+      () {
+    final merged = mergeQueuedInvitationFetchRequest(
+      queuedSilent: true,
+      queuedQuick: true,
+      incomingSilent: true,
+      incomingQuick: false,
+    );
+    expect(merged.silent, isTrue);
+    expect(merged.quick, isFalse);
+  });
+
+  test(
+      'pruneLocallyResolvedIncomingIds keeps suppression when invitation is temporarily absent',
+      () {
+    final kept = pruneLocallyResolvedIncomingIds(
+      resolvedIds: const <String>{'inv_1'},
+      projectedInvitations: const <Invitation>[],
+    );
+
+    expect(kept, equals(const <String>{'inv_1'}));
+  });
+
+  test(
+      'pruneLocallyResolvedIncomingIds removes suppression when invitation becomes terminal',
+      () {
+    final kept = pruneLocallyResolvedIncomingIds(
+      resolvedIds: const <String>{'inv_2'},
+      projectedInvitations: <Invitation>[
+        _invitation(
+          id: 'inv_2',
+          status: InvitationStatus.accepted,
+          incoming: true,
+        ),
+      ],
+    );
+
+    expect(kept, isEmpty);
+  });
+
+  test(
+      'pruneLocallyResolvedIncomingIds keeps suppression while incoming invitation remains pending',
+      () {
+    final kept = pruneLocallyResolvedIncomingIds(
+      resolvedIds: const <String>{'inv_3'},
+      projectedInvitations: <Invitation>[
+        _invitation(
+          id: 'inv_3',
+          status: InvitationStatus.pending,
+          incoming: true,
+        ),
+      ],
+    );
+
+    expect(kept, equals(const <String>{'inv_3'}));
   });
 }

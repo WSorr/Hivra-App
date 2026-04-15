@@ -40,10 +40,18 @@ Scope:
     - conflicting `InvitationAccepted` replay skipped when invitation lineage is already terminal-expired
     - duplicated `InvitationExpired` delivery remains idempotent after export/import replay
   - Replay policy now also requires `InvitationExpired` delivery to resolve an existing outgoing offer, preventing orphan terminal append without local lineage anchor.
+  - Replay policy now enforces relationship-delivery lineage anchors:
+    - `RelationshipEstablished` delivery requires signer-to-peer binding plus an existing `InvitationAccepted` anchor and is skipped when that invitation lineage was already consumed.
+    - `RelationshipBroken` delivery requires signer-to-peer binding plus an actively projected relationship key, blocking out-of-order/duplicate break replays from rewriting settled local state.
+  - `RelationshipBroken` replay handling now distinguishes lifecycle episodes for the same relationship key:
+    - duplicate break delivery is still skipped when the relationship key is not active,
+    - break delivery is accepted after a re-establish cycle even when payload/signer bytes are identical to an older break event.
+  - Added `hivra-ffi` replay-policy regression coverage for the two `RelationshipBroken` paths above, locking deterministic behavior across re-invite/re-break cycles.
 
 Definition of done:
 - Replayed transport events are either safely ignored or appended as genuinely new facts.
 - Old resolved state cannot reappear as pending state after restart, restore, or device migration.
+- Status: completed (2026-04-15).
 
 ### 2. Persist / Import Idempotence
 
@@ -74,6 +82,7 @@ Scope:
 
 Definition of done:
 - If an event is present in persisted ledger state, it survives restart and reconstructs the same projections.
+- Status: completed (2026-04-15).
 
 ### 3. Device Migration Safety
 
@@ -108,9 +117,13 @@ Scope:
   - Bootstrap/import path now carries ordered ledger candidates (`primary`, `fallback`) and attempts import sequentially, so a single stale/corrupt source does not abort restore when another valid source exists.
   - Capsule-delete artifact cleanup now removes legacy contact-card references by either hex (`rootHex`/`nostr hex`) or bech32 (`rootKey h1`/`nostr npub`) forms, reducing stale peer-card leftovers after restore/test cleanup cycles.
   - Added `invitation_projection_service_test.dart` coverage for restore fallback (`owner` from ledger when runtime owner is unavailable): replayed offer events after terminal `InvitationAccepted`/`InvitationRejected`/`InvitationExpired` remain terminal and do not return to pending projection.
+  - Added `capsule_runtime_bootstrap_service_test.dart` restore-path fallback coverage:
+    - `restoreRuntimeFromStorage` now has regression for sequential import fallback (primary candidate fails, secondary succeeds).
+    - `restoreRuntimeFromStorage` now has regression that stored-history restore fails deterministically when no ledger candidate imports successfully.
 
 Definition of done:
 - A user can restore a capsule on a new machine without manual container surgery or hidden-path knowledge.
+- Status: completed (2026-04-15).
 
 ### 4. Ledger Inspector v2
 
@@ -164,9 +177,14 @@ Scope:
   - Added architecture contract review gate coverage to prevent reintroduction of local kind dictionaries in key projection readers.
   - `CapsuleLedgerSummaryParser` pending-invitation count now uses `InvitationProjectionService` terminal-precedence semantics (instead of `InvitationSent - resolved` arithmetic), aligning capsule selector counters with runtime invitation projections.
   - Invitations UI queue bucketing is now centralized via `bucketInvitationsForUi` (`incoming pending`, `outgoing pending`, `history`) with regression tests, so actionable queues cannot regress to showing terminal invitation states as pending work; locally resolved-id suppression now also has explicit coverage that terminal rows stay visible in history.
+  - Added cross-service parity regression (`ledger_view_service_test.dart`) that the same ledger + local transport context yields identical `pendingInvitations` and `relationshipCount` in:
+    - `LedgerViewService.loadCapsuleSnapshot`
+    - `CapsuleLedgerSummaryParser.parse`
+    This locks shared projection semantics between header snapshot counters and summary parsing.
 
 Definition of done:
 - Header counts, list screens, and detail views use the same underlying projection semantics.
+- Status: completed (2026-04-15).
 
 ## Release Discipline
 
@@ -210,6 +228,8 @@ Scope:
   - Release-discipline gate now enforces checklist coverage for release-note signing/notarization disclosure and unsigned-build tester instructions.
   - Release-discipline gate now enforces publish checklist coverage for Git tag verification, release asset parity, and `Pre-release` flag validation.
   - Release-discipline gate now enforces packaging checklist coverage for asset naming, package rebuild, and checksum regeneration.
+  - Added `tools/release/macos_release.sh` to standardize channel-aware packaging (`test` / `public`) with optional signing/notarization flow and reproducible `RELEASE-METADATA.txt` + `SHA256SUMS.txt` outputs.
+  - `release_discipline_gate.sh` now enforces checklist coverage for scripted macOS release packaging, explicit channel selection, and pre-release flag mapping (`test` => pre-release, `public` => stable).
 
 Definition of done:
 - Published macOS artifacts match the tested build and launch reliably on supported Macs.
@@ -235,6 +255,9 @@ Scope:
   - `release_discipline_gate.sh` now validates Android checklist presence and key coverage (send/accept smoke, transport diagnostics, keystore seed validation).
   - Android checklist and gate now require packaged-artifact install verification and APK checksum verification.
   - Android checklist and gate now require publish metadata coverage (asset naming and release-notes testing-scope/limitations disclosure).
+  - Added `tools/release/android_release.sh` to standardize channel-aware Android packaging (`test` / `public`) with reproducible `RELEASE-METADATA.txt` + `SHA256SUMS.txt` outputs and ABI-level `libhivra_ffi.so` presence checks.
+  - `release_discipline_gate.sh` now enforces Android scripted release packaging usage, explicit channel selection, release metadata traceability, and pre-release flag/channel mapping (`test` => pre-release, `public` => stable).
+  - `tools/release/preflight.sh` now includes Android release bundle checks that validate `libhivra_ffi.so` presence for required ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`) in release APK artifacts when available.
 
 Definition of done:
 - Published Android APKs install cleanly, launch, and complete basic invitation flows on real devices.
@@ -249,10 +272,18 @@ Current progress:
 - Added persistence safety coverage for capsule index active-selection:
   - active capsule survives index write/read roundtrip
   - stale `active` pointers are sanitized when the referenced capsule entry is absent
+- `loadRuntimeBootstrapForCurrent` now snapshots runtime owner key once per bootstrap read (stable owner identity for directory resolution + identity-mode classification), preventing owner-key drift during one bootstrap cycle.
+- Added `capsule_runtime_bootstrap_service_test.dart` coverage that current-runtime bootstrap classifies identity mode deterministically:
+  - `root_owner` when runtime owner matches root pubkey
+  - `legacy_nostr_owner` when runtime owner differs from root pubkey
+  - current-runtime bootstrap keeps a single owner snapshot even if runtime owner source mutates between potential reads (anti-drift regression lock).
+- Added refresh-path regression coverage that `identityMode=legacy_nostr_owner` drives `legacyNostrOwnerMode` capsule creation during snapshot rebuild, locking owner-mode selection on upgrade/reload paths.
 - Capsule selector now collapses duplicate visual aliases deterministically per `(network, display-key)`:
   - prefers seeded entries over unseeded aliases
   - prefers `root_owner` over `legacy_nostr_owner` when both map to the same display capsule identity
   - falls back to higher ledger version / newer activity for stable tie-breaks
+- User-visible legacy documents migration is now one-shot in `UserVisibleDataDirectoryService` (migration marker file), so deleted canonical capsule data is not silently re-imported from old container paths on subsequent launches.
+- Added `user_visible_data_directory_service_test.dart` regression coverage that one-shot migration does not rehydrate deleted canonical capsule files.
 - Added update-safety projection fixture coverage for the same-ledger reconstruction path:
   - repeated parse of the same `ledger.json` keeps starter/relationship/pending counters stable
   - summary pending/relationship counters stay aligned with shared invitation/relationship projection services
@@ -281,6 +312,7 @@ Minimum required upgrade tests:
 
 Definition of done:
 - Updating the app preserves the same capsule truth instead of reconstructing a partial or duplicated history.
+- Status: completed (2026-04-15).
 
 ## Modularity and Architecture
 
@@ -314,6 +346,10 @@ Scope:
   - Gate coverage now includes restart active-capsule stability, reinstall stale-seed guard, and receive-path diagnostic separation checks.
   - Gate coverage now includes restart seed-binding stability and backup-import truth parity checks.
   - Gate now enforces explicit parity checks for both invitation projections and relationship break/re-invite projections versus macOS.
+  - Receive worker path now propagates FFI last-error details through `InvitationActionsService` into `InvitationIntentHandler` failure messages (full + quick fetch), so Android receive failures are diagnosable at UI layer without terminal-only inspection.
+  - Added `invitation_intent_handler_test.dart` coverage for receive-failure diagnostics:
+    - baseline receive failure now includes deterministic code suffix (`[code: ...]`)
+    - FFI detail payload is surfaced when available (`[code: ...; ffi: ...]`)
 
 Definition of done:
 - Android runtime failures are diagnosable.
@@ -351,6 +387,8 @@ Scope:
   - Capsule file-store state loading now reuses a shared JSON-map parser in `CapsuleFileStore.readState`, with regression tests covering missing/valid/non-map state files.
   - Capsule address-card import/read/projection paths now reuse shared JSON-map parse/coerce helpers in `CapsuleAddressService`, with regression tests for card roundtrip and malformed contact-card file shape.
   - WASM plugin registry loading now reuses shared JSON list/map parse-coerce helpers in `WasmPluginRegistryService.loadPlugins`, with regression tests for malformed-entry filtering, sort order, and install/remove registry sync.
+  - Shared projection counters (`pendingInvitations`, `relationshipCount`) are now centralized in `CapsuleLedgerSummaryParser.projectSharedCountersFromLedgerRoot(...)`; `LedgerViewService.loadCapsuleSnapshot` now reuses this parser boundary instead of maintaining a separate counter path.
+  - Added parser/runtime regression coverage that malformed ledger owner + runtime owner context still yields deterministic pending classification (`capsule_ledger_summary_parser_test.dart`), aligning snapshot and summary projection semantics during degraded owner-field recovery windows.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.
@@ -366,9 +404,24 @@ Scope:
 - Remove legacy behavior where a transport-specific public key is exposed as the capsule public key.
 - Preserve seed compatibility, ledger ownership stability, and upgrade safety during migration.
 
+Current progress:
+- Runtime signing identity is root-backed by default:
+  - `SeedBackedKeyStore::generate/public_key/sign` uses root derivation.
+  - `build_engine` signer invariants are locked by regression coverage (`build_engine_uses_root_identity_for_signer`).
+- FFI/public identity APIs are split explicitly by domain:
+  - capsule/root identity: `hivra_capsule_root_public_key`, `hivra_seed_root_public_key`
+  - transport identity: `hivra_capsule_nostr_public_key`, `hivra_seed_nostr_public_key`
+  - runtime-owner identity: `hivra_capsule_runtime_owner_public_key`
+- Added FFI regression coverage (`ffi_identity_boundary_keeps_root_and_transport_split`) that locks:
+  - root and Nostr derivations are distinct for the same seed
+  - runtime owner in `root` mode equals root derivation
+  - runtime owner in `legacy_nostr` mode equals Nostr derivation
+- Flutter/runtime diagnostics and bootstrap paths now track identity mode explicitly (`root_owner` / `legacy_nostr_owner`) instead of assuming one transport key as canonical capsule identity.
+
 Definition of done:
 - Capsule identity is transport-agnostic.
 - Transport keys remain adapter-level concerns.
+- Status: completed (2026-04-10, v1 scope).
 
 ### 9.2 Lineage-Derived Starter Identity
 
@@ -389,13 +442,18 @@ Current progress:
 - Inviter anchor selection now prefers sender root provenance from invitation lineage and falls back to sender transport key when root provenance is unavailable.
 - Added regression coverage in `platform/hivra-ffi/src/tests.rs` for:
   - invitation-id-sensitive lineage derivation (same slot, different invitation IDs -> different starter IDs),
+  - invitation-id-sensitive lineage nonce derivation (same slot, different invitation IDs -> different nonces),
   - fallback anchor behavior without sender root provenance,
   - root-anchor precedence over transport-key fallback.
+- Added `UseExistingStarter` acceptance-plan coverage that when invited kind already exists, relationship binding reuses existing local starter while supplemental starter creation in the first empty slot still follows lineage derivation (`id + nonce`) with inviter-root anchor precedence.
+- Added `UseExistingStarter` full-capacity coverage that when no slot is empty, acceptance plan stays deterministic with `created_starter=None` (no hidden lineage starter creation) while still reusing the existing local starter for relationship binding.
 - Legacy reactivation expectations in FFI tests were replaced with linear-generation invariants (burned starter IDs are not reused, next cycle uses a distinct ID).
+- Specification sync: `Starter Identity vs Provenance` and identifier rules now explicitly allow deterministic `starter_v2` lineage derivation from invitation provenance (`invitation_id + inviter anchor`) while forbidding peer-starter ID reuse.
 
 Definition of done:
 - Starter IDs are immutable per lifecycle episode and are not reanimated.
 - Reconstructing from ledger preserves linear per-slot ancestry and inviter provenance without introducing branch explosions.
+- Status: completed (2026-04-10, v1 scope).
 
 ### 9.3 Pairwise Consensus Snapshot v1
 
@@ -431,6 +489,7 @@ Definition of done:
 - A fresh pair of capsules can derive the same `pairwise consensus snapshot v1` hash from local ledger truth.
 - The snapshot is small and stable enough to serve as a signed execution precondition for future smart-contract plugins.
 - UI no longer presents a transport-derived key as the canonical capsule identity.
+- Status: completed (2026-04-10, v1 scope).
 
 ## Longer-Term Work
 
@@ -457,10 +516,46 @@ Scope:
   - Added plugin draft documentation for the first test smart-contract package (`docs/plugins/temperature_tomorrow_liechtenstein_test_plugin.md`).
   - Added `PluginDemoContractRunnerService` + WASM Plugins screen `Run Demo Settlement` dry-run action so test-contract execution can be manually exercised via consensus guard without introducing wasm runtime execution yet.
   - Added package-install preflight validation (`WasmPluginPackagePreflightService`) for `.wasm` magic/version and `.zip` manifest/module shape, wired into `WasmPluginRegistryService.installPluginFromFile` with regression coverage for malformed packages.
+  - Zip preflight module discovery now considers only safe normalized `.wasm` paths (entries with parent-traversal segments are ignored), and install fails when no safe runtime module candidates remain.
+  - External plugin source-catalog install path now verifies optional `sha256_hex` integrity before install (both remote download and local `file://` package flows); catalog entries with malformed `sha256_hex` shape are rejected, checksum mismatch blocks installation, and metadata mismatch (`plugin_id` / `package_kind` + `version` when available) triggers install rollback.
+  - Source catalog parsing now drops entries with unsupported `download_url` schemes and deduplicates duplicate `entry.id` rows deterministically (first entry wins), reducing install-time ambiguity from malformed catalogs.
+  - Source catalog parsing now also deduplicates duplicate package offers by `(plugin_id, version, package_kind)` (first entry wins), preventing one package release from appearing multiple times under different catalog entry IDs.
+  - Source catalog parsing now filters malformed package identity metadata (`plugin_id`, `version`) before install flows, so only semantically valid plugin release entries reach source-install path.
   - Plugin install path now carries manifest metadata (`pluginId`, `contractKind`, `capabilities`) into the local registry model so capability/contract inspection is available before wasm runtime execution exists.
+  - Plugin registry loading now self-heals stale entries whose stored package files are missing, rewriting registry to only file-backed records so runtime binding resolution cannot stick on dead package pointers.
   - Added capability policy boundary (`WasmPluginCapabilityPolicyService`) and wired preflight to reject unknown manifest capabilities at install-time.
   - Added deterministic `PluginHostApiService` request/response boundary (`executed` / `blocked` / `rejected`) with response hashing and guard-gated temperature contract execution as Host API v1 (no wasm runtime execution yet).
+  - Host API external-package boundary now validates `contractKind` against requested `plugin_id`; mismatched package metadata is rejected (`runtime_contract_kind_mismatch`) before contract execution.
+  - Host API now validates external runtime binding shape (`package_id`, `package_kind`) before invoke and rejects malformed metadata as `runtime_binding_invalid`.
+  - Host API external-package boundary now also validates declared runtime capabilities against required grants for requested `(plugin_id, method)` and rejects missing/unsupported capability sets (`runtime_capability_mismatch`) before contract execution.
+    - Temperature contract capability gate now supports both oracle capability variants (`oracle.read.mock_weather` or `oracle.read.temperature.li`) while keeping deterministic required-grant checks.
+  - Host response canonical boundary now includes normalized runtime capability metadata (`execution_capabilities`) for deterministic diagnostics and hash traceability.
   - Added host API v1 documentation (`docs/plugins/plugin_host_api_v1.md`) and regression coverage for deterministic hash, blocked guard path, unsupported plugin/method, and invalid-args rejection.
+  - Host API runtime-binding path now supports `executeWithRuntimeHook(...)` with deterministic execution-source metadata (`host_fallback` vs `external_package` + package fields), including package-byte digest (`execution_package_digest_hex`) for resolved external packages; plugin screen panels/logs now surface source + digest hint for manual diagnostics.
+  - Added deterministic `wasm_stub_v1` runtime invoke evidence path for external packages:
+    - validates installed package bytes against binding digest (`execution_package_digest_hex`) before module extraction; digest mismatch is rejected as invalid runtime invoke
+    - reads module bytes from resolved package (`.wasm` or first `.wasm` in `.zip`)
+    - when zip manifest declares `runtime.module_path`, runtime stub resolves that exact module path and rejects missing targets
+    - runtime module-path validation now rejects parent-traversal segments (`..`) while keeping deterministic support for normal dotted path segments
+    - zip module auto-selection now ignores archive entries containing parent-traversal segments (`..`) so runtime evidence cannot bind to traversal-shaped module paths
+    - runtime invoke now rejects zip packages where `.wasm` entries exist but all module paths are traversal-shaped (no safe runtime module candidates), producing explicit invalid-runtime diagnostics instead of ambiguous unavailable state
+    - enforces strict runtime contract for zip manifests (`runtime.abi=hivra_host_abi_v1`, `runtime.entry_export=hivra_entry_v1`)
+    - validates that selected wasm module exports required entry symbol (`hivra_entry_v1`) with `() -> ()` signature before emitting runtime invoke evidence
+    - rejects wasm modules declaring imports in `wasm_stub_v1` phase to keep current runtime evidence path side-effect free and host-ABI minimal until full runtime execution stage
+    - rejects wasm modules declaring `start` section in `wasm_stub_v1` phase to prevent implicit auto-start semantics before full host runtime execution policy is mounted
+    - `wasm_stub_v1` now executes `hivra_entry_v1` through a deterministic no-host opcode subset (`nop/drop/const/i32.add/i32.sub/i32.mul/block/if/else/br/br_if/end`) and rejects unsupported opcodes with explicit invalid-runtime diagnostics
+    - structured control-flow in `wasm_stub_v1` is currently limited to empty block type (`0x40`); non-void block types and `loop` opcode are explicitly rejected
+    - `wasm_stub_v1` entry execution now enforces deterministic safety limits (max instruction count + max stack depth), rejecting over-limit modules as invalid runtime invoke
+    - emits `execution_runtime_mode`, `execution_runtime_module_digest_hex`, and `execution_runtime_invoke_digest_hex` in host response canonical boundary
+    - keeps execution side-effect free and capability-neutral while wiring end-to-end runtime call path semantics
+  - Host API/runtime diagnostics now also carry explicit runtime module path (`execution_runtime_module_path`), and plugin panels show that path alongside ABI/entry/invoke diagnostics for deterministic manual verification.
+  - Host response now prioritizes runtime-selected module path (from invoke evidence) over manifest hint when they differ, with regression coverage to lock deterministic boundary output.
+  - Runtime invoke evidence now carries explicit module-selection strategy (`manifest_module_path` / `lexical_first_wasm` / `package_wasm`), surfaced through host response for deterministic diagnostics.
+  - Runtime invoke digest now binds module selection + module path in addition to module bytes, preventing same-byte different-path module selections from collapsing to identical invoke evidence.
+  - WASM Plugins UI installed-package cards now show explicit runtime phase + ABI/entry diagnostics (`ABI ok/mismatch`, `Entry ok/mismatch`) so manual smoke testing does not require terminal log inspection.
+  - BingX and Capsule Chat runtime panels now surface runtime invoke diagnostics from host responses (`runtime mode`, `ABI`, `entry export`, `invoke digest`) with explicit mismatch highlighting for ABI/entry.
+  - BingX and Capsule Chat runtime panels now also show host-declared runtime capability diagnostics (`execution_capabilities`) with deterministic ordering and compact overflow hinting.
+  - Runtime capability-chip display logic is now extracted into a shared utility (`summarizeRuntimeCapabilitiesForDisplay`) with dedicated unit tests, locking deterministic UI diagnostics shape for Host API capability responses.
 
 Definition of done:
 - Plugins extend transport capabilities without bypassing core rules or rewriting local truth.
@@ -497,12 +592,26 @@ When tradeoffs are unclear, prefer:
   - Break-relationship delivery now carries optional `peer_root_pubkey` in `RelationshipBroken` payloads when root anchor is known from established lineage.
   - Relationship peer grouping now collapses mixed transport links under the same root anchor (when root provenance exists), reducing transport-key fragmentation in relationship counters and peer cards while preserving per-link transport payloads for operations.
   - Relationship projection now infers peer root for legacy `RelationshipEstablished` payloads from root-augmented invitation lineage (`InvitationReceived`/`InvitationAccepted`) by `invitation_id`, reducing legacy transport-only peer identity drift in mixed ledgers.
+  - Relationship projection now enforces local-addressed + remote-signed checks for `InvitationReceived` lineage fallback (`to_pubkey == local transport`, signer != local), preventing foreign or mirrored incoming records from polluting peer-root inference.
+  - Invitation-lineage root inference now requires explicit local identity addressing even when runtime transport key is unavailable (owner-only fallback path), so foreign `InvitationReceived` rows cannot inject peer-root anchors during startup/switch windows.
+  - `InvitationAccepted` lineage root fallback now requires known local transport anchor (`from_pubkey == local transport`), preventing ambiguous accepted rows from mutating peer-root mapping when transport identity is unavailable.
   - Relationship projection invitation-lineage fallback is now direction-aware: local `InvitationSent` and local-signed `InvitationAccepted` root fields are excluded from peer-root inference, preventing local-root leakage into peer identity (`npub/self-root` drift) for legacy relationship payloads.
+  - Relationship projection now also filters transport-self peers (when runtime transport key is available), so mixed root/transport ledgers cannot project local `npub` self-links as active remote relationships.
   - Added `consensus_processor_test.dart` regression coverage that local invitation-lineage root fields (`InvitationSent.sender_root_pubkey`, local-signed `InvitationAccepted.accepter_root_pubkey`) are not treated as peer-root anchors during consensus peer mapping.
-  - Consensus peer-root inference from `InvitationAccepted.accepter_root_pubkey` now remains available for imported/legacy records even when event `signer` is absent, while still enforcing remote-accept direction (`from_pubkey == local transport`) to avoid local-root leakage.
-  - Consensus ingestion now drops `InvitationReceived` facts not addressed to the active local transport key, preventing foreign/merged incoming records from creating phantom pending pairwise blockers during preview/signable checks.
+  - Consensus peer-root inference from `InvitationAccepted.accepter_root_pubkey` now requires a valid remote signer; unsigned/imported accepted rows no longer rewrite peer-root mapping in preview/signable paths.
+  - Relationship projection now requires a valid remote signer for `InvitationAccepted` lineage fallback; unsigned/imported accepted rows no longer infer peer root, preventing signer-less drift between Relationships and Consensus views.
+  - Signed `InvitationAccepted` lineage fallback remains invitation-anchored: peer root is inferred only when the same `invitation_id` is first seen in local offer lineage (`InvitationSent` / local-addressed `InvitationReceived`), preventing orphan accepted rows from creating phantom peer-root links.
+  - Added projection/consensus regression coverage that remote-signed `InvitationAccepted` still anchors peer-root inference, preventing over-hardening regressions after removing unsigned/imported fallback paths.
+    - Consensus invitation ingestion now mirrors local-address/signature projection rules:
+      - `InvitationReceived` is accepted only when remote-signed and addressed to local identity;
+      - foreign `InvitationSent` rows are ignored unless they are local-signed or explicitly addressed to local identity;
+      - peer-signed `InvitationSent` addressed to local identity is treated as incoming pending lineage for consensus blocking.
+    - Consensus ingestion now drops `InvitationReceived` facts not addressed to the active local transport key, preventing foreign/merged incoming records from creating phantom pending pairwise blockers during preview/signable checks.
+    - Consensus preview now drops local-transport peer rows (in addition to local-root rows), preventing transport-self relationship artifacts from appearing as separate consensus peers in mixed/legacy payload histories.
+  - Added runtime regression coverage (`consensus_runtime_service_test.dart`) that mirrored A/B root-anchored ledgers derive identical pairwise consensus hash, locking symmetric cross-capsule snapshot behavior.
   - Invitations and Relationships screens now share root-first identity formatting (`root as primary, transport as hint`) with fallback to transport label when root anchor is unknown.
   - Relationships screen root fallback now resolves imported contact-card root identity across all transport keys inside a peer group (not only the representative transport key), reducing false `npub` fallback in mixed-link groups.
+  - Status: completed (2026-04-10, v1 scope).
 
 - `9.5 Ledger-Gated Capsule UI`
   - Capsule UI should treat the local ledger as the primary source of domain truth once any ledger history exists.
@@ -519,11 +628,29 @@ When tradeoffs are unclear, prefer:
       - quick receive timeout reduced to 8s (`InvitationActionsService`) to avoid long startup stalls under relay-connect degradation
     - quick receive dedupe is capsule-scoped in `InvitationIntentHandler` (in-flight coalescing + cooldown), so repeated screen/runtime reopen cycles do not trigger redundant receive workers for the same active capsule
       - added `invitation_intent_handler_test.dart` coverage for concurrent coalescing, cooldown skip, and per-capsule cooldown isolation
+      - unknown capsule identity (`unknown`/empty) now bypasses quick-fetch dedupe/cooldown so startup capsule-switch windows cannot suppress receive checks by aliasing different capsules under one placeholder key
+      - quick-fetch cooldown now applies only after successful fetch results (`code >= 0`), so transient receive failures do not suppress immediate retry on the same capsule
     - FFI now reuses per-capsule Nostr transport sessions (default + quick profiles) across send/receive/accept/reject/break paths instead of recreating transport on each action, reducing relay re-handshake churn during capsule switches and periodic refreshes
     - `hivra_reject_invitation` is now ledger-first: local `InvitationRejected` append occurs before/beside transport delivery so UI projections do not re-surface the same invitation as actionable pending during relay timeout/degradation windows; outbound reject delivery remains best-effort.
     - Added deterministic overdue-invitation sweep in `InvitationIntentHandler` for outgoing `pending` rows past 24h, appending `InvitationExpired` through existing `cancelInvitation/expire` path so local slot locks are released even when transport fetch returns no new events
     - Added `invitation_intent_handler_test.dart` coverage that auto-expiry sweep only applies to overdue outgoing `pending` invitations (does not touch incoming, fresh pending, or already terminal invitations) and still runs on both quick-fetch cooldown skips and receive-failure fetch cycles.
     - Invitation projection now falls back to ledger `owner` when runtime owner key is temporarily unavailable, preserving incoming/outgoing classification from ledger truth instead of dropping invitation rows to empty.
+    - Invitation projection incoming/outgoing classification is now local-identity aware (`owner + runtime transport`): offers addressed to local transport key are treated as incoming even when owner/root differs, reducing mixed root/transport pending misclassification.
+    - Capsule selector summary parsing now feeds invitation/relationship projections with derived local transport identity when available (legacy owner key or root-seed nostr derivation), keeping header pending/relationship counters aligned with runtime screens in mixed root/transport histories.
+    - Invitations screen now retains local incoming-resolution suppression after successful `accept/reject` until ledger projection reports terminal status, avoiding transient reappearance of the same pending row during post-action receive/update windows.
+    - Local incoming-resolution suppression pruning is now absence-tolerant: suppression is cleared only when an invitation id is explicitly projected as non-pending/non-incoming, not when it is temporarily missing during refresh windows, reducing pending-row resurrection flicker across capsule switches.
+    - Invitations screen fetch flow now queues refresh requests that arrive while an action/fetch is in-flight and drains them immediately after unlock, preventing dropped refresh intents during rapid accept/reject/switch interaction bursts.
+    - Invitations screen lifecycle is now capsule-stable across ledger mutations (screen key no longer rotates on `ledgerVersion`), with explicit `didUpdateWidget` refresh on `ledgerVersion` and transient-state reset on active-capsule switch; this removes action-state loss/flicker caused by per-mutation widget re-creation.
+    - Invitations async actions/fetch now drop stale completions when active capsule changes mid-flight, preventing old-capsule delivery/result messages from mutating the currently selected capsule view after switch.
+    - `InvitationActionsService.rejectInvitation` timeout path now mirrors send/accept behavior by scheduling late worker-ledger apply, so timed-out reject workers can still reconcile local ledger truth when completion arrives after UI timeout.
+    - `InvitationIntentHandler.rejectInvitation` now treats transport-failure codes with recorded local ledger state as success (`Local rejection is recorded`) and also trusts terminal local projection fallback, reducing duplicate-reject loops when network delivery degrades after local reject append.
+    - Invitation projection terminal resolution is now order-invariant for anchored lifecycles: `InvitationAccepted/Rejected/Expired` are applied by `invitation_id` precedence (`accepted > rejected > expired`) whenever an offer lineage exists anywhere in local ledger history, eliminating replay-order drift while still ignoring orphan terminal rows without offer anchor.
+    - Added `invitation_projection_service_test.dart` regression coverage that terminal precedence (`accepted > rejected > expired`) remains stable regardless of terminal-event ordering.
+    - `InvitationIntentHandler` now short-circuits repeated terminal `accept/reject` attempts using current local projection state, so stale UI rows cannot re-trigger duplicate terminal actions against already resolved invitation lineage.
+    - Duplicate terminal rows now resolve deterministic terminal timestamp by taking the earliest terminal event per invitation lifecycle, reducing replay-order drift in `respondedAt` projection.
+    - Invitation terminal projection (`Accepted/Rejected/Expired`) now requires valid signer width (32-byte signer), so malformed/imported unsigned terminal rows cannot mutate pending/terminal state.
+    - Invitation projection now filters foreign invitation rows by local addressing rules: `InvitationReceived` must target local identity and be remote-signed, while foreign `InvitationSent` rows that are neither local-signed nor local-addressed are ignored, reducing phantom pending queues in merged/imported ledgers.
+  - Status: completed (2026-04-10, v1 scope).
 
 - `9.6 Ledger-Derived Slot Projection In Flutter`
   - Core already provides deterministic slot projection via `SlotLayout::from_ledger` and `CapsuleState::from_capsule`.
@@ -531,6 +658,7 @@ When tradeoffs are unclear, prefer:
   - Keep slot projection sourced from the same ledger-derived capsule state path used by core.
   - Current progress:
     - Architecture contract gate now enforces absence of legacy per-slot starter probes in Flutter bindings (`starterExists/getStarterId/getStarterType` and `hivra_starter_get_*` symbols), preventing accidental rollback to slot-side FFI reads.
+  - Status: completed (2026-04-10).
 
 - `9.7 Local Relationship Sovereignty And Pairwise Consensus`
   - Each capsule remains sovereign over its own relationship truth: one side may append `RelationshipBroken` locally without waiting for remote approval.
@@ -558,11 +686,16 @@ When tradeoffs are unclear, prefer:
     - Projection now preserves `local break > remote pending` precedence, so late/replayed remote break notifications cannot re-open a pending state after a local break was already finalized.
     - Added `relationship_projection_service_test.dart` coverage that this `local break > remote pending` precedence also holds when local owner is resolved via ledger fallback (restore/runtime-owner-unavailable path).
     - Relationship projection now requires a valid 32-byte `signer` on `RelationshipBroken` before classifying local-finalized vs remote-pending when local owner is known; malformed/missing signer break events are ignored instead of mutating state.
+    - Relationship projection break classification now uses both local owner and local transport identity as deterministic signer anchors; when local identity is known, foreign-signed break events are ignored, and remote-signed breaks remain pending (never auto-finalized by missing owner context).
     - Ledger-owner fallback in relationship projection now treats owner as present only when raw owner bytes are actually available (32 bytes), preventing zero-filled owner fallbacks from misclassifying unsigned break events as deterministic local truth.
+    - FFI `hivra_break_relationship` now applies local break ledger append before transport delivery and keeps remote notification best-effort (`TransportProfile::Quick`), so local relationship sovereignty is preserved during relay degradation windows.
     - `RelationshipService` peer root resolution now normalizes contact-card hex fields (case/separator tolerant), so relationship identity hints continue resolving `transport -> root` for cards created/imported under older formatting variants.
+    - Added `RelationshipService.confirmRemoteBreak` edge-case coverage: invalid relationship ids and breaker refusal both return deterministic failure without persisting ledger snapshot.
     - Capsule summary relationship counts now reuse `RelationshipProjectionService` so header/list counters stay aligned with pending remote-break semantics instead of diverging on direct payload walks.
     - Relationships screen now exposes explicit pending-break confirmation action (single or chooser flow) so peer break notifications are finalized by deliberate user action instead of passive badge-only state.
+    - `ConsensusProcessor` now keeps remote-signed break facts as explicit `pending_remote_break` blockers (when local root identity is available), instead of auto-demoting the pair to finalized `relationship_broken`; this aligns signability gating with pending-break UI semantics.
     - Added `hivra-ffi` regression coverage that a repeated `InvitationSent` toward an already active peer appends only invitation lineage (no implicit `RelationshipBroken` or hidden relationship-state mutation).
+  - Status: completed (2026-04-10, v1 scope).
 
 - `9.8 Consensus Processor Module`
   - Keep consensus logic out of screen flows and invitation form orchestration.
@@ -583,8 +716,18 @@ When tradeoffs are unclear, prefer:
     - Removed the legacy `PairwiseSnapshotService` wrapper after moving inspector/guard readers onto shared consensus boundaries.
     - Added processor regression coverage for canonical hash derivation, pending-invitation blocking facts, and verification mismatch reporting.
     - `ConsensusProcessor.verify()` now treats duplicate participant IDs in a signature set as an explicit blocking fact (`duplicate_participant`), with regression coverage to prevent ambiguous/replayed signature bundles from being treated as valid match input.
+    - Duplicate-participant detection in `ConsensusProcessor.verify()` is now case-insensitive for hex participant IDs, so mixed upper/lowercase variants of the same capsule key cannot bypass duplicate-signature guards.
     - Consensus preview now ignores self-addressed outgoing invitations and self-signed incoming invitations, preventing self-loop delivery artifacts from appearing as pairwise peers or pending blockers in manual/plugin guard checks.
     - `ConsensusProcessor.signable()` now validates/normalizes `peerHex` input (case-insensitive hex), returning `invalid_peer_id` for malformed values, with regression coverage for uppercase and invalid peer-id paths.
+    - Added runtime/guard regression coverage that remote-signed `RelationshipBroken` is propagated as `pending_remote_break` (with local root identity), so host execution guard blocks contracts without collapsing pair state into finalized `relationship_broken`.
+    - `ConsensusProcessor` now ignores unsigned/malformed `RelationshipBroken` events when local root identity is available, aligning break classification with relationship projection semantics (deterministic local-finalized vs remote-pending split requires valid signer) and preventing unsigned break artifacts from mutating consensus state.
+    - Added host API regression coverage that `pending_remote_break` survives plugin blocked-response canonicalization/hash path, ensuring plugin runtime consumers receive the same pairwise blocker semantics as guard/runtime services.
+    - Added plugin demo runner regression coverage that execution-level `pending_remote_break` facts take precedence over stale check-level blockers, so partial-run summaries and blocked pair rows expose consistent remote-break gating semantics.
+    - Added contract-level regression coverage for chat/trading/weather plugin services that `pending_remote_break` blocks deterministic execution paths exactly as other consensus blockers, preventing contract-specific drift in guard semantics.
+    - Added deterministic demo digest boundary (`PluginDemoDigestService`) with explicit `guard_digest` (consensus-only) and `run_digest` (execution-inclusive) separation; `Run Demo Settlement` logging now prints both digests and pair-level `consensus_hash`, and regression coverage locks:
+      - guard-digest stability across repeated runs when only settlement payload changes
+      - digest invariance under pair ordering permutations
+      - guard-digest change on blocking-fact drift
   - Consensus must be computed on demand, not continuously in UI/runtime background.
   - Recalculation triggers are explicit:
     - smart-contract precondition check
@@ -595,6 +738,7 @@ When tradeoffs are unclear, prefer:
     - `verify` (validate signatures and hash equality)
   - Expose processor output as read-only inputs to UI and plugin execution guards.
   - Do not mix processor rollout with transport send/receive UX changes.
+  - Status: completed (2026-04-10, v1 scope).
 
 - `9.9 UI-FFI Boundary Reduction`
   - Reduce direct `HivraBindings` imports in UI screens by moving operational calls into service/facade boundaries.
@@ -626,6 +770,7 @@ When tradeoffs are unclear, prefer:
 - Definition of done for this slice:
   - screens depend on application services/facades, not raw FFI bindings
   - FFI access is concentrated in a smaller boundary layer with explicit ownership
+- Status: completed (2026-04-10).
 
 - `9.10 Execution Discipline Standard`
   - Codify one internal execution discipline for new modules and refactors.
@@ -640,6 +785,11 @@ When tradeoffs are unclear, prefer:
       - modular ownership
       - deterministic replay/projection behavior
       - strict downward dependencies
+    - `UiEventLogService` now serializes concurrent log writes and sanitizes legacy torn log lines on first write, so operational diagnostics stay deterministic and parseable under concurrent UI actions.
+    - Starters send-success flow now finalizes through screen-level lifecycle (not modal lifecycle), preventing stale modal unmount from dropping ledger-refresh/message side effects after successful invitation send.
+    - Removed duplicate UI-level send timeout in Starters flow; invitation send now relies on single worker timeout boundary from `InvitationActionsService`, avoiding competing timeout branches for one intent.
+    - Interactive outbound delivery paths (`InvitationSent` / `InvitationAccepted` / `InvitationRejected` / `RelationshipBroken` notification / capsule chat send) now use cached `TransportProfile::Quick`, reducing latency while keeping ledger-first local truth discipline.
+    - Invitations send path now emits explicit `invitations.send.finally` timing diagnostics (`elapsedMs`, `resultCode`, widget mount state) so both send entry points share the same resolve-once observability.
     - `tools/review/architecture_contract_gate.sh` now enforces baseline execution-discipline sync across:
       - `docs/architecture-execution-discipline.md`
       - `docs/README.md` index reference
@@ -648,3 +798,8 @@ When tradeoffs are unclear, prefer:
   - Definition of done:
     - New architectural work uses one documented execution discipline.
     - Review and implementation discussions reference internal Hivra rules instead of ad hoc patterns.
+  - Status: completed (2026-04-10).
+
+## Active Debt Kill List
+
+No active `9.x` architecture debt remains in v1 scope before trading-agent build.

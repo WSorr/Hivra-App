@@ -9,6 +9,7 @@ void main() {
     final normalized = service.normalizeAndValidate(<String>[
       'oracle.read.mock_weather',
       'consensus_guard.read',
+      'exchange.trade.bingx.spot',
       'oracle.read.mock_weather',
     ]);
 
@@ -16,6 +17,7 @@ void main() {
       normalized,
       <String>[
         'consensus_guard.read',
+        'exchange.trade.bingx.spot',
         'oracle.read.mock_weather',
       ],
     );

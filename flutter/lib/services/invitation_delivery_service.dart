@@ -182,6 +182,39 @@ class InvitationDeliveryService {
     }
   }
 
+  String rejectFailureMessage(int code) {
+    switch (code) {
+      case -1:
+        return 'Invalid rejection arguments';
+      case -2:
+        return 'Invalid rejection reason';
+      case -3:
+        return 'Seed not found';
+      case -4:
+        return 'Capsule is not initialized or invitation not found';
+      case -5:
+        return 'Delivery transport is unavailable';
+      case -6:
+        return 'Failed to deliver InvitationRejected';
+      case -11:
+        return 'No connected delivery relays available';
+      case -12:
+        return 'InvitationRejected delivery timed out';
+      case -13:
+        return 'Delivery relay rejected InvitationRejected';
+      case -14:
+        return 'Delivery relay requires or rejected authentication';
+      case -1002:
+        return 'Reject API is not available in FFI';
+      case -1003:
+        return 'Reject timed out';
+      case -1004:
+        return 'Active capsule bootstrap failed';
+      default:
+        return 'Failed to reject invitation (code $code)';
+    }
+  }
+
   String fetchSuccessMessage(int count) => count == 0
       ? 'No new invitation deliveries'
       : 'Fetched invitation deliveries: $count new event(s)';

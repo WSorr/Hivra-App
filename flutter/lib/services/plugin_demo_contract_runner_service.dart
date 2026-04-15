@@ -12,12 +12,14 @@ enum PluginDemoRunState {
 class PluginDemoPairRunResult {
   final String peerHex;
   final String? peerLabel;
+  final String? consensusHashHex;
   final TemperatureContractSettlement? settlement;
   final List<ConsensusBlockingFact> blockingFacts;
 
   const PluginDemoPairRunResult({
     required this.peerHex,
     required this.peerLabel,
+    this.consensusHashHex,
     required this.settlement,
     required this.blockingFacts,
   });
@@ -54,7 +56,8 @@ class PluginDemoRunResult {
 
   String? get peerLabel => firstExecutedPair?.peerLabel ?? firstPair?.peerLabel;
 
-  TemperatureContractSettlement? get settlement => firstExecutedPair?.settlement;
+  TemperatureContractSettlement? get settlement =>
+      firstExecutedPair?.settlement;
 
   bool get isExecuted => state == PluginDemoRunState.executed;
 }
@@ -102,6 +105,7 @@ class PluginDemoContractRunnerService {
           PluginDemoPairRunResult(
             peerHex: check.peerHex,
             peerLabel: check.peerLabel,
+            consensusHashHex: check.hashHex,
             settlement: execution.settlement,
             blockingFacts: const <ConsensusBlockingFact>[],
           ),
@@ -120,6 +124,7 @@ class PluginDemoContractRunnerService {
         PluginDemoPairRunResult(
           peerHex: check.peerHex,
           peerLabel: check.peerLabel,
+          consensusHashHex: check.hashHex,
           settlement: null,
           blockingFacts: facts,
         ),

@@ -919,6 +919,85 @@ void main() {
       expect(previews, isEmpty);
     });
 
+    test('preview ignores foreign InvitationSent not addressed to local identity',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(111));
+      final ownStarter = Uint8List.fromList(bytes32(112));
+      final localTransport = Uint8List.fromList(bytes32(113));
+      final foreignTransport = Uint8List.fromList(bytes32(114));
+      final peerTransport = Uint8List.fromList(bytes32(115));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...foreignTransport,
+            1,
+          ],
+          'signer': peerTransport,
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, isEmpty);
+    });
+
+    test(
+        'preview treats peer-signed InvitationSent addressed to local transport as incoming pending',
+        () {
+      final anchorInvitationId = Uint8List.fromList(bytes32(120));
+      final anchorOwnStarter = Uint8List.fromList(bytes32(121));
+      final anchorPeerStarter = Uint8List.fromList(bytes32(122));
+      final peerRoot = Uint8List.fromList(bytes32(123));
+      final senderTransport = Uint8List.fromList(bytes32(124));
+      final senderStarter = Uint8List.fromList(bytes32(125));
+      final senderRoot = Uint8List.fromList(bytes32(126));
+      final invitationId = Uint8List.fromList(bytes32(116));
+      final peerStarter = Uint8List.fromList(bytes32(117));
+      final localTransport = Uint8List.fromList(bytes32(118));
+      final peerTransport = Uint8List.fromList(bytes32(119));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...anchorOwnStarter,
+            ...anchorPeerStarter,
+            1,
+            ...anchorInvitationId,
+            ...senderTransport,
+            1,
+            ...senderStarter,
+            ...peerRoot,
+            ...senderRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...peerStarter,
+            ...localTransport,
+            1,
+          ],
+          'signer': peerTransport,
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, hasLength(1));
+      expect(previews.first.peerHex, equals(hex(peerRoot)));
+      expect(
+        previews.first.blockingFacts.map((fact) => fact.code),
+        contains('pending_invitation'),
+      );
+    });
+
     test('preview ignores self-addressed outgoing invitation events', () {
       final invitationId = Uint8List.fromList(bytes32(98));
       final ownStarter = Uint8List.fromList(bytes32(99));
@@ -966,8 +1045,79 @@ void main() {
       expect(previews, isEmpty);
     });
 
+    test('preview drops transport-self relationship peer rows', () {
+      final localTransport = Uint8List.fromList(bytes32(105));
+      final remoteTransport = Uint8List.fromList(bytes32(106));
+      final invitationId = Uint8List.fromList(bytes32(107));
+      final ownStarter = Uint8List.fromList(bytes32(108));
+      final peerStarter = Uint8List.fromList(bytes32(109));
+      final senderStarter = Uint8List.fromList(bytes32(110));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...localTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...remoteTransport,
+            1,
+            ...senderStarter,
+          ],
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, isEmpty);
+    });
+
     test(
-        'preview maps remote acceptance root anchor even when signer is absent in imported event',
+        'preview maps remote acceptance root anchor when InvitationAccepted is remote-signed',
+        () {
+      final invitationId = Uint8List.fromList(bytes32(127));
+      final ownStarter = Uint8List.fromList(bytes32(128));
+      final peerTransport = Uint8List.fromList(bytes32(129));
+      final peerRoot = Uint8List.fromList(bytes32(130));
+      final localTransport = Uint8List.fromList(bytes32(131));
+      final createdStarter = Uint8List.fromList(bytes32(132));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...localTransport,
+            ...createdStarter,
+            ...peerRoot,
+          ],
+          'signer': peerTransport,
+        },
+      ];
+
+      final previews = processor.preview(events, localTransport);
+
+      expect(previews, hasLength(1));
+      expect(previews.first.peerHex, equals(hex(peerRoot)));
+      expect(
+        previews.first.blockingFacts.map((fact) => fact.code),
+        contains('no_active_relationship'),
+      );
+    });
+
+    test(
+        'preview does not map remote acceptance root anchor when signer is absent',
         () {
       final invitationId = Uint8List.fromList(bytes32(86));
       final ownStarter = Uint8List.fromList(bytes32(87));
@@ -1000,9 +1150,7 @@ void main() {
 
       final previews = processor.preview(events, localTransport);
 
-      expect(previews, hasLength(1));
-      expect(previews.first.peerHex, equals(hex(peerRoot)));
-      expect(previews.first.peerHex, isNot(equals(hex(peerTransport))));
+      expect(previews, isEmpty);
     });
 
     test(
@@ -1388,6 +1536,319 @@ void main() {
       expect(
         signable.blockingFacts.map((fact) => fact.code),
         isNot(contains('no_active_relationship')),
+      );
+    });
+
+    test(
+        'remote-signed break keeps relationship active but blocks signable as pending remote break',
+        () {
+      final localTransport = Uint8List.fromList(bytes32(241));
+      final localRoot = Uint8List.fromList(bytes32(242));
+      final invitationId = Uint8List.fromList(bytes32(243));
+      final ownStarter = Uint8List.fromList(bytes32(244));
+      final peerTransport = Uint8List.fromList(bytes32(245));
+      final peerRoot = Uint8List.fromList(bytes32(246));
+      final peerStarter = Uint8List.fromList(bytes32(247));
+      final senderStarter = Uint8List.fromList(bytes32(248));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...localTransport,
+            1,
+            ...senderStarter,
+            ...peerRoot,
+            ...localRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...peerTransport,
+            ...peerStarter,
+            ...peerRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerRoot,
+          ],
+          'signer': peerTransport,
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        localRootKey: localRoot,
+        peerHex: hex(peerRoot),
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.preview!.relationshipCount, equals(1));
+      expect(signable.isSignable, isFalse);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        contains('pending_remote_break'),
+      );
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('relationship_broken')),
+      );
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('no_active_relationship')),
+      );
+    });
+
+    test('local-signed break finalizes relationship for consensus', () {
+      final localTransport = Uint8List.fromList(bytes32(251));
+      final localRoot = Uint8List.fromList(bytes32(252));
+      final invitationId = Uint8List.fromList(bytes32(253));
+      final ownStarter = Uint8List.fromList(bytes32(254));
+      final peerTransport = Uint8List.fromList(bytes32(255));
+      final peerRoot = Uint8List.fromList(bytes32(200));
+      final peerStarter = Uint8List.fromList(bytes32(201));
+      final senderStarter = Uint8List.fromList(bytes32(202));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...localTransport,
+            1,
+            ...senderStarter,
+            ...peerRoot,
+            ...localRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...peerTransport,
+            ...peerStarter,
+            ...peerRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerRoot,
+          ],
+          'signer': localTransport,
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        localRootKey: localRoot,
+        peerHex: hex(peerRoot),
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.preview!.relationshipCount, equals(0));
+      expect(signable.isSignable, isFalse);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        contains('relationship_broken'),
+      );
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        contains('no_active_relationship'),
+      );
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('pending_remote_break')),
+      );
+    });
+
+    test(
+        'unsigned break is ignored when local root identity is available',
+        () {
+      final localTransport = Uint8List.fromList(bytes32(260));
+      final localRoot = Uint8List.fromList(bytes32(261));
+      final invitationId = Uint8List.fromList(bytes32(262));
+      final ownStarter = Uint8List.fromList(bytes32(263));
+      final peerTransport = Uint8List.fromList(bytes32(264));
+      final peerRoot = Uint8List.fromList(bytes32(265));
+      final peerStarter = Uint8List.fromList(bytes32(266));
+      final senderStarter = Uint8List.fromList(bytes32(267));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...localTransport,
+            1,
+            ...senderStarter,
+            ...peerRoot,
+            ...localRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...peerTransport,
+            ...peerStarter,
+            ...peerRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerRoot,
+          ],
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        localRootKey: localRoot,
+        peerHex: hex(peerRoot),
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.preview!.relationshipCount, equals(1));
+      expect(signable.isSignable, isTrue);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('relationship_broken')),
+      );
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('pending_remote_break')),
+      );
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        isNot(contains('no_active_relationship')),
+      );
+    });
+
+    test('unsigned break still applies when local root identity is unavailable',
+        () {
+      final localTransport = Uint8List.fromList(bytes32(270));
+      final invitationId = Uint8List.fromList(bytes32(271));
+      final ownStarter = Uint8List.fromList(bytes32(272));
+      final peerTransport = Uint8List.fromList(bytes32(273));
+      final peerRoot = Uint8List.fromList(bytes32(274));
+      final peerStarter = Uint8List.fromList(bytes32(275));
+      final senderStarter = Uint8List.fromList(bytes32(276));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...ownStarter,
+            ...peerTransport,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...localTransport,
+            1,
+            ...senderStarter,
+            ...peerRoot,
+            ...bytes32(277),
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...peerTransport,
+            ...peerStarter,
+            ...peerRoot,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerRoot,
+          ],
+        },
+      ];
+
+      final signable = processor.signable(
+        events,
+        localTransport,
+        peerHex: hex(peerRoot),
+      );
+
+      expect(signable.preview, isNotNull);
+      expect(signable.preview!.relationshipCount, equals(0));
+      expect(signable.isSignable, isFalse);
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        contains('relationship_broken'),
+      );
+      expect(
+        signable.blockingFacts.map((fact) => fact.code),
+        contains('no_active_relationship'),
       );
     });
 

@@ -698,17 +698,52 @@ class CapsulePersistenceService {
     return entries;
   }
 
-  Future<CapsuleLedgerSummary> loadCapsuleSummary(String pubKeyHex) async {
+  Future<CapsuleLedgerSummary> loadCapsuleSummary(
+    String pubKeyHex, {
+    CapsulePersistenceBindings? hivra,
+  }) async {
     final capsuleDir = await _capsuleDirForHex(pubKeyHex);
     final raw = await _fileStore.readLedger(capsuleDir);
     if (raw == null) {
       return CapsuleLedgerSummary.empty();
     }
     try {
-      return _summaryParser.parse(raw, _bytesToHex);
+      final localTransportPublicKey = await _deriveSummaryTransportPublicKey(
+        pubKeyHex,
+        hivra: hivra,
+      );
+      return _summaryParser.parse(
+        raw,
+        _bytesToHex,
+        runtimeTransportPublicKey: localTransportPublicKey,
+      );
     } catch (_) {
       return CapsuleLedgerSummary.empty();
     }
+  }
+
+  Future<Uint8List?> _deriveSummaryTransportPublicKey(
+    String pubKeyHex, {
+    CapsulePersistenceBindings? hivra,
+  }) async {
+    final index = await _readIndex();
+    final identityMode =
+        _identityModeForCapsule(indexEntry: index.capsules[pubKeyHex]);
+    if (identityMode == 'legacy_nostr_owner') {
+      return _hexToBytes(pubKeyHex);
+    }
+    if (hivra == null) {
+      return null;
+    }
+    final seed = await _loadSeedForCapsule(pubKeyHex);
+    if (seed == null || seed.length != 32) {
+      return null;
+    }
+    final nostr = hivra.seedNostrPublicKey(seed);
+    if (nostr == null || nostr.length != 32) {
+      return null;
+    }
+    return Uint8List.fromList(nostr);
   }
 
   Future<String?> loadCapsuleLedgerOwnerHex(String pubKeyHex) async {
@@ -764,17 +799,31 @@ class CapsulePersistenceService {
   }
 
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra, {
+    String? capsuleHex,
+  }) async {
+    final requestedHex = capsuleHex?.trim();
+    final requestedCapsuleHex = requestedHex != null &&
+            requestedHex.isNotEmpty &&
+            RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(requestedHex)
+        ? requestedHex.toLowerCase()
+        : null;
+
     final activeHex = await resolveActiveCapsuleHex(hivra);
+    var bootstrapCapsuleHex = requestedCapsuleHex;
     CapsuleRuntimeBootstrap? bootstrap;
-    if (activeHex != null && activeHex.isNotEmpty) {
+    if (bootstrapCapsuleHex != null && bootstrapCapsuleHex.isNotEmpty) {
+      bootstrap = await loadRuntimeBootstrap(bootstrapCapsuleHex);
+    }
+    if (bootstrap == null && activeHex != null && activeHex.isNotEmpty) {
+      bootstrapCapsuleHex = activeHex;
       bootstrap = await loadRuntimeBootstrap(activeHex);
     }
     bootstrap ??= await loadRuntimeBootstrapForCurrent(hivra);
     if (bootstrap == null) return null;
 
     return <String, Object?>{
-      'activeCapsuleHex': activeHex,
+      'activeCapsuleHex': bootstrapCapsuleHex ?? activeHex,
       'seed': bootstrap.seed,
       'isGenesis': bootstrap.isGenesis,
       'isNeste': bootstrap.isNeste,

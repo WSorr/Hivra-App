@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -99,5 +100,54 @@ void main() {
     final entry = index.capsules[capsuleHex];
     expect(entry, isNotNull);
     expect(entry!.identityMode, equals('root_owner'));
+  });
+
+  test('repairs missing index entries from capsule directories', () async {
+    const indexedCapsule =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const missingCapsule =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    final capsulesRoot = Directory('${tempDocsDir.path}/capsules');
+    await capsulesRoot.create(recursive: true);
+    final indexedDir = Directory('${capsulesRoot.path}/$indexedCapsule');
+    final missingDir = Directory('${capsulesRoot.path}/$missingCapsule');
+    await indexedDir.create(recursive: true);
+    await missingDir.create(recursive: true);
+
+    final missingState = File('${missingDir.path}/capsule_state.json');
+    await missingState.writeAsString(
+      jsonEncode({
+        'isGenesis': true,
+        'isNeste': false,
+        'identityMode': 'legacy_nostr_owner',
+      }),
+      flush: true,
+    );
+
+    final indexFile = File('${capsulesRoot.path}/capsules_index.json');
+    await indexFile.writeAsString(
+      jsonEncode({
+        'active': indexedCapsule,
+        'capsules': {
+          indexedCapsule: {
+            'pubKeyHex': indexedCapsule,
+            'createdAt': '2026-03-28T00:00:00.000Z',
+            'lastActive': '2026-03-28T00:00:00.000Z',
+            'isGenesis': false,
+            'isNeste': true,
+            'identityMode': 'root_owner',
+          },
+        },
+      }),
+      flush: true,
+    );
+
+    final index = await store.read();
+    expect(index.capsules.keys.toSet(), equals({indexedCapsule, missingCapsule}));
+    final repaired = index.capsules[missingCapsule];
+    expect(repaired, isNotNull);
+    expect(repaired!.isGenesis, isTrue);
+    expect(repaired.isNeste, isFalse);
+    expect(repaired.identityMode, equals('legacy_nostr_owner'));
   });
 }

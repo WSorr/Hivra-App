@@ -44,6 +44,30 @@ void main() {
       expect(snapshot.blockedPairCount, 1);
       expect(factCodes, contains('pending_invitation'));
     });
+
+    test('reports blocked on pending_remote_break without losing active pair',
+        () {
+      final service = PluginExecutionGuardService(
+        consensus: ConsensusRuntimeService(
+          exportLedger: () => _remoteBreakPendingLedgerJson(),
+          readLocalTransportKey: () =>
+              Uint8List.fromList(List<int>.filled(32, 26)),
+          readLocalRootKey: () => Uint8List.fromList(List<int>.filled(32, 27)),
+        ),
+      );
+
+      final snapshot = service.inspectHostReadiness();
+      final factCodes = snapshot.blockingFacts
+          .map((fact) => fact.code)
+          .toList(growable: false);
+
+      expect(snapshot.state, ConsensusGuardState.blocked);
+      expect(snapshot.readyPairCount, 0);
+      expect(snapshot.blockedPairCount, 1);
+      expect(factCodes, contains('pending_remote_break'));
+      expect(factCodes, isNot(contains('relationship_broken')));
+      expect(factCodes, isNot(contains('no_active_relationship')));
+    });
   });
 }
 
@@ -147,6 +171,64 @@ String _pendingLedgerJson() {
           ...peerTransport,
           1,
         ],
+      },
+    ],
+  });
+}
+
+String _remoteBreakPendingLedgerJson() {
+  final invitationId = Uint8List.fromList(List<int>.filled(32, 21));
+  final ownStarter = Uint8List.fromList(List<int>.filled(32, 22));
+  final peerTransport = Uint8List.fromList(List<int>.filled(32, 23));
+  final peerRoot = Uint8List.fromList(List<int>.filled(32, 24));
+  final peerStarter = Uint8List.fromList(List<int>.filled(32, 25));
+  final localTransport = Uint8List.fromList(List<int>.filled(32, 26));
+  final localRoot = Uint8List.fromList(List<int>.filled(32, 27));
+  final senderStarter = Uint8List.fromList(List<int>.filled(32, 28));
+
+  return jsonEncode(<String, dynamic>{
+    'events': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'kind': 1,
+        'payload': <int>[
+          ...invitationId,
+          ...ownStarter,
+          ...peerTransport,
+          1,
+        ],
+      },
+      <String, dynamic>{
+        'kind': 7,
+        'payload': <int>[
+          ...peerTransport,
+          ...ownStarter,
+          ...peerStarter,
+          1,
+          ...invitationId,
+          ...localTransport,
+          1,
+          ...senderStarter,
+          ...peerRoot,
+          ...localRoot,
+        ],
+      },
+      <String, dynamic>{
+        'kind': 2,
+        'payload': <int>[
+          ...invitationId,
+          ...peerTransport,
+          ...peerStarter,
+          ...peerRoot,
+        ],
+      },
+      <String, dynamic>{
+        'kind': 8,
+        'payload': <int>[
+          ...peerTransport,
+          ...ownStarter,
+          ...peerRoot,
+        ],
+        'signer': peerTransport,
       },
     ],
   });

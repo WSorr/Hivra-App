@@ -9,7 +9,10 @@ import '../models/relationship.dart';
 import 'capsule_address_service.dart';
 import 'manual_consensus_check_service.dart';
 
-const Duration _chatSendWorkerTimeout = Duration(seconds: 20);
+// Chat send may need two relay publish passes under degraded connectivity.
+// Keep timeout above a single slow relay cycle to avoid false -1003 while
+// transport still completes on a later relay.
+const Duration _chatSendWorkerTimeout = Duration(seconds: 35);
 const Duration _chatReceiveWorkerTimeout = Duration(seconds: 12);
 
 typedef ChatWorkerRunner = Future<Map<String, Object?>> Function(
@@ -74,17 +77,51 @@ class CapsuleChatInboxMessage {
   });
 }
 
+class CapsuleTradeSignalInboxMessage {
+  final String id;
+  final String signalId;
+  final String fromHex;
+  final String symbol;
+  final String side;
+  final String orderType;
+  final String quantityDecimal;
+  final String entryMode;
+  final String intentHashHex;
+  final String createdAtUtc;
+  final String? strategyTag;
+  final String canonicalIntentJson;
+  final int timestampMs;
+
+  const CapsuleTradeSignalInboxMessage({
+    required this.id,
+    required this.signalId,
+    required this.fromHex,
+    required this.symbol,
+    required this.side,
+    required this.orderType,
+    required this.quantityDecimal,
+    required this.entryMode,
+    required this.intentHashHex,
+    required this.createdAtUtc,
+    required this.strategyTag,
+    required this.canonicalIntentJson,
+    required this.timestampMs,
+  });
+}
+
 class CapsuleChatDeliveryReceiveResult {
   final int code;
   final String? errorMessage;
   final int droppedByConsensus;
   final List<CapsuleChatInboxMessage> messages;
+  final List<CapsuleTradeSignalInboxMessage> tradeSignals;
 
   const CapsuleChatDeliveryReceiveResult({
     required this.code,
     required this.errorMessage,
     required this.droppedByConsensus,
     required this.messages,
+    required this.tradeSignals,
   });
 }
 
@@ -168,7 +205,8 @@ class CapsuleChatDeliveryService {
       _chatSendWorkerTimeout,
       onTimeout: () => <String, Object?>{
         'result': -1003,
-        'lastError': 'Chat send timed out',
+        'lastError':
+            'Chat send timed out locally; relay delivery may still complete',
       },
     );
 
@@ -201,6 +239,7 @@ class CapsuleChatDeliveryService {
         errorMessage: 'Chat worker bootstrap unavailable',
         droppedByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
     }
 
@@ -221,6 +260,7 @@ class CapsuleChatDeliveryService {
         errorMessage: transportError,
         droppedByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
     }
 
@@ -230,6 +270,7 @@ class CapsuleChatDeliveryService {
         errorMessage: null,
         droppedByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
     }
 
@@ -242,6 +283,7 @@ class CapsuleChatDeliveryService {
         errorMessage: 'Chat receive payload is not valid JSON',
         droppedByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
     }
     if (decoded is! List) {
@@ -250,6 +292,7 @@ class CapsuleChatDeliveryService {
         errorMessage: 'Chat receive payload has invalid shape',
         droppedByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
     }
 
@@ -261,6 +304,7 @@ class CapsuleChatDeliveryService {
     final identityIndex = await _loadPeerIdentityIndex();
 
     final byId = <String, CapsuleChatInboxMessage>{};
+    final byTradeSignalId = <String, CapsuleTradeSignalInboxMessage>{};
     var droppedByConsensus = 0;
 
     for (final item in decoded) {
@@ -282,22 +326,48 @@ class CapsuleChatDeliveryService {
       }
 
       final envelope = _parseEnvelope(payloadJson);
-      if (envelope == null) continue;
-      final id = envelope['envelope_hash_hex']!.isEmpty
-          ? _stableMessageId(consensusPeerHex, timestampMs, payloadJson)
-          : envelope['envelope_hash_hex']!;
+      if (envelope != null) {
+        final id = envelope['envelope_hash_hex']!.isEmpty
+            ? _stableMessageId(consensusPeerHex, timestampMs, payloadJson)
+            : envelope['envelope_hash_hex']!;
 
-      byId[id] = CapsuleChatInboxMessage(
+        byId[id] = CapsuleChatInboxMessage(
+          id: id,
+          fromHex: consensusPeerHex,
+          messageText: envelope['message_text']!,
+          createdAtUtc: envelope['created_at_utc']!,
+          envelopeHashHex: envelope['envelope_hash_hex']!,
+          timestampMs: timestampMs,
+        );
+        continue;
+      }
+
+      final tradeSignal = _parseTradeSignalEnvelope(payloadJson);
+      if (tradeSignal == null) continue;
+      final signalId = tradeSignal['signal_id']!;
+      final id = signalId.isEmpty
+          ? _stableMessageId(consensusPeerHex, timestampMs, payloadJson)
+          : signalId;
+      byTradeSignalId[id] = CapsuleTradeSignalInboxMessage(
         id: id,
+        signalId: signalId.isEmpty ? id : signalId,
         fromHex: consensusPeerHex,
-        messageText: envelope['message_text']!,
-        createdAtUtc: envelope['created_at_utc']!,
-        envelopeHashHex: envelope['envelope_hash_hex']!,
+        symbol: tradeSignal['symbol']!,
+        side: tradeSignal['side']!,
+        orderType: tradeSignal['order_type']!,
+        quantityDecimal: tradeSignal['quantity_decimal']!,
+        entryMode: tradeSignal['entry_mode']!,
+        intentHashHex: tradeSignal['intent_hash_hex']!,
+        createdAtUtc: tradeSignal['created_at_utc']!,
+        strategyTag: tradeSignal['strategy_tag'],
+        canonicalIntentJson: tradeSignal['canonical_intent_json']!,
         timestampMs: timestampMs,
       );
     }
 
     final messages = byId.values.toList()
+      ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    final tradeSignals = byTradeSignalId.values.toList()
       ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
 
     return CapsuleChatDeliveryReceiveResult(
@@ -305,6 +375,8 @@ class CapsuleChatDeliveryService {
       errorMessage: null,
       droppedByConsensus: droppedByConsensus,
       messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
+      tradeSignals:
+          List<CapsuleTradeSignalInboxMessage>.unmodifiable(tradeSignals),
     );
   }
 
@@ -421,6 +493,58 @@ class CapsuleChatDeliveryService {
         'message_text': messageText,
         'created_at_utc': createdAtUtc,
         'envelope_hash_hex': envelopeHashHex.toLowerCase(),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, String?>? _parseTradeSignalEnvelope(String payloadJson) {
+    try {
+      final decoded = jsonDecode(payloadJson);
+      if (decoded is! Map) return null;
+      final map = Map<String, dynamic>.from(decoded);
+      if (map['contract_kind']?.toString() != 'bingx_trade_signal_v1') {
+        return null;
+      }
+
+      final signalId = map['signal_id']?.toString() ?? '';
+      final symbol = map['symbol']?.toString() ?? '';
+      final side = map['side']?.toString() ?? '';
+      final orderType = map['order_type']?.toString() ?? '';
+      final quantityDecimal = map['quantity_decimal']?.toString() ?? '';
+      final entryMode = map['entry_mode']?.toString() ?? 'direct';
+      final intentHashHex =
+          (map['intent_hash_hex']?.toString() ?? '').toLowerCase();
+      final createdAtUtc = map['created_at_utc']?.toString() ?? '';
+      final canonicalIntentJson =
+          map['canonical_intent_json']?.toString() ?? '';
+      final strategyTag = map['strategy_tag']?.toString();
+
+      if (symbol.isEmpty ||
+          side.isEmpty ||
+          orderType.isEmpty ||
+          quantityDecimal.isEmpty ||
+          intentHashHex.isEmpty ||
+          createdAtUtc.isEmpty ||
+          canonicalIntentJson.isEmpty) {
+        return null;
+      }
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(intentHashHex)) {
+        return null;
+      }
+
+      return <String, String?>{
+        'signal_id': signalId,
+        'symbol': symbol,
+        'side': side,
+        'order_type': orderType,
+        'quantity_decimal': quantityDecimal,
+        'entry_mode': entryMode,
+        'intent_hash_hex': intentHashHex,
+        'created_at_utc': createdAtUtc,
+        'strategy_tag': strategyTag,
+        'canonical_intent_json': canonicalIntentJson,
       };
     } catch (_) {
       return null;

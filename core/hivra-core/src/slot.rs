@@ -5,6 +5,7 @@ use crate::event_payloads::{
 };
 use crate::ledger::Ledger;
 use crate::primitives::{SlotIndex, StarterId, StarterKind};
+use alloc::vec::Vec;
 
 /// Projected slot state derived from the ledger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +50,7 @@ impl SlotLayout {
     pub fn from_ledger(ledger: &Ledger) -> Self {
         let mut layout = Self::empty();
         let owner = ledger.owner();
+        let mut burned_starters: Vec<StarterId> = Vec::new();
 
         for event in ledger.events() {
             if event.signer() != owner {
@@ -58,12 +60,30 @@ impl SlotLayout {
             match event.kind() {
                 EventKind::StarterCreated => {
                     if let Ok(payload) = StarterCreatedPayload::from_bytes(event.payload()) {
+                        if burned_starters
+                            .iter()
+                            .any(|burned_id| *burned_id == payload.starter_id)
+                        {
+                            continue;
+                        }
+
+                        if layout.contains_starter(payload.starter_id) {
+                            continue;
+                        }
+
                         layout.occupy_first_free(payload.starter_id);
                     }
                 }
                 EventKind::StarterBurned => {
                     if let Ok(payload) = StarterBurnedPayload::from_bytes(event.payload()) {
                         layout.free_starter(payload.starter_id);
+
+                        if !burned_starters
+                            .iter()
+                            .any(|burned_id| *burned_id == payload.starter_id)
+                        {
+                            burned_starters.push(payload.starter_id);
+                        }
                     }
                 }
                 _ => {}
@@ -104,14 +124,11 @@ impl SlotLayout {
     }
 
     pub fn entries_with_kinds(&self, ledger: &Ledger) -> [SlotEntry; 5] {
-        let starter_kinds = starter_kinds_by_id(ledger);
         core::array::from_fn(|idx| {
             let state = self.slots[idx];
             let starter_kind = match state {
                 SlotState::Empty => None,
-                SlotState::Occupied(id) | SlotState::Locked(id) => starter_kinds
-                    .iter()
-                    .find_map(|(starter_id, kind)| (*starter_id == id).then_some(*kind)),
+                SlotState::Occupied(id) | SlotState::Locked(id) => starter_kind_for_id(ledger, id),
             };
 
             SlotEntry {
@@ -174,14 +191,19 @@ impl SlotLayout {
             self.slots[idx] = SlotState::Locked(starter_id);
         }
     }
+
+    fn contains_starter(&self, starter_id: StarterId) -> bool {
+        self.slots.iter().any(|state| match state {
+            SlotState::Occupied(id) | SlotState::Locked(id) => *id == starter_id,
+            SlotState::Empty => false,
+        })
+    }
 }
 
-fn starter_kinds_by_id(ledger: &Ledger) -> [(StarterId, StarterKind); 5] {
-    let mut items = [(StarterId::from([0u8; 32]), StarterKind::Juice); 5];
-    let mut count = 0usize;
+fn starter_kind_for_id(ledger: &Ledger, starter_id: StarterId) -> Option<StarterKind> {
     let owner = ledger.owner();
 
-    for event in ledger.events() {
+    for event in ledger.events().iter().rev() {
         if event.signer() != owner {
             continue;
         }
@@ -194,23 +216,16 @@ fn starter_kinds_by_id(ledger: &Ledger) -> [(StarterId, StarterKind); 5] {
             continue;
         };
 
-        if count < items.len() {
-            items[count] = (payload.starter_id, payload.kind);
-            count += 1;
+        if payload.starter_id == starter_id {
+            return Some(payload.kind);
         }
     }
 
-    items
+    None
 }
 
 fn locked_starter_ids(ledger: &Ledger) -> [Option<StarterId>; 5] {
-    let mut pending: [(Option<[u8; 32]>, Option<StarterId>); 5] = [
-        (None, None),
-        (None, None),
-        (None, None),
-        (None, None),
-        (None, None),
-    ];
+    let mut pending: Vec<([u8; 32], StarterId)> = Vec::new();
     let owner = ledger.owner();
 
     for event in ledger.events() {
@@ -224,12 +239,7 @@ fn locked_starter_ids(ledger: &Ledger) -> [Option<StarterId>; 5] {
                     continue;
                 };
 
-                if let Some(idx) = pending
-                    .iter()
-                    .position(|(invitation, _)| invitation.is_none())
-                {
-                    pending[idx] = (Some(payload.invitation_id), Some(payload.starter_id));
-                }
+                pending.push((payload.invitation_id, payload.starter_id));
             }
             EventKind::InvitationAccepted => {
                 let Ok(payload) = InvitationAcceptedPayload::from_bytes(event.payload()) else {
@@ -253,18 +263,31 @@ fn locked_starter_ids(ledger: &Ledger) -> [Option<StarterId>; 5] {
         }
     }
 
-    core::array::from_fn(|idx| pending[idx].1)
+    let mut unique_starters: [Option<StarterId>; 5] = [None, None, None, None, None];
+    let mut cursor = 0usize;
+
+    for (_, starter_id) in pending {
+        if unique_starters
+            .iter()
+            .flatten()
+            .any(|current| *current == starter_id)
+        {
+            continue;
+        }
+
+        if cursor >= unique_starters.len() {
+            break;
+        }
+
+        unique_starters[cursor] = Some(starter_id);
+        cursor += 1;
+    }
+
+    unique_starters
 }
 
-fn clear_pending(
-    pending: &mut [(Option<[u8; 32]>, Option<StarterId>); 5],
-    invitation_id: [u8; 32],
-) {
-    if let Some(idx) = pending.iter().position(|(current_invitation_id, _)| {
-        current_invitation_id.is_some_and(|current| current == invitation_id)
-    }) {
-        pending[idx] = (None, None);
-    }
+fn clear_pending(pending: &mut Vec<([u8; 32], StarterId)>, invitation_id: [u8; 32]) {
+    pending.retain(|(current_invitation_id, _)| *current_invitation_id != invitation_id);
 }
 
 #[cfg(test)]
@@ -399,6 +422,66 @@ mod tests {
     }
 
     #[test]
+    fn ignores_duplicate_starter_created_for_active_id() {
+        let owner = PubKey::from([7u8; 32]);
+        let mut ledger = Ledger::new(owner);
+
+        append_event(
+            &mut ledger,
+            EventKind::StarterCreated,
+            &starter_created(1, StarterKind::Juice),
+            1,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::StarterCreated,
+            &starter_created(1, StarterKind::Juice),
+            2,
+        );
+
+        let layout = SlotLayout::from_ledger(&ledger);
+
+        assert_eq!(
+            layout.starter_ids(),
+            [Some(StarterId::from([1u8; 32])), None, None, None, None,]
+        );
+    }
+
+    #[test]
+    fn ignores_starter_reactivation_after_burn_for_same_id() {
+        let owner = PubKey::from([7u8; 32]);
+        let mut ledger = Ledger::new(owner);
+
+        append_event(
+            &mut ledger,
+            EventKind::StarterCreated,
+            &starter_created(1, StarterKind::Juice),
+            1,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::StarterBurned,
+            &StarterBurnedPayload {
+                starter_id: StarterId::from([1u8; 32]),
+                reason: 0,
+            }
+            .to_bytes(),
+            2,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::StarterCreated,
+            &starter_created(1, StarterKind::Juice),
+            3,
+        );
+
+        let layout = SlotLayout::from_ledger(&ledger);
+
+        assert_eq!(layout.starter_ids(), [None, None, None, None, None,]);
+        assert!(!layout.has_matching_starter(&ledger, StarterKind::Juice));
+    }
+
+    #[test]
     fn marks_pending_outgoing_invitation_as_locked_until_finalized() {
         let owner = PubKey::from([7u8; 32]);
         let peer = PubKey::from([8u8; 32]);
@@ -445,6 +528,178 @@ mod tests {
             unlocked_layout.state_at(SlotIndex::new(0).unwrap()),
             SlotState::Occupied(StarterId::from([1u8; 32]))
         );
+    }
+
+    #[test]
+    fn keeps_starter_locked_when_more_than_five_pending_invites_exist() {
+        let owner = PubKey::from([7u8; 32]);
+        let peer = PubKey::from([8u8; 32]);
+        let mut ledger = Ledger::new(owner);
+        let starter_id = StarterId::from([1u8; 32]);
+
+        append_event(
+            &mut ledger,
+            EventKind::StarterCreated,
+            &starter_created(1, StarterKind::Juice),
+            1,
+        );
+
+        for invitation_idx in 0u8..6u8 {
+            append_event(
+                &mut ledger,
+                EventKind::InvitationSent,
+                &InvitationSentPayload {
+                    invitation_id: [invitation_idx + 1; 32],
+                    starter_id,
+                    to_pubkey: peer,
+                    sender_root_pubkey: None,
+                }
+                .to_bytes(),
+                invitation_idx as u64 + 2,
+            );
+        }
+
+        for invitation_idx in 0u8..5u8 {
+            append_event(
+                &mut ledger,
+                EventKind::InvitationAccepted,
+                &InvitationAcceptedPayload {
+                    invitation_id: [invitation_idx + 1; 32],
+                    created_starter_id: StarterId::from([9u8; 32]),
+                    from_pubkey: peer,
+                    accepter_root_pubkey: None,
+                }
+                .to_bytes(),
+                invitation_idx as u64 + 10,
+            );
+        }
+
+        let layout = SlotLayout::from_ledger(&ledger);
+        assert_eq!(
+            layout.state_at(SlotIndex::new(0).unwrap()),
+            SlotState::Locked(starter_id)
+        );
+    }
+
+    #[test]
+    fn keeps_lock_until_last_pending_for_same_starter_is_resolved() {
+        let owner = PubKey::from([7u8; 32]);
+        let peer = PubKey::from([8u8; 32]);
+        let mut ledger = Ledger::new(owner);
+        let starter_id = StarterId::from([1u8; 32]);
+
+        append_event(
+            &mut ledger,
+            EventKind::StarterCreated,
+            &starter_created(1, StarterKind::Juice),
+            1,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationSent,
+            &InvitationSentPayload {
+                invitation_id: [11u8; 32],
+                starter_id,
+                to_pubkey: peer,
+                sender_root_pubkey: None,
+            }
+            .to_bytes(),
+            2,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationSent,
+            &InvitationSentPayload {
+                invitation_id: [12u8; 32],
+                starter_id,
+                to_pubkey: peer,
+                sender_root_pubkey: None,
+            }
+            .to_bytes(),
+            3,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationRejected,
+            &InvitationRejectedPayload {
+                invitation_id: [11u8; 32],
+                reason: RejectReason::Other,
+            }
+            .to_bytes(),
+            4,
+        );
+
+        let still_locked = SlotLayout::from_ledger(&ledger);
+        assert_eq!(
+            still_locked.state_at(SlotIndex::new(0).unwrap()),
+            SlotState::Locked(starter_id)
+        );
+
+        append_event(
+            &mut ledger,
+            EventKind::InvitationRejected,
+            &InvitationRejectedPayload {
+                invitation_id: [12u8; 32],
+                reason: RejectReason::Other,
+            }
+            .to_bytes(),
+            5,
+        );
+
+        let unlocked = SlotLayout::from_ledger(&ledger);
+        assert_eq!(
+            unlocked.state_at(SlotIndex::new(0).unwrap()),
+            SlotState::Occupied(starter_id)
+        );
+    }
+
+    #[test]
+    fn starter_kind_lookup_covers_full_history_beyond_first_five_creations() {
+        let owner = PubKey::from([7u8; 32]);
+        let mut ledger = Ledger::new(owner);
+
+        for idx in 1u8..=5u8 {
+            append_event(
+                &mut ledger,
+                EventKind::StarterCreated,
+                &starter_created(idx, StarterKind::Juice),
+                idx as u64,
+            );
+        }
+
+        append_event(
+            &mut ledger,
+            EventKind::StarterBurned,
+            &StarterBurnedPayload {
+                starter_id: StarterId::from([1u8; 32]),
+                reason: 0,
+            }
+            .to_bytes(),
+            6,
+        );
+
+        append_event(
+            &mut ledger,
+            EventKind::StarterCreated,
+            &starter_created(6, StarterKind::Kick),
+            7,
+        );
+
+        let layout = SlotLayout::from_ledger(&ledger);
+        assert_eq!(
+            layout.starter_ids(),
+            [
+                Some(StarterId::from([6u8; 32])),
+                Some(StarterId::from([2u8; 32])),
+                Some(StarterId::from([3u8; 32])),
+                Some(StarterId::from([4u8; 32])),
+                Some(StarterId::from([5u8; 32])),
+            ]
+        );
+
+        let entries = layout.entries_with_kinds(&ledger);
+        assert_eq!(entries[0].starter_kind, Some(StarterKind::Kick));
+        assert!(layout.has_matching_starter(&ledger, StarterKind::Kick));
     }
 
     #[test]

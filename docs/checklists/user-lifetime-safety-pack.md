@@ -34,6 +34,7 @@ Run it on the release candidate build.
 - [ ] Launch new build on same data.
 - [ ] Same ledger reconstructs the same visible truth.
 - [ ] Previously resolved invitations do not reappear as pending.
+- [ ] Deleting a capsule in canonical storage does not get silently undone by legacy-container migration on next launch.
 
 ## Scenario 5: Long-Pending Invitation Stability
 

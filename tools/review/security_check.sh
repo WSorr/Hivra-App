@@ -40,9 +40,19 @@ else
   pass "no obvious secret-like tokens detected in repository content"
 fi
 
-if rg -n 'print.*seed|debugPrint.*seed|eprintln!.*secret|eprintln!.*seed' \
-  "$ROOT/flutter" "$ROOT/platform" "$ROOT/core" >/dev/null; then
-  warn "possible sensitive logging patterns detected; review output above with manual run if needed"
+DART_LOG_PATTERN='(print|debugPrint)\s*\([^)]*(seed|mnemonic|secret|private\s*key|nsec|npub)'
+RUST_LOG_PATTERN='eprintln!\s*\([^)]*(seed|mnemonic|secret|private\s*key|nsec|npub)'
+
+SENSITIVE_MATCHES="$(
+  {
+    rg -n --pcre2 -i "$DART_LOG_PATTERN" "$ROOT/flutter/lib" "$ROOT/flutter/bin" 2>/dev/null || true
+    rg -n --pcre2 -i "$RUST_LOG_PATTERN" "$ROOT/platform" "$ROOT/core" 2>/dev/null || true
+  } | sed '/^$/d'
+)"
+
+if [ -n "$SENSITIVE_MATCHES" ]; then
+  warn "possible sensitive logging patterns detected"
+  printf '%s\n' "$SENSITIVE_MATCHES"
 else
   pass "no obvious sensitive logging patterns detected"
 fi

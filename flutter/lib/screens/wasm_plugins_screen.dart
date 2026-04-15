@@ -9,12 +9,14 @@ import '../services/capsule_chat_delivery_service.dart';
 import '../services/consensus_processor.dart';
 import '../services/manual_consensus_check_service.dart';
 import '../services/plugin_demo_contract_runner_service.dart';
+import '../services/plugin_demo_digest_service.dart';
 import '../services/plugin_execution_guard_service.dart';
 import '../services/plugin_host_api_service.dart';
 import '../services/temperature_tomorrow_contract_service.dart';
 import '../services/ui_event_log_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
 import '../services/wasm_plugin_source_catalog_service.dart';
+import '../utils/runtime_capability_display.dart';
 
 class WasmPluginsScreen extends StatefulWidget {
   final bool embedded;
@@ -34,6 +36,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       const WasmPluginSourceCatalogService();
   final PluginDemoContractRunnerService _demoRunner =
       AppRuntimeService().buildPluginDemoContractRunnerService();
+  final PluginDemoDigestService _demoDigest = const PluginDemoDigestService();
   final PluginExecutionGuardService _guard =
       AppRuntimeService().buildPluginExecutionGuardService();
   final ManualConsensusCheckService _manualChecks =
@@ -351,6 +354,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       setState(() {
         _lastDemoResult = result;
       });
+      await _logTemperatureDemoResult(result);
+      if (!mounted) return;
 
       final messenger = ScaffoldMessenger.of(context);
       switch (result.state) {
@@ -401,6 +406,34 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         });
       }
     }
+  }
+
+  Future<void> _logTemperatureDemoResult(PluginDemoRunResult result) async {
+    final digestReport = _demoDigest.build(result);
+    for (final pair in result.pairResults) {
+      final facts = pair.blockingFacts.map((fact) => fact.key).toList()..sort();
+      final consensusHash = pair.consensusHashHex ?? '-';
+      final shortConsensusHash =
+          consensusHash == '-' ? consensusHash : consensusHash.substring(0, 16);
+      final settlementHash = pair.settlement?.settlementHashHex ?? '-';
+      final shortSettlementHash = settlementHash == '-'
+          ? settlementHash
+          : settlementHash.substring(0, 16);
+      final outcome = pair.settlement?.outcome.name ?? '-';
+      await _uiLog.log(
+        'consensus.demo.pair',
+        'peer=${_shortHex(pair.peerHex)} status=${pair.isExecuted ? 'ok' : 'blocked'} outcome=$outcome settlement=$shortSettlementHash consensus_hash=$shortConsensusHash facts=${facts.isEmpty ? '-' : facts.join(",")}',
+      );
+    }
+    await _uiLog.log(
+      'consensus.demo.run',
+      'state=${result.state.name} ready=${result.readyPairCount} blocked=${result.blockedPairCount} guard_digest=${digestReport.guardDigestHex} run_digest=${digestReport.runDigestHex}',
+    );
+  }
+
+  String _shortHex(String value) {
+    if (value.length <= 18) return value;
+    return '${value.substring(0, 8)}..${value.substring(value.length - 6)}';
   }
 
   Future<String?> _selectConsensusPeer({
@@ -610,15 +643,17 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           );
           break;
         case PluginHostApiStatus.rejected:
+          final rejectedMessage = _hostRejectedMessage(
+            response,
+            fallback: 'BingX request rejected',
+          );
           await _uiLog.log(
             'bingx.intent.rejected',
-            '${response.errorMessage ?? "BingX request rejected"} source=${_executionSourceInfo(response)}',
+            '$rejectedMessage code=${response.errorCode ?? "none"} source=${_executionSourceInfo(response)}',
           );
           messenger.showSnackBar(
             SnackBar(
-              content: Text(
-                response.errorMessage ?? 'BingX request rejected',
-              ),
+              content: Text(rejectedMessage),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -912,15 +947,17 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           );
           break;
         case PluginHostApiStatus.rejected:
+          final rejectedMessage = _hostRejectedMessage(
+            response,
+            fallback: 'Chat request rejected',
+          );
           await _uiLog.log(
             'chat.send.rejected',
-            '${response.errorMessage ?? "Chat request rejected"} source=${_executionSourceInfo(response)}',
+            '$rejectedMessage code=${response.errorCode ?? "none"} source=${_executionSourceInfo(response)}',
           );
           messenger.showSnackBar(
             SnackBar(
-              content: Text(
-                response.errorMessage ?? 'Chat request rejected',
-              ),
+              content: Text(rejectedMessage),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -1007,6 +1044,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final demoDigestReport =
+        _lastDemoResult == null ? null : _demoDigest.build(_lastDemoResult!);
     final content = ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -1049,6 +1088,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         _ContractDemoPanel(
           running: _runningDemo,
           lastResult: _lastDemoResult,
+          guardDigestHex: demoDigestReport?.guardDigestHex,
+          runDigestHex: demoDigestReport?.runDigestHex,
           onRunPressed: _runTemperatureDemo,
         ),
         const SizedBox(height: 20),
@@ -1490,6 +1531,9 @@ class _EmptyInstalledState extends StatelessWidget {
 }
 
 class _InstalledPluginTile extends StatelessWidget {
+  static const String _requiredRuntimeAbi = 'hivra_host_abi_v1';
+  static const String _requiredRuntimeEntryExport = 'hivra_entry_v1';
+
   final WasmPluginRecord record;
   final Future<void> Function() onRemovePressed;
 
@@ -1504,6 +1548,14 @@ class _InstalledPluginTile extends StatelessWidget {
         ? record.originalFileName
         : record.displayName;
     final accent = _accentForName(displayName);
+    final isZipPackage = record.packageKind.trim().toLowerCase() == 'zip';
+    final runtimeAbi = record.runtimeAbi?.trim() ?? '';
+    final runtimeEntryExport = record.runtimeEntryExport?.trim() ?? '';
+    final abiMatches = runtimeAbi == _requiredRuntimeAbi;
+    final entryMatches = runtimeEntryExport == _requiredRuntimeEntryExport;
+    final runtimePhaseLabel = !isZipPackage
+        ? 'Phase: raw_wasm'
+        : (abiMatches && entryMatches ? 'Phase: v1.1 ABI' : 'Phase: check ABI');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1573,11 +1625,48 @@ class _InstalledPluginTile extends StatelessWidget {
                   icon: Icons.badge_outlined,
                   label: record.pluginId!,
                 ),
+              _InfoChip(
+                icon: Icons.account_tree_outlined,
+                label: runtimePhaseLabel,
+              ),
               if (record.contractKind != null &&
                   record.contractKind!.isNotEmpty)
                 _InfoChip(
                   icon: Icons.gavel_outlined,
                   label: record.contractKind!,
+                ),
+              if (isZipPackage)
+                _InfoChip(
+                  icon: Icons.integration_instructions_outlined,
+                  label:
+                      runtimeAbi.isEmpty ? 'ABI: missing' : 'ABI: $runtimeAbi',
+                ),
+              if (isZipPackage)
+                _InfoChip(
+                  icon: Icons.login_rounded,
+                  label: runtimeEntryExport.isEmpty
+                      ? 'Entry: missing'
+                      : 'Entry: $runtimeEntryExport',
+                ),
+              if (isZipPackage)
+                _InfoChip(
+                  icon: abiMatches
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.error_outline_rounded,
+                  label: abiMatches ? 'ABI ok' : 'ABI mismatch',
+                  accent: abiMatches
+                      ? const Color(0xFF75D98A)
+                      : const Color(0xFFFF8A7A),
+                ),
+              if (isZipPackage)
+                _InfoChip(
+                  icon: entryMatches
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.error_outline_rounded,
+                  label: entryMatches ? 'Entry ok' : 'Entry mismatch',
+                  accent: entryMatches
+                      ? const Color(0xFF75D98A)
+                      : const Color(0xFFFF8A7A),
                 ),
               if (record.capabilities.isNotEmpty)
                 _InfoChip(
@@ -1826,7 +1915,7 @@ class _HostPanel extends StatelessWidget {
             icon: Icons.shield_moon_rounded,
             accent: accent,
             glow: accent.withAlpha(20),
-            size: 54,
+            size: 46,
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -1876,11 +1965,15 @@ class _HostPanel extends StatelessWidget {
 class _ContractDemoPanel extends StatelessWidget {
   final bool running;
   final PluginDemoRunResult? lastResult;
+  final String? guardDigestHex;
+  final String? runDigestHex;
   final Future<void> Function() onRunPressed;
 
   const _ContractDemoPanel({
     required this.running,
     required this.lastResult,
+    this.guardDigestHex,
+    this.runDigestHex,
     required this.onRunPressed,
   });
 
@@ -1979,6 +2072,18 @@ class _ContractDemoPanel extends StatelessWidget {
                             icon: Icons.block_outlined,
                             label: 'Blocked: ${result.blockedPairCount}',
                           ),
+                          if (guardDigestHex != null &&
+                              guardDigestHex!.isNotEmpty)
+                            _InfoChip(
+                              icon: Icons.fingerprint_rounded,
+                              label:
+                                  'Guard ${guardDigestHex!.substring(0, 10)}..',
+                            ),
+                          if (runDigestHex != null && runDigestHex!.isNotEmpty)
+                            _InfoChip(
+                              icon: Icons.data_object_rounded,
+                              label: 'Run ${runDigestHex!.substring(0, 10)}..',
+                            ),
                         ],
                       ),
                     ],
@@ -2029,11 +2134,18 @@ class _DemoPairRunRow extends StatelessWidget {
     final accent =
         pair.isExecuted ? const Color(0xFF75D98A) : const Color(0xFFFF8A7A);
     final title = pair.peerLabel ?? pair.peerHex;
+    final consensusHash = pair.consensusHashHex;
+    final shortConsensusHash = consensusHash == null || consensusHash.isEmpty
+        ? null
+        : '${consensusHash.substring(0, 10)}..';
     final detail = pair.isExecuted
         ? 'Settled: ${pair.settlement!.outcome.name} · ${pair.settlement!.settlementHashHex.substring(0, 10)}..'
         : pair.blockingFacts.isEmpty
             ? 'Blocked'
             : 'Blocked: ${pair.blockingFacts.first.label}';
+    final digestLine = shortConsensusHash == null
+        ? null
+        : 'Consensus hash: $shortConsensusHash';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -2053,7 +2165,9 @@ class _DemoPairRunRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '$title\n$detail',
+              digestLine == null
+                  ? '$title\n$detail'
+                  : '$title\n$detail\n$digestLine',
               style: const TextStyle(
                 fontSize: 12,
                 height: 1.35,
@@ -2161,8 +2275,10 @@ class _BingxIntentPanel extends StatelessWidget {
       PluginHostApiStatus.blocked => response!.blockingFacts.isEmpty
           ? 'Consensus guard blocked execution.'
           : response.blockingFacts.first.label,
-      PluginHostApiStatus.rejected =>
-        response?.errorMessage ?? 'Input rejected by host API.',
+      PluginHostApiStatus.rejected => _hostRejectedMessage(
+          response!,
+          fallback: 'Input rejected by host API.',
+        ),
       null =>
         'Pre-trade deterministic intent envelope for spot execution planning. Supports direct and zone-based pending entries.',
     };
@@ -2653,6 +2769,73 @@ class _BingxIntentPanel extends StatelessWidget {
                   icon: Icons.memory_outlined,
                   label: 'Source: ${_executionSourceInfo(response)}',
                 ),
+                if ((response.executionRuntimeMode?.trim().isNotEmpty ?? false))
+                  _InfoChip(
+                    icon: Icons.terminal_rounded,
+                    label: 'Runtime: ${response.executionRuntimeMode!.trim()}',
+                  ),
+                if ((response.executionRuntimeAbi?.trim().isNotEmpty ?? false))
+                  _InfoChip(
+                    icon: _runtimeAbiMatches(response)
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    label: 'ABI: ${response.executionRuntimeAbi!.trim()}',
+                    accent: _runtimeAbiMatches(response)
+                        ? const Color(0xFF75D98A)
+                        : const Color(0xFFFF8A7A),
+                  ),
+                if ((response.executionRuntimeEntryExport?.trim().isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: _runtimeEntryMatches(response)
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    label:
+                        'Entry: ${response.executionRuntimeEntryExport!.trim()}',
+                    accent: _runtimeEntryMatches(response)
+                        ? const Color(0xFF75D98A)
+                        : const Color(0xFFFF8A7A),
+                  ),
+                if ((response.executionRuntimeModulePath?.trim().isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: Icons.description_outlined,
+                    label:
+                        'Module: ${_shortModulePath(response.executionRuntimeModulePath!)}',
+                  ),
+                if ((response.executionRuntimeModuleSelection
+                        ?.trim()
+                        .isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: Icons.rule_folder_outlined,
+                    label:
+                        'Select: ${_runtimeModuleSelectionLabel(response.executionRuntimeModuleSelection!)}',
+                  ),
+                if ((response.executionRuntimeModuleDigestHex
+                        ?.trim()
+                        .isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: Icons.dataset_outlined,
+                    label:
+                        'Module: ${_shortDigest(response.executionRuntimeModuleDigestHex!)}',
+                  ),
+                if ((response.executionRuntimeInvokeDigestHex
+                        ?.trim()
+                        .isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: Icons.fingerprint_rounded,
+                    label:
+                        'Invoke: ${_shortDigest(response.executionRuntimeInvokeDigestHex!)}',
+                  ),
+                if (response.executionCapabilities.isNotEmpty)
+                  _InfoChip(
+                    icon: Icons.verified_user_outlined,
+                    label: 'Caps: ${response.executionCapabilities.length}',
+                  ),
+                ..._runtimeCapabilityChips(response),
               ],
             ),
           ],
@@ -2833,8 +3016,10 @@ class _CapsuleChatPanel extends StatelessWidget {
       PluginHostApiStatus.blocked => response!.blockingFacts.isEmpty
           ? 'Consensus guard blocked execution.'
           : response.blockingFacts.first.label,
-      PluginHostApiStatus.rejected =>
-        response?.errorMessage ?? 'Input rejected by host API.',
+      PluginHostApiStatus.rejected => _hostRejectedMessage(
+          response!,
+          fallback: 'Input rejected by host API.',
+        ),
       null =>
         'Deterministic host envelope + transport send, guarded by pairwise consensus.',
     };
@@ -2958,6 +3143,73 @@ class _CapsuleChatPanel extends StatelessWidget {
                   icon: Icons.memory_outlined,
                   label: 'Source: ${_executionSourceInfo(response)}',
                 ),
+                if ((response.executionRuntimeMode?.trim().isNotEmpty ?? false))
+                  _InfoChip(
+                    icon: Icons.terminal_rounded,
+                    label: 'Runtime: ${response.executionRuntimeMode!.trim()}',
+                  ),
+                if ((response.executionRuntimeAbi?.trim().isNotEmpty ?? false))
+                  _InfoChip(
+                    icon: _runtimeAbiMatches(response)
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    label: 'ABI: ${response.executionRuntimeAbi!.trim()}',
+                    accent: _runtimeAbiMatches(response)
+                        ? const Color(0xFF75D98A)
+                        : const Color(0xFFFF8A7A),
+                  ),
+                if ((response.executionRuntimeEntryExport?.trim().isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: _runtimeEntryMatches(response)
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    label:
+                        'Entry: ${response.executionRuntimeEntryExport!.trim()}',
+                    accent: _runtimeEntryMatches(response)
+                        ? const Color(0xFF75D98A)
+                        : const Color(0xFFFF8A7A),
+                  ),
+                if ((response.executionRuntimeModulePath?.trim().isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: Icons.description_outlined,
+                    label:
+                        'Module: ${_shortModulePath(response.executionRuntimeModulePath!)}',
+                  ),
+                if ((response.executionRuntimeModuleSelection
+                        ?.trim()
+                        .isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: Icons.rule_folder_outlined,
+                    label:
+                        'Select: ${_runtimeModuleSelectionLabel(response.executionRuntimeModuleSelection!)}',
+                  ),
+                if ((response.executionRuntimeModuleDigestHex
+                        ?.trim()
+                        .isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: Icons.dataset_outlined,
+                    label:
+                        'Module: ${_shortDigest(response.executionRuntimeModuleDigestHex!)}',
+                  ),
+                if ((response.executionRuntimeInvokeDigestHex
+                        ?.trim()
+                        .isNotEmpty ??
+                    false))
+                  _InfoChip(
+                    icon: Icons.fingerprint_rounded,
+                    label:
+                        'Invoke: ${_shortDigest(response.executionRuntimeInvokeDigestHex!)}',
+                  ),
+                if (response.executionCapabilities.isNotEmpty)
+                  _InfoChip(
+                    icon: Icons.verified_user_outlined,
+                    label: 'Caps: ${response.executionCapabilities.length}',
+                  ),
+                ..._runtimeCapabilityChips(response),
               ],
             ),
           ],
@@ -3054,14 +3306,117 @@ String _executionSourceInfo(PluginHostApiResponse response) {
   }
 
   final packageId = response.executionPackageId?.trim() ?? '';
-  if (packageId.isEmpty) {
-    return source;
-  }
+  final digest = response.executionPackageDigestHex?.trim() ?? '';
 
-  final shortPackageId = packageId.length <= 12
-      ? packageId
-      : '${packageId.substring(0, 12)}..';
-  return '$source:$shortPackageId';
+  if (packageId.isNotEmpty && digest.isNotEmpty) {
+    final shortPackageId =
+        packageId.length <= 12 ? packageId : '${packageId.substring(0, 12)}..';
+    final shortDigest =
+        digest.length <= 10 ? digest : '${digest.substring(0, 10)}..';
+    return '$source:$shortPackageId@$shortDigest';
+  }
+  if (packageId.isNotEmpty) {
+    final shortPackageId =
+        packageId.length <= 12 ? packageId : '${packageId.substring(0, 12)}..';
+    return '$source:$shortPackageId';
+  }
+  if (digest.isNotEmpty) {
+    final shortDigest =
+        digest.length <= 10 ? digest : '${digest.substring(0, 10)}..';
+    return '$source:@$shortDigest';
+  }
+  return source;
+}
+
+String _shortDigest(String value) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) {
+    return 'none';
+  }
+  return normalized.length <= 10
+      ? normalized
+      : '${normalized.substring(0, 10)}..';
+}
+
+List<Widget> _runtimeCapabilityChips(PluginHostApiResponse response) {
+  final summary = summarizeRuntimeCapabilitiesForDisplay(
+    response.executionCapabilities,
+  );
+  if (summary.visibleCapabilities.isEmpty) {
+    return const <Widget>[];
+  }
+  final widgets = <Widget>[
+    for (final capability in summary.visibleCapabilities)
+      _InfoChip(
+        icon: Icons.shield_outlined,
+        label: capability,
+      ),
+  ];
+  if (summary.hiddenCount > 0) {
+    widgets.add(
+      _InfoChip(
+        icon: Icons.more_horiz_rounded,
+        label: '+${summary.hiddenCount} more',
+      ),
+    );
+  }
+  return widgets;
+}
+
+String _hostRejectedMessage(
+  PluginHostApiResponse response, {
+  required String fallback,
+}) {
+  final code = response.errorCode?.trim() ?? '';
+  final message = response.errorMessage?.trim() ?? '';
+  switch (code) {
+    case 'runtime_invoke_invalid':
+      if (message.isNotEmpty) {
+        return 'Plugin runtime validation failed: $message';
+      }
+      return 'Plugin runtime mismatch (ABI/entry). Reinstall compatible package.';
+    case 'runtime_invoke_failed':
+      return message.isEmpty
+          ? 'Plugin runtime call failed. Retry, then reinstall package if needed.'
+          : message;
+    case 'runtime_invoke_unavailable':
+      return message.isEmpty
+          ? 'Plugin runtime unavailable for this package. Reinstall or update package.'
+          : message;
+    default:
+      return message.isEmpty ? fallback : message;
+  }
+}
+
+bool _runtimeAbiMatches(PluginHostApiResponse response) {
+  final abi = response.executionRuntimeAbi?.trim() ?? '';
+  return abi == 'hivra_host_abi_v1';
+}
+
+bool _runtimeEntryMatches(PluginHostApiResponse response) {
+  final entry = response.executionRuntimeEntryExport?.trim() ?? '';
+  return entry == 'hivra_entry_v1';
+}
+
+String _shortModulePath(String value) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) return 'none';
+  if (normalized.length <= 28) return normalized;
+  return '${normalized.substring(0, 16)}..${normalized.substring(normalized.length - 10)}';
+}
+
+String _runtimeModuleSelectionLabel(String value) {
+  final normalized = value.trim();
+  switch (normalized) {
+    case 'manifest_module_path':
+      return 'manifest path';
+    case 'lexical_first_wasm':
+      return 'lexical first';
+    case 'package_wasm':
+      return 'raw wasm package';
+    default:
+      return normalized.isEmpty ? 'unknown' : normalized;
+  }
 }
 
 class _PluginGrid extends StatelessWidget {
@@ -3218,7 +3573,7 @@ class _PluginIconPlate extends StatelessWidget {
     required this.icon,
     required this.accent,
     required this.glow,
-    this.size = 52,
+    this.size = 42,
   });
 
   @override
@@ -3235,7 +3590,7 @@ class _PluginIconPlate extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: accent.withAlpha(70)),
       ),
-      child: Icon(icon, color: accent, size: size * 0.5),
+      child: Icon(icon, color: accent, size: size * 0.46),
     );
   }
 }
@@ -3271,30 +3626,37 @@ class _StatusPill extends StatelessWidget {
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
+  final Color? accent;
 
   const _InfoChip({
     required this.icon,
     required this.label,
+    this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
+    final iconAndTextColor = accent ?? const Color(0xFFAEB9C7);
+    final backgroundColor =
+        accent == null ? const Color(0xFF10161D) : accent!.withAlpha(28);
+    final borderColor =
+        accent == null ? const Color(0xFF29313D) : accent!.withAlpha(120);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFF10161D),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFF29313D)),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: const Color(0xFFA1ADBC)),
+          Icon(icon, size: 14, color: iconAndTextColor),
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFFAEB9C7),
+            style: TextStyle(
+              color: iconAndTextColor,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),

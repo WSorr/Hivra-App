@@ -86,14 +86,58 @@ void main() {
     expect(persistCalls, equals(1));
   });
 
-  test('loadPeerRootKeysByTransportBase64 resolves via normalized transport hex',
+  test('confirmRemoteBreak returns false for invalid ids', () async {
+    var breakCalls = 0;
+    var persistCalls = 0;
+    final service = RelationshipService(
+      loadRelationshipGroups: () => const [],
+      breakRelationship: (_, __, ___) {
+        breakCalls += 1;
+        return true;
+      },
+      persistLedgerSnapshot: () async {
+        persistCalls += 1;
+      },
+    );
+
+    final ok = await service.confirmRemoteBreak(
+      sampleRelationship(peerStarterId: 'invalid'),
+    );
+
+    expect(ok, isFalse);
+    expect(breakCalls, equals(0));
+    expect(persistCalls, equals(0));
+  });
+
+  test('confirmRemoteBreak does not persist when breaker rejects', () async {
+    var breakCalls = 0;
+    var persistCalls = 0;
+    final service = RelationshipService(
+      loadRelationshipGroups: () => const [],
+      breakRelationship: (_, __, ___) {
+        breakCalls += 1;
+        return false;
+      },
+      persistLedgerSnapshot: () async {
+        persistCalls += 1;
+      },
+    );
+
+    final ok = await service.confirmRemoteBreak(sampleRelationship());
+
+    expect(ok, isFalse);
+    expect(breakCalls, equals(1));
+    expect(persistCalls, equals(0));
+  });
+
+  test(
+      'loadPeerRootKeysByTransportBase64 resolves via normalized transport hex',
       () async {
     final peerBytes = List<int>.filled(32, 0x11);
     final rootBytes = List<int>.filled(32, 0x22);
     final peerBase64 = base64.encode(peerBytes);
-    final rootHex = rootBytes
-        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-        .join();
+    final rootHex =
+        rootBytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
     final nostrHex = peerBytes
         .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
         .join()
@@ -128,9 +172,8 @@ void main() {
       () async {
     final rootBytes = List<int>.filled(32, 0x33);
     final rootBase64 = base64.encode(rootBytes);
-    final rootHex = rootBytes
-        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-        .join();
+    final rootHex =
+        rootBytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 
     final service = RelationshipService(
       loadRelationshipGroups: () => const [],

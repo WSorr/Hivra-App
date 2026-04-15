@@ -30,6 +30,39 @@ void main() {
       );
     });
 
+    test('blocks on pending_remote_break and preserves blocker code', () {
+      final service = CapsuleChatContractService(
+        readSignable: (_) => const ConsensusSignableResult(
+          preview: null,
+          blockingFacts: <ConsensusBlockingFact>[
+            ConsensusBlockingFact(
+              code: 'pending_remote_break',
+              subjectId:
+                  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            ),
+          ],
+        ),
+      );
+
+      final result = service.execute(
+        peerHex: _peerHex,
+        clientMessageId: 'msg-2',
+        messageText: 'hello',
+        createdAtUtc: '2026-04-04T10:00:00Z',
+      );
+
+      expect(result.isExecutable, isFalse);
+      expect(result.envelope, isNull);
+      expect(
+        result.blockingFacts.map((fact) => fact.code),
+        contains('pending_remote_break'),
+      );
+      expect(
+        result.blockingFacts.map((fact) => fact.code),
+        isNot(contains('pending_invitation')),
+      );
+    });
+
     test('produces deterministic envelope hash for identical inputs', () {
       final service = CapsuleChatContractService(
         readSignable: (_) => const ConsensusSignableResult(

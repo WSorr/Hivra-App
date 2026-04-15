@@ -35,6 +35,40 @@ pub unsafe extern "C" fn hivra_crypto_self_check() -> i32 {
     }
 }
 
+/// Verify detached ed25519 signature for a 32-byte message digest.
+///
+/// Returns:
+/// - 0 on success
+/// - negative value on failure
+#[no_mangle]
+pub unsafe extern "C" fn hivra_verify_ed25519_signature32(
+    message_ptr: *const u8,
+    pubkey_ptr: *const u8,
+    signature_ptr: *const u8,
+) -> i32 {
+    clear_last_error();
+    if message_ptr.is_null() || pubkey_ptr.is_null() || signature_ptr.is_null() {
+        set_last_error("Verify ed25519 failed: null pointer argument");
+        return -1;
+    }
+
+    let mut message = [0u8; 32];
+    message.copy_from_slice(std::slice::from_raw_parts(message_ptr, 32));
+    let mut pubkey = [0u8; 32];
+    pubkey.copy_from_slice(std::slice::from_raw_parts(pubkey_ptr, 32));
+    let mut signature = [0u8; 64];
+    signature.copy_from_slice(std::slice::from_raw_parts(signature_ptr, 64));
+
+    let provider = Ed25519CryptoProvider::new();
+    match provider.verify(&message, &pubkey, &signature) {
+        Ok(_) => 0,
+        Err(_) => {
+            set_last_error("Verify ed25519 failed: signature mismatch");
+            -2
+        }
+    }
+}
+
 /// End-to-end self-check for the current delivery prepared-send path.
 ///
 /// The current implementation still exercises the Nostr adapter, but the

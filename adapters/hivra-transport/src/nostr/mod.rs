@@ -8,6 +8,7 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio::runtime::{Builder, Runtime};
+use tokio::time;
 
 // Use standard DM kind for better relay compatibility.
 const APP_EVENT_KIND: Kind = Kind::Custom(4);
@@ -63,7 +64,7 @@ impl Default for NostrConfig {
             ],
             ephemeral: true,
             // Keep receive reliable across slower relay handshakes.
-            timeout: 8,
+            timeout: 12,
         }
     }
 }
@@ -80,7 +81,9 @@ impl NostrConfig {
                 "wss://relay.current.fyi".into(),
             ],
             ephemeral: true,
-            timeout: 3,
+            // Quick profile is still user-facing fast path, but must be long
+            // enough for real relay handshakes on mobile networks.
+            timeout: 8,
         }
     }
 }
@@ -326,19 +329,27 @@ impl NostrTransport {
 
                 had_connected = true;
 
-                match self.runtime.block_on(relay.send_event(event.clone())) {
-                    Ok(id) => {
-                        eprintln!(
-                            "[Nostr] Relay {} accepted event on attempt {}/{}: {}",
-                            relay_url,
-                            attempt,
-                            RELAY_SEND_ATTEMPTS,
-                            id.to_hex()
+                let send_result = self.runtime.block_on(async {
+                    time::timeout(
+                        Duration::from_secs(self.timeout_secs.max(2)),
+                        relay.send_event(event.clone()),
+                    )
+                    .await
+                });
+
+                match send_result {
+                    Err(_) => {
+                        let reason = format!(
+                            "relay send timeout after {}s",
+                            self.timeout_secs.max(2)
                         );
-                        eprintln!("[Nostr] Message published to at least one relay");
-                        return Ok(());
+                        last_reason = Some(reason.clone());
+                        eprintln!(
+                            "[Nostr] Relay {} timeout on attempt {}/{}: {}",
+                            relay_url, attempt, RELAY_SEND_ATTEMPTS, reason
+                        );
                     }
-                    Err(err) => {
+                    Ok(Err(err)) => {
                         let reason = err.to_string();
                         last_reason = Some(reason.clone());
                         eprintln!(
@@ -351,21 +362,43 @@ impl NostrTransport {
                                 "[Nostr] Relay {} requested NIP-42 auth, trying AUTH",
                                 relay_url
                             );
-                            match self
-                                .runtime
-                                .block_on(self.client.auth(challenge, relay.url().clone()))
-                            {
-                                Ok(()) => {
+                            let auth_result = self.runtime.block_on(async {
+                                time::timeout(
+                                    Duration::from_secs(self.timeout_secs.max(2)),
+                                    self.client.auth(challenge, relay.url().clone()),
+                                )
+                                .await
+                            });
+                            match auth_result {
+                                Ok(Ok(())) => {
                                     eprintln!("[Nostr] Relay {} auth succeeded", relay_url);
                                 }
-                                Err(auth_err) => {
+                                Ok(Err(auth_err)) => {
                                     eprintln!(
                                         "[Nostr] Relay {} auth failed: {}",
                                         relay_url, auth_err
                                     );
                                 }
+                                Err(_) => {
+                                    eprintln!(
+                                        "[Nostr] Relay {} auth timeout after {}s",
+                                        relay_url,
+                                        self.timeout_secs.max(2)
+                                    );
+                                }
                             }
                         }
+                    }
+                    Ok(Ok(id)) => {
+                        eprintln!(
+                            "[Nostr] Relay {} accepted event on attempt {}/{}: {}",
+                            relay_url,
+                            attempt,
+                            RELAY_SEND_ATTEMPTS,
+                            id.to_hex()
+                        );
+                        eprintln!("[Nostr] Message published to at least one relay");
+                        return Ok(());
                     }
                 }
             }

@@ -59,8 +59,14 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
+              'release_version': '0.1.0',
               'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
               'contract': {'kind': 'temperature_tomorrow_liechtenstein'},
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+                'module_path': 'plugin/module.wasm',
+              },
               'capabilities': [
                 'oracle.read.mock_weather',
                 'consensus_guard.read'
@@ -77,11 +83,159 @@ void main() {
 
     expect(preflight.packageKind, 'zip');
     expect(preflight.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
+    expect(preflight.pluginVersion, '0.1.0');
     expect(preflight.contractKind, 'temperature_tomorrow_liechtenstein');
+    expect(preflight.runtimeAbi, 'hivra_host_abi_v1');
+    expect(preflight.runtimeEntryExport, 'hivra_entry_v1');
+    expect(preflight.runtimeModulePath, 'plugin/module.wasm');
     expect(
       preflight.capabilities,
       ['consensus_guard.read', 'oracle.read.mock_weather'],
     );
+  });
+
+  test('rejects zip package when runtime module_path is missing', () async {
+    final file = File('${tempDir.path}/missing_module_path_target.zip');
+    await file.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+                'module_path': 'plugin/entry.wasm',
+              },
+            },
+          ),
+          'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+        },
+      ),
+      flush: true,
+    );
+
+    expect(
+      () => service.inspect(file),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('accepts runtime module_path containing dots inside segment', () async {
+    final file = File('${tempDir.path}/module_path_with_dots.zip');
+    await file.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+                'module_path': 'plugin/v1..2/module.wasm',
+              },
+            },
+          ),
+          'plugin/v1..2/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+        },
+      ),
+      flush: true,
+    );
+
+    final preflight = await service.inspect(file);
+    expect(preflight.runtimeModulePath, 'plugin/v1..2/module.wasm');
+  });
+
+  test('rejects runtime module_path with parent traversal segment', () async {
+    final file = File('${tempDir.path}/module_path_parent_traversal.zip');
+    await file.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+                'module_path': 'plugin/../module.wasm',
+              },
+            },
+          ),
+          'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+        },
+      ),
+      flush: true,
+    );
+
+    expect(
+      () => service.inspect(file),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('rejects zip package when all wasm entries use parent traversal',
+      () async {
+    final file = File('${tempDir.path}/only_traversal_wasm.zip');
+    await file.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+              },
+            },
+          ),
+          '../evil.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+        },
+      ),
+      flush: true,
+    );
+
+    expect(
+      () => service.inspect(file),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('accepts zip package when at least one safe wasm entry exists',
+      () async {
+    final file = File('${tempDir.path}/mixed_wasm_paths.zip');
+    await file.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+                'module_path': 'plugin/module.wasm',
+              },
+            },
+          ),
+          '../evil.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+          'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+        },
+      ),
+      flush: true,
+    );
+
+    final preflight = await service.inspect(file);
+    expect(preflight.packageKind, 'zip');
+    expect(preflight.runtimeModulePath, 'plugin/module.wasm');
   });
 
   test('rejects non-list capabilities field in manifest', () async {
@@ -94,6 +248,10 @@ void main() {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
               'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+              },
               'capabilities': 'not-a-list',
             },
           ),
@@ -119,6 +277,10 @@ void main() {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
               'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+              },
               'capabilities': ['oracle.read.untrusted_source'],
             },
           ),
@@ -161,8 +323,64 @@ void main() {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
               'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+              },
             },
           ),
+        },
+      ),
+      flush: true,
+    );
+
+    expect(
+      () => service.inspect(file),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('rejects zip package without runtime section', () async {
+    final file = File('${tempDir.path}/missing_runtime.zip');
+    await file.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+            },
+          ),
+          'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+        },
+      ),
+      flush: true,
+    );
+
+    expect(
+      () => service.inspect(file),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('rejects zip package with unsupported runtime ABI', () async {
+    final file = File('${tempDir.path}/bad_runtime_abi.zip');
+    await file.writeAsBytes(
+      _zipBytes(
+        files: {
+          'plugin/manifest.json': jsonEncode(
+            {
+              'schema': 'hivra.plugin.manifest',
+              'version': 1,
+              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'runtime': {
+                'abi': 'wrong_abi',
+                'entry_export': 'hivra_entry_v1',
+              },
+            },
+          ),
+          'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
         },
       ),
       flush: true,

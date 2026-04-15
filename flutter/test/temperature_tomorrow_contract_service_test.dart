@@ -76,6 +76,38 @@ void main() {
           contains('pending_invitation'));
     });
 
+    test('returns blocked result for pending_remote_break', () {
+      final service = TemperatureTomorrowContractService(
+        readSignable: (_) => const ConsensusSignableResult(
+          preview: null,
+          blockingFacts: <ConsensusBlockingFact>[
+            ConsensusBlockingFact(
+              code: 'pending_remote_break',
+              subjectId:
+                  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            ),
+          ],
+        ),
+      );
+
+      final result = service.execute(
+        peerHex: _peerHex,
+        contract: _contract(),
+        observation: _observation(observedDeciCelsius: 90),
+      );
+
+      expect(result.isExecutable, isFalse);
+      expect(result.settlement, isNull);
+      expect(
+        result.blockingFacts.map((f) => f.code),
+        contains('pending_remote_break'),
+      );
+      expect(
+        result.blockingFacts.map((f) => f.code),
+        isNot(contains('pending_invitation')),
+      );
+    });
+
     test('settles proposer win when observed above threshold', () {
       final service =
           TemperatureTomorrowContractService(readSignable: _readySignable);

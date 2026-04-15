@@ -11,11 +11,16 @@ class UserVisibleDataDirectoryService {
   static const String _pluginsDirName = 'Plugins';
   static const String _capsulesDirName = 'capsules';
   static const String _cardsFileName = 'capsule_contact_cards.json';
+  static const String _legacyMigrationDoneFile =
+      '.legacy_documents_migration_v1.done';
 
-  const UserVisibleDataDirectoryService();
+  final String? _homeOverride;
+
+  const UserVisibleDataDirectoryService({String? homeOverride})
+      : _homeOverride = homeOverride;
 
   Future<Directory> rootDirectory({bool create = false}) async {
-    final home = Platform.environment['HOME'];
+    final home = _homeOverride ?? Platform.environment['HOME'];
     Directory root;
 
     if (home != null && home.isNotEmpty) {
@@ -74,8 +79,13 @@ class UserVisibleDataDirectoryService {
   }
 
   Future<void> _migrateLegacyDocumentsIfNeeded(Directory targetRoot) async {
+    final migrationMarker = File('${targetRoot.path}/$_legacyMigrationDoneFile');
+    if (await migrationMarker.exists()) return;
+
     final legacyDocs = await _legacyContainerDocumentsDirectory();
-    if (legacyDocs == null || !await legacyDocs.exists()) return;
+    if (legacyDocs == null || !await legacyDocs.exists()) {
+      return;
+    }
 
     if (!await targetRoot.exists()) {
       await targetRoot.create(recursive: true);
@@ -94,6 +104,7 @@ class UserVisibleDataDirectoryService {
       File('${targetRoot.path}/$_cardsFileName'),
     );
     await _migrateFlatLegacyCardsIfNeeded(targetRoot);
+    await migrationMarker.writeAsString(DateTime.now().toUtc().toIso8601String());
   }
 
   Future<void> _migrateFlatLegacyCardsIfNeeded(Directory targetRoot) async {
@@ -140,7 +151,7 @@ class UserVisibleDataDirectoryService {
   }
 
   Future<Directory?> _legacyContainerDocumentsDirectory() async {
-    final home = Platform.environment['HOME'];
+    final home = _homeOverride ?? Platform.environment['HOME'];
     if (home == null || home.isEmpty) return null;
     return Directory(
       '$home/Library/Containers/$_legacyContainerBundleId/Data/Documents',

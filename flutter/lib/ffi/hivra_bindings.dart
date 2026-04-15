@@ -103,6 +103,16 @@ typedef HivraTransportReceiveC = Int32 Function();
 typedef HivraTransportReceiveDart = int Function();
 typedef HivraTransportReceiveQuickC = Int32 Function();
 typedef HivraTransportReceiveQuickDart = int Function();
+typedef HivraVerifyEd25519Signature32C = Int32 Function(
+  Pointer<Uint8> message32,
+  Pointer<Uint8> pubkey32,
+  Pointer<Uint8> signature64,
+);
+typedef HivraVerifyEd25519Signature32Dart = int Function(
+  Pointer<Uint8> message32,
+  Pointer<Uint8> pubkey32,
+  Pointer<Uint8> signature64,
+);
 
 typedef HivraSendCapsuleChatC = Int32 Function(
   Pointer<Uint8> toPubkey,
@@ -237,6 +247,7 @@ class HivraBindings {
   HivraSendInvitationDart? _sendInvitation;
   HivraTransportReceiveDart? _transportReceive;
   HivraTransportReceiveQuickDart? _transportReceiveQuick;
+  HivraVerifyEd25519Signature32Dart? _verifyEd25519Signature32;
   HivraSendCapsuleChatDart? _sendCapsuleChat;
   HivraReceiveCapsuleChatJsonDart? _receiveCapsuleChatJson;
   HivraAcceptInvitationDart? _acceptInvitation;
@@ -345,6 +356,15 @@ class HivraBindings {
           .asFunction();
     } catch (_) {
       _transportReceiveQuick = null;
+    }
+
+    try {
+      _verifyEd25519Signature32 = _lib
+          .lookup<NativeFunction<HivraVerifyEd25519Signature32C>>(
+              'hivra_verify_ed25519_signature32')
+          .asFunction();
+    } catch (_) {
+      _verifyEd25519Signature32 = null;
     }
 
     try {
@@ -611,6 +631,34 @@ class HivraBindings {
 
   int fetchInvitationDeliveriesQuick() =>
       _transportReceiveQuick?.call() ?? -1002;
+
+  int verifyEd25519Signature32Code(
+    Uint8List message32,
+    Uint8List pubkey32,
+    Uint8List signature64,
+  ) {
+    if (message32.length != 32 || pubkey32.length != 32 || signature64.length != 64) {
+      return -1;
+    }
+    final verifyFn = _verifyEd25519Signature32;
+    if (verifyFn == null) {
+      return -1002;
+    }
+
+    final messagePtr = calloc<Uint8>(32);
+    final pubkeyPtr = calloc<Uint8>(32);
+    final signaturePtr = calloc<Uint8>(64);
+    try {
+      messagePtr.asTypedList(32).setAll(0, message32);
+      pubkeyPtr.asTypedList(32).setAll(0, pubkey32);
+      signaturePtr.asTypedList(64).setAll(0, signature64);
+      return verifyFn(messagePtr, pubkeyPtr, signaturePtr);
+    } finally {
+      calloc.free(messagePtr);
+      calloc.free(pubkeyPtr);
+      calloc.free(signaturePtr);
+    }
+  }
 
   int sendCapsuleChatCode(Uint8List toPubkey, String payloadJson) {
     if (toPubkey.length != 32 || payloadJson.trim().isEmpty) {

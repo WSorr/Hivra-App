@@ -36,6 +36,8 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   }
 
   Future<void> _loadRelationships() async {
+    final previousPendingBreakKeys =
+        _pendingRemoteBreakKeysForGroups(_relationshipGroups);
     final groups = widget.service.loadRelationshipGroups();
     final lookupPeerPubkeys = <String>{};
     for (final group in groups) {
@@ -57,6 +59,58 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
       _peerRootKeyByTransportB64 = peerRootKeys;
       _isLoading = false;
     });
+
+    _notifyNewPendingRemoteBreaks(
+      groups: groups,
+      previousPendingBreakKeys: previousPendingBreakKeys,
+    );
+  }
+
+  Set<String> _pendingRemoteBreakKeysForGroups(
+    List<RelationshipPeerGroup> groups,
+  ) {
+    final keys = <String>{};
+    for (final group in groups) {
+      for (final relationship in group.pendingRemoteBreakRelationships) {
+        keys.add(_relationshipProjectionKey(relationship));
+      }
+    }
+    return keys;
+  }
+
+  String _relationshipProjectionKey(Relationship relationship) {
+    return '${relationship.peerPubkey}:${relationship.ownStarterId}:${relationship.peerStarterId}';
+  }
+
+  void _notifyNewPendingRemoteBreaks({
+    required List<RelationshipPeerGroup> groups,
+    required Set<String> previousPendingBreakKeys,
+  }) {
+    final currentPendingBreakKeys = _pendingRemoteBreakKeysForGroups(groups);
+    final newPendingBreakKeys =
+        currentPendingBreakKeys.difference(previousPendingBreakKeys);
+    if (newPendingBreakKeys.isEmpty || !mounted) {
+      return;
+    }
+
+    final affectedGroups = groups.where((group) {
+      return group.pendingRemoteBreakRelationships.any(
+        (relationship) =>
+            newPendingBreakKeys.contains(_relationshipProjectionKey(relationship)),
+      );
+    }).toList();
+
+    final message = affectedGroups.length == 1
+        ? 'Break request received from ${_peerDisplayName(affectedGroups.first)}'
+        : 'Received ${newPendingBreakKeys.length} break requests';
+
+    UiFeedbackService.showSnackBar(
+      context,
+      message,
+      source: 'relationships.break.pending_remote',
+      duration: const Duration(seconds: 2),
+      enableCopy: false,
+    );
   }
 
   Future<void> _confirmRelationshipTransition(

@@ -5,6 +5,7 @@ import '../ffi/ledger_view_runtime.dart';
 import '../models/invitation.dart';
 import '../models/relationship.dart';
 import '../models/relationship_peer_group.dart';
+import 'capsule_ledger_summary_parser.dart';
 import 'capsule_ledger_snapshot.dart';
 import 'invitation_projection_service.dart';
 import 'ledger_view_support.dart';
@@ -13,12 +14,15 @@ import 'relationship_projection_service.dart';
 typedef LedgerExporter = String? Function();
 typedef CapsuleStateExporter = String? Function();
 typedef RuntimeOwnerKeyReader = Uint8List? Function();
+typedef RuntimeTransportKeyReader = Uint8List? Function();
 
 class LedgerViewService {
   final LedgerExporter _exportLedger;
   final CapsuleStateExporter _exportCapsuleState;
   final RuntimeOwnerKeyReader _readRuntimeOwnerPublicKey;
+  final RuntimeTransportKeyReader _readRuntimeTransportPublicKey;
   final LedgerViewSupport _support;
+  final CapsuleLedgerSummaryParser _summaryParser;
   late final InvitationProjectionService _invitationProjection;
   late final RelationshipProjectionService _relationshipProjection;
 
@@ -26,15 +30,20 @@ class LedgerViewService {
       : _exportLedger = runtime.exportLedger,
         _exportCapsuleState = runtime.exportCapsuleStateJson,
         _readRuntimeOwnerPublicKey = runtime.capsuleRuntimeOwnerPublicKey,
-        _support = const LedgerViewSupport() {
+        _readRuntimeTransportPublicKey =
+            runtime.capsuleRuntimeTransportPublicKey,
+        _support = const LedgerViewSupport(),
+        _summaryParser = const CapsuleLedgerSummaryParser() {
     _invitationProjection = InvitationProjectionService.withOwnerKeyProvider(
       _readRuntimeOwnerPublicKey,
       _support,
+      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
     );
     _relationshipProjection =
         RelationshipProjectionService.withOwnerKeyProvider(
       _readRuntimeOwnerPublicKey,
       _support,
+      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
     );
   }
 
@@ -42,21 +51,31 @@ class LedgerViewService {
     required LedgerExporter exportLedger,
     required CapsuleStateExporter exportCapsuleState,
     required RuntimeOwnerKeyReader readRuntimeOwnerPublicKey,
+    RuntimeTransportKeyReader? readRuntimeTransportPublicKey,
     LedgerViewSupport support = const LedgerViewSupport(),
+    CapsuleLedgerSummaryParser summaryParser =
+        const CapsuleLedgerSummaryParser(),
   })  : _exportLedger = exportLedger,
         _exportCapsuleState = exportCapsuleState,
         _readRuntimeOwnerPublicKey = readRuntimeOwnerPublicKey,
-        _support = support {
+        _readRuntimeTransportPublicKey =
+            readRuntimeTransportPublicKey ?? _emptyRuntimeTransportKey,
+        _support = support,
+        _summaryParser = summaryParser {
     _invitationProjection = InvitationProjectionService.withOwnerKeyProvider(
       _readRuntimeOwnerPublicKey,
       _support,
+      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
     );
     _relationshipProjection =
         RelationshipProjectionService.withOwnerKeyProvider(
       _readRuntimeOwnerPublicKey,
       _support,
+      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
     );
   }
+
+  static Uint8List? _emptyRuntimeTransportKey() => null;
 
   CapsuleLedgerSnapshot loadCapsuleSnapshot() {
     final root = _exportLedgerRoot();
@@ -105,11 +124,12 @@ class LedgerViewService {
     final rawHash = capsuleState?['ledger_hash'] ?? root['last_hash'];
     final hashHex = rawHash == null ? '0' : rawHash.toString();
 
-    final relationshipGroups = loadRelationshipGroups(root: root);
     final invitations = loadInvitations(root: root, starterIds: starterIds);
-    final pendingInvitations = invitations
-        .where((invitation) => invitation.status == InvitationStatus.pending)
-        .length;
+    final sharedCounters = _summaryParser.projectSharedCountersFromLedgerRoot(
+      root,
+      runtimeOwnerPublicKey: _readRuntimeOwnerPublicKey(),
+      runtimeTransportPublicKey: _readRuntimeTransportPublicKey(),
+    );
     final lockedStarterSlots = invitations
         .where((invitation) =>
             invitation.status == InvitationStatus.pending &&
@@ -120,9 +140,8 @@ class LedgerViewService {
     return CapsuleLedgerSnapshot(
       publicKey: pubKey,
       starterCount: starterCount,
-      relationshipCount:
-          relationshipGroups.where((group) => group.isActive).length,
-      pendingInvitations: pendingInvitations,
+      relationshipCount: sharedCounters.relationshipCount,
+      pendingInvitations: sharedCounters.pendingInvitations,
       version: version,
       ledgerHashHex: hashHex,
       hasLedgerHistory: true,

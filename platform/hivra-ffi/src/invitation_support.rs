@@ -2,6 +2,8 @@ use super::*;
 use crate::runtime_support::{
     derive_starter_id_lineage, derive_starter_nonce_lineage, starter_is_active_in_runtime,
 };
+use hivra_core::event_payloads::{RelationshipBrokenPayload, RelationshipEstablishedPayload};
+use std::collections::HashSet;
 
 #[derive(Clone, Copy)]
 pub(crate) struct InvitationLookupRecord {
@@ -12,8 +14,24 @@ pub(crate) struct InvitationLookupRecord {
     pub(crate) sender_root_pubkey: Option<PubKey>,
 }
 
+pub(crate) struct PendingOutgoingInvitationDelivery {
+    pub(crate) invitation_id: [u8; 32],
+    pub(crate) to_pubkey: [u8; 32],
+    pub(crate) payload: Vec<u8>,
+    pub(crate) timestamp: u64,
+}
+
 fn invitation_payload_has_known_shape(payload: &[u8]) -> bool {
     payload.len() == 96 || payload.len() == 97 || payload.len() == 128 || payload.len() == 129
+}
+
+fn invitation_id_from_outgoing_payload(payload: &[u8]) -> Option<[u8; 32]> {
+    if !invitation_payload_has_known_shape(payload) {
+        return None;
+    }
+    let mut invitation_id = [0u8; 32];
+    invitation_id.copy_from_slice(&payload[..32]);
+    Some(invitation_id)
 }
 
 fn invitation_payload_sender_root(payload: &[u8]) -> Option<PubKey> {
@@ -32,6 +50,25 @@ fn invitation_payload_starter_kind(payload: &[u8]) -> Option<StarterKind> {
     }
     if payload.len() == 129 {
         return starter_kind_from_slot(payload[128]);
+    }
+    None
+}
+
+fn find_starter_kind_by_id_in_ledger(
+    ledger: &Ledger,
+    starter_id: &[u8; 32],
+) -> Option<StarterKind> {
+    let owner = ledger.owner();
+    for event in ledger.events().iter().rev() {
+        if event.kind() != EventKind::StarterCreated || event.signer() != owner {
+            continue;
+        }
+        let Ok(payload) = StarterCreatedPayload::from_bytes(event.payload()) else {
+            continue;
+        };
+        if payload.starter_id.as_bytes() == starter_id {
+            return Some(payload.kind);
+        }
     }
     None
 }
@@ -83,6 +120,90 @@ pub(crate) fn invitation_is_resolved_in_runtime(invitation_id: &[u8; 32]) -> boo
     })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct RelationshipKey {
+    peer_pubkey: PubKey,
+    own_starter_id: StarterId,
+}
+
+fn relationship_key_from_established_payload(payload: &[u8]) -> Option<RelationshipKey> {
+    let parsed = RelationshipEstablishedPayload::from_bytes(payload).ok()?;
+    Some(RelationshipKey {
+        peer_pubkey: parsed.peer_pubkey,
+        own_starter_id: parsed.own_starter_id,
+    })
+}
+
+fn relationship_key_from_broken_payload(payload: &[u8]) -> Option<RelationshipKey> {
+    let parsed = RelationshipBrokenPayload::from_bytes(payload).ok()?;
+    Some(RelationshipKey {
+        peer_pubkey: parsed.peer_pubkey,
+        own_starter_id: parsed.own_starter_id,
+    })
+}
+
+fn relationship_key_is_active_in_runtime(target: RelationshipKey) -> bool {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return false;
+    };
+
+    let mut active = false;
+    for event in capsule.ledger.events() {
+        match event.kind() {
+            EventKind::RelationshipEstablished => {
+                let Some(key) = relationship_key_from_established_payload(event.payload()) else {
+                    continue;
+                };
+                if key == target {
+                    active = true;
+                }
+            }
+            EventKind::RelationshipBroken => {
+                let Some(key) = relationship_key_from_broken_payload(event.payload()) else {
+                    continue;
+                };
+                if key == target {
+                    active = false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    active
+}
+
+fn relationship_established_exists_for_invitation_in_runtime(invitation_id: &[u8; 32]) -> bool {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return false;
+    };
+
+    capsule.ledger.events().iter().any(|event| {
+        if event.kind() != EventKind::RelationshipEstablished {
+            return false;
+        }
+        RelationshipEstablishedPayload::from_bytes(event.payload())
+            .is_ok_and(|payload| &payload.invitation_id == invitation_id)
+    })
+}
+
+fn invitation_accepted_exists_in_runtime(invitation_id: &[u8; 32]) -> bool {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return false;
+    };
+
+    capsule.ledger.events().iter().any(|event| {
+        if event.kind() != EventKind::InvitationAccepted {
+            return false;
+        }
+        InvitationAcceptedPayload::from_bytes(event.payload())
+            .is_ok_and(|payload| &payload.invitation_id == invitation_id)
+    })
+}
+
 pub(crate) fn invitation_id_from_terminal_payload(
     kind: EventKind,
     payload: &[u8],
@@ -107,11 +228,104 @@ pub(crate) fn invitation_id_from_terminal_payload(
     }
 }
 
+pub(crate) fn pending_outgoing_invitation_deliveries_in_runtime(
+    local_pubkey: PubKey,
+) -> Vec<PendingOutgoingInvitationDelivery> {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return Vec::new();
+    };
+
+    let mut resolved_ids: HashSet<[u8; 32]> = HashSet::new();
+    for event in capsule.ledger.events() {
+        if let Some(invitation_id) =
+            invitation_id_from_terminal_payload(event.kind(), event.payload())
+        {
+            resolved_ids.insert(invitation_id);
+        }
+    }
+
+    let local_bytes = local_pubkey.as_bytes();
+    let mut yielded_ids: HashSet<[u8; 32]> = HashSet::new();
+    let mut pending = Vec::new();
+    for event in capsule.ledger.events() {
+        if event.kind() != EventKind::InvitationSent {
+            continue;
+        }
+        if event.signer().as_bytes() != local_bytes {
+            continue;
+        }
+
+        let payload = event.payload();
+        let Some(invitation_id) = invitation_id_from_outgoing_payload(payload) else {
+            continue;
+        };
+        if resolved_ids.contains(&invitation_id) || !yielded_ids.insert(invitation_id) {
+            continue;
+        }
+
+        let mut to_pubkey = [0u8; 32];
+        to_pubkey.copy_from_slice(&payload[64..96]);
+        if to_pubkey == *local_bytes {
+            continue;
+        }
+
+        pending.push(PendingOutgoingInvitationDelivery {
+            invitation_id,
+            to_pubkey,
+            payload: payload.to_vec(),
+            timestamp: event.timestamp().as_u64(),
+        });
+    }
+
+    pending
+}
+
 pub(crate) fn should_skip_incoming_delivery_append(
     local_kind: EventKind,
     payload: &[u8],
     signer: PubKey,
 ) -> bool {
+    if local_kind == EventKind::RelationshipEstablished {
+        let Some(parsed) = RelationshipEstablishedPayload::from_bytes(payload).ok() else {
+            return true;
+        };
+        if parsed.peer_pubkey != signer {
+            return true;
+        }
+        if !invitation_accepted_exists_in_runtime(&parsed.invitation_id) {
+            return true;
+        }
+        if relationship_established_exists_for_invitation_in_runtime(&parsed.invitation_id) {
+            return true;
+        }
+        if relationship_key_is_active_in_runtime(RelationshipKey {
+            peer_pubkey: parsed.peer_pubkey,
+            own_starter_id: parsed.own_starter_id,
+        }) {
+            return true;
+        }
+    }
+
+    if local_kind == EventKind::RelationshipBroken {
+        let Some(parsed) = RelationshipBrokenPayload::from_bytes(payload).ok() else {
+            return true;
+        };
+        if parsed.peer_pubkey != signer {
+            return true;
+        }
+        if !relationship_key_is_active_in_runtime(RelationshipKey {
+            peer_pubkey: parsed.peer_pubkey,
+            own_starter_id: parsed.own_starter_id,
+        }) {
+            return true;
+        }
+        // Do not dedupe RelationshipBroken by raw payload/signer when the
+        // pair is currently active. The same relationship key can be
+        // re-established later and then broken again with identical payload.
+        return false;
+    }
+
     if local_kind == EventKind::InvitationReceived && payload.len() >= 32 {
         let mut invitation_id = [0u8; 32];
         invitation_id.copy_from_slice(&payload[..32]);
@@ -186,7 +400,8 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
         }
 
         let kind = invitation_payload_starter_kind(payload).unwrap_or_else(|| {
-            find_starter_kind_by_id_in_runtime(&starter_id).unwrap_or(StarterKind::Juice)
+            find_starter_kind_by_id_in_ledger(&capsule.ledger, &starter_id)
+                .unwrap_or(StarterKind::Juice)
         });
         let candidate = InvitationLookupRecord {
             starter_id: StarterId::from(starter_id),
@@ -472,12 +687,7 @@ pub(crate) fn resolve_local_acceptance_plan(
                 created_starter: Some((
                     created_starter_id,
                     kind,
-                    derive_starter_nonce_lineage(
-                        seed,
-                        slot_u8,
-                        &invitation_id,
-                        &inviter_anchor,
-                    ),
+                    derive_starter_nonce_lineage(seed, slot_u8, &invitation_id, &inviter_anchor),
                 )),
             })
         }

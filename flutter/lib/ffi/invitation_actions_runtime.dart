@@ -52,9 +52,11 @@ Map<String, Object?> receiveInvitationsInWorker(Map<String, Object?> args) {
     return <String, Object?>{'result': -1004};
   }
   final result = hivra.fetchInvitationDeliveries();
+  final lastError = hivra.lastErrorMessage();
   return <String, Object?>{
     'result': result,
     'ledgerJson': hivra.exportLedger(),
+    'lastError': lastError,
   };
 }
 
@@ -65,9 +67,11 @@ Map<String, Object?> receiveInvitationsQuickInWorker(
     return <String, Object?>{'result': -1004};
   }
   final result = hivra.fetchInvitationDeliveriesQuick();
+  final lastError = hivra.lastErrorMessage();
   return <String, Object?>{
     'result': result,
     'ledgerJson': hivra.exportLedger(),
+    'lastError': lastError,
   };
 }
 
@@ -108,7 +112,9 @@ Map<String, Object?> rejectInvitationInWorker(Map<String, Object?> args) {
 }
 
 abstract class InvitationActionsRuntime {
-  Future<Map<String, Object?>?> loadWorkerBootstrapArgs();
+  Future<Map<String, Object?>?> loadWorkerBootstrapArgs({
+    String? capsuleHex,
+  });
 
   Future<String?> resolveActiveCapsuleHex();
 
@@ -135,8 +141,13 @@ class HivraInvitationActionsRuntime implements InvitationActionsRuntime {
         _persistence = persistence ?? CapsulePersistenceService();
 
   @override
-  Future<Map<String, Object?>?> loadWorkerBootstrapArgs() {
-    return _persistence.loadWorkerBootstrapArgs(_hivra);
+  Future<Map<String, Object?>?> loadWorkerBootstrapArgs({
+    String? capsuleHex,
+  }) {
+    return _persistence.loadWorkerBootstrapArgs(
+      _hivra,
+      capsuleHex: capsuleHex,
+    );
   }
 
   @override

@@ -73,6 +73,14 @@ void main() {
       expect(result.readyPairCount, 1);
       expect(result.blockedPairCount, 1);
       expect(result.pairResults, hasLength(2));
+      final readyPair = result.pairResults.firstWhere(
+        (pair) => pair.peerHex == _readyPeer,
+      );
+      final blockedPair = result.pairResults.firstWhere(
+        (pair) => pair.peerHex == _blockedPeer,
+      );
+      expect(readyPair.consensusHashHex, 'b');
+      expect(blockedPair.consensusHashHex, 'a');
       expect(result.peerHex, _readyPeer);
       expect(result.settlement, isNotNull);
       expect(
@@ -110,6 +118,7 @@ void main() {
       expect(result.blockedPairCount, 0);
       expect(result.pairResults, hasLength(1));
       expect(result.pairResults.single.isExecuted, isTrue);
+      expect(result.pairResults.single.consensusHashHex, 'b');
     });
 
     test('returns blocked when only blocked peer exists', () {
@@ -150,6 +159,77 @@ void main() {
       expect(result.settlement, isNull);
       expect(result.blockingFacts.map((f) => f.code),
           contains('pending_invitation'));
+    });
+
+    test(
+        'propagates pending_remote_break from execution blocking facts in partial state',
+        () {
+      final runner = PluginDemoContractRunnerService(
+        readChecks: () => const <ConsensusCheck>[
+          ConsensusCheck(
+            peerHex: _blockedPeer,
+            peerLabel: 'blocked',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex: 'a',
+            canonicalJson: '{}',
+            isSignable: false,
+            blockingFacts: <ConsensusBlockingFact>[
+              // Simulate stale check-level blocker that should be replaced by
+              // execution-level blocker when available.
+              ConsensusBlockingFact(code: 'pending_invitation'),
+            ],
+          ),
+          ConsensusCheck(
+            peerHex: _readyPeer,
+            peerLabel: 'ready',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex: 'b',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ],
+        contractService: TemperatureTomorrowContractService(
+          readSignable: (peerHex) => peerHex == _readyPeer
+              ? _signable()
+              : const ConsensusSignableResult(
+                  preview: null,
+                  blockingFacts: <ConsensusBlockingFact>[
+                    ConsensusBlockingFact(
+                      code: 'pending_remote_break',
+                      subjectId:
+                          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    ),
+                  ],
+                ),
+        ),
+      );
+
+      final result = runner.runTemperatureTomorrowDemo(
+        contract: _contract(),
+        observation: _observation(observedDeciCelsius: 90),
+      );
+
+      expect(result.state, PluginDemoRunState.partial);
+      expect(result.readyPairCount, 1);
+      expect(result.blockedPairCount, 1);
+      final blockedPair = result.pairResults.firstWhere(
+        (pair) => pair.peerHex == _blockedPeer,
+      );
+      expect(
+        blockedPair.blockingFacts.map((f) => f.code),
+        contains('pending_remote_break'),
+      );
+      expect(
+        blockedPair.blockingFacts.map((f) => f.code),
+        isNot(contains('pending_invitation')),
+      );
+      expect(
+        result.blockingFacts.map((f) => f.code),
+        contains('pending_remote_break'),
+      );
     });
   });
 }

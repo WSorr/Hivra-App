@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:typed_data';
 import '../services/app_runtime_service.dart';
 import '../services/invitation_delivery_service.dart';
 import '../services/invitation_intent_handler.dart';
+import '../services/ui_event_log_service.dart';
 import '../services/ui_feedback_service.dart';
 import '../utils/hivra_id_format.dart';
 
@@ -22,6 +24,7 @@ class StartersScreen extends StatefulWidget {
 
 class _StartersScreenState extends State<StartersScreen> {
   final InvitationDeliveryService _delivery = const InvitationDeliveryService();
+  final UiEventLogService _uiLog = const UiEventLogService();
   late final InvitationIntentHandler _intents;
   List<Map<String, dynamic>> _slots = const [];
 
@@ -66,7 +69,7 @@ class _StartersScreenState extends State<StartersScreen> {
     final TextEditingController pubkeyController = TextEditingController();
     String? formError;
     bool isSending = false;
-    
+
     return showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -107,97 +110,138 @@ class _StartersScreenState extends State<StartersScreen> {
               onPressed: isSending
                   ? null
                   : () async {
-                final input = pubkeyController.text.trim();
-                if (input.isEmpty) {
-                  setDialogState(
-                    () => formError =
-                        'Please enter a capsule address or delivery address',
-                  );
-                  return;
-                }
+                      final input = pubkeyController.text.trim();
+                      if (input.isEmpty) {
+                        setDialogState(
+                          () => formError =
+                              'Please enter a capsule address or delivery address',
+                        );
+                        return;
+                      }
 
-                setDialogState(() {
-                  isSending = true;
-                });
+                      setDialogState(() {
+                        isSending = true;
+                      });
 
-                final resolution = await _delivery.resolveRecipientAddress(
-                  input,
-                  selfRootKey: widget.runtime.capsuleRootPublicKey(),
-                  selfNostrKey: widget.runtime.capsuleNostrPublicKey(),
-                );
-                if (!context.mounted) return;
-                if (!resolution.isSuccess) {
-                  setDialogState(
-                    () {
-                      formError = resolution.errorMessage ??
-                          'Could not resolve recipient address';
-                      isSending = false;
+                      final resolution =
+                          await _delivery.resolveRecipientAddress(
+                        input,
+                        selfRootKey: widget.runtime.capsuleRootPublicKey(),
+                        selfNostrKey: widget.runtime.capsuleNostrPublicKey(),
+                      );
+                      if (!context.mounted) return;
+                      if (!resolution.isSuccess) {
+                        unawaited(_uiLog.log(
+                          'starters.send.resolve_failed',
+                          resolution.errorMessage ??
+                              'Could not resolve recipient address',
+                        ));
+                        setDialogState(
+                          () {
+                            formError = resolution.errorMessage ??
+                                'Could not resolve recipient address';
+                            isSending = false;
+                          },
+                        );
+                        return;
+                      }
+
+                      final slotIndex =
+                          slot['index'] is int ? slot['index'] as int : -1;
+                      if (slotIndex < 0 || slotIndex > 4) {
+                        unawaited(
+                          _uiLog.log(
+                            'starters.send.invalid_slot',
+                            'slot=$slotIndex input=$input',
+                          ),
+                        );
+                        setDialogState(() {
+                          formError = 'Invalid starter slot';
+                          isSending = false;
+                        });
+                        return;
+                      }
+
+                      final startedAt = DateTime.now();
+                      InvitationIntentResult? sendResult;
+                      try {
+                        unawaited(_uiLog.log(
+                          'starters.send.request',
+                          'slot=$slotIndex peer=$input',
+                        ));
+
+                        sendResult = await _intents.sendInvitation(
+                          resolution.transportRecipient!,
+                          slotIndex,
+                        );
+                        final result = sendResult;
+                        unawaited(_uiLog.log(
+                          'starters.send.result',
+                          'slot=$slotIndex code=${result.code} message=${result.message}',
+                        ));
+                        if (!result.isSuccess) {
+                          if (!mounted) return;
+                          UiFeedbackService.showSnackBar(
+                            this.context,
+                            result.message,
+                            source: 'starters.send',
+                            duration: const Duration(seconds: 3),
+                            enableCopy: false,
+                          );
+                          if (!context.mounted) return;
+                          setDialogState(() {
+                            formError = result.message;
+                            isSending = false;
+                          });
+                          return;
+                        }
+
+                        if (context.mounted) {
+                          Navigator.of(context).pop();
+                        }
+                        if (!mounted) return;
+                        final peerPreview = input.length <= 8
+                            ? input
+                            : '${input.substring(0, 8)}...';
+                        UiFeedbackService.showSnackBar(
+                          this.context,
+                          'Invitation sent to $peerPreview. Receiver should pull to refresh Invitations.',
+                          source: 'starters.send',
+                          duration: const Duration(seconds: 5),
+                          enableCopy: false,
+                        );
+
+                        setState(() {
+                          slot['locked'] = true;
+                        });
+                        _loadSlots();
+                        await widget.onLedgerChanged?.call();
+                      } catch (e) {
+                        unawaited(_uiLog.log('starters.send.exception', '$e'));
+                        if (!mounted) return;
+                        UiFeedbackService.showSnackBar(
+                          this.context,
+                          'Failed to send: $e',
+                          source: 'starters.send',
+                          duration: const Duration(seconds: 3),
+                          enableCopy: false,
+                        );
+                        if (context.mounted) {
+                          setDialogState(() {
+                            isSending = false;
+                          });
+                        }
+                      } finally {
+                        final elapsedMs =
+                            DateTime.now().difference(startedAt).inMilliseconds;
+                        unawaited(
+                          _uiLog.log(
+                            'starters.send.finally',
+                            'slot=$slotIndex elapsedMs=$elapsedMs resultCode=${sendResult?.code ?? 'none'} contextMounted=${context.mounted} widgetMounted=$mounted',
+                          ),
+                        );
+                      }
                     },
-                  );
-                  return;
-                }
-
-                try {
-                  final slotIndex = slot['index'] is int ? slot['index'] as int : -1;
-                  if (slotIndex < 0 || slotIndex > 4) {
-                    throw Exception('Invalid starter slot');
-                  }
-
-                  final result = await _intents.sendInvitation(
-                    resolution.transportRecipient!,
-                    slotIndex,
-                  );
-                  if (!result.isSuccess) {
-                    if (!mounted) return;
-                    UiFeedbackService.showSnackBar(
-                      this.context,
-                      result.message,
-                      source: 'starters.send',
-                      duration: const Duration(seconds: 3),
-                      enableCopy: false,
-                    );
-                    if (!context.mounted) return;
-                    setDialogState(() {
-                      formError = result.message;
-                      isSending = false;
-                    });
-                    return;
-                  }
-
-                  if (!context.mounted) return;
-                  final navigator = Navigator.of(context);
-                  navigator.pop();
-                  if (!mounted) return;
-                  final peerPreview = input.length <= 8 ? input : '${input.substring(0, 8)}...';
-                  UiFeedbackService.showSnackBar(
-                    this.context,
-                    'Invitation sent to $peerPreview. Receiver should pull to refresh Invitations.',
-                    source: 'starters.send',
-                    duration: const Duration(seconds: 5),
-                    enableCopy: false,
-                  );
-
-                  setState(() {
-                    slot['locked'] = true;
-                  });
-                  _loadSlots();
-                  await widget.onLedgerChanged?.call();
-                } catch (e) {
-                  if (!mounted) return;
-                  UiFeedbackService.showSnackBar(
-                    this.context,
-                    'Failed to send: $e',
-                    source: 'starters.send',
-                    duration: const Duration(seconds: 3),
-                    enableCopy: false,
-                  );
-                  if (context.mounted) {
-                    setDialogState(() {
-                      isSending = false;
-                    });
-                  }
-                }
-              },
               child: isSending
                   ? const SizedBox(
                       width: 18,

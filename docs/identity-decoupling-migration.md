@@ -23,25 +23,17 @@ This must preserve:
 
 ## Current State
 
-Today the public capsule identity exposed through FFI and UI is still derived from the Nostr transport key.
+Root/transport identity split is implemented and live:
 
-The main legacy coupling points are:
+- runtime signing key path is root-backed (`SeedBackedKeyStore`)
+- root and Nostr identities are exposed through explicit FFI APIs
+- diagnostics/bootstrap track identity mode (`root_owner` / `legacy_nostr_owner`)
 
-- `platform/hivra-keystore/src/lib.rs`
-  - `derive_nostr_keypair(seed)`
-- `platform/hivra-ffi/src/runtime_support.rs`
-  - `SeedBackedKeyStore::generate/public_key/sign`
-  - `derive_nostr_public_key(seed)`
-  - `init_runtime_state(...)`
-- `platform/hivra-ffi/src/capsule_api.rs`
-  - `hivra_capsule_public_key(...)`
-- `platform/hivra-ffi/src/seed_api.rs`
-  - `hivra_seed_public_key(...)`
-- invitation, relationship, and self-check paths in FFI that explicitly derive Nostr keys from the seed when talking to the transport adapter
+Remaining compatibility debt:
 
-This means the capsule runtime owner and the Nostr adapter identity are still the same bytes.
-
-That is implementation debt, not the intended architecture.
+- `legacy_nostr_owner` mode still exists for controlled migration/recovery scenarios
+- invitation/relationship transport flows still derive Nostr keys locally (adapter boundary), which is expected
+- old ledger/index artifacts can still carry legacy identity mode and must remain readable
 
 ## Required Invariants
 

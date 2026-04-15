@@ -3,6 +3,8 @@ class WasmPluginCapabilityPolicyService {
     'consensus_guard.read',
     'oracle.read.mock_weather',
     'oracle.read.temperature.li',
+    'exchange.read.bingx.market',
+    'exchange.trade.bingx.spot',
   };
 
   const WasmPluginCapabilityPolicyService();

@@ -8,6 +8,8 @@ abstract class LedgerViewRuntime {
   String? exportCapsuleStateJson();
 
   Uint8List? capsuleRuntimeOwnerPublicKey();
+
+  Uint8List? capsuleRuntimeTransportPublicKey();
 }
 
 class HivraLedgerViewRuntime implements LedgerViewRuntime {
@@ -25,4 +27,8 @@ class HivraLedgerViewRuntime implements LedgerViewRuntime {
   @override
   Uint8List? capsuleRuntimeOwnerPublicKey() =>
       _hivra.capsuleRuntimeOwnerPublicKey();
+
+  @override
+  Uint8List? capsuleRuntimeTransportPublicKey() =>
+      _hivra.capsuleNostrPublicKey();
 }

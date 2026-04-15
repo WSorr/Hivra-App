@@ -53,13 +53,64 @@ InvitationUiBuckets bucketInvitationsForUi(
   );
 }
 
+@visibleForTesting
+bool shouldRetainLocalResolvedIncoming(InvitationIntentResult result) =>
+    result.isSuccess;
+
+@visibleForTesting
+({bool silent, bool quick}) mergeQueuedInvitationFetchRequest({
+  required bool queuedSilent,
+  required bool queuedQuick,
+  required bool incomingSilent,
+  required bool incomingQuick,
+}) =>
+    (
+      silent: queuedSilent && incomingSilent,
+      quick: queuedQuick && incomingQuick,
+    );
+
+@visibleForTesting
+Set<String> pruneLocallyResolvedIncomingIds({
+  required Set<String> resolvedIds,
+  required List<Invitation> projectedInvitations,
+}) {
+  final pendingIncomingIds = projectedInvitations
+      .where((inv) => inv.isIncoming && inv.status == InvitationStatus.pending)
+      .map((inv) => inv.id)
+      .toSet();
+  final nonPendingIncomingOrOtherIds = projectedInvitations
+      .where(
+          (inv) => !(inv.isIncoming && inv.status == InvitationStatus.pending))
+      .map((inv) => inv.id)
+      .toSet();
+
+  final kept = <String>{};
+  for (final id in resolvedIds) {
+    if (pendingIncomingIds.contains(id)) {
+      kept.add(id);
+      continue;
+    }
+    if (nonPendingIncomingOrOtherIds.contains(id)) {
+      continue;
+    }
+    // Keep suppression when id is temporarily absent from projection to avoid
+    // flicker/reappearance during transient refresh windows.
+    kept.add(id);
+  }
+  return kept;
+}
+
 class InvitationsScreen extends StatefulWidget {
   final AppRuntimeService runtime;
+  final String activeCapsuleHex;
+  final int ledgerVersion;
   final Future<void> Function()? onLedgerChanged;
 
   const InvitationsScreen({
     super.key,
     required this.runtime,
+    required this.activeCapsuleHex,
+    required this.ledgerVersion,
     this.onLedgerChanged,
   });
 
@@ -76,8 +127,14 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   bool _isFetchingDeliveries = false;
   String? _processingId;
   String? _processingAction;
+  bool _hasQueuedFetchRequest = false;
+  bool _queuedFetchSilent = true;
+  bool _queuedFetchQuick = true;
   final Set<String> _locallyResolvedIncomingIds = <String>{};
   Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
+
+  bool _isOperationForActiveCapsule(String capturedCapsuleHex) =>
+      capturedCapsuleHex == widget.activeCapsuleHex;
 
   @override
   void initState() {
@@ -88,21 +145,52 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     unawaited(_fetchInvitationDeliveries(silent: true, quick: true));
   }
 
+  @override
+  void didUpdateWidget(covariant InvitationsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final capsuleChanged =
+        widget.activeCapsuleHex != oldWidget.activeCapsuleHex;
+    final ledgerChanged = widget.ledgerVersion != oldWidget.ledgerVersion;
+    if (!capsuleChanged && !ledgerChanged) {
+      return;
+    }
+
+    if (capsuleChanged) {
+      _resetTransientStateForCapsuleSwitch();
+      unawaited(_fetchInvitationDeliveries(silent: true, quick: true));
+    }
+    unawaited(_loadInvitations(showLoading: false));
+  }
+
   Future<void> _loadInvitations({bool showLoading = true}) async {
     final invitations = _intents.loadInvitations();
     final peerRoots = await _loadPeerRootKeys(invitations);
-    final stillPendingIncoming = invitations
-        .where(
-            (inv) => inv.isIncoming && inv.status == InvitationStatus.pending)
-        .map((inv) => inv.id)
-        .toSet();
+    final nextResolved = pruneLocallyResolvedIncomingIds(
+      resolvedIds: _locallyResolvedIncomingIds,
+      projectedInvitations: invitations,
+    );
     if (!mounted) return;
     setState(() {
       _invitations = invitations;
       _peerRootKeyByTransportB64 = peerRoots;
-      _locallyResolvedIncomingIds.removeWhere(
-        (id) => !stillPendingIncoming.contains(id),
-      );
+      _locallyResolvedIncomingIds
+        ..clear()
+        ..addAll(nextResolved);
+    });
+  }
+
+  void _resetTransientStateForCapsuleSwitch() {
+    if (!mounted) return;
+    setState(() {
+      _invitations = <Invitation>[];
+      _isFetchingDeliveries = false;
+      _processingId = null;
+      _processingAction = null;
+      _hasQueuedFetchRequest = false;
+      _queuedFetchSilent = true;
+      _queuedFetchQuick = true;
+      _locallyResolvedIncomingIds.clear();
+      _peerRootKeyByTransportB64 = const <String, String>{};
     });
   }
 
@@ -173,16 +261,27 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     Uint8List pubkey,
     int slot,
   ) async {
+    final operationCapsuleHex = widget.activeCapsuleHex;
+    final startedAt = DateTime.now();
+    InvitationIntentResult? sendResult;
     try {
       unawaited(_uiLog.log(
         'invitations.send.request',
         'slot=$slot peer=${HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(pubkey))}',
       ));
       final result = await _intents.sendInvitation(pubkey, slot);
+      sendResult = result;
       unawaited(_uiLog.log(
         'invitations.send.result',
         'slot=$slot code=${result.code} message=${result.message}',
       ));
+      if (!_isOperationForActiveCapsule(operationCapsuleHex)) {
+        unawaited(_uiLog.log(
+          'invitations.send.stale_drop',
+          'slot=$slot opCapsule=$operationCapsuleHex activeCapsule=${widget.activeCapsuleHex}',
+        ));
+        return result;
+      }
       if (result.isSuccess) {
         if (mounted) {
           await _refreshAfterLedgerMutation();
@@ -199,6 +298,12 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         await _showUserMessage(message, source: 'invitations.send');
       }
       return InvitationIntentResult(code: -1, message: message);
+    } finally {
+      final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
+      unawaited(_uiLog.log(
+        'invitations.send.finally',
+        'slot=$slot elapsedMs=$elapsedMs resultCode=${sendResult?.code ?? 'none'} widgetMounted=$mounted',
+      ));
     }
   }
 
@@ -206,7 +311,11 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     bool silent = false,
     bool quick = false,
   }) async {
-    if (_isFetchingDeliveries || _processingId != null) return;
+    final operationCapsuleHex = widget.activeCapsuleHex;
+    if (_isFetchingDeliveries || _processingId != null) {
+      _queueFetchRequest(silent: silent, quick: quick);
+      return;
+    }
 
     setState(() => _isFetchingDeliveries = true);
     InvitationIntentResult result = const InvitationIntentResult(
@@ -225,6 +334,13 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     }
 
     if (!mounted) return;
+    if (!_isOperationForActiveCapsule(operationCapsuleHex)) {
+      unawaited(_uiLog.log(
+        'invitations.fetch.stale_drop',
+        'silent=$silent quick=$quick opCapsule=$operationCapsuleHex activeCapsule=${widget.activeCapsuleHex}',
+      ));
+      return;
+    }
 
     if (result.code >= 0) {
       await _refreshAfterLedgerMutation();
@@ -234,20 +350,23 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       } else {
         unawaited(_uiLog.log('invitations.fetch.silent', result.message));
       }
+      await _drainQueuedFetchRequestIfNeeded();
       return;
     }
 
     if (!silent) {
       await _showUserMessage(result.message, source: 'invitations.fetch');
+      await _drainQueuedFetchRequestIfNeeded();
       return;
     }
     unawaited(_uiLog.log('invitations.fetch.silent.error', result.message));
+    await _drainQueuedFetchRequestIfNeeded();
   }
 
   Future<void> _acceptInvitation(Invitation invitation) async {
+    final operationCapsuleHex = widget.activeCapsuleHex;
     if (_processingId != null) return;
     if (_locallyResolvedIncomingIds.contains(invitation.id)) return;
-    var keepLocallyResolved = false;
     setState(() {
       _processingId = invitation.id;
       _processingAction = 'accept';
@@ -257,17 +376,19 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     final invitationId = _decodeB64_32(invitation.id);
     final fromPubkey = _decodeB64_32(invitation.fromPubkey);
+    var retainLocallyResolved = false;
+    var processingReleased = false;
     try {
       if (invitationId == null || fromPubkey == null) {
-        if (mounted) {
-          setState(() {
-            _locallyResolvedIncomingIds.remove(invitation.id);
-          });
-          await _showUserMessage(
-            _delivery.acceptFailureMessage(-1),
-            source: 'invitations.accept',
-          );
-        }
+        _releaseInvitationProcessing(
+          invitation.id,
+          retainLocallyResolved: false,
+        );
+        processingReleased = true;
+        await _showUserMessage(
+          _delivery.acceptFailureMessage(-1),
+          source: 'invitations.accept',
+        );
         return;
       }
 
@@ -275,34 +396,33 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         invitationId,
         fromPubkey,
       );
-      keepLocallyResolved = result.isSuccess;
-      if (!result.isSuccess && mounted) {
-        setState(() {
-          _locallyResolvedIncomingIds.remove(invitation.id);
-        });
+      retainLocallyResolved = shouldRetainLocalResolvedIncoming(result);
+      _releaseInvitationProcessing(
+        invitation.id,
+        retainLocallyResolved: retainLocallyResolved,
+      );
+      processingReleased = true;
+      if (!_isOperationForActiveCapsule(operationCapsuleHex)) {
+        return;
       }
-
       await _refreshAfterLedgerMutation();
       if (mounted) {
         await _showUserMessage(result.message, source: 'invitations.accept');
       }
     } finally {
-      if (mounted && _processingId == invitation.id) {
-        setState(() {
-          _processingId = null;
-          _processingAction = null;
-          if (!keepLocallyResolved) {
-            _locallyResolvedIncomingIds.remove(invitation.id);
-          }
-        });
+      if (!processingReleased) {
+        _releaseInvitationProcessing(
+          invitation.id,
+          retainLocallyResolved: retainLocallyResolved,
+        );
       }
     }
   }
 
   Future<void> _rejectInvitation(Invitation invitation) async {
+    final operationCapsuleHex = widget.activeCapsuleHex;
     if (_processingId != null) return;
     if (_locallyResolvedIncomingIds.contains(invitation.id)) return;
-    var keepLocallyResolved = false;
 
     // Show confirmation dialog for empty slot case
     final bool? confirm = await showDialog<bool>(
@@ -370,29 +490,74 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     });
     UiFeedbackService.dismissCurrent(context);
 
+    var retainLocallyResolved = false;
+    var processingReleased = false;
     try {
+      unawaited(
+        _uiLog.log(
+          'invitations.reject.request',
+          'invitationId=${invitation.id} from=${invitation.fromPubkey}',
+        ),
+      );
       final result = await _intents.rejectInvitation(invitation);
-      keepLocallyResolved = result.isSuccess;
-      if (!result.isSuccess && mounted) {
-        setState(() {
-          _locallyResolvedIncomingIds.remove(invitation.id);
-        });
+      unawaited(
+        _uiLog.log(
+          'invitations.reject.result',
+          'code=${result.code} message=${result.message}',
+        ),
+      );
+      retainLocallyResolved = shouldRetainLocalResolvedIncoming(result);
+      _releaseInvitationProcessing(
+        invitation.id,
+        retainLocallyResolved: retainLocallyResolved,
+      );
+      processingReleased = true;
+      if (!_isOperationForActiveCapsule(operationCapsuleHex)) {
+        return;
       }
       await _refreshAfterLedgerMutation();
       if (mounted) {
         await _showUserMessage(result.message, source: 'invitations.reject');
       }
+    } catch (error, stackTrace) {
+      unawaited(
+        _uiLog.log(
+          'invitations.reject.error',
+          '$error\n$stackTrace',
+        ),
+      );
+      rethrow;
     } finally {
-      if (mounted) {
-        setState(() {
-          _processingId = null;
-          _processingAction = null;
-          if (!keepLocallyResolved) {
-            _locallyResolvedIncomingIds.remove(invitation.id);
-          }
-        });
+      unawaited(
+        _uiLog.log(
+          'invitations.reject.finally',
+          'processingReleased=$processingReleased retainLocallyResolved=$retainLocallyResolved',
+        ),
+      );
+      if (!processingReleased) {
+        _releaseInvitationProcessing(
+          invitation.id,
+          retainLocallyResolved: retainLocallyResolved,
+        );
       }
     }
+  }
+
+  void _releaseInvitationProcessing(
+    String invitationId, {
+    required bool retainLocallyResolved,
+  }) {
+    if (!mounted || _processingId != invitationId) {
+      return;
+    }
+    setState(() {
+      _processingId = null;
+      _processingAction = null;
+      if (!retainLocallyResolved) {
+        _locallyResolvedIncomingIds.remove(invitationId);
+      }
+    });
+    unawaited(_drainQueuedFetchRequestIfNeeded());
   }
 
   String _buildRejectDiagnostics(Invitation invitation) {
@@ -426,6 +591,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   Future<void> _cancelInvitation(Invitation invitation) async {
+    final operationCapsuleHex = widget.activeCapsuleHex;
     if (_processingId != null) return;
 
     final bool? confirm = await showDialog<bool>(
@@ -455,20 +621,72 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     });
     UiFeedbackService.dismissCurrent(context);
 
+    var processingReleased = false;
     try {
       final result = await _intents.cancelInvitation(invitation.id);
+      _releaseCancelProcessing(invitation.id);
+      processingReleased = true;
+      if (!_isOperationForActiveCapsule(operationCapsuleHex)) {
+        return;
+      }
       await _refreshAfterLedgerMutation();
       if (mounted) {
         await _showUserMessage(result.message, source: 'invitations.cancel');
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _processingId = null;
-          _processingAction = null;
-        });
+      if (!processingReleased) {
+        _releaseCancelProcessing(invitation.id);
       }
     }
+  }
+
+  void _releaseCancelProcessing(String invitationId) {
+    if (!mounted || _processingId != invitationId) {
+      return;
+    }
+    setState(() {
+      _processingId = null;
+      _processingAction = null;
+    });
+    unawaited(_drainQueuedFetchRequestIfNeeded());
+  }
+
+  void _queueFetchRequest({
+    required bool silent,
+    required bool quick,
+  }) {
+    if (!_hasQueuedFetchRequest) {
+      _hasQueuedFetchRequest = true;
+      _queuedFetchSilent = silent;
+      _queuedFetchQuick = quick;
+      return;
+    }
+    final merged = mergeQueuedInvitationFetchRequest(
+      queuedSilent: _queuedFetchSilent,
+      queuedQuick: _queuedFetchQuick,
+      incomingSilent: silent,
+      incomingQuick: quick,
+    );
+    _queuedFetchSilent = merged.silent;
+    _queuedFetchQuick = merged.quick;
+  }
+
+  Future<void> _drainQueuedFetchRequestIfNeeded() async {
+    if (!_hasQueuedFetchRequest ||
+        _isFetchingDeliveries ||
+        _processingId != null ||
+        !mounted) {
+      return;
+    }
+    final silent = _queuedFetchSilent;
+    final quick = _queuedFetchQuick;
+    _hasQueuedFetchRequest = false;
+    _queuedFetchSilent = true;
+    _queuedFetchQuick = true;
+    await _fetchInvitationDeliveries(
+      silent: silent,
+      quick: quick,
+    );
   }
 
   void _showSendInvitationDialog() {

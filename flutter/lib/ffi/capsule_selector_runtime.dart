@@ -71,7 +71,7 @@ class HivraCapsuleSelectorRuntime implements CapsuleSelectorRuntime {
 
   @override
   Future<CapsuleLedgerSummary> loadCapsuleSummary(String pubKeyHex) {
-    return _persistence.loadCapsuleSummary(pubKeyHex);
+    return _persistence.loadCapsuleSummary(pubKeyHex, hivra: _hivra);
   }
 
   @override

@@ -58,6 +58,8 @@ void main() {
   test('loadPlugins ignores malformed entries and sorts by installedAt desc',
       () async {
     final pluginsDir = await service.pluginsDirectory(create: true);
+    await File('${pluginsDir.path}/old.wasm').writeAsString('old', flush: true);
+    await File('${pluginsDir.path}/new.wasm').writeAsString('new', flush: true);
     final registry = File('${pluginsDir.path}/registry.json');
     await registry.writeAsString(
       jsonEncode([
@@ -121,8 +123,14 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
+              'release_version': '0.1.0',
               'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
               'contract': {'kind': 'temperature_tomorrow_liechtenstein'},
+              'runtime': {
+                'abi': 'hivra_host_abi_v1',
+                'entry_export': 'hivra_entry_v1',
+                'module_path': 'plugin/module.wasm',
+              },
               'capabilities': [
                 'consensus_guard.read',
                 'oracle.read.mock_weather'
@@ -139,7 +147,11 @@ void main() {
 
     expect(installed.packageKind, 'zip');
     expect(installed.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
+    expect(installed.pluginVersion, '0.1.0');
     expect(installed.contractKind, 'temperature_tomorrow_liechtenstein');
+    expect(installed.runtimeAbi, 'hivra_host_abi_v1');
+    expect(installed.runtimeEntryExport, 'hivra_entry_v1');
+    expect(installed.runtimeModulePath, 'plugin/module.wasm');
     expect(
       installed.capabilities,
       ['consensus_guard.read', 'oracle.read.mock_weather'],
@@ -149,6 +161,154 @@ void main() {
     expect(loaded, isNotEmpty);
     expect(loaded.first.packageKind, 'zip');
     expect(loaded.first.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
+  });
+
+  test('reinstalls same plugin_id + version without creating duplicates',
+      () async {
+    Future<File> createPackage(String name) async {
+      final sourceFile = File('${tempDocsDir.path}/$name');
+      await sourceFile.writeAsBytes(
+        _zipBytes(
+          files: {
+            'plugin/manifest.json': jsonEncode(
+              {
+                'schema': 'hivra.plugin.manifest',
+                'version': 1,
+                'release_version': '0.1.0',
+                'plugin_id': 'hivra.contract.bingx-trading.v1',
+                'contract': {'kind': 'bingx_spot_order_intent'},
+                'runtime': {
+                  'abi': 'hivra_host_abi_v1',
+                  'entry_export': 'hivra_entry_v1',
+                },
+                'capabilities': [
+                  'exchange.read.bingx.market',
+                  'exchange.trade.bingx.spot'
+                ],
+              },
+            ),
+            'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
+          },
+        ),
+        flush: true,
+      );
+      return sourceFile;
+    }
+
+    final first = await service.installPluginFromFile(
+      await createPackage('bingx-a-0.1.0.zip'),
+    );
+    final pluginsDir = await service.pluginsDirectory();
+    final firstStored = File('${pluginsDir.path}/${first.storedFileName}');
+    expect(await firstStored.exists(), isTrue);
+
+    final second = await service.installPluginFromFile(
+      await createPackage('bingx-b-0.1.0.zip'),
+    );
+    final secondStored = File('${pluginsDir.path}/${second.storedFileName}');
+    expect(await secondStored.exists(), isTrue);
+    expect(await firstStored.exists(), isFalse);
+
+    final records = await service.loadPlugins();
+    final samePlugin = records
+        .where((r) =>
+            r.pluginId == 'hivra.contract.bingx-trading.v1' &&
+            r.pluginVersion == '0.1.0')
+        .toList();
+    expect(samePlugin.length, 1);
+    expect(samePlugin.first.id, second.id);
+  });
+
+  test('loadPlugins self-heals duplicate plugin_id + version records',
+      () async {
+    final pluginsDir = await service.pluginsDirectory(create: true);
+    final staleFile = File('${pluginsDir.path}/stale.zip');
+    final freshFile = File('${pluginsDir.path}/fresh.zip');
+    await staleFile.writeAsString('stale', flush: true);
+    await freshFile.writeAsString('fresh', flush: true);
+
+    final registry = File('${pluginsDir.path}/registry.json');
+    await registry.writeAsString(
+      jsonEncode([
+        {
+          'id': 'fresh-id',
+          'displayName': 'BingX',
+          'originalFileName': 'bingx_spot_test_plugin-0.1.0.zip',
+          'storedFileName': 'fresh.zip',
+          'sizeBytes': 10,
+          'installedAtIso': '2026-04-09T12:00:00Z',
+          'packageKind': 'zip',
+          'pluginId': 'hivra.contract.bingx-trading.v1',
+          'pluginVersion': '0.1.0',
+        },
+        {
+          'id': 'stale-id',
+          'displayName': 'BingX',
+          'originalFileName': 'bingx_spot_test_plugin-0.1.0.zip',
+          'storedFileName': 'stale.zip',
+          'sizeBytes': 11,
+          'installedAtIso': '2026-04-09T11:00:00Z',
+          'packageKind': 'zip',
+          'pluginId': 'hivra.contract.bingx-trading.v1',
+          'pluginVersion': '0.1.0',
+        },
+      ]),
+      flush: true,
+    );
+
+    final records = await service.loadPlugins();
+    expect(records.length, 1);
+    expect(records.first.id, 'fresh-id');
+    expect(await staleFile.exists(), isFalse);
+    expect(await freshFile.exists(), isTrue);
+  });
+
+  test('loadPlugins prunes records with missing stored package files',
+      () async {
+    final pluginsDir = await service.pluginsDirectory(create: true);
+    final presentFile = File('${pluginsDir.path}/present.zip');
+    await presentFile.writeAsString('present', flush: true);
+
+    final registry = File('${pluginsDir.path}/registry.json');
+    await registry.writeAsString(
+      jsonEncode([
+        {
+          'id': 'present-id',
+          'displayName': 'Present',
+          'originalFileName': 'present.zip',
+          'storedFileName': 'present.zip',
+          'sizeBytes': 10,
+          'installedAtIso': '2026-04-10T12:00:00Z',
+          'packageKind': 'zip',
+          'pluginId': 'hivra.contract.temperature-li.tomorrow.v1',
+          'pluginVersion': '0.1.0',
+        },
+        {
+          'id': 'missing-id',
+          'displayName': 'Missing',
+          'originalFileName': 'missing.zip',
+          'storedFileName': 'missing.zip',
+          'sizeBytes': 10,
+          'installedAtIso': '2026-04-10T11:00:00Z',
+          'packageKind': 'zip',
+          'pluginId': 'hivra.contract.capsule-chat.v1',
+          'pluginVersion': '0.1.0',
+        },
+      ]),
+      flush: true,
+    );
+
+    final loaded = await service.loadPlugins();
+    expect(loaded.length, 1);
+    expect(loaded.first.id, 'present-id');
+
+    final repairedRegistry =
+        jsonDecode(await registry.readAsString()) as List<dynamic>;
+    expect(repairedRegistry.length, 1);
+    expect(
+      (repairedRegistry.first as Map<String, dynamic>)['id'],
+      'present-id',
+    );
   });
 }
 

@@ -9,18 +9,29 @@ import 'wasm_plugin_capability_policy_service.dart';
 class WasmPluginPackagePreflight {
   final String packageKind;
   final String? pluginId;
+  final String? pluginVersion;
   final String? contractKind;
+  final String? runtimeAbi;
+  final String? runtimeEntryExport;
+  final String? runtimeModulePath;
   final List<String> capabilities;
 
   const WasmPluginPackagePreflight({
     required this.packageKind,
     this.pluginId,
+    this.pluginVersion,
     this.contractKind,
+    this.runtimeAbi,
+    this.runtimeEntryExport,
+    this.runtimeModulePath,
     this.capabilities = const <String>[],
   });
 }
 
 class WasmPluginPackagePreflightService {
+  static const String requiredRuntimeAbi = 'hivra_host_abi_v1';
+  static const String requiredRuntimeEntryExport = 'hivra_entry_v1';
+
   final WasmPluginCapabilityPolicyService _capabilityPolicy;
 
   const WasmPluginPackagePreflightService({
@@ -79,15 +90,6 @@ class WasmPluginPackagePreflightService {
         'Zip plugin package must include manifest.json',
       ),
     );
-    final wasmModule = archive.files.any(
-      (file) => file.isFile && file.name.toLowerCase().endsWith('.wasm'),
-    );
-    if (!wasmModule) {
-      throw const FormatException(
-        'Zip plugin package must include at least one .wasm module',
-      );
-    }
-
     final manifestText = utf8.decode(_archiveFileBytes(manifestFile));
     final decoded = jsonDecode(manifestText);
     if (decoded is! Map) {
@@ -106,20 +108,128 @@ class WasmPluginPackagePreflightService {
     if (pluginId == null || pluginId.isEmpty) {
       throw const FormatException('Plugin manifest is missing plugin_id');
     }
+    final pluginVersion = _parsePluginVersion(manifest);
 
     String? contractKind;
     final contract = manifest['contract'];
     if (contract is Map) {
       contractKind = contract['kind']?.toString();
     }
+    final runtime = manifest['runtime'];
+    if (runtime is! Map) {
+      throw const FormatException(
+        'Plugin manifest is missing runtime section',
+      );
+    }
+    final runtimeMap = Map<String, dynamic>.from(runtime);
+    final runtimeAbi = runtimeMap['abi']?.toString().trim() ?? '';
+    final runtimeEntryExport =
+        runtimeMap['entry_export']?.toString().trim() ?? '';
+    final runtimeModulePath = _parseRuntimeModulePath(
+      runtimeMap['module_path'],
+    );
+    if (runtimeAbi != requiredRuntimeAbi) {
+      throw const FormatException(
+        'Unsupported plugin runtime ABI',
+      );
+    }
+    if (runtimeEntryExport != requiredRuntimeEntryExport) {
+      throw const FormatException(
+        'Unsupported plugin runtime entry export',
+      );
+    }
+    final wasmModulePaths = <String>{};
+    for (final file in archive.files) {
+      if (!file.isFile) continue;
+      final normalizedPath = _normalizeArchivePath(file.name);
+      if (normalizedPath == null) continue;
+      if (!normalizedPath.toLowerCase().endsWith('.wasm')) continue;
+      wasmModulePaths.add(normalizedPath);
+    }
+    if (wasmModulePaths.isEmpty) {
+      throw const FormatException(
+        'Zip plugin package must include at least one .wasm module',
+      );
+    }
+    if (runtimeModulePath != null) {
+      final normalizedRuntimeModulePath = _normalizeArchivePath(
+        runtimeModulePath,
+        rejectParentTraversal: true,
+      )!;
+      final hasDeclaredModule =
+          wasmModulePaths.contains(normalizedRuntimeModulePath);
+      if (!hasDeclaredModule) {
+        throw const FormatException(
+          'Plugin runtime module_path not found in package',
+        );
+      }
+    }
     final capabilities = _parseCapabilities(manifest['capabilities']);
 
     return WasmPluginPackagePreflight(
       packageKind: 'zip',
       pluginId: pluginId,
+      pluginVersion: pluginVersion,
       contractKind: contractKind,
+      runtimeAbi: runtimeAbi,
+      runtimeEntryExport: runtimeEntryExport,
+      runtimeModulePath: runtimeModulePath,
       capabilities: capabilities,
     );
+  }
+
+  String? _parseRuntimeModulePath(Object? raw) {
+    if (raw == null) return null;
+    final value = raw.toString().trim();
+    if (value.isEmpty) {
+      throw const FormatException(
+        'Plugin runtime module_path must be a non-empty string',
+      );
+    }
+    final normalized = _normalizeArchivePath(
+      value,
+      rejectParentTraversal: true,
+    )!;
+    if (!normalized.toLowerCase().endsWith('.wasm')) {
+      throw const FormatException(
+        'Plugin runtime module_path must point to a .wasm file',
+      );
+    }
+    return normalized;
+  }
+
+  String? _normalizeArchivePath(
+    String path, {
+    bool rejectParentTraversal = false,
+  }) {
+    var normalized = path.replaceAll('\\', '/').trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    while (normalized.startsWith('./')) {
+      normalized = normalized.substring(2);
+    }
+    while (normalized.startsWith('/')) {
+      normalized = normalized.substring(1);
+    }
+    final segments = normalized.split('/');
+    final hasParentTraversal =
+        segments.any((segment) => segment.trim() == '..');
+    if (hasParentTraversal) {
+      if (rejectParentTraversal) {
+        throw const FormatException(
+          'Plugin runtime module_path must not include parent traversal',
+        );
+      }
+      return null;
+    }
+    return normalized;
+  }
+
+  String? _parsePluginVersion(Map<String, dynamic> manifest) {
+    final raw = manifest['release_version'] ?? manifest['plugin_version'];
+    final value = raw?.toString().trim() ?? '';
+    return value.isEmpty ? null : value;
   }
 
   List<String> _parseCapabilities(Object? raw) {

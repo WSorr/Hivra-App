@@ -184,7 +184,27 @@ void main() {
           packageId: 'pkg-123',
           packageVersion: '1.0.0',
           packageKind: 'zip',
-          contractKind: 'trade_signal_v1',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          runtimeModulePath: 'plugin/module.wasm',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+          capabilities: <String>[
+            'oracle.read.mock_weather',
+            'consensus_guard.read',
+            'consensus_guard.read',
+          ],
+        ),
+        resolveRuntimeInvoke: (request, binding) async =>
+            const PluginRuntimeInvokeEvidence(
+          mode: 'wasm_stub_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex:
+              'abababababababababababababababababababababababababababababababab',
+          invokeDigestHex:
+              'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
         ),
       );
 
@@ -202,7 +222,465 @@ void main() {
       expect(response.executionPackageId, 'pkg-123');
       expect(response.executionPackageVersion, '1.0.0');
       expect(response.executionPackageKind, 'zip');
-      expect(response.executionContractKind, 'trade_signal_v1');
+      expect(response.executionPackageDigestHex,
+          'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');
+      expect(
+          response.executionContractKind, 'temperature_tomorrow_liechtenstein');
+      expect(response.executionRuntimeMode, 'wasm_stub_v1');
+      expect(response.executionRuntimeAbi, 'hivra_host_abi_v1');
+      expect(response.executionRuntimeEntryExport, 'hivra_entry_v1');
+      expect(response.executionRuntimeModulePath, 'plugin/module.wasm');
+      expect(response.executionRuntimeModuleSelection, 'manifest_module_path');
+      expect(response.executionRuntimeModuleDigestHex,
+          'abababababababababababababababababababababababababababababababab');
+      expect(response.executionRuntimeInvokeDigestHex,
+          'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd');
+      expect(
+        response.executionCapabilities,
+        <String>[
+          'consensus_guard.read',
+          'oracle.read.mock_weather',
+        ],
+      );
+      expect(
+        response.canonicalJson,
+        contains(
+          '"execution_capabilities":["consensus_guard.read","oracle.read.mock_weather"]',
+        ),
+      );
+    });
+
+    test('prefers runtime-selected module path over manifest module_path',
+        () async {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) {
+          return PluginDemoRunResult(
+            state: PluginDemoRunState.executed,
+            pairResults: const <PluginDemoPairRunResult>[
+              PluginDemoPairRunResult(
+                peerHex: _peerHex,
+                peerLabel: 'peer',
+                settlement: TemperatureContractSettlement(
+                  pluginId: PluginHostApiService.temperaturePluginId,
+                  peerHex: _peerHex,
+                  locationCode: 'LI',
+                  targetDateUtc: '2026-04-01',
+                  thresholdDeciCelsius: 85,
+                  observedDeciCelsius: 90,
+                  proposerRule: TemperatureOutcomeRule.above,
+                  outcome: TemperatureContractOutcome.proposerWins,
+                  winnerRole: 'proposer',
+                  canonicalJson: '{"demo":"settlement"}',
+                  settlementHashHex:
+                      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                  oracleSourceId: 'oracle.mock.weather.v1',
+                  oracleEventId: 'evt-1',
+                  oracleRecordedAtUtc: '2026-04-01T12:00:00Z',
+                ),
+                blockingFacts: <ConsensusBlockingFact>[],
+              ),
+            ],
+            blockingFacts: const <ConsensusBlockingFact>[],
+          );
+        },
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          runtimeModulePath: 'plugin/manifest_path.wasm',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+        ),
+        resolveRuntimeInvoke: (request, binding) async =>
+            const PluginRuntimeInvokeEvidence(
+          mode: 'wasm_stub_v1',
+          modulePath: 'plugin/selected_path.wasm',
+          moduleSelection: 'lexical_first_wasm',
+          moduleDigestHex:
+              'abababababababababababababababababababababababababababababababab',
+          invokeDigestHex:
+              'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+        ),
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.executed);
+      expect(response.executionRuntimeModulePath, 'plugin/selected_path.wasm');
+      expect(response.executionRuntimeModuleSelection, 'lexical_first_wasm');
+      expect(response.canonicalJson, contains('plugin/selected_path.wasm'));
+      expect(
+        response.canonicalJson.contains('plugin/manifest_path.wasm'),
+        isFalse,
+      );
+    });
+
+    test(
+        'rejects external package when runtime contract kind mismatches plugin id',
+        () async {
+      var runCalled = false;
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) {
+          runCalled = true;
+          return const PluginDemoRunResult(
+            state: PluginDemoRunState.noPairwisePaths,
+            pairResults: <PluginDemoPairRunResult>[],
+            blockingFacts: <ConsensusBlockingFact>[],
+          );
+        },
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          runtimeModulePath: 'plugin/module.wasm',
+          contractKind: 'capsule_chat',
+        ),
+        resolveRuntimeInvoke: (_, __) async =>
+            const PluginRuntimeInvokeEvidence(
+          mode: 'wasm_stub_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex:
+              'abababababababababababababababababababababababababababababababab',
+          invokeDigestHex:
+              'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+        ),
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_contract_kind_mismatch');
+      expect(
+        response.errorMessage,
+        'Runtime contract kind does not match requested plugin id',
+      );
+      expect(runCalled, isFalse);
+    });
+
+    test('executes external package when required capabilities are declared',
+        () async {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) {
+          return const PluginDemoRunResult(
+            state: PluginDemoRunState.noPairwisePaths,
+            pairResults: <PluginDemoPairRunResult>[],
+            blockingFacts: <ConsensusBlockingFact>[],
+          );
+        },
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          runtimeModulePath: 'plugin/module.wasm',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+          capabilities: <String>[
+            'oracle.read.mock_weather',
+            'consensus_guard.read',
+          ],
+        ),
+        resolveRuntimeInvoke: (_, __) async =>
+            const PluginRuntimeInvokeEvidence(
+          mode: 'wasm_stub_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex:
+              'abababababababababababababababababababababababababababababababab',
+          invokeDigestHex:
+              'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+        ),
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.blocked);
+      expect(response.errorCode, isNull);
+    });
+
+    test(
+        'executes external package when temperature oracle capability uses li variant',
+        () async {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) {
+          return const PluginDemoRunResult(
+            state: PluginDemoRunState.noPairwisePaths,
+            pairResults: <PluginDemoPairRunResult>[],
+            blockingFacts: <ConsensusBlockingFact>[],
+          );
+        },
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          runtimeModulePath: 'plugin/module.wasm',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+          capabilities: <String>[
+            'consensus_guard.read',
+            'oracle.read.temperature.li',
+          ],
+        ),
+        resolveRuntimeInvoke: (_, __) async =>
+            const PluginRuntimeInvokeEvidence(
+          mode: 'wasm_stub_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex:
+              'abababababababababababababababababababababababababababababababab',
+          invokeDigestHex:
+              'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+        ),
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.blocked);
+      expect(response.errorCode, isNull);
+    });
+
+    test(
+        'rejects external package when runtime capabilities miss required grants',
+        () async {
+      var runCalled = false;
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) {
+          runCalled = true;
+          return const PluginDemoRunResult(
+            state: PluginDemoRunState.noPairwisePaths,
+            pairResults: <PluginDemoPairRunResult>[],
+            blockingFacts: <ConsensusBlockingFact>[],
+          );
+        },
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          runtimeModulePath: 'plugin/module.wasm',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+          capabilities: <String>[
+            'consensus_guard.read',
+          ],
+        ),
+        resolveRuntimeInvoke: (_, __) async =>
+            const PluginRuntimeInvokeEvidence(
+          mode: 'wasm_stub_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex:
+              'abababababababababababababababababababababababababababababababab',
+          invokeDigestHex:
+              'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+        ),
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_capability_mismatch');
+      expect(
+        response.errorMessage,
+        'Runtime capabilities are missing required grants',
+      );
+      expect(runCalled, isFalse);
+    });
+
+    test(
+        'rejects external package when runtime capabilities contain unsupported values',
+        () async {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) {
+          return const PluginDemoRunResult(
+            state: PluginDemoRunState.noPairwisePaths,
+            pairResults: <PluginDemoPairRunResult>[],
+            blockingFacts: <ConsensusBlockingFact>[],
+          );
+        },
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          runtimeModulePath: 'plugin/module.wasm',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+          capabilities: <String>[
+            'consensus_guard.read',
+            'oracle.read.mock_weather',
+            'unsupported.capability',
+          ],
+        ),
+        resolveRuntimeInvoke: (_, __) async =>
+            const PluginRuntimeInvokeEvidence(
+          mode: 'wasm_stub_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex:
+              'abababababababababababababababababababababababababababababababab',
+          invokeDigestHex:
+              'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+        ),
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_capability_mismatch');
+      expect(
+        response.errorMessage,
+        'Runtime capabilities contain unsupported entries',
+      );
     });
 
     test('returns rejected response for unsupported plugin id', () {
@@ -238,6 +716,228 @@ void main() {
       expect(response.status, PluginHostApiStatus.rejected);
       expect(response.errorCode, 'unsupported_plugin');
       expect(response.result, isNull);
+    });
+
+    test('returns rejected response for invalid runtime binding shape',
+        () async {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'tar',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+        ),
+        resolveRuntimeInvoke: (_, __) async =>
+            const PluginRuntimeInvokeEvidence(
+          mode: 'wasm_stub_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex:
+              'abababababababababababababababababababababababababababababababab',
+          invokeDigestHex:
+              'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+        ),
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_binding_invalid');
+      expect(
+        response.errorMessage,
+        'Runtime binding package_kind is invalid',
+      );
+    });
+
+    test('returns rejected response when runtime invoke is invalid', () async {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'wrong_abi',
+          runtimeEntryExport: 'hivra_entry_v1',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+        ),
+        resolveRuntimeInvoke: (_, __) async =>
+            throw const FormatException('Plugin runtime ABI mismatch'),
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_invoke_invalid');
+      expect(response.errorMessage, 'Plugin runtime ABI mismatch');
+    });
+
+    test(
+        'returns rejected response when runtime invoke detects package digest mismatch',
+        () async {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+        ),
+        resolveRuntimeInvoke: (_, __) async =>
+            throw const FormatException('Plugin package digest mismatch'),
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_invoke_invalid');
+      expect(response.errorMessage, 'Plugin package digest mismatch');
+    });
+
+    test(
+        'returns rejected response when runtime invoke evidence is unavailable',
+        () async {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({
+          required contract,
+          required observation,
+        }) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-123',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          contractKind: 'temperature_tomorrow_liechtenstein',
+        ),
+        resolveRuntimeInvoke: (_, __) async => null,
+      );
+
+      final response = await service.executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.temperaturePluginId,
+          method: PluginHostApiService.settleTemperatureMethod,
+          args: _validArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_invoke_unavailable');
+      expect(
+        response.errorMessage,
+        'Runtime invoke evidence unavailable for external package',
+      );
     });
 
     test('returns rejected response for invalid args', () {
@@ -501,6 +1201,67 @@ void main() {
         response.blockingFacts.map((fact) => fact.code),
         contains('pending_invitation'),
       );
+    });
+
+    test(
+        'returns blocked response for capsule chat with pending_remote_break fact',
+        () {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({required contract, required observation}) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runBingxSpotOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[
+            ConsensusBlockingFact(
+              code: 'pending_remote_break',
+              subjectId:
+                  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            ),
+            ConsensusBlockingFact(
+              code: 'pending_invitation',
+              subjectId: 'deadbeef',
+            ),
+          ],
+        ),
+      );
+
+      final response = service.execute(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.capsuleChatPluginId,
+          method: PluginHostApiService.postCapsuleChatMethod,
+          args: <String, dynamic>{
+            'peer_hex': _peerHex,
+            'client_message_id': 'm4',
+            'message_text': 'hello pending break',
+            'created_at_utc': '2026-04-04T10:00:00Z',
+          },
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.blocked);
+      expect(response.errorCode, isNull);
+      expect(response.result, isNull);
+      expect(
+        response.blockingFacts.map((fact) => fact.code),
+        contains('pending_remote_break'),
+      );
+      expect(
+        response.canonicalJson.contains('"code":"pending_remote_break"'),
+        isTrue,
+      );
+      expect(response.responseHashHex.length, equals(64));
     });
 
     test('returns rejected response for capsule chat invalid args', () {

@@ -48,7 +48,11 @@ class Invitation {
 
   bool get isIncoming => toPubkey == null;
   bool get isOutgoing => toPubkey != null;
-  bool get isExpired => expiresAt != null && expiresAt!.isBefore(DateTime.now());
+  bool get isExpired =>
+      status == InvitationStatus.expired ||
+      (status == InvitationStatus.pending &&
+          expiresAt != null &&
+          expiresAt!.isBefore(DateTime.now()));
 
   String get peerKeyDisplay {
     final raw = isIncoming ? fromPubkey : (toPubkey ?? '');

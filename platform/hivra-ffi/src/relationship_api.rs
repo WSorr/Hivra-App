@@ -104,23 +104,33 @@ pub unsafe extern "C" fn hivra_break_relationship(
         invitation_id: None,
     };
 
-    let delivered =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Default, -5, |transport| {
-            transport.send(message).map_err(|err| {
-                eprintln!(
-                    "[Delivery/Nostr] RelationshipBroken delivery failed: {:?}",
-                    err
-                );
-                -6
-            })
-        });
-    if let Err(code) = delivered {
-        return code;
-    }
-
     if append_prepared_event(local_prepared).is_err() {
         return -7;
     }
+
+    // Local sovereignty is ledger-first: once local break is appended, pairwise
+    // local truth must not depend on remote transport availability. Delivery is
+    // best-effort for peer convergence and must not block UI-facing FFI callers.
+    let delivery_secret = sender_secret;
+    let delivery_message = message.clone();
+    std::thread::spawn(move || {
+        if let Err(code) =
+            with_cached_nostr_transport(delivery_secret, TransportProfile::Quick, -5, |transport| {
+                transport.send(delivery_message.clone()).map_err(|err| {
+                    eprintln!(
+                        "[Delivery/Nostr] RelationshipBroken local append ok; delivery failed: {:?}",
+                        err
+                    );
+                    -6
+                })
+            })
+        {
+            eprintln!(
+                "[Delivery/Nostr] RelationshipBroken local append ok; delivery unavailable ({})",
+                code
+            );
+        }
+    });
 
     0
 }

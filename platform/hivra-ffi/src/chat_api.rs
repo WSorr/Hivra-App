@@ -178,9 +178,9 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
     };
 
     if let Err(code) =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Default, -5, |transport| {
+        with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
             transport
-                .send(message)
+                .send(message.clone())
                 .map_err(|err| map_delivery_error(err, -6))
         })
     {

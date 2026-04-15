@@ -33,6 +33,7 @@ class ConsensusRuntimeService {
   final LedgerExporter _exportLedger;
   final TransportKeyReader _readLocalTransportKey;
   final RootKeyReader _readLocalRootKey;
+  final ConsensusSignatureVerifier? _verifySignature;
   final LedgerViewSupport _support;
   final ConsensusProcessor _processor;
 
@@ -40,11 +41,13 @@ class ConsensusRuntimeService {
     required LedgerExporter exportLedger,
     required TransportKeyReader readLocalTransportKey,
     RootKeyReader? readLocalRootKey,
+    ConsensusSignatureVerifier? verifySignature,
     LedgerViewSupport support = const LedgerViewSupport(),
     ConsensusProcessor processor = const ConsensusProcessor(),
   })  : _exportLedger = exportLedger,
         _readLocalTransportKey = readLocalTransportKey,
         _readLocalRootKey = readLocalRootKey ?? _nullKeyReader,
+        _verifySignature = verifySignature,
         _support = support,
         _processor = processor;
 
@@ -105,6 +108,7 @@ class ConsensusRuntimeService {
     return _processor.verify(
       expectedHashHex: expectedHashHex,
       participants: participants,
+      verifySignature: _verifySignature,
     );
   }
 

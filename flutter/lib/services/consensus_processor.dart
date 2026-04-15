@@ -24,6 +24,9 @@ class ConsensusBlockingFact {
         'relationship_broken' => subjectId == null
             ? 'Relationship broken'
             : 'Relationship broken ${_shortId(subjectId!)}',
+        'pending_remote_break' => subjectId == null
+            ? 'Pending remote break'
+            : 'Pending remote break ${_shortId(subjectId!)}',
         'no_active_relationship' => subjectId == null
             ? 'No active relationship'
             : 'No active relationship with ${_shortId(subjectId!)}',
@@ -158,6 +161,7 @@ class ConsensusProcessor {
     final relationshipFactsByPeer = <String, List<_PairwiseRelationshipFact>>{};
     final pendingInvitationIdsByPeer = <String, Set<String>>{};
     final brokenRelationshipIdsByPeer = <String, Set<String>>{};
+    final pendingRemoteBreakIdsByPeer = <String, Set<String>>{};
     final unresolvedLegacyBreaks = <_PendingLegacyBreakFact>[];
     void remapTransportPeerToRoot({
       required String transportPeerHex,
@@ -184,6 +188,13 @@ class ConsensusProcessor {
         brokenRelationshipIdsByPeer
             .putIfAbsent(rootedPeerHex, () => <String>{})
             .addAll(brokenRelationshipIds);
+      }
+      final pendingRemoteBreakIds =
+          pendingRemoteBreakIdsByPeer.remove(transportPeerHex);
+      if (pendingRemoteBreakIds != null && pendingRemoteBreakIds.isNotEmpty) {
+        pendingRemoteBreakIdsByPeer
+            .putIfAbsent(rootedPeerHex, () => <String>{})
+            .addAll(pendingRemoteBreakIds);
       }
     }
 
@@ -216,6 +227,13 @@ class ConsensusProcessor {
       brokenRelationshipIdsByPeer
           .putIfAbsent(peerRootHex, () => <String>{})
           .add(ownStarterId);
+      final pendingRemote = pendingRemoteBreakIdsByPeer[peerRootHex];
+      if (pendingRemote != null) {
+        pendingRemote.remove(ownStarterId);
+        if (pendingRemote.isEmpty) {
+          pendingRemoteBreakIdsByPeer.remove(peerRootHex);
+        }
+      }
     }
 
     for (var eventIndex = 0; eventIndex < events.length; eventIndex++) {
@@ -226,21 +244,32 @@ class ConsensusProcessor {
 
       if ((kind == 'InvitationSent' || kind == 'InvitationReceived') &&
           payload.length >= 96) {
-        final isIncoming = kind == 'InvitationReceived';
-        if (!isIncoming &&
-            localTransportHex != null &&
-            _hex(payload.sublist(64, 96)) == localTransportHex) {
-          continue;
+        final toPubkeyHex = _hex(payload.sublist(64, 96));
+        final signerHex = signer == null ? null : _hex(signer);
+        final isIncomingByAddress =
+            toPubkeyHex == localTransportHex || toPubkeyHex == localRootHex;
+        final signerIsSelf = signerHex != null &&
+            (signerHex == localTransportHex || signerHex == localRootHex);
+        if (kind == 'InvitationReceived') {
+          if (signerHex == null || !isIncomingByAddress || signerIsSelf) {
+            continue;
+          }
+        } else {
+          if (signerHex != null) {
+            if (!signerIsSelf && !isIncomingByAddress) {
+              continue;
+            }
+          } else if (isIncomingByAddress) {
+            // Legacy signer-less InvitationSent rows addressed to local identity
+            // are ambiguous; skip to avoid self-loop/foreign drift.
+            continue;
+          }
         }
-        if (isIncoming &&
-            localTransportHex != null &&
-            _hex(payload.sublist(64, 96)) != localTransportHex) {
-          continue;
-        }
-        if (isIncoming &&
-            localTransportHex != null &&
-            signer != null &&
-            _hex(signer) == localTransportHex) {
+
+        final isIncoming = kind == 'InvitationReceived' ||
+            (signerHex != null && isIncomingByAddress && !signerIsSelf);
+        if (!isIncoming && signerIsSelf && isIncomingByAddress) {
+          // Ignore self-loop outgoing offers in pairwise consensus.
           continue;
         }
         final invitationId = _hex(payload.sublist(0, 32));
@@ -249,8 +278,8 @@ class ConsensusProcessor {
           () => _PairwiseInviteFact(invitationId),
         );
         final transportPeerHex = isIncoming
-            ? (signer == null ? null : _hex(signer))
-            : _hex(payload.sublist(64, 96));
+            ? signerHex
+            : toPubkeyHex;
         if (transportPeerHex != null && transportPeerHex.isNotEmpty) {
           inviteTransportPeerById[invitationId] = transportPeerHex;
         }
@@ -260,10 +289,10 @@ class ConsensusProcessor {
         if (starterKind != null) {
           fact.starterKinds.add(starterKind);
         }
-        if (isIncoming &&
+        if (kind == 'InvitationReceived' &&
+            isIncoming &&
             payload.length >= 128 &&
-            (localTransportHex == null ||
-                _hex(payload.sublist(64, 96)) == localTransportHex)) {
+            toPubkeyHex == localTransportHex) {
           final rootedPeerHex = _hex(payload.sublist(96, 128));
           inviteRootPeerById[invitationId] = rootedPeerHex;
           if (transportPeerHex != null && transportPeerHex.isNotEmpty) {
@@ -353,12 +382,48 @@ class ConsensusProcessor {
             brokenRelationshipIdsByPeer.remove(resolvedPeerRootHex);
           }
         }
+        final pendingRemoteForPeer =
+            pendingRemoteBreakIdsByPeer[resolvedPeerRootHex];
+        if (pendingRemoteForPeer != null) {
+          pendingRemoteForPeer.remove(ownStarterId);
+          if (pendingRemoteForPeer.isEmpty) {
+            pendingRemoteBreakIdsByPeer.remove(resolvedPeerRootHex);
+          }
+        }
       } else if (kind == 'RelationshipBroken' && payload.length >= 64) {
         final peerRootHex = payload.length >= 96
             ? _hex(payload.sublist(64, 96))
             : transportPeerToRootPeer[_hex(payload.sublist(0, 32))];
         if (peerRootHex != null && peerRootHex.isNotEmpty) {
           final ownStarterId = _hex(payload.sublist(32, 64));
+          final signerHex = signer == null ? null : _hex(signer);
+          if (localRootHex != null && signerHex == null) {
+            // With known local root identity, unsigned/malformed break events
+            // cannot be deterministically classified as local-finalized vs
+            // remote-pending, so they must not mutate consensus state.
+            continue;
+          }
+          final signerMatchesLocalTransport = signerHex != null &&
+              localTransportHex != null &&
+              signerHex == localTransportHex;
+          final signerMatchesLocalRoot = signerHex != null &&
+              localRootHex != null &&
+              signerHex == localRootHex;
+          final signerMatchesLocal =
+              signerMatchesLocalTransport || signerMatchesLocalRoot;
+          final classifyRemotePending =
+              signerHex != null && localRootHex != null && !signerMatchesLocal;
+          if (classifyRemotePending) {
+            final localBrokenForPeer = brokenRelationshipIdsByPeer[peerRootHex];
+            final isAlreadyLocallyBroken =
+                localBrokenForPeer?.contains(ownStarterId) ?? false;
+            if (!isAlreadyLocallyBroken) {
+              pendingRemoteBreakIdsByPeer
+                  .putIfAbsent(peerRootHex, () => <String>{})
+                  .add(ownStarterId);
+            }
+            continue;
+          }
           applyBreakForPeer(
             peerRootHex: peerRootHex,
             ownStarterId: ownStarterId,
@@ -389,10 +454,13 @@ class ConsensusProcessor {
       switch (kind) {
         case 'InvitationAccepted':
           fact.accepted = true;
+          final signerHex = signer == null ? null : _hex(signer);
           if (payload.length >= 128 &&
               localTransportHex != null &&
               _hex(payload.sublist(32, 64)) == localTransportHex &&
-              (signer == null || _hex(signer) != localTransportHex)) {
+              signerHex != null &&
+              signerHex != localTransportHex &&
+              (localRootHex == null || signerHex != localRootHex)) {
             inviteRootPeerById[invitationId] = _hex(payload.sublist(96, 128));
           }
           break;
@@ -458,10 +526,14 @@ class ConsensusProcessor {
       ...relationshipFactsByPeer.keys,
       ...pendingInvitationIdsByPeer.keys,
       ...brokenRelationshipIdsByPeer.keys,
+      ...pendingRemoteBreakIdsByPeer.keys,
     }.toList()
       ..sort();
     if (localRootHex != null) {
       peers.removeWhere((peer) => peer == localRootHex);
+    }
+    if (localTransportHex != null) {
+      peers.removeWhere((peer) => peer == localTransportHex);
     }
 
     for (final peerRootHex in peers) {
@@ -490,6 +562,15 @@ class ConsensusProcessor {
           (id) => ConsensusBlockingFact(
             code: 'pending_invitation',
             subjectId: id,
+          ),
+        ),
+        ...((pendingRemoteBreakIdsByPeer[peerRootHex] ?? const <String>{})
+                .toList()
+              ..sort())
+            .map(
+          (starterId) => ConsensusBlockingFact(
+            code: 'pending_remote_break',
+            subjectId: starterId,
           ),
         ),
       ];

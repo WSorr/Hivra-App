@@ -21,6 +21,7 @@ class InvitationIntentResult {
 
 class InvitationIntentHandler {
   static const Duration _quickFetchCooldown = Duration(seconds: 8);
+  static const Duration _sendPendingRecencyWindow = Duration(seconds: 10);
   static const Set<int> _softSendDeliveryCodes = <int>{
     -5,
     -7,
@@ -28,6 +29,10 @@ class InvitationIntentHandler {
     -12,
     -13,
     -14,
+  };
+  static const Set<int> _sendDeliveryProbeCodes = <int>{
+    ..._softSendDeliveryCodes,
+    -1003,
   };
   static const Set<int> _softAcceptDeliveryCodes = <int>{
     -6,
@@ -37,10 +42,20 @@ class InvitationIntentHandler {
     -13,
     -14,
   };
+  static const Set<int> _softRejectDeliveryCodes = <int>{
+    -5,
+    -6,
+    -11,
+    -12,
+    -13,
+    -14,
+  };
   static final Map<String, Future<InvitationIntentResult>>
       _quickFetchInFlightByCapsule = <String, Future<InvitationIntentResult>>{};
   static final Map<String, DateTime> _lastQuickFetchAtByCapsule =
       <String, DateTime>{};
+  static final Map<String, Future<InvitationIntentResult>>
+      _sendInFlightByIntentKey = <String, Future<InvitationIntentResult>>{};
 
   final InvitationActionsService? _actions;
   final InvitationDeliveryService _delivery;
@@ -78,12 +93,87 @@ class InvitationIntentHandler {
     Uint8List toPubkey,
     int starterSlot,
   ) async {
-    final workerResult =
-        await _requireActions().sendInvitation(toPubkey, starterSlot);
+    final capsuleHex = _activeCapsuleHex();
+    final operationCapsuleHex =
+        _isUnknownCapsuleKey(capsuleHex) ? null : capsuleHex;
+    if (_isUnknownCapsuleKey(capsuleHex)) {
+      return _sendInvitationUncached(
+        toPubkey,
+        starterSlot,
+        capsuleHex: operationCapsuleHex,
+      );
+    }
+    final sendKey = _sendInFlightKey(
+      capsuleHex: capsuleHex,
+      toPubkey: toPubkey,
+      starterSlot: starterSlot,
+    );
+    final inFlight = _sendInFlightByIntentKey[sendKey];
+    if (inFlight != null) {
+      return inFlight;
+    }
+
+    final operation = _sendInvitationUncached(
+      toPubkey,
+      starterSlot,
+      capsuleHex: operationCapsuleHex,
+    );
+    _sendInFlightByIntentKey[sendKey] = operation;
+    try {
+      return await operation;
+    } finally {
+      _sendInFlightByIntentKey.remove(sendKey);
+    }
+  }
+
+  Future<InvitationIntentResult> _sendInvitationUncached(
+      Uint8List toPubkey, int starterSlot,
+      {String? capsuleHex}) async {
+    final sendStartedAt = DateTime.now();
+    final minPendingSentAt =
+        sendStartedAt.subtract(_sendPendingRecencyWindow);
+    final recipientPubkeyB64 = base64.encode(toPubkey);
+    final pendingIdsBeforeSend = _pendingOutgoingInvitationIds(
+      toPubkeyB64: recipientPubkeyB64,
+      starterSlot: starterSlot,
+    );
+    final workerResult = await _requireActions().sendInvitation(
+      toPubkey,
+      starterSlot,
+      capsuleHex: capsuleHex,
+    );
     final code = workerResult.code;
     final hasWorkerLedger = (workerResult.ledgerJson?.isNotEmpty ?? false);
-    final localPendingRecorded =
-        hasWorkerLedger && _softSendDeliveryCodes.contains(code);
+    final localPendingRecorded = hasWorkerLedger &&
+        _softSendDeliveryCodes.contains(code) &&
+        _hasNewPendingOutgoingInvitation(
+          toPubkeyB64: recipientPubkeyB64,
+          starterSlot: starterSlot,
+          previousPendingIds: pendingIdsBeforeSend,
+          minSentAt: minPendingSentAt,
+        );
+    final localPendingProjectedAfterFailure = !localPendingRecorded &&
+        code != 0 &&
+        _hasNewPendingOutgoingInvitation(
+          toPubkeyB64: recipientPubkeyB64,
+          starterSlot: starterSlot,
+          previousPendingIds: pendingIdsBeforeSend,
+          minSentAt: minPendingSentAt,
+        );
+    final localPendingConfirmedAfterFetch = !localPendingRecorded &&
+        code != 0 &&
+        _sendDeliveryProbeCodes.contains(code) &&
+        await _confirmPendingOutgoingByQuickFetch(
+          toPubkeyB64: recipientPubkeyB64,
+          starterSlot: starterSlot,
+          previousPendingIds: pendingIdsBeforeSend,
+          minSentAt: minPendingSentAt,
+        );
+    final localPendingSource = localPendingRecorded
+        ? 'worker'
+        : localPendingConfirmedAfterFetch
+            ? 'quick_fetch'
+            : null;
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
         ? ' [code: $code; ffi: $lastError]'
@@ -94,11 +184,18 @@ class InvitationIntentHandler {
         message: _delivery.invitationSentMessage(),
       );
     }
-    if (localPendingRecorded) {
+    if (localPendingRecorded || localPendingConfirmedAfterFetch) {
       return InvitationIntentResult(
         code: 0,
         message:
-            '${_delivery.sendFailureMessage(code)} Local pending invitation is recorded.$diagnostics',
+            '${_delivery.sendFailureMessage(code)} Local pending invitation is recorded (source: $localPendingSource).$diagnostics',
+      );
+    }
+    if (localPendingProjectedAfterFailure) {
+      return InvitationIntentResult(
+        code: code,
+        message:
+            '${_delivery.sendFailureMessage(code)} Pending invitation appeared in local projection but was not confirmed.$diagnostics',
       );
     }
     return InvitationIntentResult(
@@ -107,21 +204,38 @@ class InvitationIntentHandler {
     );
   }
 
+  String _sendInFlightKey({
+    required String capsuleHex,
+    required Uint8List toPubkey,
+    required int starterSlot,
+  }) {
+    return '$capsuleHex|$starterSlot|${base64.encode(toPubkey)}';
+  }
+
   Future<InvitationIntentResult> fetchInvitations() async {
+    final capsuleHex = _activeCapsuleHexOrNull();
     final workerResult = await (_fetchInvitationsAction?.call() ??
-        _requireActions().fetchInvitations());
+        _requireActions().fetchInvitations(capsuleHex: capsuleHex));
     final code = workerResult.code;
     await _expireOverdueOutgoingInvitationsIfNeeded();
+    final diagnostics = _receiveDiagnostics(workerResult);
     return InvitationIntentResult(
       code: code,
       message: code >= 0
           ? _delivery.fetchSuccessMessage(code)
-          : _delivery.receiveFailureMessage(code),
+          : '${_delivery.receiveFailureMessage(code)}$diagnostics',
     );
   }
 
   Future<InvitationIntentResult> fetchInvitationsQuick() async {
     final capsuleHex = _activeCapsuleHex();
+    final isUnknownCapsule = _isUnknownCapsuleKey(capsuleHex);
+    if (isUnknownCapsule) {
+      // Do not dedupe/cooldown unknown capsule identity: at startup or during
+      // capsule switches this placeholder key can alias different capsules.
+      return _fetchInvitationsQuickUncached();
+    }
+
     final inFlight = _quickFetchInFlightByCapsule[capsuleHex];
     if (inFlight != null) {
       return inFlight;
@@ -141,7 +255,9 @@ class InvitationIntentHandler {
     _quickFetchInFlightByCapsule[capsuleHex] = operation;
     try {
       final result = await operation;
-      _lastQuickFetchAtByCapsule[capsuleHex] = DateTime.now();
+      if (result.code >= 0) {
+        _lastQuickFetchAtByCapsule[capsuleHex] = DateTime.now();
+      }
       return result;
     } finally {
       _quickFetchInFlightByCapsule.remove(capsuleHex);
@@ -149,28 +265,62 @@ class InvitationIntentHandler {
   }
 
   Future<InvitationIntentResult> _fetchInvitationsQuickUncached() async {
+    final capsuleHex = _activeCapsuleHexOrNull();
     final workerResult = await (_fetchInvitationsQuickAction?.call() ??
-        _requireActions().fetchInvitationsQuick());
+        _requireActions().fetchInvitationsQuick(capsuleHex: capsuleHex));
     final code = workerResult.code;
     await _expireOverdueOutgoingInvitationsIfNeeded();
+    final diagnostics = _receiveDiagnostics(workerResult);
     return InvitationIntentResult(
       code: code,
       message: code >= 0
           ? _delivery.fetchSuccessMessage(code)
-          : _delivery.receiveFailureMessage(code),
+          : '${_delivery.receiveFailureMessage(code)}$diagnostics',
     );
+  }
+
+  String _receiveDiagnostics(InvitationWorkerResult workerResult) {
+    final code = workerResult.code;
+    final lastError = workerResult.lastError?.trim();
+    if (lastError != null && lastError.isNotEmpty) {
+      return ' [code: $code; ffi: $lastError]';
+    }
+    return ' [code: $code]';
   }
 
   Future<InvitationIntentResult> acceptInvitation(
     Uint8List invitationId,
     Uint8List fromPubkey,
   ) async {
-    final workerResult =
-        await _requireActions().acceptInvitation(invitationId, fromPubkey);
+    final invitationIdB64 = base64.encode(invitationId);
+    final localInvitation = _findInvitationById(invitationIdB64);
+    if (localInvitation != null) {
+      if (localInvitation.status != InvitationStatus.pending) {
+        return const InvitationIntentResult(
+          code: 0,
+          message: 'Invitation already resolved',
+        );
+      }
+      if (!localInvitation.isIncoming) {
+        return const InvitationIntentResult(
+          code: -1,
+          message: 'Only incoming invitations can be accepted',
+        );
+      }
+    }
+
+    final workerResult = await _requireActions().acceptInvitation(
+      invitationId,
+      fromPubkey,
+      capsuleHex: _activeCapsuleHexOrNull(),
+    );
     final code = workerResult.code;
     final hasWorkerLedger = (workerResult.ledgerJson?.isNotEmpty ?? false);
     final localAcceptanceRecorded =
         hasWorkerLedger && _softAcceptDeliveryCodes.contains(code);
+    final localAcceptedAfterFailure = !localAcceptanceRecorded &&
+        code != 0 &&
+        _isInvitationLocallyAccepted(invitationIdB64);
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
         ? ' [code: $code; ffi: $lastError]'
@@ -181,7 +331,7 @@ class InvitationIntentHandler {
         message: 'Invitation accepted',
       );
     }
-    if (localAcceptanceRecorded) {
+    if (localAcceptanceRecorded || localAcceptedAfterFailure) {
       return InvitationIntentResult(
         code: 0,
         message:
@@ -195,6 +345,22 @@ class InvitationIntentHandler {
   }
 
   Future<InvitationIntentResult> rejectInvitation(Invitation invitation) async {
+    final localInvitation = _findInvitationById(invitation.id);
+    if (localInvitation != null) {
+      if (localInvitation.status != InvitationStatus.pending) {
+        return const InvitationIntentResult(
+          code: 0,
+          message: 'Invitation already resolved',
+        );
+      }
+      if (!localInvitation.isIncoming) {
+        return const InvitationIntentResult(
+          code: -1,
+          message: 'Only incoming invitations can be rejected',
+        );
+      }
+    }
+
     final invitationId = _decodeB64_32(invitation.id);
     if (invitationId == null) {
       return const InvitationIntentResult(
@@ -204,18 +370,31 @@ class InvitationIntentHandler {
     }
 
     final reason = _rejectReasonForInvitation(invitation);
-    final workerResult =
-        await _requireActions().rejectInvitation(invitationId, reason);
+    final workerResult = await _requireActions().rejectInvitation(
+      invitationId,
+      reason,
+      capsuleHex: _activeCapsuleHexOrNull(),
+    );
     final code = workerResult.code;
+    final hasWorkerLedger = (workerResult.ledgerJson?.isNotEmpty ?? false);
+    final localRejectionRecorded =
+        hasWorkerLedger && _softRejectDeliveryCodes.contains(code);
+    final localTerminalAfterFailure = !localRejectionRecorded &&
+        code != 0 &&
+        _isInvitationLocallyTerminal(invitation.id);
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
         ? ' [code: $code; ffi: $lastError]'
         : ' [code: $code]';
     return InvitationIntentResult(
-      code: code == 0 ? 0 : -1,
+      code: (code == 0 || localRejectionRecorded || localTerminalAfterFailure)
+          ? 0
+          : -1,
       message: code == 0
           ? 'Invitation rejected'
-          : 'Failed to reject invitation$diagnostics',
+          : (localRejectionRecorded || localTerminalAfterFailure)
+              ? '${_delivery.rejectFailureMessage(code)} Local rejection is recorded.$diagnostics'
+              : '${_delivery.rejectFailureMessage(code)}$diagnostics',
     );
   }
 
@@ -273,6 +452,16 @@ class InvitationIntentHandler {
     throw StateError('Invitation actions are not configured');
   }
 
+  bool _isUnknownCapsuleKey(String capsuleHex) {
+    final normalized = capsuleHex.trim().toLowerCase();
+    return normalized.isEmpty || normalized == 'unknown';
+  }
+
+  String? _activeCapsuleHexOrNull() {
+    final capsuleHex = _activeCapsuleHex();
+    return _isUnknownCapsuleKey(capsuleHex) ? null : capsuleHex;
+  }
+
   Future<void> _expireOverdueOutgoingInvitationsIfNeeded() async {
     final actions = _actions;
     if (actions == null) {
@@ -319,5 +508,96 @@ class InvitationIntentHandler {
       return false;
     }
     return respondedAt == expiresAt;
+  }
+
+  bool _isInvitationLocallyTerminal(String invitationId) {
+    final local = _findInvitationById(invitationId);
+    if (local == null) {
+      return false;
+    }
+    return local.status != InvitationStatus.pending;
+  }
+
+  bool _isInvitationLocallyAccepted(String invitationId) {
+    final local = _findInvitationById(invitationId);
+    if (local == null) {
+      return false;
+    }
+    return local.status == InvitationStatus.accepted;
+  }
+
+  Set<String> _pendingOutgoingInvitationIds({
+    required String toPubkeyB64,
+    required int starterSlot,
+    DateTime? minSentAt,
+  }) {
+    final ids = <String>{};
+    for (final invitation in loadInvitations()) {
+      if (!invitation.isOutgoing) {
+        continue;
+      }
+      if (invitation.status != InvitationStatus.pending) {
+        continue;
+      }
+      if (invitation.toPubkey != toPubkeyB64) {
+        continue;
+      }
+      if (invitation.starterSlot != starterSlot) {
+        continue;
+      }
+      if (minSentAt != null && invitation.sentAt.isBefore(minSentAt)) {
+        continue;
+      }
+      ids.add(invitation.id);
+    }
+    return ids;
+  }
+
+  bool _hasNewPendingOutgoingInvitation({
+    required String toPubkeyB64,
+    required int starterSlot,
+    required Set<String> previousPendingIds,
+    DateTime? minSentAt,
+  }) {
+    final currentIds = _pendingOutgoingInvitationIds(
+      toPubkeyB64: toPubkeyB64,
+      starterSlot: starterSlot,
+      minSentAt: minSentAt,
+    );
+    for (final id in currentIds) {
+      if (!previousPendingIds.contains(id)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _confirmPendingOutgoingByQuickFetch({
+    required String toPubkeyB64,
+    required int starterSlot,
+    required Set<String> previousPendingIds,
+    DateTime? minSentAt,
+  }) async {
+    final workerResult = await (_fetchInvitationsQuickAction?.call() ??
+        _requireActions().fetchInvitationsQuick());
+    if (workerResult.code < 0) {
+      return false;
+    }
+    await _expireOverdueOutgoingInvitationsIfNeeded();
+    return _hasNewPendingOutgoingInvitation(
+      toPubkeyB64: toPubkeyB64,
+      starterSlot: starterSlot,
+      previousPendingIds: previousPendingIds,
+      minSentAt: minSentAt,
+    );
+  }
+
+  Invitation? _findInvitationById(String invitationId) {
+    for (final invitation in loadInvitations()) {
+      if (invitation.id == invitationId) {
+        return invitation;
+      }
+    }
+    return null;
   }
 }

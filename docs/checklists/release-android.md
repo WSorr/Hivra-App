@@ -5,6 +5,8 @@ Use this checklist before publishing Android builds to testers or end users.
 ## Build
 
 - [ ] `tools/release/preflight.sh` passes before packaging.
+- [ ] `tools/release/android_release.sh --version <version> --channel <test|public>` is used for packaging.
+- [ ] `--channel` was chosen explicitly (`test` for internal/pre-release, `public` for stable release).
 - [ ] Android build includes Rust FFI artifacts from the current source state.
 - [ ] Release APK was built from the intended commit.
 
@@ -28,4 +30,6 @@ Use this checklist before publishing Android builds to testers or end users.
 
 - [ ] Release asset name clearly indicates version and target.
 - [ ] Checksums were generated for published APK assets.
+- [ ] `RELEASE-METADATA.txt` was generated and kept with release artifacts.
 - [ ] Release notes mention testing scope and known Android limitations, if any.
+- [ ] GitHub Release `Pre-release` flag matches channel (`test` => pre-release, `public` => stable release).

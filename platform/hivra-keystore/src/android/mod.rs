@@ -99,7 +99,26 @@ pub fn delete_seed() -> Result<()> {
 
 /// Returns `true` if a seed entry exists in Android secure storage.
 pub fn seed_exists() -> bool {
-    load_seed().is_ok()
+    let dir = match keystore_dir() {
+        Ok(path) => path,
+        Err(_) => return false,
+    };
+
+    let active_account = fs::read_to_string(dir.join(ACTIVE_SEED_ACCOUNT))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    if let Some(account) = active_account {
+        if matches!(seed_blob_exists(&account), Ok(true)) {
+            return true;
+        }
+        if dir.join(&account).exists() {
+            return true;
+        }
+    }
+
+    dir.join(LEGACY_SEED_FILE).exists()
 }
 
 fn load_seed_from_account(account: &str) -> Result<Seed> {
@@ -245,7 +264,6 @@ fn delete_seed_blob(account: &str) -> Result<bool> {
     })
 }
 
-#[allow(dead_code)]
 fn seed_blob_exists(account: &str) -> Result<bool> {
     with_bridge(|env, bridge| {
         let account = env

@@ -165,16 +165,24 @@ class InvitationCard extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: _timeRow(
-                      icon: invitation.status == InvitationStatus.rejected
-                          ? Icons.block
-                          : Icons.check_circle_outline,
-                      label: invitation.status == InvitationStatus.rejected
-                          ? 'Rejected'
-                          : 'Responded',
+                      icon: switch (invitation.status) {
+                        InvitationStatus.rejected => Icons.block,
+                        InvitationStatus.expired =>
+                          Icons.hourglass_disabled_outlined,
+                        _ => Icons.check_circle_outline,
+                      },
+                      label: switch (invitation.status) {
+                        InvitationStatus.rejected => 'Rejected',
+                        InvitationStatus.accepted => 'Accepted',
+                        InvitationStatus.expired => 'Expired',
+                        _ => 'Responded',
+                      },
                       value: _formatDate(invitation.respondedAt!),
                     ),
                   ),
-                if (invitation.expiresAt != null)
+                if (invitation.isOutgoing &&
+                    invitation.status == InvitationStatus.pending &&
+                    invitation.expiresAt != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: _timeRow(

@@ -110,6 +110,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         '${_launchStopwatch?.elapsedMilliseconds ?? -1} '
         'started_ms=${startedAtMs ?? -1}',
       );
+      unawaited(
+        _runDelayedQuickTransportSync(
+          reason: 'launch_follow_up',
+          delay: const Duration(seconds: 7),
+        ),
+      );
     } catch (_) {
       // Launch-time receive is best-effort only.
       debugPrint(
@@ -127,8 +133,28 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (result.code >= 0) {
         _loadCapsuleData();
       }
+      unawaited(
+        _runDelayedQuickTransportSync(
+          reason: 'resume_follow_up',
+          delay: const Duration(seconds: 7),
+        ),
+      );
     } catch (_) {
       // Resume sync is best-effort only.
+    }
+  }
+
+  Future<void> _runDelayedQuickTransportSync({
+    required String reason,
+    required Duration delay,
+  }) async {
+    await Future<void>.delayed(delay);
+    if (!mounted) return;
+
+    final result = await _runQuickTransportSync(reason: reason);
+    if (!mounted) return;
+    if (result.code >= 0) {
+      _loadCapsuleData();
     }
   }
 
@@ -152,7 +178,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     _transportQuickSyncInFlight = true;
     try {
-      return await _invitationIntents.fetchInvitationsQuick();
+      final quick = await _invitationIntents.fetchInvitationsQuick();
+      if (quick.code == -1003) {
+        debugPrint(
+          '[StartupTiming] quick_sync_timeout_fallback_full reason=$reason',
+        );
+        return await _invitationIntents.fetchInvitations();
+      }
+      return quick;
     } finally {
       _transportQuickSyncInFlight = false;
       _lastTransportQuickSyncAt = DateTime.now();
@@ -293,8 +326,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         );
       case 1:
         return InvitationsScreen(
-          key: ValueKey('invitations-$_activeCapsuleHex-$_ledgerVersion'),
+          key: ValueKey('invitations-$_activeCapsuleHex'),
           runtime: _runtime,
+          activeCapsuleHex: _activeCapsuleHex,
+          ledgerVersion: _ledgerVersion,
           onLedgerChanged: _handleLedgerChanged,
         );
       case 2:
@@ -304,7 +339,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           onLedgerChanged: _handleLedgerChanged,
         );
       case 3:
-        return const WasmPluginsScreen(embedded: true);
+        return WasmPluginsScreen(
+          key: ValueKey('plugins-$_activeCapsuleHex-$_ledgerVersion'),
+          embedded: true,
+        );
       case 4:
         return SettingsScreen(
           service: _runtime.buildSettingsService(),
@@ -391,6 +429,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: Text(_titles[_selectedIndex]),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(98),

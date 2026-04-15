@@ -14,7 +14,11 @@ class CapsuleLedgerSummaryParser {
   }) : _support = support;
 
   CapsuleLedgerSummary parse(
-      String json, String Function(Uint8List bytes) toHex) {
+    String json,
+    String Function(Uint8List bytes) toHex, {
+    Uint8List? runtimeOwnerPublicKey,
+    Uint8List? runtimeTransportPublicKey,
+  }) {
     if (json.trim().isEmpty) return CapsuleLedgerSummary.empty();
     try {
       final ledger = _support.exportLedgerRoot(json);
@@ -22,6 +26,7 @@ class CapsuleLedgerSummaryParser {
       final events = _support.events(ledger);
 
       final activeStartersById = <String, int>{};
+      final burnedStarterIds = <String>{};
 
       for (final eventRaw in events) {
         if (eventRaw is! Map) continue;
@@ -33,14 +38,22 @@ class CapsuleLedgerSummaryParser {
           case 5:
             final starter = _parseStarterCreated(payload);
             if (starter != null) {
-              activeStartersById[toHex(Uint8List.fromList(starter.starterId))] =
-                  starter.kindCode;
+              final starterIdHex = toHex(Uint8List.fromList(starter.starterId));
+              if (burnedStarterIds.contains(starterIdHex)) {
+                break;
+              }
+              if (activeStartersById.containsKey(starterIdHex)) {
+                break;
+              }
+              activeStartersById[starterIdHex] = starter.kindCode;
             }
             break;
           case 6:
             final burnedId = _parseStarterBurnedId(payload);
             if (burnedId != null) {
-              activeStartersById.remove(toHex(Uint8List.fromList(burnedId)));
+              final starterIdHex = toHex(Uint8List.fromList(burnedId));
+              activeStartersById.remove(starterIdHex);
+              burnedStarterIds.add(starterIdHex);
             }
             break;
           default:
@@ -49,46 +62,73 @@ class CapsuleLedgerSummaryParser {
       }
 
       final starterCount = activeStartersById.length.clamp(0, 5);
-      final ownerBytes = parseBytesField(ledger['owner']);
-      Uint8List? readOwner() {
-        if (ownerBytes != null && ownerBytes.length == 32) {
-          return Uint8List.fromList(ownerBytes);
-        }
-        return null;
-      }
-
-      final projection = InvitationProjectionService.withOwnerKeyProvider(
-        readOwner,
-        _support,
+      final sharedCounters = projectSharedCountersFromLedgerRoot(
+        ledger,
+        runtimeOwnerPublicKey: runtimeOwnerPublicKey,
+        runtimeTransportPublicKey: runtimeTransportPublicKey,
       );
-      final relationshipProjection =
-          RelationshipProjectionService.withOwnerKeyProvider(
-        readOwner,
-        _support,
-      );
-      final relationshipCount = relationshipProjection
-          .loadRelationshipGroups(ledger)
-          .where((group) => group.isActive)
-          .length
-          .clamp(0, 9999);
-      final pendingInvitations = projection
-          .loadInvitations(ledger)
-          .where((invitation) => invitation.status == InvitationStatus.pending)
-          .length
-          .clamp(0, 9999);
       final ledgerVersion = events.length;
       final ledgerHashHex = _parseLedgerHashHex(ledger['last_hash']);
 
       return CapsuleLedgerSummary(
         starterCount: starterCount,
-        relationshipCount: relationshipCount,
-        pendingInvitations: pendingInvitations,
+        relationshipCount: sharedCounters.relationshipCount,
+        pendingInvitations: sharedCounters.pendingInvitations,
         ledgerVersion: ledgerVersion,
         ledgerHashHex: ledgerHashHex,
       );
     } catch (_) {
       return CapsuleLedgerSummary.empty();
     }
+  }
+
+  ({int relationshipCount, int pendingInvitations})
+      projectSharedCountersFromLedgerRoot(
+    Map<String, dynamic> ledger, {
+    Uint8List? runtimeOwnerPublicKey,
+    Uint8List? runtimeTransportPublicKey,
+  }) {
+    final ownerBytes = parseBytesField(ledger['owner']);
+    Uint8List? readOwner() {
+      if (runtimeOwnerPublicKey != null && runtimeOwnerPublicKey.length == 32) {
+        return Uint8List.fromList(runtimeOwnerPublicKey);
+      }
+      if (ownerBytes != null && ownerBytes.length == 32) {
+        return Uint8List.fromList(ownerBytes);
+      }
+      return null;
+    }
+
+    final projection = InvitationProjectionService.withOwnerKeyProvider(
+      readOwner,
+      _support,
+      runtimeTransportPublicKey: runtimeTransportPublicKey == null
+          ? null
+          : () => runtimeTransportPublicKey,
+    );
+    final relationshipProjection =
+        RelationshipProjectionService.withOwnerKeyProvider(
+      readOwner,
+      _support,
+      runtimeTransportPublicKey: runtimeTransportPublicKey == null
+          ? null
+          : () => runtimeTransportPublicKey,
+    );
+    final relationshipCount = relationshipProjection
+        .loadRelationshipGroups(ledger)
+        .where((group) => group.isActive)
+        .length
+        .clamp(0, 9999);
+    final pendingInvitations = projection
+        .loadInvitations(ledger)
+        .where((invitation) => invitation.status == InvitationStatus.pending)
+        .length
+        .clamp(0, 9999);
+
+    return (
+      relationshipCount: relationshipCount,
+      pendingInvitations: pendingInvitations,
+    );
   }
 
   List<int>? parseBytesField(dynamic raw) {

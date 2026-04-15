@@ -231,6 +231,148 @@ void main() {
       expect(summary.pendingInvitations, equals(1));
     });
 
+    test(
+      'pending count uses runtime transport key when owner/root differs from transport',
+      () {
+        final ownerRoot = rep(0xaa);
+        final localTransport = rep(0xab);
+        final peer = rep(0xbb);
+        final t0 = DateTime.now()
+            .subtract(const Duration(hours: 30))
+            .millisecondsSinceEpoch;
+
+        final ledger = jsonEncode(<String, dynamic>{
+          'owner': ownerRoot,
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'InvitationSent',
+              payload: invitationSentPayload(
+                invitationByte: 0x14,
+                starterByte: 0x24,
+                toPubkey: localTransport,
+              ),
+              timestamp: t0 + 1,
+              signer: peer,
+            ),
+          ],
+        });
+
+        final summaryWithoutTransport = parser.parse(ledger, toHex);
+        final summaryWithTransport = parser.parse(
+          ledger,
+          toHex,
+          runtimeTransportPublicKey: Uint8List.fromList(localTransport),
+        );
+
+        expect(summaryWithoutTransport.pendingInvitations, equals(0));
+        expect(summaryWithTransport.pendingInvitations, equals(1));
+      },
+    );
+
+    test(
+      'pending count uses runtime owner key when ledger owner is malformed',
+      () {
+        final runtimeOwner = Uint8List.fromList(rep(0xaa));
+        final peer = rep(0xbb);
+        final t0 = DateTime.now()
+            .subtract(const Duration(hours: 2))
+            .millisecondsSinceEpoch;
+
+        final ledger = jsonEncode(<String, dynamic>{
+          'owner': <int>[170, 170], // malformed owner field
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'InvitationSent',
+              payload: invitationSentPayload(
+                invitationByte: 0x15,
+                starterByte: 0x25,
+                toPubkey: peer,
+              ),
+              timestamp: t0 + 1,
+              signer: runtimeOwner,
+            ),
+          ],
+        });
+
+        final summaryWithoutRuntimeOwner = parser.parse(ledger, toHex);
+        final summaryWithRuntimeOwner = parser.parse(
+          ledger,
+          toHex,
+          runtimeOwnerPublicKey: runtimeOwner,
+        );
+
+        expect(summaryWithoutRuntimeOwner.pendingInvitations, equals(0));
+        expect(summaryWithRuntimeOwner.pendingInvitations, equals(1));
+      },
+    );
+
+    test('starter count ignores duplicate StarterCreated for active starter id',
+        () {
+      final self = rep(0xaa);
+      const t0 = 1800000150000;
+
+      final ledger = jsonEncode(<String, dynamic>{
+        'owner': self,
+        'events': <Map<String, dynamic>>[
+          event(
+            kind: 'StarterCreated',
+            payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
+            timestamp: t0 + 1,
+            signer: self,
+          ),
+          event(
+            kind: 'StarterCreated',
+            payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
+            timestamp: t0 + 2,
+            signer: self,
+          ),
+        ],
+      });
+
+      final summary = parser.parse(ledger, toHex);
+      expect(summary.starterCount, equals(1));
+    });
+
+    test(
+        'starter count does not reactivate burned starter id on later StarterCreated',
+        () {
+      final self = rep(0xaa);
+      const t0 = 1800000160000;
+
+      final ledger = jsonEncode(<String, dynamic>{
+        'owner': self,
+        'events': <Map<String, dynamic>>[
+          event(
+            kind: 'StarterCreated',
+            payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
+            timestamp: t0 + 1,
+            signer: self,
+          ),
+          event(
+            kind: 'StarterBurned',
+            payload: starterBurnedPayload(starterByte: 0x21),
+            timestamp: t0 + 2,
+            signer: self,
+          ),
+          event(
+            kind: 'StarterCreated',
+            payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
+            timestamp: t0 + 3,
+            signer: self,
+          ),
+          event(
+            kind: 'StarterCreated',
+            payload: starterCreatedPayload(starterByte: 0x22, kindByte: 2),
+            timestamp: t0 + 4,
+            signer: self,
+          ),
+        ],
+      });
+
+      final summary = parser.parse(ledger, toHex);
+      expect(summary.starterCount, equals(1));
+    });
+
     test('parseBytesField decodes hex and base64 payload strings', () {
       expect(parser.parseBytesField('0a0b0c'), equals(<int>[10, 11, 12]));
       expect(parser.parseBytesField('AQID'), equals(<int>[1, 2, 3]));
