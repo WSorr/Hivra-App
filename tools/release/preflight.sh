@@ -68,15 +68,18 @@ check_android_release_bundle() {
 
   echo "Android APK: $ANDROID_APK"
 
-  if ! unzip -l "$ANDROID_APK" | rg -q "lib/arm64-v8a/libhivra_ffi\\.so"; then
+  local apk_entries
+  apk_entries="$(unzip -Z1 "$ANDROID_APK" 2>/dev/null || true)"
+
+  if ! rg -q "lib/arm64-v8a/libhivra_ffi\\.so" <<< "$apk_entries"; then
     echo "FAIL: Missing arm64-v8a libhivra_ffi.so in APK"
     return 1
   fi
-  if ! unzip -l "$ANDROID_APK" | rg -q "lib/armeabi-v7a/libhivra_ffi\\.so"; then
+  if ! rg -q "lib/armeabi-v7a/libhivra_ffi\\.so" <<< "$apk_entries"; then
     echo "FAIL: Missing armeabi-v7a libhivra_ffi.so in APK"
     return 1
   fi
-  if ! unzip -l "$ANDROID_APK" | rg -q "lib/x86_64/libhivra_ffi\\.so"; then
+  if ! rg -q "lib/x86_64/libhivra_ffi\\.so" <<< "$apk_entries"; then
     echo "FAIL: Missing x86_64 libhivra_ffi.so in APK"
     return 1
   fi
