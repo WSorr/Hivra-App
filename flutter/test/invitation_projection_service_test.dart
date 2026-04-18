@@ -133,8 +133,7 @@ void main() {
       expect(invitations.single.status, InvitationStatus.pending);
     });
 
-    test('classifies sent invitation to local capsule from peer as incoming',
-        () {
+    test('ignores sent invitation to local capsule from peer', () {
       final invitationId = _bytes32(12);
       final starterId = _bytes32(32);
       final t0 = _futureBaseTimestampMs();
@@ -156,15 +155,46 @@ void main() {
         ],
       });
 
-      expect(invitations, hasLength(1));
-      expect(invitations.single.isIncoming, isTrue);
-      expect(invitations.single.toPubkey, isNull);
-      expect(invitations.single.status, InvitationStatus.pending);
+      expect(invitations, isEmpty);
     });
 
     test(
-        'classifies sent invitation as incoming when addressed to local transport key',
+        'ignores peer sent invitation when starter id collides with local slot',
         () {
+      final invitationId = _bytes32(112);
+      final collidedStarter = Uint8List.fromList(_bytes32(132));
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceForSelf(self);
+
+      final invitations = service.loadInvitations(
+        <String, dynamic>{
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: collidedStarter,
+                toPubkey: self,
+                kindByte: 1,
+              ),
+              signer: peer,
+              timestamp: t0 + 1,
+            ),
+          ],
+        },
+        starterIds: <Uint8List?>[
+          collidedStarter,
+          null,
+          null,
+          null,
+          null,
+        ],
+      );
+
+      expect(invitations, isEmpty);
+    });
+
+    test('ignores sent invitation addressed to local transport key', () {
       final localOwner = Uint8List.fromList(_bytes32(151));
       final localTransport = Uint8List.fromList(_bytes32(152));
       final invitationId = _bytes32(153);
@@ -191,13 +221,12 @@ void main() {
         ],
       });
 
-      expect(invitations, hasLength(1));
-      expect(invitations.single.isIncoming, isTrue);
-      expect(invitations.single.toPubkey, isNull);
-      expect(invitations.single.status, InvitationStatus.pending);
+      expect(invitations, isEmpty);
     });
 
-    test('falls back to ledger owner when runtime owner is unavailable', () {
+    test(
+        'ignores sent invitation addressed to ledger owner when runtime owner is unavailable',
+        () {
       final invitationId = _bytes32(122);
       final starterId = _bytes32(142);
       final t0 = _futureBaseTimestampMs();
@@ -220,9 +249,7 @@ void main() {
         ],
       });
 
-      expect(invitations, hasLength(1));
-      expect(invitations.single.isIncoming, isTrue);
-      expect(invitations.single.status, InvitationStatus.pending);
+      expect(invitations, isEmpty);
     });
 
     test(

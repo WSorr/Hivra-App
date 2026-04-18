@@ -28,6 +28,16 @@ Set<String> computeNewPendingRemoteBreakKeys({
       .difference(notifiedKeys);
 }
 
+@visibleForTesting
+bool shouldSuppressPendingRemoteBreakNotification({
+  required DateTime now,
+  required DateTime? lastShownAt,
+  Duration cooldown = const Duration(seconds: 8),
+}) {
+  if (lastShownAt == null) return false;
+  return now.difference(lastShownAt) < cooldown;
+}
+
 class RelationshipsScreen extends StatefulWidget {
   final RelationshipService service;
   final Future<void> Function()? onLedgerChanged;
@@ -45,12 +55,16 @@ class RelationshipsScreen extends StatefulWidget {
 }
 
 class _RelationshipsScreenState extends State<RelationshipsScreen> {
+  static const Duration _pendingRemoteBreakNotificationCooldown =
+      Duration(seconds: 8);
   List<RelationshipPeerGroup> _relationshipGroups = [];
   bool _isLoading = true;
   bool _isSyncingTransport = false;
   Future<void>? _loadRelationshipsInFlight;
   int _peerRootLookupGeneration = 0;
   Set<String> _notifiedPendingRemoteBreakKeys = <String>{};
+  final Map<String, DateTime> _lastPendingRemoteBreakNotificationAtByKey =
+      <String, DateTime>{};
   String? _filterKind;
   String? _breakingPeerPubkey;
   Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
@@ -170,6 +184,19 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     return '${relationship.peerPubkey}:${relationship.ownStarterId}:${relationship.peerStarterId}';
   }
 
+  String _pendingRemoteBreakNotificationKey(
+    List<RelationshipPeerGroup> affectedGroups,
+  ) {
+    if (affectedGroups.length == 1) {
+      return affectedGroups.first.peerPubkey;
+    }
+    final peers = affectedGroups
+        .map((group) => group.peerPubkey)
+        .toList(growable: false)
+      ..sort();
+    return peers.join('|');
+  }
+
   void _notifyNewPendingRemoteBreaks({
     required List<RelationshipPeerGroup> groups,
     required Set<String> previousPendingBreakKeys,
@@ -194,6 +221,31 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
             .contains(_relationshipProjectionKey(relationship)),
       );
     }).toList();
+    if (affectedGroups.isEmpty) {
+      _notifiedPendingRemoteBreakKeys.addAll(newPendingBreakKeys);
+      return;
+    }
+
+    final now = DateTime.now();
+    final staleThreshold = now.subtract(
+      Duration(
+        seconds: _pendingRemoteBreakNotificationCooldown.inSeconds * 2,
+      ),
+    );
+    _lastPendingRemoteBreakNotificationAtByKey
+        .removeWhere((_, shownAt) => shownAt.isBefore(staleThreshold));
+    final notificationKey = _pendingRemoteBreakNotificationKey(affectedGroups);
+    final lastShownAt =
+        _lastPendingRemoteBreakNotificationAtByKey[notificationKey];
+    final suppressByCooldown = shouldSuppressPendingRemoteBreakNotification(
+      now: now,
+      lastShownAt: lastShownAt,
+      cooldown: _pendingRemoteBreakNotificationCooldown,
+    );
+    if (suppressByCooldown) {
+      _notifiedPendingRemoteBreakKeys.addAll(newPendingBreakKeys);
+      return;
+    }
 
     final message = affectedGroups.length == 1
         ? 'Break request received from ${_peerDisplayName(affectedGroups.first)}'
@@ -206,6 +258,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
       duration: const Duration(seconds: 2),
       enableCopy: false,
     );
+    _lastPendingRemoteBreakNotificationAtByKey[notificationKey] = now;
     _notifiedPendingRemoteBreakKeys.addAll(newPendingBreakKeys);
   }
 

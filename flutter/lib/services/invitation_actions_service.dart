@@ -4,9 +4,19 @@ import 'package:flutter/foundation.dart';
 
 import '../ffi/invitation_actions_runtime.dart';
 
+// Keep invitation actions responsive under unstable transport.
+// Local truth is still protected by ledger projection + retry pumps.
 const Duration _sendWorkerTimeout = Duration(seconds: 20);
-const Duration _receiveWorkerTimeout = Duration(seconds: 20);
-const Duration _receiveQuickWorkerTimeout = Duration(seconds: 15);
+// Full receive path can spend up to:
+// - relay reconnect wait (up to transport timeout)
+// - fetch_events timeout (up to transport timeout)
+// so worker budget must exceed roughly 2x transport timeout.
+const Duration _receiveWorkerTimeout = Duration(seconds: 30);
+// Quick receive is a best-effort fast path. Keep timeout short so it does not
+// block user-initiated invitation actions behind long background polls.
+// In practice quick transport can still take reconnect + fetch cycle (~16s),
+// so keep this below full receive but above that combined budget.
+const Duration _receiveQuickWorkerTimeout = Duration(seconds: 20);
 const Duration _acceptWorkerTimeout = Duration(seconds: 35);
 const Duration _rejectWorkerTimeout = Duration(seconds: 35);
 
@@ -208,13 +218,23 @@ class InvitationActionsService {
       }
 
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
-      final workerResult =
-          await compute<Map<String, Object?>, Map<String, Object?>>(
+      final workerFuture =
+          compute<Map<String, Object?>, Map<String, Object?>>(
         receiveInvitationsInWorker,
         bootstrap,
-      ).timeout(
+      );
+      final workerResult = await workerFuture.timeout(
         _receiveWorkerTimeout,
-        onTimeout: () => <String, Object?>{'result': -1003},
+        onTimeout: () {
+          debugPrint(
+            '[InvitationActions] receive worker timeout capsule=${bootstrapActiveHex ?? 'unknown'} timeoutMs=${_receiveWorkerTimeout.inMilliseconds}',
+          );
+          _scheduleLateWorkerLedgerApply(
+            workerFuture: workerFuture,
+            bootstrapActiveHex: bootstrapActiveHex,
+          );
+          return <String, Object?>{'result': -1003};
+        },
       );
 
       final code = (workerResult['result'] as int?) ?? -1003;
@@ -253,13 +273,23 @@ class InvitationActionsService {
       }
 
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
-      final workerResult =
-          await compute<Map<String, Object?>, Map<String, Object?>>(
+      final workerFuture =
+          compute<Map<String, Object?>, Map<String, Object?>>(
         receiveInvitationsQuickInWorker,
         bootstrap,
-      ).timeout(
+      );
+      final workerResult = await workerFuture.timeout(
         _receiveQuickWorkerTimeout,
-        onTimeout: () => <String, Object?>{'result': -1003},
+        onTimeout: () {
+          debugPrint(
+            '[InvitationActions] quick receive worker timeout capsule=${bootstrapActiveHex ?? 'unknown'} timeoutMs=${_receiveQuickWorkerTimeout.inMilliseconds}',
+          );
+          _scheduleLateWorkerLedgerApply(
+            workerFuture: workerFuture,
+            bootstrapActiveHex: bootstrapActiveHex,
+          );
+          return <String, Object?>{'result': -1003};
+        },
       );
 
       final code = (workerResult['result'] as int?) ?? -1003;
@@ -389,11 +419,33 @@ class InvitationActionsService {
     });
   }
 
-  Future<bool> cancelInvitation(Uint8List invitationId) async {
+  Future<bool> cancelInvitation(
+    Uint8List invitationId, {
+    String? capsuleHex,
+  }) async {
     return _serialize(() async {
-      final ok = _runtime.expireInvitation(invitationId);
-      if (!ok) return false;
-      await _runtime.persistLedgerSnapshot();
+      final bootstrap =
+          await _runtime.loadWorkerBootstrapArgs(capsuleHex: capsuleHex);
+      if (bootstrap == null) return false;
+
+      final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
+      final workerResult =
+          await compute<Map<String, Object?>, Map<String, Object?>>(
+        cancelInvitationInWorker,
+        <String, Object?>{
+          ...bootstrap,
+          'invitationId': invitationId,
+        },
+      );
+
+      final code = (workerResult['result'] as int?) ?? -1;
+      if (code != 0) return false;
+
+      final ledgerJson = workerResult['ledgerJson'] as String?;
+      await _applyWorkerLedgerResult(
+        bootstrapActiveHex: bootstrapActiveHex,
+        ledgerJson: ledgerJson,
+      );
       return true;
     });
   }

@@ -132,6 +132,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   bool _queuedFetchQuick = true;
   final Set<String> _locallyResolvedIncomingIds = <String>{};
   Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
+  int _invitationLoadGeneration = 0;
 
   bool _isOperationForActiveCapsule(String capturedCapsuleHex) =>
       capturedCapsuleHex == widget.activeCapsuleHex;
@@ -163,13 +164,19 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   Future<void> _loadInvitations() async {
+    final capturedCapsuleHex = widget.activeCapsuleHex;
+    final loadGeneration = ++_invitationLoadGeneration;
     final invitations = _intents.loadInvitations();
     final peerRoots = await _loadPeerRootKeys(invitations);
     final nextResolved = pruneLocallyResolvedIncomingIds(
       resolvedIds: _locallyResolvedIncomingIds,
       projectedInvitations: invitations,
     );
-    if (!mounted) return;
+    if (!mounted ||
+        loadGeneration != _invitationLoadGeneration ||
+        !_isOperationForActiveCapsule(capturedCapsuleHex)) {
+      return;
+    }
     setState(() {
       _invitations = invitations;
       _peerRootKeyByTransportB64 = peerRoots;
@@ -182,6 +189,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   void _resetTransientStateForCapsuleSwitch() {
     if (!mounted) return;
     setState(() {
+      _invitationLoadGeneration += 1;
       _invitations = <Invitation>[];
       _isFetchingDeliveries = false;
       _processingId = null;
@@ -243,7 +251,11 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         'invitations.send.request',
         'slot=$slot peer=${HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(pubkey))}',
       ));
-      final result = await _intents.sendInvitation(pubkey, slot);
+      final result = await _intents.sendInvitation(
+        pubkey,
+        slot,
+        capsuleHex: operationCapsuleHex,
+      );
       sendResult = result;
       unawaited(_uiLog.log(
         'invitations.send.result',
@@ -299,8 +311,12 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     try {
       result = quick
-          ? await _intents.fetchInvitationsQuick()
-          : await _intents.fetchInvitations();
+          ? await _intents.fetchInvitationsQuick(
+              capsuleHex: operationCapsuleHex,
+            )
+          : await _intents.fetchInvitations(
+              capsuleHex: operationCapsuleHex,
+            );
     } finally {
       if (mounted) {
         setState(() => _isFetchingDeliveries = false);
@@ -369,6 +385,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       final result = await _intents.acceptInvitation(
         invitationId,
         fromPubkey,
+        capsuleHex: operationCapsuleHex,
       );
       retainLocallyResolved = shouldRetainLocalResolvedIncoming(result);
       _releaseInvitationProcessing(
@@ -473,7 +490,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           'invitationId=${invitation.id} from=${invitation.fromPubkey}',
         ),
       );
-      final result = await _intents.rejectInvitation(invitation);
+      final result = await _intents.rejectInvitation(
+        invitation,
+        capsuleHex: operationCapsuleHex,
+      );
       unawaited(
         _uiLog.log(
           'invitations.reject.result',
@@ -597,7 +617,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     var processingReleased = false;
     try {
-      final result = await _intents.cancelInvitation(invitation.id);
+      final result = await _intents.cancelInvitation(
+        invitation.id,
+        capsuleHex: operationCapsuleHex,
+      );
       _releaseCancelProcessing(invitation.id);
       processingReleased = true;
       if (!_isOperationForActiveCapsule(operationCapsuleHex)) {

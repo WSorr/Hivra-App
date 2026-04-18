@@ -41,4 +41,28 @@ void main() {
     expect(prunedAfterClear, isEmpty);
     expect(newKeys, equals(<String>{'a'}));
   });
+
+  test('suppresses repeated pending-remote toast inside cooldown window', () {
+    final now = DateTime.utc(2026, 4, 19, 1, 30, 0);
+    final lastShownAt = now.subtract(const Duration(seconds: 3));
+    final suppressed = shouldSuppressPendingRemoteBreakNotification(
+      now: now,
+      lastShownAt: lastShownAt,
+      cooldown: const Duration(seconds: 8),
+    );
+
+    expect(suppressed, isTrue);
+  });
+
+  test('allows pending-remote toast after cooldown elapsed', () {
+    final now = DateTime.utc(2026, 4, 19, 1, 30, 0);
+    final lastShownAt = now.subtract(const Duration(seconds: 12));
+    final suppressed = shouldSuppressPendingRemoteBreakNotification(
+      now: now,
+      lastShownAt: lastShownAt,
+      cooldown: const Duration(seconds: 8),
+    );
+
+    expect(suppressed, isFalse);
+  });
 }

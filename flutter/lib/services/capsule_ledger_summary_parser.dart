@@ -87,6 +87,7 @@ class CapsuleLedgerSummaryParser {
     Map<String, dynamic> ledger, {
     Uint8List? runtimeOwnerPublicKey,
     Uint8List? runtimeTransportPublicKey,
+    List<Uint8List?> starterIds = const <Uint8List?>[],
   }) {
     final ownerBytes = parseBytesField(ledger['owner']);
     Uint8List? readOwner() {
@@ -120,7 +121,10 @@ class CapsuleLedgerSummaryParser {
         .length
         .clamp(0, 9999);
     final pendingInvitations = projection
-        .loadInvitations(ledger)
+        .loadInvitations(
+          ledger,
+          starterIds: starterIds,
+        )
         .where((invitation) => invitation.status == InvitationStatus.pending)
         .length
         .clamp(0, 9999);

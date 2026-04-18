@@ -111,6 +111,22 @@ Map<String, Object?> rejectInvitationInWorker(Map<String, Object?> args) {
   };
 }
 
+Map<String, Object?> cancelInvitationInWorker(Map<String, Object?> args) {
+  final hivra = HivraBindings();
+  if (!_bootstrapWorkerRuntime(hivra, args)) {
+    return <String, Object?>{'result': -1004};
+  }
+
+  final invitationId = args['invitationId'] as Uint8List;
+  final ok = hivra.expireInvitation(invitationId);
+  final lastError = hivra.lastErrorMessage();
+  return <String, Object?>{
+    'result': ok ? 0 : -1,
+    'ledgerJson': ok ? hivra.exportLedger() : null,
+    'lastError': lastError,
+  };
+}
+
 abstract class InvitationActionsRuntime {
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs({
     String? capsuleHex,

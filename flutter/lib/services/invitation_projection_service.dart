@@ -91,6 +91,12 @@ class InvitationProjectionService {
             continue;
           }
         } else {
+          // Receiver projection must be driven by InvitationReceived events.
+          // Foreign InvitationSent rows addressed to local identity are
+          // transport mirrors and are not actionable for accept/reject.
+          if (isIncomingByAddress && !signerIsSelf) {
+            continue;
+          }
           final localOutgoingByIdentity = signerIsSelf;
           // Keep local outgoing events when signer identity is temporarily
           // unresolved, as long as invitation starter_id maps to own starter
@@ -104,8 +110,7 @@ class InvitationProjectionService {
             continue;
           }
         }
-        final isIncoming = kind == 9 ||
-            (isIncomingByAddress && !signerIsSelf && !matchesOwnStarter);
+        final isIncoming = kind == 9 || (isIncomingByAddress && !signerIsSelf);
         final candidateOffer = _ProjectedInvitationOffer(
           id: id,
           fromPubkey: base64.encode(signer),

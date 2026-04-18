@@ -10,11 +10,13 @@ import '../utils/hivra_id_format.dart';
 
 class StartersScreen extends StatefulWidget {
   final AppRuntimeService runtime;
+  final String activeCapsuleHex;
   final Future<void> Function()? onLedgerChanged;
 
   const StartersScreen({
     super.key,
     required this.runtime,
+    required this.activeCapsuleHex,
     this.onLedgerChanged,
   });
 
@@ -163,6 +165,7 @@ class _StartersScreenState extends State<StartersScreen> {
                       }
 
                       final startedAt = DateTime.now();
+                      final operationCapsuleHex = widget.activeCapsuleHex;
                       InvitationIntentResult? sendResult;
                       try {
                         unawaited(_uiLog.log(
@@ -173,6 +176,7 @@ class _StartersScreenState extends State<StartersScreen> {
                         sendResult = await _intents.sendInvitation(
                           resolution.transportRecipient!,
                           slotIndex,
+                          capsuleHex: operationCapsuleHex,
                         );
                         final result = sendResult;
                         unawaited(_uiLog.log(

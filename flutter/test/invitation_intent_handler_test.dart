@@ -90,6 +90,26 @@ void main() {
       expect(firstCapsuleRepeatResult.message, 'Skipped duplicate quick fetch');
     });
 
+    test('uses explicit capsule override for quick fetch operation', () async {
+      final actions = _FakeInvitationActionsService();
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+        activeCapsuleHexResolver: () => 'capsule-from-resolver',
+      );
+      const capsuleA =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const capsuleB =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+      final first = await handler.fetchInvitationsQuick(capsuleHex: capsuleA);
+      final second = await handler.fetchInvitationsQuick(capsuleHex: capsuleB);
+
+      expect(first.code, -5);
+      expect(second.code, -5);
+      expect(actions.quickFetchCallsByCapsule, <String?>[capsuleA, capsuleB]);
+    });
+
     test('does not apply cooldown after failed quick fetch', () async {
       var calls = 0;
       final handler = InvitationIntentHandler(
@@ -706,6 +726,8 @@ void main() {
 
     test('treats transport timeout with local ledger as recorded acceptance',
         () async {
+      final invitationId = Uint8List(32);
+      final fromPubkey = Uint8List(32);
       final actions = _FakeInvitationActionsService()
         ..acceptResult = const InvitationWorkerResult(
           code: -12,
@@ -716,10 +738,19 @@ void main() {
       final handler = InvitationIntentHandler(
         actions: actions,
         delivery: const InvitationDeliveryService(),
+        invitationsLoader: () => <Invitation>[
+          Invitation(
+            id: base64.encode(invitationId),
+            fromPubkey: base64.encode(fromPubkey),
+            toPubkey: null,
+            kind: StarterKind.juice,
+            status: InvitationStatus.pending,
+            sentAt: DateTime.now().subtract(const Duration(minutes: 1)),
+          ),
+        ],
       );
 
-      final result =
-          await handler.acceptInvitation(Uint8List(32), Uint8List(32));
+      final result = await handler.acceptInvitation(invitationId, fromPubkey);
       expect(result.code, 0);
       expect(result.message, contains('timed out'));
       expect(result.message, contains('Local acceptance is recorded'));
@@ -728,6 +759,8 @@ void main() {
     test(
         'keeps transport timeout as failure when worker ledger payload is missing',
         () async {
+      final invitationId = Uint8List(32);
+      final fromPubkey = Uint8List(32);
       final actions = _FakeInvitationActionsService()
         ..acceptResult = const InvitationWorkerResult(
           code: -12,
@@ -738,13 +771,47 @@ void main() {
       final handler = InvitationIntentHandler(
         actions: actions,
         delivery: const InvitationDeliveryService(),
+        invitationsLoader: () => <Invitation>[
+          Invitation(
+            id: base64.encode(invitationId),
+            fromPubkey: base64.encode(fromPubkey),
+            toPubkey: null,
+            kind: StarterKind.spark,
+            status: InvitationStatus.pending,
+            sentAt: DateTime.now().subtract(const Duration(minutes: 1)),
+          ),
+        ],
       );
 
-      final result =
-          await handler.acceptInvitation(Uint8List(32), Uint8List(32));
+      final result = await handler.acceptInvitation(invitationId, fromPubkey);
       expect(result.code, -12);
       expect(result.message, contains('timed out'));
       expect(result.message, isNot(contains('Local acceptance is recorded')));
+    });
+
+    test('returns -8 without FFI accept when invitation is absent after refresh',
+        () async {
+      final actions = _FakeInvitationActionsService()
+        ..onFetchQuick = () async {
+          return const InvitationWorkerResult(code: -1003);
+        }
+        ..onFetch = () async => const InvitationWorkerResult(code: -5);
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+        invitationsLoader: () => const <Invitation>[],
+      );
+
+      final result = await handler.acceptInvitation(
+        Uint8List.fromList(List<int>.filled(32, 80)),
+        Uint8List.fromList(List<int>.filled(32, 81)),
+      );
+
+      expect(result.code, -8);
+      expect(result.message, 'Invitation is not available in active capsule ledger');
+      expect(actions.acceptCalls, 0);
+      expect(actions.fetchQuickCalls, 1);
+      expect(actions.fetchCalls, 1);
     });
 
     test('treats worker timeout as recorded when local accepted is projected',
@@ -792,6 +859,106 @@ void main() {
       expect(result.code, 0);
       expect(result.message, contains('Local acceptance is recorded'));
       expect(result.message, contains('code: -1003'));
+    });
+
+    test(
+        'retries accept after quick fetch when incoming invite appears in projection',
+        () async {
+      final invitationId = Uint8List.fromList(List<int>.filled(32, 68));
+      final invitationIdB64 = base64.encode(invitationId);
+      final fromPubkey = Uint8List.fromList(List<int>.filled(32, 69));
+      final fromPubkeyB64 = base64.encode(fromPubkey);
+      List<Invitation> projectedInvitations = <Invitation>[];
+
+      late final _FakeInvitationActionsService actions;
+      actions = _FakeInvitationActionsService()
+        ..onAccept = (_, __) async {
+          if (actions.acceptCalls == 1) {
+            return const InvitationWorkerResult(
+              code: -8,
+              ledgerJson: null,
+              lastError:
+                  'Accept invitation failed: matching incoming invitation not found',
+            );
+          }
+          return const InvitationWorkerResult(code: 0);
+        }
+        ..onFetchQuick = () async {
+          projectedInvitations = <Invitation>[
+            Invitation(
+              id: invitationIdB64,
+              fromPubkey: fromPubkeyB64,
+              toPubkey: null,
+              kind: StarterKind.seed,
+              status: InvitationStatus.pending,
+              sentAt: DateTime.now().subtract(const Duration(minutes: 1)),
+            ),
+          ];
+          return const InvitationWorkerResult(code: 1);
+        };
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+        invitationsLoader: () => projectedInvitations,
+      );
+
+      final result = await handler.acceptInvitation(invitationId, fromPubkey);
+      expect(result.code, 0);
+      expect(result.message, 'Invitation accepted');
+      expect(actions.acceptCalls, 2);
+      expect(actions.fetchQuickCalls, 2);
+    });
+
+    test(
+        'retries accept after full fetch when quick fetch times out and invite appears',
+        () async {
+      final invitationId = Uint8List.fromList(List<int>.filled(32, 70));
+      final invitationIdB64 = base64.encode(invitationId);
+      final fromPubkey = Uint8List.fromList(List<int>.filled(32, 71));
+      final fromPubkeyB64 = base64.encode(fromPubkey);
+      List<Invitation> projectedInvitations = <Invitation>[];
+
+      late final _FakeInvitationActionsService actions;
+      actions = _FakeInvitationActionsService()
+        ..onAccept = (_, __) async {
+          if (actions.acceptCalls == 1) {
+            return const InvitationWorkerResult(
+              code: -8,
+              ledgerJson: null,
+              lastError:
+                  'Accept invitation failed: matching incoming invitation not found',
+            );
+          }
+          return const InvitationWorkerResult(code: 0);
+        }
+        ..onFetchQuick = () async {
+          return const InvitationWorkerResult(code: -1003);
+        }
+        ..onFetch = () async {
+          projectedInvitations = <Invitation>[
+            Invitation(
+              id: invitationIdB64,
+              fromPubkey: fromPubkeyB64,
+              toPubkey: null,
+              kind: StarterKind.pulse,
+              status: InvitationStatus.pending,
+              sentAt: DateTime.now().subtract(const Duration(minutes: 1)),
+            ),
+          ];
+          return const InvitationWorkerResult(code: 1);
+        };
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+        invitationsLoader: () => projectedInvitations,
+      );
+
+      final result = await handler.acceptInvitation(invitationId, fromPubkey);
+      expect(result.code, 0);
+      expect(result.message, 'Invitation accepted');
+      expect(actions.acceptCalls, 2);
+      expect(actions.fetchQuickCalls, 2);
+      expect(actions.fetchCalls, 2);
     });
   });
 
@@ -922,10 +1089,16 @@ class _FakeInvitationActionsService extends InvitationActionsService {
   InvitationWorkerResult rejectResult = const InvitationWorkerResult(code: 0);
   InvitationWorkerResult fetchQuickResult =
       const InvitationWorkerResult(code: -5);
+  InvitationWorkerResult fetchResult =
+      const InvitationWorkerResult(code: -5);
   Future<InvitationWorkerResult> Function()? onFetchQuick;
+  Future<InvitationWorkerResult> Function()? onFetch;
+  final List<String?> quickFetchCallsByCapsule = <String?>[];
+  final List<String?> fetchCallsByCapsule = <String?>[];
   int acceptCalls = 0;
   int rejectCalls = 0;
   int fetchQuickCalls = 0;
+  int fetchCalls = 0;
 
   @override
   Future<InvitationWorkerResult> sendInvitation(
@@ -967,6 +1140,7 @@ class _FakeInvitationActionsService extends InvitationActionsService {
   Future<InvitationWorkerResult> fetchInvitationsQuick(
       {String? capsuleHex}) async {
     fetchQuickCalls += 1;
+    quickFetchCallsByCapsule.add(capsuleHex);
     final handler = onFetchQuick;
     if (handler != null) {
       return handler();
@@ -975,7 +1149,21 @@ class _FakeInvitationActionsService extends InvitationActionsService {
   }
 
   @override
-  Future<bool> cancelInvitation(Uint8List invitationId) async {
+  Future<InvitationWorkerResult> fetchInvitations({String? capsuleHex}) async {
+    fetchCalls += 1;
+    fetchCallsByCapsule.add(capsuleHex);
+    final handler = onFetch;
+    if (handler != null) {
+      return handler();
+    }
+    return fetchResult;
+  }
+
+  @override
+  Future<bool> cancelInvitation(
+    Uint8List invitationId, {
+    String? capsuleHex,
+  }) async {
     canceledInvitationIds.add(base64.encode(invitationId));
     return true;
   }

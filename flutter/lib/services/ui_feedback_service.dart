@@ -7,11 +7,16 @@ import 'ui_event_log_service.dart';
 
 class UiFeedbackService {
   static const UiEventLogService _log = UiEventLogService();
+  static int _snackGeneration = 0;
+  static Timer? _dismissTimer;
 
   static void dismissCurrent(BuildContext context) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
-    messenger.hideCurrentSnackBar();
+    _snackGeneration += 1;
+    _dismissTimer?.cancel();
+    _dismissTimer = null;
+    messenger.removeCurrentSnackBar();
     messenger.clearSnackBars();
   }
 
@@ -29,13 +34,18 @@ class UiFeedbackService {
     unawaited(_log.log(source, text));
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
+    final effectiveDuration =
+        duration > Duration.zero ? duration : const Duration(seconds: 3);
     if (replaceCurrent) {
       dismissCurrent(context);
     }
+    final generation = ++_snackGeneration;
+    _dismissTimer?.cancel();
+    _dismissTimer = null;
 
-    messenger.showSnackBar(
+    final controller = messenger.showSnackBar(
       SnackBar(
-        duration: duration,
+        duration: effectiveDuration,
         content: Text(text),
         action: enableCopy
             ? SnackBarAction(
@@ -48,6 +58,20 @@ class UiFeedbackService {
               )
             : null,
       ),
+    );
+
+    controller.closed.whenComplete(() {
+      if (_snackGeneration != generation) return;
+      _dismissTimer?.cancel();
+      _dismissTimer = null;
+    });
+
+    _dismissTimer = Timer(
+      effectiveDuration + const Duration(milliseconds: 350),
+      () {
+        if (_snackGeneration != generation) return;
+        messenger.removeCurrentSnackBar(reason: SnackBarClosedReason.timeout);
+      },
     );
   }
 }

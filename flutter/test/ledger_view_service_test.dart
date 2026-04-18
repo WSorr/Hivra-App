@@ -178,5 +178,62 @@ void main() {
         expect(snapshot.relationshipCount, equals(1));
       },
     );
+
+    test(
+      'counts pending outgoing from local starter mapping even when signer transport is unresolved',
+      () {
+        final owner = bytes32(0xaa);
+        final unresolvedSigner = bytes32(0xcd);
+        final localStarter = bytes32(0x21);
+        final invitationId = bytes32(0x51);
+        final recipient = bytes32(0x61);
+
+        final invitationSentPayload = <int>[
+          ...invitationId,
+          ...localStarter,
+          ...recipient,
+          1,
+        ];
+
+        final service = LedgerViewService.withSources(
+          exportLedger: () => jsonEncode(<String, dynamic>{
+            'owner': owner,
+            'events': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'kind': 'CapsuleCreated',
+                'payload': <int>[1, 0],
+                'timestamp': 1891000000000,
+                'signer': owner,
+              },
+              <String, dynamic>{
+                'kind': 'InvitationSent',
+                'payload': invitationSentPayload,
+                'timestamp': 1891000001000,
+                'signer': unresolvedSigner,
+              },
+            ],
+            'last_hash': '0xface',
+          }),
+          exportCapsuleState: () => jsonEncode(<String, dynamic>{
+            'public_key': owner,
+            'version': 2,
+            'ledger_hash': 'face',
+            'slots': <Object?>[
+              localStarter,
+              null,
+              null,
+              null,
+              null,
+            ],
+          }),
+          readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
+        );
+
+        final snapshot = service.loadCapsuleSnapshot();
+
+        expect(snapshot.pendingInvitations, equals(1));
+        expect(snapshot.lockedStarterSlots, equals(<int>{0}));
+      },
+    );
   });
 }

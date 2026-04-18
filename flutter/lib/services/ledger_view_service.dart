@@ -129,6 +129,7 @@ class LedgerViewService {
       root,
       runtimeOwnerPublicKey: _readRuntimeOwnerPublicKey(),
       runtimeTransportPublicKey: _readRuntimeTransportPublicKey(),
+      starterIds: starterIds,
     );
     final lockedStarterSlots = invitations
         .where((invitation) =>

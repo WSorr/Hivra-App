@@ -5,6 +5,7 @@ import 'dart:async';
 import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/invitation_intent_handler.dart';
+import '../models/invitation.dart';
 import 'starters_screen.dart';
 import 'invitations_screen.dart';
 import 'relationships_screen.dart';
@@ -94,12 +95,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _receiveTransportOnLaunch() async {
+    final operationCapsuleHex = _activeCapsuleHex;
     final startedAtMs = _launchStopwatch?.elapsedMilliseconds;
 
     try {
       // Launch-time receive must stay lightweight so UI projection from ledger
       // remains responsive; full sync is still available via manual refresh.
-      final result = await _runQuickTransportSync(reason: 'launch');
+      final result = await _runQuickTransportSync(
+        reason: 'launch',
+        capsuleHex: operationCapsuleHex,
+      );
       if (result.code < 0) {
         debugPrint(
           '[StartupTiming] launch_receive_failed_code=${result.code}',
@@ -114,6 +119,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         _runDelayedQuickTransportSync(
           reason: 'launch_follow_up',
           delay: const Duration(seconds: 7),
+          capsuleHex: operationCapsuleHex,
         ),
       );
     } catch (_) {
@@ -127,8 +133,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _syncInvitationsOnResume() async {
+    final operationCapsuleHex = _activeCapsuleHex;
     try {
-      final result = await _runQuickTransportSync(reason: 'resume');
+      final result = await _runQuickTransportSync(
+        reason: 'resume',
+        capsuleHex: operationCapsuleHex,
+      );
       if (!mounted) return;
       if (result.code >= 0) {
         _loadCapsuleData();
@@ -137,6 +147,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         _runDelayedQuickTransportSync(
           reason: 'resume_follow_up',
           delay: const Duration(seconds: 7),
+          capsuleHex: operationCapsuleHex,
         ),
       );
     } catch (_) {
@@ -147,11 +158,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Future<void> _runDelayedQuickTransportSync({
     required String reason,
     required Duration delay,
+    String? capsuleHex,
   }) async {
     await Future<void>.delayed(delay);
     if (!mounted) return;
 
-    final result = await _runQuickTransportSync(reason: reason);
+    final result = await _runQuickTransportSync(
+      reason: reason,
+      capsuleHex: capsuleHex,
+    );
     if (!mounted) return;
     if (result.code >= 0) {
       _loadCapsuleData();
@@ -169,6 +184,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Future<InvitationIntentResult> _runQuickTransportSync({
     required String reason,
     bool force = false,
+    String? capsuleHex,
   }) async {
     if (_shouldSkipQuickTransportSync(force: force)) {
       debugPrint('[StartupTiming] quick_sync_skipped_reason=$reason');
@@ -180,12 +196,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     _transportQuickSyncInFlight = true;
     try {
-      final quick = await _invitationIntents.fetchInvitationsQuick();
+      final quick = await _invitationIntents.fetchInvitationsQuick(
+        capsuleHex: capsuleHex,
+      );
       if (quick.code == -1003) {
         debugPrint(
           '[StartupTiming] quick_sync_timeout_fallback_full reason=$reason',
         );
-        return await _invitationIntents.fetchInvitations();
+        return await _invitationIntents.fetchInvitations(
+          capsuleHex: capsuleHex,
+        );
       }
       return quick;
     } finally {
@@ -216,11 +236,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final state = _stateManager.state;
     final displayKey = _runtime.capsuleRootPublicKey() ?? state.publicKey;
     final activeCapsuleHex = _bytesToHex(state.publicKey);
+    var pendingInvitations = state.pendingInvitations;
+
+    // Keep header pending counter aligned with Invitations projection while
+    // user is on Invitations screen (same source of truth as visible list).
+    if (_selectedIndex == 1) {
+      pendingInvitations = _invitationIntents
+          .loadInvitations()
+          .where((invitation) => invitation.status == InvitationStatus.pending)
+          .length;
+    }
 
     setState(() {
       _starterCount = state.starterCount;
       _relationshipCount = state.relationshipCount;
-      _pendingInvitations = state.pendingInvitations;
+      _pendingInvitations = pendingInvitations;
       _isNeste = state.isNeste;
       _ledgerHashHex = state.ledgerHashHex;
       _ledgerVersion = state.version;
@@ -274,9 +304,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _syncRelationshipsTransport() async {
+    final operationCapsuleHex = _activeCapsuleHex;
     final result = await _runQuickTransportSync(
       reason: 'relationships_screen_refresh',
       force: true,
+      capsuleHex: operationCapsuleHex,
     );
     if (!mounted) return;
     if (result.code >= 0) {
@@ -286,7 +318,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _refreshFromTopBar() async {
     if (_selectedIndex == 1) {
-      final result = await _invitationIntents.fetchInvitations();
+      final result = await _invitationIntents.fetchInvitations(
+        capsuleHex: _activeCapsuleHex,
+      );
       if (!mounted) return;
       _loadCapsuleData();
       if (result.code < 0) {
@@ -335,6 +369,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return StartersScreen(
           key: ValueKey('starters-$_activeCapsuleHex-$_ledgerVersion'),
           runtime: _runtime,
+          activeCapsuleHex: _activeCapsuleHex,
           onLedgerChanged: _handleLedgerChanged,
         );
       case 1:
@@ -347,7 +382,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         );
       case 2:
         return RelationshipsScreen(
-          key: ValueKey('relationships-$_activeCapsuleHex-$_ledgerVersion'),
+          key: ValueKey('relationships-$_activeCapsuleHex'),
           service: _runtime.buildRelationshipService(),
           onLedgerChanged: _handleLedgerChanged,
           onSyncTransport: _syncRelationshipsTransport,
@@ -366,6 +401,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return StartersScreen(
           key: ValueKey('starters-$_activeCapsuleHex-$_ledgerVersion'),
           runtime: _runtime,
+          activeCapsuleHex: _activeCapsuleHex,
           onLedgerChanged: _handleLedgerChanged,
         );
     }

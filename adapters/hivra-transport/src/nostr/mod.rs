@@ -18,6 +18,7 @@ const RECEIVE_LIMIT: usize = 200;
 const RECEIVE_SEEN_CAPACITY: usize = 2048;
 const MIN_RELAY_SEND_TIMEOUT_SECS: u64 = 6;
 const SEND_CONNECT_TIMEOUT_SECS: u64 = 4;
+const INIT_CONNECT_TIMEOUT_SECS: u64 = 4;
 
 static SEEN_EVENT_IDS: OnceLock<Mutex<HashMap<[u8; 32], HashSet<String>>>> = OnceLock::new();
 
@@ -164,7 +165,7 @@ impl NostrTransport {
         if !Self::wait_for_connected_relays(
             runtime,
             &client,
-            Duration::from_secs(config.timeout.max(2)),
+            Duration::from_secs(config.timeout.min(INIT_CONNECT_TIMEOUT_SECS).max(2)),
         ) {
             eprintln!("[Nostr] Warning: no relay reached Connected state during init");
         }
