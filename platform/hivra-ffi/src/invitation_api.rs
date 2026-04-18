@@ -1,4 +1,24 @@
 use super::*;
+use std::sync::{Mutex, OnceLock};
+
+static LAST_DELIVERY_REASON: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn delivery_reason_cell() -> &'static Mutex<Option<String>> {
+    LAST_DELIVERY_REASON.get_or_init(|| Mutex::new(None))
+}
+
+fn set_last_delivery_reason(reason: Option<String>) {
+    if let Ok(mut guard) = delivery_reason_cell().lock() {
+        *guard = reason;
+    }
+}
+
+fn take_last_delivery_reason() -> Option<String> {
+    match delivery_reason_cell().lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => None,
+    }
+}
 
 fn map_delivery_error(err: TransportError, default_code: i32) -> i32 {
     match err {
@@ -15,6 +35,28 @@ fn map_delivery_error(err: TransportError, default_code: i32) -> i32 {
             }
         }
         _ => default_code,
+    }
+}
+
+fn describe_transport_error(err: &TransportError) -> Option<String> {
+    match err {
+        TransportError::Other(reason) => {
+            let trimmed = reason.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        TransportError::Timeout => Some("transport timeout".to_string()),
+        TransportError::ConnectionFailed => Some("connection failed".to_string()),
+        TransportError::SendFailed => Some("send failed".to_string()),
+        TransportError::ReceiveFailed => Some("receive failed".to_string()),
+        TransportError::InvalidMessage => Some("invalid message".to_string()),
+        TransportError::EncodingFailed => Some("encoding failed".to_string()),
+        TransportError::DecodingFailed => Some("decoding failed".to_string()),
+        TransportError::InvalidKey => Some("invalid key".to_string()),
+        TransportError::NotImplemented => Some("transport not implemented".to_string()),
     }
 }
 
@@ -37,10 +79,19 @@ fn send_delivery_message(
     message: &Message,
     failure_code: i32,
     debug_label: &str,
-) -> Result<(), i32> {
+) -> Result<(), (i32, Option<String>)> {
     if let Err(err) = transport.send(message.clone()) {
-        eprintln!("[Delivery/Nostr] {} failed: {:?}", debug_label, err);
-        return Err(map_delivery_error(err, failure_code));
+        let reason = describe_transport_error(&err);
+        eprintln!(
+            "[Delivery/Nostr] {} failed: {:?}{}",
+            debug_label,
+            err,
+            reason
+                .as_deref()
+                .map(|value| format!(" | reason={value}"))
+                .unwrap_or_default()
+        );
+        return Err((map_delivery_error(err, failure_code), reason));
     }
 
     eprintln!("[Delivery/Nostr] {} delivered", debug_label);
@@ -59,7 +110,7 @@ fn retry_pending_outgoing_invitations_over_transport(
     }
 
     let mut delivered_count: i32 = 0;
-    let mut first_delivery_error: Option<i32> = None;
+    let mut first_delivery_error: Option<(i32, Option<String>)> = None;
     for pending_delivery in pending {
         let message = Message {
             from: sender_pubkey,
@@ -74,9 +125,9 @@ fn retry_pending_outgoing_invitations_over_transport(
             Ok(_) => {
                 delivered_count += 1;
             }
-            Err(delivery_code) => {
+            Err(delivery_error) => {
                 if first_delivery_error.is_none() {
-                    first_delivery_error = Some(delivery_code);
+                    first_delivery_error = Some(delivery_error);
                 }
             }
         }
@@ -90,7 +141,7 @@ fn retry_pending_outgoing_invitations_over_transport(
         return Ok(delivered_count);
     }
 
-    if let Some(code) = first_delivery_error {
+    if let Some((code, _reason)) = first_delivery_error {
         return Err(code);
     }
 
@@ -202,13 +253,24 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
         }
     };
 
+    set_last_delivery_reason(None);
     if let Err(code) =
         with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
-            send_delivery_message(transport, &message, -7, "InvitationSent")
+            match send_delivery_message(transport, &message, -7, "InvitationSent") {
+                Ok(()) => Ok(()),
+                Err((code, reason)) => {
+                    set_last_delivery_reason(reason);
+                    Err(code)
+                }
+            }
         })
     {
+        let reason_suffix = take_last_delivery_reason()
+            .as_deref()
+            .map(|value| format!("; reason: {value}"))
+            .unwrap_or_default();
         set_last_error(format!(
-            "Send invitation failed: delivery transport rejected message (code {code})"
+            "Send invitation failed: delivery transport rejected message (code {code}{reason_suffix})"
         ));
         return code;
     }
@@ -561,17 +623,28 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         &invitation_id[..4]
     );
 
+    set_last_delivery_reason(None);
     if let Err(code) =
         with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -6, |transport| {
-            send_delivery_message(transport, &message, -7, "InvitationAccepted")
+            match send_delivery_message(transport, &message, -7, "InvitationAccepted") {
+                Ok(()) => Ok(()),
+                Err((code, reason)) => {
+                    set_last_delivery_reason(reason);
+                    Err(code)
+                }
+            }
         })
     {
+        let reason_suffix = take_last_delivery_reason()
+            .as_deref()
+            .map(|value| format!("; reason: {value}"))
+            .unwrap_or_default();
         eprintln!(
             "[Delivery/Nostr] InvitationAccepted local append/finalize ok; delivery failed ({})",
             code
         );
         set_last_error(format!(
-            "Accept invitation delivery failed but local acceptance is recorded (code {code})"
+            "Accept invitation delivery failed but local acceptance is recorded (code {code}{reason_suffix})"
         ));
         return code;
     }
@@ -643,17 +716,32 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
                         timestamp: delivery_timestamp,
                         invitation_id: Some(invitation_id),
                     };
+                    set_last_delivery_reason(None);
                     if let Err(code) = with_cached_nostr_transport(
                         sender_secret,
                         TransportProfile::Quick,
                         -5,
-                        |transport| {
-                            send_delivery_message(transport, &message, -6, "InvitationRejected")
+                        |transport| match send_delivery_message(
+                            transport,
+                            &message,
+                            -6,
+                            "InvitationRejected",
+                        ) {
+                            Ok(()) => Ok(()),
+                            Err((code, reason)) => {
+                                set_last_delivery_reason(reason);
+                                Err(code)
+                            }
                         },
                     ) {
+                        let reason_suffix = take_last_delivery_reason()
+                            .as_deref()
+                            .map(|value| format!("; reason: {value}"))
+                            .unwrap_or_default();
                         eprintln!(
-                            "[Delivery/Nostr] InvitationRejected local append ok; delivery failed ({})",
-                            code
+                            "[Delivery/Nostr] InvitationRejected local append ok; delivery failed ({}){}",
+                            code,
+                            reason_suffix
                         );
                     }
                 }

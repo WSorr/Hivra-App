@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FLUTTER_DIR="$ROOT/flutter"
 APP_PATH="$FLUTTER_DIR/build/macos/Build/Products/Release/hivra_app.app"
-FFI_LIB="$APP_PATH/Contents/Frameworks/libhivra_ffi.dylib"
 ANDROID_APK="$FLUTTER_DIR/build/app/outputs/flutter-apk/app-release.apk"
 
 STATUS=0
@@ -25,19 +24,26 @@ check_release_bundle() {
     echo "      Build it first with: flutter build macos --release"
     return 0
   fi
+  verify_macos_app_bundle "$APP_PATH" "build-tree app bundle"
+}
 
-  if [ ! -f "$FFI_LIB" ]; then
-    echo "FAIL: Missing bundled FFI library at $FFI_LIB"
+verify_macos_app_bundle() {
+  local app_path="$1"
+  local context="$2"
+  local ffi_lib="$app_path/Contents/Frameworks/libhivra_ffi.dylib"
+
+  if [ ! -f "$ffi_lib" ]; then
+    echo "FAIL: Missing bundled FFI library at $ffi_lib ($context)"
     return 1
   fi
 
-  echo "App bundle: $APP_PATH"
-  echo "FFI library: $FFI_LIB"
+  echo "$context: $app_path"
+  echo "FFI library: $ffi_lib"
 
-  file "$FFI_LIB"
+  file "$ffi_lib"
 
   local lipo_info
-  lipo_info="$(lipo -info "$FFI_LIB" 2>/dev/null || true)"
+  lipo_info="$(lipo -info "$ffi_lib" 2>/dev/null || true)"
   echo "$lipo_info"
 
   if [[ "$lipo_info" != *"x86_64"* ]] || [[ "$lipo_info" != *"arm64"* ]]; then
@@ -45,11 +51,11 @@ check_release_bundle() {
     return 1
   fi
 
-  codesign --verify --deep --strict "$APP_PATH"
+  codesign --verify --deep --strict "$app_path"
 
   local spctl_output
   set +e
-  spctl_output="$(spctl --assess --type execute "$APP_PATH" 2>&1)"
+  spctl_output="$(spctl --assess --type execute "$app_path" 2>&1)"
   local spctl_status=$?
   set -e
 
@@ -57,6 +63,38 @@ check_release_bundle() {
   if [ $spctl_status -ne 0 ]; then
     echo "WARN: Gatekeeper assessment did not pass. This is expected for unsigned test builds."
   fi
+}
+
+check_packaged_macos_release_bundle() {
+  local packaged_zip
+  packaged_zip="$(ls -1t "$ROOT"/dist/*-macos/hivra_app-*-macos-universal*.zip 2>/dev/null | head -n1 || true)"
+  if [ -z "$packaged_zip" ]; then
+    echo "WARN: No packaged macOS ZIP artifact found in dist/"
+    echo "      Build one first with: tools/release/macos_release.sh --version <v> --channel <test|public>"
+    return 0
+  fi
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  echo "Packaged ZIP artifact: $packaged_zip"
+  ditto -x -k "$packaged_zip" "$tmp_dir"
+
+  local extracted_app="$tmp_dir/hivra_app.app"
+  if [ ! -d "$extracted_app" ]; then
+    extracted_app="$(find "$tmp_dir" -maxdepth 3 -type d -name '*.app' | head -n1 || true)"
+  fi
+  if [ -z "$extracted_app" ]; then
+    rm -rf "$tmp_dir"
+    echo "FAIL: No .app bundle found after extracting $packaged_zip"
+    return 1
+  fi
+
+  if ! verify_macos_app_bundle "$extracted_app" "packaged ZIP app bundle"; then
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  rm -rf "$tmp_dir"
 }
 
 check_android_release_bundle() {
@@ -108,6 +146,9 @@ main() {
 
   run_step "macOS Release Bundle Checks" \
     check_release_bundle
+
+  run_step "Packaged macOS Artifact Checks" \
+    check_packaged_macos_release_bundle
 
   run_step "Android Release Bundle Checks" \
     check_android_release_bundle

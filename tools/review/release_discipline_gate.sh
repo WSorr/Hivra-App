@@ -71,6 +71,8 @@ require_present "$CHECKLIST_MAC" 'explicit `--channel` \(`test` or `public`\)' \
   "macOS checklist requires explicit channel selection"
 require_present "$CHECKLIST_MAC" 'codesign --verify --deep --strict' \
   "macOS checklist requires codesign verify"
+require_present "$CHECKLIST_MAC" 'Packaged ZIP artifact was unpacked and verified' \
+  "macOS checklist requires packaged-artifact verification"
 require_present "$CHECKLIST_MAC" 'update path was evaluated for truth preservation' \
   "macOS checklist requires update truth-preservation verification"
 require_present "$CHECKLIST_MAC" 'does not re-materialize previously resolved invitation history' \
@@ -174,6 +176,10 @@ require_present "$PRECHECK" 'macOS Release Bundle Checks' \
   "preflight includes macOS release bundle check step"
 require_present "$PRECHECK" 'check_release_bundle' \
   "preflight wires check_release_bundle"
+require_present "$PRECHECK" 'Packaged macOS Artifact Checks' \
+  "preflight includes packaged macOS artifact check step"
+require_present "$PRECHECK" 'check_packaged_macos_release_bundle' \
+  "preflight wires packaged macOS artifact validation"
 require_present "$PRECHECK" 'Android Release Bundle Checks' \
   "preflight includes Android release bundle check step"
 require_present "$PRECHECK" 'check_android_release_bundle' \

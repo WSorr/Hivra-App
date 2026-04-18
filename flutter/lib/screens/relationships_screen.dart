@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/relationship.dart';
@@ -5,17 +7,37 @@ import '../models/relationship_peer_group.dart';
 import '../models/starter.dart';
 import '../services/relationship_service.dart';
 import '../services/ui_feedback_service.dart';
-import '../utils/hivra_id_format.dart';
 import '../utils/peer_identity_format.dart';
+
+@visibleForTesting
+Set<String> pruneNotifiedPendingRemoteBreakKeys({
+  required Set<String> notifiedKeys,
+  required Set<String> currentPendingKeys,
+}) {
+  return notifiedKeys.intersection(currentPendingKeys);
+}
+
+@visibleForTesting
+Set<String> computeNewPendingRemoteBreakKeys({
+  required Set<String> currentPendingKeys,
+  required Set<String> previousPendingKeys,
+  required Set<String> notifiedKeys,
+}) {
+  return currentPendingKeys
+      .difference(previousPendingKeys)
+      .difference(notifiedKeys);
+}
 
 class RelationshipsScreen extends StatefulWidget {
   final RelationshipService service;
   final Future<void> Function()? onLedgerChanged;
+  final Future<void> Function()? onSyncTransport;
 
   const RelationshipsScreen({
     super.key,
     required this.service,
     this.onLedgerChanged,
+    this.onSyncTransport,
   });
 
   @override
@@ -25,6 +47,10 @@ class RelationshipsScreen extends StatefulWidget {
 class _RelationshipsScreenState extends State<RelationshipsScreen> {
   List<RelationshipPeerGroup> _relationshipGroups = [];
   bool _isLoading = true;
+  bool _isSyncingTransport = false;
+  Future<void>? _loadRelationshipsInFlight;
+  int _peerRootLookupGeneration = 0;
+  Set<String> _notifiedPendingRemoteBreakKeys = <String>{};
   String? _filterKind;
   String? _breakingPeerPubkey;
   Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
@@ -55,31 +81,39 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadRelationships();
+    unawaited(_bootstrapFromLedgerThenSync());
+  }
+
+  Future<void> _bootstrapFromLedgerThenSync() async {
+    await _loadRelationships();
+    unawaited(_syncTransportAndReload(silent: true));
   }
 
   Future<void> _loadRelationships() async {
+    final inFlight = _loadRelationshipsInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+
+    final operation = _loadRelationshipsImpl();
+    _loadRelationshipsInFlight = operation;
+    try {
+      await operation;
+    } finally {
+      if (identical(_loadRelationshipsInFlight, operation)) {
+        _loadRelationshipsInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _loadRelationshipsImpl() async {
     final previousPendingBreakKeys =
         _pendingRemoteBreakKeysForGroups(_relationshipGroups);
     final groups = widget.service.loadRelationshipGroups();
-    final lookupPeerPubkeys = <String>{};
-    for (final group in groups) {
-      if (group.peerPubkey.isNotEmpty) {
-        lookupPeerPubkeys.add(group.peerPubkey);
-      }
-      for (final relationship in group.relationships) {
-        if (relationship.peerPubkey.isNotEmpty) {
-          lookupPeerPubkeys.add(relationship.peerPubkey);
-        }
-      }
-    }
-    final peerRootKeys = await widget.service.loadPeerRootKeysByTransportBase64(
-      lookupPeerPubkeys,
-    );
     if (!mounted) return;
     setState(() {
       _relationshipGroups = groups;
-      _peerRootKeyByTransportB64 = peerRootKeys;
       _isLoading = false;
     });
 
@@ -87,6 +121,37 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
       groups: groups,
       previousPendingBreakKeys: previousPendingBreakKeys,
     );
+
+    final lookupGeneration = ++_peerRootLookupGeneration;
+    final peerRootKeys = await widget.service.loadPeerRootKeysForGroups(groups);
+    if (!mounted || lookupGeneration != _peerRootLookupGeneration) return;
+    setState(() {
+      _peerRootKeyByTransportB64 = peerRootKeys;
+    });
+  }
+
+  Future<void> _syncTransportAndReload({bool silent = false}) async {
+    if (_isSyncingTransport) return;
+    _isSyncingTransport = true;
+    try {
+      final sync = widget.onSyncTransport;
+      if (sync != null) {
+        await sync();
+      }
+    } finally {
+      _isSyncingTransport = false;
+    }
+    await _loadRelationships();
+    await widget.onLedgerChanged?.call();
+    if (!silent && mounted) {
+      UiFeedbackService.showSnackBar(
+        context,
+        'Relationships refreshed',
+        source: 'relationships.refresh',
+        duration: const Duration(seconds: 2),
+        enableCopy: false,
+      );
+    }
   }
 
   Set<String> _pendingRemoteBreakKeysForGroups(
@@ -110,8 +175,15 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     required Set<String> previousPendingBreakKeys,
   }) {
     final currentPendingBreakKeys = _pendingRemoteBreakKeysForGroups(groups);
-    final newPendingBreakKeys =
-        currentPendingBreakKeys.difference(previousPendingBreakKeys);
+    _notifiedPendingRemoteBreakKeys = pruneNotifiedPendingRemoteBreakKeys(
+      notifiedKeys: _notifiedPendingRemoteBreakKeys,
+      currentPendingKeys: currentPendingBreakKeys,
+    );
+    final newPendingBreakKeys = computeNewPendingRemoteBreakKeys(
+      currentPendingKeys: currentPendingBreakKeys,
+      previousPendingKeys: previousPendingBreakKeys,
+      notifiedKeys: _notifiedPendingRemoteBreakKeys,
+    );
     if (newPendingBreakKeys.isEmpty || !mounted) {
       return;
     }
@@ -134,6 +206,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
       duration: const Duration(seconds: 2),
       enableCopy: false,
     );
+    _notifiedPendingRemoteBreakKeys.addAll(newPendingBreakKeys);
   }
 
   Future<void> _confirmRelationshipTransition(
@@ -354,7 +427,8 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadRelationships,
+            onPressed:
+                _isSyncingTransport ? null : () => _syncTransportAndReload(),
           ),
         ],
       ),
@@ -432,23 +506,10 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   }
 
   String? _resolvedRootKey(RelationshipPeerGroup group) {
-    final projectedRootB64 = group.preferredPeerRootPubkey;
-    if (projectedRootB64 != null && projectedRootB64.isNotEmpty) {
-      return HivraIdFormat.formatCapsuleKeyFromBase64(projectedRootB64);
-    }
-    final importedRootKey = _peerRootKeyByTransportB64[group.peerPubkey];
-    if (importedRootKey != null && importedRootKey.isNotEmpty) {
-      return importedRootKey;
-    }
-    final relationships = group.relationships.toList()
-      ..sort((a, b) => b.establishedAt.compareTo(a.establishedAt));
-    for (final relationship in relationships) {
-      final rootKey = _peerRootKeyByTransportB64[relationship.peerPubkey];
-      if (rootKey != null && rootKey.isNotEmpty) {
-        return rootKey;
-      }
-    }
-    return null;
+    return widget.service.resolvePeerRootDisplayKey(
+      group: group,
+      importedRootKeyByTransportB64: _peerRootKeyByTransportB64,
+    );
   }
 }
 

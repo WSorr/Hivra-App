@@ -85,12 +85,21 @@ class InvitationActionsService {
   }) {
     unawaited(
       workerFuture.then((lateResult) async {
+        final lateCode = (lateResult['result'] as int?) ?? -1003;
+        final lateLastError = (lateResult['lastError'] as String?)?.trim();
         final lateLedgerJson = lateResult['ledgerJson'] as String?;
+        debugPrint(
+          '[InvitationActions] late worker completion capsule=${bootstrapActiveHex ?? 'unknown'} code=$lateCode lastError=${lateLastError ?? '-'} ledger=${lateLedgerJson?.isNotEmpty == true ? 'yes' : 'no'}',
+        );
         await _applyWorkerLedgerResult(
           bootstrapActiveHex: bootstrapActiveHex,
           ledgerJson: lateLedgerJson,
         );
-      }).catchError((_) {}),
+      }).catchError((error, stackTrace) {
+        debugPrint(
+          '[InvitationActions] late worker completion failed capsule=${bootstrapActiveHex ?? 'unknown'} error=$error',
+        );
+      }),
     );
   }
 
@@ -158,6 +167,9 @@ class InvitationActionsService {
       final workerResult = await workerFuture.timeout(
         _sendWorkerTimeout,
         onTimeout: () {
+          debugPrint(
+            '[InvitationActions] send worker timeout capsule=${bootstrapActiveHex ?? 'unknown'} timeoutMs=${_sendWorkerTimeout.inMilliseconds}',
+          );
           _scheduleLateWorkerLedgerApply(
             workerFuture: workerFuture,
             bootstrapActiveHex: bootstrapActiveHex,

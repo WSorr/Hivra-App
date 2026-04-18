@@ -180,19 +180,21 @@ class _StartersScreenState extends State<StartersScreen> {
                           'slot=$slotIndex code=${result.code} message=${result.message}',
                         ));
                         if (!result.isSuccess) {
-                          if (!mounted) return;
-                          UiFeedbackService.showSnackBar(
-                            this.context,
-                            result.message,
-                            source: 'starters.send',
-                            duration: const Duration(seconds: 3),
-                            enableCopy: false,
-                          );
-                          if (!context.mounted) return;
-                          setDialogState(() {
-                            formError = result.message;
-                            isSending = false;
-                          });
+                          if (context.mounted) {
+                            setDialogState(() {
+                              formError = result.message;
+                              isSending = false;
+                            });
+                          }
+                          if (mounted) {
+                            UiFeedbackService.showSnackBar(
+                              this.context,
+                              result.message,
+                              source: 'starters.send',
+                              duration: const Duration(seconds: 3),
+                              enableCopy: false,
+                            );
+                          }
                           return;
                         }
 
@@ -218,14 +220,15 @@ class _StartersScreenState extends State<StartersScreen> {
                         await widget.onLedgerChanged?.call();
                       } catch (e) {
                         unawaited(_uiLog.log('starters.send.exception', '$e'));
-                        if (!mounted) return;
-                        UiFeedbackService.showSnackBar(
-                          this.context,
-                          'Failed to send: $e',
-                          source: 'starters.send',
-                          duration: const Duration(seconds: 3),
-                          enableCopy: false,
-                        );
+                        if (mounted) {
+                          UiFeedbackService.showSnackBar(
+                            this.context,
+                            'Failed to send: $e',
+                            source: 'starters.send',
+                            duration: const Duration(seconds: 3),
+                            enableCopy: false,
+                          );
+                        }
                         if (context.mounted) {
                           setDialogState(() {
                             isSending = false;
@@ -240,6 +243,11 @@ class _StartersScreenState extends State<StartersScreen> {
                             'slot=$slotIndex elapsedMs=$elapsedMs resultCode=${sendResult?.code ?? 'none'} contextMounted=${context.mounted} widgetMounted=$mounted',
                           ),
                         );
+                        if (context.mounted && isSending) {
+                          setDialogState(() {
+                            isSending = false;
+                          });
+                        }
                       }
                     },
               child: isSending

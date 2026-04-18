@@ -159,10 +159,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       _resetTransientStateForCapsuleSwitch();
       unawaited(_fetchInvitationDeliveries(silent: true, quick: true));
     }
-    unawaited(_loadInvitations(showLoading: false));
+    unawaited(_loadInvitations());
   }
 
-  Future<void> _loadInvitations({bool showLoading = true}) async {
+  Future<void> _loadInvitations() async {
     final invitations = _intents.loadInvitations();
     final peerRoots = await _loadPeerRootKeys(invitations);
     final nextResolved = pruneLocallyResolvedIncomingIds(
@@ -197,33 +197,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   Future<Map<String, String>> _loadPeerRootKeys(
     List<Invitation> invitations,
   ) async {
-    final transportKeys = invitations
-        .map((inv) => inv.isIncoming ? inv.fromPubkey : (inv.toPubkey ?? ''))
-        .where((key) => key.isNotEmpty)
-        .toSet();
-    if (transportKeys.isEmpty) return const <String, String>{};
-
-    final fromCards =
-        await _relationships.loadPeerRootKeysByTransportBase64(transportKeys);
-    final fromLedger = _projectedPeerRootsByTransport();
-    return <String, String>{
-      ...fromCards,
-      ...fromLedger,
-    };
-  }
-
-  Map<String, String> _projectedPeerRootsByTransport() {
-    final groups = widget.runtime.ledgerView.loadRelationshipGroups();
-    final map = <String, String>{};
-    for (final group in groups) {
-      for (final relationship in group.relationships) {
-        final peerRoot = relationship.peerRootPubkey;
-        if (peerRoot == null || peerRoot.isEmpty) continue;
-        map[relationship.peerPubkey] =
-            HivraIdFormat.formatCapsuleKeyFromBase64(peerRoot);
-      }
-    }
-    return map;
+    return _relationships.loadPeerRootKeysForInvitations(invitations);
   }
 
   String _peerTransportB64(Invitation invitation) => invitation.isIncoming
@@ -253,7 +227,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   }
 
   Future<void> _refreshAfterLedgerMutation() async {
-    await _loadInvitations(showLoading: false);
+    await _loadInvitations();
     await widget.onLedgerChanged?.call();
   }
 

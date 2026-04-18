@@ -1,6 +1,7 @@
 //! Nostr transport adapter
 
 use crate::{Message, Transport, TransportError};
+use futures::stream::{FuturesUnordered, StreamExt};
 use nostr_sdk::nips::nip04;
 use nostr_sdk::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -12,11 +13,11 @@ use tokio::time;
 
 // Use standard DM kind for better relay compatibility.
 const APP_EVENT_KIND: Kind = Kind::Custom(4);
-const WRITE_RETRY_DELAY_MS: u64 = 1200;
-const RELAY_SEND_ATTEMPTS: usize = 2;
 const CONNECT_POLL_MS: u64 = 250;
 const RECEIVE_LIMIT: usize = 200;
 const RECEIVE_SEEN_CAPACITY: usize = 2048;
+const MIN_RELAY_SEND_TIMEOUT_SECS: u64 = 6;
+const SEND_CONNECT_TIMEOUT_SECS: u64 = 4;
 
 static SEEN_EVENT_IDS: OnceLock<Mutex<HashMap<[u8; 32], HashSet<String>>>> = OnceLock::new();
 
@@ -194,10 +195,14 @@ impl NostrTransport {
     }
 
     fn ensure_connected_relays(&self) -> bool {
+        self.ensure_connected_relays_with_timeout(self.timeout_secs.max(2))
+    }
+
+    fn ensure_connected_relays_with_timeout(&self, timeout_secs: u64) -> bool {
         Self::wait_for_connected_relays(
             &self.runtime,
             &self.client,
-            Duration::from_secs(self.timeout_secs.max(2)),
+            Duration::from_secs(timeout_secs.max(2)),
         )
     }
 
@@ -299,126 +304,80 @@ impl NostrTransport {
     }
 
     pub fn send_event(&self, event: Event) -> Result<(), TransportError> {
-        if !self.ensure_connected_relays() {
+        let connect_timeout_secs = self.timeout_secs.min(SEND_CONNECT_TIMEOUT_SECS).max(2);
+        if !self.ensure_connected_relays_with_timeout(connect_timeout_secs) {
             eprintln!("[Nostr] No connected relays available before publish");
             return Err(TransportError::ConnectionFailed);
         }
-        let mut last_reason: Option<String> = None;
+        let relays = self.runtime.block_on(self.client.relays());
+        let connected_relays: Vec<_> = relays
+            .into_values()
+            .filter(|relay| matches!(relay.status(), RelayStatus::Connected))
+            .collect();
 
-        for attempt in 1..=RELAY_SEND_ATTEMPTS {
-            let relays = self.runtime.block_on(self.client.relays());
+        if connected_relays.is_empty() {
+            let reason = "no connected relays available for publish".to_string();
+            eprintln!("[Nostr] {}", reason);
+            return Err(TransportError::Other(reason));
+        }
 
-            if relays.is_empty() {
-                eprintln!("[Nostr] No relays available for publish");
-                return Err(TransportError::ConnectionFailed);
+        let per_relay_timeout =
+            Duration::from_secs(self.timeout_secs.max(MIN_RELAY_SEND_TIMEOUT_SECS));
+        let publish_result = self.runtime.block_on(async {
+            let mut pending = FuturesUnordered::new();
+            for relay in connected_relays {
+                let relay_url = relay.url().to_string();
+                let event = event.clone();
+                pending.push(async move {
+                    let result = time::timeout(per_relay_timeout, relay.send_event(event)).await;
+                    (relay_url, result)
+                });
             }
 
-            let mut had_connected = false;
-
-            for relay in relays.into_values() {
-                let relay_url = relay.url().to_string();
-
-                if !matches!(relay.status(), RelayStatus::Connected) {
-                    eprintln!(
-                        "[Nostr] Relay {} skipped: status {}",
-                        relay_url,
-                        relay.status()
-                    );
-                    continue;
-                }
-
-                had_connected = true;
-
-                let send_result = self.runtime.block_on(async {
-                    time::timeout(
-                        Duration::from_secs(self.timeout_secs.max(2)),
-                        relay.send_event(event.clone()),
-                    )
-                    .await
-                });
-
-                match send_result {
+            let mut failure_details: Vec<String> = Vec::new();
+            while let Some((relay_url, result)) = pending.next().await {
+                match result {
+                    Ok(Ok(event_id)) => {
+                        return Ok((relay_url, event_id.to_hex(), failure_details));
+                    }
                     Err(_) => {
-                        let reason = format!(
-                            "relay send timeout after {}s",
-                            self.timeout_secs.max(2)
-                        );
-                        last_reason = Some(reason.clone());
-                        eprintln!(
-                            "[Nostr] Relay {} timeout on attempt {}/{}: {}",
-                            relay_url, attempt, RELAY_SEND_ATTEMPTS, reason
-                        );
+                        failure_details.push(format!(
+                            "{}: timeout after {}s",
+                            relay_url,
+                            per_relay_timeout.as_secs()
+                        ));
                     }
                     Ok(Err(err)) => {
                         let reason = err.to_string();
-                        last_reason = Some(reason.clone());
-                        eprintln!(
-                            "[Nostr] Relay {} reject on attempt {}/{}: {}",
-                            relay_url, attempt, RELAY_SEND_ATTEMPTS, reason
-                        );
-
                         if let Some(challenge) = extract_auth_challenge(&reason) {
                             eprintln!(
-                                "[Nostr] Relay {} requested NIP-42 auth, trying AUTH",
-                                relay_url
+                                "[Nostr] Relay {} returned auth challenge marker: {}",
+                                relay_url, challenge
                             );
-                            let auth_result = self.runtime.block_on(async {
-                                time::timeout(
-                                    Duration::from_secs(self.timeout_secs.max(2)),
-                                    self.client.auth(challenge, relay.url().clone()),
-                                )
-                                .await
-                            });
-                            match auth_result {
-                                Ok(Ok(())) => {
-                                    eprintln!("[Nostr] Relay {} auth succeeded", relay_url);
-                                }
-                                Ok(Err(auth_err)) => {
-                                    eprintln!(
-                                        "[Nostr] Relay {} auth failed: {}",
-                                        relay_url, auth_err
-                                    );
-                                }
-                                Err(_) => {
-                                    eprintln!(
-                                        "[Nostr] Relay {} auth timeout after {}s",
-                                        relay_url,
-                                        self.timeout_secs.max(2)
-                                    );
-                                }
-                            }
                         }
-                    }
-                    Ok(Ok(id)) => {
-                        eprintln!(
-                            "[Nostr] Relay {} accepted event on attempt {}/{}: {}",
-                            relay_url,
-                            attempt,
-                            RELAY_SEND_ATTEMPTS,
-                            id.to_hex()
-                        );
-                        eprintln!("[Nostr] Message published to at least one relay");
-                        return Ok(());
+                        failure_details.push(format!("{}: {}", relay_url, reason));
                     }
                 }
             }
 
-            if attempt < RELAY_SEND_ATTEMPTS {
-                if !had_connected {
-                    eprintln!(
-                        "[Nostr] No connected relays on attempt {}/{}, retrying after reconnect",
-                        attempt, RELAY_SEND_ATTEMPTS
-                    );
-                }
-                self.runtime.block_on(self.client.connect());
-                thread::sleep(Duration::from_millis(WRITE_RETRY_DELAY_MS));
+            Err(failure_details)
+        });
+
+        if let Ok((relay_url, event_id, failure_details)) = publish_result {
+            eprintln!("[Nostr] Relay {} accepted event: {}", relay_url, event_id);
+            if !failure_details.is_empty() {
+                eprintln!(
+                    "[Nostr] Message published with {} relay(s) failing before first success",
+                    failure_details.len()
+                );
             }
+            return Ok(());
         }
 
-        eprintln!("[Nostr] Send failed: no relay accepted event");
-        Err(TransportError::Other(
-            last_reason.unwrap_or_else(|| "no relay accepted event".to_string()),
-        ))
+        let failure_details = publish_result.err().unwrap_or_default();
+        let reason = format!("no relay accepted event; {}", failure_details.join(" | "));
+        eprintln!("[Nostr] Send failed: {}", reason);
+        Err(TransportError::Other(reason))
     }
 
     fn decode_event(&self, event: Event) -> Result<Message, TransportError> {

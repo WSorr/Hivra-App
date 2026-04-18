@@ -22,6 +22,7 @@ class InvitationIntentResult {
 class InvitationIntentHandler {
   static const Duration _quickFetchCooldown = Duration(seconds: 8);
   static const Duration _sendPendingRecencyWindow = Duration(seconds: 10);
+  static const Duration _sendPostFailureProbeTimeout = Duration(seconds: 2);
   static const Set<int> _softSendDeliveryCodes = <int>{
     -5,
     -7,
@@ -130,8 +131,7 @@ class InvitationIntentHandler {
       Uint8List toPubkey, int starterSlot,
       {String? capsuleHex}) async {
     final sendStartedAt = DateTime.now();
-    final minPendingSentAt =
-        sendStartedAt.subtract(_sendPendingRecencyWindow);
+    final minPendingSentAt = sendStartedAt.subtract(_sendPendingRecencyWindow);
     final recipientPubkeyB64 = base64.encode(toPubkey);
     final pendingIdsBeforeSend = _pendingOutgoingInvitationIds(
       toPubkeyB64: recipientPubkeyB64,
@@ -163,7 +163,7 @@ class InvitationIntentHandler {
     final localPendingConfirmedAfterFetch = !localPendingRecorded &&
         code != 0 &&
         _sendDeliveryProbeCodes.contains(code) &&
-        await _confirmPendingOutgoingByQuickFetch(
+        await _confirmPendingOutgoingByQuickFetchBounded(
           toPubkeyB64: recipientPubkeyB64,
           starterSlot: starterSlot,
           previousPendingIds: pendingIdsBeforeSend,
@@ -589,6 +589,24 @@ class InvitationIntentHandler {
       starterSlot: starterSlot,
       previousPendingIds: previousPendingIds,
       minSentAt: minSentAt,
+    );
+  }
+
+  Future<bool> _confirmPendingOutgoingByQuickFetchBounded({
+    required String toPubkeyB64,
+    required int starterSlot,
+    required Set<String> previousPendingIds,
+    DateTime? minSentAt,
+  }) {
+    final probe = _confirmPendingOutgoingByQuickFetch(
+      toPubkeyB64: toPubkeyB64,
+      starterSlot: starterSlot,
+      previousPendingIds: previousPendingIds,
+      minSentAt: minSentAt,
+    );
+    return probe.timeout(
+      _sendPostFailureProbeTimeout,
+      onTimeout: () => false,
     );
   }
 

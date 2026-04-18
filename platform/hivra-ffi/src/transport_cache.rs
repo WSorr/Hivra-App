@@ -33,7 +33,11 @@ fn config_for_profile(profile: TransportProfile) -> NostrConfig {
 }
 
 fn should_retry_with_fresh_transport(code: i32) -> bool {
-    matches!(code, -5 | -6 | -7 | -11 | -12 | -13 | -14)
+    // Retry only when transport/session state itself is likely stale.
+    // Do not retry delivery-level timeout/reject codes immediately, because
+    // this doubles latency and often turns a concrete transport error into
+    // UI worker timeout.
+    matches!(code, -5 | -11 | -14)
 }
 
 fn rebuild_transport_for_profile(
@@ -108,14 +112,14 @@ mod tests {
 
     #[test]
     fn retryable_transport_codes_match_runtime_delivery_domain() {
-        for code in [-5, -6, -7, -11, -12, -13, -14] {
+        for code in [-5, -11, -14] {
             assert!(should_retry_with_fresh_transport(code));
         }
     }
 
     #[test]
     fn non_transport_codes_do_not_trigger_retry_rebuild() {
-        for code in [-4, -3, -2, -1, 0, 1] {
+        for code in [-13, -12, -7, -6, -4, -3, -2, -1, 0, 1] {
             assert!(!should_retry_with_fresh_transport(code));
         }
     }

@@ -14,6 +14,41 @@ import 'manual_consensus_check_service.dart';
 // transport still completes on a later relay.
 const Duration _chatSendWorkerTimeout = Duration(seconds: 35);
 const Duration _chatReceiveWorkerTimeout = Duration(seconds: 12);
+const Duration _chatSendRetryDelay = Duration(milliseconds: 900);
+
+bool chatSendShouldRetry({
+  required int code,
+  String? errorMessage,
+}) {
+  if (code == -1003 ||
+      code == -11 ||
+      code == -12 ||
+      code == -13 ||
+      code == -5 ||
+      code == -6) {
+    return true;
+  }
+  final message = (errorMessage ?? '').toLowerCase();
+  return message.contains('timeout') ||
+      message.contains('timed out') ||
+      message.contains('connection') ||
+      message.contains('relay');
+}
+
+String tradeSignalInboxRecordId({
+  required String fromHex,
+  required String signalId,
+  required int timestampMs,
+  required String payloadJson,
+}) {
+  final normalizedFrom = fromHex.trim().toLowerCase();
+  final normalizedSignalId = signalId.trim();
+  if (normalizedSignalId.isNotEmpty) {
+    return '$normalizedFrom::$normalizedSignalId';
+  }
+  final canonical = '$normalizedFrom|$timestampMs|$payloadJson';
+  return sha256.convert(utf8.encode(canonical)).toString();
+}
 
 typedef ChatWorkerRunner = Future<Map<String, Object?>> Function(
   Map<String, Object?> args,
@@ -195,23 +230,39 @@ class CapsuleChatDeliveryService {
       );
     }
 
-    final workerResult = await _sendWorkerRunner(
-      <String, Object?>{
-        ...bootstrap,
-        'toPubkey': peerBytes,
-        'payloadJson': canonicalEnvelopeJson,
-      },
-    ).timeout(
-      _chatSendWorkerTimeout,
-      onTimeout: () => <String, Object?>{
-        'result': -1003,
-        'lastError':
-            'Chat send timed out locally; relay delivery may still complete',
-      },
-    );
+    Future<Map<String, Object?>> runWorker() {
+      return _sendWorkerRunner(
+        <String, Object?>{
+          ...bootstrap,
+          'toPubkey': peerBytes,
+          'payloadJson': canonicalEnvelopeJson,
+        },
+      ).timeout(
+        _chatSendWorkerTimeout,
+        onTimeout: () => <String, Object?>{
+          'result': -1003,
+          'lastError':
+              'Chat send timed out locally; relay delivery may still complete',
+        },
+      );
+    }
 
-    final code = (workerResult['result'] as int?) ?? -1003;
-    final lastError = workerResult['lastError'] as String?;
+    var workerResult = await runWorker();
+    var code = (workerResult['result'] as int?) ?? -1003;
+    var lastError = workerResult['lastError'] as String?;
+    if (code != 0 && chatSendShouldRetry(code: code, errorMessage: lastError)) {
+      await Future<void>.delayed(_chatSendRetryDelay);
+      final retry = await runWorker();
+      final retryCode = (retry['result'] as int?) ?? -1003;
+      final retryError = retry['lastError'] as String?;
+      if (retryCode == 0) {
+        code = 0;
+        lastError = null;
+      } else {
+        code = retryCode;
+        lastError = retryError ?? lastError;
+      }
+    }
     if (code != 0) {
       return CapsuleChatDeliverySendResult(
         isSuccess: false,
@@ -345,9 +396,12 @@ class CapsuleChatDeliveryService {
       final tradeSignal = _parseTradeSignalEnvelope(payloadJson);
       if (tradeSignal == null) continue;
       final signalId = tradeSignal['signal_id']!;
-      final id = signalId.isEmpty
-          ? _stableMessageId(consensusPeerHex, timestampMs, payloadJson)
-          : signalId;
+      final id = tradeSignalInboxRecordId(
+        fromHex: consensusPeerHex,
+        signalId: signalId,
+        timestampMs: timestampMs,
+        payloadJson: payloadJson,
+      );
       byTradeSignalId[id] = CapsuleTradeSignalInboxMessage(
         id: id,
         signalId: signalId.isEmpty ? id : signalId,

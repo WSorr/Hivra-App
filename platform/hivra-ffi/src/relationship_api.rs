@@ -114,8 +114,11 @@ pub unsafe extern "C" fn hivra_break_relationship(
     let delivery_secret = sender_secret;
     let delivery_message = message.clone();
     std::thread::spawn(move || {
-        if let Err(code) =
-            with_cached_nostr_transport(delivery_secret, TransportProfile::Quick, -5, |transport| {
+        if let Err(code) = with_cached_nostr_transport(
+            delivery_secret,
+            TransportProfile::Quick,
+            -5,
+            |transport| {
                 transport.send(delivery_message.clone()).map_err(|err| {
                     eprintln!(
                         "[Delivery/Nostr] RelationshipBroken local append ok; delivery failed: {:?}",
@@ -123,8 +126,8 @@ pub unsafe extern "C" fn hivra_break_relationship(
                     );
                     -6
                 })
-            })
-        {
+            },
+        ) {
             eprintln!(
                 "[Delivery/Nostr] RelationshipBroken local append ok; delivery unavailable ({})",
                 code

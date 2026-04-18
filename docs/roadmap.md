@@ -230,6 +230,7 @@ Scope:
   - Release-discipline gate now enforces packaging checklist coverage for asset naming, package rebuild, and checksum regeneration.
   - Added `tools/release/macos_release.sh` to standardize channel-aware packaging (`test` / `public`) with optional signing/notarization flow and reproducible `RELEASE-METADATA.txt` + `SHA256SUMS.txt` outputs.
   - `release_discipline_gate.sh` now enforces checklist coverage for scripted macOS release packaging, explicit channel selection, and pre-release flag mapping (`test` => pre-release, `public` => stable).
+  - macOS packaging path now validates the packaged ZIP artifact itself (extract + verify `.app` bundle, universal `libhivra_ffi.dylib`, and signature checks), and preflight includes a dedicated packaged-artifact verification step.
 
 Definition of done:
 - Published macOS artifacts match the tested build and launch reliably on supported Macs.
@@ -389,6 +390,13 @@ Scope:
   - WASM plugin registry loading now reuses shared JSON list/map parse-coerce helpers in `WasmPluginRegistryService.loadPlugins`, with regression tests for malformed-entry filtering, sort order, and install/remove registry sync.
   - Shared projection counters (`pendingInvitations`, `relationshipCount`) are now centralized in `CapsuleLedgerSummaryParser.projectSharedCountersFromLedgerRoot(...)`; `LedgerViewService.loadCapsuleSnapshot` now reuses this parser boundary instead of maintaining a separate counter path.
   - Added parser/runtime regression coverage that malformed ledger owner + runtime owner context still yields deterministic pending classification (`capsule_ledger_summary_parser_test.dart`), aligning snapshot and summary projection semantics during degraded owner-field recovery windows.
+  - Relationships screen refresh path now performs a quick transport sync before projection reload (via `MainScreen` sync hook), so incoming relationship-break facts are not hidden behind invitation-screen-only polling.
+  - Manual relationship-screen refresh now bypasses quick-sync cooldown gating, ensuring explicit user refresh always triggers a transport receive cycle instead of being silently skipped by recent-sync throttling.
+  - Invitations screen peer-identity root resolution now stays inside `RelationshipService` (cards + projected relationship roots) instead of reading ledger projections directly in screen code; added `relationship_service_test.dart` coverage for projected-root fallback from relationship groups.
+  - `RelationshipService` root-resolution regression coverage now locks latest-relationship precedence when multiple projected peer roots exist for the same transport key (`establishedAt` tie-break toward newest), keeping peer identity display deterministic across re-invite history.
+  - Relationships screen now delegates peer-root lookup orchestration to `RelationshipService` (`loadPeerRootKeysForGroups`, `resolvePeerRootDisplayKey`) instead of keeping group-scan and identity fallback policy in widget code; service-level regression tests cover non-representative transport-key lookup and fallback precedence.
+  - Pending-remote-break notification projection in Relationships UI is now extracted into testable helper functions (`computeNewPendingRemoteBreakKeys`, `pruneNotifiedPendingRemoteBreakKeys`) with regression tests preventing duplicate snackbar alerts during repeated refresh/sync cycles.
+  - Relationships screen bootstrap path now uses a single startup sync flow (`_syncTransportAndReload`) instead of parallel initial load + sync kickoff, reducing first-frame projection races and duplicate notification windows.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.

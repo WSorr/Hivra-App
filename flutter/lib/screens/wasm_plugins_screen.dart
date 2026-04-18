@@ -87,6 +87,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   bool _runningBingx = false;
   bool _broadcastingBingxSignal = false;
   bool _runningChat = false;
+  bool _refreshingChatInbox = false;
   Set<String> _installingSourceEntryIds = <String>{};
   PluginDemoRunResult? _lastDemoResult;
   PluginHostApiResponse? _lastBingxResponse;
@@ -731,6 +732,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     var sent = 0;
     var blocked = 0;
     var failed = 0;
+    int? firstFailedCode;
+    String? firstFailedMessage;
     try {
       for (final peerHex in peers) {
         final sendResult = await _chatDelivery.sendCanonicalEnvelope(
@@ -743,11 +746,16 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           blocked += 1;
         } else {
           failed += 1;
+          firstFailedCode ??= sendResult.code;
+          firstFailedMessage ??=
+              sendResult.errorMessage ?? 'unknown transport failure';
         }
       }
       await _uiLog.log(
         'bingx.signal.broadcast',
-        'signal=$signalId peers=${peers.length} sent=$sent blocked=$blocked failed=$failed',
+        'signal=$signalId peers=${peers.length} sent=$sent blocked=$blocked failed=$failed'
+            '${firstFailedCode == null ? "" : " firstFailedCode=$firstFailedCode"}'
+            '${firstFailedMessage == null ? "" : " firstFailedMessage=$firstFailedMessage"}',
       );
       await _refreshCapsuleChatInbox(silentWhenEmpty: true);
       if (!mounted) return;
@@ -763,6 +771,17 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
+      if (failed > 0 && peers.length == 1 && firstFailedCode != null) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Broadcast failed (code $firstFailedCode): '
+              '${firstFailedMessage ?? "transport timeout or relay unreachable"}',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -973,72 +992,91 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   }
 
   Future<void> _refreshCapsuleChatInbox({bool silentWhenEmpty = false}) async {
-    if (!mounted) return;
-    final result = await _chatDelivery.receiveAndFilter();
-    await _uiLog.log(
-      'chat.fetch.result',
-      'code=${result.code} chat=${result.messages.length} trade=${result.tradeSignals.length} dropped=${result.droppedByConsensus}'
-          '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
-    );
-    if (!mounted) return;
-    if (result.code < 0) {
+    if (_refreshingChatInbox) {
+      if (!silentWhenEmpty && mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Inbox refresh already in progress'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    _refreshingChatInbox = true;
+    try {
+      if (!mounted) return;
+      final result = await _chatDelivery.receiveAndFilter();
+      await _uiLog.log(
+        'chat.fetch.result',
+        'code=${result.code} chat=${result.messages.length} trade=${result.tradeSignals.length} dropped=${result.droppedByConsensus}'
+            '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
+      );
+      if (!mounted) return;
+      if (result.code < 0) {
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              result.errorMessage ??
+                  'Chat receive failed (code ${result.code})',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        final byId = <String, CapsuleChatInboxMessage>{
+          for (final message in _chatInbox) message.id: message,
+        };
+        for (final message in result.messages) {
+          byId[message.id] = message;
+        }
+        final merged = byId.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+
+        final tradeById = <String, CapsuleTradeSignalInboxMessage>{
+          for (final signal in _tradeSignalInbox) signal.id: signal,
+        };
+        for (final signal in result.tradeSignals) {
+          tradeById[signal.id] = signal;
+        }
+        final mergedSignals = tradeById.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+
+        _chatDroppedByConsensus = result.droppedByConsensus;
+        _chatInbox = List<CapsuleChatInboxMessage>.unmodifiable(merged);
+        _tradeSignalInbox =
+            List<CapsuleTradeSignalInboxMessage>.unmodifiable(mergedSignals);
+      });
+
+      if (result.messages.isEmpty &&
+          result.tradeSignals.isEmpty &&
+          silentWhenEmpty) {
+        return;
+      }
+
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
+      final droppedNote = result.droppedByConsensus > 0
+          ? ' · dropped ${result.droppedByConsensus} by consensus'
+          : '';
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            result.errorMessage ?? 'Chat receive failed (code ${result.code})',
+            'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}$droppedNote',
           ),
           duration: const Duration(seconds: 2),
         ),
       );
-      return;
+    } finally {
+      _refreshingChatInbox = false;
     }
-
-    setState(() {
-      final byId = <String, CapsuleChatInboxMessage>{
-        for (final message in _chatInbox) message.id: message,
-      };
-      for (final message in result.messages) {
-        byId[message.id] = message;
-      }
-      final merged = byId.values.toList()
-        ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-
-      final tradeById = <String, CapsuleTradeSignalInboxMessage>{
-        for (final signal in _tradeSignalInbox) signal.id: signal,
-      };
-      for (final signal in result.tradeSignals) {
-        tradeById[signal.id] = signal;
-      }
-      final mergedSignals = tradeById.values.toList()
-        ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-
-      _chatDroppedByConsensus = result.droppedByConsensus;
-      _chatInbox = List<CapsuleChatInboxMessage>.unmodifiable(merged);
-      _tradeSignalInbox =
-          List<CapsuleTradeSignalInboxMessage>.unmodifiable(mergedSignals);
-    });
-
-    if (result.messages.isEmpty &&
-        result.tradeSignals.isEmpty &&
-        silentWhenEmpty) {
-      return;
-    }
-
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    final droppedNote = result.droppedByConsensus > 0
-        ? ' · dropped ${result.droppedByConsensus} by consensus'
-        : '';
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}$droppedNote',
-        ),
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   @override
@@ -1438,6 +1476,9 @@ class _SourceCatalogSection extends StatelessWidget {
             )
           else
             _PluginGrid(
+              maxColumns: 3,
+              desktopAspectRatio: 2.2,
+              mobileAspectRatio: 1.55,
               children: entries.map((entry) {
                 final busy = installingEntryIds.contains(entry.id);
                 return Container(
@@ -1512,7 +1553,7 @@ class _EmptyInstalledState extends StatelessWidget {
       ),
       child: const Column(
         children: [
-          Icon(Icons.extension_off_rounded, color: Color(0xFF728196), size: 34),
+          Icon(Icons.extension_off_rounded, color: Color(0xFF728196), size: 26),
           SizedBox(height: 10),
           Text(
             'No plugin packages installed yet.',
@@ -1777,20 +1818,20 @@ class _StatusBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: <Color>[Color(0xFF253447), Color(0xFF17222F)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(
               Icons.auto_awesome_mosaic_rounded,
               color: Color(0xFF8BC8FF),
-              size: 28,
+              size: 20,
             ),
           ),
           const SizedBox(width: 14),
@@ -1915,7 +1956,7 @@ class _HostPanel extends StatelessWidget {
             icon: Icons.shield_moon_rounded,
             accent: accent,
             glow: accent.withAlpha(20),
-            size: 46,
+            size: 34,
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -3421,27 +3462,39 @@ String _runtimeModuleSelectionLabel(String value) {
 
 class _PluginGrid extends StatelessWidget {
   final List<Widget> children;
+  final int? maxColumns;
+  final double desktopAspectRatio;
+  final double mobileAspectRatio;
 
-  const _PluginGrid({required this.children});
+  const _PluginGrid({
+    required this.children,
+    this.maxColumns,
+    this.desktopAspectRatio = 1.05,
+    this.mobileAspectRatio = 1.9,
+  });
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final columns = width >= 1080
+        var columns = width >= 1080
             ? 4
             : width >= 760
                 ? 3
                 : width >= 520
                     ? 2
                     : 1;
+        if (maxColumns != null && columns > maxColumns!) {
+          columns = maxColumns!;
+        }
 
         return GridView.count(
           crossAxisCount: columns,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: width < 520 ? 1.9 : 1.05,
+          childAspectRatio:
+              width < 520 ? mobileAspectRatio : desktopAspectRatio,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: children,
@@ -3573,7 +3626,7 @@ class _PluginIconPlate extends StatelessWidget {
     required this.icon,
     required this.accent,
     required this.glow,
-    this.size = 42,
+    this.size = 28,
   });
 
   @override
@@ -3587,10 +3640,10 @@ class _PluginIconPlate extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: accent.withAlpha(70)),
       ),
-      child: Icon(icon, color: accent, size: size * 0.46),
+      child: Icon(icon, color: accent, size: size * 0.52),
     );
   }
 }

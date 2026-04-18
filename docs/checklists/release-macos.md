@@ -15,6 +15,7 @@ Use this checklist before publishing any macOS build to testers or end users.
 
 - [ ] `codesign --verify --deep --strict` succeeds for the `.app`.
 - [ ] `spctl --assess --type execute` result is recorded.
+- [ ] Packaged ZIP artifact was unpacked and verified (app bundle integrity + universal `libhivra_ffi.dylib`) from the extracted `.app`, not only from build tree.
 - [ ] Apple Silicon smoke launch was tested.
 - [ ] Intel smoke launch was tested.
 - [ ] App starts past first screen on a clean machine or clean user account.

@@ -158,7 +158,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
-  bool _shouldSkipQuickTransportSync() {
+  bool _shouldSkipQuickTransportSync({required bool force}) {
+    if (force) return false;
     if (_transportQuickSyncInFlight) return true;
     final last = _lastTransportQuickSyncAt;
     if (last == null) return false;
@@ -167,8 +168,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<InvitationIntentResult> _runQuickTransportSync({
     required String reason,
+    bool force = false,
   }) async {
-    if (_shouldSkipQuickTransportSync()) {
+    if (_shouldSkipQuickTransportSync(force: force)) {
       debugPrint('[StartupTiming] quick_sync_skipped_reason=$reason');
       return const InvitationIntentResult(
         code: 0,
@@ -271,6 +273,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _loadCapsuleData();
   }
 
+  Future<void> _syncRelationshipsTransport() async {
+    final result = await _runQuickTransportSync(
+      reason: 'relationships_screen_refresh',
+      force: true,
+    );
+    if (!mounted) return;
+    if (result.code >= 0) {
+      _loadCapsuleData();
+    }
+  }
+
   Future<void> _refreshFromTopBar() async {
     if (_selectedIndex == 1) {
       final result = await _invitationIntents.fetchInvitations();
@@ -337,6 +350,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           key: ValueKey('relationships-$_activeCapsuleHex-$_ledgerVersion'),
           service: _runtime.buildRelationshipService(),
           onLedgerChanged: _handleLedgerChanged,
+          onSyncTransport: _syncRelationshipsTransport,
         );
       case 3:
         return WasmPluginsScreen(

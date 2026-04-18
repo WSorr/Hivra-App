@@ -45,6 +45,45 @@ info() {
   echo "== $* =="
 }
 
+verify_macos_app_bundle() {
+  local app_path="$1"
+  local context="$2"
+  local ffi_lib="$app_path/Contents/Frameworks/libhivra_ffi.dylib"
+
+  [ -d "$app_path" ] || die "$context app bundle not found: $app_path"
+  [ -f "$ffi_lib" ] || die "$context missing bundled FFI library: $ffi_lib"
+
+  info "Verify $context app bundle"
+  file "$ffi_lib"
+
+  local lipo_info
+  lipo_info="$(lipo -info "$ffi_lib" 2>/dev/null || true)"
+  echo "$lipo_info"
+  if [[ "$lipo_info" != *"x86_64"* ]] || [[ "$lipo_info" != *"arm64"* ]]; then
+    die "$context libhivra_ffi.dylib is not universal (expected x86_64 + arm64)"
+  fi
+
+  codesign --verify --deep --strict "$app_path"
+}
+
+verify_packaged_zip_bundle() {
+  local zip_path="$1"
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+
+  info "Verify packaged ZIP artifact"
+  ditto -x -k "$zip_path" "$tmp_dir"
+
+  local extracted_app="$tmp_dir/hivra_app.app"
+  if [ ! -d "$extracted_app" ]; then
+    extracted_app="$(find "$tmp_dir" -maxdepth 3 -type d -name '*.app' | head -n1 || true)"
+  fi
+  [ -n "$extracted_app" ] || die "No .app bundle found after extracting $zip_path"
+  verify_macos_app_bundle "$extracted_app" "packaged ZIP"
+
+  rm -rf "$tmp_dir"
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --version)
@@ -118,8 +157,7 @@ else
   info "Codesign identity not set (unsigned build)"
 fi
 
-info "Verify bundle signature"
-codesign --verify --deep --strict "$APP_PATH"
+verify_macos_app_bundle "$APP_PATH" "build-tree"
 
 info "Gatekeeper assessment (recorded)"
 set +e
@@ -137,6 +175,7 @@ META_PATH="$OUTPUT_DIR/RELEASE-METADATA.txt"
 info "Package ZIP artifact"
 rm -f "$ZIP_PATH"
 ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+verify_packaged_zip_bundle "$ZIP_PATH"
 
 if [ -n "$NOTARY_PROFILE" ]; then
   info "Submit for notarization"
@@ -150,6 +189,7 @@ if [ -n "$NOTARY_PROFILE" ]; then
   rm -f "$ZIP_PATH"
   ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
   NOTARIZED="yes"
+  verify_packaged_zip_bundle "$ZIP_PATH"
 else
   info "Notary profile not set (not notarized)"
 fi
