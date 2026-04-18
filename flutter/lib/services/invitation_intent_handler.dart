@@ -321,19 +321,17 @@ class InvitationIntentHandler {
         message: 'Invitation is not available in active capsule ledger',
       );
     }
-    if (localInvitation != null) {
-      if (localInvitation.status != InvitationStatus.pending) {
-        return const InvitationIntentResult(
-          code: 0,
-          message: 'Invitation already resolved',
-        );
-      }
-      if (!localInvitation.isIncoming) {
-        return const InvitationIntentResult(
-          code: -1,
-          message: 'Only incoming invitations can be accepted',
-        );
-      }
+    if (localInvitation.status != InvitationStatus.pending) {
+      return const InvitationIntentResult(
+        code: 0,
+        message: 'Invitation already resolved',
+      );
+    }
+    if (!localInvitation.isIncoming) {
+      return const InvitationIntentResult(
+        code: -1,
+        message: 'Only incoming invitations can be accepted',
+      );
     }
 
     final actions = _requireActions();

@@ -238,7 +238,7 @@ void main() {
         final localTransport = rep(0xab);
         final peer = rep(0xbb);
         final t0 = DateTime.now()
-            .subtract(const Duration(hours: 30))
+            .subtract(const Duration(hours: 2))
             .millisecondsSinceEpoch;
 
         final ledger = jsonEncode(<String, dynamic>{
@@ -249,10 +249,10 @@ void main() {
               payload: invitationSentPayload(
                 invitationByte: 0x14,
                 starterByte: 0x24,
-                toPubkey: localTransport,
+                toPubkey: peer,
               ),
               timestamp: t0 + 1,
-              signer: peer,
+              signer: localTransport,
             ),
           ],
         });
