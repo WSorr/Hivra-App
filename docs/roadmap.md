@@ -234,6 +234,7 @@ Scope:
 
 Definition of done:
 - Published macOS artifacts match the tested build and launch reliably on supported Macs.
+- Status: completed (2026-04-19, v1 scope).
 
 ### 7.2 Android Release Quality
 
@@ -263,6 +264,7 @@ Scope:
 Definition of done:
 - Published Android APKs install cleanly, launch, and complete basic invitation flows on real devices.
 - Android release verification is part of the normal release process rather than an ad hoc side task.
+- Status: completed (2026-04-19, v1 scope).
 
 ### 7.1 Update Safety Blockers
 
@@ -331,6 +333,7 @@ Scope:
 
 Definition of done:
 - FFI remains explicit, narrow, and predictable.
+- Status: completed (2026-04-19, v1 scope).
 
 ### 8.1 Android Runtime Hardening
 
@@ -351,10 +354,15 @@ Scope:
   - Added `invitation_intent_handler_test.dart` coverage for receive-failure diagnostics:
     - baseline receive failure now includes deterministic code suffix (`[code: ...]`)
     - FFI detail payload is surfaced when available (`[code: ...; ffi: ...]`)
+  - Invitation worker ledger-apply path now restores the currently active runtime capsule when a worker completes for a stale capsule context (capsule switched mid-flight), preventing cross-capsule runtime drift during delayed send/fetch/accept/reject completions.
+  - `MainScreen` quick-sync orchestration now drops stale delayed sync requests when their captured capsule is no longer active, reducing redundant transport/bootstrap churn after capsule switches.
+  - `InvitationIntentHandler` local projection/expiry checks are now capsule-scoped (`capsuleHex`) instead of reading/mutating whichever runtime capsule happens to be active, reducing cross-capsule pending disappearance and stale-state leakage during rapid switches.
+  - Invitations screen and header pending counter now request invitation projection with explicit `activeCapsuleHex`, preventing mixed “header from capsule A + invitation list from capsule B” rendering while runtime drift is being reconciled.
 
 Definition of done:
 - Android runtime failures are diagnosable.
 - Android behavior matches the same ledger/truth rules expected on other platforms.
+- Status: completed (2026-04-19, v1 scope).
 
 ### 9. Flutter Policy Reduction
 
@@ -396,10 +404,12 @@ Scope:
   - `RelationshipService` root-resolution regression coverage now locks latest-relationship precedence when multiple projected peer roots exist for the same transport key (`establishedAt` tie-break toward newest), keeping peer identity display deterministic across re-invite history.
   - Relationships screen now delegates peer-root lookup orchestration to `RelationshipService` (`loadPeerRootKeysForGroups`, `resolvePeerRootDisplayKey`) instead of keeping group-scan and identity fallback policy in widget code; service-level regression tests cover non-representative transport-key lookup and fallback precedence.
   - Pending-remote-break notification projection in Relationships UI is now extracted into testable helper functions (`computeNewPendingRemoteBreakKeys`, `pruneNotifiedPendingRemoteBreakKeys`) with regression tests preventing duplicate snackbar alerts during repeated refresh/sync cycles.
+  - Relationships pending-remote notifications now establish a first-load baseline before alerting; persisted pre-existing pending break rows are no longer surfaced as newly received break requests on initial screen open/switch.
   - Relationships screen bootstrap path now uses a single startup sync flow (`_syncTransportAndReload`) instead of parallel initial load + sync kickoff, reducing first-frame projection races and duplicate notification windows.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.
+- Status: completed (2026-04-19, v1 scope).
 
 ### 9.1 Identity Decoupling
 
@@ -564,9 +574,11 @@ Scope:
   - BingX and Capsule Chat runtime panels now surface runtime invoke diagnostics from host responses (`runtime mode`, `ABI`, `entry export`, `invoke digest`) with explicit mismatch highlighting for ABI/entry.
   - BingX and Capsule Chat runtime panels now also show host-declared runtime capability diagnostics (`execution_capabilities`) with deterministic ordering and compact overflow hinting.
   - Runtime capability-chip display logic is now extracted into a shared utility (`summarizeRuntimeCapabilitiesForDisplay`) with dedicated unit tests, locking deterministic UI diagnostics shape for Host API capability responses.
+  - WASM Plugins catalog/installed grids now use compact bounded layout (`maxColumns=3` with tighter aspect ratios), preventing oversized "skyscraper" plugin cards on wide desktop windows while keeping deterministic package diagnostics visible.
 
 Definition of done:
 - Plugins extend transport capabilities without bypassing core rules or rewriting local truth.
+- Status: completed (2026-04-19, v1 scope pre-runtime-execution).
 
 ## Working Rule
 
@@ -811,3 +823,4 @@ When tradeoffs are unclear, prefer:
 ## Active Debt Kill List
 
 No active `9.x` architecture debt remains in v1 scope before trading-agent build.
+No active `10.x` plugin-host debt remains in v1 scope before trading-agent build.

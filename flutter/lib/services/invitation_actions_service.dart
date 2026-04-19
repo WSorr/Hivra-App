@@ -75,15 +75,23 @@ class InvitationActionsService {
     required String? bootstrapActiveHex,
     required String? ledgerJson,
   }) async {
-    if (ledgerJson == null || ledgerJson.isEmpty) {
-      return;
-    }
     final activeNow = await _runtime.resolveActiveCapsuleHex();
     if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
-      await _persistWorkerLedgerForBootstrapCapsule(
-        bootstrapActiveHex: bootstrapActiveHex,
-        ledgerJson: ledgerJson,
+      if (ledgerJson != null && ledgerJson.isNotEmpty) {
+        await _persistWorkerLedgerForBootstrapCapsule(
+          bootstrapActiveHex: bootstrapActiveHex,
+          ledgerJson: ledgerJson,
+        );
+      }
+      final restored = await _runtime.bootstrapActiveCapsuleRuntime();
+      debugPrint(
+        '[InvitationActions] restored active runtime capsule after worker drift '
+        'workerCapsule=${bootstrapActiveHex.isEmpty ? 'unknown' : bootstrapActiveHex} '
+        'activeCapsule=${activeNow ?? 'none'} restored=$restored',
       );
+      return;
+    }
+    if (ledgerJson == null || ledgerJson.isEmpty) {
       return;
     }
     await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
@@ -240,20 +248,11 @@ class InvitationActionsService {
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
-      if (code >= 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _runtime.resolveActiveCapsuleHex();
-        if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
-          await _persistWorkerLedgerForBootstrapCapsule(
-            bootstrapActiveHex: bootstrapActiveHex,
-            ledgerJson: ledgerJson,
-          );
-          return InvitationWorkerResult(
-            code: code,
-            ledgerJson: ledgerJson,
-            lastError: lastError,
-          );
-        }
-        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
+      if (code >= 0) {
+        await _applyWorkerLedgerResult(
+          bootstrapActiveHex: bootstrapActiveHex,
+          ledgerJson: ledgerJson,
+        );
       }
       return InvitationWorkerResult(
         code: code,
@@ -295,20 +294,11 @@ class InvitationActionsService {
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
-      if (code >= 0 && ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _runtime.resolveActiveCapsuleHex();
-        if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
-          await _persistWorkerLedgerForBootstrapCapsule(
-            bootstrapActiveHex: bootstrapActiveHex,
-            ledgerJson: ledgerJson,
-          );
-          return InvitationWorkerResult(
-            code: code,
-            ledgerJson: ledgerJson,
-            lastError: lastError,
-          );
-        }
-        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
+      if (code >= 0) {
+        await _applyWorkerLedgerResult(
+          bootstrapActiveHex: bootstrapActiveHex,
+          ledgerJson: ledgerJson,
+        );
       }
       return InvitationWorkerResult(
         code: code,
@@ -396,21 +386,10 @@ class InvitationActionsService {
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
-      if (ledgerJson != null && ledgerJson.isNotEmpty) {
-        final activeNow = await _runtime.resolveActiveCapsuleHex();
-        if (bootstrapActiveHex != null && bootstrapActiveHex != activeNow) {
-          await _persistWorkerLedgerForBootstrapCapsule(
-            bootstrapActiveHex: bootstrapActiveHex,
-            ledgerJson: ledgerJson,
-          );
-          return InvitationWorkerResult(
-            code: code,
-            ledgerJson: ledgerJson,
-            lastError: lastError,
-          );
-        }
-        await _runtime.applyLedgerSnapshotIfNotStale(ledgerJson);
-      }
+      await _applyWorkerLedgerResult(
+        bootstrapActiveHex: bootstrapActiveHex,
+        ledgerJson: ledgerJson,
+      );
       return InvitationWorkerResult(
         code: code,
         ledgerJson: ledgerJson,

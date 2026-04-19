@@ -400,7 +400,12 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         };
 
         let message_signer = PubKey::from(message.from);
-        if should_skip_incoming_delivery_append(local_kind, &local_payload, message_signer) {
+        if should_skip_incoming_delivery_append_with_timestamp(
+            local_kind,
+            &local_payload,
+            message_signer,
+            Some(message.timestamp),
+        ) {
             eprintln!("[Delivery/Nostr] Skip message: event already exists");
             continue;
         }

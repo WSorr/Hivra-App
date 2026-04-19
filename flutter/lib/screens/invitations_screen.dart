@@ -166,7 +166,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   Future<void> _loadInvitations() async {
     final capturedCapsuleHex = widget.activeCapsuleHex;
     final loadGeneration = ++_invitationLoadGeneration;
-    final invitations = _intents.loadInvitations();
+    final invitations = _intents.loadInvitations(
+      capsuleHex: capturedCapsuleHex,
+    );
     final peerRoots = await _loadPeerRootKeys(invitations);
     final nextResolved = pruneLocallyResolvedIncomingIds(
       resolvedIds: _locallyResolvedIncomingIds,

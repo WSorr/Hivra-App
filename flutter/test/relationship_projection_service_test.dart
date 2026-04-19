@@ -486,6 +486,57 @@ void main() {
     );
 
     test(
+      'ignores stale remote break replay older than current relationship episode',
+      () {
+        const t0 = 1890003218000;
+        final local = rep(0xaa);
+        final peer = rep(0xbb);
+        final serviceWithOwner =
+            RelationshipProjectionService.withOwnerKeyProvider(
+          () => Uint8List.fromList(local),
+          support,
+        );
+        final root = <String, dynamic>{
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xbb,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x41,
+                senderByte: 0xbb,
+                senderStarterByte: 0x61,
+                peerRootByte: 0xcc,
+                senderRootByte: 0xaa,
+              ),
+              timestamp: t0 + 100,
+              signer: local,
+            ),
+            // Stale replay of an old remote break appended later in history order.
+            event(
+              kind: 'RelationshipBroken',
+              payload: <int>[
+                ...rep(0xbb),
+                ...rep(0x21),
+                ...rep(0xcc),
+              ],
+              timestamp: t0 + 10,
+              signer: peer,
+            ),
+          ],
+        };
+
+        final projected = serviceWithOwner.loadRelationships(root);
+
+        expect(projected, hasLength(1));
+        expect(projected.single.isActive, isTrue);
+        expect(projected.single.hasPendingRemoteBreak, isFalse);
+      },
+    );
+
+    test(
       'groups mixed transport links under one peer when root anchor matches',
       () {
         const t0 = 1890003220000;

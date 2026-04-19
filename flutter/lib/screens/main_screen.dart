@@ -162,6 +162,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }) async {
     await Future<void>.delayed(delay);
     if (!mounted) return;
+    if (_isStaleCapsuleSyncRequest(capsuleHex)) {
+      debugPrint(
+        '[StartupTiming] quick_sync_delayed_stale_skip reason=$reason '
+        'opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
+      );
+      return;
+    }
 
     final result = await _runQuickTransportSync(
       reason: reason,
@@ -181,11 +188,33 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return DateTime.now().difference(last) < const Duration(seconds: 4);
   }
 
+  bool _isStaleCapsuleSyncRequest(String? capsuleHex) {
+    final opCapsule = capsuleHex?.trim();
+    if (opCapsule == null || opCapsule.isEmpty) {
+      return false;
+    }
+    if (_activeCapsuleHex.isEmpty) {
+      return false;
+    }
+    return opCapsule != _activeCapsuleHex;
+  }
+
   Future<InvitationIntentResult> _runQuickTransportSync({
     required String reason,
     bool force = false,
     String? capsuleHex,
   }) async {
+    if (_isStaleCapsuleSyncRequest(capsuleHex)) {
+      debugPrint(
+        '[StartupTiming] quick_sync_stale_skip reason=$reason '
+        'opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
+      );
+      return const InvitationIntentResult(
+        code: 0,
+        message: 'Skipped stale capsule quick sync',
+      );
+    }
+
     if (_shouldSkipQuickTransportSync(force: force)) {
       debugPrint('[StartupTiming] quick_sync_skipped_reason=$reason');
       return const InvitationIntentResult(
@@ -242,7 +271,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     // user is on Invitations screen (same source of truth as visible list).
     if (_selectedIndex == 1) {
       pendingInvitations = _invitationIntents
-          .loadInvitations()
+          .loadInvitations(capsuleHex: _activeCapsuleHex)
           .where((invitation) => invitation.status == InvitationStatus.pending)
           .length;
     }

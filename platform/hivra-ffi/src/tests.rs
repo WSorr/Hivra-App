@@ -1982,6 +1982,84 @@ fn replay_policy_skips_duplicate_relationship_broken_without_reestablish() {
 }
 
 #[test]
+fn replay_policy_skips_stale_relationship_broken_after_reestablish_by_timestamp() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(211);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [212u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_starter_id = derive_starter_id(&test_seed(213), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+
+    let established = RelationshipEstablishedPayload {
+        peer_pubkey: PubKey::from(peer_pubkey),
+        own_starter_id: StarterId::from(own_starter_id),
+        peer_starter_id: StarterId::from(peer_starter_id),
+        kind: StarterKind::Kick,
+        invitation_id: [214u8; 32],
+        sender_pubkey: PubKey::from(peer_pubkey),
+        sender_starter_type: StarterKind::Kick,
+        sender_starter_id: StarterId::from(peer_starter_id),
+        peer_root_pubkey: None,
+        sender_root_pubkey: None,
+    };
+    let broken = RelationshipBrokenPayload {
+        peer_pubkey: PubKey::from(peer_pubkey),
+        own_starter_id: StarterId::from(own_starter_id),
+        peer_root_pubkey: None,
+    };
+    let broken_bytes = broken.to_bytes();
+
+    // Episode 1: establish -> break.
+    append_runtime_event_with_signer(
+        EventKind::RelationshipEstablished,
+        &established.to_bytes(),
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+    let old_break_ts = {
+        let runtime = RUNTIME.lock().unwrap();
+        runtime
+            .capsule
+            .as_ref()
+            .and_then(|capsule| {
+                capsule
+                    .ledger
+                    .events()
+                    .last()
+                    .map(|event| event.timestamp().as_u64())
+            })
+            .unwrap_or(0)
+            .saturating_add(1)
+    };
+    append_runtime_event_with_signer(
+        EventKind::RelationshipBroken,
+        &broken_bytes,
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+
+    // Episode 2: re-establish same relationship key.
+    append_runtime_event_with_signer(
+        EventKind::RelationshipEstablished,
+        &established.to_bytes(),
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+
+    // Replayed old break (timestamp from episode 1) must be skipped.
+    assert!(should_skip_incoming_delivery_append_with_timestamp(
+        EventKind::RelationshipBroken,
+        &broken_bytes,
+        PubKey::from(peer_pubkey),
+        Some(old_break_ts),
+    ));
+}
+
+#[test]
 fn replay_policy_skips_replayed_relationship_established_after_local_break() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

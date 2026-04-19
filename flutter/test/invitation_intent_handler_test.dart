@@ -276,6 +276,79 @@ void main() {
       ]);
     });
 
+    test('scopes expiry sweep to explicit capsule and skips stale capsule',
+        () async {
+      String idForByte(int value) =>
+          base64.encode(Uint8List.fromList(List<int>.filled(32, value)));
+
+      const activeCapsule =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const staleCapsule =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      final now = DateTime.now();
+      final overdueOutgoingPending = Invitation(
+        id: idForByte(41),
+        fromPubkey: idForByte(42),
+        toPubkey: idForByte(43),
+        kind: StarterKind.pulse,
+        status: InvitationStatus.pending,
+        sentAt: now.subtract(const Duration(hours: 30)),
+        expiresAt: now.subtract(const Duration(hours: 6)),
+      );
+
+      final actions = _FakeInvitationActionsService();
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+        activeCapsuleHexResolver: () => activeCapsule,
+        invitationsLoader: () => <Invitation>[overdueOutgoingPending],
+        fetchInvitationsQuickAction: () async =>
+            const InvitationWorkerResult(code: 0),
+      );
+
+      final result =
+          await handler.fetchInvitationsQuick(capsuleHex: staleCapsule);
+
+      expect(result.code, 0);
+      expect(actions.canceledInvitationIds, isEmpty);
+      expect(actions.canceledInvitationCapsules, isEmpty);
+    });
+
+    test('passes explicit capsule to expiry cancel action', () async {
+      String idForByte(int value) =>
+          base64.encode(Uint8List.fromList(List<int>.filled(32, value)));
+
+      const capsuleHex =
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+      final now = DateTime.now();
+      final overdueOutgoingPending = Invitation(
+        id: idForByte(44),
+        fromPubkey: idForByte(45),
+        toPubkey: idForByte(46),
+        kind: StarterKind.seed,
+        status: InvitationStatus.pending,
+        sentAt: now.subtract(const Duration(hours: 30)),
+        expiresAt: now.subtract(const Duration(hours: 6)),
+      );
+
+      final actions = _FakeInvitationActionsService();
+      final handler = InvitationIntentHandler(
+        actions: actions,
+        delivery: const InvitationDeliveryService(),
+        activeCapsuleHexResolver: () => capsuleHex,
+        invitationsLoader: () => <Invitation>[overdueOutgoingPending],
+        fetchInvitationsQuickAction: () async =>
+            const InvitationWorkerResult(code: 0),
+      );
+
+      final result =
+          await handler.fetchInvitationsQuick(capsuleHex: capsuleHex);
+
+      expect(result.code, 0);
+      expect(actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
+      expect(actions.canceledInvitationCapsules, <String?>[capsuleHex]);
+    });
+
     test('runs expiry sweep even when quick fetch is skipped by cooldown',
         () async {
       String idForByte(int value) =>
@@ -1073,6 +1146,7 @@ class _FakeInvitationActionsService extends InvitationActionsService {
       : super(runtime: _NoopInvitationActionsRuntime());
 
   final List<String> canceledInvitationIds = <String>[];
+  final List<String?> canceledInvitationCapsules = <String?>[];
   InvitationWorkerResult sendResult = const InvitationWorkerResult(code: 0);
   Future<InvitationWorkerResult> Function(Uint8List toPubkey, int starterSlot)?
       onSend;
@@ -1165,6 +1239,7 @@ class _FakeInvitationActionsService extends InvitationActionsService {
     String? capsuleHex,
   }) async {
     canceledInvitationIds.add(base64.encode(invitationId));
+    canceledInvitationCapsules.add(capsuleHex);
     return true;
   }
 }
@@ -1172,6 +1247,9 @@ class _FakeInvitationActionsService extends InvitationActionsService {
 class _NoopInvitationActionsRuntime implements InvitationActionsRuntime {
   @override
   Future<bool> applyLedgerSnapshotIfNotStale(String ledgerJson) async => true;
+
+  @override
+  Future<bool> bootstrapActiveCapsuleRuntime() async => true;
 
   @override
   bool expireInvitation(Uint8List invitationId) => true;

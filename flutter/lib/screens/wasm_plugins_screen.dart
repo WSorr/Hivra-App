@@ -1239,6 +1239,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         ),
         const SizedBox(height: 12),
         _PluginGrid(
+          maxColumns: 3,
+          desktopAspectRatio: 1.45,
+          mobileAspectRatio: 1.18,
           children: _transportPlugins
               .map(
                 (plugin) => _CatalogPluginTile(plugin: plugin),
@@ -1253,6 +1256,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         ),
         const SizedBox(height: 12),
         _PluginGrid(
+          maxColumns: 3,
+          desktopAspectRatio: 1.45,
+          mobileAspectRatio: 1.18,
           children: _boundaryRules
               .map(
                 (rule) => _RuleTile(rule: rule),
@@ -1348,6 +1354,9 @@ class _InstalledSection extends StatelessWidget {
             const _EmptyInstalledState()
           else
             _PluginGrid(
+              maxColumns: 3,
+              desktopAspectRatio: 1.42,
+              mobileAspectRatio: 1.14,
               children: installed
                   .map(
                     (record) => _InstalledPluginTile(
@@ -1477,8 +1486,8 @@ class _SourceCatalogSection extends StatelessWidget {
           else
             _PluginGrid(
               maxColumns: 3,
-              desktopAspectRatio: 2.2,
-              mobileAspectRatio: 1.55,
+              desktopAspectRatio: 2.65,
+              mobileAspectRatio: 1.92,
               children: entries.map((entry) {
                 final busy = installingEntryIds.contains(entry.id);
                 return Container(
@@ -3469,8 +3478,8 @@ class _PluginGrid extends StatelessWidget {
   const _PluginGrid({
     required this.children,
     this.maxColumns,
-    this.desktopAspectRatio = 1.05,
-    this.mobileAspectRatio = 1.9,
+    this.desktopAspectRatio = 1.35,
+    this.mobileAspectRatio = 1.15,
   });
 
   @override
@@ -3626,7 +3635,7 @@ class _PluginIconPlate extends StatelessWidget {
     required this.icon,
     required this.accent,
     required this.glow,
-    this.size = 28,
+    this.size = 24,
   });
 
   @override

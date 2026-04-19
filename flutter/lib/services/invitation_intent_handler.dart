@@ -85,10 +85,18 @@ class InvitationIntentHandler {
         _fetchInvitationsQuickAction = fetchInvitationsQuickAction,
         _activeCapsuleHexResolver = activeCapsuleHexResolver;
 
-  List<Invitation> loadInvitations() =>
-      _invitationsLoader?.call() ??
-      _ledgerView?.loadInvitations() ??
-      const <Invitation>[];
+  List<Invitation> loadInvitations({String? capsuleHex}) {
+    final expectedCapsuleHex = _normalizeExplicitCapsuleHex(capsuleHex);
+    if (expectedCapsuleHex != null) {
+      final activeCapsuleHex = _activeCapsuleHexOrNull();
+      if (activeCapsuleHex != null && activeCapsuleHex != expectedCapsuleHex) {
+        return const <Invitation>[];
+      }
+    }
+    return _invitationsLoader?.call() ??
+        _ledgerView?.loadInvitations() ??
+        const <Invitation>[];
+  }
 
   Future<InvitationIntentResult> sendInvitation(
       Uint8List toPubkey, int starterSlot,
@@ -135,6 +143,7 @@ class InvitationIntentHandler {
     final pendingIdsBeforeSend = _pendingOutgoingInvitationIds(
       toPubkeyB64: recipientPubkeyB64,
       starterSlot: starterSlot,
+      capsuleHex: capsuleHex,
     );
     final workerResult = await _requireActions().sendInvitation(
       toPubkey,
@@ -150,6 +159,7 @@ class InvitationIntentHandler {
           starterSlot: starterSlot,
           previousPendingIds: pendingIdsBeforeSend,
           minSentAt: minPendingSentAt,
+          capsuleHex: capsuleHex,
         );
     final localPendingProjectedAfterFailure = !localPendingRecorded &&
         code != 0 &&
@@ -158,6 +168,7 @@ class InvitationIntentHandler {
           starterSlot: starterSlot,
           previousPendingIds: pendingIdsBeforeSend,
           minSentAt: minPendingSentAt,
+          capsuleHex: capsuleHex,
         );
     final localPendingConfirmedAfterFetch = !localPendingRecorded &&
         code != 0 &&
@@ -219,7 +230,9 @@ class InvitationIntentHandler {
     final workerResult = await (_fetchInvitationsAction?.call() ??
         _requireActions().fetchInvitations(capsuleHex: operationCapsuleHex));
     final code = workerResult.code;
-    await _expireOverdueOutgoingInvitationsIfNeeded();
+    await _expireOverdueOutgoingInvitationsIfNeeded(
+      capsuleHex: operationCapsuleHex,
+    );
     final diagnostics = _receiveDiagnostics(workerResult);
     return InvitationIntentResult(
       code: code,
@@ -250,7 +263,9 @@ class InvitationIntentHandler {
     final lastQuickFetchAt = _lastQuickFetchAtByCapsule[operationCapsuleHex];
     if (lastQuickFetchAt != null &&
         DateTime.now().difference(lastQuickFetchAt) < _quickFetchCooldown) {
-      await _expireOverdueOutgoingInvitationsIfNeeded();
+      await _expireOverdueOutgoingInvitationsIfNeeded(
+        capsuleHex: operationCapsuleHex,
+      );
       return const InvitationIntentResult(
         code: 0,
         message: 'Skipped duplicate quick fetch',
@@ -282,7 +297,9 @@ class InvitationIntentHandler {
         _requireActions()
             .fetchInvitationsQuick(capsuleHex: operationCapsuleHex));
     final code = workerResult.code;
-    await _expireOverdueOutgoingInvitationsIfNeeded();
+    await _expireOverdueOutgoingInvitationsIfNeeded(
+      capsuleHex: operationCapsuleHex,
+    );
     final diagnostics = _receiveDiagnostics(workerResult);
     return InvitationIntentResult(
       code: code,
@@ -307,12 +324,18 @@ class InvitationIntentHandler {
     final invitationIdB64 = base64.encode(invitationId);
     final operationCapsuleHex =
         _capsuleHexOrNull(explicitCapsuleHex: capsuleHex);
-    var localInvitation = _findInvitationById(invitationIdB64);
+    var localInvitation = _findInvitationById(
+      invitationIdB64,
+      capsuleHex: operationCapsuleHex,
+    );
     if (localInvitation == null) {
       final syncCode =
           await _syncInvitationsForAccept(capsuleHex: operationCapsuleHex);
       if (syncCode >= 0) {
-        localInvitation = _findInvitationById(invitationIdB64);
+        localInvitation = _findInvitationById(
+          invitationIdB64,
+          capsuleHex: operationCapsuleHex,
+        );
       }
     }
     if (localInvitation == null) {
@@ -351,7 +374,10 @@ class InvitationIntentHandler {
         );
       }
       if (refreshResult.code >= 0) {
-        final refreshedInvitation = _findInvitationById(invitationIdB64);
+        final refreshedInvitation = _findInvitationById(
+          invitationIdB64,
+          capsuleHex: operationCapsuleHex,
+        );
         final canRetry = refreshedInvitation != null &&
             refreshedInvitation.isIncoming &&
             refreshedInvitation.status == InvitationStatus.pending;
@@ -370,7 +396,10 @@ class InvitationIntentHandler {
         hasWorkerLedger && _softAcceptDeliveryCodes.contains(code);
     final localAcceptedAfterFailure = !localAcceptanceRecorded &&
         code != 0 &&
-        _isInvitationLocallyAccepted(invitationIdB64);
+        _isInvitationLocallyAccepted(
+          invitationIdB64,
+          capsuleHex: operationCapsuleHex,
+        );
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
         ? ' [code: $code; ffi: $lastError]'
@@ -404,7 +433,9 @@ class InvitationIntentHandler {
       code = fullResult.code;
     }
     if (code >= 0) {
-      await _expireOverdueOutgoingInvitationsIfNeeded();
+      await _expireOverdueOutgoingInvitationsIfNeeded(
+        capsuleHex: capsuleHex,
+      );
     }
     return code;
   }
@@ -413,7 +444,12 @@ class InvitationIntentHandler {
     Invitation invitation, {
     String? capsuleHex,
   }) async {
-    final localInvitation = _findInvitationById(invitation.id);
+    final operationCapsuleHex =
+        _capsuleHexOrNull(explicitCapsuleHex: capsuleHex);
+    final localInvitation = _findInvitationById(
+      invitation.id,
+      capsuleHex: operationCapsuleHex,
+    );
     if (localInvitation != null) {
       if (localInvitation.status != InvitationStatus.pending) {
         return const InvitationIntentResult(
@@ -441,7 +477,7 @@ class InvitationIntentHandler {
     final workerResult = await _requireActions().rejectInvitation(
       invitationId,
       reason,
-      capsuleHex: _capsuleHexOrNull(explicitCapsuleHex: capsuleHex),
+      capsuleHex: operationCapsuleHex,
     );
     final code = workerResult.code;
     final hasWorkerLedger = (workerResult.ledgerJson?.isNotEmpty ?? false);
@@ -449,7 +485,10 @@ class InvitationIntentHandler {
         hasWorkerLedger && _softRejectDeliveryCodes.contains(code);
     final localTerminalAfterFailure = !localRejectionRecorded &&
         code != 0 &&
-        _isInvitationLocallyTerminal(invitation.id);
+        _isInvitationLocallyTerminal(
+          invitation.id,
+          capsuleHex: operationCapsuleHex,
+        );
     final lastError = workerResult.lastError?.trim();
     final diagnostics = lastError != null && lastError.isNotEmpty
         ? ' [code: $code; ffi: $lastError]'
@@ -563,14 +602,21 @@ class InvitationIntentHandler {
     return normalized;
   }
 
-  Future<void> _expireOverdueOutgoingInvitationsIfNeeded() async {
+  Future<void> _expireOverdueOutgoingInvitationsIfNeeded({
+    String? capsuleHex,
+  }) async {
     final actions = _actions;
     if (actions == null) {
       return;
     }
+    final operationCapsuleHex = _capsuleHexOrNull(
+      explicitCapsuleHex: capsuleHex,
+    );
 
     final now = DateTime.now();
-    final overdueOutgoingPending = loadInvitations()
+    final overdueOutgoingPending = loadInvitations(
+      capsuleHex: operationCapsuleHex,
+    )
         .where((invitation) =>
             invitation.isOutgoing &&
             invitation.expiresAt != null &&
@@ -586,7 +632,10 @@ class InvitationIntentHandler {
       if (invitationId == null) {
         continue;
       }
-      final ok = await actions.cancelInvitation(invitationId);
+      final ok = await actions.cancelInvitation(
+        invitationId,
+        capsuleHex: operationCapsuleHex,
+      );
       if (!ok) continue;
     }
   }
@@ -611,16 +660,28 @@ class InvitationIntentHandler {
     return respondedAt == expiresAt;
   }
 
-  bool _isInvitationLocallyTerminal(String invitationId) {
-    final local = _findInvitationById(invitationId);
+  bool _isInvitationLocallyTerminal(
+    String invitationId, {
+    String? capsuleHex,
+  }) {
+    final local = _findInvitationById(
+      invitationId,
+      capsuleHex: capsuleHex,
+    );
     if (local == null) {
       return false;
     }
     return local.status != InvitationStatus.pending;
   }
 
-  bool _isInvitationLocallyAccepted(String invitationId) {
-    final local = _findInvitationById(invitationId);
+  bool _isInvitationLocallyAccepted(
+    String invitationId, {
+    String? capsuleHex,
+  }) {
+    final local = _findInvitationById(
+      invitationId,
+      capsuleHex: capsuleHex,
+    );
     if (local == null) {
       return false;
     }
@@ -631,9 +692,10 @@ class InvitationIntentHandler {
     required String toPubkeyB64,
     required int starterSlot,
     DateTime? minSentAt,
+    String? capsuleHex,
   }) {
     final ids = <String>{};
-    for (final invitation in loadInvitations()) {
+    for (final invitation in loadInvitations(capsuleHex: capsuleHex)) {
       if (!invitation.isOutgoing) {
         continue;
       }
@@ -659,11 +721,13 @@ class InvitationIntentHandler {
     required int starterSlot,
     required Set<String> previousPendingIds,
     DateTime? minSentAt,
+    String? capsuleHex,
   }) {
     final currentIds = _pendingOutgoingInvitationIds(
       toPubkeyB64: toPubkeyB64,
       starterSlot: starterSlot,
       minSentAt: minSentAt,
+      capsuleHex: capsuleHex,
     );
     for (final id in currentIds) {
       if (!previousPendingIds.contains(id)) {
@@ -685,12 +749,15 @@ class InvitationIntentHandler {
     if (workerResult.code < 0) {
       return false;
     }
-    await _expireOverdueOutgoingInvitationsIfNeeded();
+    await _expireOverdueOutgoingInvitationsIfNeeded(
+      capsuleHex: capsuleHex,
+    );
     return _hasNewPendingOutgoingInvitation(
       toPubkeyB64: toPubkeyB64,
       starterSlot: starterSlot,
       previousPendingIds: previousPendingIds,
       minSentAt: minSentAt,
+      capsuleHex: capsuleHex,
     );
   }
 
@@ -714,8 +781,11 @@ class InvitationIntentHandler {
     );
   }
 
-  Invitation? _findInvitationById(String invitationId) {
-    for (final invitation in loadInvitations()) {
+  Invitation? _findInvitationById(
+    String invitationId, {
+    String? capsuleHex,
+  }) {
+    for (final invitation in loadInvitations(capsuleHex: capsuleHex)) {
       if (invitation.id == invitationId) {
         return invitation;
       }

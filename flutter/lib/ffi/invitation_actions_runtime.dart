@@ -132,6 +132,8 @@ abstract class InvitationActionsRuntime {
     String? capsuleHex,
   });
 
+  Future<bool> bootstrapActiveCapsuleRuntime();
+
   Future<String?> resolveActiveCapsuleHex();
 
   Future<bool> applyLedgerSnapshotIfNotStale(String ledgerJson);
@@ -164,6 +166,11 @@ class HivraInvitationActionsRuntime implements InvitationActionsRuntime {
       _hivra,
       capsuleHex: capsuleHex,
     );
+  }
+
+  @override
+  Future<bool> bootstrapActiveCapsuleRuntime() {
+    return _persistence.bootstrapActiveCapsuleRuntime(_hivra);
   }
 
   @override

@@ -281,11 +281,23 @@ pub(crate) fn pending_outgoing_invitation_deliveries_in_runtime(
     pending
 }
 
+#[cfg(test)]
 pub(crate) fn should_skip_incoming_delivery_append(
     local_kind: EventKind,
     payload: &[u8],
     signer: PubKey,
 ) -> bool {
+    should_skip_incoming_delivery_append_with_timestamp(local_kind, payload, signer, None)
+}
+
+pub(crate) fn should_skip_incoming_delivery_append_with_timestamp(
+    local_kind: EventKind,
+    payload: &[u8],
+    signer: PubKey,
+    incoming_timestamp: Option<u64>,
+) -> bool {
+    let normalized_incoming_timestamp = incoming_timestamp.map(normalize_delivery_timestamp);
+
     if local_kind == EventKind::RelationshipEstablished {
         let Some(parsed) = RelationshipEstablishedPayload::from_bytes(payload).ok() else {
             return true;
@@ -313,6 +325,24 @@ pub(crate) fn should_skip_incoming_delivery_append(
         };
         if parsed.peer_pubkey != signer {
             return true;
+        }
+        let key = RelationshipKey {
+            peer_pubkey: parsed.peer_pubkey,
+            own_starter_id: parsed.own_starter_id,
+        };
+        let (latest_established_ts, latest_broken_ts) =
+            relationship_key_latest_timestamps_in_runtime(key);
+        if let Some(incoming_ts) = normalized_incoming_timestamp {
+            if let Some(last_break_ts) = latest_broken_ts {
+                if incoming_ts <= last_break_ts {
+                    return true;
+                }
+            }
+            if let Some(last_established_ts) = latest_established_ts {
+                if incoming_ts < last_established_ts {
+                    return true;
+                }
+            }
         }
         if !relationship_key_is_active_in_runtime(RelationshipKey {
             peer_pubkey: parsed.peer_pubkey,
@@ -354,6 +384,57 @@ pub(crate) fn should_skip_incoming_delivery_append(
     }
 
     event_exists_in_runtime_with_signer(local_kind, payload, signer)
+}
+
+fn normalize_delivery_timestamp(raw: u64) -> u64 {
+    if raw == 0 {
+        return 0;
+    }
+    if raw < 100_000_000_000 {
+        // Legacy/external transports may encode seconds; normalize to millis.
+        return raw.saturating_mul(1000);
+    }
+    raw
+}
+
+fn relationship_key_latest_timestamps_in_runtime(
+    target: RelationshipKey,
+) -> (Option<u64>, Option<u64>) {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return (None, None);
+    };
+
+    let mut latest_established: Option<u64> = None;
+    let mut latest_broken: Option<u64> = None;
+
+    for event in capsule.ledger.events() {
+        match event.kind() {
+            EventKind::RelationshipEstablished => {
+                let Some(key) = relationship_key_from_established_payload(event.payload()) else {
+                    continue;
+                };
+                if key != target {
+                    continue;
+                }
+                let ts = event.timestamp().as_u64();
+                latest_established = Some(latest_established.map_or(ts, |cur| cur.max(ts)));
+            }
+            EventKind::RelationshipBroken => {
+                let Some(key) = relationship_key_from_broken_payload(event.payload()) else {
+                    continue;
+                };
+                if key != target {
+                    continue;
+                }
+                let ts = event.timestamp().as_u64();
+                latest_broken = Some(latest_broken.map_or(ts, |cur| cur.max(ts)));
+            }
+            _ => {}
+        }
+    }
+
+    (latest_established, latest_broken)
 }
 
 pub(crate) fn find_invitation_sent_in_runtime_with_direction(

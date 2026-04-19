@@ -38,6 +38,13 @@ bool shouldSuppressPendingRemoteBreakNotification({
   return now.difference(lastShownAt) < cooldown;
 }
 
+@visibleForTesting
+bool shouldDeferPendingRemoteBreakNotifications({
+  required bool baselineReady,
+}) {
+  return !baselineReady;
+}
+
 class RelationshipsScreen extends StatefulWidget {
   final RelationshipService service;
   final Future<void> Function()? onLedgerChanged;
@@ -65,6 +72,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   Set<String> _notifiedPendingRemoteBreakKeys = <String>{};
   final Map<String, DateTime> _lastPendingRemoteBreakNotificationAtByKey =
       <String, DateTime>{};
+  bool _pendingRemoteBreakBaselineReady = false;
   String? _filterKind;
   String? _breakingPeerPubkey;
   Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
@@ -103,11 +111,13 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     unawaited(_syncTransportAndReload(silent: true));
   }
 
-  Future<void> _loadRelationships() async {
+  Future<void> _loadRelationships({bool forceFresh = false}) async {
     final inFlight = _loadRelationshipsInFlight;
     if (inFlight != null) {
       await inFlight;
-      return;
+      if (!forceFresh) {
+        return;
+      }
     }
 
     final operation = _loadRelationshipsImpl();
@@ -155,7 +165,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     } finally {
       _isSyncingTransport = false;
     }
-    await _loadRelationships();
+    await _loadRelationships(forceFresh: true);
     await widget.onLedgerChanged?.call();
     if (!silent && mounted) {
       UiFeedbackService.showSnackBar(
@@ -202,6 +212,17 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     required Set<String> previousPendingBreakKeys,
   }) {
     final currentPendingBreakKeys = _pendingRemoteBreakKeysForGroups(groups);
+    if (shouldDeferPendingRemoteBreakNotifications(
+      baselineReady: _pendingRemoteBreakBaselineReady,
+    )) {
+      _pendingRemoteBreakBaselineReady = true;
+      _notifiedPendingRemoteBreakKeys = pruneNotifiedPendingRemoteBreakKeys(
+        notifiedKeys: _notifiedPendingRemoteBreakKeys,
+        currentPendingKeys: currentPendingBreakKeys,
+      );
+      return;
+    }
+
     _notifiedPendingRemoteBreakKeys = pruneNotifiedPendingRemoteBreakKeys(
       notifiedKeys: _notifiedPendingRemoteBreakKeys,
       currentPendingKeys: currentPendingBreakKeys,
@@ -333,7 +354,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
       );
       return;
     }
-    await _loadRelationships();
+    await _loadRelationships(forceFresh: true);
     await widget.onLedgerChanged?.call();
     if (!mounted) return;
     UiFeedbackService.showSnackBar(

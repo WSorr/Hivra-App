@@ -65,4 +65,15 @@ void main() {
 
     expect(suppressed, isFalse);
   });
+
+  test('defers pending-remote notifications until baseline is ready', () {
+    expect(
+      shouldDeferPendingRemoteBreakNotifications(baselineReady: false),
+      isTrue,
+    );
+    expect(
+      shouldDeferPendingRemoteBreakNotifications(baselineReady: true),
+      isFalse,
+    );
+  });
 }

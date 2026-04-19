@@ -109,6 +109,11 @@ class RelationshipProjectionService {
             // break state when local identity is known.
             continue;
           }
+          if (timestamp.isBefore(current.establishedAt)) {
+            // A break older than the currently projected relationship episode
+            // is stale replay noise and must not reopen pending/final break.
+            continue;
+          }
           final isPendingRemoteBreak = signerIsValid &&
               !signerMatchesLocal &&
               (signerMatchesPeerTransport || hasLocalIdentity);
