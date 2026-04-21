@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
+import '../models/invitation.dart';
 import '../services/app_runtime_service.dart';
 import '../services/invitation_delivery_service.dart';
 import '../services/invitation_intent_handler.dart';
@@ -179,9 +181,23 @@ class _StartersScreenState extends State<StartersScreen> {
                           capsuleHex: operationCapsuleHex,
                         );
                         final result = sendResult;
+                        final recipientTransportB64 =
+                            base64.encode(resolution.transportRecipient!);
+                        var projectedPending = _intents
+                            .loadInvitations(capsuleHex: operationCapsuleHex)
+                            .where((invitation) =>
+                                invitation.isOutgoing &&
+                                invitation.status == InvitationStatus.pending &&
+                                invitation.starterSlot == slotIndex &&
+                                invitation.toPubkey == recipientTransportB64)
+                            .toList(growable: false);
                         unawaited(_uiLog.log(
                           'starters.send.result',
                           'slot=$slotIndex code=${result.code} message=${result.message}',
+                        ));
+                        unawaited(_uiLog.log(
+                          'starters.send.ledger_projection',
+                          'slot=$slotIndex pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
                         ));
                         if (!result.isSuccess) {
                           if (context.mounted) {
@@ -202,25 +218,64 @@ class _StartersScreenState extends State<StartersScreen> {
                           return;
                         }
 
+                        if (projectedPending.isEmpty) {
+                          final quickResult =
+                              await _intents.fetchInvitationsQuick(
+                            capsuleHex: operationCapsuleHex,
+                          );
+                          projectedPending = _intents
+                              .loadInvitations(capsuleHex: operationCapsuleHex)
+                              .where((invitation) =>
+                                  invitation.isOutgoing &&
+                                  invitation.status ==
+                                      InvitationStatus.pending &&
+                                  invitation.starterSlot == slotIndex &&
+                                  invitation.toPubkey == recipientTransportB64)
+                              .toList(growable: false);
+                          unawaited(_uiLog.log(
+                            'starters.send.ledger_projection.retry',
+                            'slot=$slotIndex quickFetchCode=${quickResult.code} pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
+                          ));
+                        }
+
                         if (context.mounted) {
                           Navigator.of(context).pop();
                         }
-                        if (!mounted) return;
                         final peerPreview = input.length <= 8
                             ? input
                             : '${input.substring(0, 8)}...';
-                        UiFeedbackService.showSnackBar(
-                          this.context,
-                          'Invitation sent to $peerPreview. Receiver should pull to refresh Invitations.',
-                          source: 'starters.send',
-                          duration: const Duration(seconds: 5),
-                          enableCopy: false,
-                        );
+                        final normalizedResultMessage =
+                            result.message.toLowerCase();
+                        final locallyRecordedOnly =
+                            normalizedResultMessage.contains(
+                                  'local invitation is recorded',
+                                ) ||
+                                normalizedResultMessage.contains(
+                                  'local pending invitation is recorded',
+                                );
+                        final ledgerProjected = projectedPending.isNotEmpty;
+                        final successUiMessage = locallyRecordedOnly
+                            ? 'Invitation recorded locally for $peerPreview. '
+                                'Relay delivery is retrying in background; receiver may see it after refresh.'
+                            : ledgerProjected
+                                ? 'Invitation sent to $peerPreview. '
+                                    'Receiver should pull to refresh Invitations.'
+                                : 'Invitation send returned success, but pending is not projected yet. '
+                                    'Refresh Invitations to verify ledger projection.';
+                        if (mounted) {
+                          UiFeedbackService.showSnackBar(
+                            this.context,
+                            successUiMessage,
+                            source: 'starters.send',
+                            duration: const Duration(seconds: 5),
+                            enableCopy: false,
+                          );
 
-                        setState(() {
-                          slot['locked'] = true;
-                        });
-                        _loadSlots();
+                          setState(() {
+                            slot['locked'] = true;
+                          });
+                          _loadSlots();
+                        }
                         await widget.onLedgerChanged?.call();
                       } catch (e) {
                         unawaited(_uiLog.log('starters.send.exception', '$e'));

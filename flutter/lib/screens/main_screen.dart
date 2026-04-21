@@ -1,4 +1,5 @@
 import 'package:bech32/bech32.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
@@ -29,6 +30,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Stopwatch? _launchStopwatch;
   bool _transportQuickSyncInFlight = false;
   DateTime? _lastTransportQuickSyncAt;
+  StreamSubscription<dynamic>? _connectivitySubscription;
+  DateTime? _lastNetworkTriggeredSyncAt;
 
   String _publicKeyText = '';
   int _starterCount = 0;
@@ -66,13 +69,72 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _stateManager = _runtime.stateManager;
     _invitationIntents = _runtime.invitationIntents;
+    _listenConnectivityChanges();
     Future.microtask(_bootstrapActiveRuntime);
   }
 
   @override
   void dispose() {
+    _connectivitySubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _listenConnectivityChanges() {
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription =
+        Connectivity().onConnectivityChanged.listen((dynamic result) {
+      final hasTransport = _hasUsableTransport(result);
+      if (!hasTransport) return;
+      if (!mounted || _bootstrapping) return;
+      unawaited(_syncInvitationsOnNetworkChange());
+    });
+  }
+
+  bool _hasUsableTransport(dynamic result) {
+    if (result is ConnectivityResult) {
+      return result != ConnectivityResult.none;
+    }
+    if (result is Iterable) {
+      for (final entry in result) {
+        if (entry is ConnectivityResult && entry != ConnectivityResult.none) {
+          return true;
+        }
+      }
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _syncInvitationsOnNetworkChange() async {
+    if (_activeCapsuleHex.isEmpty) return;
+    final now = DateTime.now();
+    final last = _lastNetworkTriggeredSyncAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 8)) {
+      return;
+    }
+    _lastNetworkTriggeredSyncAt = now;
+
+    final operationCapsuleHex = _activeCapsuleHex;
+    debugPrint(
+      '[StartupTiming] network_change_sync_start capsule=$operationCapsuleHex',
+    );
+
+    final result = await _runQuickTransportSync(
+      reason: 'network_change',
+      capsuleHex: operationCapsuleHex,
+    );
+    if (!mounted) return;
+    if (result.code >= 0) {
+      _loadCapsuleData();
+    }
+    unawaited(
+      _runDelayedQuickTransportSync(
+        reason: 'network_change_follow_up',
+        delay: const Duration(seconds: 5),
+        capsuleHex: operationCapsuleHex,
+      ),
+    );
   }
 
   @override
@@ -271,7 +333,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     // user is on Invitations screen (same source of truth as visible list).
     if (_selectedIndex == 1) {
       pendingInvitations = _invitationIntents
-          .loadInvitations(capsuleHex: _activeCapsuleHex)
+          .loadInvitations(capsuleHex: activeCapsuleHex)
           .where((invitation) => invitation.status == InvitationStatus.pending)
           .length;
     }

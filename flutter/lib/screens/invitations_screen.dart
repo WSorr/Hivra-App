@@ -93,9 +93,9 @@ Set<String> pruneLocallyResolvedIncomingIds({
     if (nonPendingIncomingOrOtherIds.contains(id)) {
       continue;
     }
-    // Keep suppression when id is temporarily absent from projection to avoid
-    // flicker/reappearance during transient refresh windows.
-    kept.add(id);
+    // Drop suppression when id is absent from projection.
+    // Source of truth is ledger projection: if the invitation later reappears
+    // as pending, it should be visible/actionable again.
   }
   return kept;
 }
@@ -246,6 +246,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     int slot,
   ) async {
     final operationCapsuleHex = widget.activeCapsuleHex;
+    final recipientTransportB64 = base64.encode(pubkey);
     final startedAt = DateTime.now();
     InvitationIntentResult? sendResult;
     try {
@@ -271,9 +272,54 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         return result;
       }
       if (result.isSuccess) {
+        var projectedPending = _intents
+            .loadInvitations(capsuleHex: operationCapsuleHex)
+            .where((invitation) =>
+                invitation.isOutgoing &&
+                invitation.status == InvitationStatus.pending &&
+                invitation.starterSlot == slot &&
+                invitation.toPubkey == recipientTransportB64)
+            .toList(growable: false);
+        unawaited(_uiLog.log(
+          'invitations.send.ledger_projection',
+          'slot=$slot pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
+        ));
+        if (projectedPending.isEmpty) {
+          final quickResult = await _intents.fetchInvitationsQuick(
+            capsuleHex: operationCapsuleHex,
+          );
+          projectedPending = _intents
+              .loadInvitations(capsuleHex: operationCapsuleHex)
+              .where((invitation) =>
+                  invitation.isOutgoing &&
+                  invitation.status == InvitationStatus.pending &&
+                  invitation.starterSlot == slot &&
+                  invitation.toPubkey == recipientTransportB64)
+              .toList(growable: false);
+          unawaited(_uiLog.log(
+            'invitations.send.ledger_projection.retry',
+            'slot=$slot quickFetchCode=${quickResult.code} pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
+          ));
+        }
         if (mounted) {
           await _refreshAfterLedgerMutation();
         }
+        final normalizedResultMessage = result.message.toLowerCase();
+        final locallyRecordedOnly =
+            normalizedResultMessage.contains('local invitation is recorded') ||
+                normalizedResultMessage.contains(
+                  'local pending invitation is recorded',
+                );
+        final ledgerProjected = projectedPending.isNotEmpty;
+        final message = locallyRecordedOnly
+            ? 'Invitation recorded locally. Relay delivery is retrying in background.'
+            : ledgerProjected
+                ? 'Invitation sent. Receiver should see it after refresh.'
+                : 'Send returned success, but pending is not projected yet. Refresh Invitations to verify ledger projection.';
+        if (mounted) {
+          await _showUserMessage(message, source: 'invitations.send');
+        }
+        return result;
       }
       if (mounted) {
         await _showUserMessage(result.message, source: 'invitations.send');

@@ -19,6 +19,7 @@ dependencies:
   share_plus: ^12.0.1
   file_selector: ^1.1.0
   archive: ^3.6.1
+  connectivity_plus: ^6.0.5
 
 dev_dependencies:
   flutter_test:

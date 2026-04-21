@@ -307,8 +307,22 @@ impl NostrTransport {
     pub fn send_event(&self, event: Event) -> Result<(), TransportError> {
         let connect_timeout_secs = self.timeout_secs.min(SEND_CONNECT_TIMEOUT_SECS).max(2);
         if !self.ensure_connected_relays_with_timeout(connect_timeout_secs) {
-            eprintln!("[Nostr] No connected relays available before publish");
-            return Err(TransportError::ConnectionFailed);
+            // Mobile networks may need longer TLS/relay handshake than the fast
+            // send path budget. Keep quick attempt first, then allow one
+            // extended fallback before declaring transport unavailable.
+            let fallback_timeout_secs = self.timeout_secs.max(connect_timeout_secs);
+            if fallback_timeout_secs > connect_timeout_secs {
+                eprintln!(
+                    "[Nostr] No connected relays in fast window ({}s), retrying connect with fallback budget {}s",
+                    connect_timeout_secs, fallback_timeout_secs
+                );
+            }
+            if fallback_timeout_secs <= connect_timeout_secs
+                || !self.ensure_connected_relays_with_timeout(fallback_timeout_secs)
+            {
+                eprintln!("[Nostr] No connected relays available before publish");
+                return Err(TransportError::ConnectionFailed);
+            }
         }
         let relays = self.runtime.block_on(self.client.relays());
         let connected_relays: Vec<_> = relays

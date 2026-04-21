@@ -358,6 +358,8 @@ Scope:
   - `MainScreen` quick-sync orchestration now drops stale delayed sync requests when their captured capsule is no longer active, reducing redundant transport/bootstrap churn after capsule switches.
   - `InvitationIntentHandler` local projection/expiry checks are now capsule-scoped (`capsuleHex`) instead of reading/mutating whichever runtime capsule happens to be active, reducing cross-capsule pending disappearance and stale-state leakage during rapid switches.
   - Invitations screen and header pending counter now request invitation projection with explicit `activeCapsuleHex`, preventing mixed “header from capsule A + invitation list from capsule B” rendering while runtime drift is being reconciled.
+  - Pending-outgoing retry pump after transport-failed send now runs an extended backoff series (`2s/8s/20s/45s/90s/180s`) with explicit attempt/result diagnostics, so locally recorded invitations are retried longer under relay instability instead of stopping after two short attempts.
+  - Starters send-success feedback now distinguishes transport-confirmed send from local-only recording (`local invitation is recorded`), avoiding misleading “Invitation sent” UX when relay delivery has not yet been accepted.
 
 Definition of done:
 - Android runtime failures are diagnosable.

@@ -100,17 +100,17 @@ class InvitationDeliveryService {
       case -7:
         return 'Failed to deliver invitation (local invitation is still recorded)';
       case -11:
-        return 'No connected delivery relays available (local invitation is recorded)';
+        return 'No connected delivery relays available (local invitation is recorded). Check internet/VPN and wait for auto-retry.';
       case -12:
-        return 'Invitation delivery timed out (local invitation is recorded)';
+        return 'Invitation delivery timed out at relay (local invitation is recorded). Check internet/VPN and wait for auto-retry.';
       case -13:
-        return 'Delivery relay rejected the invitation (local invitation is recorded)';
+        return 'Delivery relay rejected the invitation (local invitation is recorded). Try another network/VPN and retry.';
       case -14:
         return 'Delivery relay requires or rejected authentication (local invitation is recorded)';
       case -1002:
         return 'Invitation delivery API is not available';
       case -1003:
-        return 'Invitation delivery timed out. Pull to refresh and check status.';
+        return 'Invitation delivery timed out. Local state is safe; reconnect internet/VPN and refresh.';
       case -1004:
         return 'Active capsule bootstrap failed';
       default:
@@ -127,13 +127,13 @@ class InvitationDeliveryService {
       case -3:
         return 'Capsule is not initialized';
       case -4:
-        return 'Delivery transport is unavailable';
+        return 'Delivery transport is unavailable. Check internet/VPN.';
       case -5:
-        return 'Failed to fetch invitation deliveries';
+        return 'Failed to fetch invitation deliveries. Check internet/VPN and retry.';
       case -1002:
         return 'Delivery receive API is not available';
       case -1003:
-        return 'Fetch timed out';
+        return 'Fetch timed out. Check internet/VPN and retry.';
       case -1004:
         return 'Active capsule bootstrap failed';
       default:

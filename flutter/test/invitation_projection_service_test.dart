@@ -376,6 +376,53 @@ void main() {
       expect(invitations.single.status, InvitationStatus.pending);
     });
 
+    test(
+        'keeps local outgoing InvitationSent when starter exists in local ledger and signer is unresolved',
+        () {
+      final invitationId = _bytes32(211);
+      final localStarter = Uint8List.fromList(_bytes32(212));
+      final foreignRecipient = Uint8List.fromList(_bytes32(213));
+      final unresolvedSigner = Uint8List.fromList(_bytes32(214));
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceForSelf(self);
+
+      final invitations = service.loadInvitations(
+        <String, dynamic>{
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'StarterCreated',
+              payload: <int>[
+                ...localStarter,
+                ...List<int>.filled(32, 0),
+                1,
+                0,
+              ],
+              signer: self,
+              timestamp: t0,
+            ),
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: localStarter,
+                toPubkey: foreignRecipient,
+                kindByte: 1,
+              ),
+              signer: unresolvedSigner,
+              timestamp: t0 + 1,
+            ),
+          ],
+        },
+        starterIds: List<Uint8List?>.filled(5, null),
+      );
+
+      expect(invitations, hasLength(1));
+      expect(invitations.single.isOutgoing, isTrue);
+      expect(invitations.single.isIncoming, isFalse);
+      expect(invitations.single.starterSlot, isNull);
+      expect(invitations.single.status, InvitationStatus.pending);
+    });
+
     test('ignores InvitationReceived not addressed to local identity', () {
       final invitationId = _bytes32(126);
       final starterId = _bytes32(146);

@@ -83,12 +83,23 @@ class InvitationActionsService {
           ledgerJson: ledgerJson,
         );
       }
-      final restored = await _runtime.bootstrapActiveCapsuleRuntime();
-      debugPrint(
-        '[InvitationActions] restored active runtime capsule after worker drift '
-        'workerCapsule=${bootstrapActiveHex.isEmpty ? 'unknown' : bootstrapActiveHex} '
-        'activeCapsule=${activeNow ?? 'none'} restored=$restored',
-      );
+      // Do not re-bootstrap active runtime for non-active worker completions.
+      // Persist worker ledger to its capsule storage and keep currently active
+      // capsule runtime untouched to prevent cross-capsule UI drift.
+      if (activeNow == null || activeNow.isEmpty) {
+        final restored = await _runtime.bootstrapActiveCapsuleRuntime();
+        debugPrint(
+          '[InvitationActions] restored active runtime capsule after worker drift '
+          'workerCapsule=${bootstrapActiveHex.isEmpty ? 'unknown' : bootstrapActiveHex} '
+          'activeCapsule=${activeNow ?? 'none'} restored=$restored',
+        );
+      } else {
+        debugPrint(
+          '[InvitationActions] persisted worker ledger for non-active capsule '
+          'workerCapsule=${bootstrapActiveHex.isEmpty ? 'unknown' : bootstrapActiveHex} '
+          'activeCapsule=$activeNow',
+        );
+      }
       return;
     }
     if (ledgerJson == null || ledgerJson.isEmpty) {
@@ -135,21 +146,45 @@ class InvitationActionsService {
       const retryDelays = <Duration>[
         Duration(seconds: 2),
         Duration(seconds: 8),
+        Duration(seconds: 20),
+        Duration(seconds: 45),
+        Duration(seconds: 90),
+        Duration(seconds: 180),
       ];
-      for (final delay in retryDelays) {
+      for (var attempt = 0; attempt < retryDelays.length; attempt += 1) {
+        final delay = retryDelays[attempt];
         await Future<void>.delayed(delay);
+        final refreshedBootstrap = await _runtime.loadWorkerBootstrapArgs(
+          capsuleHex: capsuleHex,
+        );
+        final attemptBootstrap = refreshedBootstrap ?? bootstrap;
+        final attemptCapsuleHex =
+            attemptBootstrap['activeCapsuleHex'] as String? ??
+                bootstrapActiveHex;
+        final bootstrapSource =
+            refreshedBootstrap == null ? 'initial' : 'refreshed';
+        debugPrint(
+          '[InvitationActions] pending retry pump attempt=${attempt + 1}/${retryDelays.length} '
+          'capsule=$capsuleHex delayMs=${delay.inMilliseconds} bootstrap=$bootstrapSource',
+        );
         final workerResult =
             await compute<Map<String, Object?>, Map<String, Object?>>(
           receiveInvitationsInWorker,
-          bootstrap,
+          attemptBootstrap,
         ).timeout(
           _receiveWorkerTimeout,
           onTimeout: () => <String, Object?>{'result': -1003},
         );
+        final code = (workerResult['result'] as int?) ?? -1003;
+        final lastError = (workerResult['lastError'] as String?)?.trim();
+        debugPrint(
+          '[InvitationActions] pending retry pump result attempt=${attempt + 1}/${retryDelays.length} '
+          'capsule=$capsuleHex code=$code error=${lastError ?? '-'}',
+        );
 
         final ledgerJson = workerResult['ledgerJson'] as String?;
         await _applyWorkerLedgerResult(
-          bootstrapActiveHex: bootstrapActiveHex,
+          bootstrapActiveHex: attemptCapsuleHex,
           ledgerJson: ledgerJson,
         );
       }
@@ -226,8 +261,7 @@ class InvitationActionsService {
       }
 
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
-      final workerFuture =
-          compute<Map<String, Object?>, Map<String, Object?>>(
+      final workerFuture = compute<Map<String, Object?>, Map<String, Object?>>(
         receiveInvitationsInWorker,
         bootstrap,
       );
@@ -272,8 +306,7 @@ class InvitationActionsService {
       }
 
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
-      final workerFuture =
-          compute<Map<String, Object?>, Map<String, Object?>>(
+      final workerFuture = compute<Map<String, Object?>, Map<String, Object?>>(
         receiveInvitationsQuickInWorker,
         bootstrap,
       );

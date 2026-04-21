@@ -154,14 +154,14 @@ void main() {
   });
 
   test(
-      'pruneLocallyResolvedIncomingIds keeps suppression when invitation is temporarily absent',
+      'pruneLocallyResolvedIncomingIds drops suppression when invitation is absent',
       () {
     final kept = pruneLocallyResolvedIncomingIds(
       resolvedIds: const <String>{'inv_1'},
       projectedInvitations: const <Invitation>[],
     );
 
-    expect(kept, equals(const <String>{'inv_1'}));
+    expect(kept, isEmpty);
   });
 
   test(

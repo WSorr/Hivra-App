@@ -40,6 +40,10 @@ class InvitationProjectionService {
       final id = starterIds[i];
       if (id != null) ownStarterBySlot[i] = id;
     }
+    final localStarterIds = <String>{
+      ...starterKinds.keys,
+      ...ownStarterBySlot.values.map(base64.encode),
+    };
 
     final offersById = <String, _ProjectedInvitationOffer>{};
     final acceptedAtById = <String, DateTime>{};
@@ -64,6 +68,7 @@ class InvitationProjectionService {
         final invitationId = payload.sublist(0, 32);
         final starterId = payload.sublist(32, 64);
         final toPubkey = payload.sublist(64, 96);
+        final starterIdB64 = base64.encode(starterId);
 
         final hasKindByte = payload.length == 97 || payload.length == 129;
         final kindFromPayload = hasKindByte
@@ -75,6 +80,8 @@ class InvitationProjectionService {
         final starterSlot =
             _support.slotForStarterId(starterId, ownStarterBySlot);
         final matchesOwnStarter = starterSlot != null;
+        final localStarterKnownFromLedger =
+            localStarterIds.contains(starterIdB64);
         final isIncomingByAddress = _matchesLocalIdentity(
           toPubkey,
           owners: selfOwners,
@@ -100,9 +107,11 @@ class InvitationProjectionService {
           final localOutgoingByIdentity = signerIsSelf;
           // Keep local outgoing events when signer identity is temporarily
           // unresolved, as long as invitation starter_id maps to own starter
-          // slot. This avoids dropping local pending invites after capsule
-          // restore/switch when runtime transport key is transiently unavailable.
-          final localOutgoingByStarter = matchesOwnStarter;
+          // slot or exists among local starter ids from ledger projection.
+          // This avoids dropping local pending invites after capsule
+          // restore/switch when runtime identity is transiently unavailable.
+          final localOutgoingByStarter =
+              matchesOwnStarter || localStarterKnownFromLedger;
           if (!localOutgoingByIdentity &&
               !localOutgoingByStarter &&
               !isIncomingByAddress) {
@@ -116,7 +125,7 @@ class InvitationProjectionService {
           fromPubkey: base64.encode(signer),
           toPubkey: isIncoming ? null : base64.encode(toPubkey),
           kind: kindFromPayload ??
-              starterKinds[base64.encode(starterId)] ??
+              starterKinds[starterIdB64] ??
               StarterKind.juice,
           starterSlot: isIncoming ? null : starterSlot,
           isIncoming: isIncoming,
