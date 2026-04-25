@@ -5,6 +5,8 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../services/app_runtime_service.dart';
+import '../services/bingx_futures_credential_store.dart';
+import '../services/bingx_futures_exchange_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
 import '../services/consensus_processor.dart';
 import '../services/manual_consensus_check_service.dart';
@@ -43,6 +45,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       AppRuntimeService().buildManualConsensusCheckService();
   final PluginHostApiService _pluginHostApi =
       AppRuntimeService().buildPluginHostApiService();
+  final BingxFuturesCredentialStore _bingxCredentialStore =
+      AppRuntimeService().buildBingxFuturesCredentialStore();
+  final BingxFuturesExchangeService _bingxExchangeService =
+      AppRuntimeService().buildBingxFuturesExchangeService();
   final CapsuleChatDeliveryService _chatDelivery =
       AppRuntimeService().buildCapsuleChatDeliveryService();
   final UiEventLogService _uiLog = const UiEventLogService();
@@ -70,6 +76,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       TextEditingController();
   final TextEditingController _bingxStrategyTagController =
       TextEditingController(text: 'demo');
+  final TextEditingController _bingxApiKeyController = TextEditingController();
+  final TextEditingController _bingxApiSecretController =
+      TextEditingController();
+  final TextEditingController _bingxLeverageController =
+      TextEditingController(text: '3');
   List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
   WasmPluginSourceCatalog? _sourceCatalogSnapshot;
   String? _sourceCatalogError;
@@ -85,12 +96,22 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   bool _installing = false;
   bool _runningDemo = false;
   bool _runningBingx = false;
+  bool _savingBingxCredentials = false;
+  bool _readingBingxCurrentSettings = false;
+  bool _executingBingxOrder = false;
+  bool _switchingBingxLeverage = false;
+  bool _switchingBingxMarginType = false;
   bool _broadcastingBingxSignal = false;
   bool _runningChat = false;
   bool _refreshingChatInbox = false;
   Set<String> _installingSourceEntryIds = <String>{};
   PluginDemoRunResult? _lastDemoResult;
   PluginHostApiResponse? _lastBingxResponse;
+  BingxFuturesOrderExecutionResult? _lastBingxExchangeResult;
+  BingxFuturesControlActionResult? _lastBingxLeverageResult;
+  BingxFuturesControlActionResult? _lastBingxMarginTypeResult;
+  BingxFuturesLeverageReadResult? _lastBingxLeverageReadResult;
+  BingxFuturesMarginTypeReadResult? _lastBingxMarginTypeReadResult;
   PluginHostApiResponse? _lastChatResponse;
   List<CapsuleChatInboxMessage> _chatInbox = const <CapsuleChatInboxMessage>[];
   List<CapsuleTradeSignalInboxMessage> _tradeSignalInbox =
@@ -102,6 +123,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   String _bingxEntryMode = 'direct';
   String _bingxZoneSide = 'buyside';
   String _bingxZonePriceRule = 'zone_mid';
+  bool _bingxUseTestOrderEndpoint = true;
+  String _bingxLeverageSide = 'LONG';
+  String _bingxMarginType = 'CROSSED';
 
   static const List<_CatalogPlugin> _transportPlugins = <_CatalogPlugin>[
     _CatalogPlugin(
@@ -144,6 +168,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     super.initState();
     _reload();
     _reloadSourceCatalog();
+    _loadBingxCredentials();
   }
 
   @override
@@ -161,6 +186,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     _bingxStopLossController.dispose();
     _bingxTakeProfitController.dispose();
     _bingxStrategyTagController.dispose();
+    _bingxApiKeyController.dispose();
+    _bingxApiSecretController.dispose();
+    _bingxLeverageController.dispose();
     super.dispose();
   }
 
@@ -528,6 +556,443 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     });
   }
 
+  Future<void> _loadBingxCredentials() async {
+    try {
+      final credentials = await _bingxCredentialStore.load();
+      if (!mounted || credentials == null) return;
+      setState(() {
+        _bingxApiKeyController.text = credentials.apiKey;
+        _bingxApiSecretController.text = credentials.apiSecret;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Failed to load BingX credentials'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _saveBingxCredentials() async {
+    if (_savingBingxCredentials) return;
+    final apiKey = _bingxApiKeyController.text.trim();
+    final apiSecret = _bingxApiSecretController.text.trim();
+    if (apiKey.isEmpty || apiSecret.isEmpty) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('BingX API key and secret are required'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _savingBingxCredentials = true;
+    });
+    try {
+      await _bingxCredentialStore.save(
+        BingxFuturesApiCredentials(
+          apiKey: apiKey,
+          apiSecret: apiSecret,
+        ),
+      );
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('BingX credentials saved for active capsule'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Failed to save BingX credentials'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingBingxCredentials = false;
+        });
+      }
+    }
+  }
+
+  BingxFuturesApiCredentials? _resolveBingxCredentialsOrNotify() {
+    final apiKey = _bingxApiKeyController.text.trim();
+    final apiSecret = _bingxApiSecretController.text.trim();
+    if (apiKey.isEmpty || apiSecret.isEmpty) {
+      if (!mounted) return null;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Save BingX API credentials first'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return null;
+    }
+    return BingxFuturesApiCredentials(
+      apiKey: apiKey,
+      apiSecret: apiSecret,
+    );
+  }
+
+  Future<void> _executeLastBingxIntentOnExchange() async {
+    if (_executingBingxOrder) return;
+    final response = _lastBingxResponse;
+    final result = response?.result;
+    if (response?.status != PluginHostApiStatus.executed || result == null) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Run a BingX intent first'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final credentials = _resolveBingxCredentialsOrNotify();
+    if (credentials == null) return;
+
+    late final BingxFuturesIntentPayload payload;
+    try {
+      payload = BingxFuturesIntentPayload.fromPluginResult(result);
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _executingBingxOrder = true;
+    });
+    try {
+      final execution = await _bingxExchangeService.placeOrder(
+        credentials: credentials,
+        intent: payload,
+        testOrder: _bingxUseTestOrderEndpoint,
+      );
+      await _uiLog.log(
+        'bingx.exchange.execute',
+        'symbol=${payload.symbol} side=${payload.side} type=${payload.orderType} '
+            'test=${_bingxUseTestOrderEndpoint ? "yes" : "no"} '
+            'success=${execution.isSuccess} '
+            'http=${execution.httpStatusCode} '
+            'code=${execution.exchangeCode} '
+            'order=${execution.orderId ?? "none"}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _lastBingxExchangeResult = execution;
+      });
+
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      if (execution.isSuccess) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'BingX ${_bingxUseTestOrderEndpoint ? "test" : "live"} order sent'
+              '${execution.orderId == null ? "" : " · id ${execution.orderId}"}',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'BingX order failed: ${execution.exchangeCode} ${execution.exchangeMessage}',
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (error) {
+      await _uiLog.log('bingx.exchange.error', error.toString());
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('BingX execution failed: $error'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _executingBingxOrder = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _switchBingxLeverage() async {
+    if (_switchingBingxLeverage) return;
+    final credentials = _resolveBingxCredentialsOrNotify();
+    if (credentials == null) return;
+    final symbol = _bingxSymbolController.text.trim();
+    final leverageRaw = _bingxLeverageController.text.trim();
+    final leverage = int.tryParse(leverageRaw);
+    if (symbol.isEmpty || leverage == null) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Symbol and integer leverage are required'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _switchingBingxLeverage = true;
+    });
+    try {
+      final result = await _bingxExchangeService.switchLeverage(
+        credentials: credentials,
+        symbol: symbol,
+        side: _bingxLeverageSide == 'LONG'
+            ? BingxFuturesLeverageSide.long
+            : BingxFuturesLeverageSide.short,
+        leverage: leverage,
+      );
+      await _uiLog.log(
+        'bingx.exchange.switch_leverage',
+        'symbol=${result.symbol} side=$_bingxLeverageSide leverage=$leverage '
+            'success=${result.isSuccess} http=${result.httpStatusCode} '
+            'code=${result.exchangeCode}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _lastBingxLeverageResult = result;
+      });
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            result.isSuccess
+                ? 'Leverage switched: $_bingxLeverageSide x$leverage'
+                : 'Switch leverage failed: ${result.exchangeCode} ${result.exchangeMessage}',
+          ),
+          duration: Duration(seconds: result.isSuccess ? 2 : 4),
+        ),
+      );
+    } catch (error) {
+      await _uiLog.log('bingx.exchange.switch_leverage.error', '$error');
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Switch leverage failed: $error'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _switchingBingxLeverage = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _switchBingxMarginType() async {
+    if (_switchingBingxMarginType) return;
+    final credentials = _resolveBingxCredentialsOrNotify();
+    if (credentials == null) return;
+    final symbol = _bingxSymbolController.text.trim();
+    if (symbol.isEmpty) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Symbol is required'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _switchingBingxMarginType = true;
+    });
+    try {
+      final result = await _bingxExchangeService.switchMarginType(
+        credentials: credentials,
+        symbol: symbol,
+        marginType: _bingxMarginType == 'ISOLATED'
+            ? BingxFuturesMarginType.isolated
+            : BingxFuturesMarginType.crossed,
+      );
+      await _uiLog.log(
+        'bingx.exchange.switch_margin_type',
+        'symbol=${result.symbol} margin=$_bingxMarginType '
+            'success=${result.isSuccess} http=${result.httpStatusCode} '
+            'code=${result.exchangeCode}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _lastBingxMarginTypeResult = result;
+      });
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            result.isSuccess
+                ? 'Margin mode switched: $_bingxMarginType'
+                : 'Switch margin mode failed: ${result.exchangeCode} ${result.exchangeMessage}',
+          ),
+          duration: Duration(seconds: result.isSuccess ? 2 : 4),
+        ),
+      );
+    } catch (error) {
+      await _uiLog.log('bingx.exchange.switch_margin_type.error', '$error');
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Switch margin mode failed: $error'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _switchingBingxMarginType = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchBingxCurrentSettings() async {
+    if (_readingBingxCurrentSettings) return;
+    final credentials = _resolveBingxCredentialsOrNotify();
+    if (credentials == null) return;
+    final symbol = _bingxSymbolController.text.trim();
+    if (symbol.isEmpty) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Symbol is required'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _readingBingxCurrentSettings = true;
+    });
+
+    try {
+      final leverageResult = await _bingxExchangeService.getLeverage(
+        credentials: credentials,
+        symbol: symbol,
+      );
+      final marginResult = await _bingxExchangeService.getMarginType(
+        credentials: credentials,
+        symbol: symbol,
+      );
+      await _uiLog.log(
+        'bingx.exchange.fetch_current',
+        'symbol=${symbol.toUpperCase()} '
+            'lev=${leverageResult.isSuccess ? "ok" : "fail"}(${leverageResult.exchangeCode}) '
+            'margin=${marginResult.isSuccess ? "ok" : "fail"}(${marginResult.exchangeCode})',
+      );
+      if (!mounted) return;
+      setState(() {
+        _lastBingxLeverageReadResult = leverageResult;
+        _lastBingxMarginTypeReadResult = marginResult;
+        if (marginResult.isSuccess &&
+            marginResult.marginType != null &&
+            (marginResult.marginType == 'CROSSED' ||
+                marginResult.marginType == 'ISOLATED')) {
+          _bingxMarginType = marginResult.marginType!;
+        }
+        if (leverageResult.isSuccess) {
+          final selected = _bingxLeverageSide == 'LONG'
+              ? leverageResult.longLeverage
+              : leverageResult.shortLeverage;
+          if (selected != null && selected > 0) {
+            _bingxLeverageController.text = selected.toString();
+          }
+        }
+      });
+
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      final levSummary = leverageResult.isSuccess
+          ? 'L:${leverageResult.longLeverage ?? "-"} / S:${leverageResult.shortLeverage ?? "-"}'
+          : 'err ${leverageResult.exchangeCode}';
+      final marginSummary = marginResult.isSuccess
+          ? (marginResult.marginType ?? '-')
+          : 'err ${marginResult.exchangeCode}';
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+              'Current fetched · leverage $levSummary · margin $marginSummary'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (error) {
+      await _uiLog.log('bingx.exchange.fetch_current.error', '$error');
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Fetch current failed: $error'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _readingBingxCurrentSettings = false;
+        });
+      }
+    }
+  }
+
   Future<void> _runBingxIntent() async {
     if (_runningBingx) return;
     if (!mounted) return;
@@ -564,8 +1029,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       final response = await _pluginHostApi.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: PluginHostApiService.schemaVersion,
-          pluginId: PluginHostApiService.bingxTradingPluginId,
-          method: PluginHostApiService.placeBingxSpotOrderIntentMethod,
+          pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
+          method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
           args: <String, dynamic>{
             'peer_hex': peerHex,
             'client_order_id': clientOrderId,
@@ -646,7 +1111,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         case PluginHostApiStatus.rejected:
           final rejectedMessage = _hostRejectedMessage(
             response,
-            fallback: 'BingX request rejected',
+            fallback: 'BingX futures request rejected',
           );
           await _uiLog.log(
             'bingx.intent.rejected',
@@ -709,7 +1174,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     final signalId = 'sig-${DateTime.now().microsecondsSinceEpoch}';
     final payloadJson = jsonEncode(<String, dynamic>{
       'schema_version': 1,
-      'plugin_id': PluginHostApiService.bingxTradingPluginId,
+      'plugin_id': PluginHostApiService.bingxFuturesTradingPluginId,
       'contract_kind': 'bingx_trade_signal_v1',
       'signal_type': 'intent_prepared',
       'signal_id': signalId,
@@ -1011,7 +1476,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       final result = await _chatDelivery.receiveAndFilter();
       await _uiLog.log(
         'chat.fetch.result',
-        'code=${result.code} chat=${result.messages.length} trade=${result.tradeSignals.length} dropped=${result.droppedByConsensus}'
+        'code=${result.code} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus}'
             '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
       );
       if (!mounted) return;
@@ -1057,6 +1522,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
       if (result.messages.isEmpty &&
           result.tradeSignals.isEmpty &&
+          result.executionDecisions.isEmpty &&
+          result.executionReceipts.isEmpty &&
           silentWhenEmpty) {
         return;
       }
@@ -1069,7 +1536,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}$droppedNote',
+            'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}, cmd +${result.executionDecisions.length}, receipt +${result.executionReceipts.length}$droppedNote',
           ),
           duration: const Duration(seconds: 2),
         ),
@@ -1132,9 +1599,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         ),
         const SizedBox(height: 20),
         _SectionTitle(
-          title: 'BingX Trading Intent',
+          title: 'BingX Futures Intent',
           subtitle:
-              'Deterministic spot-order intent over host API boundary (no live order execution in v1).',
+              'Deterministic futures intent + optional signed execution on BingX Futures test/live endpoints.',
         ),
         const SizedBox(height: 10),
         _BingxIntentPanel(
@@ -1206,6 +1673,49 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               _bingxZonePriceRule = value;
             });
           },
+        ),
+        const SizedBox(height: 10),
+        _BingxExecutionPanel(
+          savingCredentials: _savingBingxCredentials,
+          readingCurrentSettings: _readingBingxCurrentSettings,
+          executing: _executingBingxOrder,
+          switchingLeverage: _switchingBingxLeverage,
+          switchingMarginType: _switchingBingxMarginType,
+          canExecuteIntent:
+              _lastBingxResponse?.status == PluginHostApiStatus.executed,
+          useTestOrderEndpoint: _bingxUseTestOrderEndpoint,
+          apiKeyController: _bingxApiKeyController,
+          apiSecretController: _bingxApiSecretController,
+          leverageController: _bingxLeverageController,
+          leverageSide: _bingxLeverageSide,
+          marginType: _bingxMarginType,
+          lastExecution: _lastBingxExchangeResult,
+          lastLeverageSwitch: _lastBingxLeverageResult,
+          lastMarginTypeSwitch: _lastBingxMarginTypeResult,
+          lastLeverageRead: _lastBingxLeverageReadResult,
+          lastMarginTypeRead: _lastBingxMarginTypeReadResult,
+          onUseTestEndpointChanged: (value) {
+            setState(() {
+              _bingxUseTestOrderEndpoint = value;
+            });
+          },
+          onLeverageSideChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _bingxLeverageSide = value;
+            });
+          },
+          onMarginTypeChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _bingxMarginType = value;
+            });
+          },
+          onSaveCredentialsPressed: _saveBingxCredentials,
+          onFetchCurrentPressed: _fetchBingxCurrentSettings,
+          onExecutePressed: _executeLastBingxIntentOnExchange,
+          onSwitchLeveragePressed: _switchBingxLeverage,
+          onSwitchMarginTypePressed: _switchBingxMarginType,
         ),
         const SizedBox(height: 10),
         _BingxSignalInboxPanel(
@@ -2330,7 +2840,7 @@ class _BingxIntentPanel extends StatelessWidget {
           fallback: 'Input rejected by host API.',
         ),
       null =>
-        'Pre-trade deterministic intent envelope for spot execution planning. Supports direct and zone-based pending entries.',
+        'Pre-trade deterministic intent envelope for futures execution planning. Supports direct and zone-based pending entries.',
     };
     final intentHash = response?.result?['intent_hash_hex']?.toString() ?? '';
     final shortIntentHash = intentHash.isEmpty
@@ -2886,6 +3396,424 @@ class _BingxIntentPanel extends StatelessWidget {
                     label: 'Caps: ${response.executionCapabilities.length}',
                   ),
                 ..._runtimeCapabilityChips(response),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BingxExecutionPanel extends StatelessWidget {
+  final bool savingCredentials;
+  final bool readingCurrentSettings;
+  final bool executing;
+  final bool switchingLeverage;
+  final bool switchingMarginType;
+  final bool canExecuteIntent;
+  final bool useTestOrderEndpoint;
+  final TextEditingController apiKeyController;
+  final TextEditingController apiSecretController;
+  final TextEditingController leverageController;
+  final String leverageSide;
+  final String marginType;
+  final BingxFuturesOrderExecutionResult? lastExecution;
+  final BingxFuturesControlActionResult? lastLeverageSwitch;
+  final BingxFuturesControlActionResult? lastMarginTypeSwitch;
+  final BingxFuturesLeverageReadResult? lastLeverageRead;
+  final BingxFuturesMarginTypeReadResult? lastMarginTypeRead;
+  final ValueChanged<bool> onUseTestEndpointChanged;
+  final ValueChanged<String?> onLeverageSideChanged;
+  final ValueChanged<String?> onMarginTypeChanged;
+  final Future<void> Function() onSaveCredentialsPressed;
+  final Future<void> Function() onFetchCurrentPressed;
+  final Future<void> Function() onExecutePressed;
+  final Future<void> Function() onSwitchLeveragePressed;
+  final Future<void> Function() onSwitchMarginTypePressed;
+
+  const _BingxExecutionPanel({
+    required this.savingCredentials,
+    required this.readingCurrentSettings,
+    required this.executing,
+    required this.switchingLeverage,
+    required this.switchingMarginType,
+    required this.canExecuteIntent,
+    required this.useTestOrderEndpoint,
+    required this.apiKeyController,
+    required this.apiSecretController,
+    required this.leverageController,
+    required this.leverageSide,
+    required this.marginType,
+    required this.lastExecution,
+    required this.lastLeverageSwitch,
+    required this.lastMarginTypeSwitch,
+    required this.lastLeverageRead,
+    required this.lastMarginTypeRead,
+    required this.onUseTestEndpointChanged,
+    required this.onLeverageSideChanged,
+    required this.onMarginTypeChanged,
+    required this.onSaveCredentialsPressed,
+    required this.onFetchCurrentPressed,
+    required this.onExecutePressed,
+    required this.onSwitchLeveragePressed,
+    required this.onSwitchMarginTypePressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final execution = lastExecution;
+    final statusColor = switch (execution?.isSuccess) {
+      true => const Color(0xFF75D98A),
+      false => const Color(0xFFFF8A7A),
+      null => const Color(0xFF7F92A8),
+    };
+    final statusLabel = switch (execution?.isSuccess) {
+      true => 'Executed on BingX',
+      false => 'Exchange error',
+      null => 'Execution not run yet',
+    };
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121821),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF2B3846)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _PluginIconPlate(
+                icon: Icons.rocket_launch_rounded,
+                accent: statusColor,
+                glow: statusColor.withAlpha(22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'BingX Futures Execution',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      statusLabel,
+                      style: const TextStyle(
+                        color: Color(0xFF9FAABA),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: apiKeyController,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: InputDecoration(
+              labelText: 'BingX API Key',
+              filled: true,
+              fillColor: const Color(0xFF0F141C),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: apiSecretController,
+            autocorrect: false,
+            enableSuggestions: false,
+            obscureText: true,
+            decoration: InputDecoration(
+              labelText: 'BingX API Secret',
+              filled: true,
+              fillColor: const Color(0xFF0F141C),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile.adaptive(
+            value: useTestOrderEndpoint,
+            onChanged: executing ? null : onUseTestEndpointChanged,
+            title: const Text('Use test order endpoint'),
+            subtitle: Text(
+              useTestOrderEndpoint
+                  ? '/openApi/swap/v2/trade/order/test'
+                  : '/openApi/swap/v2/trade/order',
+              style: const TextStyle(color: Color(0xFF94A1B4)),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: savingCredentials ? null : onSaveCredentialsPressed,
+                icon: savingCredentials
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.key_rounded),
+                label: Text(savingCredentials ? 'Saving' : 'Save Credentials'),
+              ),
+              OutlinedButton.icon(
+                onPressed:
+                    readingCurrentSettings ? null : onFetchCurrentPressed,
+                icon: readingCurrentSettings
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_rounded),
+                label:
+                    Text(readingCurrentSettings ? 'Fetching' : 'Fetch Current'),
+              ),
+              FilledButton.icon(
+                onPressed:
+                    executing || !canExecuteIntent ? null : onExecutePressed,
+                icon: executing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send_rounded),
+                label: Text(executing
+                    ? 'Executing'
+                    : useTestOrderEndpoint
+                        ? 'Execute Test Order'
+                        : 'Execute Live Order'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 170,
+                child: TextField(
+                  controller: leverageController,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: false,
+                    signed: false,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Leverage',
+                    hintText: '3',
+                    filled: true,
+                    fillColor: const Color(0xFF0F141C),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 170,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey<String>('bingx-leverage-side-$leverageSide'),
+                  initialValue: leverageSide,
+                  decoration: InputDecoration(
+                    labelText: 'Leverage Side',
+                    filled: true,
+                    fillColor: const Color(0xFF0F141C),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: const <DropdownMenuItem<String>>[
+                    DropdownMenuItem(value: 'LONG', child: Text('LONG')),
+                    DropdownMenuItem(value: 'SHORT', child: Text('SHORT')),
+                  ],
+                  onChanged: switchingLeverage ? null : onLeverageSideChanged,
+                ),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: switchingLeverage ? null : onSwitchLeveragePressed,
+                icon: switchingLeverage
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.tune_rounded),
+                label:
+                    Text(switchingLeverage ? 'Switching' : 'Switch Leverage'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 220,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey<String>('bingx-margin-type-$marginType'),
+                  initialValue: marginType,
+                  decoration: InputDecoration(
+                    labelText: 'Margin Type',
+                    filled: true,
+                    fillColor: const Color(0xFF0F141C),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: const <DropdownMenuItem<String>>[
+                    DropdownMenuItem(value: 'CROSSED', child: Text('CROSSED')),
+                    DropdownMenuItem(
+                        value: 'ISOLATED', child: Text('ISOLATED')),
+                  ],
+                  onChanged: switchingMarginType ? null : onMarginTypeChanged,
+                ),
+              ),
+              FilledButton.tonalIcon(
+                onPressed:
+                    switchingMarginType ? null : onSwitchMarginTypePressed,
+                icon: switchingMarginType
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.swap_horiz_rounded),
+                label: Text(
+                  switchingMarginType ? 'Switching' : 'Switch Margin Type',
+                ),
+              ),
+            ],
+          ),
+          if (execution != null) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _InfoChip(
+                  icon: execution.isSuccess
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.error_outline_rounded,
+                  label: execution.isSuccess
+                      ? 'Status: success'
+                      : 'Status: failed',
+                  accent: execution.isSuccess
+                      ? const Color(0xFF75D98A)
+                      : const Color(0xFFFF8A7A),
+                ),
+                _InfoChip(
+                  icon: Icons.http_rounded,
+                  label: 'HTTP: ${execution.httpStatusCode}',
+                ),
+                _InfoChip(
+                  icon: Icons.tag_outlined,
+                  label: 'Code: ${execution.exchangeCode}',
+                ),
+                _InfoChip(
+                  icon: Icons.route_rounded,
+                  label: execution.endpointPath,
+                ),
+                if (execution.orderId != null && execution.orderId!.isNotEmpty)
+                  _InfoChip(
+                    icon: Icons.receipt_long_outlined,
+                    label: 'Order: ${execution.orderId}',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              execution.exchangeMessage,
+              style: const TextStyle(
+                color: Color(0xFF9FAABA),
+                height: 1.35,
+              ),
+            ),
+          ],
+          if (lastLeverageSwitch != null || lastMarginTypeSwitch != null) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (lastLeverageSwitch != null)
+                  _InfoChip(
+                    icon: lastLeverageSwitch!.isSuccess
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    label:
+                        'Leverage ${lastLeverageSwitch!.isSuccess ? "ok" : "fail"} · ${lastLeverageSwitch!.exchangeCode}',
+                    accent: lastLeverageSwitch!.isSuccess
+                        ? const Color(0xFF75D98A)
+                        : const Color(0xFFFF8A7A),
+                  ),
+                if (lastMarginTypeSwitch != null)
+                  _InfoChip(
+                    icon: lastMarginTypeSwitch!.isSuccess
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    label:
+                        'Margin ${lastMarginTypeSwitch!.isSuccess ? "ok" : "fail"} · ${lastMarginTypeSwitch!.exchangeCode}',
+                    accent: lastMarginTypeSwitch!.isSuccess
+                        ? const Color(0xFF75D98A)
+                        : const Color(0xFFFF8A7A),
+                  ),
+              ],
+            ),
+          ],
+          if (lastLeverageRead != null || lastMarginTypeRead != null) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (lastLeverageRead != null)
+                  _InfoChip(
+                    icon: lastLeverageRead!.isSuccess
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    label: lastLeverageRead!.isSuccess
+                        ? 'Current leverage L:${lastLeverageRead!.longLeverage ?? "-"} S:${lastLeverageRead!.shortLeverage ?? "-"}'
+                        : 'Current leverage err ${lastLeverageRead!.exchangeCode}',
+                    accent: lastLeverageRead!.isSuccess
+                        ? const Color(0xFF75D98A)
+                        : const Color(0xFFFF8A7A),
+                  ),
+                if (lastMarginTypeRead != null)
+                  _InfoChip(
+                    icon: lastMarginTypeRead!.isSuccess
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    label: lastMarginTypeRead!.isSuccess
+                        ? 'Current margin ${lastMarginTypeRead!.marginType ?? "-"}'
+                        : 'Current margin err ${lastMarginTypeRead!.exchangeCode}',
+                    accent: lastMarginTypeRead!.isSuccess
+                        ? const Color(0xFF75D98A)
+                        : const Color(0xFFFF8A7A),
+                  ),
               ],
             ),
           ],

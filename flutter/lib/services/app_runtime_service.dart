@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import '../ffi/app_runtime_runtime.dart';
+import 'bingx_futures_credential_store.dart';
+import 'bingx_futures_exchange_service.dart';
 import 'bingx_trading_contract_service.dart';
 import 'capsule_chat_contract_service.dart';
 import 'capsule_address_service.dart';
@@ -63,6 +65,12 @@ class AppRuntimeService {
   Uint8List? capsuleNostrPublicKey() => _runtime.capsuleNostrPublicKey();
   String? exportLedger() => _runtime.exportLedger();
 
+  String? activeCapsuleRootHex() {
+    final root = _runtime.capsuleRootPublicKey();
+    if (root == null || root.length != 32) return null;
+    return _hex(root);
+  }
+
   ConsensusRuntimeService buildConsensusRuntimeService() {
     return ConsensusRuntimeService(
       exportLedger: _runtime.exportLedger,
@@ -116,8 +124,13 @@ class AppRuntimeService {
   PluginHostApiService buildPluginHostApiService() {
     final consensus = buildConsensusRuntimeService();
     final demoRunner = buildPluginDemoContractRunnerService();
-    final bingx = BingxTradingContractService(
+    final bingxSpot = BingxTradingContractService(
       readSignable: consensus.signable,
+    );
+    final bingxFutures = BingxTradingContractService(
+      readSignable: consensus.signable,
+      configuredPluginId: BingxTradingContractService.futuresPluginId,
+      configuredContractKind: BingxTradingContractService.futuresContractKind,
     );
     final chat = CapsuleChatContractService(
       readSignable: consensus.signable,
@@ -125,7 +138,8 @@ class AppRuntimeService {
     final wasmRuntime = const WasmPluginRuntimeStubService();
     return PluginHostApiService(
       runTemperatureDemo: demoRunner.runTemperatureTomorrowDemo,
-      runBingxSpotOrder: bingx.execute,
+      runBingxSpotOrder: bingxSpot.execute,
+      runBingxFuturesOrder: bingxFutures.execute,
       runCapsuleChat: chat.execute,
       resolveRuntimeBinding: _resolvePluginRuntimeBinding,
       resolveRuntimeInvoke: (request, binding) => wasmRuntime.invoke(
@@ -133,6 +147,16 @@ class AppRuntimeService {
         binding: binding,
       ),
     );
+  }
+
+  BingxFuturesCredentialStore buildBingxFuturesCredentialStore() {
+    return BingxFuturesCredentialStore(
+      readActiveCapsuleRootHex: activeCapsuleRootHex,
+    );
+  }
+
+  BingxFuturesExchangeService buildBingxFuturesExchangeService() {
+    return BingxFuturesExchangeService();
   }
 
   Future<PluginRuntimeBinding> _resolvePluginRuntimeBinding(
@@ -192,6 +216,9 @@ class AppRuntimeService {
     }
     return sha256.convert(bytes).toString();
   }
+
+  String _hex(Uint8List bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
   RelationshipService buildRelationshipService() {
     return RelationshipService(
