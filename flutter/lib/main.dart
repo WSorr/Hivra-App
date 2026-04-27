@@ -6,6 +6,7 @@ import 'screens/backup_screen.dart';
 import 'screens/recovery_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/ledger_inspector_screen.dart';
+import 'screens/trading_drone_screen.dart';
 import 'screens/wasm_plugins_screen.dart';
 import 'services/recovery_service.dart';
 
@@ -28,7 +29,8 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             final autoSelect = args?['autoSelectSingle'] as bool? ?? true;
             return MaterialPageRoute(
-              builder: (_) => CapsuleSelectorScreen(autoSelectSingle: autoSelect),
+              builder: (_) =>
+                  CapsuleSelectorScreen(autoSelectSingle: autoSelect),
             );
           case '/first_launch':
             return MaterialPageRoute(builder: (_) => const FirstLaunchScreen());
@@ -53,8 +55,12 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(builder: (_) => LedgerInspectorScreen());
           case '/wasm_plugins':
             return MaterialPageRoute(builder: (_) => const WasmPluginsScreen());
+          case '/trading_drone':
+            return MaterialPageRoute(
+                builder: (_) => const TradingDroneScreen());
           default:
-            return MaterialPageRoute(builder: (_) => const CapsuleSelectorScreen());
+            return MaterialPageRoute(
+                builder: (_) => const CapsuleSelectorScreen());
         }
       },
     );

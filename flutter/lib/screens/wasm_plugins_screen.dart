@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../services/app_runtime_service.dart';
 import '../services/bingx_futures_credential_store.dart';
 import '../services/bingx_futures_exchange_service.dart';
+import '../services/bingx_futures_execution_queue_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
 import '../services/consensus_processor.dart';
 import '../services/manual_consensus_check_service.dart';
@@ -49,6 +50,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       AppRuntimeService().buildBingxFuturesCredentialStore();
   final BingxFuturesExchangeService _bingxExchangeService =
       AppRuntimeService().buildBingxFuturesExchangeService();
+  late final BingxFuturesExecutionQueueService _bingxExecutionQueue;
   final CapsuleChatDeliveryService _chatDelivery =
       AppRuntimeService().buildCapsuleChatDeliveryService();
   final UiEventLogService _uiLog = const UiEventLogService();
@@ -166,6 +168,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   @override
   void initState() {
     super.initState();
+    _bingxExecutionQueue = BingxFuturesExecutionQueueService(
+      exchangeService: _bingxExchangeService,
+    );
     _reload();
     _reloadSourceCatalog();
     _loadBingxCredentials();
@@ -694,15 +699,18 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       _executingBingxOrder = true;
     });
     try {
-      final execution = await _bingxExchangeService.placeOrder(
+      final queued = await _bingxExecutionQueue.enqueueOrderExecution(
         credentials: credentials,
         intent: payload,
         testOrder: _bingxUseTestOrderEndpoint,
       );
+      final execution = queued.execution;
       await _uiLog.log(
         'bingx.exchange.execute',
         'symbol=${payload.symbol} side=${payload.side} type=${payload.orderType} '
             'test=${_bingxUseTestOrderEndpoint ? "yes" : "no"} '
+            'attempts=${queued.attempts} '
+            'cache=${queued.fromIdempotentCache ? "hit" : "miss"} '
             'success=${execution.isSuccess} '
             'http=${execution.httpStatusCode} '
             'code=${execution.exchangeCode} '
@@ -720,7 +728,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           SnackBar(
             content: Text(
               'BingX ${_bingxUseTestOrderEndpoint ? "test" : "live"} order sent'
-              '${execution.orderId == null ? "" : " · id ${execution.orderId}"}',
+              '${execution.orderId == null ? "" : " · id ${execution.orderId}"}'
+              '${queued.fromIdempotentCache ? " · idempotent cache" : ""}',
             ),
             duration: const Duration(seconds: 2),
           ),
@@ -1576,6 +1585,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           onInstallPressed: _installFromSource,
         ),
         const SizedBox(height: 20),
+        _TradingDroneLaunchPanel(
+          onOpenPressed: () =>
+              Navigator.of(context).pushNamed('/trading_drone'),
+        ),
+        const SizedBox(height: 20),
         _SectionTitle(
           title: 'Plugin Host',
           subtitle:
@@ -2083,6 +2097,70 @@ class _EmptyInstalledState extends StatelessWidget {
             'Install a .wasm or .zip package to stage it locally inside the plugin sandbox.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Color(0xFF93A0B1), height: 1.35),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TradingDroneLaunchPanel extends StatelessWidget {
+  final VoidCallback onOpenPressed;
+
+  const _TradingDroneLaunchPanel({
+    required this.onOpenPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: <Color>[Color(0xFF171D27), Color(0xFF101722)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF2A3340)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _PluginIconPlate(
+            icon: Icons.smart_toy_outlined,
+            accent: Color(0xFFFFC76A),
+            glow: Color(0xFF3E2D10),
+            size: 34,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Trading Drone',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'BingX intent/execution moved to a dedicated workspace screen to keep plugin host focused and reduce UI layer coupling.',
+                  style: TextStyle(
+                    color: Color(0xFF9CA7B5),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: onOpenPressed,
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  label: const Text('Open Trading Drone'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
