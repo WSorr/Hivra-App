@@ -96,13 +96,22 @@ class BingxTradingExecutionResult {
 }
 
 class BingxTradingContractService {
-  static const String pluginId = 'hivra.contract.bingx-trading.v1';
-  static const String contractKind = 'bingx_spot_order_intent';
+  static const String spotPluginId = 'hivra.contract.bingx-trading.v1';
+  static const String futuresPluginId =
+      'hivra.contract.bingx-futures-trading.v1';
+  static const String pluginId = spotPluginId;
+  static const String spotContractKind = 'bingx_spot_order_intent';
+  static const String futuresContractKind = 'bingx_futures_order_intent';
+  static const String contractKind = spotContractKind;
 
   final BingxConsensusSignableReader _readSignable;
+  final String configuredPluginId;
+  final String configuredContractKind;
 
   const BingxTradingContractService({
     required BingxConsensusSignableReader readSignable,
+    this.configuredPluginId = spotPluginId,
+    this.configuredContractKind = spotContractKind,
   }) : _readSignable = readSignable;
 
   BingxTradingExecutionResult execute({
@@ -360,6 +369,19 @@ class BingxTradingContractService {
         triggerPriceDecimal,
         field: 'trigger_price_decimal',
       );
+      if (normalizedTriggerPrice == null) {
+        // Deterministic default trigger for pending entries:
+        // buy waits for reclaim toward zone high, sell waits toward zone low.
+        normalizedTriggerPrice = parsedSide == BingxOrderSide.buy
+            ? normalizedZoneHigh
+            : normalizedZoneLow;
+      } else {
+        final triggerScaled = _toScaledInt(normalizedTriggerPrice, scale: 8);
+        if (triggerScaled < lowScaled || triggerScaled > highScaled) {
+          throw const FormatException(
+              'trigger_price_decimal must stay inside [zone_low_decimal, zone_high_decimal]');
+        }
+      }
       normalizedStopLoss = _normalizeOptionalDecimal(
         stopLossDecimal,
         field: 'stop_loss_decimal',
@@ -420,8 +442,8 @@ class BingxTradingContractService {
 
     final canonical = jsonEncode(<String, dynamic>{
       'schema_version': 1,
-      'plugin_id': pluginId,
-      'contract_kind': contractKind,
+      'plugin_id': configuredPluginId,
+      'contract_kind': configuredContractKind,
       'peer_hex': normalizedPeer,
       'client_order_id': normalizedClientOrderId,
       'symbol': normalizedSymbol,
@@ -455,7 +477,7 @@ class BingxTradingContractService {
     final intentHashHex = sha256.convert(utf8.encode(canonical)).toString();
 
     return BingxSpotOrderIntent(
-      pluginId: pluginId,
+      pluginId: configuredPluginId,
       peerHex: normalizedPeer,
       clientOrderId: normalizedClientOrderId,
       symbol: normalizedSymbol,

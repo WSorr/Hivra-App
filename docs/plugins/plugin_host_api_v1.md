@@ -15,6 +15,8 @@ This document defines the first deterministic host API boundary used before wasm
   - method: `settle_temperature_tomorrow`
 - `hivra.contract.bingx-trading.v1`
   - method: `place_bingx_spot_order_intent`
+- `hivra.contract.bingx-futures-trading.v1`
+  - method: `place_bingx_futures_order_intent`
 - `hivra.contract.capsule-chat.v1`
   - method: `post_capsule_chat_message`
 
@@ -90,6 +92,27 @@ This document defines the first deterministic host API boundary used before wasm
 ```json
 {
   "schema_version": 1,
+  "plugin_id": "hivra.contract.bingx-futures-trading.v1",
+  "method": "place_bingx_futures_order_intent",
+  "args": {
+    "peer_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "client_order_id": "ord-fut-1",
+    "symbol": "BTC-USDT",
+    "side": "sell",
+    "order_type": "limit",
+    "quantity_decimal": "0.02",
+    "limit_price_decimal": "61000",
+    "time_in_force": "GTC",
+    "entry_mode": "direct",
+    "created_at_utc": "2026-04-09T10:00:00Z",
+    "strategy_tag": "futures-demo"
+  }
+}
+```
+
+```json
+{
+  "schema_version": 1,
   "plugin_id": "hivra.contract.capsule-chat.v1",
   "method": "post_capsule_chat_message",
   "args": {
@@ -158,6 +181,7 @@ This document defines the first deterministic host API boundary used before wasm
     - `oracle.read.mock_weather`
     - `oracle.read.temperature.li`
   - `place_bingx_spot_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.spot`
+  - `place_bingx_futures_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.futures`
   - `post_capsule_chat_message` requires `consensus_guard.read`
 - Current runtime phase exposes deterministic invoke evidence via `wasm_stub_v1`:
   - when `execution_package_digest_hex` is present, host verifies installed package bytes against that digest before runtime module extraction
@@ -182,5 +206,8 @@ This document defines the first deterministic host API boundary used before wasm
 - `place_bingx_spot_order_intent` supports:
   - `entry_mode=direct` (current flat spot intent)
   - `entry_mode=zone_pending` (deterministic pending-entry parameters from `buyside/sellside` zones)
+- `place_bingx_futures_order_intent` supports:
+  - `entry_mode=direct`
+  - `entry_mode=zone_pending`
 - In `zone_pending`, host API computes the final limit entry price from zone rules and returns it in deterministic result payload; no live-trading execution is performed in host API v1.
 - `post_capsule_chat_message` currently returns a deterministic envelope hash only; transport delivery remains outside this host API boundary.

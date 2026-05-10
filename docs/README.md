@@ -83,6 +83,15 @@ Contains:
 - effect and async resolution discipline
 - module creation checklist and refactor acceptance criteria
 
+### 9) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
+Use this when implementing TVH/signal logic for the BingX futures plugin.
+
+Contains:
+- required exchange data surface for deterministic TVH
+- snapshot normalization and hashing contract
+- v1 entry criteria (long/short), risk filters, and output schema
+- host API and capability boundary for futures intent preparation
+
 ## Recommended Reading Order
 
 1. `specification.md`
@@ -93,6 +102,7 @@ Contains:
 6. `capsule-addressing-model.md` when touching invitation addressing or peer endpoint resolution
 7. `checklists/user-lifetime-safety-pack.md` when preparing release candidates
 8. `architecture-execution-discipline.md` when designing/refactoring module boundaries and async behavior
+9. `plugins/bingx_futures_trading_drone_spec_v1.md` when implementing trading-drone logic
 
 ## Update Rules
 

@@ -34,15 +34,39 @@ sha256_hex() {
   shasum -a 256 "$1" | awk '{print tolower($1)}'
 }
 
-BINGX_ZIP="$(ls "$SOURCE_DIR"/bingx_spot_test_plugin-*.zip | sort | tail -n1)"
+latest_zip_or_empty() {
+  local pattern="$1"
+  local latest
+  latest="$(ls $pattern 2>/dev/null | sort | tail -n1 || true)"
+  echo "$latest"
+}
+
+BINGX_FUTURES_ZIP="$(latest_zip_or_empty "$SOURCE_DIR"/bingx_futures_test_plugin-*.zip)"
+BINGX_SPOT_ZIP="$(latest_zip_or_empty "$SOURCE_DIR"/bingx_spot_test_plugin-*.zip)"
 TEMP_ZIP="$(ls "$SOURCE_DIR"/temperature_li_tomorrow_test_plugin-*.zip | sort | tail -n1)"
 CHAT_ZIP="$(ls "$SOURCE_DIR"/capsule_chat_test_plugin-*.zip | sort | tail -n1)"
+
+if [[ -n "$BINGX_FUTURES_ZIP" ]]; then
+  BINGX_ZIP="$BINGX_FUTURES_ZIP"
+  BINGX_ENTRY_ID="bingx-futures-test"
+  BINGX_PLUGIN_ID="hivra.contract.bingx-futures-trading.v1"
+  BINGX_DISPLAY_NAME="BingX Futures Trading (Test Plugin)"
+  BINGX_VERSION="$(basename "$BINGX_ZIP" | sed -E 's/^bingx_futures_test_plugin-([0-9.]+)\.zip$/\1/')"
+elif [[ -n "$BINGX_SPOT_ZIP" ]]; then
+  BINGX_ZIP="$BINGX_SPOT_ZIP"
+  BINGX_ENTRY_ID="bingx-spot-test"
+  BINGX_PLUGIN_ID="hivra.contract.bingx-trading.v1"
+  BINGX_DISPLAY_NAME="BingX Spot Trading (Test Plugin)"
+  BINGX_VERSION="$(basename "$BINGX_ZIP" | sed -E 's/^bingx_spot_test_plugin-([0-9.]+)\.zip$/\1/')"
+else
+  echo "missing BingX plugin zip (expected bingx_futures_test_plugin-*.zip or bingx_spot_test_plugin-*.zip)"
+  exit 1
+fi
 
 BINGX_SHA256="$(sha256_hex "$BINGX_ZIP")"
 TEMP_SHA256="$(sha256_hex "$TEMP_ZIP")"
 CHAT_SHA256="$(sha256_hex "$CHAT_ZIP")"
 
-BINGX_VERSION="$(basename "$BINGX_ZIP" | sed -E 's/^bingx_spot_test_plugin-([0-9.]+)\.zip$/\1/')"
 TEMP_VERSION="$(basename "$TEMP_ZIP" | sed -E 's/^temperature_li_tomorrow_test_plugin-([0-9.]+)\.zip$/\1/')"
 CHAT_VERSION="$(basename "$CHAT_ZIP" | sed -E 's/^capsule_chat_test_plugin-([0-9.]+)\.zip$/\1/')"
 
@@ -54,9 +78,9 @@ cat > "$CATALOG_PATH" <<JSON
   "source_name": "Local Hivra Plugins",
   "entries": [
     {
-      "id": "bingx-spot-test",
-      "plugin_id": "hivra.contract.bingx-trading.v1",
-      "display_name": "BingX Spot Trading (Test Plugin)",
+      "id": "$BINGX_ENTRY_ID",
+      "plugin_id": "$BINGX_PLUGIN_ID",
+      "display_name": "$BINGX_DISPLAY_NAME",
       "version": "$BINGX_VERSION",
       "package_kind": "zip",
       "download_url": "$(zip_uri "$BINGX_ZIP")",

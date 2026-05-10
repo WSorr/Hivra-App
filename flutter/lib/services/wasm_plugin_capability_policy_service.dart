@@ -5,6 +5,7 @@ class WasmPluginCapabilityPolicyService {
     'oracle.read.temperature.li',
     'exchange.read.bingx.market',
     'exchange.trade.bingx.spot',
+    'exchange.trade.bingx.futures',
   };
 
   const WasmPluginCapabilityPolicyService();

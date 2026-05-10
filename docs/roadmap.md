@@ -826,3 +826,21 @@ When tradeoffs are unclear, prefer:
 
 No active `9.x` architecture debt remains in v1 scope before trading-agent build.
 No active `10.x` plugin-host debt remains in v1 scope before trading-agent build.
+
+- `11.1 Trading Drone Runtime Execution (remove host_fallback for execution path)`
+  - Goal:
+    - execute trading-drone contract path through mounted plugin runtime boundary (not host fallback) while preserving modularity, determinism, and downward dependencies.
+  - Scope:
+    - route `place_bingx_futures_order_intent` execution through runtime invoke path whenever runtime contract is valid (`abi/entry/capabilities` pass).
+    - keep deterministic reject paths (`runtime_binding_invalid`, `runtime_contract_kind_mismatch`, capability mismatch) unchanged and hash-stable.
+    - add regression coverage that response/source metadata stays deterministic across:
+      - runtime executed path
+      - runtime rejected path
+      - explicit fallback-disabled path
+    - add manual smoke checklist entries for Trading Drone screen:
+      - `intent -> execute -> queue/retry/idempotency -> signal broadcast/inbox`.
+  - Definition of done:
+    - trading-drone execution no longer reports `execution_source=host_fallback` in normal valid-runtime path.
+    - plugin runtime and fallback error branches are deterministic and test-covered.
+    - release smoke can verify runtime execution end-to-end on macOS and Android.
+  - Status: active.

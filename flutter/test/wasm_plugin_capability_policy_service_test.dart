@@ -10,6 +10,7 @@ void main() {
       'oracle.read.mock_weather',
       'consensus_guard.read',
       'exchange.trade.bingx.spot',
+      'exchange.trade.bingx.futures',
       'oracle.read.mock_weather',
     ]);
 
@@ -17,6 +18,7 @@ void main() {
       normalized,
       <String>[
         'consensus_guard.read',
+        'exchange.trade.bingx.futures',
         'exchange.trade.bingx.spot',
         'oracle.read.mock_weather',
       ],

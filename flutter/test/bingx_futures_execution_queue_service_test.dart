@@ -19,6 +19,7 @@ void main() {
       quantityDecimal: '0.01',
       limitPriceDecimal: '60000',
       timeInForce: 'GTC',
+      entryMode: 'direct',
       triggerPriceDecimal: null,
       intentHashHex:
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',

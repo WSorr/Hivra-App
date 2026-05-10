@@ -59,6 +59,7 @@ void main() {
           quantityDecimal: '0.01',
           limitPriceDecimal: '63000',
           timeInForce: 'GTC',
+          entryMode: 'direct',
           triggerPriceDecimal: null,
           intentHashHex: 'abc',
         ),
@@ -69,6 +70,7 @@ void main() {
       expect(capturedRequest.uri.path, '/openApi/swap/v2/trade/order/test');
       expect(capturedRequest.headers['X-BX-APIKEY'], 'api-key');
       expect(capturedRequest.body, contains('signature='));
+      expect(capturedRequest.body, contains('type=LIMIT'));
       expect(result.isSuccess, isTrue);
       expect(result.orderId, '789');
       expect(result.exchangeCode, '0');
@@ -89,6 +91,47 @@ void main() {
       expect(payload.exchangeSide, 'SELL');
       expect(payload.positionSide, 'SHORT');
       expect(payload.exchangeOrderType, 'MARKET');
+    });
+
+    test('maps zone_pending limit intent to trigger-limit order payload',
+        () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body: '{"code":0,"msg":"OK","data":{"order":{"orderId":"555"}}}',
+          );
+        },
+      );
+
+      final result = await service.placeOrder(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+        intent: const BingxFuturesIntentPayload(
+          clientOrderId: 'ord-zp-1',
+          symbol: 'BTC-USDT',
+          side: 'sell',
+          orderType: 'limit',
+          quantityDecimal: '0.01',
+          limitPriceDecimal: '63000',
+          timeInForce: 'GTC',
+          entryMode: 'zone_pending',
+          triggerPriceDecimal: '62950',
+          intentHashHex: 'def',
+        ),
+        testOrder: true,
+      );
+
+      expect(capturedRequest.body, contains('type=TRIGGER_LIMIT'));
+      expect(capturedRequest.body, contains('stopPrice=62950'));
+      expect(capturedRequest.body, contains('price=63000'));
+      expect(result.isSuccess, isTrue);
+      expect(result.orderId, '555');
     });
 
     test('switches leverage with signed v2 trade endpoint', () async {
@@ -213,6 +256,64 @@ void main() {
       expect(capturedRequest.uri.query, contains('signature='));
       expect(result.isSuccess, isTrue);
       expect(result.marginType, 'ISOLATED');
+    });
+
+    test('reads public quote price via unsigned endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"","data":{"symbol":"BTC-USDT","price":"80078.0","time":1778255944017}}',
+          );
+        },
+      );
+
+      final result = await service.getPublicPrice(symbol: 'btc-usdt');
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/price');
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(capturedRequest.headers.isEmpty, isTrue);
+      expect(result.isSuccess, isTrue);
+      expect(result.symbol, 'BTC-USDT');
+      expect(result.priceDecimal, '80078.0');
+      expect(result.exchangeCode, '0');
+    });
+
+    test('reads public klines via unsigned endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"","data":[[1710000000000,"60000","60100","59900","60050"],[1710000300000,"60050","60200","60020","60180"]]}',
+          );
+        },
+      );
+
+      final result = await service.getPublicKlines(
+        symbol: 'btc-usdt',
+        interval: '5m',
+        limit: 50,
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v3/quote/klines');
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(capturedRequest.uri.query, contains('interval=5m'));
+      expect(capturedRequest.uri.query, contains('limit=50'));
+      expect(capturedRequest.headers.isEmpty, isTrue);
+      expect(result.isSuccess, isTrue);
+      expect(result.interval, '5m');
+      expect(result.klines, hasLength(2));
+      expect(result.klines.first.openTimeMs, 1710000000000);
+      expect(result.klines.first.highDecimal, '60100');
+      expect(result.klines.last.closeDecimal, '60180');
     });
   });
 }

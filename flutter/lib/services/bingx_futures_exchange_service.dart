@@ -36,6 +36,7 @@ class BingxFuturesIntentPayload {
   final String quantityDecimal;
   final String? limitPriceDecimal;
   final String? timeInForce;
+  final String entryMode;
   final String? triggerPriceDecimal;
   final String? intentHashHex;
 
@@ -47,6 +48,7 @@ class BingxFuturesIntentPayload {
     required this.quantityDecimal,
     required this.limitPriceDecimal,
     required this.timeInForce,
+    required this.entryMode,
     required this.triggerPriceDecimal,
     required this.intentHashHex,
   });
@@ -78,10 +80,22 @@ class BingxFuturesIntentPayload {
     final quantity = readRequiredString('quantity_decimal');
     final limitPrice = result['limit_price_decimal']?.toString().trim();
     final timeInForce = result['time_in_force']?.toString().trim();
+    final entryModeRaw = result['entry_mode']?.toString().trim().toLowerCase();
+    final entryMode = switch (entryModeRaw) {
+      null || '' || 'direct' => 'direct',
+      'zone_pending' => 'zone_pending',
+      _ => throw const FormatException(
+          'Intent entry_mode must be direct or zone_pending'),
+    };
     final triggerPrice = result['trigger_price_decimal']?.toString().trim();
     if (normalizedOrderType == 'limit' &&
         (limitPrice == null || limitPrice.isEmpty)) {
       throw const FormatException('Limit intent requires limit_price_decimal');
+    }
+    if (entryMode == 'zone_pending' &&
+        (triggerPrice == null || triggerPrice.isEmpty)) {
+      throw const FormatException(
+          'zone_pending intent requires trigger_price_decimal');
     }
     return BingxFuturesIntentPayload(
       clientOrderId: readRequiredString('client_order_id'),
@@ -93,6 +107,7 @@ class BingxFuturesIntentPayload {
           (limitPrice == null || limitPrice.isEmpty) ? null : limitPrice,
       timeInForce:
           (timeInForce == null || timeInForce.isEmpty) ? null : timeInForce,
+      entryMode: entryMode,
       triggerPriceDecimal:
           (triggerPrice == null || triggerPrice.isEmpty) ? null : triggerPrice,
       intentHashHex: result['intent_hash_hex']?.toString().trim(),
@@ -101,7 +116,12 @@ class BingxFuturesIntentPayload {
 
   String get exchangeSide => side == 'buy' ? 'BUY' : 'SELL';
   String get positionSide => side == 'buy' ? 'LONG' : 'SHORT';
-  String get exchangeOrderType => orderType == 'limit' ? 'LIMIT' : 'MARKET';
+  String get exchangeOrderType {
+    if (entryMode == 'zone_pending' && orderType == 'limit') {
+      return 'TRIGGER_LIMIT';
+    }
+    return orderType == 'limit' ? 'LIMIT' : 'MARKET';
+  }
 }
 
 class BingxFuturesOrderExecutionResult {
@@ -212,6 +232,70 @@ class BingxFuturesMarginTypeReadResult {
   });
 }
 
+class BingxFuturesPublicPriceResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final String symbol;
+  final String? priceDecimal;
+  final String? timestampMs;
+
+  const BingxFuturesPublicPriceResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.symbol,
+    required this.priceDecimal,
+    required this.timestampMs,
+  });
+}
+
+class BingxFuturesPublicKline {
+  final int openTimeMs;
+  final String openDecimal;
+  final String highDecimal;
+  final String lowDecimal;
+  final String closeDecimal;
+
+  const BingxFuturesPublicKline({
+    required this.openTimeMs,
+    required this.openDecimal,
+    required this.highDecimal,
+    required this.lowDecimal,
+    required this.closeDecimal,
+  });
+}
+
+class BingxFuturesPublicKlinesResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final String symbol;
+  final String interval;
+  final List<BingxFuturesPublicKline> klines;
+
+  const BingxFuturesPublicKlinesResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.symbol,
+    required this.interval,
+    required this.klines,
+  });
+}
+
 class BingxHttpRequest {
   final String method;
   final Uri uri;
@@ -242,6 +326,8 @@ typedef BingxHttpRequestSender = Future<BingxHttpResponse> Function(
 
 class BingxFuturesExchangeService {
   static const String _defaultBaseUrl = 'https://open-api.bingx.com';
+  static const String _publicPricePath = '/openApi/swap/v2/quote/price';
+  static const String _publicKlinesPath = '/openApi/swap/v3/quote/klines';
   static const String _liveOrderPath = '/openApi/swap/v2/trade/order';
   static const String _testOrderPath = '/openApi/swap/v2/trade/order/test';
   static const String _switchLeveragePath = '/openApi/swap/v2/trade/leverage';
@@ -282,9 +368,16 @@ class BingxFuturesExchangeService {
       'timestamp': timestampMs.toString(),
       'type': intent.exchangeOrderType,
     };
-    if (intent.exchangeOrderType == 'LIMIT') {
+    if (intent.exchangeOrderType == 'LIMIT' ||
+        intent.exchangeOrderType == 'TRIGGER_LIMIT') {
       params['price'] = intent.limitPriceDecimal!;
       params['timeInForce'] = (intent.timeInForce ?? 'GTC').toUpperCase();
+    }
+    if (intent.exchangeOrderType.startsWith('TRIGGER') &&
+        (intent.triggerPriceDecimal == null ||
+            intent.triggerPriceDecimal!.isEmpty)) {
+      throw const FormatException(
+          'Trigger order requires trigger_price_decimal');
     }
     if (intent.triggerPriceDecimal != null &&
         intent.triggerPriceDecimal!.isNotEmpty) {
@@ -440,6 +533,135 @@ class BingxFuturesExchangeService {
       responseBody: response.body,
       symbol: normalizedSymbol,
       marginType: marginType,
+    );
+  }
+
+  Future<BingxFuturesPublicPriceResult> getPublicPrice({
+    required String symbol,
+  }) async {
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final requestUri = Uri.parse(
+      '$_baseUrl$_publicPricePath?symbol=${Uri.encodeQueryComponent(normalizedSymbol)}',
+    );
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'GET',
+        uri: requestUri,
+        headers: const <String, String>{},
+        body: '',
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+    String? priceDecimal;
+    String? timestampMs;
+    final data = decoded?['data'];
+    if (data is Map) {
+      final rawPrice = data['price']?.toString().trim();
+      if (rawPrice != null && rawPrice.isNotEmpty) {
+        priceDecimal = rawPrice;
+      }
+      final rawTime = data['time']?.toString().trim();
+      if (rawTime != null && rawTime.isNotEmpty) {
+        timestampMs = rawTime;
+      }
+    }
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        priceDecimal != null &&
+        priceDecimal.isNotEmpty;
+    return BingxFuturesPublicPriceResult(
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      endpointPath: _publicPricePath,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      priceDecimal: priceDecimal,
+      timestampMs: timestampMs,
+    );
+  }
+
+  Future<BingxFuturesPublicKlinesResult> getPublicKlines({
+    required String symbol,
+    required String interval,
+    int limit = 120,
+  }) async {
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final normalizedInterval = interval.trim().toLowerCase();
+    if (!RegExp(r'^\d+[mhdw]$').hasMatch(normalizedInterval)) {
+      throw const FormatException(
+        'Interval format is invalid (expected 1m/5m/1h/4h/1d/1w)',
+      );
+    }
+    if (limit < 10 || limit > 1000) {
+      throw const FormatException('Kline limit must be in range 10..1000');
+    }
+
+    final requestUri = Uri.parse(
+      '$_baseUrl$_publicKlinesPath'
+      '?symbol=${Uri.encodeQueryComponent(normalizedSymbol)}'
+      '&interval=${Uri.encodeQueryComponent(normalizedInterval)}'
+      '&limit=$limit',
+    );
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'GET',
+        uri: requestUri,
+        headers: const <String, String>{},
+        body: '',
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+
+    final parsed = <BingxFuturesPublicKline>[];
+    final dynamic data = decoded?['data'];
+    if (data is List) {
+      for (final raw in data) {
+        final kline = _extractPublicKline(raw);
+        if (kline != null) {
+          parsed.add(kline);
+        }
+      }
+    } else if (data is Map) {
+      final nested = data['list'];
+      if (nested is List) {
+        for (final raw in nested) {
+          final kline = _extractPublicKline(raw);
+          if (kline != null) {
+            parsed.add(kline);
+          }
+        }
+      }
+    }
+
+    parsed.sort((a, b) => a.openTimeMs.compareTo(b.openTimeMs));
+    final klines = List<BingxFuturesPublicKline>.unmodifiable(parsed);
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        klines.isNotEmpty;
+    return BingxFuturesPublicKlinesResult(
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      endpointPath: _publicKlinesPath,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      interval: normalizedInterval,
+      klines: klines,
     );
   }
 
@@ -630,6 +852,58 @@ class BingxFuturesExchangeService {
         final nested = order['orderId']?.toString();
         if (nested != null && nested.isNotEmpty) return nested;
       }
+    }
+    return null;
+  }
+
+  static BingxFuturesPublicKline? _extractPublicKline(dynamic raw) {
+    if (raw is List && raw.length >= 5) {
+      final openTimeMs = int.tryParse(raw[0].toString());
+      final open = raw[1].toString().trim();
+      final high = raw[2].toString().trim();
+      final low = raw[3].toString().trim();
+      final close = raw[4].toString().trim();
+      if (openTimeMs == null ||
+          open.isEmpty ||
+          high.isEmpty ||
+          low.isEmpty ||
+          close.isEmpty) {
+        return null;
+      }
+      return BingxFuturesPublicKline(
+        openTimeMs: openTimeMs,
+        openDecimal: open,
+        highDecimal: high,
+        lowDecimal: low,
+        closeDecimal: close,
+      );
+    }
+    if (raw is Map) {
+      final openTimeRaw =
+          raw['time'] ?? raw['openTime'] ?? raw['timestamp'] ?? raw['t'];
+      final openRaw = raw['open'] ?? raw['o'];
+      final highRaw = raw['high'] ?? raw['h'];
+      final lowRaw = raw['low'] ?? raw['l'];
+      final closeRaw = raw['close'] ?? raw['c'];
+      final openTimeMs = int.tryParse(openTimeRaw?.toString() ?? '');
+      final open = openRaw?.toString().trim() ?? '';
+      final high = highRaw?.toString().trim() ?? '';
+      final low = lowRaw?.toString().trim() ?? '';
+      final close = closeRaw?.toString().trim() ?? '';
+      if (openTimeMs == null ||
+          open.isEmpty ||
+          high.isEmpty ||
+          low.isEmpty ||
+          close.isEmpty) {
+        return null;
+      }
+      return BingxFuturesPublicKline(
+        openTimeMs: openTimeMs,
+        openDecimal: open,
+        highDecimal: high,
+        lowDecimal: low,
+        closeDecimal: close,
+      );
     }
     return null;
   }

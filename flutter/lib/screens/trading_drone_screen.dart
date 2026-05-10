@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,15 @@ class TradingDroneScreen extends StatefulWidget {
 }
 
 class _TradingDroneScreenState extends State<TradingDroneScreen> {
+  static const Duration _hostIntentTimeout = Duration(seconds: 20);
+  static const double _zoneNearBps = 15.0;
+  static const double _zoneFarBps = 35.0;
+  static const String _microInterval = '5m';
+  static const String _macroInterval = '1h';
+  static const int _microLimit = 72;
+  static const int _macroLimit = 96;
+  static const int _recentMicroBars = 8;
+
   final PluginHostApiService _pluginHostApi =
       AppRuntimeService().buildPluginHostApiService();
   final ManualConsensusCheckService _manualChecks =
@@ -37,14 +47,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       TextEditingController(text: 'BTC-USDT');
   final TextEditingController _quantityController =
       TextEditingController(text: '0.01');
-  final TextEditingController _limitPriceController =
-      TextEditingController(text: '60000');
-  final TextEditingController _zoneLowController =
-      TextEditingController(text: '58000');
-  final TextEditingController _zoneHighController =
-      TextEditingController(text: '60000');
-  final TextEditingController _manualEntryPriceController =
-      TextEditingController();
+  final TextEditingController _limitPriceController = TextEditingController();
+  final TextEditingController _zoneLowController = TextEditingController();
+  final TextEditingController _zoneHighController = TextEditingController();
   final TextEditingController _triggerPriceController = TextEditingController();
   final TextEditingController _stopLossController = TextEditingController();
   final TextEditingController _takeProfitController = TextEditingController();
@@ -103,7 +108,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _limitPriceController.dispose();
     _zoneLowController.dispose();
     _zoneHighController.dispose();
-    _manualEntryPriceController.dispose();
     _triggerPriceController.dispose();
     _stopLossController.dispose();
     _takeProfitController.dispose();
@@ -246,82 +250,328 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     );
   }
 
+  String? _deriveDirectLimitFromZone() {
+    final lowRaw = _zoneLowController.text.trim();
+    final highRaw = _zoneHighController.text.trim();
+    if (lowRaw.isEmpty || highRaw.isEmpty) return null;
+    final low = num.tryParse(lowRaw);
+    final high = num.tryParse(highRaw);
+    if (low == null || high == null || low <= 0 || high <= 0 || low >= high) {
+      return null;
+    }
+    return _side == 'buy' ? lowRaw : highRaw;
+  }
+
+  String _formatDecimal(num value, {int scale = 8}) {
+    final fixed = value.toStringAsFixed(scale);
+    return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  num _clamp(num value, num min, num max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+  }
+
+  num? _toNum(String raw) => num.tryParse(raw.trim());
+
+  num _fallbackZoneWidth(num mid) =>
+      mid * ((_zoneFarBps - _zoneNearBps) / 10000.0);
+
+  Future<void> _applyZone({
+    required num zoneLow,
+    required num zoneHigh,
+  }) async {
+    final normalizedLow = zoneLow <= zoneHigh ? zoneLow : zoneHigh;
+    final normalizedHigh = zoneLow <= zoneHigh ? zoneHigh : zoneLow;
+    if (normalizedLow <= 0 || normalizedHigh <= 0) {
+      return;
+    }
+    final zoneLowDecimal = _formatDecimal(normalizedLow);
+    final zoneHighDecimal = _formatDecimal(normalizedHigh);
+    if (mounted) {
+      setState(() {
+        _zoneLowController.text = zoneLowDecimal;
+        _zoneHighController.text = zoneHighDecimal;
+      });
+    } else {
+      _zoneLowController.text = zoneLowDecimal;
+      _zoneHighController.text = zoneHighDecimal;
+    }
+  }
+
+  Future<bool> _computeZoneFromMarketStructure({required String symbol}) async {
+    final quote = await _bingxExchangeService.getPublicPrice(symbol: symbol);
+    if (!quote.isSuccess || quote.priceDecimal == null) {
+      final message =
+          quote.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
+      await _uiLog.log(
+        'bingx.strategy.zone.error',
+        'symbol=${quote.symbol} code=${quote.exchangeCode} '
+            'http=${quote.httpStatusCode} endpoint=${quote.endpointPath} msg=$message',
+      );
+      await _showSnack(
+        'Strategy failed: quote unavailable (${quote.exchangeCode})',
+        seconds: 3,
+      );
+      return false;
+    }
+
+    final mid = _toNum(quote.priceDecimal!);
+    if (mid == null || mid <= 0) {
+      await _uiLog.log(
+        'bingx.strategy.zone.error',
+        'symbol=${quote.symbol} code=invalid_quote price=${quote.priceDecimal}',
+      );
+      await _showSnack('Strategy failed: invalid quote price', seconds: 3);
+      return false;
+    }
+
+    final micro = await _bingxExchangeService.getPublicKlines(
+      symbol: symbol,
+      interval: _microInterval,
+      limit: _microLimit,
+    );
+    final macro = await _bingxExchangeService.getPublicKlines(
+      symbol: symbol,
+      interval: _macroInterval,
+      limit: _macroLimit,
+    );
+
+    if (!micro.isSuccess ||
+        !macro.isSuccess ||
+        micro.klines.length < 20 ||
+        macro.klines.length < 20) {
+      final nearDelta = mid * (_zoneNearBps / 10000.0);
+      final farDelta = mid * (_zoneFarBps / 10000.0);
+      final zoneLow = _side == 'buy' ? mid - farDelta : mid + nearDelta;
+      final zoneHigh = _side == 'buy' ? mid - nearDelta : mid + farDelta;
+      await _applyZone(zoneLow: zoneLow, zoneHigh: zoneHigh);
+      await _uiLog.log(
+        'bingx.strategy.zone',
+        'symbol=${quote.symbol} side=$_side source=fallback_quote '
+            'mid=${quote.priceDecimal} low=${_zoneLowController.text} high=${_zoneHighController.text} '
+            'microOk=${micro.isSuccess} macroOk=${macro.isSuccess}',
+      );
+      return true;
+    }
+
+    final microHighs = <num>[];
+    final microLows = <num>[];
+    for (final candle in micro.klines) {
+      final high = _toNum(candle.highDecimal);
+      final low = _toNum(candle.lowDecimal);
+      if (high != null) microHighs.add(high);
+      if (low != null) microLows.add(low);
+    }
+    final macroHighs = <num>[];
+    final macroLows = <num>[];
+    for (final candle in macro.klines) {
+      final high = _toNum(candle.highDecimal);
+      final low = _toNum(candle.lowDecimal);
+      if (high != null) macroHighs.add(high);
+      if (low != null) macroLows.add(low);
+    }
+    if (microHighs.length < 20 ||
+        microLows.length < 20 ||
+        macroHighs.length < 20 ||
+        macroLows.length < 20) {
+      await _showSnack('Strategy failed: malformed kline data', seconds: 3);
+      return false;
+    }
+
+    final microSplit = microHighs.length - _recentMicroBars;
+    if (microSplit < 5) {
+      await _showSnack('Strategy failed: not enough structure bars',
+          seconds: 3);
+      return false;
+    }
+
+    final olderMicroHighs = microHighs.sublist(0, microSplit);
+    final olderMicroLows = microLows.sublist(0, microSplit);
+    final recentMicroHighs = microHighs.sublist(microSplit);
+    final recentMicroLows = microLows.sublist(microSplit);
+
+    final olderHigh = olderMicroHighs.reduce((a, b) => a > b ? a : b);
+    final olderLow = olderMicroLows.reduce((a, b) => a < b ? a : b);
+    final recentHigh = recentMicroHighs.reduce((a, b) => a > b ? a : b);
+    final recentLow = recentMicroLows.reduce((a, b) => a < b ? a : b);
+
+    final macroHigh = macroHighs.reduce((a, b) => a > b ? a : b);
+    final macroLow = macroLows.reduce((a, b) => a < b ? a : b);
+    final macroRange = macroHigh - macroLow;
+
+    final minWidth = mid * 0.0010; // 10 bps
+    final maxWidth = mid * 0.0040; // 40 bps
+    final widthFromMacro = macroRange * 0.08;
+    final width = _clamp(widthFromMacro, minWidth, maxWidth);
+    final fallbackWidth = _fallbackZoneWidth(mid);
+
+    final sweepUp = recentHigh > olderHigh;
+    final sweepDown = recentLow < olderLow;
+
+    num zoneLow;
+    num zoneHigh;
+    if (_side == 'sell') {
+      final anchorHigh = sweepUp ? recentHigh : olderHigh;
+      zoneLow = anchorHigh - width * 0.65;
+      zoneHigh = anchorHigh - width * 0.20;
+      if (zoneHigh <= 0 || zoneLow <= 0 || zoneHigh <= zoneLow) {
+        zoneLow = mid + (fallbackWidth * 0.40);
+        zoneHigh = mid + (fallbackWidth * 1.00);
+      }
+    } else {
+      final anchorLow = sweepDown ? recentLow : olderLow;
+      zoneLow = anchorLow + width * 0.20;
+      zoneHigh = anchorLow + width * 0.65;
+      if (zoneHigh <= 0 || zoneLow <= 0 || zoneHigh <= zoneLow) {
+        zoneLow = mid - (fallbackWidth * 1.00);
+        zoneHigh = mid - (fallbackWidth * 0.40);
+      }
+    }
+
+    await _applyZone(zoneLow: zoneLow, zoneHigh: zoneHigh);
+    await _uiLog.log(
+      'bingx.strategy.zone',
+      'symbol=${quote.symbol} side=$_side source=mtf_sweep_retest '
+          'mid=${quote.priceDecimal} low=${_zoneLowController.text} high=${_zoneHighController.text} '
+          'micro=$_microInterval/${micro.klines.length} macro=$_macroInterval/${macro.klines.length} '
+          'olderHigh=${_formatDecimal(olderHigh)} olderLow=${_formatDecimal(olderLow)} '
+          'recentHigh=${_formatDecimal(recentHigh)} recentLow=${_formatDecimal(recentLow)} '
+          'sweepUp=$sweepUp sweepDown=$sweepDown',
+    );
+    return true;
+  }
+
   Future<void> _runIntent() async {
     if (_runningIntent) return;
     final peerHex = _peerController.text.trim().toLowerCase();
     final symbol = _symbolController.text.trim();
     final quantityDecimal = _quantityController.text.trim();
     final strategyTag = _strategyTagController.text.trim();
-    final zoneLowDecimal = _zoneLowController.text.trim();
-    final zoneHighDecimal = _zoneHighController.text.trim();
-    final manualEntryPriceDecimal = _manualEntryPriceController.text.trim();
     final triggerPriceDecimal = _triggerPriceController.text.trim();
     final stopLossDecimal = _stopLossController.text.trim();
     final takeProfitDecimal = _takeProfitController.text.trim();
     final nowUtc = DateTime.now().toUtc().toIso8601String();
     final clientOrderId = 'ui-ord-${DateTime.now().microsecondsSinceEpoch}';
+    if (symbol.isEmpty) {
+      await _showSnack('Symbol is required');
+      return;
+    }
+
+    final forceAutoZonePending = _orderType == 'limit';
+    if (forceAutoZonePending &&
+        (_entryMode != 'zone_pending' ||
+            _zonePriceRule == 'manual' ||
+            _zoneSide != (_side == 'buy' ? 'buyside' : 'sellside'))) {
+      if (mounted) {
+        setState(() {
+          _entryMode = 'zone_pending';
+          _zonePriceRule = 'zone_mid';
+          _zoneSide = _side == 'buy' ? 'buyside' : 'sellside';
+        });
+      } else {
+        _entryMode = 'zone_pending';
+        _zonePriceRule = 'zone_mid';
+        _zoneSide = _side == 'buy' ? 'buyside' : 'sellside';
+      }
+      await _uiLog.log(
+        'bingx.strategy.entry_mode.auto',
+        'forced=zone_pending rule=zone_mid side=$_zoneSide order_type=$_orderType',
+      );
+    }
+
     final isZonePending = _entryMode == 'zone_pending';
-    final limitPriceDecimal = _orderType == 'limit' && !isZonePending
+
+    if (_orderType == 'limit') {
+      final zoneReady = await _computeZoneFromMarketStructure(symbol: symbol);
+      if (!zoneReady) {
+        return;
+      }
+    }
+    final zoneLowDecimal = _zoneLowController.text.trim();
+    final zoneHighDecimal = _zoneHighController.text.trim();
+    String? limitPriceDecimal = _orderType == 'limit' && !isZonePending
         ? _limitPriceController.text.trim()
         : null;
+    if (_orderType == 'limit' &&
+        !isZonePending &&
+        (limitPriceDecimal == null || limitPriceDecimal.isEmpty)) {
+      final derived = _deriveDirectLimitFromZone();
+      if (derived != null && derived.isNotEmpty) {
+        limitPriceDecimal = derived;
+        _limitPriceController.text = derived;
+        await _uiLog.log(
+          'bingx.intent.autofill_limit',
+          'mode=direct source=zone side=$_side value=$derived',
+        );
+      }
+    }
     final timeInForce = _orderType == 'limit' ? _timeInForce : null;
 
     setState(() {
       _runningIntent = true;
     });
+    final stopwatch = Stopwatch()..start();
+    PluginHostApiStatus? finalStatus;
     try {
       await _uiLog.log(
         'bingx.intent.request',
         'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} symbol=$symbol side=$_side type=$_orderType entry=$_entryMode qty=$quantityDecimal',
       );
 
-      final response = await _pluginHostApi.executeWithRuntimeHook(
-        PluginHostApiRequest(
-          schemaVersion: PluginHostApiService.schemaVersion,
-          pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
-          method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
-          args: <String, dynamic>{
-            'peer_hex': peerHex,
-            'client_order_id': clientOrderId,
-            'symbol': symbol,
-            'side': _side,
-            'order_type': _orderType,
-            'quantity_decimal': quantityDecimal,
-            'limit_price_decimal': limitPriceDecimal,
-            'time_in_force': timeInForce,
-            'entry_mode': _entryMode,
-            'zone_side': isZonePending ? _zoneSide : null,
-            'zone_low_decimal': isZonePending && zoneLowDecimal.isNotEmpty
-                ? zoneLowDecimal
-                : null,
-            'zone_high_decimal': isZonePending && zoneHighDecimal.isNotEmpty
-                ? zoneHighDecimal
-                : null,
-            'zone_price_rule': isZonePending ? _zonePriceRule : null,
-            'manual_entry_price_decimal': isZonePending &&
-                    _zonePriceRule == 'manual' &&
-                    manualEntryPriceDecimal.isNotEmpty
-                ? manualEntryPriceDecimal
-                : null,
-            'trigger_price_decimal':
-                isZonePending && triggerPriceDecimal.isNotEmpty
-                    ? triggerPriceDecimal
+      final response = await _pluginHostApi
+          .executeWithRuntimeHook(
+            PluginHostApiRequest(
+              schemaVersion: PluginHostApiService.schemaVersion,
+              pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
+              method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
+              args: <String, dynamic>{
+                'peer_hex': peerHex,
+                'client_order_id': clientOrderId,
+                'symbol': symbol,
+                'side': _side,
+                'order_type': _orderType,
+                'quantity_decimal': quantityDecimal,
+                'limit_price_decimal': limitPriceDecimal,
+                'time_in_force': timeInForce,
+                'entry_mode': _entryMode,
+                'zone_side': isZonePending ? _zoneSide : null,
+                'zone_low_decimal': isZonePending && zoneLowDecimal.isNotEmpty
+                    ? zoneLowDecimal
                     : null,
-            'stop_loss_decimal': isZonePending && stopLossDecimal.isNotEmpty
-                ? stopLossDecimal
-                : null,
-            'take_profit_decimal': isZonePending && takeProfitDecimal.isNotEmpty
-                ? takeProfitDecimal
-                : null,
-            'created_at_utc': nowUtc,
-            'strategy_tag': strategyTag.isEmpty ? null : strategyTag,
-          },
-        ),
-      );
+                'zone_high_decimal': isZonePending && zoneHighDecimal.isNotEmpty
+                    ? zoneHighDecimal
+                    : null,
+                'zone_price_rule': isZonePending ? _zonePriceRule : null,
+                'trigger_price_decimal':
+                    isZonePending && triggerPriceDecimal.isNotEmpty
+                        ? triggerPriceDecimal
+                        : null,
+                'stop_loss_decimal': isZonePending && stopLossDecimal.isNotEmpty
+                    ? stopLossDecimal
+                    : null,
+                'take_profit_decimal':
+                    isZonePending && takeProfitDecimal.isNotEmpty
+                        ? takeProfitDecimal
+                        : null,
+                'created_at_utc': nowUtc,
+                'strategy_tag': strategyTag.isEmpty ? null : strategyTag,
+              },
+            ),
+          )
+          .timeout(_hostIntentTimeout);
       if (!mounted) return;
       setState(() {
         _lastIntentResponse = response;
       });
+      finalStatus = response.status;
+      await _uiLog.log(
+        'bingx.intent.response',
+        'status=${response.status.name} '
+            'elapsedMs=${stopwatch.elapsedMilliseconds} '
+            'source=${response.executionSource}',
+      );
 
       switch (response.status) {
         case PluginHostApiStatus.executed:
@@ -343,7 +593,26 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           await _showSnack(message);
           break;
       }
+    } on TimeoutException {
+      await _uiLog.log(
+        'bingx.intent.timeout',
+        'elapsedMs=${stopwatch.elapsedMilliseconds} timeoutMs=${_hostIntentTimeout.inMilliseconds}',
+      );
+      await _showSnack(
+        'Intent host timeout (${_hostIntentTimeout.inSeconds}s)',
+        seconds: 3,
+      );
+    } catch (error) {
+      await _uiLog.log(
+        'bingx.intent.error',
+        '$error elapsedMs=${stopwatch.elapsedMilliseconds}',
+      );
+      await _showSnack('Intent failed: $error', seconds: 3);
     } finally {
+      await _uiLog.log(
+        'bingx.intent.finally',
+        'elapsedMs=${stopwatch.elapsedMilliseconds} status=${finalStatus?.name ?? "none"}',
+      );
       if (mounted) {
         setState(() {
           _runningIntent = false;
@@ -494,9 +763,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _zoneLowController.text = decoded['zone_low_decimal']?.toString() ?? '';
         _zoneHighController.text =
             decoded['zone_high_decimal']?.toString() ?? '';
-        _zonePriceRule = decoded['zone_price_rule']?.toString() ?? 'zone_mid';
-        _manualEntryPriceController.text =
-            decoded['manual_entry_price_decimal']?.toString() ?? '';
+        final decodedRule =
+            decoded['zone_price_rule']?.toString() ?? 'zone_mid';
+        _zonePriceRule = decodedRule == 'manual' ? 'zone_mid' : decodedRule;
         _triggerPriceController.text =
             decoded['trigger_price_decimal']?.toString() ?? '';
         _stopLossController.text =
@@ -518,16 +787,28 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   }
 
   Future<void> _executeLastIntent() async {
+    await _uiLog.log(
+      'bingx.exchange.execute.tap',
+      'running=$_executing hasIntent=${_lastIntentResponse?.status == PluginHostApiStatus.executed}',
+    );
     if (_executing) return;
     final response = _lastIntentResponse;
     final result = response?.result;
     if (response?.status != PluginHostApiStatus.executed || result == null) {
+      await _uiLog.log(
+        'bingx.exchange.execute.guard',
+        'blocked=no_intent status=${response?.status.name ?? "none"}',
+      );
       await _showSnack('Run a BingX intent first');
       return;
     }
 
     final credentials = _resolveCredentials();
     if (credentials == null) {
+      await _uiLog.log(
+        'bingx.exchange.execute.guard',
+        'blocked=no_credentials',
+      );
       await _showSnack('Save BingX API credentials first');
       return;
     }
@@ -536,6 +817,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     try {
       payload = BingxFuturesIntentPayload.fromPluginResult(result);
     } on FormatException catch (error) {
+      await _uiLog.log(
+        'bingx.exchange.execute.parse_error',
+        error.message,
+      );
       await _showSnack(error.message, seconds: 3);
       return;
     }
@@ -549,13 +834,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         intent: payload,
         testOrder: _useTestOrderEndpoint,
       );
+      final safeMessage = queued.execution.exchangeMessage
+          .replaceAll('\n', ' ')
+          .replaceAll('\r', ' ');
       await _uiLog.log(
         'bingx.exchange.execute',
         'symbol=${payload.symbol} side=${payload.side} type=${payload.orderType} '
             'test=${_useTestOrderEndpoint ? "yes" : "no"} attempts=${queued.attempts} '
             'cache=${queued.fromIdempotentCache ? "hit" : "miss"} '
             'success=${queued.execution.isSuccess} http=${queued.execution.httpStatusCode} '
-            'code=${queued.execution.exchangeCode}',
+            'code=${queued.execution.exchangeCode} endpoint=${queued.execution.endpointPath} msg=$safeMessage',
       );
       if (!mounted) return;
       setState(() {
@@ -613,10 +901,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             : BingxFuturesLeverageSide.short,
         leverage: leverage,
       );
+      final safeMessage =
+          result.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
       await _uiLog.log(
         'bingx.exchange.switch_leverage',
         'symbol=${result.symbol} side=$_leverageSide leverage=$leverage '
-            'success=${result.isSuccess} http=${result.httpStatusCode} code=${result.exchangeCode}',
+            'success=${result.isSuccess} http=${result.httpStatusCode} '
+            'code=${result.exchangeCode} endpoint=${result.endpointPath} msg=$safeMessage',
       );
       if (!mounted) return;
       setState(() {
@@ -663,10 +954,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             ? BingxFuturesMarginType.isolated
             : BingxFuturesMarginType.crossed,
       );
+      final safeMessage =
+          result.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
       await _uiLog.log(
         'bingx.exchange.switch_margin_type',
         'symbol=${result.symbol} margin=$_marginType '
-            'success=${result.isSuccess} http=${result.httpStatusCode} code=${result.exchangeCode}',
+            'success=${result.isSuccess} http=${result.httpStatusCode} '
+            'code=${result.exchangeCode} endpoint=${result.endpointPath} msg=$safeMessage',
       );
       if (!mounted) return;
       setState(() {
@@ -714,9 +1008,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         credentials: credentials,
         symbol: symbol,
       );
+      final levMsg = leverageResult.exchangeMessage
+          .replaceAll('\n', ' ')
+          .replaceAll('\r', ' ');
+      final marginMsg = marginResult.exchangeMessage
+          .replaceAll('\n', ' ')
+          .replaceAll('\r', ' ');
       await _uiLog.log(
         'bingx.exchange.fetch_current',
-        'symbol=${symbol.toUpperCase()} lev=${leverageResult.exchangeCode} margin=${marginResult.exchangeCode}',
+        'symbol=${symbol.toUpperCase()} '
+            'lev=${leverageResult.exchangeCode} levEndpoint=${leverageResult.endpointPath} levMsg=$levMsg '
+            'margin=${marginResult.exchangeCode} marginEndpoint=${marginResult.endpointPath} marginMsg=$marginMsg',
       );
       if (!mounted) return;
       setState(() {
@@ -826,7 +1128,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   @override
   Widget build(BuildContext context) {
     final isZonePending = _entryMode == 'zone_pending';
-    final isZoneManual = _zonePriceRule == 'manual';
     final canBroadcast =
         _lastIntentResponse?.status == PluginHostApiStatus.executed;
     final shortIntentHash =
@@ -1013,7 +1314,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         ),
                         decoration: InputDecoration(
                           labelText: 'Limit Price',
-                          hintText: '60000',
+                          hintText: 'Auto from zone if empty',
                           filled: true,
                           fillColor: const Color(0xFF0F141C),
                           border: OutlineInputBorder(
@@ -1119,10 +1420,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                             value: 'zone_high',
                             child: Text('Zone High'),
                           ),
-                          DropdownMenuItem(
-                            value: 'manual',
-                            child: Text('Manual'),
-                          ),
                         ],
                         onChanged: _runningIntent
                             ? null
@@ -1138,11 +1435,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       width: 150,
                       child: TextField(
                         controller: _zoneLowController,
+                        readOnly: true,
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         decoration: InputDecoration(
                           labelText: 'Zone Low',
+                          hintText: 'Auto by strategy',
                           filled: true,
                           fillColor: const Color(0xFF0F141C),
                           border: OutlineInputBorder(
@@ -1155,11 +1454,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       width: 150,
                       child: TextField(
                         controller: _zoneHighController,
+                        readOnly: true,
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         decoration: InputDecoration(
                           labelText: 'Zone High',
+                          hintText: 'Auto by strategy',
                           filled: true,
                           fillColor: const Color(0xFF0F141C),
                           border: OutlineInputBorder(
@@ -1168,25 +1469,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         ),
                       ),
                     ),
-                    if (isZoneManual)
-                      SizedBox(
-                        width: 170,
-                        child: TextField(
-                          controller: _manualEntryPriceController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: InputDecoration(
-                            labelText: 'Manual Entry',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Zone is computed from live BingX quote on each Run Strategy.',
+                  style: TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
                 ),
                 const SizedBox(height: 10),
                 Wrap(

@@ -1062,6 +1062,93 @@ void main() {
       expect(first.canonicalJson, second.canonicalJson);
     });
 
+    test('executes bingx futures request via dedicated futures runner', () {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({required contract, required observation}) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runBingxSpotOrder: _noopBingx,
+        runBingxFuturesOrder: ({
+          required peerHex,
+          required clientOrderId,
+          required symbol,
+          required side,
+          required orderType,
+          required quantityDecimal,
+          required limitPriceDecimal,
+          required timeInForce,
+          required entryMode,
+          required zoneSide,
+          required zoneLowDecimal,
+          required zoneHighDecimal,
+          required zonePriceRule,
+          required manualEntryPriceDecimal,
+          required triggerPriceDecimal,
+          required stopLossDecimal,
+          required takeProfitDecimal,
+          required createdAtUtc,
+          required strategyTag,
+        }) =>
+            const BingxTradingExecutionResult(
+          intent: BingxSpotOrderIntent(
+            pluginId: BingxTradingContractService.futuresPluginId,
+            peerHex: _peerHex,
+            clientOrderId: 'ord-fut-1',
+            symbol: 'BTC-USDT',
+            side: BingxOrderSide.sell,
+            orderType: BingxOrderType.limit,
+            quantityDecimal: '0.02',
+            limitPriceDecimal: '61000',
+            timeInForce: 'GTC',
+            entryMode: BingxEntryMode.direct,
+            zoneSide: null,
+            zoneLowDecimal: null,
+            zoneHighDecimal: null,
+            zonePriceRule: null,
+            triggerPriceDecimal: null,
+            stopLossDecimal: null,
+            takeProfitDecimal: null,
+            createdAtUtc: '2026-04-09T10:00:00Z',
+            strategyTag: 'futures-demo',
+            canonicalJson: '{"bingx":"futures_intent"}',
+            intentHashHex:
+                'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          ),
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      );
+
+      final response = service.execute(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
+          method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
+          args: _validBingxArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.executed);
+      expect(response.result?['intent_hash_hex'],
+          'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');
+      expect(
+        response.result?['plugin_id'],
+        BingxTradingContractService.futuresPluginId,
+      );
+    });
+
     test('returns rejected response for bingx invalid args', () {
       final service = PluginHostApiService(
         runTemperatureDemo: ({required contract, required observation}) =>

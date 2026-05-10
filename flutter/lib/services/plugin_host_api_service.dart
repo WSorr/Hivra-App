@@ -200,15 +200,21 @@ class PluginHostApiService {
   static const String temperaturePluginId =
       'hivra.contract.temperature-li.tomorrow.v1';
   static const String settleTemperatureMethod = 'settle_temperature_tomorrow';
-  static const String bingxTradingPluginId =
-      BingxTradingContractService.pluginId;
+  static const String bingxSpotTradingPluginId =
+      BingxTradingContractService.spotPluginId;
+  static const String bingxTradingPluginId = bingxSpotTradingPluginId;
+  static const String bingxFuturesTradingPluginId =
+      BingxTradingContractService.futuresPluginId;
   static const String placeBingxSpotOrderIntentMethod =
       'place_bingx_spot_order_intent';
+  static const String placeBingxFuturesOrderIntentMethod =
+      'place_bingx_futures_order_intent';
   static const String capsuleChatPluginId = CapsuleChatContractService.pluginId;
   static const String postCapsuleChatMethod = 'post_capsule_chat_message';
 
   final TemperatureDemoRunner _runTemperatureDemo;
   final BingxSpotOrderRunner _runBingxSpotOrder;
+  final BingxSpotOrderRunner _runBingxFuturesOrder;
   final CapsuleChatRunner _runCapsuleChat;
   final PluginRuntimeBindingResolver? _resolveRuntimeBinding;
   final PluginRuntimeInvokeResolver? _resolveRuntimeInvoke;
@@ -217,6 +223,7 @@ class PluginHostApiService {
   const PluginHostApiService({
     required TemperatureDemoRunner runTemperatureDemo,
     required BingxSpotOrderRunner runBingxSpotOrder,
+    BingxSpotOrderRunner? runBingxFuturesOrder,
     required CapsuleChatRunner runCapsuleChat,
     PluginRuntimeBindingResolver? resolveRuntimeBinding,
     PluginRuntimeInvokeResolver? resolveRuntimeInvoke,
@@ -224,6 +231,7 @@ class PluginHostApiService {
         const WasmPluginCapabilityPolicyService(),
   })  : _runTemperatureDemo = runTemperatureDemo,
         _runBingxSpotOrder = runBingxSpotOrder,
+        _runBingxFuturesOrder = runBingxFuturesOrder ?? runBingxSpotOrder,
         _runCapsuleChat = runCapsuleChat,
         _resolveRuntimeBinding = resolveRuntimeBinding,
         _resolveRuntimeInvoke = resolveRuntimeInvoke,
@@ -355,7 +363,8 @@ class PluginHostApiService {
     if (request.pluginId == temperaturePluginId) {
       return _executeTemperature(request, runtimeBinding, runtimeInvoke);
     }
-    if (request.pluginId == bingxTradingPluginId) {
+    if (request.pluginId == bingxSpotTradingPluginId ||
+        request.pluginId == bingxFuturesTradingPluginId) {
       return _executeBingx(request, runtimeBinding, runtimeInvoke);
     }
     if (request.pluginId == capsuleChatPluginId) {
@@ -397,8 +406,11 @@ class PluginHostApiService {
     if (pluginId == temperaturePluginId) {
       return 'temperature_tomorrow_liechtenstein';
     }
-    if (pluginId == bingxTradingPluginId) {
-      return 'bingx_spot_order_intent';
+    if (pluginId == bingxSpotTradingPluginId) {
+      return BingxTradingContractService.spotContractKind;
+    }
+    if (pluginId == bingxFuturesTradingPluginId) {
+      return BingxTradingContractService.futuresContractKind;
     }
     if (pluginId == capsuleChatPluginId) {
       return 'capsule_chat';
@@ -456,11 +468,18 @@ class PluginHostApiService {
         'consensus_guard.read',
       };
     }
-    if (pluginId == bingxTradingPluginId &&
+    if (pluginId == bingxSpotTradingPluginId &&
         method == placeBingxSpotOrderIntentMethod) {
       return const <String>{
         'consensus_guard.read',
         'exchange.trade.bingx.spot',
+      };
+    }
+    if (pluginId == bingxFuturesTradingPluginId &&
+        method == placeBingxFuturesOrderIntentMethod) {
+      return const <String>{
+        'consensus_guard.read',
+        'exchange.trade.bingx.futures',
       };
     }
     if (pluginId == capsuleChatPluginId && method == postCapsuleChatMethod) {
@@ -644,7 +663,11 @@ class PluginHostApiService {
     PluginRuntimeBinding runtimeBinding,
     PluginRuntimeInvokeEvidence? runtimeInvoke,
   ) {
-    if (request.method != placeBingxSpotOrderIntentMethod) {
+    final isFuturesPlugin = request.pluginId == bingxFuturesTradingPluginId;
+    final expectedMethod = isFuturesPlugin
+        ? placeBingxFuturesOrderIntentMethod
+        : placeBingxSpotOrderIntentMethod;
+    if (request.method != expectedMethod) {
       return _rejected(
         pluginId: request.pluginId,
         method: request.method,
@@ -708,7 +731,9 @@ class PluginHostApiService {
 
     late final BingxTradingExecutionResult runResult;
     try {
-      runResult = _runBingxSpotOrder(
+      final runner =
+          isFuturesPlugin ? _runBingxFuturesOrder : _runBingxSpotOrder;
+      runResult = runner(
         peerHex: peerHex,
         clientOrderId: clientOrderId,
         symbol: symbol,
@@ -747,6 +772,10 @@ class PluginHostApiService {
         runtimeBinding: runtimeBinding,
         runtimeInvoke: runtimeInvoke,
         result: <String, dynamic>{
+          'plugin_id': runResult.intent!.pluginId,
+          'contract_kind': isFuturesPlugin
+              ? BingxTradingContractService.futuresContractKind
+              : BingxTradingContractService.spotContractKind,
           'peer_hex': runResult.intent!.peerHex,
           'client_order_id': runResult.intent!.clientOrderId,
           'symbol': runResult.intent!.symbol,
