@@ -49,3 +49,27 @@ capsule_seeds.json
 /flutter/libhivra_ffi.dylib
 /flutter/macos/libhivra_ffi.dylib
 /flutter/macos/Frameworks/libhivra_ffi.dylib
+
+# Secrets, credentials, and signing materials
+.env
+.env.*
+!.env.example
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+*.cer
+*.der
+flutter/android/key.properties
+flutter/android/local.properties
+
+# Runtime/user data that must stay local
+capsules/
+Documents/Hivra/
+flutter/flutter_*.log
+*.sqlite
+*.sqlite3
