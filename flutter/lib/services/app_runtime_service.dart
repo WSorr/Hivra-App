@@ -66,6 +66,10 @@ class AppRuntimeService {
   String? exportLedger() => _runtime.exportLedger();
 
   String? activeCapsuleRootHex() {
+    final stateKey = _stateManager.state.publicKey;
+    if (stateKey.length == 32) {
+      return _hex(stateKey);
+    }
     final root = _runtime.capsuleRootPublicKey();
     if (root == null || root.length != 32) return null;
     return _hex(root);

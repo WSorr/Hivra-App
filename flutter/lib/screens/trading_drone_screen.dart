@@ -77,6 +77,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _switchingMarginType = false;
   bool _refreshingSignals = false;
   bool _useTestOrderEndpoint = true;
+  bool _obscureApiSecret = true;
 
   String _side = 'buy';
   String _orderType = 'limit';
@@ -1699,13 +1700,26 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               const SizedBox(height: 10),
               TextField(
                 controller: _apiSecretController,
-                obscureText: true,
+                obscureText: _obscureApiSecret,
                 decoration: InputDecoration(
                   labelText: 'BingX API Secret',
                   filled: true,
                   fillColor: const Color(0xFF0F141C),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                  ),
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _obscureApiSecret = !_obscureApiSecret;
+                      });
+                    },
+                    icon: Icon(
+                      _obscureApiSecret
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                    ),
+                    tooltip: _obscureApiSecret ? 'Show secret' : 'Hide secret',
                   ),
                 ),
               ),

@@ -106,6 +106,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   bool _broadcastingBingxSignal = false;
   bool _runningChat = false;
   bool _refreshingChatInbox = false;
+  bool _obscureBingxApiSecret = true;
   Set<String> _installingSourceEntryIds = <String>{};
   PluginDemoRunResult? _lastDemoResult;
   PluginHostApiResponse? _lastBingxResponse;
@@ -1700,6 +1701,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           useTestOrderEndpoint: _bingxUseTestOrderEndpoint,
           apiKeyController: _bingxApiKeyController,
           apiSecretController: _bingxApiSecretController,
+          obscureApiSecret: _obscureBingxApiSecret,
           leverageController: _bingxLeverageController,
           leverageSide: _bingxLeverageSide,
           marginType: _bingxMarginType,
@@ -1723,6 +1725,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
             if (value == null) return;
             setState(() {
               _bingxMarginType = value;
+            });
+          },
+          onToggleApiSecretVisibility: () {
+            setState(() {
+              _obscureBingxApiSecret = !_obscureBingxApiSecret;
             });
           },
           onSaveCredentialsPressed: _saveBingxCredentials,
@@ -3493,6 +3500,7 @@ class _BingxExecutionPanel extends StatelessWidget {
   final bool useTestOrderEndpoint;
   final TextEditingController apiKeyController;
   final TextEditingController apiSecretController;
+  final bool obscureApiSecret;
   final TextEditingController leverageController;
   final String leverageSide;
   final String marginType;
@@ -3504,6 +3512,7 @@ class _BingxExecutionPanel extends StatelessWidget {
   final ValueChanged<bool> onUseTestEndpointChanged;
   final ValueChanged<String?> onLeverageSideChanged;
   final ValueChanged<String?> onMarginTypeChanged;
+  final VoidCallback onToggleApiSecretVisibility;
   final Future<void> Function() onSaveCredentialsPressed;
   final Future<void> Function() onFetchCurrentPressed;
   final Future<void> Function() onExecutePressed;
@@ -3520,6 +3529,7 @@ class _BingxExecutionPanel extends StatelessWidget {
     required this.useTestOrderEndpoint,
     required this.apiKeyController,
     required this.apiSecretController,
+    required this.obscureApiSecret,
     required this.leverageController,
     required this.leverageSide,
     required this.marginType,
@@ -3531,6 +3541,7 @@ class _BingxExecutionPanel extends StatelessWidget {
     required this.onUseTestEndpointChanged,
     required this.onLeverageSideChanged,
     required this.onMarginTypeChanged,
+    required this.onToggleApiSecretVisibility,
     required this.onSaveCredentialsPressed,
     required this.onFetchCurrentPressed,
     required this.onExecutePressed,
@@ -3612,13 +3623,22 @@ class _BingxExecutionPanel extends StatelessWidget {
             controller: apiSecretController,
             autocorrect: false,
             enableSuggestions: false,
-            obscureText: true,
+            obscureText: obscureApiSecret,
             decoration: InputDecoration(
               labelText: 'BingX API Secret',
               filled: true,
               fillColor: const Color(0xFF0F141C),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
+              ),
+              suffixIcon: IconButton(
+                onPressed: onToggleApiSecretVisibility,
+                icon: Icon(
+                  obscureApiSecret
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                ),
+                tooltip: obscureApiSecret ? 'Show secret' : 'Hide secret',
               ),
             ),
           ),
