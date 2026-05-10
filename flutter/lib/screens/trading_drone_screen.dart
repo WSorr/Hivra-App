@@ -28,6 +28,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   static const int _microLimit = 72;
   static const int _macroLimit = 96;
   static const int _recentMicroBars = 8;
+  static const List<String> _shortBreakdownSymbols = <String>[
+    'BTC-USDT',
+    'ETH-USDT',
+    'SOL-USDT',
+    'XRP-USDT',
+    'BNB-USDT',
+    'DOGE-USDT',
+  ];
 
   final PluginHostApiService _pluginHostApi =
       AppRuntimeService().buildPluginHostApiService();
@@ -205,6 +213,49 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     setState(() {
       _peerController.text = selectedPeerHex;
     });
+  }
+
+  String _playbookQtyForSymbol(String symbol) {
+    return switch (symbol.toUpperCase()) {
+      'BTC-USDT' => '0.001',
+      'ETH-USDT' => '0.01',
+      'SOL-USDT' => '0.10',
+      'BNB-USDT' => '0.01',
+      'XRP-USDT' => '10',
+      'DOGE-USDT' => '50',
+      _ => '0.01',
+    };
+  }
+
+  Future<void> _applyShortBreakdownPlaybook({
+    required String symbol,
+  }) async {
+    final normalizedSymbol = symbol.trim().toUpperCase();
+    if (normalizedSymbol.isEmpty) return;
+    if (mounted) {
+      setState(() {
+        _symbolController.text = normalizedSymbol;
+        _quantityController.text = _playbookQtyForSymbol(normalizedSymbol);
+        _side = 'sell';
+        _orderType = 'limit';
+        _entryMode = 'zone_pending';
+        _zoneSide = 'sellside';
+        _zonePriceRule = 'zone_mid';
+        _timeInForce = 'GTC';
+        _strategyTagController.text = 'tvh_short_breakdown_v1';
+        _limitPriceController.clear();
+        _zoneLowController.clear();
+        _zoneHighController.clear();
+        _triggerPriceController.clear();
+        _stopLossController.clear();
+        _takeProfitController.clear();
+      });
+    }
+    await _uiLog.log(
+      'bingx.playbook.apply',
+      'name=short_breakdown_v1 symbol=$normalizedSymbol side=sell mode=zone_pending',
+    );
+    await _showSnack('Playbook applied: short breakdown · $normalizedSymbol');
   }
 
   Future<void> _saveCredentials() async {
@@ -1150,6 +1201,28 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             subtitle:
                 'Deterministic futures intent for plugin host and broadcast.',
             children: [
+              const Text(
+                'Playbook · Short Breakdown v1',
+                style: TextStyle(
+                  color: Color(0xFF97A3B5),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final symbol in _shortBreakdownSymbols)
+                    ActionChip(
+                      label: Text(symbol),
+                      onPressed: _runningIntent
+                          ? null
+                          : () => _applyShortBreakdownPlaybook(symbol: symbol),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
               TextField(
                 controller: _peerController,
                 autocorrect: false,
