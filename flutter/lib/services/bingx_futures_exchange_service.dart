@@ -182,6 +182,84 @@ class BingxFuturesControlActionResult {
   });
 }
 
+class BingxFuturesOpenOrder {
+  final String orderId;
+  final String symbol;
+  final String side;
+  final String positionSide;
+  final String orderType;
+  final String status;
+  final String? priceDecimal;
+  final String? triggerPriceDecimal;
+  final String? quantityDecimal;
+  final String? executedQuantityDecimal;
+  final int? createdAtMs;
+
+  const BingxFuturesOpenOrder({
+    required this.orderId,
+    required this.symbol,
+    required this.side,
+    required this.positionSide,
+    required this.orderType,
+    required this.status,
+    required this.priceDecimal,
+    required this.triggerPriceDecimal,
+    required this.quantityDecimal,
+    required this.executedQuantityDecimal,
+    required this.createdAtMs,
+  });
+}
+
+class BingxFuturesOpenOrdersResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String signedPayloadHashHex;
+  final String responseBody;
+  final String symbol;
+  final List<BingxFuturesOpenOrder> orders;
+
+  const BingxFuturesOpenOrdersResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.signedPayloadHashHex,
+    required this.responseBody,
+    required this.symbol,
+    required this.orders,
+  });
+}
+
+class BingxFuturesCancelOrderResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String signedPayloadHashHex;
+  final String responseBody;
+  final String symbol;
+  final String requestedOrderId;
+  final String? canceledOrderId;
+
+  const BingxFuturesCancelOrderResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.signedPayloadHashHex,
+    required this.responseBody,
+    required this.symbol,
+    required this.requestedOrderId,
+    required this.canceledOrderId,
+  });
+}
+
 class BingxFuturesLeverageReadResult {
   final bool isSuccess;
   final int httpStatusCode;
@@ -335,6 +413,8 @@ class BingxFuturesExchangeService {
       '/openApi/swap/v2/trade/marginType';
   static const String _getLeveragePath = '/openApi/swap/v2/trade/leverage';
   static const String _getMarginTypePath = '/openApi/swap/v2/trade/marginType';
+  static const String _getOpenOrdersPath = '/openApi/swap/v2/trade/openOrders';
+  static const String _cancelOrderPath = '/openApi/swap/v2/trade/order';
 
   final BingxHttpRequestSender _requestSender;
   final int Function() _clockMs;
@@ -533,6 +613,80 @@ class BingxFuturesExchangeService {
       responseBody: response.body,
       symbol: normalizedSymbol,
       marginType: marginType,
+    );
+  }
+
+  Future<BingxFuturesOpenOrdersResult> getOpenOrders({
+    required BingxFuturesApiCredentials credentials,
+    required String symbol,
+  }) async {
+    final normalizedCredentials = credentials.normalized();
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final timestampMs = _clockMs();
+    final params = <String, String>{
+      'symbol': normalizedSymbol,
+      'recvWindow': recvWindowMs.toString(),
+      'timestamp': timestampMs.toString(),
+    };
+    final response = await _executeSignedGet(
+      credentials: normalizedCredentials,
+      endpointPath: _getOpenOrdersPath,
+      params: params,
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final orders = _extractOpenOrders(
+      decoded: decoded,
+      fallbackSymbol: normalizedSymbol,
+    );
+    return BingxFuturesOpenOrdersResult(
+      isSuccess: response.isSuccess,
+      httpStatusCode: response.httpStatusCode,
+      exchangeCode: response.exchangeCode,
+      exchangeMessage: response.exchangeMessage,
+      endpointPath: _getOpenOrdersPath,
+      signedPayloadHashHex: response.signedPayloadHashHex,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      orders: orders,
+    );
+  }
+
+  Future<BingxFuturesCancelOrderResult> cancelOrder({
+    required BingxFuturesApiCredentials credentials,
+    required String symbol,
+    required String orderId,
+  }) async {
+    final normalizedCredentials = credentials.normalized();
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final normalizedOrderId = orderId.trim();
+    if (normalizedOrderId.isEmpty) {
+      throw const FormatException('orderId is required');
+    }
+    final timestampMs = _clockMs();
+    final params = <String, String>{
+      'symbol': normalizedSymbol,
+      'orderId': normalizedOrderId,
+      'recvWindow': recvWindowMs.toString(),
+      'timestamp': timestampMs.toString(),
+    };
+    final response = await _executeSignedDelete(
+      credentials: normalizedCredentials,
+      endpointPath: _cancelOrderPath,
+      params: params,
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final canceledOrderId = _extractOrderId(decoded);
+    return BingxFuturesCancelOrderResult(
+      isSuccess: response.isSuccess,
+      httpStatusCode: response.httpStatusCode,
+      exchangeCode: response.exchangeCode,
+      exchangeMessage: response.exchangeMessage,
+      endpointPath: _cancelOrderPath,
+      signedPayloadHashHex: response.signedPayloadHashHex,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      requestedOrderId: normalizedOrderId,
+      canceledOrderId: canceledOrderId,
     );
   }
 
@@ -821,6 +975,58 @@ class BingxFuturesExchangeService {
     );
   }
 
+  Future<
+      ({
+        bool isSuccess,
+        int httpStatusCode,
+        String exchangeCode,
+        String exchangeMessage,
+        String signedPayloadHashHex,
+        String body,
+      })> _executeSignedDelete({
+    required BingxFuturesApiCredentials credentials,
+    required String endpointPath,
+    required Map<String, String> params,
+  }) async {
+    final canonicalParamString = buildCanonicalParamString(params);
+    final signature = signParamString(
+      canonicalParamString: canonicalParamString,
+      apiSecret: credentials.apiSecret,
+    );
+    final signedBody = '$canonicalParamString&signature=$signature';
+    final signedPayloadHashHex =
+        sha256.convert(utf8.encode(signedBody)).toString();
+    final requestUri = Uri.parse('$_baseUrl$endpointPath');
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'DELETE',
+        uri: requestUri,
+        headers: <String, String>{
+          'X-BX-APIKEY': credentials.apiKey,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: signedBody,
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok');
+    return (
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      signedPayloadHashHex: signedPayloadHashHex,
+      body: response.body,
+    );
+  }
+
   String _normalizeSymbol(String symbol) {
     final normalized = symbol.trim().toUpperCase();
     if (!RegExp(r'^[A-Z0-9]{2,20}([-_/][A-Z0-9]{2,20})?$')
@@ -854,6 +1060,93 @@ class BingxFuturesExchangeService {
       }
     }
     return null;
+  }
+
+  static List<BingxFuturesOpenOrder> _extractOpenOrders({
+    required Map<String, dynamic>? decoded,
+    required String fallbackSymbol,
+  }) {
+    if (decoded == null) return const <BingxFuturesOpenOrder>[];
+    final data = decoded['data'];
+    final rawList = <dynamic>[];
+    if (data is List) {
+      rawList.addAll(data);
+    } else if (data is Map<String, dynamic>) {
+      final orders = data['orders'];
+      if (orders is List) {
+        rawList.addAll(orders);
+      } else {
+        final rows = data['rows'];
+        if (rows is List) {
+          rawList.addAll(rows);
+        } else {
+          final list = data['list'];
+          if (list is List) {
+            rawList.addAll(list);
+          }
+        }
+      }
+    }
+
+    final parsed = <BingxFuturesOpenOrder>[];
+    for (final raw in rawList) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      final orderId = map['orderId']?.toString().trim() ??
+          map['orderID']?.toString().trim() ??
+          map['id']?.toString().trim() ??
+          '';
+      if (orderId.isEmpty) continue;
+      final symbol = map['symbol']?.toString().trim().toUpperCase();
+      final side = map['side']?.toString().trim().toUpperCase() ?? '';
+      final positionSide =
+          map['positionSide']?.toString().trim().toUpperCase() ?? '';
+      final orderType = map['type']?.toString().trim().toUpperCase() ?? '';
+      final status = map['status']?.toString().trim().toUpperCase() ?? '';
+      final price =
+          map['price']?.toString().trim().isNotEmpty == true
+              ? map['price']?.toString().trim()
+              : map['avgPrice']?.toString().trim();
+      final stopPrice = map['stopPrice']?.toString().trim();
+      final quantity = map['origQty']?.toString().trim().isNotEmpty == true
+          ? map['origQty']?.toString().trim()
+          : map['quantity']?.toString().trim();
+      final executedQty = map['executedQty']?.toString().trim().isNotEmpty ==
+              true
+          ? map['executedQty']?.toString().trim()
+          : map['cumQuote']?.toString().trim();
+      final createdAtMs = int.tryParse(
+        map['time']?.toString() ??
+            map['createTime']?.toString() ??
+            map['timestamp']?.toString() ??
+            '',
+      );
+      parsed.add(
+        BingxFuturesOpenOrder(
+          orderId: orderId,
+          symbol:
+              symbol == null || symbol.isEmpty ? fallbackSymbol : symbol,
+          side: side,
+          positionSide: positionSide,
+          orderType: orderType,
+          status: status,
+          priceDecimal: (price == null || price.isEmpty) ? null : price,
+          triggerPriceDecimal:
+              (stopPrice == null || stopPrice.isEmpty) ? null : stopPrice,
+          quantityDecimal:
+              (quantity == null || quantity.isEmpty) ? null : quantity,
+          executedQuantityDecimal:
+              (executedQty == null || executedQty.isEmpty) ? null : executedQty,
+          createdAtMs: createdAtMs,
+        ),
+      );
+    }
+    parsed.sort((a, b) {
+      final ta = a.createdAtMs ?? 0;
+      final tb = b.createdAtMs ?? 0;
+      return tb.compareTo(ta);
+    });
+    return List<BingxFuturesOpenOrder>.unmodifiable(parsed);
   }
 
   static BingxFuturesPublicKline? _extractPublicKline(dynamic raw) {
@@ -919,6 +1212,7 @@ class BingxFuturesExchangeService {
       final httpRequest = switch (method) {
         'GET' => await client.getUrl(request.uri),
         'POST' => await client.postUrl(request.uri),
+        'DELETE' => await client.deleteUrl(request.uri),
         _ => throw FormatException('Unsupported HTTP method: $method'),
       };
       request.headers.forEach(httpRequest.headers.set);

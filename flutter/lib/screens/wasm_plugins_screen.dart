@@ -585,14 +585,22 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         _bingxApiKeyController.text = credentials.apiKey;
         _bingxApiSecretController.text = credentials.apiSecret;
       });
-    } catch (_) {
+      await _uiLog.log(
+        'bingx.credentials.load',
+        'ok keyLen=${credentials.apiKey.length} secretLen=${credentials.apiSecret.length}',
+      );
+    } catch (error) {
+      await _uiLog.log(
+        'bingx.credentials.load.error',
+        '$error',
+      );
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Failed to load BingX credentials'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text('Failed to load BingX credentials: $error'),
+          duration: const Duration(seconds: 3),
         ),
       );
     }
@@ -625,6 +633,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           apiSecret: apiSecret,
         ),
       );
+      await _uiLog.log(
+        'bingx.credentials.save',
+        'ok keyLen=${apiKey.length} secretLen=${apiSecret.length}',
+      );
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
@@ -634,14 +646,18 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           duration: Duration(seconds: 2),
         ),
       );
-    } catch (_) {
+    } catch (error) {
+      await _uiLog.log(
+        'bingx.credentials.save.error',
+        '$error',
+      );
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Failed to save BingX credentials'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text('Failed to save BingX credentials: $error'),
+          duration: const Duration(seconds: 3),
         ),
       );
     } finally {

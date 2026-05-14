@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/bingx_futures_credential_store.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
+import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
@@ -50,6 +53,48 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     WindowsOptions? wOptions,
   }) async {
     values.remove(key);
+  }
+}
+
+class _ThrowingSecureStorage extends FlutterSecureStorage {
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    throw Exception('secure storage unavailable');
+  }
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    throw Exception('secure storage unavailable');
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    throw Exception('secure storage unavailable');
   }
 }
 
@@ -117,6 +162,36 @@ void main() {
             .containsKey('hivra.bingx.futures.global.api_secret'),
         isTrue,
       );
+    });
+
+    test('falls back to file storage when secure storage is unavailable',
+        () async {
+      final tempHome =
+          await Directory.systemTemp.createTemp('hivra-cred-store-test-');
+      addTearDown(() async {
+        if (await tempHome.exists()) {
+          await tempHome.delete(recursive: true);
+        }
+      });
+
+      final scope =
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+      final store = BingxFuturesCredentialStore(
+        readActiveCapsuleRootHex: () => scope,
+        secureStorage: _ThrowingSecureStorage(),
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      );
+
+      await store.save(
+        const BingxFuturesApiCredentials(
+          apiKey: 'fallback-key',
+          apiSecret: 'fallback-secret',
+        ),
+      );
+      final loaded = await store.load();
+      expect(loaded, isNotNull);
+      expect(loaded!.apiKey, 'fallback-key');
+      expect(loaded.apiSecret, 'fallback-secret');
     });
   });
 }

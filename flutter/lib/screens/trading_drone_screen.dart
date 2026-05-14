@@ -75,6 +75,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   final TextEditingController _apiSecretController = TextEditingController();
   final TextEditingController _leverageController =
       TextEditingController(text: '3');
+  final TextEditingController _cancelOrderIdController = TextEditingController();
 
   bool _runningIntent = false;
   bool _broadcastingSignal = false;
@@ -84,6 +85,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _switchingLeverage = false;
   bool _switchingMarginType = false;
   bool _refreshingSignals = false;
+  bool _fetchingOpenOrders = false;
+  bool _cancelingOrder = false;
   bool _useTestOrderEndpoint = true;
   bool _obscureApiSecret = true;
   bool _droneEnabled = true;
@@ -104,6 +107,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   BingxFuturesControlActionResult? _lastMarginSwitch;
   BingxFuturesLeverageReadResult? _lastLeverageRead;
   BingxFuturesMarginTypeReadResult? _lastMarginRead;
+  BingxFuturesOpenOrdersResult? _lastOpenOrdersRead;
+  BingxFuturesCancelOrderResult? _lastCancelOrder;
+  List<BingxFuturesOpenOrder> _openOrders = const <BingxFuturesOpenOrder>[];
   int _lastExecutionAttempts = 0;
   bool _lastExecutionFromCache = false;
   List<CapsuleTradeSignalInboxMessage> _signalInbox =
@@ -144,6 +150,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _apiKeyController.dispose();
     _apiSecretController.dispose();
     _leverageController.dispose();
+    _cancelOrderIdController.dispose();
     super.dispose();
   }
 
@@ -167,8 +174,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _apiKeyController.text = credentials.apiKey;
         _apiSecretController.text = credentials.apiSecret;
       });
-    } catch (_) {
-      await _showSnack('Failed to load BingX credentials');
+      await _uiLog.log(
+        'bingx.credentials.load',
+        'ok keyLen=${credentials.apiKey.length} secretLen=${credentials.apiSecret.length}',
+      );
+    } catch (error) {
+      await _uiLog.log(
+        'bingx.credentials.load.error',
+        '$error',
+      );
+      await _showSnack('Failed to load BingX credentials: $error', seconds: 3);
     }
   }
 
@@ -298,9 +313,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           apiSecret: apiSecret,
         ),
       );
+      await _uiLog.log(
+        'bingx.credentials.save',
+        'ok keyLen=${apiKey.length} secretLen=${apiSecret.length}',
+      );
       await _showSnack('BingX credentials saved for active capsule');
-    } catch (_) {
-      await _showSnack('Failed to save BingX credentials');
+    } catch (error) {
+      await _uiLog.log(
+        'bingx.credentials.save.error',
+        '$error',
+      );
+      await _showSnack('Failed to save BingX credentials: $error', seconds: 3);
     } finally {
       if (mounted) {
         setState(() {
@@ -708,6 +731,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'elapsedMs=${stopwatch.elapsedMilliseconds} '
             'source=${response.executionSource}',
       );
+      if (response.status == PluginHostApiStatus.rejected) {
+        final code = response.errorCode?.trim().isNotEmpty == true
+            ? response.errorCode!.trim()
+            : 'none';
+        final msg = response.errorMessage?.trim().isNotEmpty == true
+            ? response.errorMessage!.trim()
+            : 'none';
+        await _uiLog.log(
+          'bingx.intent.rejected.detail',
+          'code=$code message=$msg source=${response.executionSource}',
+        );
+      }
       await _uiLog.log(
         'drone.decision.envelope',
         'hash=${decisionEnvelope.envelopeHashHex.substring(0, 12)} '
@@ -998,6 +1033,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _executing = true;
     });
     try {
+      await _uiLog.log(
+        'bingx.exchange.execute.intent',
+        'symbol=${payload.symbol} side=${payload.side} type=${payload.orderType} '
+            'entry=${payload.entryMode} limit=${payload.limitPriceDecimal ?? "-"} '
+            'trigger=${payload.triggerPriceDecimal ?? "-"} tif=${payload.timeInForce ?? "-"}',
+      );
       final queued = await _bingxExecutionQueue.enqueueOrderExecution(
         credentials: credentials,
         intent: payload,
@@ -1029,7 +1070,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'test=${_useTestOrderEndpoint ? "yes" : "no"} attempts=${queued.attempts} '
             'cache=${queued.fromIdempotentCache ? "hit" : "miss"} '
             'success=${queued.execution.isSuccess} http=${queued.execution.httpStatusCode} '
-            'code=${queued.execution.exchangeCode} endpoint=${queued.execution.endpointPath} msg=$safeMessage',
+            'code=${queued.execution.exchangeCode} endpoint=${queued.execution.endpointPath} '
+            'orderId=${queued.execution.orderId ?? "-"} msg=$safeMessage',
       );
       await _uiLog.log(
         'drone.execution.envelope',
@@ -1310,6 +1352,142 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         });
       }
     }
+  }
+
+  Future<void> _fetchOpenOrders({bool silent = false}) async {
+    if (_fetchingOpenOrders) return;
+    final credentials = _resolveCredentials();
+    if (credentials == null) {
+      await _showSnack('Save BingX API credentials first');
+      return;
+    }
+    final symbol = _symbolController.text.trim();
+    if (symbol.isEmpty) {
+      await _showSnack('Symbol is required');
+      return;
+    }
+
+    setState(() {
+      _fetchingOpenOrders = true;
+    });
+    try {
+      final result = await _bingxExchangeService.getOpenOrders(
+        credentials: credentials,
+        symbol: symbol,
+      );
+      final message = result.exchangeMessage
+          .replaceAll('\n', ' ')
+          .replaceAll('\r', ' ');
+      await _uiLog.log(
+        'bingx.exchange.open_orders',
+        'symbol=${result.symbol} success=${result.isSuccess} '
+            'http=${result.httpStatusCode} code=${result.exchangeCode} '
+            'count=${result.orders.length} endpoint=${result.endpointPath} msg=$message',
+      );
+      if (!mounted) return;
+      setState(() {
+        _lastOpenOrdersRead = result;
+        _openOrders = result.orders;
+        if (result.orders.isNotEmpty) {
+          _cancelOrderIdController.text = result.orders.first.orderId;
+        }
+      });
+      if (!silent) {
+        await _showSnack(
+          result.isSuccess
+              ? 'Open orders: ${result.orders.length}'
+              : 'Open orders failed: ${result.exchangeCode}',
+          seconds: result.isSuccess ? 2 : 4,
+        );
+      }
+    } catch (error) {
+      await _uiLog.log('bingx.exchange.open_orders.error', '$error');
+      if (!silent) {
+        await _showSnack('Fetch open orders failed: $error', seconds: 3);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _fetchingOpenOrders = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _cancelOrder() async {
+    if (_cancelingOrder) return;
+    final credentials = _resolveCredentials();
+    if (credentials == null) {
+      await _showSnack('Save BingX API credentials first');
+      return;
+    }
+    final symbol = _symbolController.text.trim();
+    if (symbol.isEmpty) {
+      await _showSnack('Symbol is required');
+      return;
+    }
+    final orderId = _cancelOrderIdController.text.trim();
+    if (orderId.isEmpty) {
+      await _showSnack('Order ID is required');
+      return;
+    }
+
+    setState(() {
+      _cancelingOrder = true;
+    });
+    try {
+      final result = await _bingxExchangeService.cancelOrder(
+        credentials: credentials,
+        symbol: symbol,
+        orderId: orderId,
+      );
+      final message = result.exchangeMessage
+          .replaceAll('\n', ' ')
+          .replaceAll('\r', ' ');
+      await _uiLog.log(
+        'bingx.exchange.cancel_order',
+        'symbol=${result.symbol} requestOrderId=${result.requestedOrderId} '
+            'canceledOrderId=${result.canceledOrderId ?? "-"} '
+            'success=${result.isSuccess} http=${result.httpStatusCode} '
+            'code=${result.exchangeCode} endpoint=${result.endpointPath} msg=$message',
+      );
+      if (!mounted) return;
+      setState(() {
+        _lastCancelOrder = result;
+        if (result.isSuccess) {
+          final canceled = result.canceledOrderId ?? result.requestedOrderId;
+          _openOrders =
+              _openOrders.where((order) => order.orderId != canceled).toList();
+        }
+      });
+      await _showSnack(
+        result.isSuccess
+            ? 'Order canceled: ${result.canceledOrderId ?? result.requestedOrderId}'
+            : 'Cancel failed: ${result.exchangeCode}',
+        seconds: result.isSuccess ? 2 : 4,
+      );
+      if (result.isSuccess) {
+        await _fetchOpenOrders(silent: true);
+      }
+    } catch (error) {
+      await _uiLog.log('bingx.exchange.cancel_order.error', '$error');
+      await _showSnack('Cancel order failed: $error', seconds: 3);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _cancelingOrder = false;
+        });
+      }
+    }
+  }
+
+  String _formatOrderTime(int? timestampMs) {
+    if (timestampMs == null || timestampMs <= 0) return '-';
+    final dt = DateTime.fromMillisecondsSinceEpoch(timestampMs, isUtc: true)
+        .toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
+        '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
   }
 
   Map<String, dynamic>? _tryDecodeJsonMap(String raw) {
@@ -2003,6 +2181,21 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         _readingCurrentSettings ? 'Fetching' : 'Fetch Current',
                       ),
                     ),
+                  OutlinedButton.icon(
+                    onPressed: _fetchingOpenOrders
+                        ? null
+                        : () => _fetchOpenOrders(),
+                    icon: _fetchingOpenOrders
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.list_alt_rounded),
+                    label: Text(
+                      _fetchingOpenOrders ? 'Fetching Orders' : 'Open Orders',
+                    ),
+                  ),
                   FilledButton.icon(
                     onPressed: _executing ? null : _executeLastIntent,
                     icon: _executing
@@ -2018,6 +2211,41 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                           : _useTestOrderEndpoint
                               ? 'Execute Test Order'
                               : 'Execute Live Order',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 260,
+                    child: TextField(
+                      controller: _cancelOrderIdController,
+                      decoration: InputDecoration(
+                        labelText: 'Order ID to cancel',
+                        filled: true,
+                        fillColor: const Color(0xFF0F141C),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: _cancelingOrder ? null : _cancelOrder,
+                    icon: _cancelingOrder
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.cancel_presentation_rounded),
+                    label: Text(
+                      _cancelingOrder ? 'Canceling' : 'Cancel Order',
                     ),
                   ),
                 ],
@@ -2162,6 +2390,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   if (_lastExecutionFromCache)
                     _statusChip('Idempotent cache',
                         accent: const Color(0xFFFFC76A)),
+                  if (_lastOpenOrdersRead != null)
+                    _statusChip(
+                      'Open: ${_openOrders.length} (${_lastOpenOrdersRead!.exchangeCode})',
+                      accent: _lastOpenOrdersRead!.isSuccess
+                          ? const Color(0xFF75D98A)
+                          : const Color(0xFFFF8A7A),
+                    ),
+                  if (_lastCancelOrder != null)
+                    _statusChip(
+                      'Cancel: ${_lastCancelOrder!.exchangeCode}',
+                      accent: _lastCancelOrder!.isSuccess
+                          ? const Color(0xFF75D98A)
+                          : const Color(0xFFFF8A7A),
+                    ),
                   if (_lastLeverageSwitch != null)
                     _statusChip(
                       'Lev: ${_lastLeverageSwitch!.exchangeCode}',
@@ -2196,6 +2438,66 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     ),
                 ],
               ),
+              if (_openOrders.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Active Orders',
+                    style: TextStyle(
+                      color: Color(0xFF9FAAC0),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                for (final order in _openOrders.take(12))
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D1322),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: const Color(0xFF2D3550),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${order.symbol} · ${order.side} · ${order.orderType}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFE6EBFF),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'id ${order.orderId}',
+                          style: const TextStyle(
+                            color: Color(0xFF9FAAC0),
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'status ${order.status.isEmpty ? "-" : order.status} · '
+                          'price ${order.priceDecimal ?? "-"} · '
+                          'trigger ${order.triggerPriceDecimal ?? "-"} · '
+                          'qty ${order.quantityDecimal ?? "-"}',
+                          style: const TextStyle(color: Color(0xFFC4CCE0)),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'updated ${_formatOrderTime(order.createdAtMs)}',
+                          style: const TextStyle(color: Color(0xFF8D97AE)),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ],
           ),
           const SizedBox(height: 14),

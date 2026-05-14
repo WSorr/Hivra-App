@@ -16,6 +16,7 @@ This document defines the loadable test package shape for BingX futures intent e
   "version": 1,
   "plugin_id": "hivra.contract.bingx-futures-trading.v1",
   "capabilities": [
+    "consensus_guard.read",
     "exchange.read.bingx.market",
     "exchange.trade.bingx.futures"
   ],

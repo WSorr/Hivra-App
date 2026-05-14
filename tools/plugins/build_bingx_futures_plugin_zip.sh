@@ -20,6 +20,7 @@ cat >"$PLUGIN_DIR/manifest.json" <<'JSON'
   "version": 1,
   "plugin_id": "hivra.contract.bingx-futures-trading.v1",
   "capabilities": [
+    "consensus_guard.read",
     "exchange.read.bingx.market",
     "exchange.trade.bingx.futures"
   ],
@@ -35,11 +36,11 @@ cat >"$PLUGIN_DIR/manifest.json" <<'JSON'
 JSON
 
 # Minimal valid WASM module with exported function `hivra_entry_v1`.
-printf '\x00\x61\x73\x6d\x01\x00\x00\x00\
-\x01\x04\x01\x60\x00\x00\
-\x03\x02\x01\x00\
-\x07\x12\x01\x0e\x68\x69\x76\x72\x61\x5f\x65\x6e\x74\x72\x79\x5f\x76\x31\x00\x00\
-\x0a\x04\x01\x02\x00\x0b' >"$PLUGIN_DIR/module.wasm"
+# Use hex decode to avoid shell-escape/newline corruption in binary output.
+cat >"$TMP_DIR/module.wasm.hex" <<'HEX'
+0061736d01000000010401600000030201000712010e68697672615f656e7472795f763100000a040102000b
+HEX
+xxd -r -p "$TMP_DIR/module.wasm.hex" >"$PLUGIN_DIR/module.wasm"
 
 (
   cd "$TMP_DIR"

@@ -283,6 +283,71 @@ void main() {
       expect(result.exchangeCode, '0');
     });
 
+    test('reads open orders via signed GET endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"orders":[{"orderId":"111","symbol":"BTC-USDT","side":"SELL","positionSide":"SHORT","type":"TRIGGER_LIMIT","status":"NEW","price":"81900","stopPrice":"81800","origQty":"0.001","executedQty":"0","time":1710000000000}]}}',
+          );
+        },
+      );
+
+      final result = await service.getOpenOrders(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+        symbol: 'btc-usdt',
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/trade/openOrders');
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(capturedRequest.uri.query, contains('signature='));
+      expect(result.isSuccess, isTrue);
+      expect(result.orders, hasLength(1));
+      expect(result.orders.first.orderId, '111');
+      expect(result.orders.first.priceDecimal, '81900');
+      expect(result.orders.first.triggerPriceDecimal, '81800');
+    });
+
+    test('cancels order via signed DELETE endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body: '{"code":0,"msg":"ok","data":{"orderId":"111"}}',
+          );
+        },
+      );
+
+      final result = await service.cancelOrder(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+        symbol: 'BTC-USDT',
+        orderId: '111',
+      );
+
+      expect(capturedRequest.method, 'DELETE');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/trade/order');
+      expect(capturedRequest.body, contains('symbol=BTC-USDT'));
+      expect(capturedRequest.body, contains('orderId=111'));
+      expect(capturedRequest.body, contains('signature='));
+      expect(result.isSuccess, isTrue);
+      expect(result.requestedOrderId, '111');
+      expect(result.canceledOrderId, '111');
+    });
+
     test('reads public klines via unsigned endpoint', () async {
       late BingxHttpRequest capturedRequest;
       final service = BingxFuturesExchangeService(
