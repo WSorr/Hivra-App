@@ -79,6 +79,16 @@ require_present "$CHECKLIST_MAC" 'does not re-materialize previously resolved in
   "macOS checklist requires no resolved-invite resurrection check"
 require_present "$CHECKLIST_MAC" 'does not rehydrate deleted canonical capsule files on relaunch' \
   "macOS checklist requires no legacy rehydration after deletion"
+require_present "$CHECKLIST_MAC" 'Trading Drone smoke gate completed' \
+  "macOS checklist requires trading drone smoke gate"
+require_present "$CHECKLIST_MAC" '`situational` decision envelope hash captured' \
+  "macOS checklist requires situational decision hash capture"
+require_present "$CHECKLIST_MAC" '`interactive` parity hash verified' \
+  "macOS checklist requires interactive parity hash verification"
+require_present "$CHECKLIST_MAC" 'risk-block and retry paths exercised' \
+  "macOS checklist requires risk-block/retry smoke"
+require_present "$CHECKLIST_MAC" 'execution envelope receipt hash captured' \
+  "macOS checklist requires execution receipt hash capture"
 require_present "$CHECKLIST_MAC" 'signed/notarized or test-only' \
   "macOS checklist requires signed/notarized disclosure in release notes"
 require_present "$CHECKLIST_MAC" 'RELEASE-METADATA\.txt' \
@@ -105,6 +115,16 @@ require_present "$CHECKLIST_ANDROID" 'Invitation send succeeds' \
   "Android checklist covers invitation send flow"
 require_present "$CHECKLIST_ANDROID" 'Invitation accept succeeds' \
   "Android checklist covers invitation accept flow"
+require_present "$CHECKLIST_ANDROID" 'Trading Drone smoke gate completed' \
+  "Android checklist requires trading drone smoke gate"
+require_present "$CHECKLIST_ANDROID" '`situational` decision envelope hash captured' \
+  "Android checklist requires situational decision hash capture"
+require_present "$CHECKLIST_ANDROID" '`interactive` parity hash verified' \
+  "Android checklist requires interactive parity hash verification"
+require_present "$CHECKLIST_ANDROID" 'risk-block and retry paths exercised' \
+  "Android checklist requires risk-block/retry smoke"
+require_present "$CHECKLIST_ANDROID" 'execution envelope receipt hash captured' \
+  "Android checklist requires execution receipt hash capture"
 require_present "$CHECKLIST_ANDROID" 'tools/release/android_release\.sh' \
   "Android checklist requires scripted release packaging"
 require_present "$CHECKLIST_ANDROID" 'explicitly \(`test` for internal/pre-release, `public` for stable release\)' \
@@ -153,6 +173,12 @@ require_present "$CHECKLIST_SMOKE" 'Relationship Flow' \
   "manual smoke checklist covers relationship flow"
 require_present "$CHECKLIST_SMOKE" 'Ledger Truth' \
   "manual smoke checklist covers ledger truth projection"
+require_present "$CHECKLIST_SMOKE" 'Trading Drone \(Observability Gate\)' \
+  "manual smoke checklist covers trading drone observability gate"
+require_present "$CHECKLIST_SMOKE" 'drone\.decision\.envelope' \
+  "manual smoke checklist requires decision envelope visibility"
+require_present "$CHECKLIST_SMOKE" 'drone\.execution\.envelope' \
+  "manual smoke checklist requires execution envelope visibility"
 require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 1: First Capsule Birth' \
   "user lifetime checklist covers capsule birth"
 require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 2: First Relationship' \

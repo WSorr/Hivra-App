@@ -19,6 +19,18 @@ class InvitationIntentResult {
   bool get isSuccess => code == 0;
 }
 
+class InvitationSendPreflightResult {
+  final bool relayHealthy;
+  final int code;
+  final String message;
+
+  const InvitationSendPreflightResult({
+    required this.relayHealthy,
+    required this.code,
+    required this.message,
+  });
+}
+
 class InvitationIntentHandler {
   static const Duration _quickFetchCooldown = Duration(seconds: 8);
   static const Duration _sendPendingRecencyWindow = Duration(seconds: 10);
@@ -221,6 +233,20 @@ class InvitationIntentHandler {
     required int starterSlot,
   }) {
     return '$capsuleHex|$starterSlot|${base64.encode(toPubkey)}';
+  }
+
+  Future<InvitationSendPreflightResult> preflightSend({
+    String? capsuleHex,
+  }) async {
+    final quick = await _fetchInvitationsQuickUncached(capsuleHex: capsuleHex);
+    final relayHealthy = quick.code >= 0;
+    return InvitationSendPreflightResult(
+      relayHealthy: relayHealthy,
+      code: quick.code,
+      message: relayHealthy
+          ? 'Relay preflight is healthy'
+          : 'Relay preflight is degraded: ${quick.message}',
+    );
   }
 
   Future<InvitationIntentResult> fetchInvitations({String? capsuleHex}) async {

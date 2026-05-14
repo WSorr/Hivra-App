@@ -301,6 +301,11 @@ class PluginHostApiService {
     return _executeResolved(request, runtimeBinding, runtimeInvoke);
   }
 
+  bool _requiresExternalRuntimeExecution(PluginHostApiRequest request) {
+    return request.pluginId == bingxFuturesTradingPluginId &&
+        request.method == placeBingxFuturesOrderIntentMethod;
+  }
+
   String? _validateRuntimeBindingShape(PluginRuntimeBinding binding) {
     if (binding.source != 'external_package') {
       return null;
@@ -330,6 +335,28 @@ class PluginHostApiService {
         runtimeBinding: runtimeBinding,
         runtimeInvoke: runtimeInvoke,
       );
+    }
+    if (_requiresExternalRuntimeExecution(request)) {
+      if (runtimeBinding.source != 'external_package') {
+        return _rejected(
+          pluginId: request.pluginId,
+          method: request.method,
+          code: 'runtime_invoke_unavailable',
+          message: 'Runtime package is required for futures plugin execution',
+          runtimeBinding: runtimeBinding,
+          runtimeInvoke: runtimeInvoke,
+        );
+      }
+      if (runtimeInvoke == null) {
+        return _rejected(
+          pluginId: request.pluginId,
+          method: request.method,
+          code: 'runtime_invoke_unavailable',
+          message: 'Runtime invoke evidence unavailable for external package',
+          runtimeBinding: runtimeBinding,
+          runtimeInvoke: runtimeInvoke,
+        );
+      }
     }
     final contractKindMismatch = _validateRuntimeContractKind(
       pluginId: request.pluginId,

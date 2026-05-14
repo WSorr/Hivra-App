@@ -171,6 +171,9 @@ This document defines the first deterministic host API boundary used before wasm
 - Runtime execution source is resolved by host-side binding policy:
   - `execute(...)` forces `host_fallback`
   - `executeWithRuntimeHook(...)` may resolve installed package metadata and emit `external_package`
+  - for `place_bingx_futures_order_intent`, host-fallback execution is disallowed:
+    - if external runtime package is not resolved, request is rejected (`runtime_invoke_unavailable`)
+    - if runtime invoke evidence is missing, request is rejected (`runtime_invoke_unavailable`)
   - external-package runtime binding shape is validated before invoke (`package_id` required, `package_kind` must be `wasm|zip`); invalid metadata is rejected (`runtime_binding_invalid`)
   - when external package is resolved, host includes deterministic package digest (`execution_package_digest_hex`)
   - when external package exposes `execution_contract_kind`, host rejects mismatches against requested `plugin_id` (`runtime_contract_kind_mismatch`)

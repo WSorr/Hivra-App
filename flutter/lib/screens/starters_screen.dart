@@ -174,6 +174,22 @@ class _StartersScreenState extends State<StartersScreen> {
                           'starters.send.request',
                           'slot=$slotIndex peer=$input',
                         ));
+                        final preflight = await _intents.preflightSend(
+                          capsuleHex: operationCapsuleHex,
+                        );
+                        unawaited(_uiLog.log(
+                          'starters.send.preflight',
+                          'slot=$slotIndex relayHealthy=${preflight.relayHealthy} code=${preflight.code} message=${preflight.message}',
+                        ));
+                        if (!preflight.relayHealthy && mounted) {
+                          UiFeedbackService.showSnackBar(
+                            this.context,
+                            'Relay seems offline/unstable. We will still record local send and retry in background.',
+                            source: 'starters.send.preflight',
+                            duration: const Duration(seconds: 4),
+                            enableCopy: false,
+                          );
+                        }
 
                         sendResult = await _intents.sendInvitation(
                           resolution.transportRecipient!,

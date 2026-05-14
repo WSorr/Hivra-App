@@ -22,6 +22,11 @@ Use this checklist before publishing any macOS build to testers or end users.
 - [ ] Existing-user update path was evaluated for truth preservation (same ledger -> same starters/relationships/pending state).
 - [ ] Update build does not re-materialize previously resolved invitation history.
 - [ ] Legacy container migration does not rehydrate deleted canonical capsule files on relaunch.
+- [ ] Trading Drone smoke gate completed:
+  - `situational` decision envelope hash captured
+  - `interactive` parity hash verified
+  - risk-block and retry paths exercised
+  - execution envelope receipt hash captured
 - [ ] User Lifetime Safety Pack (`docs/checklists/user-lifetime-safety-pack.md`) was completed on this build.
 
 ## Packaging

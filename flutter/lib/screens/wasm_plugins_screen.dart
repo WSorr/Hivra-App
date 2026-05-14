@@ -7,7 +7,9 @@ import 'package:flutter/material.dart';
 import '../services/app_runtime_service.dart';
 import '../services/bingx_futures_credential_store.dart';
 import '../services/bingx_futures_exchange_service.dart';
+import '../services/bingx_futures_observability_envelope_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
+import '../services/bingx_futures_risk_governor_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
 import '../services/consensus_processor.dart';
 import '../services/manual_consensus_check_service.dart';
@@ -50,6 +52,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       AppRuntimeService().buildBingxFuturesCredentialStore();
   final BingxFuturesExchangeService _bingxExchangeService =
       AppRuntimeService().buildBingxFuturesExchangeService();
+  final BingxFuturesRiskGovernorService _riskGovernor =
+      const BingxFuturesRiskGovernorService();
+  final BingxFuturesObservabilityEnvelopeService _observability =
+      const BingxFuturesObservabilityEnvelopeService();
   late final BingxFuturesExecutionQueueService _bingxExecutionQueue;
   final CapsuleChatDeliveryService _chatDelivery =
       AppRuntimeService().buildCapsuleChatDeliveryService();
@@ -119,6 +125,15 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   List<CapsuleChatInboxMessage> _chatInbox = const <CapsuleChatInboxMessage>[];
   List<CapsuleTradeSignalInboxMessage> _tradeSignalInbox =
       const <CapsuleTradeSignalInboxMessage>[];
+
+  static const BingxFuturesRiskPolicy _executionRiskPolicy =
+      BingxFuturesRiskPolicy(
+    maxRiskPerTradePercent: 2.0,
+    maxDailyLossPercent: 5.0,
+    maxConcurrentPositions: 3,
+    cooldownAfterLossStreak: 2,
+    cooldownMinutes: 60,
+  );
   int _chatDroppedByConsensus = 0;
   String _bingxSide = 'buy';
   String _bingxOrderType = 'limit';
@@ -695,6 +710,34 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       return;
     }
 
+    final riskDecision = await _evaluateBingxExecutionRisk(
+      payload: payload,
+      rawIntentResult: result,
+    );
+    if (riskDecision == null) return;
+    if (riskDecision.status == BingxFuturesRiskDecisionStatus.blocked) {
+      final shortHash = riskDecision.decisionHashHex.substring(0, 12);
+      await _uiLog.log(
+        'bingx.exchange.risk_blocked',
+        'code=${riskDecision.reasonCode} hash=$shortHash',
+      );
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content:
+              Text('Risk blocked: ${riskDecision.reasonCode} ($shortHash)'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+    await _uiLog.log(
+      'bingx.exchange.risk_allowed',
+      'hash=${riskDecision.decisionHashHex.substring(0, 12)}',
+    );
+
     if (!mounted) return;
     setState(() {
       _executingBingxOrder = true;
@@ -704,6 +747,23 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         credentials: credentials,
         intent: payload,
         testOrder: _bingxUseTestOrderEndpoint,
+      );
+      final executionEnvelope = _observability.buildExecutionEnvelope(
+        screen: 'wasm_plugins',
+        symbol: payload.symbol,
+        side: payload.side,
+        orderType: payload.orderType,
+        idempotencyKey: queued.idempotencyKey,
+        attempts: queued.attempts,
+        fromIdempotentCache: queued.fromIdempotentCache,
+        isSuccess: queued.execution.isSuccess,
+        httpStatusCode: queued.execution.httpStatusCode,
+        exchangeCode: queued.execution.exchangeCode,
+        endpointPath: queued.execution.endpointPath,
+        orderId: queued.execution.orderId,
+        intentHashHex: payload.intentHashHex,
+        riskDecisionCode: riskDecision.reasonCode,
+        riskDecisionHashHex: riskDecision.decisionHashHex,
       );
       final execution = queued.execution;
       await _uiLog.log(
@@ -716,6 +776,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
             'http=${execution.httpStatusCode} '
             'code=${execution.exchangeCode} '
             'order=${execution.orderId ?? "none"}',
+      );
+      await _uiLog.log(
+        'drone.execution.envelope',
+        'hash=${executionEnvelope.envelopeHashHex.substring(0, 12)} '
+            'kind=execution screen=wasm_plugins',
       );
       if (!mounted) return;
       setState(() {
@@ -763,6 +828,62 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         });
       }
     }
+  }
+
+  Future<BingxFuturesRiskDecision?> _evaluateBingxExecutionRisk({
+    required BingxFuturesIntentPayload payload,
+    required Map<String, dynamic> rawIntentResult,
+  }) async {
+    String? entryPriceDecimal = payload.limitPriceDecimal;
+    entryPriceDecimal ??= payload.triggerPriceDecimal;
+    if (entryPriceDecimal == null || entryPriceDecimal.trim().isEmpty) {
+      final quote = await _bingxExchangeService.getPublicPrice(
+        symbol: payload.symbol,
+      );
+      if (quote.isSuccess &&
+          quote.priceDecimal != null &&
+          quote.priceDecimal!.trim().isNotEmpty) {
+        entryPriceDecimal = quote.priceDecimal!.trim();
+      }
+    }
+    if (entryPriceDecimal == null || entryPriceDecimal.trim().isEmpty) {
+      await _uiLog.log(
+        'bingx.exchange.risk_error',
+        'entry_price_unavailable symbol=${payload.symbol}',
+      );
+      return null;
+    }
+
+    var stopLossDecimal =
+        rawIntentResult['stop_loss_decimal']?.toString().trim() ?? '';
+    if (stopLossDecimal.isEmpty) {
+      if (payload.side == 'buy') {
+        stopLossDecimal =
+            rawIntentResult['zone_low_decimal']?.toString().trim() ?? '';
+      } else {
+        stopLossDecimal =
+            rawIntentResult['zone_high_decimal']?.toString().trim() ?? '';
+      }
+    }
+    if (stopLossDecimal.isEmpty) {
+      stopLossDecimal = entryPriceDecimal;
+    }
+
+    return _riskGovernor.evaluate(
+      input: BingxFuturesRiskGovernorInput(
+        symbol: payload.symbol,
+        quantityDecimal: payload.quantityDecimal,
+        entryPriceDecimal: entryPriceDecimal,
+        stopLossDecimal: stopLossDecimal,
+        accountEquityQuoteDecimal: '10000',
+        realizedDailyPnlQuoteDecimal: '0',
+        concurrentPositions: 0,
+        lossStreakCount: 0,
+        lastLossAtUtc: null,
+        nowUtc: DateTime.now().toUtc().toIso8601String(),
+      ),
+      policy: _executionRiskPolicy,
+    );
   }
 
   Future<void> _switchBingxLeverage() async {
@@ -1084,6 +1205,26 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       setState(() {
         _lastBingxResponse = response;
       });
+      final decisionEnvelope = _observability.buildDecisionEnvelope(
+        screen: 'wasm_plugins',
+        pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
+        method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
+        status: response.status.name,
+        symbol: symbol,
+        side: _bingxSide,
+        orderType: _bingxOrderType,
+        entryMode: _bingxEntryMode,
+        executionSource: response.executionSource,
+        intentHashHex: response.result?['intent_hash_hex']?.toString(),
+        errorCode: response.errorCode,
+        blockingFactCodes: response.blockingFacts.map((f) => f.key).toList(),
+      );
+      await _uiLog.log(
+        'drone.decision.envelope',
+        'hash=${decisionEnvelope.envelopeHashHex.substring(0, 12)} '
+            'kind=decision screen=wasm_plugins',
+      );
+      if (!mounted) return;
 
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();

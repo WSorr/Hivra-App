@@ -129,7 +129,10 @@ void main() {
 
       expect(calls, 2);
       expect(first.code, -5);
-      expect(first.message, 'Failed to fetch invitation deliveries [code: -5]');
+      expect(
+        first.message,
+        'Failed to fetch invitation deliveries. Check internet/VPN and retry. [code: -5]',
+      );
       expect(second.code, 0);
       expect(second.message, 'No new invitation deliveries');
     });
@@ -426,7 +429,9 @@ void main() {
 
       expect(result.code, -5);
       expect(
-          result.message, 'Failed to fetch invitation deliveries [code: -5]');
+        result.message,
+        'Failed to fetch invitation deliveries. Check internet/VPN and retry. [code: -5]',
+      );
       expect(
           actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
     });
@@ -444,10 +449,10 @@ void main() {
       final result = await handler.fetchInvitations();
 
       expect(result.code, -5);
-      expect(
-        result.message,
-        'Failed to fetch invitation deliveries [code: -5; ffi: receive failed: relay timeout]',
-      );
+    expect(
+      result.message,
+      'Failed to fetch invitation deliveries. Check internet/VPN and retry. [code: -5; ffi: receive failed: relay timeout]',
+    );
     });
   });
 

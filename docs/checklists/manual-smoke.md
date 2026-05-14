@@ -40,3 +40,10 @@ Use this checklist for interactive validation before or after a release build.
 - [ ] Old resolved invitations do not resurrect as pending after launch receive.
 - [ ] Switching capsules does not mix ledgers.
 
+## Trading Drone (Observability Gate)
+
+- [ ] `situational` run produces deterministic decision envelope hash (`drone.decision.envelope`).
+- [ ] `interactive` cycle on same fixture input produces matching decision hash (no drift).
+- [ ] Risk-block path is exercised and logs `risk_blocked` with deterministic reason code.
+- [ ] Retry path is exercised (transient failure) and execution envelope is written.
+- [ ] Receipt path is visible (`drone.execution.envelope`) and hash is traceable in logs.

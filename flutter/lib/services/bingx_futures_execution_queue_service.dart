@@ -10,6 +10,8 @@ const List<Duration> _defaultBingxExecutionRetryDelays = <Duration>[
   Duration(seconds: 5),
 ];
 
+const Duration _defaultPendingOrderTtl = Duration(minutes: 20);
+
 typedef BingxFuturesPlaceOrderRunner = Future<BingxFuturesOrderExecutionResult>
     Function({
   required BingxFuturesApiCredentials credentials,
@@ -18,9 +20,18 @@ typedef BingxFuturesPlaceOrderRunner = Future<BingxFuturesOrderExecutionResult>
 });
 
 typedef BingxExecutionQueueDelay = Future<void> Function(Duration delay);
+typedef BingxExecutionQueueClock = DateTime Function();
 
 Future<void> _defaultExecutionDelay(Duration delay) {
   return Future<void>.delayed(delay);
+}
+
+DateTime _defaultQueueClock() => DateTime.now().toUtc();
+
+enum BingxExecutionRetryClass {
+  retryableTransient,
+  retryableClockSkew,
+  nonRetryable,
 }
 
 bool bingxExchangeExecutionShouldRetry({
@@ -28,8 +39,21 @@ bool bingxExchangeExecutionShouldRetry({
   required String exchangeCode,
   required String exchangeMessage,
 }) {
+  return bingxExchangeExecutionRetryClass(
+        httpStatusCode: httpStatusCode,
+        exchangeCode: exchangeCode,
+        exchangeMessage: exchangeMessage,
+      ) !=
+      BingxExecutionRetryClass.nonRetryable;
+}
+
+BingxExecutionRetryClass bingxExchangeExecutionRetryClass({
+  required int httpStatusCode,
+  required String exchangeCode,
+  required String exchangeMessage,
+}) {
   if (httpStatusCode == 408 || httpStatusCode == 429 || httpStatusCode >= 500) {
-    return true;
+    return BingxExecutionRetryClass.retryableTransient;
   }
 
   final code = exchangeCode.trim().toLowerCase();
@@ -47,18 +71,71 @@ bool bingxExchangeExecutionShouldRetry({
     'http_503',
     'http_504',
   }.contains(code)) {
-    return true;
+    return BingxExecutionRetryClass.retryableTransient;
+  }
+  if (const <String>{
+    '-1021',
+    'timestamp_invalid',
+    'recvwindow_invalid',
+  }.contains(code)) {
+    return BingxExecutionRetryClass.retryableClockSkew;
   }
 
   final message = exchangeMessage.trim().toLowerCase();
-  return message.contains('timeout') ||
+  if (message.contains('timestamp') ||
+      message.contains('recvwindow') ||
+      message.contains('clock')) {
+    return BingxExecutionRetryClass.retryableClockSkew;
+  }
+  if (message.contains('timeout') ||
       message.contains('timed out') ||
       message.contains('connection') ||
       message.contains('network') ||
       message.contains('unavailable') ||
       message.contains('too many requests') ||
       message.contains('rate limit') ||
-      message.contains('temporarily');
+      message.contains('temporarily')) {
+    return BingxExecutionRetryClass.retryableTransient;
+  }
+  return BingxExecutionRetryClass.nonRetryable;
+}
+
+enum BingxPendingOrderActionType {
+  cancelReplace,
+}
+
+class BingxPendingOrderAction {
+  final BingxPendingOrderActionType actionType;
+  final String idempotencyKey;
+  final String orderId;
+  final String reasonCode;
+  final String reasonMessage;
+
+  const BingxPendingOrderAction({
+    required this.actionType,
+    required this.idempotencyKey,
+    required this.orderId,
+    required this.reasonCode,
+    required this.reasonMessage,
+  });
+}
+
+class BingxPendingOrderRecord {
+  final String idempotencyKey;
+  final String orderId;
+  final String symbol;
+  final String entryMode;
+  final DateTime createdAtUtc;
+  final DateTime expiresAtUtc;
+
+  const BingxPendingOrderRecord({
+    required this.idempotencyKey,
+    required this.orderId,
+    required this.symbol,
+    required this.entryMode,
+    required this.createdAtUtc,
+    required this.expiresAtUtc,
+  });
 }
 
 class BingxQueuedExecutionResult {
@@ -67,6 +144,7 @@ class BingxQueuedExecutionResult {
   final int attempts;
   final bool fromIdempotentCache;
   final bool exhaustedRetries;
+  final bool pendingTracked;
 
   const BingxQueuedExecutionResult({
     required this.execution,
@@ -74,6 +152,7 @@ class BingxQueuedExecutionResult {
     required this.attempts,
     required this.fromIdempotentCache,
     required this.exhaustedRetries,
+    this.pendingTracked = false,
   });
 
   BingxQueuedExecutionResult asIdempotentCacheHit() {
@@ -83,6 +162,7 @@ class BingxQueuedExecutionResult {
       attempts: attempts,
       fromIdempotentCache: true,
       exhaustedRetries: exhaustedRetries,
+      pendingTracked: pendingTracked,
     );
   }
 }
@@ -90,23 +170,34 @@ class BingxQueuedExecutionResult {
 class BingxFuturesExecutionQueueService {
   final BingxFuturesPlaceOrderRunner _placeOrder;
   final BingxExecutionQueueDelay _delay;
+  final BingxExecutionQueueClock _clockUtc;
   final List<Duration> retryDelays;
+  final Duration pendingOrderTtl;
   final int maxSuccessCacheEntries;
+  final int maxPendingOrderEntries;
 
   final LinkedHashMap<String, BingxQueuedExecutionResult> _successfulByKey =
       LinkedHashMap<String, BingxQueuedExecutionResult>();
   final Map<String, Future<BingxQueuedExecutionResult>> _inFlightByKey =
       <String, Future<BingxQueuedExecutionResult>>{};
+  final LinkedHashMap<String, BingxPendingOrderRecord> _pendingByKey =
+      LinkedHashMap<String, BingxPendingOrderRecord>();
 
   BingxFuturesExecutionQueueService({
     required BingxFuturesExchangeService exchangeService,
     BingxFuturesPlaceOrderRunner? placeOrderRunner,
     BingxExecutionQueueDelay delay = _defaultExecutionDelay,
+    BingxExecutionQueueClock clockUtc = _defaultQueueClock,
     List<Duration> retryDelays = _defaultBingxExecutionRetryDelays,
+    this.pendingOrderTtl = _defaultPendingOrderTtl,
     this.maxSuccessCacheEntries = 128,
+    this.maxPendingOrderEntries = 128,
   })  : _placeOrder = placeOrderRunner ?? exchangeService.placeOrder,
         _delay = delay,
+        _clockUtc = clockUtc,
         retryDelays = List<Duration>.unmodifiable(retryDelays);
+
+  int get pendingOrderCount => _pendingByKey.length;
 
   String buildIdempotencyKey({
     required BingxFuturesIntentPayload intent,
@@ -134,6 +225,9 @@ class BingxFuturesExecutionQueueService {
     required BingxFuturesIntentPayload intent,
     required bool testOrder,
   }) {
+    // Auto-sweep stale pending orders before handling any new execution.
+    collectExpiredPendingOrderActions();
+
     final key = buildIdempotencyKey(
       intent: intent,
       testOrder: testOrder,
@@ -202,13 +296,17 @@ class BingxFuturesExecutionQueueService {
                 exchangeMessage: execution.exchangeMessage,
               ),
         );
+        final withPending = _trackPendingIfNeeded(
+          result: result,
+          intent: intent,
+        );
         if (execution.isSuccess) {
           _rememberSuccessfulResult(
             idempotencyKey: idempotencyKey,
-            result: result,
+            result: withPending,
           );
         }
-        return result;
+        return withPending;
       } on FormatException {
         rethrow;
       } catch (error) {
@@ -234,6 +332,81 @@ class BingxFuturesExecutionQueueService {
         message.contains('connection') ||
         message.contains('network') ||
         message.contains('unavailable');
+  }
+
+  List<BingxPendingOrderAction> collectExpiredPendingOrderActions({
+    DateTime? nowUtc,
+  }) {
+    if (_pendingByKey.isEmpty) return const <BingxPendingOrderAction>[];
+    final now = (nowUtc ?? _clockUtc()).toUtc();
+    final actions = <BingxPendingOrderAction>[];
+    final expiredKeys = <String>[];
+    for (final entry in _pendingByKey.entries) {
+      final pending = entry.value;
+      if (now.isBefore(pending.expiresAtUtc)) {
+        continue;
+      }
+      expiredKeys.add(entry.key);
+      actions.add(
+        BingxPendingOrderAction(
+          actionType: BingxPendingOrderActionType.cancelReplace,
+          idempotencyKey: pending.idempotencyKey,
+          orderId: pending.orderId,
+          reasonCode: 'pending_order_ttl_expired',
+          reasonMessage:
+              'Pending order TTL expired, queue requests deterministic cancel/replace.',
+        ),
+      );
+    }
+    for (final key in expiredKeys) {
+      _pendingByKey.remove(key);
+      _successfulByKey.remove(key);
+    }
+    return actions;
+  }
+
+  void markPendingOrderCompleted(String idempotencyKey) {
+    _pendingByKey.remove(idempotencyKey);
+    _successfulByKey.remove(idempotencyKey);
+  }
+
+  BingxQueuedExecutionResult _trackPendingIfNeeded({
+    required BingxQueuedExecutionResult result,
+    required BingxFuturesIntentPayload intent,
+  }) {
+    final execution = result.execution;
+    final orderId = execution.orderId?.trim();
+    if (!execution.isSuccess || orderId == null || orderId.isEmpty) {
+      return result;
+    }
+    final trackPending = intent.orderType.toLowerCase() == 'limit' ||
+        intent.entryMode == 'zone_pending';
+    if (!trackPending) {
+      return result;
+    }
+
+    final createdAtUtc = _clockUtc().toUtc();
+    final record = BingxPendingOrderRecord(
+      idempotencyKey: result.idempotencyKey,
+      orderId: orderId,
+      symbol: intent.symbol,
+      entryMode: intent.entryMode,
+      createdAtUtc: createdAtUtc,
+      expiresAtUtc: createdAtUtc.add(pendingOrderTtl),
+    );
+    _pendingByKey.remove(result.idempotencyKey);
+    _pendingByKey[result.idempotencyKey] = record;
+    while (_pendingByKey.length > maxPendingOrderEntries) {
+      _pendingByKey.remove(_pendingByKey.keys.first);
+    }
+    return BingxQueuedExecutionResult(
+      execution: execution,
+      idempotencyKey: result.idempotencyKey,
+      attempts: result.attempts,
+      fromIdempotentCache: result.fromIdempotentCache,
+      exhaustedRetries: result.exhaustedRetries,
+      pendingTracked: true,
+    );
   }
 
   void _rememberSuccessfulResult({

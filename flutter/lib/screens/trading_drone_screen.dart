@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import '../services/app_runtime_service.dart';
 import '../services/bingx_futures_credential_store.dart';
 import '../services/bingx_futures_exchange_service.dart';
+import '../services/bingx_futures_observability_envelope_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
+import '../services/bingx_futures_risk_governor_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
 import '../services/manual_consensus_check_service.dart';
 import '../services/plugin_host_api_service.dart';
@@ -45,6 +47,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       AppRuntimeService().buildBingxFuturesCredentialStore();
   final BingxFuturesExchangeService _bingxExchangeService =
       AppRuntimeService().buildBingxFuturesExchangeService();
+  final BingxFuturesRiskGovernorService _riskGovernor =
+      const BingxFuturesRiskGovernorService();
+  final BingxFuturesObservabilityEnvelopeService _observability =
+      const BingxFuturesObservabilityEnvelopeService();
   final CapsuleChatDeliveryService _chatDelivery =
       AppRuntimeService().buildCapsuleChatDeliveryService();
   final UiEventLogService _uiLog = const UiEventLogService();
@@ -53,6 +59,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   final TextEditingController _peerController = TextEditingController();
   final TextEditingController _symbolController =
       TextEditingController(text: 'BTC-USDT');
+  final TextEditingController _maxNotionalUsdtController =
+      TextEditingController(text: '100');
   final TextEditingController _quantityController =
       TextEditingController(text: '0.01');
   final TextEditingController _limitPriceController = TextEditingController();
@@ -78,6 +86,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _refreshingSignals = false;
   bool _useTestOrderEndpoint = true;
   bool _obscureApiSecret = true;
+  bool _droneEnabled = true;
+  bool _advancedControlsEnabled = false;
 
   String _side = 'buy';
   String _orderType = 'limit';
@@ -99,6 +109,15 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   List<CapsuleTradeSignalInboxMessage> _signalInbox =
       const <CapsuleTradeSignalInboxMessage>[];
 
+  static const BingxFuturesRiskPolicy _executionRiskPolicy =
+      BingxFuturesRiskPolicy(
+    maxRiskPerTradePercent: 2.0,
+    maxDailyLossPercent: 5.0,
+    maxConcurrentPositions: 3,
+    cooldownAfterLossStreak: 2,
+    cooldownMinutes: 60,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -113,6 +132,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   void dispose() {
     _peerController.dispose();
     _symbolController.dispose();
+    _maxNotionalUsdtController.dispose();
     _quantityController.dispose();
     _limitPriceController.dispose();
     _zoneLowController.dispose();
@@ -327,6 +347,48 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   num? _toNum(String raw) => num.tryParse(raw.trim());
 
+  Future<bool> _applyRiskBudgetQuantity({required String symbol}) async {
+    final maxNotional = _toNum(_maxNotionalUsdtController.text);
+    if (maxNotional == null || maxNotional <= 0) {
+      await _showSnack('Max notional must be a positive number');
+      return false;
+    }
+
+    final quote = await _bingxExchangeService.getPublicPrice(symbol: symbol);
+    if (!quote.isSuccess || quote.priceDecimal == null) {
+      await _showSnack(
+        'Cannot compute quantity: quote unavailable (${quote.exchangeCode})',
+        seconds: 3,
+      );
+      return false;
+    }
+    final mid = _toNum(quote.priceDecimal!);
+    if (mid == null || mid <= 0) {
+      await _showSnack('Cannot compute quantity: invalid quote price',
+          seconds: 3);
+      return false;
+    }
+
+    final quantity = maxNotional / mid;
+    if (quantity <= 0) {
+      await _showSnack('Cannot compute quantity: max notional too small');
+      return false;
+    }
+    final quantityDecimal = _formatDecimal(quantity, scale: 6);
+    if (mounted) {
+      setState(() {
+        _quantityController.text = quantityDecimal;
+      });
+    } else {
+      _quantityController.text = quantityDecimal;
+    }
+    await _uiLog.log(
+      'bingx.risk.quantity',
+      'symbol=${quote.symbol} max_notional_usdt=$maxNotional mid=${quote.priceDecimal} quantity=$quantityDecimal',
+    );
+    return true;
+  }
+
   num _fallbackZoneWidth(num mid) =>
       mid * ((_zoneFarBps - _zoneNearBps) / 10000.0);
 
@@ -497,9 +559,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   Future<void> _runIntent() async {
     if (_runningIntent) return;
+    if (!_droneEnabled) {
+      await _showSnack('Drone is paused. Resume before running strategy.');
+      return;
+    }
     final peerHex = _peerController.text.trim().toLowerCase();
     final symbol = _symbolController.text.trim();
-    final quantityDecimal = _quantityController.text.trim();
     final strategyTag = _strategyTagController.text.trim();
     final triggerPriceDecimal = _triggerPriceController.text.trim();
     final stopLossDecimal = _stopLossController.text.trim();
@@ -510,6 +575,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack('Symbol is required');
       return;
     }
+    final riskReady = await _applyRiskBudgetQuantity(symbol: symbol);
+    if (!riskReady) {
+      return;
+    }
+    final quantityDecimal = _quantityController.text.trim();
 
     final forceAutoZonePending = _orderType == 'limit';
     if (forceAutoZonePending &&
@@ -618,11 +688,30 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _lastIntentResponse = response;
       });
       finalStatus = response.status;
+      final decisionEnvelope = _observability.buildDecisionEnvelope(
+        screen: 'trading_drone',
+        pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
+        method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
+        status: response.status.name,
+        symbol: symbol,
+        side: _side,
+        orderType: _orderType,
+        entryMode: _entryMode,
+        executionSource: response.executionSource,
+        intentHashHex: response.result?['intent_hash_hex']?.toString(),
+        errorCode: response.errorCode,
+        blockingFactCodes: response.blockingFacts.map((f) => f.key).toList(),
+      );
       await _uiLog.log(
         'bingx.intent.response',
         'status=${response.status.name} '
             'elapsedMs=${stopwatch.elapsedMilliseconds} '
             'source=${response.executionSource}',
+      );
+      await _uiLog.log(
+        'drone.decision.envelope',
+        'hash=${decisionEnvelope.envelopeHashHex.substring(0, 12)} '
+            'kind=decision screen=trading_drone',
       );
 
       switch (response.status) {
@@ -877,6 +966,34 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return;
     }
 
+    final riskDecision = await _evaluateExecutionRisk(
+      payload: payload,
+      rawIntentResult: result,
+    );
+    if (riskDecision == null) {
+      return;
+    }
+    if (riskDecision.status == BingxFuturesRiskDecisionStatus.blocked) {
+      final shortHash = riskDecision.decisionHashHex.substring(0, 12);
+      await _uiLog.log(
+        'bingx.exchange.risk_blocked',
+        'code=${riskDecision.reasonCode} hash=$shortHash '
+            'risk=${riskDecision.tradeRiskQuoteDecimal} '
+            'limit=${riskDecision.dailyLossLimitQuoteDecimal}',
+      );
+      await _showSnack(
+        'Risk blocked: ${riskDecision.reasonCode} ($shortHash)',
+        seconds: 3,
+      );
+      return;
+    }
+    await _uiLog.log(
+      'bingx.exchange.risk_allowed',
+      'hash=${riskDecision.decisionHashHex.substring(0, 12)} '
+          'max_qty=${riskDecision.maxAllowedQuantityDecimal} '
+          'risk=${riskDecision.tradeRiskQuoteDecimal}',
+    );
+
     setState(() {
       _executing = true;
     });
@@ -885,6 +1002,23 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         credentials: credentials,
         intent: payload,
         testOrder: _useTestOrderEndpoint,
+      );
+      final executionEnvelope = _observability.buildExecutionEnvelope(
+        screen: 'trading_drone',
+        symbol: payload.symbol,
+        side: payload.side,
+        orderType: payload.orderType,
+        idempotencyKey: queued.idempotencyKey,
+        attempts: queued.attempts,
+        fromIdempotentCache: queued.fromIdempotentCache,
+        isSuccess: queued.execution.isSuccess,
+        httpStatusCode: queued.execution.httpStatusCode,
+        exchangeCode: queued.execution.exchangeCode,
+        endpointPath: queued.execution.endpointPath,
+        orderId: queued.execution.orderId,
+        intentHashHex: payload.intentHashHex,
+        riskDecisionCode: riskDecision.reasonCode,
+        riskDecisionHashHex: riskDecision.decisionHashHex,
       );
       final safeMessage = queued.execution.exchangeMessage
           .replaceAll('\n', ' ')
@@ -896,6 +1030,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'cache=${queued.fromIdempotentCache ? "hit" : "miss"} '
             'success=${queued.execution.isSuccess} http=${queued.execution.httpStatusCode} '
             'code=${queued.execution.exchangeCode} endpoint=${queued.execution.endpointPath} msg=$safeMessage',
+      );
+      await _uiLog.log(
+        'drone.execution.envelope',
+        'hash=${executionEnvelope.envelopeHashHex.substring(0, 12)} '
+            'kind=execution screen=trading_drone',
       );
       if (!mounted) return;
       setState(() {
@@ -925,6 +1064,67 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         });
       }
     }
+  }
+
+  Future<BingxFuturesRiskDecision?> _evaluateExecutionRisk({
+    required BingxFuturesIntentPayload payload,
+    required Map<String, dynamic> rawIntentResult,
+  }) async {
+    String? entryPriceDecimal = payload.limitPriceDecimal;
+    entryPriceDecimal ??= payload.triggerPriceDecimal;
+    if (entryPriceDecimal == null || entryPriceDecimal.trim().isEmpty) {
+      final quote = await _bingxExchangeService.getPublicPrice(
+        symbol: payload.symbol,
+      );
+      if (quote.isSuccess &&
+          quote.priceDecimal != null &&
+          quote.priceDecimal!.trim().isNotEmpty) {
+        entryPriceDecimal = quote.priceDecimal!.trim();
+      }
+    }
+    if (entryPriceDecimal == null || entryPriceDecimal.trim().isEmpty) {
+      await _uiLog.log(
+        'bingx.exchange.risk_error',
+        'entry_price_unavailable symbol=${payload.symbol}',
+      );
+      await _showSnack('Risk check failed: entry price unavailable');
+      return null;
+    }
+
+    var stopLossDecimal =
+        rawIntentResult['stop_loss_decimal']?.toString().trim() ?? '';
+    if (stopLossDecimal.isEmpty) {
+      if (payload.side == 'buy') {
+        stopLossDecimal =
+            rawIntentResult['zone_low_decimal']?.toString().trim() ?? '';
+      } else {
+        stopLossDecimal =
+            rawIntentResult['zone_high_decimal']?.toString().trim() ?? '';
+      }
+    }
+    if (stopLossDecimal.isEmpty) {
+      stopLossDecimal = entryPriceDecimal;
+    }
+
+    final equityProxy =
+        double.tryParse(_maxNotionalUsdtController.text.trim()) ?? 100.0;
+    final decision = _riskGovernor.evaluate(
+      input: BingxFuturesRiskGovernorInput(
+        symbol: payload.symbol,
+        quantityDecimal: payload.quantityDecimal,
+        entryPriceDecimal: entryPriceDecimal,
+        stopLossDecimal: stopLossDecimal,
+        accountEquityQuoteDecimal:
+            equityProxy <= 0 ? '100' : equityProxy.toStringAsFixed(8),
+        realizedDailyPnlQuoteDecimal: '0',
+        concurrentPositions: 0,
+        lossStreakCount: 0,
+        lastLossAtUtc: null,
+        nowUtc: DateTime.now().toUtc().toIso8601String(),
+      ),
+      policy: _executionRiskPolicy,
+    );
+    return decision;
   }
 
   Future<void> _switchLeverage() async {
@@ -1244,108 +1444,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 runSpacing: 10,
                 children: [
                   SizedBox(
-                    width: 170,
-                    child: DropdownButtonFormField<String>(
-                      key: ValueKey<String>('drone-entry-mode-$_entryMode'),
-                      initialValue: _entryMode,
-                      decoration: InputDecoration(
-                        labelText: 'Entry Mode',
-                        filled: true,
-                        fillColor: const Color(0xFF0F141C),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      items: const <DropdownMenuItem<String>>[
-                        DropdownMenuItem(
-                            value: 'direct', child: Text('Direct')),
-                        DropdownMenuItem(
-                          value: 'zone_pending',
-                          child: Text('Zone Pending'),
-                        ),
-                      ],
-                      onChanged: _runningIntent
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setState(() {
-                                _entryMode = value;
-                                if (_entryMode == 'zone_pending') {
-                                  _orderType = 'limit';
-                                  _zoneSide =
-                                      _side == 'buy' ? 'buyside' : 'sellside';
-                                }
-                              });
-                            },
-                    ),
-                  ),
-                  SizedBox(
-                    width: 150,
-                    child: DropdownButtonFormField<String>(
-                      key: ValueKey<String>('drone-side-$_side'),
-                      initialValue: _side,
-                      decoration: InputDecoration(
-                        labelText: 'Side',
-                        filled: true,
-                        fillColor: const Color(0xFF0F141C),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      items: const <DropdownMenuItem<String>>[
-                        DropdownMenuItem(value: 'buy', child: Text('Buy')),
-                        DropdownMenuItem(value: 'sell', child: Text('Sell')),
-                      ],
-                      onChanged: _runningIntent
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setState(() {
-                                _side = value;
-                                if (_entryMode == 'zone_pending') {
-                                  _zoneSide =
-                                      _side == 'buy' ? 'buyside' : 'sellside';
-                                }
-                              });
-                            },
-                    ),
-                  ),
-                  SizedBox(
-                    width: 160,
-                    child: DropdownButtonFormField<String>(
-                      key: ValueKey<String>('drone-order-$_orderType'),
-                      initialValue: _orderType,
-                      decoration: InputDecoration(
-                        labelText: 'Order Type',
-                        filled: true,
-                        fillColor: const Color(0xFF0F141C),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      items: const <DropdownMenuItem<String>>[
-                        DropdownMenuItem(value: 'limit', child: Text('Limit')),
-                        DropdownMenuItem(
-                            value: 'market', child: Text('Market')),
-                      ],
-                      onChanged: _runningIntent || isZonePending
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setState(() {
-                                _orderType = value;
-                              });
-                            },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  SizedBox(
                     width: 180,
                     child: TextField(
                       controller: _symbolController,
@@ -1363,13 +1461,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   SizedBox(
                     width: 180,
                     child: TextField(
-                      controller: _quantityController,
+                      controller: _maxNotionalUsdtController,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
                       decoration: InputDecoration(
-                        labelText: 'Quantity',
-                        hintText: '0.01',
+                        labelText: 'Max Notional (USDT)',
+                        hintText: '100',
                         filled: true,
                         fillColor: const Color(0xFF0F141C),
                         border: OutlineInputBorder(
@@ -1378,26 +1476,138 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       ),
                     ),
                   ),
-                  if (_orderType == 'limit' && !isZonePending)
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Estimated order quantity: ${_quantityController.text}',
+                style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
+              ),
+              SwitchListTile.adaptive(
+                value: _droneEnabled,
+                onChanged: _runningIntent
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _droneEnabled = value;
+                        });
+                      },
+                title: const Text('Drone enabled'),
+                subtitle: Text(
+                  _droneEnabled
+                      ? 'Strategy can prepare and execute orders.'
+                      : 'Paused. New strategy runs are blocked.',
+                  style: const TextStyle(color: Color(0xFF97A3B5)),
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+              SwitchListTile.adaptive(
+                value: _advancedControlsEnabled,
+                onChanged: (value) {
+                  setState(() {
+                    _advancedControlsEnabled = value;
+                  });
+                },
+                title: const Text('Advanced controls (dev only)'),
+                subtitle: const Text(
+                  'Manual parameters for debugging. Keep OFF for normal use.',
+                  style: TextStyle(color: Color(0xFF97A3B5)),
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+              if (_advancedControlsEnabled) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
                     SizedBox(
-                      width: 180,
-                      child: TextField(
-                        controller: _limitPriceController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
+                      width: 170,
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey<String>('drone-entry-mode-$_entryMode'),
+                        initialValue: _entryMode,
                         decoration: InputDecoration(
-                          labelText: 'Limit Price',
-                          hintText: 'Auto from zone if empty',
+                          labelText: 'Entry Mode',
                           filled: true,
                           fillColor: const Color(0xFF0F141C),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
+                        items: const <DropdownMenuItem<String>>[
+                          DropdownMenuItem(
+                              value: 'direct', child: Text('Direct')),
+                          DropdownMenuItem(
+                            value: 'zone_pending',
+                            child: Text('Zone Pending'),
+                          ),
+                        ],
+                        onChanged: _runningIntent
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() {
+                                  _entryMode = value;
+                                });
+                              },
                       ),
                     ),
-                  if (_orderType == 'limit')
+                    SizedBox(
+                      width: 150,
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey<String>('drone-side-$_side'),
+                        initialValue: _side,
+                        decoration: InputDecoration(
+                          labelText: 'Side',
+                          filled: true,
+                          fillColor: const Color(0xFF0F141C),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        items: const <DropdownMenuItem<String>>[
+                          DropdownMenuItem(value: 'buy', child: Text('Buy')),
+                          DropdownMenuItem(value: 'sell', child: Text('Sell')),
+                        ],
+                        onChanged: _runningIntent
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() {
+                                  _side = value;
+                                });
+                              },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 160,
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey<String>('drone-order-$_orderType'),
+                        initialValue: _orderType,
+                        decoration: InputDecoration(
+                          labelText: 'Order Type',
+                          filled: true,
+                          fillColor: const Color(0xFF0F141C),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        items: const <DropdownMenuItem<String>>[
+                          DropdownMenuItem(
+                              value: 'limit', child: Text('Limit')),
+                          DropdownMenuItem(
+                              value: 'market', child: Text('Market')),
+                        ],
+                        onChanged: _runningIntent || isZonePending
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() {
+                                  _orderType = value;
+                                });
+                              },
+                      ),
+                    ),
                     SizedBox(
                       width: 150,
                       child: DropdownButtonFormField<String>(
@@ -1426,115 +1636,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                               },
                       ),
                     ),
-                ],
-              ),
-              if (isZonePending) ...[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: 160,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey<String>('drone-zone-side-$_zoneSide'),
-                        initialValue: _zoneSide,
-                        decoration: InputDecoration(
-                          labelText: 'Zone Side',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem(
-                            value: 'buyside',
-                            child: Text('Buyside'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'sellside',
-                            child: Text('Sellside'),
-                          ),
-                        ],
-                        onChanged: _runningIntent
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _zoneSide = value;
-                                });
-                              },
-                      ),
-                    ),
                     SizedBox(
                       width: 180,
-                      child: DropdownButtonFormField<String>(
-                        key:
-                            ValueKey<String>('drone-zone-rule-$_zonePriceRule'),
-                        initialValue: _zonePriceRule,
-                        decoration: InputDecoration(
-                          labelText: 'Zone Price Rule',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem(
-                            value: 'zone_low',
-                            child: Text('Zone Low'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'zone_mid',
-                            child: Text('Zone Mid'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'zone_high',
-                            child: Text('Zone High'),
-                          ),
-                        ],
-                        onChanged: _runningIntent
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _zonePriceRule = value;
-                                });
-                              },
-                      ),
-                    ),
-                    SizedBox(
-                      width: 150,
                       child: TextField(
-                        controller: _zoneLowController,
-                        readOnly: true,
+                        controller: _quantityController,
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         decoration: InputDecoration(
-                          labelText: 'Zone Low',
-                          hintText: 'Auto by strategy',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 150,
-                      child: TextField(
-                        controller: _zoneHighController,
-                        readOnly: true,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Zone High',
-                          hintText: 'Auto by strategy',
+                          labelText: 'Manual Quantity',
+                          hintText: 'overridden by risk budget',
                           filled: true,
                           fillColor: const Color(0xFF0F141C),
                           border: OutlineInputBorder(
@@ -1545,83 +1656,188 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Zone is computed from live BingX quote on each Run Strategy.',
-                  style: TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: 160,
-                      child: TextField(
-                        controller: _triggerPriceController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
+                if (isZonePending) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(
+                        width: 160,
+                        child: DropdownButtonFormField<String>(
+                          key: ValueKey<String>('drone-zone-side-$_zoneSide'),
+                          initialValue: _zoneSide,
+                          decoration: InputDecoration(
+                            labelText: 'Zone Side',
+                            filled: true,
+                            fillColor: const Color(0xFF0F141C),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          items: const <DropdownMenuItem<String>>[
+                            DropdownMenuItem(
+                              value: 'buyside',
+                              child: Text('Buyside'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'sellside',
+                              child: Text('Sellside'),
+                            ),
+                          ],
+                          onChanged: _runningIntent
+                              ? null
+                              : (value) {
+                                  if (value == null) return;
+                                  setState(() {
+                                    _zoneSide = value;
+                                  });
+                                },
                         ),
-                        decoration: InputDecoration(
-                          labelText: 'Trigger (opt)',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                      ),
+                      SizedBox(
+                        width: 180,
+                        child: DropdownButtonFormField<String>(
+                          key: ValueKey<String>(
+                              'drone-zone-rule-$_zonePriceRule'),
+                          initialValue: _zonePriceRule,
+                          decoration: InputDecoration(
+                            labelText: 'Zone Price Rule',
+                            filled: true,
+                            fillColor: const Color(0xFF0F141C),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          items: const <DropdownMenuItem<String>>[
+                            DropdownMenuItem(
+                              value: 'zone_low',
+                              child: Text('Zone Low'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'zone_mid',
+                              child: Text('Zone Mid'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'zone_high',
+                              child: Text('Zone High'),
+                            ),
+                          ],
+                          onChanged: _runningIntent
+                              ? null
+                              : (value) {
+                                  if (value == null) return;
+                                  setState(() {
+                                    _zonePriceRule = value;
+                                  });
+                                },
+                        ),
+                      ),
+                      SizedBox(
+                        width: 150,
+                        child: TextField(
+                          controller: _zoneLowController,
+                          readOnly: true,
+                          decoration: InputDecoration(
+                            labelText: 'Zone Low',
+                            filled: true,
+                            fillColor: const Color(0xFF0F141C),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    SizedBox(
-                      width: 160,
-                      child: TextField(
-                        controller: _stopLossController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Stop Loss (opt)',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                      SizedBox(
+                        width: 150,
+                        child: TextField(
+                          controller: _zoneHighController,
+                          readOnly: true,
+                          decoration: InputDecoration(
+                            labelText: 'Zone High',
+                            filled: true,
+                            fillColor: const Color(0xFF0F141C),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    SizedBox(
-                      width: 170,
-                      child: TextField(
-                        controller: _takeProfitController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Take Profit (opt)',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(
+                        width: 160,
+                        child: TextField(
+                          controller: _triggerPriceController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Trigger (opt)',
+                            filled: true,
+                            fillColor: const Color(0xFF0F141C),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
+                      SizedBox(
+                        width: 160,
+                        child: TextField(
+                          controller: _stopLossController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Stop Loss (opt)',
+                            filled: true,
+                            fillColor: const Color(0xFF0F141C),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 170,
+                        child: TextField(
+                          controller: _takeProfitController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Take Profit (opt)',
+                            filled: true,
+                            fillColor: const Color(0xFF0F141C),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _strategyTagController,
+                  maxLength: 64,
+                  decoration: InputDecoration(
+                    labelText: 'Strategy Tag (opt)',
+                    filled: true,
+                    fillColor: const Color(0xFF0F141C),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 10),
-              TextField(
-                controller: _strategyTagController,
-                maxLength: 64,
-                decoration: InputDecoration(
-                  labelText: 'Strategy Tag (opt)',
-                  filled: true,
-                  fillColor: const Color(0xFF0F141C),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-              ),
+              ],
               const SizedBox(height: 10),
               Wrap(
                 spacing: 10,
@@ -1642,6 +1858,21 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                           )
                         : const Icon(Icons.bolt_rounded),
                     label: Text(_runningIntent ? 'Preparing' : 'Run Intent'),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: _runningIntent
+                        ? null
+                        : () {
+                            setState(() {
+                              _droneEnabled = !_droneEnabled;
+                            });
+                          },
+                    icon: Icon(
+                      _droneEnabled
+                          ? Icons.pause_circle_outline_rounded
+                          : Icons.play_circle_outline_rounded,
+                    ),
+                    label: Text(_droneEnabled ? 'Emergency Pause' : 'Resume'),
                   ),
                   FilledButton.tonalIcon(
                     onPressed:
@@ -1758,19 +1989,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     label: Text(
                         _savingCredentials ? 'Saving' : 'Save Credentials'),
                   ),
-                  OutlinedButton.icon(
-                    onPressed: _readingCurrentSettings ? null : _fetchCurrent,
-                    icon: _readingCurrentSettings
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.download_rounded),
-                    label: Text(
-                      _readingCurrentSettings ? 'Fetching' : 'Fetch Current',
+                  if (_advancedControlsEnabled)
+                    OutlinedButton.icon(
+                      onPressed: _readingCurrentSettings ? null : _fetchCurrent,
+                      icon: _readingCurrentSettings
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.download_rounded),
+                      label: Text(
+                        _readingCurrentSettings ? 'Fetching' : 'Fetch Current',
+                      ),
                     ),
-                  ),
                   FilledButton.icon(
                     onPressed: _executing ? null : _executeLastIntent,
                     icon: _executing
@@ -1790,121 +2022,125 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  SizedBox(
-                    width: 160,
-                    child: TextField(
-                      controller: _leverageController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: 'Leverage',
-                        filled: true,
-                        fillColor: const Color(0xFF0F141C),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+              if (_advancedControlsEnabled) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    SizedBox(
+                      width: 160,
+                      child: TextField(
+                        controller: _leverageController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: false,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Leverage',
+                          filled: true,
+                          fillColor: const Color(0xFF0F141C),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  SizedBox(
-                    width: 150,
-                    child: DropdownButtonFormField<String>(
-                      key: ValueKey<String>('drone-lev-side-$_leverageSide'),
-                      initialValue: _leverageSide,
-                      decoration: InputDecoration(
-                        labelText: 'Lev Side',
-                        filled: true,
-                        fillColor: const Color(0xFF0F141C),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    SizedBox(
+                      width: 150,
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey<String>('drone-lev-side-$_leverageSide'),
+                        initialValue: _leverageSide,
+                        decoration: InputDecoration(
+                          labelText: 'Lev Side',
+                          filled: true,
+                          fillColor: const Color(0xFF0F141C),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
+                        items: const <DropdownMenuItem<String>>[
+                          DropdownMenuItem(value: 'LONG', child: Text('LONG')),
+                          DropdownMenuItem(
+                              value: 'SHORT', child: Text('SHORT')),
+                        ],
+                        onChanged: _switchingLeverage
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() {
+                                  _leverageSide = value;
+                                });
+                              },
                       ),
-                      items: const <DropdownMenuItem<String>>[
-                        DropdownMenuItem(value: 'LONG', child: Text('LONG')),
-                        DropdownMenuItem(value: 'SHORT', child: Text('SHORT')),
-                      ],
-                      onChanged: _switchingLeverage
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setState(() {
-                                _leverageSide = value;
-                              });
-                            },
                     ),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: _switchingLeverage ? null : _switchLeverage,
-                    icon: _switchingLeverage
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.tune_rounded),
-                    label: Text(
-                      _switchingLeverage ? 'Switching' : 'Switch Leverage',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  SizedBox(
-                    width: 180,
-                    child: DropdownButtonFormField<String>(
-                      key: ValueKey<String>('drone-margin-$_marginType'),
-                      initialValue: _marginType,
-                      decoration: InputDecoration(
-                        labelText: 'Margin Type',
-                        filled: true,
-                        fillColor: const Color(0xFF0F141C),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                    FilledButton.tonalIcon(
+                      onPressed: _switchingLeverage ? null : _switchLeverage,
+                      icon: _switchingLeverage
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.tune_rounded),
+                      label: Text(
+                        _switchingLeverage ? 'Switching' : 'Switch Leverage',
                       ),
-                      items: const <DropdownMenuItem<String>>[
-                        DropdownMenuItem(
-                            value: 'CROSSED', child: Text('CROSSED')),
-                        DropdownMenuItem(
-                          value: 'ISOLATED',
-                          child: Text('ISOLATED'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    SizedBox(
+                      width: 180,
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey<String>('drone-margin-$_marginType'),
+                        initialValue: _marginType,
+                        decoration: InputDecoration(
+                          labelText: 'Margin Type',
+                          filled: true,
+                          fillColor: const Color(0xFF0F141C),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                      ],
-                      onChanged: _switchingMarginType
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setState(() {
-                                _marginType = value;
-                              });
-                            },
+                        items: const <DropdownMenuItem<String>>[
+                          DropdownMenuItem(
+                              value: 'CROSSED', child: Text('CROSSED')),
+                          DropdownMenuItem(
+                            value: 'ISOLATED',
+                            child: Text('ISOLATED'),
+                          ),
+                        ],
+                        onChanged: _switchingMarginType
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() {
+                                  _marginType = value;
+                                });
+                              },
+                      ),
                     ),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: _switchingMarginType ? null : _switchMarginType,
-                    icon: _switchingMarginType
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.swap_horiz_rounded),
-                    label: Text(
-                      _switchingMarginType ? 'Switching' : 'Switch Margin',
+                    FilledButton.tonalIcon(
+                      onPressed:
+                          _switchingMarginType ? null : _switchMarginType,
+                      icon: _switchingMarginType
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.swap_horiz_rounded),
+                      label: Text(
+                        _switchingMarginType ? 'Switching' : 'Switch Margin',
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,

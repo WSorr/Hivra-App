@@ -1062,7 +1062,9 @@ void main() {
       expect(first.canonicalJson, second.canonicalJson);
     });
 
-    test('executes bingx futures request via dedicated futures runner', () {
+    test(
+        'executes bingx futures request via dedicated futures runner with runtime hook',
+        () async {
       final service = PluginHostApiService(
         runTemperatureDemo: ({required contract, required observation}) =>
             const PluginDemoRunResult(
@@ -1129,9 +1131,35 @@ void main() {
           envelope: null,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
+        resolveRuntimeBinding: (_) async =>
+            const PluginRuntimeBinding.externalPackage(
+          packageId: 'pkg-futures-1',
+          packageVersion: '1.0.0',
+          packageKind: 'zip',
+          packageDigestHex:
+              'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+          runtimeAbi: 'hivra_host_abi_v1',
+          runtimeEntryExport: 'hivra_entry_v1',
+          runtimeModulePath: 'plugin/module.wasm',
+          contractKind: BingxTradingContractService.futuresContractKind,
+          capabilities: <String>[
+            'consensus_guard.read',
+            'exchange.trade.bingx.futures',
+          ],
+        ),
+        resolveRuntimeInvoke: (_, __) async =>
+            const PluginRuntimeInvokeEvidence(
+          mode: 'wasm_stub_v1',
+          modulePath: 'plugin/module.wasm',
+          moduleSelection: 'manifest_module_path',
+          moduleDigestHex:
+              'abababababababababababababababababababababababababababababababab',
+          invokeDigestHex:
+              'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+        ),
       );
 
-      final response = service.execute(
+      final response = await service.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: 1,
           pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
@@ -1147,6 +1175,48 @@ void main() {
         response.result?['plugin_id'],
         BingxTradingContractService.futuresPluginId,
       );
+      expect(response.executionSource, 'external_package');
+    });
+
+    test('rejects bingx futures request when called through host fallback path',
+        () {
+      final service = PluginHostApiService(
+        runTemperatureDemo: ({required contract, required observation}) =>
+            const PluginDemoRunResult(
+          state: PluginDemoRunState.noPairwisePaths,
+          pairResults: <PluginDemoPairRunResult>[],
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        runBingxSpotOrder: _noopBingx,
+        runBingxFuturesOrder: _noopBingx,
+        runCapsuleChat: ({
+          required peerHex,
+          required clientMessageId,
+          required messageText,
+          required createdAtUtc,
+        }) =>
+            const CapsuleChatExecutionResult(
+          envelope: null,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      );
+
+      final response = service.execute(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
+          method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
+          args: _validBingxArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.rejected);
+      expect(response.errorCode, 'runtime_invoke_unavailable');
+      expect(
+        response.errorMessage,
+        'Runtime package is required for futures plugin execution',
+      );
+      expect(response.executionSource, 'host_fallback');
     });
 
     test('returns rejected response for bingx invalid args', () {

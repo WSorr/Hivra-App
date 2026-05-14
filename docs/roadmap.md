@@ -830,6 +830,13 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
 - `11.1 Trading Drone Runtime Execution (remove host_fallback for execution path)`
   - Goal:
     - execute trading-drone contract path through mounted plugin runtime boundary (not host fallback) while preserving modularity, determinism, and downward dependencies.
+  - Current progress:
+    - `PluginHostApiService` now enforces runtime-only execution for `place_bingx_futures_order_intent`:
+      - host-fallback path is rejected with deterministic `runtime_invoke_unavailable`
+      - runtime package + invoke evidence are required for futures intent execution
+    - Added/updated regression coverage in `flutter/test/plugin_host_api_service_test.dart`:
+      - executed futures path via `executeWithRuntimeHook(...)` + external runtime evidence
+      - explicit fallback-disabled reject path via `execute(...)`
   - Scope:
     - route `place_bingx_futures_order_intent` execution through runtime invoke path whenever runtime contract is valid (`abi/entry/capabilities` pass).
     - keep deterministic reject paths (`runtime_binding_invalid`, `runtime_contract_kind_mismatch`, capability mismatch) unchanged and hash-stable.
@@ -843,4 +850,125 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - trading-drone execution no longer reports `execution_source=host_fallback` in normal valid-runtime path.
     - plugin runtime and fallback error branches are deterministic and test-covered.
     - release smoke can verify runtime execution end-to-end on macOS and Android.
-  - Status: active.
+  - Status: completed (2026-05-14).
+
+- `11.2 Trading Drone Mode Orchestrator (situational + interactive parity)`
+  - Goal:
+    - introduce explicit dual-mode lifecycle (`situational` and `interactive`) without forking decision logic.
+  - Current progress:
+    - Added `BingxFuturesModeOrchestratorService` as dedicated mode lifecycle boundary (`situational` / `interactive`) using one shared deterministic pipeline callback.
+    - Added regression coverage in `flutter/test/bingx_futures_mode_orchestrator_service_test.dart` for:
+      - situational execution path
+      - interactive sequential cycle path
+      - mode parity for identical cycle input.
+  - Scope:
+    - add a dedicated orchestrator service that schedules evaluation cycles for `interactive` mode and single-run execution for `situational`.
+    - enforce one shared deterministic pipeline for both modes:
+      - `snapshot_normalize -> feature_extract -> rule_engine -> intent_builder`.
+    - prevent UI from owning any mode-specific decision logic (UI is projection-only).
+  - Definition of done:
+    - both modes produce identical decision payload/hash for identical snapshot+policy input.
+    - mode-specific behavior differs only in orchestration/timing.
+    - mode parity is covered by deterministic regression tests.
+  - Status: completed (2026-05-14).
+
+- `11.3 Deterministic Replay Harness for Drone Decisions`
+  - Goal:
+    - guarantee reproducible decisions and hashes across replays and platforms.
+  - Current progress:
+    - Added `BingxFuturesTvhRuleEngineService` with deterministic `LONG|SHORT|NO_SIGNAL|BLOCKED` evaluation and hashable canonical decision envelope.
+    - Added `BingxFuturesDeterministicReplayHarnessService` to execute:
+      - `snapshot_normalize -> feature_extract -> rule_engine`
+      - fixture-by-fixture deterministic replay assertions.
+    - Added regression suites:
+      - `flutter/test/bingx_futures_tvh_rule_engine_service_test.dart`
+      - `flutter/test/bingx_futures_deterministic_replay_harness_service_test.dart`
+      covering `long`, `short`, `no_signal`, `blocked` branches plus repeat/permutation hash stability checks.
+  - Scope:
+    - add canonical fixture pack (`snapshot fixtures + expected decision + expected hash`).
+    - add replay runner tests to execute the same fixtures multiple times and across ordering permutations.
+    - fail build on any non-deterministic drift (`decision drift`, `hash drift`, unstable rounding).
+  - Definition of done:
+    - repeated replay of identical fixtures is bit-stable for decision payload and hash.
+    - CI contains deterministic replay suite for all primary branches (`long`, `short`, `no_signal`, blocked paths).
+  - Status: completed (2026-05-14).
+
+- `11.4 Futures Risk Governor v1 (pre-execution hard gates)`
+  - Goal:
+    - ensure no order can bypass deterministic risk limits before exchange execution.
+  - Current progress:
+    - Added dedicated `BingxFuturesRiskGovernorService` boundary with deterministic pre-execution hard gates:
+      - symbol allow/deny,
+      - max concurrent positions,
+      - loss-streak cooldown,
+      - daily loss limit,
+      - per-trade risk budget via `risk% + stop-loss distance`.
+    - Wired risk gate into both futures execution UI entrypoints before exchange submit:
+      - `TradingDroneScreen._executeLastIntent()`
+      - `WasmPluginsScreen._executeLastBingxIntentOnExchange()`
+      with explicit `risk_allowed` / `risk_blocked` log events and user-visible reject feedback.
+    - Decision output now includes canonical envelope + stable hash for audit and replay checks.
+    - Added regression coverage in `flutter/test/bingx_futures_risk_governor_service_test.dart` for allow path and each block branch plus hash determinism.
+  - Scope:
+    - implement hard gates:
+      - `max_risk_per_trade`,
+      - `max_daily_loss`,
+      - `max_concurrent_positions`,
+      - cooldown after loss-streak,
+      - symbol allowlist/denylist.
+    - compute position size strictly from risk model (`risk% + SL distance`), not from ad-hoc UI quantity.
+    - emit deterministic reject codes/reasons for each blocked gate.
+  - Definition of done:
+    - every execution attempt passes through risk governor with deterministic output.
+    - blocked decisions are explainable and test-covered with stable reason codes.
+  - Status: completed (2026-05-14).
+
+- `11.5 Futures Execution Reliability (idempotency + TTL + retry discipline)`
+  - Goal:
+    - eliminate duplicate/missing execution effects under network jitter and relay/exchange instability.
+  - Current progress:
+    - Extended `BingxFuturesExecutionQueueService` with deterministic pending-order lifecycle:
+      - successful limit/zone-pending orders are tracked as pending with bounded TTL,
+      - expired pending records emit deterministic `cancelReplace` actions (`pending_order_ttl_expired`),
+      - TTL sweep releases idempotency cache for the same key so replace flow is unblocked.
+    - Added retry-class matrix helper (`bingxExchangeExecutionRetryClass`) with explicit clock-skew branch (`-1021` / timestamp / recvWindow) while preserving deterministic fail-fast for non-retryable rejects.
+    - Added regression coverage in `flutter/test/bingx_futures_execution_queue_service_test.dart` for:
+      - pending TTL expiry -> cancel/replace action + cache release,
+      - timestamp-drift retry classification.
+  - Scope:
+    - enforce idempotency keys across command send and exchange execution.
+    - add pending-order TTL lifecycle (`place -> monitor -> cancel/replace`).
+    - define bounded retry matrix for transient failures (network timeout, timestamp drift), while keeping deterministic fail-fast on non-retryable exchange rejects.
+    - keep anti-replay state in plugin journal boundary (no core-ledger mutation bypass).
+  - Definition of done:
+    - no duplicate order placement for same command idempotency key.
+    - stale pending orders are deterministically canceled by TTL policy.
+    - retry behavior is deterministic and covered by tests.
+  - Status: completed (2026-05-14).
+
+- `11.6 Drone Observability + Release Smoke Gate`
+  - Goal:
+    - make every drone decision/execution auditable and release-verifiable on macOS + Android.
+  - Current progress:
+    - Added deterministic observability envelope boundary:
+      - `BingxFuturesObservabilityEnvelopeService`
+      - canonical `decision` / `execution` envelopes with stable hash.
+    - Wired envelope logging into both futures execution surfaces:
+      - `TradingDroneScreen` (`drone.decision.envelope`, `drone.execution.envelope`)
+      - `WasmPluginsScreen` (`drone.decision.envelope`, `drone.execution.envelope`)
+    - Added regression coverage:
+      - `flutter/test/bingx_futures_observability_envelope_service_test.dart`
+    - Extended release smoke checklists to require Trading Drone gate on both platforms.
+  - Scope:
+    - standardize `decision log` and `execution log` envelopes with stable fields/hashes.
+    - add release smoke checklist:
+      - `situational run`,
+      - `interactive cycle`,
+      - risk-block path,
+      - retry path,
+      - receipt path.
+    - add cross-platform acceptance thresholds (no critical execution errors, deterministic hash parity on fixture run).
+  - Definition of done:
+    - release preflight includes drone smoke checks for both platforms.
+    - operators can trace any order to its deterministic decision record.
+  - Status: completed (2026-05-14).

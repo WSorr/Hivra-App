@@ -254,6 +254,19 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         'invitations.send.request',
         'slot=$slot peer=${HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(pubkey))}',
       ));
+      final preflight = await _intents.preflightSend(
+        capsuleHex: operationCapsuleHex,
+      );
+      unawaited(_uiLog.log(
+        'invitations.send.preflight',
+        'slot=$slot relayHealthy=${preflight.relayHealthy} code=${preflight.code} message=${preflight.message}',
+      ));
+      if (!preflight.relayHealthy && mounted) {
+        await _showUserMessage(
+          'Relay seems offline/unstable right now. We will still record send locally and retry in background.',
+          source: 'invitations.send.preflight',
+        );
+      }
       final result = await _intents.sendInvitation(
         pubkey,
         slot,

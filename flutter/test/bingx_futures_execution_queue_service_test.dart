@@ -201,6 +201,60 @@ void main() {
       expect(result.execution.isSuccess, isTrue);
       expect(result.attempts, 2);
     });
+
+    test('tracks pending limit order and expires it by TTL for cancel/replace',
+        () async {
+      var calls = 0;
+      var now = DateTime.utc(2026, 5, 13, 12, 0, 0);
+      final service = BingxFuturesExecutionQueueService(
+        exchangeService: BingxFuturesExchangeService(),
+        placeOrderRunner: ({
+          required credentials,
+          required intent,
+          required testOrder,
+        }) async {
+          calls += 1;
+          return _successResult(orderId: 'ord-pending-$calls');
+        },
+        clockUtc: () => now,
+        pendingOrderTtl: const Duration(minutes: 1),
+        delay: (_) async {},
+        retryDelays: const <Duration>[],
+      );
+
+      final first = await service.enqueueOrderExecution(
+        credentials: credentials,
+        intent: intent,
+        testOrder: false,
+      );
+      expect(first.pendingTracked, isTrue);
+      expect(service.pendingOrderCount, 1);
+      expect(calls, 1);
+
+      final cached = await service.enqueueOrderExecution(
+        credentials: credentials,
+        intent: intent,
+        testOrder: false,
+      );
+      expect(cached.fromIdempotentCache, isTrue);
+      expect(calls, 1);
+
+      now = now.add(const Duration(minutes: 2));
+      final actions = service.collectExpiredPendingOrderActions();
+      expect(actions.length, 1);
+      expect(actions.first.reasonCode, 'pending_order_ttl_expired');
+      expect(
+          actions.first.actionType, BingxPendingOrderActionType.cancelReplace);
+      expect(service.pendingOrderCount, 0);
+
+      final second = await service.enqueueOrderExecution(
+        credentials: credentials,
+        intent: intent,
+        testOrder: false,
+      );
+      expect(second.fromIdempotentCache, isFalse);
+      expect(calls, 2);
+    });
   });
 
   group('bingxExchangeExecutionShouldRetry', () {
@@ -231,6 +285,25 @@ void main() {
           exchangeMessage: 'invalid params',
         ),
         isFalse,
+      );
+    });
+
+    test('retries timestamp drift class deterministically', () {
+      expect(
+        bingxExchangeExecutionRetryClass(
+          httpStatusCode: 400,
+          exchangeCode: '-1021',
+          exchangeMessage: 'Timestamp for this request is outside recvWindow',
+        ),
+        BingxExecutionRetryClass.retryableClockSkew,
+      );
+      expect(
+        bingxExchangeExecutionShouldRetry(
+          httpStatusCode: 400,
+          exchangeCode: '-1021',
+          exchangeMessage: 'Timestamp for this request is outside recvWindow',
+        ),
+        isTrue,
       );
     });
   });

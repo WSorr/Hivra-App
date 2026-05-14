@@ -29,6 +29,26 @@ This document describes **signal generation and intent preparation**, not live o
    - UI -> App services -> plugin host API -> transport adapter.
    - Drone must not create reverse dependency into Core/Engine internals.
 
+### 2.1 Operation Modes (mandatory)
+
+The trading drone supports two operation modes in v1:
+
+1. `situational` (on-demand):
+   - Capsule and drone are invoked by explicit user action.
+   - Drone computes one deterministic decision cycle on current closed-bar snapshot.
+   - Result is projected immediately (`NO_SIGNAL` or deterministic intent draft).
+2. `interactive` (always-on):
+   - Drone runs continuously with scheduled evaluation cycles.
+   - Drone refreshes snapshot on each cycle and manages pending intents/order lifecycle according to policy.
+   - Requires heartbeat and self-recovery orchestration in app runtime layer.
+
+Mode invariants:
+
+- Both modes MUST use the same deterministic pipeline:
+  `snapshot_normalize -> feature_extract -> rule_engine -> intent_builder`.
+- Mode differences are orchestration-only (when/why to run), not decision-logic differences.
+- For identical normalized snapshot and identical policy config, both modes MUST produce identical decision payload/hash.
+
 ---
 
 ## 3. Data Inputs from Exchange (Required for TVH v1)
@@ -348,6 +368,8 @@ Broadcast behavior:
    - no transport-side business logic leakage.
 4. Explainability:
    - each emitted TVH includes rule-set id and matched condition summary.
+5. Mode parity:
+   - `situational` and `interactive` modes produce identical decision payload/hash for identical snapshot+policy inputs.
 
 ---
 
