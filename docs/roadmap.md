@@ -855,13 +855,20 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       - links `market_snapshot_hash -> feature_hash -> tvh_decision_hash -> live_decision_hash`
     - Added regression coverage in `flutter/test/bingx_futures_live_decision_service_test.dart` for:
       - deterministic live `LONG` eligibility
+      - deterministic live `SHORT` eligibility
+      - deterministic `NO_SIGNAL` (funding-guard) branch
       - input ordering stability
       - consensus-guard blocked path.
+    - Both execution surfaces now consume the same live decision contract before intent prepare:
+      - `TradingDroneScreen._runIntent`
+      - `WasmPluginsScreen._runBingxIntent`
+      removing screen-local side/zone branching from live signal gating.
+    - Live execution risk inputs now use exchange-backed runtime values via `BingxFuturesExchangeRiskInputService` (`equity`, `daily pnl`, `concurrent positions`) with deterministic fallbacks, and both execution surfaces run the same risk-governor boundary before exchange submit.
   - Definition of done:
     - no execution surface can place intent from a decision path outside the shared TVH contract.
     - identical normalized input produces identical decision payload/hash in replay and live path.
     - checklist `docs/checklists/trading-drone-spec-runtime-parity.md` status matrix is fully green.
-  - Status: active (2026-05-26).
+  - Status: completed (2026-06-01).
 
 - `11.7 Trading Drone Decision Pipeline Unification (remove screen-local heuristic split)`
   - Goal:
