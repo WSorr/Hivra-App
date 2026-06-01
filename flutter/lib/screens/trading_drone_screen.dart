@@ -10,6 +10,7 @@ import '../services/bingx_futures_live_snapshot_builder_service.dart';
 import '../services/bingx_futures_exchange_risk_input_service.dart';
 import '../services/bingx_futures_exchange_service.dart';
 import '../services/bingx_futures_observability_envelope_service.dart';
+import '../services/bingx_futures_order_tracking_store.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
 import '../services/bingx_futures_risk_governor_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
@@ -29,6 +30,19 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   static const Duration _openOrdersPollInterval = Duration(seconds: 12);
   static const double _zoneNearBps = 15.0;
   static const double _zoneFarBps = 35.0;
+  static const double _defaultStopLossPercent = 10.0;
+  static const List<double> _stopLossPercentOptions = <double>[
+    5.0,
+    7.0,
+    10.0,
+    12.0,
+  ];
+  static const double _defaultTakeProfitRiskReward = 2.0;
+  static const List<double> _takeProfitRiskRewardOptions = <double>[
+    1.5,
+    2.0,
+    3.0,
+  ];
   static const int _recentMicroBars = 8;
   static const List<String> _shortBreakdownSymbols = <String>[
     'BTC-USDT',
@@ -47,6 +61,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       AppRuntimeService().buildBingxFuturesCredentialStore();
   final BingxFuturesExchangeService _bingxExchangeService =
       AppRuntimeService().buildBingxFuturesExchangeService();
+  final BingxFuturesOrderTrackingStore _orderTrackingStore =
+      AppRuntimeService().buildBingxFuturesOrderTrackingStore();
   final BingxFuturesExchangeRiskInputService _exchangeRiskInput =
       const BingxFuturesExchangeRiskInputService();
   final BingxFuturesRiskGovernorService _riskGovernor =
@@ -90,9 +106,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _fetchingOpenOrders = false;
   bool _loadingPerpSymbols = false;
   bool _cancelingOrder = false;
+  bool _fittingMaxNotional = false;
   bool _useTestOrderEndpoint = true;
   bool _obscureApiSecret = true;
   bool _droneEnabled = true;
+  double _stopLossPercent = _defaultStopLossPercent;
+  double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
 
   String _side = 'buy';
   String _orderType = 'limit';
@@ -107,6 +126,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   BingxFuturesCancelOrderResult? _lastCancelOrder;
   List<BingxFuturesOpenOrder> _openOrders = const <BingxFuturesOpenOrder>[];
   final Set<String> _managedOrderIds = <String>{};
+  final Map<String, String> _managedOrderSymbols = <String, String>{};
   int _lastOpenOrdersTotalCount = 0;
   Timer? _openOrdersPollTimer;
   String? _trackedOrdersSymbol;
@@ -133,6 +153,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       exchangeService: _bingxExchangeService,
     );
     _loadCredentials();
+    unawaited(_restoreOpenOrdersTrackingState());
     _loadPerpetualSymbols(silent: true);
     _refreshSignalInbox(silentWhenEmpty: true);
   }
@@ -159,10 +180,21 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   bool get _isTrackingOpenOrders => _openOrdersPollTimer != null;
 
-  void _registerManagedOrderId(String? orderId) {
+  void _registerManagedOrderId(String? orderId, {String? symbol}) {
     final normalized = orderId?.trim() ?? '';
     if (normalized.isEmpty) return;
-    _managedOrderIds.add(normalized);
+    final normalizedSymbol = symbol?.trim().toUpperCase();
+    final added = _managedOrderIds.add(normalized);
+    var updated = added;
+    if (normalizedSymbol != null && normalizedSymbol.isNotEmpty) {
+      if (_managedOrderSymbols[normalized] != normalizedSymbol) {
+        _managedOrderSymbols[normalized] = normalizedSymbol;
+        updated = true;
+      }
+    }
+    if (updated) {
+      unawaited(_persistOpenOrdersTrackingState(source: 'register_order_id'));
+    }
   }
 
   void _startOpenOrdersAutoTracking({
@@ -176,8 +208,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _trackedOrdersSymbol = normalizedSymbol;
     if (normalizedOrderId != null && normalizedOrderId.isNotEmpty) {
       _trackedOrderId = normalizedOrderId;
-      _registerManagedOrderId(normalizedOrderId);
+      _registerManagedOrderId(normalizedOrderId, symbol: normalizedSymbol);
       _cancelOrderIdController.text = normalizedOrderId;
+    } else {
+      _trackedOrderId = null;
     }
     _openOrdersPollTimer = Timer.periodic(_openOrdersPollInterval, (_) {
       if (!mounted) return;
@@ -198,6 +232,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (mounted) {
       setState(() {});
     }
+    unawaited(_persistOpenOrdersTrackingState(source: 'tracking_enabled'));
   }
 
   void _stopOpenOrdersAutoTracking({String reason = 'manual'}) {
@@ -217,6 +252,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (mounted) {
       setState(() {});
     }
+    unawaited(_persistOpenOrdersTrackingState(source: 'tracking_disabled'));
   }
 
   Future<void> _maybeRetargetOpenOrdersTracking({
@@ -236,12 +272,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         );
         return;
       }
-      _managedOrderIds.remove(trackedOrderId);
+      final previousOrderId = trackedOrderId;
       _trackedOrderId = null;
       _cancelOrderIdController.clear();
       await _uiLog.log(
         'bingx.exchange.tracking.retarget.force',
-        'source=$source symbol=$normalizedSymbol previousOrderId=$trackedOrderId',
+        'source=$source symbol=$normalizedSymbol previousOrderId=$previousOrderId',
       );
     }
     if (_trackedOrdersSymbol?.trim().toUpperCase() == normalizedSymbol) {
@@ -256,6 +292,95 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       silent: true,
       symbolOverride: normalizedSymbol,
     );
+  }
+
+  Future<void> _persistOpenOrdersTrackingState({
+    required String source,
+  }) async {
+    try {
+      final state = BingxFuturesOrderTrackingState(
+        trackedSymbol: _trackedOrdersSymbol,
+        trackedOrderId: _trackedOrderId,
+        managedOrderIds: _managedOrderIds.toList(growable: false),
+        managedOrderSymbols:
+            Map<String, String>.unmodifiable(_managedOrderSymbols),
+        stopLossPercent: _stopLossPercent,
+        takeProfitRiskReward: _takeProfitRiskReward,
+      );
+      await _orderTrackingStore.save(state);
+      await _uiLog.log(
+        'bingx.exchange.tracking.persist',
+        'source=$source trackedSymbol=${state.trackedSymbol ?? "-"} '
+            'trackedOrderId=${state.trackedOrderId ?? "-"} '
+            'managedCount=${state.managedOrderIds.length} '
+            'symbolCount=${state.managedOrderSymbols.length}',
+      );
+    } catch (error) {
+      await _uiLog.log(
+        'bingx.exchange.tracking.persist.error',
+        'source=$source error=$error',
+      );
+    }
+  }
+
+  Future<void> _restoreOpenOrdersTrackingState() async {
+    try {
+      final state = await _orderTrackingStore.load();
+      if (state == null) return;
+      _managedOrderIds
+        ..clear()
+        ..addAll(state.managedOrderIds);
+      _managedOrderSymbols
+        ..clear()
+        ..addAll(state.managedOrderSymbols);
+      final restoredStopLossPercent = state.stopLossPercent;
+      if (restoredStopLossPercent != null &&
+          _stopLossPercentOptions.contains(restoredStopLossPercent)) {
+        _stopLossPercent = restoredStopLossPercent;
+      }
+      final restoredRiskReward = state.takeProfitRiskReward;
+      if (restoredRiskReward != null &&
+          _takeProfitRiskRewardOptions.contains(restoredRiskReward)) {
+        _takeProfitRiskReward = restoredRiskReward;
+      }
+      final trackedSymbol = state.trackedSymbol?.trim().toUpperCase();
+      final trackedOrderId = state.trackedOrderId?.trim();
+      if (trackedSymbol == null || trackedSymbol.isEmpty) {
+        if (mounted) {
+          setState(() {});
+        }
+        await _uiLog.log(
+          'bingx.exchange.tracking.restore',
+          'tracked=no managedCount=${_managedOrderIds.length} '
+              'symbolCount=${_managedOrderSymbols.length} '
+              'slPct=${_stopLossPercent.toStringAsFixed(2)} '
+              'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
+        );
+        return;
+      }
+      _symbolController.text = trackedSymbol;
+      _startOpenOrdersAutoTracking(
+        symbol: trackedSymbol,
+        orderId: trackedOrderId,
+      );
+      await _uiLog.log(
+        'bingx.exchange.tracking.restore',
+        'tracked=yes symbol=$trackedSymbol '
+            'orderId=${trackedOrderId ?? "-"} managedCount=${_managedOrderIds.length} '
+            'symbolCount=${_managedOrderSymbols.length} '
+            'slPct=${_stopLossPercent.toStringAsFixed(2)} '
+            'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
+      );
+      await _fetchOpenOrders(
+        silent: true,
+        symbolOverride: trackedSymbol,
+      );
+    } catch (error) {
+      await _uiLog.log(
+        'bingx.exchange.tracking.restore.error',
+        '$error',
+      );
+    }
   }
 
   Future<void> _showSnack(String message, {int seconds = 2}) async {
@@ -623,6 +748,52 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return _side == 'buy' ? lowRaw : highRaw;
   }
 
+  num? _deriveZoneEntryPrice({
+    required String zonePriceRule,
+    required String zoneLowDecimal,
+    required String zoneHighDecimal,
+    String? manualLimitPriceDecimal,
+  }) {
+    final low = _toNum(zoneLowDecimal);
+    final high = _toNum(zoneHighDecimal);
+    if (low == null || high == null || low <= 0 || high <= 0 || low >= high) {
+      return null;
+    }
+    switch (zonePriceRule.trim().toLowerCase()) {
+      case 'zone_low':
+        return low;
+      case 'zone_high':
+        return high;
+      case 'manual':
+        final manual = _toNum(manualLimitPriceDecimal ?? '');
+        if (manual == null || manual <= 0) return null;
+        return manual;
+      case 'zone_mid':
+      default:
+        return (low + high) / 2;
+    }
+  }
+
+  ({String stopLossDecimal, String takeProfitDecimal}) _deriveRiskTargets({
+    required String side,
+    required num entryPrice,
+    required double stopLossPercent,
+    required double riskReward,
+  }) {
+    final slFactor = stopLossPercent / 100;
+    final buy = side.trim().toLowerCase() == 'buy';
+    final stopLoss =
+        buy ? entryPrice * (1 - slFactor) : entryPrice * (1 + slFactor);
+    final risk = (stopLoss - entryPrice).abs();
+    final takeProfit = buy
+        ? entryPrice + (risk * riskReward)
+        : entryPrice - (risk * riskReward);
+    return (
+      stopLossDecimal: _formatDecimal(stopLoss, scale: 8),
+      takeProfitDecimal: _formatDecimal(takeProfit, scale: 8),
+    );
+  }
+
   String _formatDecimal(num value, {int scale = 8}) {
     final fixed = value.toStringAsFixed(scale);
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
@@ -670,6 +841,68 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       'symbol=${quote.symbol} max_notional_usdt=$maxNotional mid=${quote.priceDecimal} quantity=$quantityDecimal',
     );
     return true;
+  }
+
+  Future<void> _autoFitMaxNotionalToRisk() async {
+    if (_fittingMaxNotional) return;
+    final credentials = _resolveCredentials();
+    if (credentials == null) {
+      await _showSnack('Save BingX API credentials first');
+      return;
+    }
+    final slFactor = _stopLossPercent / 100;
+    if (slFactor <= 0) {
+      await _showSnack('SL% must be greater than 0');
+      return;
+    }
+    setState(() {
+      _fittingMaxNotional = true;
+    });
+    try {
+      final fallbackEquity =
+          double.tryParse(_maxNotionalUsdtController.text.trim()) ?? 100.0;
+      final riskInput = await _exchangeRiskInput.read(
+        exchangeService: _bingxExchangeService,
+        credentials: credentials,
+        fallbackEquityQuote: fallbackEquity,
+      );
+      final equity = _toNum(riskInput.accountEquityQuoteDecimal);
+      if (equity == null || equity <= 0) {
+        await _showSnack('Cannot auto-fit risk: invalid equity');
+        return;
+      }
+      final riskQuoteLimit =
+          equity * (_executionRiskPolicy.maxRiskPerTradePercent / 100.0);
+      final safeNotional = riskQuoteLimit / slFactor;
+      final conservativeNotional = safeNotional * 0.98;
+      if (conservativeNotional <= 0) {
+        await _showSnack('Cannot auto-fit risk: limit too small');
+        return;
+      }
+      final fitted = _formatDecimal(conservativeNotional, scale: 4);
+      _maxNotionalUsdtController.text = fitted;
+      final symbol = _symbolController.text.trim();
+      if (symbol.isNotEmpty) {
+        await _applyRiskBudgetQuantity(symbol: symbol);
+      }
+      await _uiLog.log(
+        'bingx.risk.autofit',
+        'equity=${riskInput.accountEquityQuoteDecimal} '
+            'risk_pct=${_executionRiskPolicy.maxRiskPerTradePercent.toStringAsFixed(2)} '
+            'sl_pct=${_stopLossPercent.toStringAsFixed(2)} '
+            'max_notional=$fitted',
+      );
+      await _showSnack('Max notional auto-fit: $fitted USDT');
+    } catch (error) {
+      await _uiLog.log('bingx.risk.autofit.error', '$error');
+      await _showSnack('Auto-fit failed: $error', seconds: 3);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _fittingMaxNotional = false;
+        });
+      }
+    }
   }
 
   ({bool isSignable, List<String> blockingCodes}) _consensusDecisionContext(
@@ -750,6 +983,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'can_prepare=${decision.canPrepareIntent} decision=${decision.decision.name} '
             'side=${decision.side ?? "-"} zone_side=${decision.zoneSide ?? "-"} '
             'zone_low=${decision.zoneLowDecimal ?? "-"} zone_high=${decision.zoneHighDecimal ?? "-"} '
+            'trend15m=${decision.trend15m} trend4h=${decision.trend4h} trend1d=${decision.trend1d} '
+            'trend_gate=${decision.trendGateCode} trend_blocked=${decision.trendGateBlocked} '
             'consensus_signable=${consensus.isSignable} '
             'market_hash=${decision.marketSnapshotHashHex.substring(0, 12)} '
             'feature_hash=${decision.featureHashHex.substring(0, 12)} '
@@ -776,9 +1011,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final peerHex = _peerController.text.trim().toLowerCase();
     final symbol = _symbolController.text.trim();
     final strategyTag = _strategyTagController.text.trim();
-    final triggerPriceDecimal = _triggerPriceController.text.trim();
-    final stopLossDecimal = _stopLossController.text.trim();
-    final takeProfitDecimal = _takeProfitController.text.trim();
+    var triggerPriceDecimal = _triggerPriceController.text.trim();
+    var stopLossDecimal = _stopLossController.text.trim();
+    var takeProfitDecimal = _takeProfitController.text.trim();
     final nowUtc = DateTime.now().toUtc().toIso8601String();
     final clientOrderId = 'ui-ord-${DateTime.now().microsecondsSinceEpoch}';
     if (symbol.isEmpty) {
@@ -896,6 +1131,39 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
     }
     final timeInForce = _orderType == 'limit' ? _timeInForce : null;
+    if (isZonePending &&
+        (stopLossDecimal.isEmpty || takeProfitDecimal.isEmpty)) {
+      final entryPrice = _deriveZoneEntryPrice(
+        zonePriceRule: _zonePriceRule,
+        zoneLowDecimal: zoneLowDecimal,
+        zoneHighDecimal: zoneHighDecimal,
+        manualLimitPriceDecimal:
+            limitPriceDecimal ?? _limitPriceController.text,
+      );
+      if (entryPrice != null && entryPrice > 0) {
+        final derived = _deriveRiskTargets(
+          side: _side,
+          entryPrice: entryPrice,
+          stopLossPercent: _stopLossPercent,
+          riskReward: _takeProfitRiskReward,
+        );
+        if (stopLossDecimal.isEmpty) {
+          stopLossDecimal = derived.stopLossDecimal;
+          _stopLossController.text = stopLossDecimal;
+        }
+        if (takeProfitDecimal.isEmpty) {
+          takeProfitDecimal = derived.takeProfitDecimal;
+          _takeProfitController.text = takeProfitDecimal;
+        }
+        await _uiLog.log(
+          'bingx.intent.risk_targets.auto',
+          'entry=$entryPrice side=$_side '
+              'sl=$stopLossDecimal tp=$takeProfitDecimal '
+              'slPct=${_stopLossPercent.toStringAsFixed(2)} '
+              'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
+        );
+      }
+    }
 
     setState(() {
       _runningIntent = true;
@@ -1267,7 +1535,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.exchange.risk_blocked',
         'code=${riskDecision.reasonCode} hash=$shortHash '
             'risk=${riskDecision.tradeRiskQuoteDecimal} '
-            'limit=${riskDecision.dailyLossLimitQuoteDecimal}',
+            'limit=${riskDecision.tradeRiskLimitQuoteDecimal}',
       );
       await _showSnack(
         'Risk blocked: ${riskDecision.reasonCode} ($shortHash)',
@@ -1290,7 +1558,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.exchange.execute.intent',
         'symbol=${payload.symbol} side=${payload.side} type=${payload.orderType} '
             'entry=${payload.entryMode} limit=${payload.limitPriceDecimal ?? "-"} '
-            'trigger=${payload.triggerPriceDecimal ?? "-"} tif=${payload.timeInForce ?? "-"}',
+            'trigger=${payload.triggerPriceDecimal ?? "-"} '
+            'sl=${payload.stopLossDecimal ?? "-"} '
+            'tp=${payload.takeProfitDecimal ?? "-"} '
+            'tif=${payload.timeInForce ?? "-"}',
       );
       final queued = await _bingxExecutionQueue.enqueueOrderExecution(
         credentials: credentials,
@@ -1345,7 +1616,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       });
 
       if (queued.execution.isSuccess) {
-        _registerManagedOrderId(queued.execution.orderId);
+        _registerManagedOrderId(
+          queued.execution.orderId,
+          symbol: payload.symbol,
+        );
         _startOpenOrdersAutoTracking(
           symbol: payload.symbol,
           orderId: queued.execution.orderId,
@@ -1466,14 +1740,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (_fetchingOpenOrders) return;
     final credentials = _resolveCredentials();
     if (credentials == null) {
-      await _showSnack('Save BingX API credentials first');
+      if (!silent) {
+        await _showSnack('Save BingX API credentials first');
+      }
       return;
     }
     final symbol = (symbolOverride ?? _symbolController.text).trim();
-    if (symbol.isEmpty) {
-      await _showSnack('Symbol is required');
-      return;
-    }
 
     setState(() {
       _fetchingOpenOrders = true;
@@ -1481,7 +1753,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     try {
       final result = await _bingxExchangeService.getOpenOrders(
         credentials: credentials,
-        symbol: symbol,
+        symbol: symbol.isEmpty ? null : symbol,
       );
       final message =
           result.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
@@ -1493,35 +1765,66 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       );
       if (!mounted) return;
       final allOrders = result.orders;
-      final managedOrders = allOrders
-          .where((order) => _managedOrderIds.contains(order.orderId))
+      final triggerOrders = allOrders
+          .where((order) => _isDroneTriggerOrder(order.orderType))
           .toList(growable: false);
+      for (final order in triggerOrders) {
+        if (_managedOrderIds.contains(order.orderId)) {
+          _managedOrderSymbols[order.orderId] = order.symbol.toUpperCase();
+        }
+      }
+      final managedOrders = triggerOrders.where((order) {
+        if (!_managedOrderIds.contains(order.orderId)) {
+          return false;
+        }
+        final trackedSymbol =
+            _managedOrderSymbols[order.orderId]?.toUpperCase();
+        if (trackedSymbol == null || trackedSymbol.isEmpty) {
+          return true;
+        }
+        return trackedSymbol == result.symbol.toUpperCase();
+      }).toList(growable: false);
       setState(() {
         _lastOpenOrdersRead = result;
-        _lastOpenOrdersTotalCount = allOrders.length;
+        _lastOpenOrdersTotalCount = triggerOrders.length;
         if (result.isSuccess) {
-          _openOrders = managedOrders;
+          _openOrders = triggerOrders;
         }
-        if (result.isSuccess && managedOrders.isNotEmpty) {
-          _cancelOrderIdController.text = managedOrders.first.orderId;
+        if (result.isSuccess && triggerOrders.isNotEmpty) {
+          _cancelOrderIdController.text = triggerOrders.first.orderId;
         }
       });
       final trackedOrderId = _trackedOrderId;
       if (trackedOrderId != null && trackedOrderId.isNotEmpty) {
         if (result.isSuccess) {
           final trackedStillOpen =
-              allOrders.any((order) => order.orderId == trackedOrderId);
+              triggerOrders.any((order) => order.orderId == trackedOrderId);
           await _uiLog.log(
             'bingx.exchange.tracking.check',
             'symbol=${result.symbol} orderId=$trackedOrderId '
                 'open=${trackedStillOpen ? "yes" : "no"} '
-                'managedCount=${managedOrders.length} totalCount=${allOrders.length}',
+                'managedCount=${managedOrders.length} totalCount=${triggerOrders.length}',
           );
           if (!trackedStillOpen) {
             _managedOrderIds.remove(trackedOrderId);
-            _stopOpenOrdersAutoTracking(reason: 'order_closed');
-            if (!silent) {
-              await _showSnack('Tracked order is no longer open');
+            _managedOrderSymbols.remove(trackedOrderId);
+            if (triggerOrders.isNotEmpty) {
+              final nextTrackedOrderId = triggerOrders.first.orderId;
+              _trackedOrderId = nextTrackedOrderId;
+              _cancelOrderIdController.text = nextTrackedOrderId;
+              await _persistOpenOrdersTrackingState(
+                source: 'tracked_order_closed_rotate',
+              );
+              await _uiLog.log(
+                'bingx.exchange.tracking.rotate',
+                'symbol=${result.symbol} previous=$trackedOrderId next=$nextTrackedOrderId '
+                    'managedCount=${triggerOrders.length}',
+              );
+            } else {
+              _stopOpenOrdersAutoTracking(reason: 'order_closed');
+              if (!silent) {
+                await _showSnack('Tracked order is no longer open');
+              }
             }
           }
         } else {
@@ -1536,7 +1839,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       if (!silent) {
         await _showSnack(
           result.isSuccess
-              ? 'Drone open orders: ${managedOrders.length} (total ${allOrders.length})'
+              ? 'Drone trigger orders: ${triggerOrders.length}'
               : 'Open orders failed: ${result.exchangeCode}',
           seconds: result.isSuccess ? 2 : 4,
         );
@@ -1597,10 +1900,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         if (result.isSuccess) {
           final canceled = result.canceledOrderId ?? result.requestedOrderId;
           _managedOrderIds.remove(canceled);
+          _managedOrderSymbols.remove(canceled);
           _openOrders =
               _openOrders.where((order) => order.orderId != canceled).toList();
         }
       });
+      if (result.isSuccess) {
+        await _persistOpenOrdersTrackingState(source: 'cancel_order');
+      }
       await _showSnack(
         result.isSuccess
             ? 'Order canceled: ${result.canceledOrderId ?? result.requestedOrderId}'
@@ -1629,6 +1936,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
         '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
+  }
+
+  bool _isDroneTriggerOrder(String orderType) {
+    final normalized = orderType.trim().toUpperCase();
+    return normalized.startsWith('TRIGGER');
   }
 
   Map<String, dynamic>? _tryDecodeJsonMap(String raw) {
@@ -1869,6 +2181,88 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   style: const TextStyle(color: Color(0xFF97A3B5)),
                 ),
                 contentPadding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text(
+                    'Auto risk',
+                    style: TextStyle(
+                      color: Color(0xFF97A3B5),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  DropdownButton<double>(
+                    value: _stopLossPercent,
+                    dropdownColor: const Color(0xFF121821),
+                    items: _stopLossPercentOptions
+                        .map(
+                          (value) => DropdownMenuItem<double>(
+                            value: value,
+                            child: Text('SL ${value.toStringAsFixed(0)}%'),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: _runningIntent
+                        ? null
+                        : (value) {
+                            if (value == null) return;
+                            setState(() {
+                              _stopLossPercent = value;
+                            });
+                            unawaited(
+                              _persistOpenOrdersTrackingState(
+                                source: 'risk_settings_sl_change',
+                              ),
+                            );
+                          },
+                  ),
+                  DropdownButton<double>(
+                    value: _takeProfitRiskReward,
+                    dropdownColor: const Color(0xFF121821),
+                    items: _takeProfitRiskRewardOptions
+                        .map(
+                          (value) => DropdownMenuItem<double>(
+                            value: value,
+                            child: Text(
+                              'TP ${value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1)}R',
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: _runningIntent
+                        ? null
+                        : (value) {
+                            if (value == null) return;
+                            setState(() {
+                              _takeProfitRiskReward = value;
+                            });
+                            unawaited(
+                              _persistOpenOrdersTrackingState(
+                                source: 'risk_settings_rr_change',
+                              ),
+                            );
+                          },
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _runningIntent || _fittingMaxNotional
+                        ? null
+                        : _autoFitMaxNotionalToRisk,
+                    icon: _fittingMaxNotional
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_fix_high_rounded),
+                    label: Text(
+                      _fittingMaxNotional ? 'Fitting' : 'Auto-fit Notional',
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Wrap(

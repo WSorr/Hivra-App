@@ -78,6 +78,8 @@ void main() {
 
       expect(decision.status, BingxFuturesRiskDecisionStatus.blocked);
       expect(decision.reasonCode, 'risk_daily_loss_limit');
+      expect(decision.dailyLossQuoteDecimal, isNot('0'));
+      expect(decision.dailyLossLimitQuoteDecimal, isNot('0'));
     });
 
     test('blocks per-trade risk exceeded', () {
@@ -88,6 +90,9 @@ void main() {
 
       expect(decision.status, BingxFuturesRiskDecisionStatus.blocked);
       expect(decision.reasonCode, 'risk_per_trade_exceeded');
+      expect(decision.tradeRiskQuoteDecimal, isNot('0'));
+      expect(decision.tradeRiskLimitQuoteDecimal, isNot('0'));
+      expect(decision.maxAllowedQuantityDecimal, isNot('0'));
     });
 
     test('is deterministic for identical inputs', () {

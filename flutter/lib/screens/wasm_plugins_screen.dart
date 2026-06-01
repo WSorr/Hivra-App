@@ -1141,6 +1141,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
             'can_prepare=${decision.canPrepareIntent} decision=${decision.decision.name} '
             'side=${decision.side ?? "-"} zone_side=${decision.zoneSide ?? "-"} '
             'zone_low=${decision.zoneLowDecimal ?? "-"} zone_high=${decision.zoneHighDecimal ?? "-"} '
+            'trend15m=${decision.trend15m} trend4h=${decision.trend4h} trend1d=${decision.trend1d} '
+            'trend_gate=${decision.trendGateCode} trend_blocked=${decision.trendGateBlocked} '
             'consensus_signable=${consensus.isSignable} '
             'market_hash=${decision.marketSnapshotHashHex.substring(0, 12)} '
             'feature_hash=${decision.featureHashHex.substring(0, 12)} '

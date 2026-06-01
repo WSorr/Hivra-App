@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/services/bingx_futures_feature_extractor_service.dart';
 import 'package:hivra_app/services/bingx_futures_live_decision_service.dart';
 import 'package:hivra_app/services/bingx_futures_market_snapshot_service.dart';
 import 'package:hivra_app/services/bingx_futures_tvh_rule_engine_service.dart';
+import 'package:hivra_app/services/bingx_futures_zone_decision_service.dart';
 
 void main() {
   group('BingxFuturesLiveDecisionService', () {
@@ -107,7 +109,90 @@ void main() {
         isTrue,
       );
     });
+
+    test('blocks far retest short in strong bearish continuation trend gate',
+        () {
+      final gatedService = BingxFuturesLiveDecisionService(
+        snapshotService: _StubSnapshotService(),
+        featureExtractor: _StubFeatureExtractor(
+          trendDirection: BingxTrendDirection.bearish,
+        ),
+        ruleEngine: _StubRuleEngine(
+          decision: BingxTvhDecisionKind.short,
+        ),
+        zoneDecision: _StubZoneDecision(
+          side: 'sell',
+          zoneSide: 'sellside',
+          trend4h: 'bear',
+          trend1d: 'bear',
+          needsFartherRetest: true,
+          targetRetestPct: 0.09,
+        ),
+      );
+
+      final result = gatedService.decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: _buildMinimalInput(),
+          isConsensusSignable: true,
+        ),
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.short);
+      expect(result.side, 'sell');
+      expect(result.trendGateBlocked, isTrue);
+      expect(result.trendGateCode, 'trend_gate_short_far_retest');
+      expect(result.canPrepareIntent, isFalse);
+      expect(
+        result.reasons.any(
+          (reason) => reason.code == 'trend_gate_short_far_retest',
+        ),
+        isTrue,
+      );
+    });
   });
+}
+
+BingxFuturesMarketSnapshotInput _buildMinimalInput() {
+  return const BingxFuturesMarketSnapshotInput(
+    instrument: BingxFuturesInstrumentMeta(
+      symbol: 'BTC-USDT',
+      baseAsset: 'BTC',
+      quoteAsset: 'USDT',
+      tickSizeDecimal: '0.10',
+      qtyStepDecimal: '0.001',
+      minQtyDecimal: '0.001',
+      maxLeverageDecimal: '125',
+    ),
+    prices: BingxFuturesPriceSnapshot(
+      lastTradePriceDecimal: '100.0',
+      markPriceDecimal: '100.0',
+      indexPriceDecimal: '100.0',
+    ),
+    candles: <BingxFuturesCandle>[],
+    trades: <BingxFuturesTrade>[],
+    openInterest: <BingxFuturesOpenInterestPoint>[],
+    funding: BingxFuturesFundingSnapshot(
+      timestampUtc: '2026-04-25T10:00:00Z',
+      fundingRateDecimal: '0.0001',
+      nextFundingAtUtc: '2026-04-25T12:00:00Z',
+    ),
+    liquidityLevels: <BingxFuturesLiquidityLevel>[
+      BingxFuturesLiquidityLevel(
+        kind: 'external',
+        side: 'sellside',
+        timeframe: '1h',
+        priceDecimal: '101.0',
+      ),
+      BingxFuturesLiquidityLevel(
+        kind: 'internal',
+        side: 'buyside',
+        timeframe: '5m',
+        priceDecimal: '99.0',
+      ),
+    ],
+    sessionVolumes: <BingxFuturesSessionVolumePoint>[],
+    orderBookTopLevels: <BingxFuturesOrderBookLevel>[],
+  );
 }
 
 BingxFuturesMarketSnapshotInput _buildInput({required bool permuted}) {
@@ -534,4 +619,138 @@ BingxFuturesCandle _singleCandle(
     volumeQuoteDecimal: '10000.0',
     isClosed: true,
   );
+}
+
+class _StubSnapshotService extends BingxFuturesMarketSnapshotService {
+  @override
+  BingxFuturesMarketSnapshotDigest build(BingxFuturesMarketSnapshotInput input) {
+    return const BingxFuturesMarketSnapshotDigest(
+      normalizedSnapshot: <String, dynamic>{
+        'schema_version': 1,
+      },
+      canonicalJson: '{"schema_version":1}',
+      marketSnapshotHashHex:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      liquidationFeedAvailable: true,
+    );
+  }
+}
+
+class _StubFeatureExtractor extends BingxFuturesFeatureExtractorService {
+  final BingxTrendDirection trendDirection;
+
+  const _StubFeatureExtractor({
+    required this.trendDirection,
+  });
+
+  @override
+  BingxFuturesFeatureExtractionResult extract(
+    BingxFuturesMarketSnapshotDigest snapshot,
+  ) {
+    return BingxFuturesFeatureExtractionResult(
+      ruleSet: 'tvh_v1',
+      marketSnapshotHashHex: snapshot.marketSnapshotHashHex,
+      canonicalJson: '{"feature":"stub"}',
+      featureHashHex:
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      trendDirection: trendDirection,
+      ema50m15Decimal: '100',
+      ema200m15Decimal: '99',
+      atr14m5Decimal: '1',
+      tradeDeltaDecimal: '-0.1',
+      openInterestDeltaDecimal: '0.01',
+      sessionNetDeltaDecimal: '-0.1',
+      liquidityLevels: const <BingxDetectedLiquidityLevel>[],
+      whaleActivations: const <BingxWhaleActivationEvent>[],
+      hasBuyWhaleActivation: false,
+      hasSellWhaleActivation: true,
+    );
+  }
+}
+
+class _StubRuleEngine extends BingxFuturesTvhRuleEngineService {
+  final BingxTvhDecisionKind decision;
+
+  const _StubRuleEngine({
+    required this.decision,
+  });
+
+  @override
+  BingxTvhDecisionResult evaluate({
+    required BingxFuturesFeatureExtractionResult features,
+    required String fundingRateDecimal,
+    required bool isConsensusSignable,
+    List<String> blockingFactCodes = const <String>[],
+    BingxTvhPolicy policy = const BingxTvhPolicy(),
+  }) {
+    return BingxTvhDecisionResult(
+      ruleSet: 'tvh_v1',
+      featureHashHex: features.featureHashHex,
+      decision: decision,
+      reasons: const <BingxTvhDecisionReason>[
+        BingxTvhDecisionReason(
+          code: 'stub_rule',
+          passed: true,
+          detail: 'stub',
+        ),
+      ],
+      canonicalJson: '{"decision":"stub"}',
+      decisionHashHex:
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
+  }
+}
+
+class _StubZoneDecision extends BingxFuturesZoneDecisionService {
+  final String side;
+  final String zoneSide;
+  final String trend4h;
+  final String trend1d;
+  final bool needsFartherRetest;
+  final num targetRetestPct;
+
+  const _StubZoneDecision({
+    required this.side,
+    required this.zoneSide,
+    required this.trend4h,
+    required this.trend1d,
+    required this.needsFartherRetest,
+    required this.targetRetestPct,
+  });
+
+  @override
+  BingxFuturesZoneDecisionResult decide({
+    required BingxFuturesZoneDecisionInput input,
+  }) {
+    return BingxFuturesZoneDecisionResult(
+      side: side,
+      zoneSide: zoneSide,
+      zoneLow: 90,
+      zoneHigh: 91,
+      source: 'stub',
+      sideReason: 'stub',
+      olderHigh: 110,
+      olderLow: 80,
+      recentHigh: 105,
+      recentLow: 85,
+      sweepUp: true,
+      sweepDown: false,
+      trend4h: trend4h,
+      trend1d: trend1d,
+      contextBias: -2,
+      aligned: false,
+      contrarian: false,
+      needsFartherRetest: needsFartherRetest,
+      rangePct1h: 0.01,
+      rangePct4h: 0.03,
+      rangePct1d: 0.05,
+      rangePct1w: 0.08,
+      targetRetestPct: targetRetestPct,
+      externalSellRetest: 90,
+      externalBuyRetest: 80,
+      anchorSource: 'stub',
+      strength: 70,
+      usedFallback: false,
+    );
+  }
 }

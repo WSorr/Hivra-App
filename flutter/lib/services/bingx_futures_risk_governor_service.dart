@@ -61,6 +61,7 @@ class BingxFuturesRiskDecision {
   final String decisionHashHex;
   final String maxAllowedQuantityDecimal;
   final String tradeRiskQuoteDecimal;
+  final String tradeRiskLimitQuoteDecimal;
   final String dailyLossQuoteDecimal;
   final String dailyLossLimitQuoteDecimal;
 
@@ -72,6 +73,7 @@ class BingxFuturesRiskDecision {
     required this.decisionHashHex,
     required this.maxAllowedQuantityDecimal,
     required this.tradeRiskQuoteDecimal,
+    required this.tradeRiskLimitQuoteDecimal,
     required this.dailyLossQuoteDecimal,
     required this.dailyLossLimitQuoteDecimal,
   });
@@ -158,6 +160,8 @@ class BingxFuturesRiskGovernorService {
         status: BingxFuturesRiskDecisionStatus.blocked,
         reasonCode: 'risk_daily_loss_limit',
         reasonMessage: 'Daily loss limit exceeded',
+        dailyLoss: dailyLoss,
+        dailyLossLimit: dailyLossLimit,
       );
     }
 
@@ -195,6 +199,11 @@ class BingxFuturesRiskGovernorService {
         status: BingxFuturesRiskDecisionStatus.blocked,
         reasonCode: 'risk_per_trade_exceeded',
         reasonMessage: 'Per-trade risk exceeds configured limit',
+        maxAllowedQuantity: maxAllowedQuantity,
+        tradeRiskQuote: tradeRiskQuote,
+        tradeRiskLimit: maxRiskQuote,
+        dailyLoss: dailyLoss,
+        dailyLossLimit: dailyLossLimit,
       );
     }
 
@@ -206,6 +215,7 @@ class BingxFuturesRiskGovernorService {
       reasonMessage: 'Risk gates passed',
       maxAllowedQuantity: maxAllowedQuantity,
       tradeRiskQuote: tradeRiskQuote,
+      tradeRiskLimit: maxRiskQuote,
       dailyLoss: dailyLoss,
       dailyLossLimit: dailyLossLimit,
     );
@@ -219,6 +229,7 @@ class BingxFuturesRiskGovernorService {
     required String reasonMessage,
     double maxAllowedQuantity = 0,
     double tradeRiskQuote = 0,
+    double tradeRiskLimit = 0,
     double dailyLoss = 0,
     double dailyLossLimit = 0,
   }) {
@@ -241,6 +252,7 @@ class BingxFuturesRiskGovernorService {
         'max_allowed_quantity_decimal':
             _fmtDecimal(maxAllowedQuantity, scale: 8),
         'trade_risk_quote_decimal': _fmtDecimal(tradeRiskQuote, scale: 8),
+        'trade_risk_limit_quote_decimal': _fmtDecimal(tradeRiskLimit, scale: 8),
         'daily_loss_quote_decimal': _fmtDecimal(dailyLoss, scale: 8),
         'daily_loss_limit_quote_decimal': _fmtDecimal(dailyLossLimit, scale: 8),
       },
@@ -254,6 +266,7 @@ class BingxFuturesRiskGovernorService {
       decisionHashHex: digest,
       maxAllowedQuantityDecimal: _fmtDecimal(maxAllowedQuantity, scale: 8),
       tradeRiskQuoteDecimal: _fmtDecimal(tradeRiskQuote, scale: 8),
+      tradeRiskLimitQuoteDecimal: _fmtDecimal(tradeRiskLimit, scale: 8),
       dailyLossQuoteDecimal: _fmtDecimal(dailyLoss, scale: 8),
       dailyLossLimitQuoteDecimal: _fmtDecimal(dailyLossLimit, scale: 8),
     );

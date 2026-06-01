@@ -38,6 +38,8 @@ class BingxFuturesIntentPayload {
   final String? timeInForce;
   final String entryMode;
   final String? triggerPriceDecimal;
+  final String? stopLossDecimal;
+  final String? takeProfitDecimal;
   final String? intentHashHex;
 
   const BingxFuturesIntentPayload({
@@ -50,6 +52,8 @@ class BingxFuturesIntentPayload {
     required this.timeInForce,
     required this.entryMode,
     required this.triggerPriceDecimal,
+    required this.stopLossDecimal,
+    required this.takeProfitDecimal,
     required this.intentHashHex,
   });
 
@@ -88,6 +92,8 @@ class BingxFuturesIntentPayload {
           'Intent entry_mode must be direct or zone_pending'),
     };
     final triggerPrice = result['trigger_price_decimal']?.toString().trim();
+    final stopLoss = result['stop_loss_decimal']?.toString().trim();
+    final takeProfit = result['take_profit_decimal']?.toString().trim();
     if (normalizedOrderType == 'limit' &&
         (limitPrice == null || limitPrice.isEmpty)) {
       throw const FormatException('Limit intent requires limit_price_decimal');
@@ -110,6 +116,9 @@ class BingxFuturesIntentPayload {
       entryMode: entryMode,
       triggerPriceDecimal:
           (triggerPrice == null || triggerPrice.isEmpty) ? null : triggerPrice,
+      stopLossDecimal: (stopLoss == null || stopLoss.isEmpty) ? null : stopLoss,
+      takeProfitDecimal:
+          (takeProfit == null || takeProfit.isEmpty) ? null : takeProfit,
       intentHashHex: result['intent_hash_hex']?.toString().trim(),
     );
   }
@@ -759,6 +768,33 @@ class BingxFuturesExchangeService {
         intent.triggerPriceDecimal!.isNotEmpty) {
       params['stopPrice'] = intent.triggerPriceDecimal!;
     }
+    String encodeProtectionParam({
+      required String type,
+      required String stopPrice,
+    }) {
+      final numericStopPrice = num.tryParse(stopPrice);
+      final encodedPrice = numericStopPrice ?? stopPrice;
+      return jsonEncode(<String, dynamic>{
+        'type': type,
+        'stopPrice': encodedPrice,
+        'price': encodedPrice,
+        'workingType': 'MARK_PRICE',
+      });
+    }
+
+    if (intent.stopLossDecimal != null && intent.stopLossDecimal!.isNotEmpty) {
+      params['stopLoss'] = encodeProtectionParam(
+        type: 'STOP_MARKET',
+        stopPrice: intent.stopLossDecimal!,
+      );
+    }
+    if (intent.takeProfitDecimal != null &&
+        intent.takeProfitDecimal!.isNotEmpty) {
+      params['takeProfit'] = encodeProtectionParam(
+        type: 'TAKE_PROFIT_MARKET',
+        stopPrice: intent.takeProfitDecimal!,
+      );
+    }
 
     final canonicalParamString = buildCanonicalParamString(params);
     final signature = signParamString(
@@ -914,16 +950,20 @@ class BingxFuturesExchangeService {
 
   Future<BingxFuturesOpenOrdersResult> getOpenOrders({
     required BingxFuturesApiCredentials credentials,
-    required String symbol,
+    String? symbol,
   }) async {
     final normalizedCredentials = credentials.normalized();
-    final normalizedSymbol = _normalizeSymbol(symbol);
     final timestampMs = _clockMs();
     final params = <String, String>{
-      'symbol': normalizedSymbol,
       'recvWindow': recvWindowMs.toString(),
       'timestamp': timestampMs.toString(),
     };
+    String? normalizedSymbol;
+    final symbolValue = symbol?.trim() ?? '';
+    if (symbolValue.isNotEmpty) {
+      normalizedSymbol = _normalizeSymbol(symbolValue);
+      params['symbol'] = normalizedSymbol;
+    }
     final response = await _executeSignedGet(
       credentials: normalizedCredentials,
       endpointPath: _getOpenOrdersPath,
@@ -932,7 +972,7 @@ class BingxFuturesExchangeService {
     final decoded = _tryDecodeMap(response.body);
     final orders = _extractOpenOrders(
       decoded: decoded,
-      fallbackSymbol: normalizedSymbol,
+      fallbackSymbol: normalizedSymbol ?? '',
     );
     return BingxFuturesOpenOrdersResult(
       isSuccess: response.isSuccess,
@@ -942,7 +982,7 @@ class BingxFuturesExchangeService {
       endpointPath: _getOpenOrdersPath,
       signedPayloadHashHex: response.signedPayloadHashHex,
       responseBody: response.body,
-      symbol: normalizedSymbol,
+      symbol: normalizedSymbol ?? 'ALL',
       orders: orders,
     );
   }

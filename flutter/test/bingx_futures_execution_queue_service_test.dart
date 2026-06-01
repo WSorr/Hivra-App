@@ -21,6 +21,8 @@ void main() {
       timeInForce: 'GTC',
       entryMode: 'direct',
       triggerPriceDecimal: null,
+      stopLossDecimal: null,
+      takeProfitDecimal: null,
       intentHashHex:
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     );

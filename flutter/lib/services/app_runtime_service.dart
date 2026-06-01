@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import '../ffi/app_runtime_runtime.dart';
 import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_service.dart';
+import 'bingx_futures_order_tracking_store.dart';
 import 'bingx_trading_contract_service.dart';
 import 'capsule_chat_contract_service.dart';
 import 'capsule_address_service.dart';
@@ -133,6 +134,12 @@ class AppRuntimeService {
 
   BingxFuturesExchangeService buildBingxFuturesExchangeService() {
     return BingxFuturesExchangeService();
+  }
+
+  BingxFuturesOrderTrackingStore buildBingxFuturesOrderTrackingStore() {
+    return BingxFuturesOrderTrackingStore(
+      readActiveCapsuleRootHex: activeCapsuleRootHex,
+    );
   }
 
   Future<PluginRuntimeBinding> _resolvePluginRuntimeBinding(

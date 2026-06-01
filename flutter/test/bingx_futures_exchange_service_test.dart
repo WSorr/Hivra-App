@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 
@@ -61,6 +63,8 @@ void main() {
           timeInForce: 'GTC',
           entryMode: 'direct',
           triggerPriceDecimal: null,
+          stopLossDecimal: null,
+          takeProfitDecimal: null,
           intentHashHex: 'abc',
         ),
         testOrder: true,
@@ -122,6 +126,8 @@ void main() {
           timeInForce: 'GTC',
           entryMode: 'zone_pending',
           triggerPriceDecimal: '62950',
+          stopLossDecimal: '64000',
+          takeProfitDecimal: '62000',
           intentHashHex: 'def',
         ),
         testOrder: true,
@@ -130,6 +136,21 @@ void main() {
       expect(capturedRequest.body, contains('type=TRIGGER_LIMIT'));
       expect(capturedRequest.body, contains('stopPrice=62950'));
       expect(capturedRequest.body, contains('price=63000'));
+      final params = Uri.splitQueryString(capturedRequest.body);
+      final stopLossRaw = params['stopLoss'];
+      final takeProfitRaw = params['takeProfit'];
+      expect(stopLossRaw, isNotNull);
+      expect(takeProfitRaw, isNotNull);
+      final stopLoss = jsonDecode(stopLossRaw!) as Map<String, dynamic>;
+      final takeProfit = jsonDecode(takeProfitRaw!) as Map<String, dynamic>;
+      expect(stopLoss['type'], 'STOP_MARKET');
+      expect(stopLoss['stopPrice'], 64000);
+      expect(stopLoss['price'], 64000);
+      expect(stopLoss['workingType'], 'MARK_PRICE');
+      expect(takeProfit['type'], 'TAKE_PROFIT_MARKET');
+      expect(takeProfit['stopPrice'], 62000);
+      expect(takeProfit['price'], 62000);
+      expect(takeProfit['workingType'], 'MARK_PRICE');
       expect(result.isSuccess, isTrue);
       expect(result.orderId, '555');
     });
@@ -314,6 +335,38 @@ void main() {
       expect(result.orders.first.orderId, '111');
       expect(result.orders.first.priceDecimal, '81900');
       expect(result.orders.first.triggerPriceDecimal, '81800');
+    });
+
+    test('reads open orders without symbol filter', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"orders":[{"orderId":"222","symbol":"SOL-USDT","side":"BUY","positionSide":"LONG","type":"TRIGGER_LIMIT","status":"NEW","price":"120.5","stopPrice":"121.0","origQty":"1","executedQty":"0","time":1710000000000}]}}',
+          );
+        },
+      );
+
+      final result = await service.getOpenOrders(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/trade/openOrders');
+      expect(capturedRequest.uri.query, isNot(contains('symbol=')));
+      expect(capturedRequest.uri.query, contains('signature='));
+      expect(result.isSuccess, isTrue);
+      expect(result.symbol, 'ALL');
+      expect(result.orders, hasLength(1));
+      expect(result.orders.first.orderId, '222');
+      expect(result.orders.first.symbol, 'SOL-USDT');
     });
 
     test('cancels order via signed DELETE endpoint', () async {

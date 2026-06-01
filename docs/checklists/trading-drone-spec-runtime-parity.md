@@ -18,6 +18,7 @@ Legend:
 | Deterministic replay harness | DONE | `flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart` | Keep fixture parity checks |
 | Live entry uses TVH decision as primary gate | DONE | `TradingDroneScreen` and `WasmPluginsScreen` resolve limit intents via `BingxFuturesLiveDecisionService` before host call | Keep live-decision replay checks green |
 | Side/zone provenance linked to TVH decision hash | DONE | `snapshot/feature/tvh/live` hashes are propagated into host result and decision/execution envelopes | Keep provenance envelope regression tests green |
+| Trend bundle + far-retest continuation gate | DONE | `BingxFuturesLiveDecisionService` emits `trend_15m/4h/1d` and deterministic `trend_gate_*` block codes | Keep live-decision regressions green |
 | Risk governor before execution | DONE | `TradingDroneScreen._evaluateExecutionRisk`, `WasmPluginsScreen._evaluateBingxExecutionRisk` | Keep policy regression and envelope checks green |
 | Exchange-backed risk inputs (equity/pnl/positions) | DONE | `BingxFuturesExchangeRiskInputService` wired in `TradingDroneScreen` and `WasmPluginsScreen` using `getUserBalance/getUserPositions` | Keep exchange payload variant tests green |
 | Runtime-only futures intent execution | DONE | `place_bingx_futures_order_intent` runtime path enforced (plugin host boundary) | Keep smoke+tests green |
@@ -37,6 +38,7 @@ Legend:
 - [ ] Snapshot normalization rules are honored (UTC, deterministic sorting, fixed decimal scales, closed candles only).
 - [ ] `market_snapshot_hash` is produced from canonical JSON.
 - [ ] Feature extractor computes trend (EMA50/EMA200 15m), ATR14(5m), liquidity levels, and whale activations deterministically.
+- [ ] Live decision emits trend bundle (`trend_15m`, `trend_4h`, `trend_1d`) and deterministic trend-gate status.
 - [ ] Rule engine decision path is explicit and hashable: `LONG | SHORT | NO_SIGNAL | BLOCKED`.
 - [ ] Funding guard is applied before execution intent.
 - [ ] Risk governor is applied before exchange execution.

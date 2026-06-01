@@ -41,6 +41,11 @@ class BingxFuturesLiveDecisionResult {
   final String liveDecisionHashHex;
   final String canonicalJson;
   final List<BingxTvhDecisionReason> reasons;
+  final String trend15m;
+  final String trend4h;
+  final String trend1d;
+  final bool trendGateBlocked;
+  final String trendGateCode;
 
   const BingxFuturesLiveDecisionResult({
     required this.canPrepareIntent,
@@ -56,10 +61,17 @@ class BingxFuturesLiveDecisionResult {
     required this.liveDecisionHashHex,
     required this.canonicalJson,
     required this.reasons,
+    required this.trend15m,
+    required this.trend4h,
+    required this.trend1d,
+    required this.trendGateBlocked,
+    required this.trendGateCode,
   });
 }
 
 class BingxFuturesLiveDecisionService {
+  static const double _trendGateRetestPctThreshold = 0.07;
+
   final BingxFuturesMarketSnapshotService _snapshotService;
   final BingxFuturesFeatureExtractorService _featureExtractor;
   final BingxFuturesTvhRuleEngineService _ruleEngine;
@@ -135,14 +147,40 @@ class BingxFuturesLiveDecisionService {
     }
 
     final zoneConflict = zone != null && zone.side != side;
-    final canPrepareIntent = side != null && zone != null && !zoneConflict;
+    final trendGateCode = _evaluateTrendGate(
+      side: side,
+      features: features,
+      zone: zone,
+    );
+    final trendGateBlocked = trendGateCode != 'ok';
+    final canPrepareIntent = side != null &&
+        zone != null &&
+        !zoneConflict &&
+        !trendGateBlocked;
+
+    final mergedReasons = <BingxTvhDecisionReason>[
+      ...tvhDecision.reasons,
+      BingxTvhDecisionReason(
+        code: trendGateCode,
+        passed: !trendGateBlocked,
+        detail: trendGateBlocked
+            ? 'trend_gate_blocked'
+            : 'trend_gate_ok',
+      ),
+    ];
     return _buildResult(
       snapshot: snapshot,
       tvhDecision: tvhDecision,
       side: side,
       zone: zone,
       zoneConflict: zoneConflict,
+      trendGateBlocked: trendGateBlocked,
+      trendGateCode: trendGateCode,
       canPrepareIntent: canPrepareIntent,
+      reasons: mergedReasons,
+      trend15m: features.trendDirection.name,
+      trend4h: zone?.trend4h ?? 'flat',
+      trend1d: zone?.trend1d ?? 'flat',
     );
   }
 
@@ -152,7 +190,13 @@ class BingxFuturesLiveDecisionService {
     required String? side,
     required BingxFuturesZoneDecisionResult? zone,
     required bool zoneConflict,
+    required bool trendGateBlocked,
+    required String trendGateCode,
     required bool canPrepareIntent,
+    required List<BingxTvhDecisionReason> reasons,
+    required String trend15m,
+    required String trend4h,
+    required String trend1d,
   }) {
     final zoneLowDecimal =
         zone == null ? null : _formatDecimal(zone.zoneLow, scale: 8);
@@ -166,6 +210,15 @@ class BingxFuturesLiveDecisionService {
       'tvh_decision_hash_hex': tvhDecision.decisionHashHex,
       'decision': tvhDecision.decision.name,
       'can_prepare_intent': canPrepareIntent,
+      'trend_bundle': <String, dynamic>{
+        'trend_15m': trend15m,
+        'trend_4h': trend4h,
+        'trend_1d': trend1d,
+      },
+      'trend_gate': <String, dynamic>{
+        'blocked': trendGateBlocked,
+        'code': trendGateCode,
+      },
       'side': side,
       'zone': zone == null
           ? null
@@ -176,8 +229,10 @@ class BingxFuturesLiveDecisionService {
               'source': zone.source,
               'side_reason': zone.sideReason,
               'conflict': zoneConflict,
+              'target_retest_pct': zone.targetRetestPct,
+              'needs_farther_retest': zone.needsFartherRetest,
             },
-      'reason_codes': tvhDecision.reasons
+      'reason_codes': reasons
           .map((reason) => <String, dynamic>{
                 'code': reason.code,
                 'passed': reason.passed,
@@ -198,8 +253,46 @@ class BingxFuturesLiveDecisionService {
       tvhDecisionHashHex: tvhDecision.decisionHashHex,
       liveDecisionHashHex: liveHash,
       canonicalJson: canonical,
-      reasons: List<BingxTvhDecisionReason>.unmodifiable(tvhDecision.reasons),
+      reasons: List<BingxTvhDecisionReason>.unmodifiable(reasons),
+      trend15m: trend15m,
+      trend4h: trend4h,
+      trend1d: trend1d,
+      trendGateBlocked: trendGateBlocked,
+      trendGateCode: trendGateCode,
     );
+  }
+
+  String _evaluateTrendGate({
+    required String? side,
+    required BingxFuturesFeatureExtractionResult features,
+    required BingxFuturesZoneDecisionResult? zone,
+  }) {
+    if (side == null || zone == null) return 'ok';
+    final trend4h = zone.trend4h.trim().toLowerCase();
+    final trend1d = zone.trend1d.trim().toLowerCase();
+    final isStrongDownContinuation = features.trendDirection ==
+            BingxTrendDirection.bearish &&
+        trend4h == 'bear' &&
+        trend1d == 'bear';
+    final isStrongUpContinuation =
+        features.trendDirection == BingxTrendDirection.bullish &&
+            trend4h == 'bull' &&
+            trend1d == 'bull';
+
+    final targetRetestPct = zone.targetRetestPct.toDouble();
+    if (side == 'sell' &&
+        isStrongDownContinuation &&
+        zone.needsFartherRetest &&
+        targetRetestPct >= _trendGateRetestPctThreshold) {
+      return 'trend_gate_short_far_retest';
+    }
+    if (side == 'buy' &&
+        isStrongUpContinuation &&
+        zone.needsFartherRetest &&
+        targetRetestPct >= _trendGateRetestPctThreshold) {
+      return 'trend_gate_long_far_retest';
+    }
+    return 'ok';
   }
 
   List<num> _readHighs(List<BingxFuturesCandle> candles, String timeframe) {

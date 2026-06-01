@@ -145,6 +145,14 @@ All downstream TVH outputs MUST include this hash.
   - bullish if EMA50 > EMA200,
   - bearish if EMA50 < EMA200.
 
+Trend context must be carried as a bundle, not a single timeframe:
+
+- `trend_15m` from EMA50/EMA200,
+- `trend_4h` from higher-timeframe drift bias,
+- `trend_1d` from daily drift bias.
+
+The runtime decision envelope must emit this bundle for every live decision.
+
 ### 5.2 Volatility/Risk Frame
 
 - ATR14 on 5m.
@@ -284,6 +292,23 @@ Entry anchor:
 Entry anchor:
 
 - zone-based pending entry inside reclaim zone.
+
+### 6.3 Trend-Gate (Continuation vs Far Retest)
+
+To avoid blind far-retest entries during impulsive continuation:
+
+- If decision side is `short`,
+- and trend bundle is strongly bearish (`trend_15m=bearish`, `trend_4h=bear`, `trend_1d=bear`),
+- and zone model marks `needs_farther_retest=true`,
+- and `target_retest_pct >= 0.07`,
+
+then live intent preparation must be blocked with deterministic code:
+
+- `trend_gate_short_far_retest`.
+
+Symmetric long-side rule applies with:
+
+- `trend_gate_long_far_retest`.
 
 ---
 
@@ -464,9 +489,9 @@ Target:
 
 Implementation:
 
-- extend `flutter/lib/services/bingx_trading_contract_service.dart`
-  or add dedicated
-  `flutter/lib/services/bingx_futures_intent_builder_service.dart`.
+- extend `flutter/lib/services/bingx_trading_contract_service.dart`.
+- optional future extraction: split intent mapping into a dedicated
+  service only if it reduces coupling without violating downward dependencies.
 - must emit:
   - `rule_set`,
   - `market_snapshot_hash`,
