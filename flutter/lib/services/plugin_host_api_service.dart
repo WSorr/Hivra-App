@@ -5,8 +5,6 @@ import 'package:crypto/crypto.dart';
 import 'bingx_trading_contract_service.dart';
 import 'capsule_chat_contract_service.dart';
 import 'consensus_processor.dart';
-import 'plugin_demo_contract_runner_service.dart';
-import 'temperature_tomorrow_contract_service.dart';
 import 'wasm_plugin_capability_policy_service.dart';
 
 enum PluginHostApiStatus {
@@ -81,10 +79,6 @@ class PluginHostApiResponse {
   });
 }
 
-typedef TemperatureDemoRunner = PluginDemoRunResult Function({
-  required TemperatureTomorrowContractSpec contract,
-  required TemperatureOracleObservation observation,
-});
 typedef CapsuleChatRunner = CapsuleChatExecutionResult Function({
   required String peerHex,
   required String clientMessageId,
@@ -197,9 +191,6 @@ typedef PluginRuntimeInvokeResolver = Future<PluginRuntimeInvokeEvidence?>
 
 class PluginHostApiService {
   static const int schemaVersion = 1;
-  static const String temperaturePluginId =
-      'hivra.contract.temperature-li.tomorrow.v1';
-  static const String settleTemperatureMethod = 'settle_temperature_tomorrow';
   static const String bingxSpotTradingPluginId =
       BingxTradingContractService.spotPluginId;
   static const String bingxTradingPluginId = bingxSpotTradingPluginId;
@@ -212,7 +203,6 @@ class PluginHostApiService {
   static const String capsuleChatPluginId = CapsuleChatContractService.pluginId;
   static const String postCapsuleChatMethod = 'post_capsule_chat_message';
 
-  final TemperatureDemoRunner _runTemperatureDemo;
   final BingxSpotOrderRunner _runBingxSpotOrder;
   final BingxSpotOrderRunner _runBingxFuturesOrder;
   final CapsuleChatRunner _runCapsuleChat;
@@ -221,7 +211,6 @@ class PluginHostApiService {
   final WasmPluginCapabilityPolicyService _capabilityPolicy;
 
   const PluginHostApiService({
-    required TemperatureDemoRunner runTemperatureDemo,
     required BingxSpotOrderRunner runBingxSpotOrder,
     BingxSpotOrderRunner? runBingxFuturesOrder,
     required CapsuleChatRunner runCapsuleChat,
@@ -229,8 +218,7 @@ class PluginHostApiService {
     PluginRuntimeInvokeResolver? resolveRuntimeInvoke,
     WasmPluginCapabilityPolicyService capabilityPolicy =
         const WasmPluginCapabilityPolicyService(),
-  })  : _runTemperatureDemo = runTemperatureDemo,
-        _runBingxSpotOrder = runBingxSpotOrder,
+  })  : _runBingxSpotOrder = runBingxSpotOrder,
         _runBingxFuturesOrder = runBingxFuturesOrder ?? runBingxSpotOrder,
         _runCapsuleChat = runCapsuleChat,
         _resolveRuntimeBinding = resolveRuntimeBinding,
@@ -387,9 +375,6 @@ class PluginHostApiService {
         runtimeInvoke: runtimeInvoke,
       );
     }
-    if (request.pluginId == temperaturePluginId) {
-      return _executeTemperature(request, runtimeBinding, runtimeInvoke);
-    }
     if (request.pluginId == bingxSpotTradingPluginId ||
         request.pluginId == bingxFuturesTradingPluginId) {
       return _executeBingx(request, runtimeBinding, runtimeInvoke);
@@ -430,9 +415,6 @@ class PluginHostApiService {
   }
 
   String? _expectedContractKindForPlugin(String pluginId) {
-    if (pluginId == temperaturePluginId) {
-      return 'temperature_tomorrow_liechtenstein';
-    }
     if (pluginId == bingxSpotTradingPluginId) {
       return BingxTradingContractService.spotContractKind;
     }
@@ -475,14 +457,6 @@ class PluginHostApiService {
     if (missing.isNotEmpty) {
       return 'Runtime capabilities are missing required grants';
     }
-    final missingAlternativeGroup = _missingAlternativeCapabilityGroup(
-      pluginId: pluginId,
-      method: method,
-      declared: normalizedSet,
-    );
-    if (missingAlternativeGroup) {
-      return 'Runtime capabilities are missing required grants';
-    }
     return null;
   }
 
@@ -490,11 +464,6 @@ class PluginHostApiService {
     required String pluginId,
     required String method,
   }) {
-    if (pluginId == temperaturePluginId && method == settleTemperatureMethod) {
-      return const <String>{
-        'consensus_guard.read',
-      };
-    }
     if (pluginId == bingxSpotTradingPluginId &&
         method == placeBingxSpotOrderIntentMethod) {
       return const <String>{
@@ -515,88 +484,6 @@ class PluginHostApiService {
       };
     }
     return const <String>{};
-  }
-
-  bool _missingAlternativeCapabilityGroup({
-    required String pluginId,
-    required String method,
-    required Set<String> declared,
-  }) {
-    if (pluginId == temperaturePluginId && method == settleTemperatureMethod) {
-      const oracleAlternatives = <String>{
-        'oracle.read.mock_weather',
-        'oracle.read.temperature.li',
-      };
-      return !declared.any(oracleAlternatives.contains);
-    }
-    return false;
-  }
-
-  PluginHostApiResponse _executeTemperature(
-    PluginHostApiRequest request,
-    PluginRuntimeBinding runtimeBinding,
-    PluginRuntimeInvokeEvidence? runtimeInvoke,
-  ) {
-    if (request.method != settleTemperatureMethod) {
-      return _rejected(
-        pluginId: request.pluginId,
-        method: request.method,
-        code: 'unsupported_method',
-        message: 'Unsupported plugin method',
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-      );
-    }
-
-    final parse = _parseTemperatureArgs(request.args);
-    if (parse.error != null) {
-      return _rejected(
-        pluginId: request.pluginId,
-        method: request.method,
-        code: 'invalid_args',
-        message: parse.error!,
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-      );
-    }
-
-    final runResult = _runTemperatureDemo(
-      contract: parse.contract!,
-      observation: parse.observation!,
-    );
-
-    if (runResult.settlement != null) {
-      return _executed(
-        pluginId: request.pluginId,
-        method: request.method,
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-        result: <String, dynamic>{
-          'peer_hex': runResult.peerHex,
-          'peer_label': runResult.peerLabel,
-          'outcome': runResult.settlement!.outcome.name,
-          'winner_role': runResult.settlement!.winnerRole,
-          'settlement_hash_hex': runResult.settlement!.settlementHashHex,
-          'canonical_settlement_json': runResult.settlement!.canonicalJson,
-          'ready_pair_count': runResult.readyPairCount,
-          'blocked_pair_count': runResult.blockedPairCount,
-        },
-      );
-    }
-
-    return switch (runResult.state) {
-      PluginDemoRunState.blocked ||
-      PluginDemoRunState.noPairwisePaths ||
-      PluginDemoRunState.partial ||
-      PluginDemoRunState.executed =>
-        _blocked(
-          pluginId: request.pluginId,
-          method: request.method,
-          blockingFacts: runResult.blockingFacts,
-          runtimeBinding: runtimeBinding,
-          runtimeInvoke: runtimeInvoke,
-        ),
-    };
   }
 
   PluginHostApiResponse _executeCapsuleChat(
@@ -845,77 +732,6 @@ class PluginHostApiService {
     );
   }
 
-  _TemperatureParseResult _parseTemperatureArgs(Map<String, dynamic> args) {
-    final targetDateUtc = args['target_date_utc']?.toString().trim() ?? '';
-    if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(targetDateUtc)) {
-      return const _TemperatureParseResult(
-        error: 'target_date_utc must be YYYY-MM-DD',
-      );
-    }
-    final threshold = _parseInt(args['threshold_deci_celsius']);
-    if (threshold == null) {
-      return const _TemperatureParseResult(
-        error: 'threshold_deci_celsius must be an integer',
-      );
-    }
-    final proposerRuleRaw = args['proposer_rule']?.toString().trim();
-    final proposerRule = switch (proposerRuleRaw) {
-      'above' => TemperatureOutcomeRule.above,
-      'below' => TemperatureOutcomeRule.below,
-      _ => null,
-    };
-    if (proposerRule == null) {
-      return const _TemperatureParseResult(
-        error: 'proposer_rule must be above or below',
-      );
-    }
-    final observed = _parseInt(args['observed_deci_celsius']);
-    if (observed == null) {
-      return const _TemperatureParseResult(
-        error: 'observed_deci_celsius must be an integer',
-      );
-    }
-
-    final sourceId = args['oracle_source_id']?.toString().trim() ?? '';
-    final eventId = args['oracle_event_id']?.toString().trim() ?? '';
-    final recordedAtUtc =
-        args['oracle_recorded_at_utc']?.toString().trim() ?? '';
-    if (sourceId.isEmpty || eventId.isEmpty || recordedAtUtc.isEmpty) {
-      return const _TemperatureParseResult(
-        error:
-            'oracle_source_id/oracle_event_id/oracle_recorded_at_utc are required',
-      );
-    }
-    if (!_isIsoUtc(recordedAtUtc)) {
-      return const _TemperatureParseResult(
-        error: 'oracle_recorded_at_utc must be ISO-8601 UTC instant',
-      );
-    }
-
-    final drawOnEqual = args['draw_on_equal'] == true;
-    final locationCode =
-        (args['location_code']?.toString().trim() ?? 'LI').toUpperCase();
-
-    return _TemperatureParseResult(
-      contract: TemperatureTomorrowContractSpec(
-        pluginId: temperaturePluginId,
-        locationCode: locationCode,
-        targetDateUtc: targetDateUtc,
-        thresholdDeciCelsius: threshold,
-        proposerRule: proposerRule,
-        drawOnEqual: drawOnEqual,
-      ),
-      observation: TemperatureOracleObservation(
-        sourceId: sourceId,
-        eventId: eventId,
-        locationCode: locationCode,
-        targetDateUtc: targetDateUtc,
-        recordedAtUtc: recordedAtUtc,
-        observedDeciCelsius: observed,
-      ),
-    );
-  }
-
   PluginHostApiResponse _executed({
     required String pluginId,
     required String method,
@@ -1108,19 +924,6 @@ class PluginHostApiService {
     });
   }
 
-  int? _parseInt(Object? value) {
-    if (value is int) return value;
-    return int.tryParse('$value');
-  }
-
-  bool _isIsoUtc(String value) {
-    try {
-      return DateTime.parse(value).isUtc;
-    } catch (_) {
-      return false;
-    }
-  }
-
   List<String> _normalizedCapabilities(List<String> raw) {
     final normalized = <String>{};
     for (final item in raw) {
@@ -1131,16 +934,4 @@ class PluginHostApiService {
     final ordered = normalized.toList()..sort();
     return ordered;
   }
-}
-
-class _TemperatureParseResult {
-  final TemperatureTomorrowContractSpec? contract;
-  final TemperatureOracleObservation? observation;
-  final String? error;
-
-  const _TemperatureParseResult({
-    this.contract,
-    this.observation,
-    this.error,
-  });
 }

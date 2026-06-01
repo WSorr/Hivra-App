@@ -15,7 +15,7 @@ void main() {
     final summary = summarizeRuntimeCapabilitiesForDisplay(
       const <String>[
         'consensus_guard.read',
-        'oracle.read.mock_weather',
+        'exchange.trade.bingx.futures',
       ],
       visibleLimit: 3,
     );
@@ -24,7 +24,7 @@ void main() {
       summary.visibleCapabilities,
       const <String>[
         'consensus_guard.read',
-        'oracle.read.mock_weather',
+        'exchange.trade.bingx.futures',
       ],
     );
     expect(summary.hiddenCount, 0);
@@ -34,7 +34,7 @@ void main() {
     final summary = summarizeRuntimeCapabilitiesForDisplay(
       const <String>[
         'consensus_guard.read',
-        'oracle.read.mock_weather',
+        'exchange.trade.bingx.futures',
         'exchange.trade.bingx.spot',
         'chat.send.capsule',
       ],
@@ -45,7 +45,7 @@ void main() {
       summary.visibleCapabilities,
       const <String>[
         'consensus_guard.read',
-        'oracle.read.mock_weather',
+        'exchange.trade.bingx.futures',
         'exchange.trade.bingx.spot',
       ],
     );
@@ -56,7 +56,7 @@ void main() {
     final summary = summarizeRuntimeCapabilitiesForDisplay(
       const <String>[
         'consensus_guard.read',
-        'oracle.read.mock_weather',
+        'exchange.trade.bingx.futures',
       ],
       visibleLimit: -5,
     );

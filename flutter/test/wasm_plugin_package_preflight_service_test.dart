@@ -60,15 +60,15 @@ void main() {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
               'release_version': '0.1.0',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
-              'contract': {'kind': 'temperature_tomorrow_liechtenstein'},
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'contract': {'kind': 'bingx_futures_order_intent'},
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
                 'module_path': 'plugin/module.wasm',
               },
               'capabilities': [
-                'oracle.read.mock_weather',
+                'exchange.trade.bingx.futures',
                 'consensus_guard.read'
               ],
             },
@@ -82,15 +82,15 @@ void main() {
     final preflight = await service.inspect(file);
 
     expect(preflight.packageKind, 'zip');
-    expect(preflight.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
+    expect(preflight.pluginId, 'hivra.contract.bingx-futures-trading.v1');
     expect(preflight.pluginVersion, '0.1.0');
-    expect(preflight.contractKind, 'temperature_tomorrow_liechtenstein');
+    expect(preflight.contractKind, 'bingx_futures_order_intent');
     expect(preflight.runtimeAbi, 'hivra_host_abi_v1');
     expect(preflight.runtimeEntryExport, 'hivra_entry_v1');
     expect(preflight.runtimeModulePath, 'plugin/module.wasm');
     expect(
       preflight.capabilities,
-      ['consensus_guard.read', 'oracle.read.mock_weather'],
+      ['consensus_guard.read', 'exchange.trade.bingx.futures'],
     );
   });
 
@@ -103,7 +103,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
@@ -132,7 +132,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
@@ -159,7 +159,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
@@ -189,7 +189,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
@@ -218,7 +218,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
@@ -247,7 +247,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
@@ -276,7 +276,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
@@ -322,7 +322,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
@@ -349,7 +349,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
             },
           ),
           'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
@@ -373,7 +373,7 @@ void main() {
             {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'runtime': {
                 'abi': 'wrong_abi',
                 'entry_export': 'hivra_entry_v1',

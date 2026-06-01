@@ -1,8 +1,6 @@
 class WasmPluginCapabilityPolicyService {
   static const Set<String> _allowedCapabilities = <String>{
     'consensus_guard.read',
-    'oracle.read.mock_weather',
-    'oracle.read.temperature.li',
     'exchange.read.bingx.market',
     'exchange.trade.bingx.spot',
     'exchange.trade.bingx.futures',

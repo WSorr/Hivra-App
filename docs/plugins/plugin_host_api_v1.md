@@ -11,8 +11,6 @@ This document defines the first deterministic host API boundary used before wasm
 
 ## Supported Contracts (v1)
 
-- `hivra.contract.temperature-li.tomorrow.v1`
-  - method: `settle_temperature_tomorrow`
 - `hivra.contract.bingx-trading.v1`
   - method: `place_bingx_spot_order_intent`
 - `hivra.contract.bingx-futures-trading.v1`
@@ -21,25 +19,6 @@ This document defines the first deterministic host API boundary used before wasm
   - method: `post_capsule_chat_message`
 
 ## Request Shape
-
-```json
-{
-  "schema_version": 1,
-  "plugin_id": "hivra.contract.temperature-li.tomorrow.v1",
-  "method": "settle_temperature_tomorrow",
-  "args": {
-    "target_date_utc": "2026-04-01",
-    "threshold_deci_celsius": 85,
-    "proposer_rule": "above",
-    "draw_on_equal": true,
-    "location_code": "LI",
-    "observed_deci_celsius": 90,
-    "oracle_source_id": "oracle.mock.weather.v1",
-    "oracle_event_id": "evt-1",
-    "oracle_recorded_at_utc": "2026-04-01T12:00:00Z"
-  }
-}
-```
 
 ```json
 {
@@ -180,9 +159,6 @@ This document defines the first deterministic host API boundary used before wasm
   - when external package exposes capability metadata, host validates required capabilities for requested `(plugin_id, method)` and rejects missing/unsupported grants (`runtime_capability_mismatch`)
   - host canonical response includes normalized runtime capability metadata (`execution_capabilities`) for deterministic diagnostics
 - Runtime capability requirements are method-scoped:
-  - `settle_temperature_tomorrow` requires `consensus_guard.read` and one oracle capability from:
-    - `oracle.read.mock_weather`
-    - `oracle.read.temperature.li`
   - `place_bingx_spot_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.spot`
   - `place_bingx_futures_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.futures`
   - `post_capsule_chat_message` requires `consensus_guard.read`

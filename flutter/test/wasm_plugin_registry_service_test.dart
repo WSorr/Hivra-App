@@ -124,8 +124,8 @@ void main() {
               'schema': 'hivra.plugin.manifest',
               'version': 1,
               'release_version': '0.1.0',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
-              'contract': {'kind': 'temperature_tomorrow_liechtenstein'},
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'contract': {'kind': 'bingx_futures_order_intent'},
               'runtime': {
                 'abi': 'hivra_host_abi_v1',
                 'entry_export': 'hivra_entry_v1',
@@ -133,7 +133,7 @@ void main() {
               },
               'capabilities': [
                 'consensus_guard.read',
-                'oracle.read.mock_weather'
+                'exchange.trade.bingx.futures'
               ],
             },
           ),
@@ -146,21 +146,21 @@ void main() {
     final installed = await service.installPluginFromFile(sourceFile);
 
     expect(installed.packageKind, 'zip');
-    expect(installed.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
+    expect(installed.pluginId, 'hivra.contract.bingx-futures-trading.v1');
     expect(installed.pluginVersion, '0.1.0');
-    expect(installed.contractKind, 'temperature_tomorrow_liechtenstein');
+    expect(installed.contractKind, 'bingx_futures_order_intent');
     expect(installed.runtimeAbi, 'hivra_host_abi_v1');
     expect(installed.runtimeEntryExport, 'hivra_entry_v1');
     expect(installed.runtimeModulePath, 'plugin/module.wasm');
     expect(
       installed.capabilities,
-      ['consensus_guard.read', 'oracle.read.mock_weather'],
+      ['consensus_guard.read', 'exchange.trade.bingx.futures'],
     );
 
     final loaded = await service.loadPlugins();
     expect(loaded, isNotEmpty);
     expect(loaded.first.packageKind, 'zip');
-    expect(loaded.first.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
+    expect(loaded.first.pluginId, 'hivra.contract.bingx-futures-trading.v1');
   });
 
   test('reinstalls same plugin_id + version without creating duplicates',
@@ -280,7 +280,7 @@ void main() {
           'sizeBytes': 10,
           'installedAtIso': '2026-04-10T12:00:00Z',
           'packageKind': 'zip',
-          'pluginId': 'hivra.contract.temperature-li.tomorrow.v1',
+          'pluginId': 'hivra.contract.bingx-futures-trading.v1',
           'pluginVersion': '0.1.0',
         },
         {

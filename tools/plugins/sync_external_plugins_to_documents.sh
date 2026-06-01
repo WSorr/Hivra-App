@@ -43,7 +43,6 @@ latest_zip_or_empty() {
 
 BINGX_FUTURES_ZIP="$(latest_zip_or_empty "$SOURCE_DIR"/bingx_futures_test_plugin-*.zip)"
 BINGX_SPOT_ZIP="$(latest_zip_or_empty "$SOURCE_DIR"/bingx_spot_test_plugin-*.zip)"
-TEMP_ZIP="$(ls "$SOURCE_DIR"/temperature_li_tomorrow_test_plugin-*.zip | sort | tail -n1)"
 CHAT_ZIP="$(ls "$SOURCE_DIR"/capsule_chat_test_plugin-*.zip | sort | tail -n1)"
 
 if [[ -n "$BINGX_FUTURES_ZIP" ]]; then
@@ -64,10 +63,8 @@ else
 fi
 
 BINGX_SHA256="$(sha256_hex "$BINGX_ZIP")"
-TEMP_SHA256="$(sha256_hex "$TEMP_ZIP")"
 CHAT_SHA256="$(sha256_hex "$CHAT_ZIP")"
 
-TEMP_VERSION="$(basename "$TEMP_ZIP" | sed -E 's/^temperature_li_tomorrow_test_plugin-([0-9.]+)\.zip$/\1/')"
 CHAT_VERSION="$(basename "$CHAT_ZIP" | sed -E 's/^capsule_chat_test_plugin-([0-9.]+)\.zip$/\1/')"
 
 cat > "$CATALOG_PATH" <<JSON
@@ -85,15 +82,6 @@ cat > "$CATALOG_PATH" <<JSON
       "package_kind": "zip",
       "download_url": "$(zip_uri "$BINGX_ZIP")",
       "sha256_hex": "$BINGX_SHA256"
-    },
-    {
-      "id": "temperature-li-tomorrow-test",
-      "plugin_id": "hivra.contract.temperature-li.tomorrow.v1",
-      "display_name": "Temperature Tomorrow LI (Test Plugin)",
-      "version": "$TEMP_VERSION",
-      "package_kind": "zip",
-      "download_url": "$(zip_uri "$TEMP_ZIP")",
-      "sha256_hex": "$TEMP_SHA256"
     },
     {
       "id": "capsule-chat-test",

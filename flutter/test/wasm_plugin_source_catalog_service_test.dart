@@ -45,8 +45,8 @@ void main() {
         {
           'schema': 'hivra.plugin.manifest',
           'version': 1,
-          'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
-          'contract': {'kind': 'temperature_tomorrow_liechtenstein'},
+          'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+          'contract': {'kind': 'bingx_futures_order_intent'},
           'runtime': {
             'abi': 'hivra_host_abi_v1',
             'entry_export': 'hivra_entry_v1',
@@ -101,9 +101,9 @@ void main() {
                 'source_name': 'Hivra Plugins',
                 'entries': [
                   {
-                    'id': 'temperature-li-tomorrow',
-                    'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
-                    'display_name': 'Temperature Tomorrow LI',
+                    'id': 'bingx-futures-catalog',
+                    'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+                    'display_name': 'BingX Futures Trading',
                     'version': '0.1.0',
                     'download_url': downloadUrl,
                     'package_kind': 'zip',
@@ -145,7 +145,7 @@ void main() {
     expect(catalog.entries.length, 1);
     expect(
       catalog.entries.first.pluginId,
-      'hivra.contract.temperature-li.tomorrow.v1',
+      'hivra.contract.bingx-futures-trading.v1',
     );
   });
 
@@ -157,8 +157,8 @@ void main() {
     final record = await service.installFromSourceEntry(catalog.entries.first);
 
     expect(record.packageKind, 'zip');
-    expect(record.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
-    expect(record.contractKind, 'temperature_tomorrow_liechtenstein');
+    expect(record.pluginId, 'hivra.contract.bingx-futures-trading.v1');
+    expect(record.contractKind, 'bingx_futures_order_intent');
   });
 
   test('supports local file catalog and file package URLs', () async {
@@ -176,9 +176,9 @@ void main() {
           'source_name': 'Local Hivra Plugins',
           'entries': [
             {
-              'id': 'temperature-local',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
-              'display_name': 'Temperature Local',
+              'id': 'bingx-futures-local',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'display_name': 'BingX Futures Local',
               'version': '0.1.0',
               'download_url': File(packagePath).uri.toString(),
               'package_kind': 'zip',
@@ -194,7 +194,7 @@ void main() {
     expect(catalog.entries.length, 1);
 
     final record = await service.installFromSourceEntry(catalog.entries.first);
-    expect(record.pluginId, 'hivra.contract.temperature-li.tomorrow.v1');
+    expect(record.pluginId, 'hivra.contract.bingx-futures-trading.v1');
   });
 
   test('fetchCatalogWithFallback loads local catalog when remote fails',
@@ -214,8 +214,8 @@ void main() {
           'entries': [
             {
               'id': 'fallback-local',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
-              'display_name': 'Temperature Local Fallback',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'display_name': 'BingX Futures Local Fallback',
               'version': '0.1.0',
               'download_url': File(packagePath).uri.toString(),
               'package_kind': 'zip',
@@ -243,7 +243,7 @@ void main() {
 
     final entry = WasmPluginSourceCatalogEntry(
       id: 'bad-hash',
-      pluginId: 'hivra.contract.temperature-li.tomorrow.v1',
+      pluginId: 'hivra.contract.bingx-futures-trading.v1',
       displayName: 'Bad Hash',
       version: '0.1.0',
       downloadUrl: File(packagePath).uri.toString(),
@@ -270,7 +270,7 @@ void main() {
           'entries': [
             {
               'id': 'bad-sha-shape',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'Bad SHA Shape',
               'version': '0.1.0',
               'download_url': 'file:///tmp/any.zip',
@@ -302,7 +302,7 @@ void main() {
           'entries': [
             {
               'id': 'valid-http',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'Valid HTTP',
               'version': '0.1.0',
               'download_url': 'https://example.com/plugin.zip',
@@ -310,7 +310,7 @@ void main() {
             },
             {
               'id': 'bad-ftp',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'Bad FTP',
               'version': '0.1.0',
               'download_url': 'ftp://example.com/plugin.zip',
@@ -339,7 +339,7 @@ void main() {
           'entries': [
             {
               'id': 'dup-id',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'First',
               'version': '0.1.0',
               'download_url': 'https://example.com/first.zip',
@@ -377,7 +377,7 @@ void main() {
           'entries': [
             {
               'id': 'valid-id-shape',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'Valid Plugin Id',
               'version': '0.1.0',
               'download_url': 'https://example.com/valid.zip',
@@ -385,7 +385,7 @@ void main() {
             },
             {
               'id': 'bad-id-shape',
-              'plugin_id': 'temperature-li.tomorrow',
+              'plugin_id': 'bingx-futures-trading',
               'display_name': 'Bad Plugin Id',
               'version': '0.1.0',
               'download_url': 'https://example.com/bad.zip',
@@ -414,7 +414,7 @@ void main() {
           'entries': [
             {
               'id': 'valid-version-shape',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'Valid Version',
               'version': '0.1.0',
               'download_url': 'https://example.com/valid.zip',
@@ -422,7 +422,7 @@ void main() {
             },
             {
               'id': 'bad-version-shape',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'Bad Version',
               'version': 'v0.1',
               'download_url': 'https://example.com/bad.zip',
@@ -454,7 +454,7 @@ void main() {
           'entries': [
             {
               'id': 'entry-a',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'First',
               'version': '0.1.0',
               'download_url': 'https://example.com/first.zip',
@@ -462,7 +462,7 @@ void main() {
             },
             {
               'id': 'entry-b',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'Second same plugin/version',
               'version': '0.1.0',
               'download_url': 'https://example.com/second.zip',
@@ -470,7 +470,7 @@ void main() {
             },
             {
               'id': 'entry-c',
-              'plugin_id': 'hivra.contract.temperature-li.tomorrow.v1',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'display_name': 'Different version',
               'version': '0.2.0',
               'download_url': 'https://example.com/third.zip',
@@ -495,8 +495,8 @@ void main() {
 
     final entry = WasmPluginSourceCatalogEntry(
       id: 'metadata-mismatch',
-      pluginId: 'hivra.contract.temperature-li.tomorrow.v1',
-      displayName: 'Expected Temperature Plugin',
+      pluginId: 'hivra.contract.bingx-futures-trading.v1',
+      displayName: 'Expected BingX Futures Plugin',
       version: '0.1.0',
       downloadUrl: File(packagePath).uri.toString(),
       packageKind: 'zip',

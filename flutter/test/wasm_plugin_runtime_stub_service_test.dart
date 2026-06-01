@@ -16,8 +16,8 @@ void main() {
       final evidence = await service.invoke(
         request: const PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: 'hivra.contract.temperature-li.tomorrow.v1',
-          method: 'settle_temperature_tomorrow',
+          pluginId: 'hivra.contract.bingx-futures-trading.v1',
+          method: 'place_bingx_futures_order_intent',
           args: <String, dynamic>{'a': 1},
         ),
         binding: const PluginRuntimeBinding.hostFallback(),
@@ -46,12 +46,12 @@ void main() {
         packageFilePath: wasmPath,
         runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
         runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
-        contractKind: 'temperature_tomorrow_liechtenstein',
+        contractKind: 'bingx_futures_order_intent',
       );
       final requestA = const PluginHostApiRequest(
         schemaVersion: 1,
-        pluginId: 'hivra.contract.temperature-li.tomorrow.v1',
-        method: 'settle_temperature_tomorrow',
+        pluginId: 'hivra.contract.bingx-futures-trading.v1',
+        method: 'place_bingx_futures_order_intent',
         args: <String, dynamic>{
           'b': 2,
           'a': <String, dynamic>{'y': 2, 'x': 1},
@@ -59,8 +59,8 @@ void main() {
       );
       final requestB = const PluginHostApiRequest(
         schemaVersion: 1,
-        pluginId: 'hivra.contract.temperature-li.tomorrow.v1',
-        method: 'settle_temperature_tomorrow',
+        pluginId: 'hivra.contract.bingx-futures-trading.v1',
+        method: 'place_bingx_futures_order_intent',
         args: <String, dynamic>{
           'a': <String, dynamic>{'x': 1, 'y': 2},
           'b': 2,

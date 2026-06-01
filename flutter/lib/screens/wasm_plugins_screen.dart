@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 
 import '../services/app_runtime_service.dart';
 import '../services/bingx_futures_credential_store.dart';
+import '../services/bingx_futures_live_decision_service.dart';
+import '../services/bingx_futures_live_snapshot_builder_service.dart';
 import '../services/bingx_futures_exchange_service.dart';
 import '../services/bingx_futures_observability_envelope_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
@@ -13,11 +15,8 @@ import '../services/bingx_futures_risk_governor_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
 import '../services/consensus_processor.dart';
 import '../services/manual_consensus_check_service.dart';
-import '../services/plugin_demo_contract_runner_service.dart';
-import '../services/plugin_demo_digest_service.dart';
 import '../services/plugin_execution_guard_service.dart';
 import '../services/plugin_host_api_service.dart';
-import '../services/temperature_tomorrow_contract_service.dart';
 import '../services/ui_event_log_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
 import '../services/wasm_plugin_source_catalog_service.dart';
@@ -39,9 +38,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   final WasmPluginRegistryService _registry = const WasmPluginRegistryService();
   final WasmPluginSourceCatalogService _sourceCatalog =
       const WasmPluginSourceCatalogService();
-  final PluginDemoContractRunnerService _demoRunner =
-      AppRuntimeService().buildPluginDemoContractRunnerService();
-  final PluginDemoDigestService _demoDigest = const PluginDemoDigestService();
   final PluginExecutionGuardService _guard =
       AppRuntimeService().buildPluginExecutionGuardService();
   final ManualConsensusCheckService _manualChecks =
@@ -56,6 +52,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       const BingxFuturesRiskGovernorService();
   final BingxFuturesObservabilityEnvelopeService _observability =
       const BingxFuturesObservabilityEnvelopeService();
+  final BingxFuturesLiveSnapshotBuilderService _liveSnapshotBuilder =
+      const BingxFuturesLiveSnapshotBuilderService();
+  final BingxFuturesLiveDecisionService _liveDecision =
+      const BingxFuturesLiveDecisionService();
   late final BingxFuturesExecutionQueueService _bingxExecutionQueue;
   final CapsuleChatDeliveryService _chatDelivery =
       AppRuntimeService().buildCapsuleChatDeliveryService();
@@ -102,7 +102,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   bool _loading = true;
   bool _loadingSourceCatalog = true;
   bool _installing = false;
-  bool _runningDemo = false;
+  final bool _showLegacyBingxIntentPanels = false;
   bool _runningBingx = false;
   bool _savingBingxCredentials = false;
   bool _readingBingxCurrentSettings = false;
@@ -114,7 +114,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   bool _refreshingChatInbox = false;
   bool _obscureBingxApiSecret = true;
   Set<String> _installingSourceEntryIds = <String>{};
-  PluginDemoRunResult? _lastDemoResult;
   PluginHostApiResponse? _lastBingxResponse;
   BingxFuturesOrderExecutionResult? _lastBingxExchangeResult;
   BingxFuturesControlActionResult? _lastBingxLeverageResult;
@@ -134,6 +133,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     cooldownAfterLossStreak: 2,
     cooldownMinutes: 60,
   );
+  static const int _recentMicroBars = 8;
+  static const double _zoneNearBps = 15.0;
+  static const double _zoneFarBps = 35.0;
   int _chatDroppedByConsensus = 0;
   String _bingxSide = 'buy';
   String _bingxOrderType = 'limit';
@@ -370,120 +372,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         });
       }
     }
-  }
-
-  Future<void> _runTemperatureDemo() async {
-    if (_runningDemo) return;
-    setState(() {
-      _runningDemo = true;
-    });
-
-    try {
-      final tomorrow = DateTime.now().toUtc().add(const Duration(days: 1));
-      final targetDateUtc = _dateOnlyUtc(tomorrow);
-      final result = _demoRunner.runTemperatureTomorrowDemo(
-        contract: TemperatureTomorrowContractSpec(
-          pluginId: 'hivra.contract.temperature-li.tomorrow.v1',
-          locationCode: 'LI',
-          targetDateUtc: targetDateUtc,
-          thresholdDeciCelsius: 85,
-          proposerRule: TemperatureOutcomeRule.above,
-          drawOnEqual: true,
-        ),
-        observation: TemperatureOracleObservation(
-          sourceId: 'oracle.mock.weather.v1',
-          eventId: 'demo-${DateTime.now().millisecondsSinceEpoch}',
-          locationCode: 'LI',
-          targetDateUtc: targetDateUtc,
-          recordedAtUtc: DateTime.now().toUtc().toIso8601String(),
-          observedDeciCelsius: 90,
-        ),
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _lastDemoResult = result;
-      });
-      await _logTemperatureDemoResult(result);
-      if (!mounted) return;
-
-      final messenger = ScaffoldMessenger.of(context);
-      switch (result.state) {
-        case PluginDemoRunState.noPairwisePaths:
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text(
-                'No pairwise consensus paths yet. Create at least one relationship first.',
-              ),
-            ),
-          );
-          break;
-        case PluginDemoRunState.blocked:
-          final reason = result.blockingFacts.isEmpty
-              ? 'Consensus guard blocked execution.'
-              : result.blockingFacts.first.label;
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                'Demo blocked for ${result.blockedPairCount} pair(s): $reason',
-              ),
-            ),
-          );
-          break;
-        case PluginDemoRunState.partial:
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                'Demo partial: executed ${result.readyPairCount}, blocked ${result.blockedPairCount}.',
-              ),
-            ),
-          );
-          break;
-        case PluginDemoRunState.executed:
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                'Demo settled for ${result.readyPairCount} pair(s).',
-              ),
-            ),
-          );
-          break;
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _runningDemo = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _logTemperatureDemoResult(PluginDemoRunResult result) async {
-    final digestReport = _demoDigest.build(result);
-    for (final pair in result.pairResults) {
-      final facts = pair.blockingFacts.map((fact) => fact.key).toList()..sort();
-      final consensusHash = pair.consensusHashHex ?? '-';
-      final shortConsensusHash =
-          consensusHash == '-' ? consensusHash : consensusHash.substring(0, 16);
-      final settlementHash = pair.settlement?.settlementHashHex ?? '-';
-      final shortSettlementHash = settlementHash == '-'
-          ? settlementHash
-          : settlementHash.substring(0, 16);
-      final outcome = pair.settlement?.outcome.name ?? '-';
-      await _uiLog.log(
-        'consensus.demo.pair',
-        'peer=${_shortHex(pair.peerHex)} status=${pair.isExecuted ? 'ok' : 'blocked'} outcome=$outcome settlement=$shortSettlementHash consensus_hash=$shortConsensusHash facts=${facts.isEmpty ? '-' : facts.join(",")}',
-      );
-    }
-    await _uiLog.log(
-      'consensus.demo.run',
-      'state=${result.state.name} ready=${result.readyPairCount} blocked=${result.blockedPairCount} guard_digest=${digestReport.guardDigestHex} run_digest=${digestReport.runDigestHex}',
-    );
-  }
-
-  String _shortHex(String value) {
-    if (value.length <= 18) return value;
-    return '${value.substring(0, 8)}..${value.substring(value.length - 6)}';
   }
 
   Future<String?> _selectConsensusPeer({
@@ -1140,6 +1028,95 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     }
   }
 
+  ({bool isSignable, List<String> blockingCodes}) _consensusDecisionContext(
+    String peerHex,
+  ) {
+    final checks = _manualChecks.loadChecks();
+    final normalizedPeer = peerHex.trim().toLowerCase();
+    if (checks.isEmpty) {
+      return (isSignable: false, blockingCodes: const <String>[]);
+    }
+
+    if (normalizedPeer.isNotEmpty) {
+      for (final check in checks) {
+        if (check.peerHex.trim().toLowerCase() == normalizedPeer) {
+          final codes = check.blockingFacts
+              .map((fact) => fact.code.trim())
+              .where((code) => code.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+          return (isSignable: check.isSignable, blockingCodes: codes);
+        }
+      }
+    }
+
+    final hasSignable = checks.any((check) => check.isSignable);
+    if (hasSignable) {
+      return (isSignable: true, blockingCodes: const <String>[]);
+    }
+
+    final first = checks.first;
+    final fallbackCodes = first.blockingFacts
+        .map((fact) => fact.code.trim())
+        .where((code) => code.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    return (isSignable: false, blockingCodes: fallbackCodes);
+  }
+
+  Future<BingxFuturesLiveDecisionResult?> _computeLiveDecision({
+    required String symbol,
+    required String peerHex,
+  }) async {
+    final snapshot = await _liveSnapshotBuilder.fetchAndBuild(
+      exchange: _bingxExchangeService,
+      symbol: symbol,
+    );
+    if (!snapshot.isSuccess || snapshot.snapshotInput == null) {
+      await _uiLog.log(
+        'bingx.strategy.live_decision.error',
+        'symbol=${snapshot.symbol} code=${snapshot.errorCode} '
+            'message=${snapshot.errorMessage}',
+      );
+      return null;
+    }
+
+    final consensus = _consensusDecisionContext(peerHex);
+    try {
+      final decision = _liveDecision.decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: snapshot.snapshotInput!,
+          isConsensusSignable: consensus.isSignable,
+          blockingFactCodes: consensus.blockingCodes,
+          recentMicroBars: _recentMicroBars,
+          zoneNearBps: _zoneNearBps,
+          zoneFarBps: _zoneFarBps,
+        ),
+      );
+      await _uiLog.log(
+        'bingx.strategy.live_decision',
+        'symbol=${snapshot.symbol} '
+            'can_prepare=${decision.canPrepareIntent} decision=${decision.decision.name} '
+            'side=${decision.side ?? "-"} zone_side=${decision.zoneSide ?? "-"} '
+            'zone_low=${decision.zoneLowDecimal ?? "-"} zone_high=${decision.zoneHighDecimal ?? "-"} '
+            'consensus_signable=${consensus.isSignable} '
+            'market_hash=${decision.marketSnapshotHashHex.substring(0, 12)} '
+            'feature_hash=${decision.featureHashHex.substring(0, 12)} '
+            'tvh_hash=${decision.tvhDecisionHashHex.substring(0, 12)} '
+            'live_hash=${decision.liveDecisionHashHex.substring(0, 12)}',
+      );
+      return decision;
+    } on FormatException catch (error) {
+      await _uiLog.log(
+        'bingx.strategy.live_decision.error',
+        'symbol=${snapshot.symbol} code=invalid_snapshot message=${error.message}',
+      );
+      return null;
+    }
+  }
+
   Future<void> _runBingxIntent() async {
     if (_runningBingx) return;
     if (!mounted) return;
@@ -1148,8 +1125,12 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     final symbol = _bingxSymbolController.text.trim();
     final quantityDecimal = _bingxQuantityController.text.trim();
     final strategyTag = _bingxStrategyTagController.text.trim();
-    final zoneLowDecimal = _bingxZoneLowController.text.trim();
-    final zoneHighDecimal = _bingxZoneHighController.text.trim();
+    var side = _bingxSide;
+    var entryMode = _bingxEntryMode;
+    var zoneSide = _bingxZoneSide;
+    var zonePriceRule = _bingxZonePriceRule;
+    var zoneLowDecimal = _bingxZoneLowController.text.trim();
+    var zoneHighDecimal = _bingxZoneHighController.text.trim();
     final manualEntryPriceDecimal =
         _bingxManualEntryPriceController.text.trim();
     final triggerPriceDecimal = _bingxTriggerPriceController.text.trim();
@@ -1157,7 +1138,88 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     final takeProfitDecimal = _bingxTakeProfitController.text.trim();
     final nowUtc = DateTime.now().toUtc().toIso8601String();
     final clientOrderId = 'ui-ord-${DateTime.now().microsecondsSinceEpoch}';
-    final isZonePending = _bingxEntryMode == 'zone_pending';
+    if (_bingxOrderType == 'limit') {
+      final live = await _computeLiveDecision(symbol: symbol, peerHex: peerHex);
+      if (live == null) {
+        if (mounted) {
+          final messenger = ScaffoldMessenger.of(context);
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Live market snapshot unavailable'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      if (live.zoneLowDecimal != null && live.zoneHighDecimal != null) {
+        if (mounted) {
+          setState(() {
+            _bingxZoneLowController.text = live.zoneLowDecimal!;
+            _bingxZoneHighController.text = live.zoneHighDecimal!;
+            if (live.zoneSide != null) {
+              _bingxZoneSide = live.zoneSide!;
+            }
+            if (live.side != null) {
+              _bingxSide = live.side!;
+            }
+          });
+        } else {
+          _bingxZoneLowController.text = live.zoneLowDecimal!;
+          _bingxZoneHighController.text = live.zoneHighDecimal!;
+          if (live.zoneSide != null) {
+            _bingxZoneSide = live.zoneSide!;
+          }
+          if (live.side != null) {
+            _bingxSide = live.side!;
+          }
+        }
+      }
+      if (!live.canPrepareIntent ||
+          live.side == null ||
+          live.zoneSide == null ||
+          live.zoneLowDecimal == null ||
+          live.zoneHighDecimal == null) {
+        final reason = live.reasons
+            .where((reason) => !reason.passed)
+            .map((reason) => reason.code)
+            .join(',');
+        if (mounted) {
+          final messenger = ScaffoldMessenger.of(context);
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                reason.isEmpty
+                    ? 'No live signal for current market state'
+                    : 'No live signal: $reason',
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      side = live.side!;
+      entryMode = 'zone_pending';
+      zoneSide = live.zoneSide!;
+      zonePriceRule = 'zone_mid';
+      zoneLowDecimal = live.zoneLowDecimal!;
+      zoneHighDecimal = live.zoneHighDecimal!;
+      if (mounted) {
+        setState(() {
+          _bingxSide = side;
+          _bingxEntryMode = entryMode;
+          _bingxZoneSide = zoneSide;
+          _bingxZonePriceRule = zonePriceRule;
+          _bingxZoneLowController.text = zoneLowDecimal;
+          _bingxZoneHighController.text = zoneHighDecimal;
+        });
+      }
+    }
+
+    final isZonePending = entryMode == 'zone_pending';
     final limitPriceDecimal = _bingxOrderType == 'limit' && !isZonePending
         ? _bingxLimitPriceController.text.trim()
         : null;
@@ -1170,7 +1232,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     try {
       await _uiLog.log(
         'bingx.intent.request',
-        'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} symbol=$symbol side=$_bingxSide type=$_bingxOrderType entry=$_bingxEntryMode qty=$quantityDecimal',
+        'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} symbol=$symbol side=$side type=$_bingxOrderType entry=$entryMode qty=$quantityDecimal',
       );
 
       final response = await _pluginHostApi.executeWithRuntimeHook(
@@ -1182,22 +1244,22 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
             'peer_hex': peerHex,
             'client_order_id': clientOrderId,
             'symbol': symbol,
-            'side': _bingxSide,
+            'side': side,
             'order_type': _bingxOrderType,
             'quantity_decimal': quantityDecimal,
             'limit_price_decimal': limitPriceDecimal,
             'time_in_force': timeInForce,
-            'entry_mode': _bingxEntryMode,
-            'zone_side': isZonePending ? _bingxZoneSide : null,
+            'entry_mode': entryMode,
+            'zone_side': isZonePending ? zoneSide : null,
             'zone_low_decimal': isZonePending && zoneLowDecimal.isNotEmpty
                 ? zoneLowDecimal
                 : null,
             'zone_high_decimal': isZonePending && zoneHighDecimal.isNotEmpty
                 ? zoneHighDecimal
                 : null,
-            'zone_price_rule': isZonePending ? _bingxZonePriceRule : null,
+            'zone_price_rule': isZonePending ? zonePriceRule : null,
             'manual_entry_price_decimal': isZonePending &&
-                    _bingxZonePriceRule == 'manual' &&
+                    zonePriceRule == 'manual' &&
                     manualEntryPriceDecimal.isNotEmpty
                 ? manualEntryPriceDecimal
                 : null,
@@ -1227,9 +1289,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
         status: response.status.name,
         symbol: symbol,
-        side: _bingxSide,
+        side: side,
         orderType: _bingxOrderType,
-        entryMode: _bingxEntryMode,
+        entryMode: entryMode,
         executionSource: response.executionSource,
         intentHashHex: response.result?['intent_hash_hex']?.toString(),
         errorCode: response.errorCode,
@@ -1716,8 +1778,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final demoDigestReport =
-        _lastDemoResult == null ? null : _demoDigest.build(_lastDemoResult!);
     final content = ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -1755,146 +1815,134 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         ),
         const SizedBox(height: 10),
         _HostPanel(snapshot: _guardSnapshot),
-        const SizedBox(height: 20),
-        _SectionTitle(
-          title: 'Contract Demo',
-          subtitle:
-              'Manual dry-run for the first test smart-contract (no wasm execution yet).',
-        ),
-        const SizedBox(height: 10),
-        _ContractDemoPanel(
-          running: _runningDemo,
-          lastResult: _lastDemoResult,
-          guardDigestHex: demoDigestReport?.guardDigestHex,
-          runDigestHex: demoDigestReport?.runDigestHex,
-          onRunPressed: _runTemperatureDemo,
-        ),
-        const SizedBox(height: 20),
-        _SectionTitle(
-          title: 'BingX Futures Intent',
-          subtitle:
-              'Deterministic futures intent + optional signed execution on BingX Futures test/live endpoints.',
-        ),
-        const SizedBox(height: 10),
-        _BingxIntentPanel(
-          running: _runningBingx,
-          broadcastingSignal: _broadcastingBingxSignal,
-          canBroadcastSignal:
-              _lastBingxResponse?.status == PluginHostApiStatus.executed,
-          lastResponse: _lastBingxResponse,
-          peerController: _bingxPeerController,
-          symbolController: _bingxSymbolController,
-          quantityController: _bingxQuantityController,
-          limitPriceController: _bingxLimitPriceController,
-          zoneLowController: _bingxZoneLowController,
-          zoneHighController: _bingxZoneHighController,
-          manualEntryPriceController: _bingxManualEntryPriceController,
-          triggerPriceController: _bingxTriggerPriceController,
-          stopLossController: _bingxStopLossController,
-          takeProfitController: _bingxTakeProfitController,
-          strategyTagController: _bingxStrategyTagController,
-          selectedSide: _bingxSide,
-          selectedOrderType: _bingxOrderType,
-          selectedTimeInForce: _bingxTimeInForce,
-          selectedEntryMode: _bingxEntryMode,
-          selectedZoneSide: _bingxZoneSide,
-          selectedZonePriceRule: _bingxZonePriceRule,
-          onUsePeerPressed: _fillBingxPeerFromConsensus,
-          onRunPressed: _runBingxIntent,
-          onBroadcastSignalPressed: _broadcastLastBingxIntent,
-          onSideChanged: (value) {
-            if (value == null) return;
-            setState(() {
-              _bingxSide = value;
-              if (_bingxEntryMode == 'zone_pending') {
-                _bingxZoneSide = value == 'buy' ? 'buyside' : 'sellside';
-              }
-            });
-          },
-          onOrderTypeChanged: (value) {
-            if (value == null) return;
-            setState(() {
-              _bingxOrderType = value;
-            });
-          },
-          onTimeInForceChanged: (value) {
-            if (value == null) return;
-            setState(() {
-              _bingxTimeInForce = value;
-            });
-          },
-          onEntryModeChanged: (value) {
-            if (value == null) return;
-            setState(() {
-              _bingxEntryMode = value;
-              if (_bingxEntryMode == 'zone_pending') {
-                _bingxOrderType = 'limit';
-                _bingxZoneSide = _bingxSide == 'buy' ? 'buyside' : 'sellside';
-              }
-            });
-          },
-          onZoneSideChanged: (value) {
-            if (value == null) return;
-            setState(() {
-              _bingxZoneSide = value;
-            });
-          },
-          onZonePriceRuleChanged: (value) {
-            if (value == null) return;
-            setState(() {
-              _bingxZonePriceRule = value;
-            });
-          },
-        ),
-        const SizedBox(height: 10),
-        _BingxExecutionPanel(
-          savingCredentials: _savingBingxCredentials,
-          readingCurrentSettings: _readingBingxCurrentSettings,
-          executing: _executingBingxOrder,
-          switchingLeverage: _switchingBingxLeverage,
-          switchingMarginType: _switchingBingxMarginType,
-          canExecuteIntent:
-              _lastBingxResponse?.status == PluginHostApiStatus.executed,
-          useTestOrderEndpoint: _bingxUseTestOrderEndpoint,
-          apiKeyController: _bingxApiKeyController,
-          apiSecretController: _bingxApiSecretController,
-          obscureApiSecret: _obscureBingxApiSecret,
-          leverageController: _bingxLeverageController,
-          leverageSide: _bingxLeverageSide,
-          marginType: _bingxMarginType,
-          lastExecution: _lastBingxExchangeResult,
-          lastLeverageSwitch: _lastBingxLeverageResult,
-          lastMarginTypeSwitch: _lastBingxMarginTypeResult,
-          lastLeverageRead: _lastBingxLeverageReadResult,
-          lastMarginTypeRead: _lastBingxMarginTypeReadResult,
-          onUseTestEndpointChanged: (value) {
-            setState(() {
-              _bingxUseTestOrderEndpoint = value;
-            });
-          },
-          onLeverageSideChanged: (value) {
-            if (value == null) return;
-            setState(() {
-              _bingxLeverageSide = value;
-            });
-          },
-          onMarginTypeChanged: (value) {
-            if (value == null) return;
-            setState(() {
-              _bingxMarginType = value;
-            });
-          },
-          onToggleApiSecretVisibility: () {
-            setState(() {
-              _obscureBingxApiSecret = !_obscureBingxApiSecret;
-            });
-          },
-          onSaveCredentialsPressed: _saveBingxCredentials,
-          onFetchCurrentPressed: _fetchBingxCurrentSettings,
-          onExecutePressed: _executeLastBingxIntentOnExchange,
-          onSwitchLeveragePressed: _switchBingxLeverage,
-          onSwitchMarginTypePressed: _switchBingxMarginType,
-        ),
+        if (_showLegacyBingxIntentPanels) ...[
+          const SizedBox(height: 20),
+          _SectionTitle(
+            title: 'BingX Futures Intent',
+            subtitle:
+                'Deterministic futures intent + optional signed execution on BingX Futures test/live endpoints.',
+          ),
+          const SizedBox(height: 10),
+          _BingxIntentPanel(
+            running: _runningBingx,
+            broadcastingSignal: _broadcastingBingxSignal,
+            canBroadcastSignal:
+                _lastBingxResponse?.status == PluginHostApiStatus.executed,
+            lastResponse: _lastBingxResponse,
+            peerController: _bingxPeerController,
+            symbolController: _bingxSymbolController,
+            quantityController: _bingxQuantityController,
+            limitPriceController: _bingxLimitPriceController,
+            zoneLowController: _bingxZoneLowController,
+            zoneHighController: _bingxZoneHighController,
+            manualEntryPriceController: _bingxManualEntryPriceController,
+            triggerPriceController: _bingxTriggerPriceController,
+            stopLossController: _bingxStopLossController,
+            takeProfitController: _bingxTakeProfitController,
+            strategyTagController: _bingxStrategyTagController,
+            selectedSide: _bingxSide,
+            selectedOrderType: _bingxOrderType,
+            selectedTimeInForce: _bingxTimeInForce,
+            selectedEntryMode: _bingxEntryMode,
+            selectedZoneSide: _bingxZoneSide,
+            selectedZonePriceRule: _bingxZonePriceRule,
+            onUsePeerPressed: _fillBingxPeerFromConsensus,
+            onRunPressed: _runBingxIntent,
+            onBroadcastSignalPressed: _broadcastLastBingxIntent,
+            onSideChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _bingxSide = value;
+                if (_bingxEntryMode == 'zone_pending') {
+                  _bingxZoneSide = value == 'buy' ? 'buyside' : 'sellside';
+                }
+              });
+            },
+            onOrderTypeChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _bingxOrderType = value;
+              });
+            },
+            onTimeInForceChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _bingxTimeInForce = value;
+              });
+            },
+            onEntryModeChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _bingxEntryMode = value;
+                if (_bingxEntryMode == 'zone_pending') {
+                  _bingxOrderType = 'limit';
+                  _bingxZoneSide = _bingxSide == 'buy' ? 'buyside' : 'sellside';
+                }
+              });
+            },
+            onZoneSideChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _bingxZoneSide = value;
+              });
+            },
+            onZonePriceRuleChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _bingxZonePriceRule = value;
+              });
+            },
+          ),
+          const SizedBox(height: 10),
+          _BingxExecutionPanel(
+            savingCredentials: _savingBingxCredentials,
+            readingCurrentSettings: _readingBingxCurrentSettings,
+            executing: _executingBingxOrder,
+            switchingLeverage: _switchingBingxLeverage,
+            switchingMarginType: _switchingBingxMarginType,
+            canExecuteIntent:
+                _lastBingxResponse?.status == PluginHostApiStatus.executed,
+            useTestOrderEndpoint: _bingxUseTestOrderEndpoint,
+            apiKeyController: _bingxApiKeyController,
+            apiSecretController: _bingxApiSecretController,
+            obscureApiSecret: _obscureBingxApiSecret,
+            leverageController: _bingxLeverageController,
+            leverageSide: _bingxLeverageSide,
+            marginType: _bingxMarginType,
+            lastExecution: _lastBingxExchangeResult,
+            lastLeverageSwitch: _lastBingxLeverageResult,
+            lastMarginTypeSwitch: _lastBingxMarginTypeResult,
+            lastLeverageRead: _lastBingxLeverageReadResult,
+            lastMarginTypeRead: _lastBingxMarginTypeReadResult,
+            onUseTestEndpointChanged: (value) {
+              setState(() {
+                _bingxUseTestOrderEndpoint = value;
+              });
+            },
+            onLeverageSideChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _bingxLeverageSide = value;
+              });
+            },
+            onMarginTypeChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _bingxMarginType = value;
+              });
+            },
+            onToggleApiSecretVisibility: () {
+              setState(() {
+                _obscureBingxApiSecret = !_obscureBingxApiSecret;
+              });
+            },
+            onSaveCredentialsPressed: _saveBingxCredentials,
+            onFetchCurrentPressed: _fetchBingxCurrentSettings,
+            onExecutePressed: _executeLastBingxIntentOnExchange,
+            onSwitchLeveragePressed: _switchBingxLeverage,
+            onSwitchMarginTypePressed: _switchBingxMarginType,
+          ),
+        ],
         const SizedBox(height: 10),
         _BingxSignalInboxPanel(
           signals: _tradeSignalInbox,
@@ -2756,225 +2804,6 @@ class _HostPanel extends StatelessWidget {
                   ),
                 ],
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ContractDemoPanel extends StatelessWidget {
-  final bool running;
-  final PluginDemoRunResult? lastResult;
-  final String? guardDigestHex;
-  final String? runDigestHex;
-  final Future<void> Function() onRunPressed;
-
-  const _ContractDemoPanel({
-    required this.running,
-    required this.lastResult,
-    this.guardDigestHex,
-    this.runDigestHex,
-    required this.onRunPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final result = lastResult;
-    final firstExecuted = result?.firstExecutedPair;
-    PluginDemoPairRunResult? firstBlocked;
-    if (result != null) {
-      for (final pair in result.pairResults) {
-        if (!pair.isExecuted) {
-          firstBlocked = pair;
-          break;
-        }
-      }
-    }
-    final accent = switch (result?.state) {
-      PluginDemoRunState.executed => const Color(0xFF75D98A),
-      PluginDemoRunState.partial => const Color(0xFFFFC76A),
-      PluginDemoRunState.blocked => const Color(0xFFFF8A7A),
-      PluginDemoRunState.noPairwisePaths => const Color(0xFF75D2FF),
-      null => const Color(0xFF7F92A8),
-    };
-    final title = switch (result?.state) {
-      PluginDemoRunState.executed => 'Last run settled',
-      PluginDemoRunState.partial => 'Last run mixed',
-      PluginDemoRunState.blocked => 'Last run blocked by guard',
-      PluginDemoRunState.noPairwisePaths => 'No pairwise paths yet',
-      null => 'Not run yet',
-    };
-    final summary = switch (result?.state) {
-      PluginDemoRunState.executed => firstExecuted == null
-          ? 'Demo reported executed.'
-          : 'Settled ${result!.readyPairCount} pair(s). Example: ${firstExecuted.settlement!.outcome.name}, hash ${firstExecuted.settlement!.settlementHashHex.substring(0, 12)}..',
-      PluginDemoRunState.partial =>
-        'Settled ${result!.readyPairCount} pair(s), blocked ${result.blockedPairCount} pair(s).',
-      PluginDemoRunState.blocked => firstBlocked == null
-          ? 'Consensus guard blocked execution.'
-          : 'Blocking reason: ${firstBlocked.blockingFacts.isEmpty ? 'unknown' : firstBlocked.blockingFacts.first.label}',
-      PluginDemoRunState.noPairwisePaths =>
-        'Create at least one relationship so consensus checks can derive a pairwise path.',
-      null =>
-        'Runs a deterministic temperature dispute demo for tomorrow in Liechtenstein. Execution remains gated by consensus guard.',
-    };
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF121821),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF2B3846)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _PluginIconPlate(
-                icon: Icons.science_outlined,
-                accent: accent,
-                glow: accent.withAlpha(24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      summary,
-                      style: const TextStyle(
-                        color: Color(0xFF9FAABA),
-                        height: 1.4,
-                      ),
-                    ),
-                    if (result != null &&
-                        result.state != PluginDemoRunState.noPairwisePaths) ...[
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _InfoChip(
-                            icon: Icons.verified_outlined,
-                            label: 'Ready: ${result.readyPairCount}',
-                          ),
-                          _InfoChip(
-                            icon: Icons.block_outlined,
-                            label: 'Blocked: ${result.blockedPairCount}',
-                          ),
-                          if (guardDigestHex != null &&
-                              guardDigestHex!.isNotEmpty)
-                            _InfoChip(
-                              icon: Icons.fingerprint_rounded,
-                              label:
-                                  'Guard ${guardDigestHex!.substring(0, 10)}..',
-                            ),
-                          if (runDigestHex != null && runDigestHex!.isNotEmpty)
-                            _InfoChip(
-                              icon: Icons.data_object_rounded,
-                              label: 'Run ${runDigestHex!.substring(0, 10)}..',
-                            ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (result != null && result.pairResults.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'Pairwise results',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Color(0xFFCFD7E2),
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...result.pairResults.map(
-              (pair) => _DemoPairRunRow(pair: pair),
-            ),
-          ],
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: running ? null : onRunPressed,
-            icon: running
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.play_arrow_rounded),
-            label: Text(running ? 'Running demo' : 'Run Demo Settlement'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DemoPairRunRow extends StatelessWidget {
-  final PluginDemoPairRunResult pair;
-
-  const _DemoPairRunRow({required this.pair});
-
-  @override
-  Widget build(BuildContext context) {
-    final accent =
-        pair.isExecuted ? const Color(0xFF75D98A) : const Color(0xFFFF8A7A);
-    final title = pair.peerLabel ?? pair.peerHex;
-    final consensusHash = pair.consensusHashHex;
-    final shortConsensusHash = consensusHash == null || consensusHash.isEmpty
-        ? null
-        : '${consensusHash.substring(0, 10)}..';
-    final detail = pair.isExecuted
-        ? 'Settled: ${pair.settlement!.outcome.name} · ${pair.settlement!.settlementHashHex.substring(0, 10)}..'
-        : pair.blockingFacts.isEmpty
-            ? 'Blocked'
-            : 'Blocked: ${pair.blockingFacts.first.label}';
-    final digestLine = shortConsensusHash == null
-        ? null
-        : 'Consensus hash: $shortConsensusHash';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E141D),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accent.withAlpha(90)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            pair.isExecuted ? Icons.check_circle_outline : Icons.block_outlined,
-            size: 16,
-            color: accent,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              digestLine == null
-                  ? '$title\n$detail'
-                  : '$title\n$detail\n$digestLine',
-              style: const TextStyle(
-                fontSize: 12,
-                height: 1.35,
-                color: Color(0xFFC8D2DF),
-              ),
             ),
           ),
         ],
@@ -4944,11 +4773,4 @@ class _BoundaryRule {
     required this.icon,
     required this.accent,
   });
-}
-
-String _dateOnlyUtc(DateTime utcDateTime) {
-  final year = utcDateTime.year.toString().padLeft(4, '0');
-  final month = utcDateTime.month.toString().padLeft(2, '0');
-  final day = utcDateTime.day.toString().padLeft(2, '0');
-  return '$year-$month-$day';
 }

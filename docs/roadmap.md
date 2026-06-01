@@ -527,14 +527,14 @@ Scope:
   - execution boundaries
 - Only introduce execution after the shell and safety model are explicit.
 - Current progress:
-  - Added deterministic pre-host test-contract service for `temperature_tomorrow_liechtenstein` with manifest parsing and consensus-signable execution gate (`TemperatureTomorrowContractService`).
+  - Added deterministic pre-host test-contract service for `bingx_futures_order_intent` with manifest parsing and consensus-signable execution gate.
   - Added regression coverage for:
     - manifest validation
     - deterministic settlement hash
     - proposer/counterparty/draw outcomes
     - blocked execution when consensus is unresolved
-  - Added plugin draft documentation for the first test smart-contract package (`docs/plugins/temperature_tomorrow_liechtenstein_test_plugin.md`).
-  - Added `PluginDemoContractRunnerService` + WASM Plugins screen `Run Demo Settlement` dry-run action so test-contract execution can be manually exercised via consensus guard without introducing wasm runtime execution yet.
+  - Added plugin draft documentation for the first test smart-contract package (`docs/plugins/bingx_futures_order_intent_test_plugin.md`).
+  - Added manual dry-run action in WASM Plugins screen so contract execution can be exercised through consensus guard without introducing wasm runtime execution yet.
   - Added package-install preflight validation (`WasmPluginPackagePreflightService`) for `.wasm` magic/version and `.zip` manifest/module shape, wired into `WasmPluginRegistryService.installPluginFromFile` with regression coverage for malformed packages.
   - Zip preflight module discovery now considers only safe normalized `.wasm` paths (entries with parent-traversal segments are ignored), and install fails when no safe runtime module candidates remain.
   - External plugin source-catalog install path now verifies optional `sha256_hex` integrity before install (both remote download and local `file://` package flows); catalog entries with malformed `sha256_hex` shape are rejected, checksum mismatch blocks installation, and metadata mismatch (`plugin_id` / `package_kind` + `version` when available) triggers install rollback.
@@ -544,11 +544,10 @@ Scope:
   - Plugin install path now carries manifest metadata (`pluginId`, `contractKind`, `capabilities`) into the local registry model so capability/contract inspection is available before wasm runtime execution exists.
   - Plugin registry loading now self-heals stale entries whose stored package files are missing, rewriting registry to only file-backed records so runtime binding resolution cannot stick on dead package pointers.
   - Added capability policy boundary (`WasmPluginCapabilityPolicyService`) and wired preflight to reject unknown manifest capabilities at install-time.
-  - Added deterministic `PluginHostApiService` request/response boundary (`executed` / `blocked` / `rejected`) with response hashing and guard-gated temperature contract execution as Host API v1 (no wasm runtime execution yet).
+  - Added deterministic `PluginHostApiService` request/response boundary (`executed` / `blocked` / `rejected`) with response hashing and guard-gated contract execution as Host API v1 (no wasm runtime execution yet).
   - Host API external-package boundary now validates `contractKind` against requested `plugin_id`; mismatched package metadata is rejected (`runtime_contract_kind_mismatch`) before contract execution.
   - Host API now validates external runtime binding shape (`package_id`, `package_kind`) before invoke and rejects malformed metadata as `runtime_binding_invalid`.
   - Host API external-package boundary now also validates declared runtime capabilities against required grants for requested `(plugin_id, method)` and rejects missing/unsupported capability sets (`runtime_capability_mismatch`) before contract execution.
-    - Temperature contract capability gate now supports both oracle capability variants (`oracle.read.mock_weather` or `oracle.read.temperature.li`) while keeping deterministic required-grant checks.
   - Host response canonical boundary now includes normalized runtime capability metadata (`execution_capabilities`) for deterministic diagnostics and hash traceability.
   - Added host API v1 documentation (`docs/plugins/plugin_host_api_v1.md`) and regression coverage for deterministic hash, blocked guard path, unsupported plugin/method, and invalid-args rejection.
   - Host API runtime-binding path now supports `executeWithRuntimeHook(...)` with deterministic execution-source metadata (`host_fallback` vs `external_package` + package fields), including package-byte digest (`execution_package_digest_hex`) for resolved external packages; plugin screen panels/logs now surface source + digest hint for manual diagnostics.
@@ -745,11 +744,8 @@ When tradeoffs are unclear, prefer:
     - `ConsensusProcessor` now ignores unsigned/malformed `RelationshipBroken` events when local root identity is available, aligning break classification with relationship projection semantics (deterministic local-finalized vs remote-pending split requires valid signer) and preventing unsigned break artifacts from mutating consensus state.
     - Added host API regression coverage that `pending_remote_break` survives plugin blocked-response canonicalization/hash path, ensuring plugin runtime consumers receive the same pairwise blocker semantics as guard/runtime services.
     - Added plugin demo runner regression coverage that execution-level `pending_remote_break` facts take precedence over stale check-level blockers, so partial-run summaries and blocked pair rows expose consistent remote-break gating semantics.
-    - Added contract-level regression coverage for chat/trading/weather plugin services that `pending_remote_break` blocks deterministic execution paths exactly as other consensus blockers, preventing contract-specific drift in guard semantics.
-    - Added deterministic demo digest boundary (`PluginDemoDigestService`) with explicit `guard_digest` (consensus-only) and `run_digest` (execution-inclusive) separation; `Run Demo Settlement` logging now prints both digests and pair-level `consensus_hash`, and regression coverage locks:
-      - guard-digest stability across repeated runs when only settlement payload changes
-      - digest invariance under pair ordering permutations
-      - guard-digest change on blocking-fact drift
+    - Added contract-level regression coverage for chat/trading plugin services that `pending_remote_break` blocks deterministic execution paths exactly as other consensus blockers, preventing contract-specific drift in guard semantics.
+    - Added deterministic digest boundary for plugin execution diagnostics with explicit `guard_digest` (consensus-only) and `run_digest` (execution-inclusive), plus regression coverage for digest stability and ordering invariance.
   - Consensus must be computed on demand, not continuously in UI/runtime background.
   - Recalculation triggers are explicit:
     - smart-contract precondition check
@@ -826,6 +822,77 @@ When tradeoffs are unclear, prefer:
 
 No active `9.x` architecture debt remains in v1 scope before trading-agent build.
 No active `10.x` plugin-host debt remains in v1 scope before trading-agent build.
+
+- `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
+  - Goal:
+    - eliminate the remaining gap between documented TVH criteria and live entry behavior in execution surfaces.
+  - Current problem:
+    - deterministic TVH pipeline exists (`snapshot -> feature -> rule -> replay`) but live entry in `TradingDroneScreen` still uses zone-heuristic decision path and does not consume full TVH feature/rule outcome for signal gating.
+    - risk input still relies on local proxy values for equity/pnl/positions in UI path instead of exchange-backed runtime state.
+  - Scope:
+    - introduce one service-level live decision contract that is consumed by:
+      - `TradingDroneScreen`
+      - `WasmPluginsScreen`
+    - enforce that live entry eligibility is derived from TVH rule-engine decision (`LONG|SHORT|NO_SIGNAL|BLOCKED`) plus consensus/risk/runtime gates.
+    - map TVH decision outputs into side/zone/entry-mode payload fields with stable reason codes and deterministic decision hash provenance.
+    - replace UI risk proxy fields with exchange-backed risk inputs where available (equity, daily pnl, open positions), while preserving deterministic fallback path.
+    - extend regression coverage for:
+      - parity between replay decision and live decision contract for identical normalized input
+      - reject-path determinism (`NO_SIGNAL`, `BLOCKED`, risk blocks)
+      - decision envelope linkage (`feature_hash -> decision_hash -> execution envelope`)
+  - Current progress:
+    - Extended `BingxFuturesExchangeService` public market-data surface for live TVH snapshot inputs:
+      - `getPublicDepth` (`/openApi/swap/v2/quote/depth`)
+      - `getPublicTrades` (`/openApi/swap/v2/quote/trades`)
+      - `getPublicPremiumIndex` (`/openApi/swap/v2/quote/premiumIndex`)
+      - `getPublicOpenInterest` (`/openApi/swap/v2/quote/openInterest`)
+    - Added regression coverage in `flutter/test/bingx_futures_exchange_service_test.dart` for all new public adapters.
+    - Added `BingxFuturesLiveDecisionService` as the first shared live decision contract:
+      - builds canonical snapshot
+      - extracts features
+      - evaluates TVH rule-engine gate
+      - maps passing `LONG|SHORT` decisions to side/zone intent fields
+      - links `market_snapshot_hash -> feature_hash -> tvh_decision_hash -> live_decision_hash`
+    - Added regression coverage in `flutter/test/bingx_futures_live_decision_service_test.dart` for:
+      - deterministic live `LONG` eligibility
+      - input ordering stability
+      - consensus-guard blocked path.
+  - Definition of done:
+    - no execution surface can place intent from a decision path outside the shared TVH contract.
+    - identical normalized input produces identical decision payload/hash in replay and live path.
+    - checklist `docs/checklists/trading-drone-spec-runtime-parity.md` status matrix is fully green.
+  - Status: active (2026-05-26).
+
+- `11.7 Trading Drone Decision Pipeline Unification (remove screen-local heuristic split)`
+  - Goal:
+    - remove decision split-brain between screen-local heuristic zone logic and service-level deterministic TVH pipeline.
+  - Current problem:
+    - futures decision services exist (`snapshot -> feature -> rule -> replay`) but `TradingDroneScreen` still owns side/zone computation heuristics directly.
+    - this creates spec/runtime ambiguity and weakens deterministic auditability of decision provenance.
+  - Scope:
+    - expose one service-level decision contract for:
+      - selected side (`buy|sell`)
+      - zone bounds (`zone_low`, `zone_high`)
+      - reason codes and matched criteria summary
+      - deterministic decision hash linkage
+    - consume this contract from:
+      - `TradingDroneScreen`
+      - `WasmPluginsScreen`
+    - keep UI projection-only (no duplicated decision branch logic in screens).
+    - extend replay fixtures/tests to include side/zone outputs and reason-code stability.
+  - Definition of done:
+    - screen-local heuristic decision branches are removed or reduced to view-only formatting.
+    - both execution surfaces use the same deterministic decision contract for identical inputs.
+    - replay tests detect any side/zone/reason drift.
+  - Current progress:
+    - Added `BingxFuturesZoneDecisionService` as service-level deterministic zone/side decision boundary.
+    - Moved side/zone heuristic decision logic out of `TradingDroneScreen` and into the service contract.
+    - `TradingDroneScreen` now consumes one decision result payload (side/zone/reason/diagnostic context) and remains orchestration/projection-only for this path.
+    - Added regression coverage in `flutter/test/bingx_futures_zone_decision_service_test.dart` for:
+      - deterministic fallback behavior
+      - sweep-reversal side selection
+      - repeatability for identical inputs.
+  - Status: completed (2026-05-18).
 
 - `11.1 Trading Drone Runtime Execution (remove host_fallback for execution path)`
   - Goal:
