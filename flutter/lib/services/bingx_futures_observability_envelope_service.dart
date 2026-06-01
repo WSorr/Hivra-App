@@ -27,6 +27,10 @@ class BingxFuturesObservabilityEnvelopeService {
     required String executionSource,
     String? intentHashHex,
     String? errorCode,
+    String? marketSnapshotHashHex,
+    String? featureHashHex,
+    String? tvhDecisionHashHex,
+    String? liveDecisionHashHex,
     List<String> blockingFactCodes = const <String>[],
     DateTime? nowUtc,
   }) {
@@ -50,6 +54,12 @@ class BingxFuturesObservabilityEnvelopeService {
       'entry_mode': entryMode.trim().toLowerCase(),
       'intent_hash_hex': (intentHashHex ?? '').trim().toLowerCase(),
       'error_code': (errorCode ?? '').trim(),
+      'market_snapshot_hash_hex':
+          (marketSnapshotHashHex ?? '').trim().toLowerCase(),
+      'feature_hash_hex': (featureHashHex ?? '').trim().toLowerCase(),
+      'tvh_decision_hash_hex': (tvhDecisionHashHex ?? '').trim().toLowerCase(),
+      'live_decision_hash_hex':
+          (liveDecisionHashHex ?? '').trim().toLowerCase(),
       'blocking_fact_codes': codes,
     });
     final hashHex = sha256.convert(utf8.encode(canonical)).toString();
@@ -75,6 +85,10 @@ class BingxFuturesObservabilityEnvelopeService {
     String? intentHashHex,
     String? riskDecisionCode,
     String? riskDecisionHashHex,
+    String? marketSnapshotHashHex,
+    String? featureHashHex,
+    String? tvhDecisionHashHex,
+    String? liveDecisionHashHex,
     DateTime? nowUtc,
   }) {
     final canonical = jsonEncode(<String, dynamic>{
@@ -97,6 +111,12 @@ class BingxFuturesObservabilityEnvelopeService {
       'risk_decision_code': (riskDecisionCode ?? '').trim(),
       'risk_decision_hash_hex':
           (riskDecisionHashHex ?? '').trim().toLowerCase(),
+      'market_snapshot_hash_hex':
+          (marketSnapshotHashHex ?? '').trim().toLowerCase(),
+      'feature_hash_hex': (featureHashHex ?? '').trim().toLowerCase(),
+      'tvh_decision_hash_hex': (tvhDecisionHashHex ?? '').trim().toLowerCase(),
+      'live_decision_hash_hex':
+          (liveDecisionHashHex ?? '').trim().toLowerCase(),
     });
     final hashHex = sha256.convert(utf8.encode(canonical)).toString();
     return BingxFuturesLogEnvelope(

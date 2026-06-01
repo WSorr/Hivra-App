@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/services/capsule_index_store.dart';
 import 'package:hivra_app/services/ui_event_log_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
@@ -18,8 +19,10 @@ void main() {
       }
     });
 
+    final dirs = UserVisibleDataDirectoryService(homeOverride: tempHome.path);
     final service = UiEventLogService(
-      directories: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      directories: dirs,
+      indexStore: CapsuleIndexStore(dirs: dirs),
     );
 
     const burst = 120;
@@ -40,7 +43,7 @@ void main() {
         .toList();
     expect(lines.length, burst);
     for (final line in lines) {
-      expect(line.contains('[test.source] msg-'), isTrue);
+      expect(line.contains('[test.source] capsule=none msg-'), isTrue);
       expect(line.startsWith('['), isTrue);
       expect(line.endsWith(']'), isFalse);
     }
@@ -55,8 +58,10 @@ void main() {
       }
     });
 
+    final dirs = UserVisibleDataDirectoryService(homeOverride: tempHome.path);
     final service = UiEventLogService(
-      directories: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      directories: dirs,
+      indexStore: CapsuleIndexStore(dirs: dirs),
     );
 
     await service.log('source\npart', 'hello\r\nworld');
@@ -64,7 +69,10 @@ void main() {
     final logFile = File('${tempHome.path}/Documents/Hivra/logs/ui_events.log');
     final lines = const LineSplitter().convert(await logFile.readAsString());
     expect(lines.length, 1);
-    expect(lines.single.contains('[source part] hello world'), isTrue);
+    expect(
+      lines.single.contains('[source part] capsule=none hello world'),
+      isTrue,
+    );
   });
 
   test('sanitizes legacy torn lines once before appending new log entries',
@@ -88,14 +96,16 @@ void main() {
       flush: true,
     );
 
+    final dirs = UserVisibleDataDirectoryService(homeOverride: tempHome.path);
     final service = UiEventLogService(
-      directories: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      directories: dirs,
+      indexStore: CapsuleIndexStore(dirs: dirs),
     );
     await service.log('post.reboot', 'entry');
 
     final lines = const LineSplitter().convert(await logFile.readAsString());
     expect(lines.length, 2);
     expect(lines[0], contains('[invitations.reject] Invitation rejected'));
-    expect(lines[1], contains('[post.reboot] entry'));
+    expect(lines[1], contains('[post.reboot] capsule=none entry'));
   });
 }

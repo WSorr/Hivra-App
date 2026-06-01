@@ -175,15 +175,15 @@ void main() {
                 'schema': 'hivra.plugin.manifest',
                 'version': 1,
                 'release_version': '0.1.0',
-                'plugin_id': 'hivra.contract.bingx-trading.v1',
-                'contract': {'kind': 'bingx_spot_order_intent'},
+                'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+                'contract': {'kind': 'bingx_futures_order_intent'},
                 'runtime': {
                   'abi': 'hivra_host_abi_v1',
                   'entry_export': 'hivra_entry_v1',
                 },
                 'capabilities': [
                   'exchange.read.bingx.market',
-                  'exchange.trade.bingx.spot'
+                  'exchange.trade.bingx.futures'
                 ],
               },
             ),
@@ -212,7 +212,7 @@ void main() {
     final records = await service.loadPlugins();
     final samePlugin = records
         .where((r) =>
-            r.pluginId == 'hivra.contract.bingx-trading.v1' &&
+            r.pluginId == 'hivra.contract.bingx-futures-trading.v1' &&
             r.pluginVersion == '0.1.0')
         .toList();
     expect(samePlugin.length, 1);
@@ -233,23 +233,23 @@ void main() {
         {
           'id': 'fresh-id',
           'displayName': 'BingX',
-          'originalFileName': 'bingx_spot_test_plugin-0.1.0.zip',
+          'originalFileName': 'bingx_futures_test_plugin-0.1.0.zip',
           'storedFileName': 'fresh.zip',
           'sizeBytes': 10,
           'installedAtIso': '2026-04-09T12:00:00Z',
           'packageKind': 'zip',
-          'pluginId': 'hivra.contract.bingx-trading.v1',
+          'pluginId': 'hivra.contract.bingx-futures-trading.v1',
           'pluginVersion': '0.1.0',
         },
         {
           'id': 'stale-id',
           'displayName': 'BingX',
-          'originalFileName': 'bingx_spot_test_plugin-0.1.0.zip',
+          'originalFileName': 'bingx_futures_test_plugin-0.1.0.zip',
           'storedFileName': 'stale.zip',
           'sizeBytes': 11,
           'installedAtIso': '2026-04-09T11:00:00Z',
           'packageKind': 'zip',
-          'pluginId': 'hivra.contract.bingx-trading.v1',
+          'pluginId': 'hivra.contract.bingx-futures-trading.v1',
           'pluginVersion': '0.1.0',
         },
       ]),

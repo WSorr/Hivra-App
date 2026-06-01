@@ -47,3 +47,4 @@ Use this checklist for interactive validation before or after a release build.
 - [ ] Risk-block path is exercised and logs `risk_blocked` with deterministic reason code.
 - [ ] Retry path is exercised (transient failure) and execution envelope is written.
 - [ ] Receipt path is visible (`drone.execution.envelope`) and hash is traceable in logs.
+- [ ] Trading drone parity checklist is completed: `docs/checklists/trading-drone-spec-runtime-parity.md`.

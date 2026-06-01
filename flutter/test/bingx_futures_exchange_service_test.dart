@@ -601,5 +601,66 @@ void main() {
       expect(result.orders.first.avgPriceDecimal, '62000');
       expect(result.orders.last.avgPriceDecimal, '60000');
     });
+
+    test('reads user balance via signed endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"balance":{"asset":"USDT","equity":"1000.5","realisedProfit":"-5.25"}}}',
+          );
+        },
+      );
+
+      final result = await service.getUserBalance(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/user/balance');
+      expect(capturedRequest.uri.query, contains('signature='));
+      expect(capturedRequest.headers['X-BX-APIKEY'], 'api-key');
+      expect(result.isSuccess, isTrue);
+      expect(result.accountEquityQuoteDecimal, '1000.5');
+      expect(result.realizedPnlQuoteDecimal, '-5.25');
+    });
+
+    test('reads user positions via signed endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","positionAmt":"0.1","positionSide":"LONG"},{"symbol":"ETH-USDT","positionAmt":"-1.2","positionSide":"SHORT"}]}',
+          );
+        },
+      );
+
+      final result = await service.getUserPositions(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/user/positions');
+      expect(capturedRequest.uri.query, contains('signature='));
+      expect(capturedRequest.headers['X-BX-APIKEY'], 'api-key');
+      expect(result.isSuccess, isTrue);
+      expect(result.positions, hasLength(2));
+      expect(result.positions.first.symbol, 'BTC-USDT');
+      expect(result.positions.last.quantityDecimal, '-1.2');
+    });
   });
 }

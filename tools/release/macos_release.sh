@@ -10,6 +10,7 @@ CHANNEL=""
 OUTPUT_DIR=""
 RUN_PREFLIGHT=1
 RUN_BUILD=1
+TRADING_EVIDENCE_BUILD_TAG=""
 
 usage() {
   cat <<'EOF'
@@ -22,6 +23,9 @@ Options:
   --output-dir <dir>       Optional. Defaults to dist/<version>-<channel>-macos.
   --skip-preflight         Optional. Skip tools/release/preflight.sh.
   --skip-build             Optional. Skip flutter build macos --release.
+  --trading-evidence-build-tag <tag>
+                           Optional. Forward build-tag coverage check to preflight:
+                           tools/release/preflight.sh --trading-evidence-build-tag <tag>
   --help                   Show this help.
 
 Environment:
@@ -106,6 +110,10 @@ while [ $# -gt 0 ]; do
       RUN_BUILD=0
       shift
       ;;
+    --trading-evidence-build-tag)
+      TRADING_EVIDENCE_BUILD_TAG="${2:-}"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -136,7 +144,12 @@ fi
 
 if [ "$RUN_PREFLIGHT" -eq 1 ]; then
   info "Release preflight"
-  "$ROOT/tools/release/preflight.sh"
+  if [ -n "$TRADING_EVIDENCE_BUILD_TAG" ]; then
+    "$ROOT/tools/release/preflight.sh" \
+      --trading-evidence-build-tag "$TRADING_EVIDENCE_BUILD_TAG"
+  else
+    "$ROOT/tools/release/preflight.sh"
+  fi
 fi
 
 if [ "$RUN_BUILD" -eq 1 ]; then

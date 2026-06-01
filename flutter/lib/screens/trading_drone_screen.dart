@@ -7,6 +7,7 @@ import '../services/app_runtime_service.dart';
 import '../services/bingx_futures_credential_store.dart';
 import '../services/bingx_futures_live_decision_service.dart';
 import '../services/bingx_futures_live_snapshot_builder_service.dart';
+import '../services/bingx_futures_exchange_risk_input_service.dart';
 import '../services/bingx_futures_exchange_service.dart';
 import '../services/bingx_futures_observability_envelope_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
@@ -46,6 +47,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       AppRuntimeService().buildBingxFuturesCredentialStore();
   final BingxFuturesExchangeService _bingxExchangeService =
       AppRuntimeService().buildBingxFuturesExchangeService();
+  final BingxFuturesExchangeRiskInputService _exchangeRiskInput =
+      const BingxFuturesExchangeRiskInputService();
   final BingxFuturesRiskGovernorService _riskGovernor =
       const BingxFuturesRiskGovernorService();
   final BingxFuturesObservabilityEnvelopeService _observability =
@@ -811,10 +814,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
 
     final isZonePending = _entryMode == 'zone_pending';
+    BingxFuturesLiveDecisionResult? liveDecision;
 
     if (_orderType == 'limit') {
-      final live = await _computeLiveDecision(symbol: symbol, peerHex: peerHex);
-      if (live == null) return;
+      liveDecision =
+          await _computeLiveDecision(symbol: symbol, peerHex: peerHex);
+      if (liveDecision == null) return;
+      final live = liveDecision;
       if (live.zoneLowDecimal != null && live.zoneHighDecimal != null) {
         if (mounted) {
           setState(() {
@@ -939,6 +945,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         : null,
                 'created_at_utc': nowUtc,
                 'strategy_tag': strategyTag.isEmpty ? null : strategyTag,
+                'market_snapshot_hash_hex': liveDecision?.marketSnapshotHashHex,
+                'feature_hash_hex': liveDecision?.featureHashHex,
+                'tvh_decision_hash_hex': liveDecision?.tvhDecisionHashHex,
+                'live_decision_hash_hex': liveDecision?.liveDecisionHashHex,
               },
             ),
           )
@@ -960,6 +970,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         executionSource: response.executionSource,
         intentHashHex: response.result?['intent_hash_hex']?.toString(),
         errorCode: response.errorCode,
+        marketSnapshotHashHex: liveDecision?.marketSnapshotHashHex ??
+            response.result?['market_snapshot_hash_hex']?.toString(),
+        featureHashHex: liveDecision?.featureHashHex ??
+            response.result?['feature_hash_hex']?.toString(),
+        tvhDecisionHashHex: liveDecision?.tvhDecisionHashHex ??
+            response.result?['tvh_decision_hash_hex']?.toString(),
+        liveDecisionHashHex: liveDecision?.liveDecisionHashHex ??
+            response.result?['live_decision_hash_hex']?.toString(),
         blockingFactCodes: response.blockingFacts.map((f) => f.key).toList(),
       );
       await _uiLog.log(
@@ -1295,6 +1313,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         intentHashHex: payload.intentHashHex,
         riskDecisionCode: riskDecision.reasonCode,
         riskDecisionHashHex: riskDecision.decisionHashHex,
+        marketSnapshotHashHex:
+            result['market_snapshot_hash_hex']?.toString().trim(),
+        featureHashHex: result['feature_hash_hex']?.toString().trim(),
+        tvhDecisionHashHex: result['tvh_decision_hash_hex']?.toString().trim(),
+        liveDecisionHashHex:
+            result['live_decision_hash_hex']?.toString().trim(),
       );
       final safeMessage = queued.execution.exchangeMessage
           .replaceAll('\n', ' ')
@@ -1394,18 +1418,38 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       stopLossDecimal = entryPriceDecimal;
     }
 
+    final credentials = _resolveCredentials();
+    if (credentials == null) {
+      await _showSnack('Save BingX API credentials first');
+      return null;
+    }
     final equityProxy =
         double.tryParse(_maxNotionalUsdtController.text.trim()) ?? 100.0;
+    final exchangeRiskInput = await _exchangeRiskInput.read(
+      exchangeService: _bingxExchangeService,
+      credentials: credentials,
+      fallbackEquityQuote: equityProxy,
+    );
+    await _uiLog.log(
+      'bingx.exchange.risk_inputs',
+      'symbol=${payload.symbol} '
+          'equity=${exchangeRiskInput.accountEquityQuoteDecimal} '
+          'pnl=${exchangeRiskInput.realizedDailyPnlQuoteDecimal} '
+          'positions=${exchangeRiskInput.concurrentPositions} '
+          'fallbacks=${exchangeRiskInput.usedBalanceFallback ? "balance" : "-"},'
+          '${exchangeRiskInput.usedPnlFallback ? "pnl" : "-"},'
+          '${exchangeRiskInput.usedPositionsFallback ? "positions" : "-"}',
+    );
     final decision = _riskGovernor.evaluate(
       input: BingxFuturesRiskGovernorInput(
         symbol: payload.symbol,
         quantityDecimal: payload.quantityDecimal,
         entryPriceDecimal: entryPriceDecimal,
         stopLossDecimal: stopLossDecimal,
-        accountEquityQuoteDecimal:
-            equityProxy <= 0 ? '100' : equityProxy.toStringAsFixed(8),
-        realizedDailyPnlQuoteDecimal: '0',
-        concurrentPositions: 0,
+        accountEquityQuoteDecimal: exchangeRiskInput.accountEquityQuoteDecimal,
+        realizedDailyPnlQuoteDecimal:
+            exchangeRiskInput.realizedDailyPnlQuoteDecimal,
+        concurrentPositions: exchangeRiskInput.concurrentPositions,
         lossStreakCount: 0,
         lastLossAtUtc: null,
         nowUtc: DateTime.now().toUtc().toIso8601String(),

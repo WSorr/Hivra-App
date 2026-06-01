@@ -1,6 +1,6 @@
 # BingX Futures Trading Drone — Specification v1
 
-Status: Draft (implementation-target)
+Status: Active (runtime-bound)
 Scope: Plugin/Application layer only (no Core/ledger invariant changes)
 
 ---
@@ -10,10 +10,14 @@ Scope: Plugin/Application layer only (no Core/ledger invariant changes)
 Define a deterministic trading-drone spec for BingX futures that:
 
 - computes TVH (entry setup) from a fixed market-data snapshot,
-- produces a deterministic intent envelope for capsule peers,
+- produces a deterministic intent envelope for capsule peers and runtime execution,
 - preserves Hivra laws: modularity, determinism, dependencies strictly downward.
 
-This document describes **signal generation and intent preparation**, not live order placement.
+This document describes the full v1 runtime path:
+
+- deterministic signal generation and intent preparation,
+- risk-governed execution through runtime invoke boundary,
+- deterministic decision/execution observability envelopes.
 
 ---
 
@@ -350,10 +354,17 @@ Current host API binding:
   - `consensus_guard.read`
   - `exchange.trade.bingx.futures`
 
+Runtime execution behavior (v1):
+
+- host method produces deterministic intent payload and intent hash,
+- exchange mutation is performed only via runtime execution queue path,
+- risk governor and idempotency/TTL guards are mandatory pre-execution checks,
+- decision/execution envelopes are emitted for traceability.
+
 Broadcast behavior:
 
-- signal envelope may be shared with consensus peers,
-- no live exchange mutation is performed by host API v1.
+- signal envelope may be shared with consensus peers as plugin-domain message,
+- peer broadcast is informational and does not bypass local execution gate.
 
 ---
 
@@ -363,6 +374,7 @@ Broadcast behavior:
    - repeated evaluation on identical snapshot produces identical `intent_hash`.
 2. Safety:
    - missing required data -> `NO_SIGNAL`, never partial trade intent.
+   - failed risk gate -> deterministic `blocked` decision code.
 3. Boundary discipline:
    - no direct ledger writes from drone,
    - no transport-side business logic leakage.
@@ -370,6 +382,9 @@ Broadcast behavior:
    - each emitted TVH includes rule-set id and matched condition summary.
 5. Mode parity:
    - `situational` and `interactive` modes produce identical decision payload/hash for identical snapshot+policy inputs.
+6. Runtime parity:
+   - execution path uses runtime invoke boundary only (no host fallback mutation path),
+   - execution envelope hash is traceable to intent hash and decision hash.
 
 ---
 

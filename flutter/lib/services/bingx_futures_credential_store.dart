@@ -123,10 +123,12 @@ class BingxFuturesCredentialStore {
         key: _apiSecretForScope(scope),
         value: credentials.apiSecret,
       );
-      await _deleteScopeFallback(scope);
     } catch (_) {
-      await _writeScopeFallback(scope, credentials);
+      // Secure storage may be unavailable in some release/signing contexts.
     }
+    // Keep file fallback as durability layer across keychain availability
+    // changes between app launches/builds.
+    await _writeScopeFallback(scope, credentials);
   }
 
   Future<BingxFuturesApiCredentials?> _readScope(String scope) async {
@@ -229,10 +231,12 @@ class BingxFuturesCredentialStore {
         key: _apiSecretForScope(scope),
         value: credentials.apiSecret,
       );
-      await _deleteScopeFallback(scope);
     } catch (_) {
       // Keep fallback as source of truth when keychain is unavailable.
     }
+    // Never delete fallback automatically: keychain availability may change
+    // across launches and signatures, and fallback keeps credentials durable.
+    await _writeScopeFallback(scope, credentials);
   }
 
   Future<BingxFuturesApiCredentials?> _readScopeAndPromote(String scope) async {

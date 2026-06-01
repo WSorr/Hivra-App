@@ -4,26 +4,35 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import 'capsule_index_store.dart';
 import 'user_visible_data_directory_service.dart';
 
 class UiEventLogService {
   static Future<void> _writeQueue = Future<void>.value();
   static bool _didSanitizeLogFile = false;
+  static String? _cachedActiveCapsuleHex;
+  static DateTime? _cachedActiveCapsuleAt;
+  static const Duration _activeCapsuleCacheTtl = Duration(seconds: 2);
   static final RegExp _logLinePattern =
       RegExp(r'^\[[^\]]+\] \[[^\]]+\] .+$');
 
   final UserVisibleDataDirectoryService _directories;
+  final CapsuleIndexStore _indexStore;
 
   const UiEventLogService({
     UserVisibleDataDirectoryService directories =
         const UserVisibleDataDirectoryService(),
-  }) : _directories = directories;
+    CapsuleIndexStore indexStore = const CapsuleIndexStore(),
+  })  : _directories = directories,
+        _indexStore = indexStore;
 
   Future<void> log(String source, String message) async {
     final ts = DateTime.now().toIso8601String();
     final normalizedSource = _normalize(source);
     final normalizedMessage = _normalize(message);
-    final line = '[$ts] [$normalizedSource] $normalizedMessage';
+    final activeCapsuleHex = await _activeCapsuleHex();
+    final line =
+        '[$ts] [$normalizedSource] capsule=$activeCapsuleHex $normalizedMessage';
     debugPrint(line);
 
     try {
@@ -78,9 +87,34 @@ class UiEventLogService {
     return compact.isEmpty ? '-' : compact;
   }
 
+  Future<String> _activeCapsuleHex() async {
+    final now = DateTime.now();
+    final cached = _cachedActiveCapsuleHex;
+    final cachedAt = _cachedActiveCapsuleAt;
+    if (cached != null &&
+        cachedAt != null &&
+        now.difference(cachedAt) <= _activeCapsuleCacheTtl) {
+      return cached;
+    }
+
+    try {
+      final index = await _indexStore.read();
+      final value = _normalize(index.activePubKeyHex ?? 'none');
+      _cachedActiveCapsuleHex = value;
+      _cachedActiveCapsuleAt = now;
+      return value;
+    } catch (_) {
+      _cachedActiveCapsuleHex = 'unknown';
+      _cachedActiveCapsuleAt = now;
+      return 'unknown';
+    }
+  }
+
   @visibleForTesting
   static void resetForTest() {
     _writeQueue = Future<void>.value();
     _didSanitizeLogFile = false;
+    _cachedActiveCapsuleHex = null;
+    _cachedActiveCapsuleAt = null;
   }
 }

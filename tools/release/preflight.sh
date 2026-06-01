@@ -7,6 +7,40 @@ APP_PATH="$FLUTTER_DIR/build/macos/Build/Products/Release/hivra_app.app"
 ANDROID_APK="$FLUTTER_DIR/build/app/outputs/flutter-apk/app-release.apk"
 
 STATUS=0
+TRADING_EVIDENCE_BUILD_TAG=""
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  tools/release/preflight.sh [--trading-evidence-build-tag <tag>]
+
+Options:
+  --trading-evidence-build-tag <tag>
+      If provided, preflight additionally validates trading-drone
+      evidence coverage for the specified build tag using:
+      tools/release/check_trading_drone_evidence.sh
+USAGE
+}
+
+parse_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --trading-evidence-build-tag)
+        TRADING_EVIDENCE_BUILD_TAG="${2:-}"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "Unknown argument: $1" >&2
+        usage
+        exit 1
+        ;;
+    esac
+  done
+}
 
 run_step() {
   local label="$1"
@@ -125,6 +159,15 @@ check_android_release_bundle() {
   echo "PASS: Android APK contains libhivra_ffi.so for required ABIs"
 }
 
+check_trading_drone_evidence_coverage() {
+  if [ -z "$TRADING_EVIDENCE_BUILD_TAG" ]; then
+    echo "SKIP: No --trading-evidence-build-tag provided"
+    return 0
+  fi
+  "$ROOT/tools/release/check_trading_drone_evidence.sh" \
+    --build-tag "$TRADING_EVIDENCE_BUILD_TAG"
+}
+
 main() {
   echo "Hivra release preflight"
   echo "Workspace: $ROOT"
@@ -143,6 +186,9 @@ main() {
 
   run_step "Flutter Tests" \
     bash -lc "cd \"$FLUTTER_DIR\" && flutter test"
+
+  run_step "Trading Drone Evidence Coverage" \
+    check_trading_drone_evidence_coverage
 
   run_step "macOS Release Bundle Checks" \
     check_release_bundle
@@ -163,4 +209,5 @@ main() {
   exit "$STATUS"
 }
 
-main "$@"
+parse_args "$@"
+main

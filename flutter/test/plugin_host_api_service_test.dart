@@ -86,6 +86,22 @@ void main() {
       expect(response.errorCode, isNull);
       expect(response.result?['plugin_id'],
           BingxTradingContractService.futuresPluginId);
+      expect(
+        response.result?['market_snapshot_hash_hex'],
+        '1111111111111111111111111111111111111111111111111111111111111111',
+      );
+      expect(
+        response.result?['feature_hash_hex'],
+        '2222222222222222222222222222222222222222222222222222222222222222',
+      );
+      expect(
+        response.result?['tvh_decision_hash_hex'],
+        '3333333333333333333333333333333333333333333333333333333333333333',
+      );
+      expect(
+        response.result?['live_decision_hash_hex'],
+        '4444444444444444444444444444444444444444444444444444444444444444',
+      );
     });
 
     test('returns blocked when chat runner reports blocking facts', () {
@@ -207,6 +223,14 @@ Map<String, dynamic> _validBingxArgs() {
     'limit_price_decimal': '60000',
     'time_in_force': 'GTC',
     'created_at_utc': '2026-01-01T00:00:00Z',
+    'market_snapshot_hash_hex':
+        '1111111111111111111111111111111111111111111111111111111111111111',
+    'feature_hash_hex':
+        '2222222222222222222222222222222222222222222222222222222222222222',
+    'tvh_decision_hash_hex':
+        '3333333333333333333333333333333333333333333333333333333333333333',
+    'live_decision_hash_hex':
+        '4444444444444444444444444444444444444444444444444444444444444444',
   };
 }
 

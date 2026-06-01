@@ -98,6 +98,34 @@ class _ThrowingSecureStorage extends FlutterSecureStorage {
   }
 }
 
+class _FailingReadSecureStorage extends _FakeSecureStorage {
+  bool failRead = false;
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (failRead) {
+      throw Exception('secure storage read unavailable');
+    }
+    return super.read(
+      key: key,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
+
 void main() {
   group('BingxFuturesCredentialStore', () {
     test('loads global credentials and promotes to capsule scope', () async {
@@ -192,6 +220,38 @@ void main() {
       expect(loaded, isNotNull);
       expect(loaded!.apiKey, 'fallback-key');
       expect(loaded.apiSecret, 'fallback-secret');
+    });
+
+    test('loads from fallback when secure read fails after prior save', () async {
+      final tempHome =
+          await Directory.systemTemp.createTemp('hivra-cred-store-test-');
+      addTearDown(() async {
+        if (await tempHome.exists()) {
+          await tempHome.delete(recursive: true);
+        }
+      });
+
+      final scope =
+          'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+      final secureStorage = _FailingReadSecureStorage();
+      final store = BingxFuturesCredentialStore(
+        readActiveCapsuleRootHex: () => scope,
+        secureStorage: secureStorage,
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      );
+
+      await store.save(
+        const BingxFuturesApiCredentials(
+          apiKey: 'durable-key',
+          apiSecret: 'durable-secret',
+        ),
+      );
+      secureStorage.failRead = true;
+
+      final loaded = await store.load();
+      expect(loaded, isNotNull);
+      expect(loaded!.apiKey, 'durable-key');
+      expect(loaded.apiSecret, 'durable-secret');
     });
   });
 }

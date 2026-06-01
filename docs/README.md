@@ -92,6 +92,32 @@ Contains:
 - v1 entry criteria (long/short), risk filters, and output schema
 - host API and capability boundary for futures intent preparation
 
+### 10) `checklists/trading-drone-spec-runtime-parity.md` (drone parity checklist)
+Use this after any drone logic change and before release packaging.
+
+Contains:
+- mandatory Hivra laws gate for the drone module
+- spec-vs-runtime parity matrix
+- required automated test evidence list
+- required manual verification records for release candidates
+
+### 11) `checklists/trading-drone-evidence-log.md` (drone evidence journal)
+Use this to record build-tagged decision/execution evidence across macOS and Android release-candidate runs.
+
+Contains:
+- per-build parity rows (`platform x mode`)
+- decision/execution envelope hash traceability
+- risk-path coverage records
+- deterministic coverage check command
+### 12) `plugins/bingx_futures_trading_drone_goal_contract_v1.md` (drone goal contract)
+Use this as the operational anchor for trading-drone development cadence.
+
+Contains:
+- source-of-truth authority stack for capsule/plugin/drone docs
+- fixed v1 target outcome and boundaries
+- mandatory patch->test->smoke cadence
+- acceptance gates and ownership rule
+
 ## Recommended Reading Order
 
 1. `specification.md`
@@ -103,6 +129,9 @@ Contains:
 7. `checklists/user-lifetime-safety-pack.md` when preparing release candidates
 8. `architecture-execution-discipline.md` when designing/refactoring module boundaries and async behavior
 9. `plugins/bingx_futures_trading_drone_spec_v1.md` when implementing trading-drone logic
+10. `plugins/bingx_futures_trading_drone_goal_contract_v1.md` to keep drone work aligned with one operational target
+11. `checklists/trading-drone-spec-runtime-parity.md` before drone release packaging and manual smoke sign-off
+12. `checklists/trading-drone-evidence-log.md` to capture build-tagged parity evidence
 
 ## Update Rules
 

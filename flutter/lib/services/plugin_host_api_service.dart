@@ -594,6 +594,13 @@ class PluginHostApiService {
         request.args['take_profit_decimal']?.toString().trim();
     final createdAtUtc = request.args['created_at_utc']?.toString().trim();
     final strategyTag = request.args['strategy_tag']?.toString().trim();
+    final marketSnapshotHashHex =
+        request.args['market_snapshot_hash_hex']?.toString().trim();
+    final featureHashHex = request.args['feature_hash_hex']?.toString().trim();
+    final tvhDecisionHashHex =
+        request.args['tvh_decision_hash_hex']?.toString().trim();
+    final liveDecisionHashHex =
+        request.args['live_decision_hash_hex']?.toString().trim();
 
     if (peerHex == null ||
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex) ||
@@ -692,6 +699,10 @@ class PluginHostApiService {
           'strategy_tag': runResult.intent!.strategyTag,
           'intent_hash_hex': runResult.intent!.intentHashHex,
           'canonical_intent_json': runResult.intent!.canonicalJson,
+          'market_snapshot_hash_hex': marketSnapshotHashHex,
+          'feature_hash_hex': featureHashHex,
+          'tvh_decision_hash_hex': tvhDecisionHashHex,
+          'live_decision_hash_hex': liveDecisionHashHex,
         },
       );
     }

@@ -143,8 +143,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -157,7 +157,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -188,8 +188,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -201,7 +201,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -247,8 +247,8 @@ void main() {
       final evidence = await service.invoke(
         request: const PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: 'hivra.contract.bingx-trading.v1',
-          method: 'place_bingx_spot_order_intent',
+          pluginId: 'hivra.contract.bingx-futures-trading.v1',
+          method: 'place_bingx_futures_order_intent',
           args: <String, dynamic>{'symbol': 'BTC-USDT'},
         ),
         binding: PluginRuntimeBinding.externalPackage(
@@ -259,7 +259,7 @@ void main() {
           runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
           runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
           runtimeModulePath: 'plugin/module.wasm',
-          contractKind: 'bingx_spot_order_intent',
+          contractKind: 'bingx_futures_order_intent',
         ),
       );
 
@@ -303,8 +303,8 @@ void main() {
       final evidence = await service.invoke(
         request: const PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: 'hivra.contract.bingx-trading.v1',
-          method: 'place_bingx_spot_order_intent',
+          pluginId: 'hivra.contract.bingx-futures-trading.v1',
+          method: 'place_bingx_futures_order_intent',
           args: <String, dynamic>{'symbol': 'BTC-USDT'},
         ),
         binding: PluginRuntimeBinding.externalPackage(
@@ -314,7 +314,7 @@ void main() {
           packageFilePath: zipPath,
           runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
           runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
-          contractKind: 'bingx_spot_order_intent',
+          contractKind: 'bingx_futures_order_intent',
         ),
       );
 
@@ -354,8 +354,8 @@ void main() {
       final evidence = await service.invoke(
         request: const PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: 'hivra.contract.bingx-trading.v1',
-          method: 'place_bingx_spot_order_intent',
+          pluginId: 'hivra.contract.bingx-futures-trading.v1',
+          method: 'place_bingx_futures_order_intent',
           args: <String, dynamic>{'symbol': 'BTC-USDT'},
         ),
         binding: PluginRuntimeBinding.externalPackage(
@@ -365,7 +365,7 @@ void main() {
           packageFilePath: zipPath,
           runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
           runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
-          contractKind: 'bingx_spot_order_intent',
+          contractKind: 'bingx_futures_order_intent',
         ),
       );
 
@@ -402,8 +402,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -414,7 +414,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -459,8 +459,8 @@ void main() {
 
       final request = const PluginHostApiRequest(
         schemaVersion: 1,
-        pluginId: 'hivra.contract.bingx-trading.v1',
-        method: 'place_bingx_spot_order_intent',
+        pluginId: 'hivra.contract.bingx-futures-trading.v1',
+        method: 'place_bingx_futures_order_intent',
         args: <String, dynamic>{'symbol': 'BTC-USDT'},
       );
       final leftEvidence = await service.invoke(
@@ -473,7 +473,7 @@ void main() {
           runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
           runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
           runtimeModulePath: 'plugin/left.wasm',
-          contractKind: 'bingx_spot_order_intent',
+          contractKind: 'bingx_futures_order_intent',
         ),
       );
       final rightEvidence = await service.invoke(
@@ -486,7 +486,7 @@ void main() {
           runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
           runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
           runtimeModulePath: 'plugin/right.wasm',
-          contractKind: 'bingx_spot_order_intent',
+          contractKind: 'bingx_futures_order_intent',
         ),
       );
 
@@ -526,8 +526,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -539,7 +539,7 @@ void main() {
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
             runtimeModulePath: 'plugin/entry.wasm',
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(isA<FormatException>()),
@@ -574,8 +574,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -587,7 +587,7 @@ void main() {
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
             runtimeModulePath: 'plugin/../module.wasm',
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(isA<FormatException>()),
@@ -611,8 +611,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -623,7 +623,7 @@ void main() {
             runtimeAbi: 'wrong_abi',
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(isA<FormatException>()),
@@ -647,8 +647,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -659,7 +659,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -690,8 +690,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -702,7 +702,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -732,8 +732,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -744,7 +744,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -774,8 +774,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -786,7 +786,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -821,8 +821,8 @@ void main() {
       final evidence = await service.invoke(
         request: const PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: 'hivra.contract.bingx-trading.v1',
-          method: 'place_bingx_spot_order_intent',
+          pluginId: 'hivra.contract.bingx-futures-trading.v1',
+          method: 'place_bingx_futures_order_intent',
           args: <String, dynamic>{'symbol': 'BTC-USDT'},
         ),
         binding: PluginRuntimeBinding.externalPackage(
@@ -832,7 +832,7 @@ void main() {
           packageFilePath: wasmPath,
           runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
           runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
-          contractKind: 'bingx_spot_order_intent',
+          contractKind: 'bingx_futures_order_intent',
         ),
       );
 
@@ -872,8 +872,8 @@ void main() {
       final evidence = await service.invoke(
         request: const PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: 'hivra.contract.bingx-trading.v1',
-          method: 'place_bingx_spot_order_intent',
+          pluginId: 'hivra.contract.bingx-futures-trading.v1',
+          method: 'place_bingx_futures_order_intent',
           args: <String, dynamic>{'symbol': 'BTC-USDT'},
         ),
         binding: PluginRuntimeBinding.externalPackage(
@@ -883,7 +883,7 @@ void main() {
           packageFilePath: wasmPath,
           runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
           runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
-          contractKind: 'bingx_spot_order_intent',
+          contractKind: 'bingx_futures_order_intent',
         ),
       );
 
@@ -916,8 +916,8 @@ void main() {
       final evidence = await service.invoke(
         request: const PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: 'hivra.contract.bingx-trading.v1',
-          method: 'place_bingx_spot_order_intent',
+          pluginId: 'hivra.contract.bingx-futures-trading.v1',
+          method: 'place_bingx_futures_order_intent',
           args: <String, dynamic>{'symbol': 'BTC-USDT'},
         ),
         binding: PluginRuntimeBinding.externalPackage(
@@ -927,7 +927,7 @@ void main() {
           packageFilePath: wasmPath,
           runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
           runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
-          contractKind: 'bingx_spot_order_intent',
+          contractKind: 'bingx_futures_order_intent',
         ),
       );
 
@@ -965,8 +965,8 @@ void main() {
       final evidence = await service.invoke(
         request: const PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: 'hivra.contract.bingx-trading.v1',
-          method: 'place_bingx_spot_order_intent',
+          pluginId: 'hivra.contract.bingx-futures-trading.v1',
+          method: 'place_bingx_futures_order_intent',
           args: <String, dynamic>{'symbol': 'BTC-USDT'},
         ),
         binding: PluginRuntimeBinding.externalPackage(
@@ -976,7 +976,7 @@ void main() {
           packageFilePath: wasmPath,
           runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
           runtimeEntryExport: WasmPluginRuntimeStubService.requiredEntryExport,
-          contractKind: 'bingx_spot_order_intent',
+          contractKind: 'bingx_futures_order_intent',
         ),
       );
 
@@ -1008,8 +1008,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -1020,7 +1020,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -1057,8 +1057,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -1069,7 +1069,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -1105,8 +1105,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -1117,7 +1117,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -1153,8 +1153,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -1165,7 +1165,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(
@@ -1204,8 +1204,8 @@ void main() {
         () => service.invoke(
           request: const PluginHostApiRequest(
             schemaVersion: 1,
-            pluginId: 'hivra.contract.bingx-trading.v1',
-            method: 'place_bingx_spot_order_intent',
+            pluginId: 'hivra.contract.bingx-futures-trading.v1',
+            method: 'place_bingx_futures_order_intent',
             args: <String, dynamic>{'symbol': 'BTC-USDT'},
           ),
           binding: PluginRuntimeBinding.externalPackage(
@@ -1216,7 +1216,7 @@ void main() {
             runtimeAbi: WasmPluginRuntimeStubService.requiredRuntimeAbi,
             runtimeEntryExport:
                 WasmPluginRuntimeStubService.requiredEntryExport,
-            contractKind: 'bingx_spot_order_intent',
+            contractKind: 'bingx_futures_order_intent',
           ),
         ),
         throwsA(

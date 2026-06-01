@@ -580,6 +580,66 @@ class BingxFuturesUserForceOrdersResult {
   });
 }
 
+class BingxFuturesUserBalanceResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String signedPayloadHashHex;
+  final String responseBody;
+  final String? accountEquityQuoteDecimal;
+  final String? realizedPnlQuoteDecimal;
+
+  const BingxFuturesUserBalanceResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.signedPayloadHashHex,
+    required this.responseBody,
+    required this.accountEquityQuoteDecimal,
+    required this.realizedPnlQuoteDecimal,
+  });
+}
+
+class BingxFuturesUserPosition {
+  final String symbol;
+  final String? quantityDecimal;
+  final String? unrealizedPnlDecimal;
+  final String? positionSide;
+
+  const BingxFuturesUserPosition({
+    required this.symbol,
+    required this.quantityDecimal,
+    required this.unrealizedPnlDecimal,
+    required this.positionSide,
+  });
+}
+
+class BingxFuturesUserPositionsResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String signedPayloadHashHex;
+  final String responseBody;
+  final List<BingxFuturesUserPosition> positions;
+
+  const BingxFuturesUserPositionsResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.signedPayloadHashHex,
+    required this.responseBody,
+    required this.positions,
+  });
+}
+
 class BingxFuturesPerpetualSymbolsResult {
   final bool isSuccess;
   final int httpStatusCode;
@@ -649,6 +709,8 @@ class BingxFuturesExchangeService {
   static const String _getOpenOrdersPath = '/openApi/swap/v2/trade/openOrders';
   static const String _cancelOrderPath = '/openApi/swap/v2/trade/order';
   static const String _forceOrdersPath = '/openApi/swap/v2/trade/forceOrders';
+  static const String _userBalancePath = '/openApi/swap/v2/user/balance';
+  static const String _userPositionsPath = '/openApi/swap/v2/user/positions';
 
   final BingxHttpRequestSender _requestSender;
   final int Function() _clockMs;
@@ -1363,6 +1425,86 @@ class BingxFuturesExchangeService {
     );
   }
 
+  Future<BingxFuturesUserBalanceResult> getUserBalance({
+    required BingxFuturesApiCredentials credentials,
+  }) async {
+    final normalizedCredentials = credentials.normalized();
+    final timestampMs = _clockMs();
+    final params = <String, String>{
+      'recvWindow': recvWindowMs.toString(),
+      'timestamp': timestampMs.toString(),
+    };
+    final response = await _executeSignedGet(
+      credentials: normalizedCredentials,
+      endpointPath: _userBalancePath,
+      params: params,
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final row = _extractBalanceRow(decoded?['data']);
+    final equity = _readStringField(row, const <String>[
+      'equity',
+      'accountEquity',
+      'balance',
+      'totalBalance',
+      'walletBalance',
+      'availableBalance',
+    ]);
+    final realizedPnl = _readStringField(row, const <String>[
+      'realizedPnl',
+      'realizedPNL',
+      'todayRealizedPnl',
+      'dailyRealizedPnl',
+      'realizedProfit',
+      'realisedProfit',
+      'realized_profit',
+      'realised_profit',
+    ]);
+    return BingxFuturesUserBalanceResult(
+      isSuccess: response.isSuccess,
+      httpStatusCode: response.httpStatusCode,
+      exchangeCode: response.exchangeCode,
+      exchangeMessage: response.exchangeMessage,
+      endpointPath: _userBalancePath,
+      signedPayloadHashHex: response.signedPayloadHashHex,
+      responseBody: response.body,
+      accountEquityQuoteDecimal: equity,
+      realizedPnlQuoteDecimal: realizedPnl,
+    );
+  }
+
+  Future<BingxFuturesUserPositionsResult> getUserPositions({
+    required BingxFuturesApiCredentials credentials,
+    String? symbol,
+  }) async {
+    final normalizedCredentials = credentials.normalized();
+    final timestampMs = _clockMs();
+    final params = <String, String>{
+      'recvWindow': recvWindowMs.toString(),
+      'timestamp': timestampMs.toString(),
+    };
+    final normalizedSymbol = symbol?.trim().toUpperCase();
+    if (normalizedSymbol != null && normalizedSymbol.isNotEmpty) {
+      params['symbol'] = _normalizeSymbol(normalizedSymbol);
+    }
+    final response = await _executeSignedGet(
+      credentials: normalizedCredentials,
+      endpointPath: _userPositionsPath,
+      params: params,
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final positions = _extractUserPositions(decoded);
+    return BingxFuturesUserPositionsResult(
+      isSuccess: response.isSuccess,
+      httpStatusCode: response.httpStatusCode,
+      exchangeCode: response.exchangeCode,
+      exchangeMessage: response.exchangeMessage,
+      endpointPath: _userPositionsPath,
+      signedPayloadHashHex: response.signedPayloadHashHex,
+      responseBody: response.body,
+      positions: positions,
+    );
+  }
+
   Future<BingxFuturesPerpetualSymbolsResult> getPerpetualSymbols() async {
     final requestUri = Uri.parse('$_baseUrl$_publicContractsPath');
     final response = await _requestSender(
@@ -2069,6 +2211,58 @@ class BingxFuturesExchangeService {
     return List<BingxFuturesForceOrder>.unmodifiable(parsed);
   }
 
+  static List<BingxFuturesUserPosition> _extractUserPositions(
+    Map<String, dynamic>? decoded,
+  ) {
+    if (decoded == null) return const <BingxFuturesUserPosition>[];
+    final data = decoded['data'];
+    final rows = <dynamic>[];
+    if (data is List) {
+      rows.addAll(data);
+    } else if (data is Map) {
+      final candidates = <dynamic>[
+        data['positions'],
+        data['rows'],
+        data['list'],
+      ];
+      for (final candidate in candidates) {
+        if (candidate is List) {
+          rows.addAll(candidate);
+          break;
+        }
+      }
+      if (rows.isEmpty) rows.add(data);
+    }
+    final parsed = <BingxFuturesUserPosition>[];
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final map = Map<String, dynamic>.from(row);
+      final symbol = _readStringField(map, const <String>[
+        'symbol',
+        'pair',
+      ]);
+      if (symbol == null) continue;
+      parsed.add(
+        BingxFuturesUserPosition(
+          symbol: _tryNormalizeSymbol(symbol) ?? symbol.toUpperCase(),
+          quantityDecimal: _readStringField(
+            map,
+            const <String>['positionAmt', 'positionAmount', 'quantity', 'size'],
+          ),
+          unrealizedPnlDecimal: _readStringField(
+            map,
+            const <String>['unRealizedProfit', 'unrealizedPnl', 'uPnl'],
+          ),
+          positionSide: _readStringField(
+            map,
+            const <String>['positionSide', 'side'],
+          ),
+        ),
+      );
+    }
+    return List<BingxFuturesUserPosition>.unmodifiable(parsed);
+  }
+
   static Map<String, dynamic>? _extractFirstRow(dynamic data) {
     if (data is Map) {
       return Map<String, dynamic>.from(data);
@@ -2079,6 +2273,28 @@ class BingxFuturesExchangeService {
       }
     }
     return null;
+  }
+
+  static Map<String, dynamic>? _extractBalanceRow(dynamic data) {
+    if (data is Map) {
+      final map = Map<String, dynamic>.from(data);
+      final nested = map['balance'];
+      if (nested is Map) {
+        return Map<String, dynamic>.from(nested);
+      }
+      final nestedList = map['balances'];
+      if (nestedList is List) {
+        for (final row in nestedList) {
+          if (row is! Map) continue;
+          final rowMap = Map<String, dynamic>.from(row);
+          final asset = rowMap['asset']?.toString().trim().toUpperCase();
+          if (asset == 'USDT') {
+            return rowMap;
+          }
+        }
+      }
+    }
+    return _extractFirstRow(data);
   }
 
   static String? _readStringField(

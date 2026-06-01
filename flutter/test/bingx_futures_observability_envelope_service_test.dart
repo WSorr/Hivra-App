@@ -20,6 +20,14 @@ void main() {
         intentHashHex:
             'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
         errorCode: 'blocked',
+        marketSnapshotHashHex:
+            '1111111111111111111111111111111111111111111111111111111111111111',
+        featureHashHex:
+            '2222222222222222222222222222222222222222222222222222222222222222',
+        tvhDecisionHashHex:
+            '3333333333333333333333333333333333333333333333333333333333333333',
+        liveDecisionHashHex:
+            '4444444444444444444444444444444444444444444444444444444444444444',
         blockingFactCodes: const <String>[
           'pending_remote_break',
           'pending_invitation',
@@ -39,6 +47,14 @@ void main() {
         intentHashHex:
             'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         errorCode: 'blocked',
+        marketSnapshotHashHex:
+            '1111111111111111111111111111111111111111111111111111111111111111',
+        featureHashHex:
+            '2222222222222222222222222222222222222222222222222222222222222222',
+        tvhDecisionHashHex:
+            '3333333333333333333333333333333333333333333333333333333333333333',
+        liveDecisionHashHex:
+            '4444444444444444444444444444444444444444444444444444444444444444',
         blockingFactCodes: const <String>[
           'pending_invitation',
           'pending_remote_break',
@@ -70,6 +86,14 @@ void main() {
         riskDecisionCode: 'risk_allowed',
         riskDecisionHashHex:
             'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        marketSnapshotHashHex:
+            '1111111111111111111111111111111111111111111111111111111111111111',
+        featureHashHex:
+            '2222222222222222222222222222222222222222222222222222222222222222',
+        tvhDecisionHashHex:
+            '3333333333333333333333333333333333333333333333333333333333333333',
+        liveDecisionHashHex:
+            '4444444444444444444444444444444444444444444444444444444444444444',
         nowUtc: fixedTs,
       );
       final second = service.buildExecutionEnvelope(
@@ -90,6 +114,14 @@ void main() {
         riskDecisionCode: 'risk_allowed',
         riskDecisionHashHex:
             'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        marketSnapshotHashHex:
+            '1111111111111111111111111111111111111111111111111111111111111111',
+        featureHashHex:
+            '2222222222222222222222222222222222222222222222222222222222222222',
+        tvhDecisionHashHex:
+            '3333333333333333333333333333333333333333333333333333333333333333',
+        liveDecisionHashHex:
+            '4444444444444444444444444444444444444444444444444444444444444444',
         nowUtc: fixedTs,
       );
 

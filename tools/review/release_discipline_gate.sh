@@ -44,6 +44,11 @@ CHECKLIST_ANDROID="$ROOT/docs/checklists/release-android.md"
 CHECKLIST_ANDROID_RUNTIME="$ROOT/docs/checklists/android-runtime-hardening.md"
 CHECKLIST_SMOKE="$ROOT/docs/checklists/manual-smoke.md"
 CHECKLIST_USER_LIFETIME="$ROOT/docs/checklists/user-lifetime-safety-pack.md"
+CHECKLIST_DRONE_PARITY="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
+CHECKLIST_DRONE_EVIDENCE="$ROOT/docs/checklists/trading-drone-evidence-log.md"
+DRONE_GOAL_CONTRACT="$ROOT/docs/plugins/bingx_futures_trading_drone_goal_contract_v1.md"
+DRONE_EVIDENCE_RECORD="$ROOT/tools/release/record_trading_drone_evidence.sh"
+DRONE_EVIDENCE_CHECK="$ROOT/tools/release/check_trading_drone_evidence.sh"
 
 require_file "$PRECHECK" "preflight script exists"
 require_file "$MAC_RELEASE_SCRIPT" "macOS release script exists"
@@ -53,6 +58,11 @@ require_file "$CHECKLIST_ANDROID" "Android release checklist exists"
 require_file "$CHECKLIST_ANDROID_RUNTIME" "Android runtime hardening checklist exists"
 require_file "$CHECKLIST_SMOKE" "manual smoke checklist exists"
 require_file "$CHECKLIST_USER_LIFETIME" "user lifetime safety checklist exists"
+require_file "$CHECKLIST_DRONE_PARITY" "trading drone spec/runtime parity checklist exists"
+require_file "$CHECKLIST_DRONE_EVIDENCE" "trading drone evidence log exists"
+require_file "$DRONE_GOAL_CONTRACT" "trading drone goal contract exists"
+require_file "$DRONE_EVIDENCE_RECORD" "trading drone evidence-record script exists"
+require_file "$DRONE_EVIDENCE_CHECK" "trading drone evidence-check script exists"
 
 require_present "$ROADMAP" '^### 6\. Release Preflight as a Gate' \
   "roadmap tracks release preflight gate"
@@ -81,6 +91,14 @@ require_present "$CHECKLIST_MAC" 'does not rehydrate deleted canonical capsule f
   "macOS checklist requires no legacy rehydration after deletion"
 require_present "$CHECKLIST_MAC" 'Trading Drone smoke gate completed' \
   "macOS checklist requires trading drone smoke gate"
+require_present "$CHECKLIST_MAC" 'Trading drone spec/runtime parity checklist was completed' \
+  "macOS checklist requires drone spec/runtime parity completion"
+require_present "$CHECKLIST_MAC" 'Trading Drone evidence row recorded in `docs/checklists/trading-drone-evidence-log\.md`' \
+  "macOS checklist requires trading drone evidence log row"
+require_present "$CHECKLIST_MAC" 'tools/release/record_trading_drone_evidence\.sh' \
+  "macOS checklist requires trading drone evidence-record script reference"
+require_present "$CHECKLIST_MAC" 'tools/release/check_trading_drone_evidence\.sh --build-tag <version-tag>' \
+  "macOS checklist requires trading drone evidence-coverage check command"
 require_present "$CHECKLIST_MAC" '`situational` decision envelope hash captured' \
   "macOS checklist requires situational decision hash capture"
 require_present "$CHECKLIST_MAC" '`interactive` parity hash verified' \
@@ -117,6 +135,14 @@ require_present "$CHECKLIST_ANDROID" 'Invitation accept succeeds' \
   "Android checklist covers invitation accept flow"
 require_present "$CHECKLIST_ANDROID" 'Trading Drone smoke gate completed' \
   "Android checklist requires trading drone smoke gate"
+require_present "$CHECKLIST_ANDROID" 'Trading drone spec/runtime parity checklist was completed' \
+  "Android checklist requires drone spec/runtime parity completion"
+require_present "$CHECKLIST_ANDROID" 'Trading Drone evidence row recorded in `docs/checklists/trading-drone-evidence-log\.md`' \
+  "Android checklist requires trading drone evidence log row"
+require_present "$CHECKLIST_ANDROID" 'tools/release/record_trading_drone_evidence\.sh' \
+  "Android checklist requires trading drone evidence-record script reference"
+require_present "$CHECKLIST_ANDROID" 'tools/release/check_trading_drone_evidence\.sh --build-tag <version-tag>' \
+  "Android checklist requires trading drone evidence-coverage check command"
 require_present "$CHECKLIST_ANDROID" '`situational` decision envelope hash captured' \
   "Android checklist requires situational decision hash capture"
 require_present "$CHECKLIST_ANDROID" '`interactive` parity hash verified' \
@@ -175,10 +201,42 @@ require_present "$CHECKLIST_SMOKE" 'Ledger Truth' \
   "manual smoke checklist covers ledger truth projection"
 require_present "$CHECKLIST_SMOKE" 'Trading Drone \(Observability Gate\)' \
   "manual smoke checklist covers trading drone observability gate"
+require_present "$CHECKLIST_SMOKE" 'Trading drone parity checklist is completed' \
+  "manual smoke checklist requires drone parity checklist completion"
 require_present "$CHECKLIST_SMOKE" 'drone\.decision\.envelope' \
   "manual smoke checklist requires decision envelope visibility"
 require_present "$CHECKLIST_SMOKE" 'drone\.execution\.envelope' \
   "manual smoke checklist requires execution envelope visibility"
+require_present "$CHECKLIST_DRONE_PARITY" '## Hivra Laws \(Non-Negotiable\)' \
+  "drone parity checklist includes Hivra laws gate"
+require_present "$CHECKLIST_DRONE_PARITY" 'Modularity: decision/risk/execution logic stays in services; UI is projection-only' \
+  "drone parity checklist enforces modularity"
+require_present "$CHECKLIST_DRONE_PARITY" 'Determinism: same normalized snapshot \+ same policy => same decision hash' \
+  "drone parity checklist enforces determinism"
+require_present "$CHECKLIST_DRONE_PARITY" 'Downward dependencies: `UI -> app services -> plugin host API -> adapter` only' \
+  "drone parity checklist enforces downward dependencies"
+require_present "$CHECKLIST_DRONE_PARITY" '## Spec vs Runtime Matrix' \
+  "drone parity checklist includes spec/runtime matrix"
+require_present "$CHECKLIST_DRONE_PARITY" '## Test Evidence \(Required\)' \
+  "drone parity checklist includes test evidence gate"
+require_present "$CHECKLIST_DRONE_PARITY" '## Manual Verification \(Release Candidate\)' \
+  "drone parity checklist includes manual verification gate"
+require_present "$CHECKLIST_DRONE_EVIDENCE" '^# Trading Drone Evidence Log' \
+  "drone evidence log has canonical title"
+require_present "$CHECKLIST_DRONE_EVIDENCE" '\| Build Tag \| Date \(UTC\) \| Platform \| Mode \| Decision Envelope Hash \| Execution Envelope Hash \| Risk Path \| Notes \|' \
+  "drone evidence log includes required evidence table columns"
+require_present "$CHECKLIST_DRONE_EVIDENCE" 'Required Coverage Per Candidate' \
+  "drone evidence log includes per-candidate coverage requirements"
+require_present "$CHECKLIST_DRONE_EVIDENCE" 'tools/release/check_trading_drone_evidence\.sh --build-tag <version-tag>' \
+  "drone evidence log includes coverage verification command"
+require_present "$DRONE_GOAL_CONTRACT" '## 2\. Three Hivra Laws \(Mandatory\)' \
+  "drone goal contract includes Hivra laws section"
+require_present "$DRONE_GOAL_CONTRACT" '## 3\. Source-of-Truth Stack \(Order of Authority\)' \
+  "drone goal contract includes source-of-truth stack"
+require_present "$DRONE_GOAL_CONTRACT" '## 6\. Work Cadence for Every Drone Change' \
+  "drone goal contract includes mandatory work cadence"
+require_present "$DRONE_GOAL_CONTRACT" '## 7\. Acceptance Gates \(Must Pass Together\)' \
+  "drone goal contract includes acceptance gates"
 require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 1: First Capsule Birth' \
   "user lifetime checklist covers capsule birth"
 require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 2: First Relationship' \
@@ -210,6 +268,16 @@ require_present "$PRECHECK" 'Android Release Bundle Checks' \
   "preflight includes Android release bundle check step"
 require_present "$PRECHECK" 'check_android_release_bundle' \
   "preflight wires check_android_release_bundle"
+require_present "$PRECHECK" 'Trading Drone Evidence Coverage' \
+  "preflight includes trading drone evidence coverage step"
+require_present "$PRECHECK" 'check_trading_drone_evidence_coverage' \
+  "preflight wires trading drone evidence coverage"
+require_present "$PRECHECK" 'trading-evidence-build-tag' \
+  "preflight exposes trading evidence build-tag option"
+require_present "$MAC_RELEASE_SCRIPT" 'trading-evidence-build-tag' \
+  "macOS release script supports forwarding trading evidence build-tag"
+require_present "$ANDROID_RELEASE_SCRIPT" 'trading-evidence-build-tag' \
+  "Android release script supports forwarding trading evidence build-tag"
 require_present "$PRECHECK" 'user_lifetime_safety_gate\.sh' \
   "preflight includes user lifetime safety gate"
 require_present "$REVIEW_ALL" 'release_discipline_gate\.sh' \
