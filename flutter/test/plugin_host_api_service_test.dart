@@ -22,9 +22,9 @@ void main() {
       expect(response.errorCode, 'unsupported_plugin');
     });
 
-    test('executes bingx spot intent', () {
+    test('executes bingx futures intent with runtime hook', () async {
       final service = _service(
-        runBingxSpotOrder: ({
+        runBingxFuturesOrder: ({
           required peerHex,
           required clientOrderId,
           required symbol,
@@ -46,8 +46,8 @@ void main() {
           required strategyTag,
         }) =>
             const BingxTradingExecutionResult(
-          intent: BingxSpotOrderIntent(
-            pluginId: BingxTradingContractService.spotPluginId,
+          intent: BingxFuturesOrderIntent(
+            pluginId: BingxTradingContractService.futuresPluginId,
             peerHex: _peerHex,
             clientOrderId: 'ord-1',
             symbol: 'BTC-USDT',
@@ -73,11 +73,11 @@ void main() {
           blockingFacts: <ConsensusBlockingFact>[],
         ),
       );
-      final response = service.execute(
+      final response = await service.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: PluginHostApiService.bingxSpotTradingPluginId,
-          method: PluginHostApiService.placeBingxSpotOrderIntentMethod,
+          pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
+          method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
           args: _validBingxArgs(),
         ),
       );
@@ -85,7 +85,7 @@ void main() {
       expect(response.status, PluginHostApiStatus.executed);
       expect(response.errorCode, isNull);
       expect(response.result?['plugin_id'],
-          BingxTradingContractService.spotPluginId);
+          BingxTradingContractService.futuresPluginId);
     });
 
     test('returns blocked when chat runner reports blocking facts', () {
@@ -120,12 +120,10 @@ void main() {
 }
 
 PluginHostApiService _service({
-  BingxSpotOrderRunner? runBingxSpotOrder,
-  BingxSpotOrderRunner? runBingxFuturesOrder,
+  BingxFuturesOrderRunner? runBingxFuturesOrder,
   CapsuleChatRunner? runCapsuleChat,
 }) {
   return PluginHostApiService(
-    runBingxSpotOrder: runBingxSpotOrder ?? _noopBingx,
     runBingxFuturesOrder: runBingxFuturesOrder ?? _noopBingx,
     runCapsuleChat: runCapsuleChat ??
         ({
@@ -138,6 +136,34 @@ PluginHostApiService _service({
               envelope: null,
               blockingFacts: <ConsensusBlockingFact>[],
             ),
+    resolveRuntimeBinding: (_) => Future<PluginRuntimeBinding>.value(
+      const PluginRuntimeBinding.externalPackage(
+        packageId: 'pkg-futures-1',
+        packageVersion: '0.1.0',
+        packageKind: 'zip',
+        packageDigestHex:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        runtimeAbi: 'hivra_host_abi_v1',
+        runtimeEntryExport: 'hivra_entry_v1',
+        runtimeModulePath: 'plugin/module.wasm',
+        contractKind: BingxTradingContractService.futuresContractKind,
+        capabilities: <String>[
+          'consensus_guard.read',
+          'exchange.trade.bingx.futures',
+        ],
+      ),
+    ),
+    resolveRuntimeInvoke: (_, __) => Future<PluginRuntimeInvokeEvidence>.value(
+      const PluginRuntimeInvokeEvidence(
+        mode: 'wasm_stub_v1',
+        modulePath: 'plugin/module.wasm',
+        moduleSelection: 'manifest_module_path',
+        moduleDigestHex:
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        invokeDigestHex:
+            'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      ),
+    ),
   );
 }
 

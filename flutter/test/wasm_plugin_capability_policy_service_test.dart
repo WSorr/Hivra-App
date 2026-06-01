@@ -9,7 +9,6 @@ void main() {
     final normalized = service.normalizeAndValidate(<String>[
       'consensus_guard.read',
       'exchange.read.bingx.market',
-      'exchange.trade.bingx.spot',
       'exchange.trade.bingx.futures',
       'exchange.trade.bingx.futures',
     ]);
@@ -20,7 +19,6 @@ void main() {
         'consensus_guard.read',
         'exchange.read.bingx.market',
         'exchange.trade.bingx.futures',
-        'exchange.trade.bingx.spot',
       ],
     );
   });

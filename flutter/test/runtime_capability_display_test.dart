@@ -35,7 +35,7 @@ void main() {
       const <String>[
         'consensus_guard.read',
         'exchange.trade.bingx.futures',
-        'exchange.trade.bingx.spot',
+        'exchange.trade.bingx.futures',
         'chat.send.capsule',
       ],
       visibleLimit: 3,
@@ -46,7 +46,7 @@ void main() {
       const <String>[
         'consensus_guard.read',
         'exchange.trade.bingx.futures',
-        'exchange.trade.bingx.spot',
+        'exchange.trade.bingx.futures',
       ],
     );
     expect(summary.hiddenCount, 1);

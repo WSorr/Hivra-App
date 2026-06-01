@@ -85,7 +85,7 @@ typedef CapsuleChatRunner = CapsuleChatExecutionResult Function({
   required String messageText,
   required String createdAtUtc,
 });
-typedef BingxSpotOrderRunner = BingxTradingExecutionResult Function({
+typedef BingxFuturesOrderRunner = BingxTradingExecutionResult Function({
   required String peerHex,
   required String clientOrderId,
   required String symbol,
@@ -191,35 +191,27 @@ typedef PluginRuntimeInvokeResolver = Future<PluginRuntimeInvokeEvidence?>
 
 class PluginHostApiService {
   static const int schemaVersion = 1;
-  static const String bingxSpotTradingPluginId =
-      BingxTradingContractService.spotPluginId;
-  static const String bingxTradingPluginId = bingxSpotTradingPluginId;
   static const String bingxFuturesTradingPluginId =
       BingxTradingContractService.futuresPluginId;
-  static const String placeBingxSpotOrderIntentMethod =
-      'place_bingx_spot_order_intent';
   static const String placeBingxFuturesOrderIntentMethod =
       'place_bingx_futures_order_intent';
   static const String capsuleChatPluginId = CapsuleChatContractService.pluginId;
   static const String postCapsuleChatMethod = 'post_capsule_chat_message';
 
-  final BingxSpotOrderRunner _runBingxSpotOrder;
-  final BingxSpotOrderRunner _runBingxFuturesOrder;
+  final BingxFuturesOrderRunner _runBingxFuturesOrder;
   final CapsuleChatRunner _runCapsuleChat;
   final PluginRuntimeBindingResolver? _resolveRuntimeBinding;
   final PluginRuntimeInvokeResolver? _resolveRuntimeInvoke;
   final WasmPluginCapabilityPolicyService _capabilityPolicy;
 
   const PluginHostApiService({
-    required BingxSpotOrderRunner runBingxSpotOrder,
-    BingxSpotOrderRunner? runBingxFuturesOrder,
+    required BingxFuturesOrderRunner runBingxFuturesOrder,
     required CapsuleChatRunner runCapsuleChat,
     PluginRuntimeBindingResolver? resolveRuntimeBinding,
     PluginRuntimeInvokeResolver? resolveRuntimeInvoke,
     WasmPluginCapabilityPolicyService capabilityPolicy =
         const WasmPluginCapabilityPolicyService(),
-  })  : _runBingxSpotOrder = runBingxSpotOrder,
-        _runBingxFuturesOrder = runBingxFuturesOrder ?? runBingxSpotOrder,
+  })  : _runBingxFuturesOrder = runBingxFuturesOrder,
         _runCapsuleChat = runCapsuleChat,
         _resolveRuntimeBinding = resolveRuntimeBinding,
         _resolveRuntimeInvoke = resolveRuntimeInvoke,
@@ -375,8 +367,7 @@ class PluginHostApiService {
         runtimeInvoke: runtimeInvoke,
       );
     }
-    if (request.pluginId == bingxSpotTradingPluginId ||
-        request.pluginId == bingxFuturesTradingPluginId) {
+    if (request.pluginId == bingxFuturesTradingPluginId) {
       return _executeBingx(request, runtimeBinding, runtimeInvoke);
     }
     if (request.pluginId == capsuleChatPluginId) {
@@ -415,9 +406,6 @@ class PluginHostApiService {
   }
 
   String? _expectedContractKindForPlugin(String pluginId) {
-    if (pluginId == bingxSpotTradingPluginId) {
-      return BingxTradingContractService.spotContractKind;
-    }
     if (pluginId == bingxFuturesTradingPluginId) {
       return BingxTradingContractService.futuresContractKind;
     }
@@ -464,13 +452,6 @@ class PluginHostApiService {
     required String pluginId,
     required String method,
   }) {
-    if (pluginId == bingxSpotTradingPluginId &&
-        method == placeBingxSpotOrderIntentMethod) {
-      return const <String>{
-        'consensus_guard.read',
-        'exchange.trade.bingx.spot',
-      };
-    }
     if (pluginId == bingxFuturesTradingPluginId &&
         method == placeBingxFuturesOrderIntentMethod) {
       return const <String>{
@@ -577,11 +558,7 @@ class PluginHostApiService {
     PluginRuntimeBinding runtimeBinding,
     PluginRuntimeInvokeEvidence? runtimeInvoke,
   ) {
-    final isFuturesPlugin = request.pluginId == bingxFuturesTradingPluginId;
-    final expectedMethod = isFuturesPlugin
-        ? placeBingxFuturesOrderIntentMethod
-        : placeBingxSpotOrderIntentMethod;
-    if (request.method != expectedMethod) {
+    if (request.method != placeBingxFuturesOrderIntentMethod) {
       return _rejected(
         pluginId: request.pluginId,
         method: request.method,
@@ -645,9 +622,7 @@ class PluginHostApiService {
 
     late final BingxTradingExecutionResult runResult;
     try {
-      final runner =
-          isFuturesPlugin ? _runBingxFuturesOrder : _runBingxSpotOrder;
-      runResult = runner(
+      runResult = _runBingxFuturesOrder(
         peerHex: peerHex,
         clientOrderId: clientOrderId,
         symbol: symbol,
@@ -687,9 +662,7 @@ class PluginHostApiService {
         runtimeInvoke: runtimeInvoke,
         result: <String, dynamic>{
           'plugin_id': runResult.intent!.pluginId,
-          'contract_kind': isFuturesPlugin
-              ? BingxTradingContractService.futuresContractKind
-              : BingxTradingContractService.spotContractKind,
+          'contract_kind': BingxTradingContractService.futuresContractKind,
           'peer_hex': runResult.intent!.peerHex,
           'client_order_id': runResult.intent!.clientOrderId,
           'symbol': runResult.intent!.symbol,

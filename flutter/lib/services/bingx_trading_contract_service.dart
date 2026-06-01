@@ -35,7 +35,7 @@ enum BingxZonePriceRule {
   manual,
 }
 
-class BingxSpotOrderIntent {
+class BingxFuturesOrderIntent {
   final String pluginId;
   final String peerHex;
   final String clientOrderId;
@@ -58,7 +58,7 @@ class BingxSpotOrderIntent {
   final String canonicalJson;
   final String intentHashHex;
 
-  const BingxSpotOrderIntent({
+  const BingxFuturesOrderIntent({
     required this.pluginId,
     required this.peerHex,
     required this.clientOrderId,
@@ -84,7 +84,7 @@ class BingxSpotOrderIntent {
 }
 
 class BingxTradingExecutionResult {
-  final BingxSpotOrderIntent? intent;
+  final BingxFuturesOrderIntent? intent;
   final List<ConsensusBlockingFact> blockingFacts;
 
   const BingxTradingExecutionResult({
@@ -96,13 +96,11 @@ class BingxTradingExecutionResult {
 }
 
 class BingxTradingContractService {
-  static const String spotPluginId = 'hivra.contract.bingx-trading.v1';
   static const String futuresPluginId =
       'hivra.contract.bingx-futures-trading.v1';
-  static const String pluginId = spotPluginId;
-  static const String spotContractKind = 'bingx_spot_order_intent';
   static const String futuresContractKind = 'bingx_futures_order_intent';
-  static const String contractKind = spotContractKind;
+  static const String pluginId = futuresPluginId;
+  static const String contractKind = futuresContractKind;
 
   final BingxConsensusSignableReader _readSignable;
   final String configuredPluginId;
@@ -110,8 +108,8 @@ class BingxTradingContractService {
 
   const BingxTradingContractService({
     required BingxConsensusSignableReader readSignable,
-    this.configuredPluginId = spotPluginId,
-    this.configuredContractKind = spotContractKind,
+    this.configuredPluginId = futuresPluginId,
+    this.configuredContractKind = futuresContractKind,
   }) : _readSignable = readSignable;
 
   BingxTradingExecutionResult execute({
@@ -170,7 +168,7 @@ class BingxTradingContractService {
     );
   }
 
-  BingxSpotOrderIntent evaluateDeterministic({
+  BingxFuturesOrderIntent evaluateDeterministic({
     required String peerHex,
     required String clientOrderId,
     required String symbol,
@@ -476,7 +474,7 @@ class BingxTradingContractService {
     });
     final intentHashHex = sha256.convert(utf8.encode(canonical)).toString();
 
-    return BingxSpotOrderIntent(
+    return BingxFuturesOrderIntent(
       pluginId: configuredPluginId,
       peerHex: normalizedPeer,
       clientOrderId: normalizedClientOrderId,

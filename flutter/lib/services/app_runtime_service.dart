@@ -107,20 +107,14 @@ class AppRuntimeService {
 
   PluginHostApiService buildPluginHostApiService() {
     final consensus = buildConsensusRuntimeService();
-    final bingxSpot = BingxTradingContractService(
-      readSignable: consensus.signable,
-    );
     final bingxFutures = BingxTradingContractService(
       readSignable: consensus.signable,
-      configuredPluginId: BingxTradingContractService.futuresPluginId,
-      configuredContractKind: BingxTradingContractService.futuresContractKind,
     );
     final chat = CapsuleChatContractService(
       readSignable: consensus.signable,
     );
     final wasmRuntime = const WasmPluginRuntimeStubService();
     return PluginHostApiService(
-      runBingxSpotOrder: bingxSpot.execute,
       runBingxFuturesOrder: bingxFutures.execute,
       runCapsuleChat: chat.execute,
       resolveRuntimeBinding: _resolvePluginRuntimeBinding,

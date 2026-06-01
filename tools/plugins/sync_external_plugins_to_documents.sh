@@ -42,7 +42,6 @@ latest_zip_or_empty() {
 }
 
 BINGX_FUTURES_ZIP="$(latest_zip_or_empty "$SOURCE_DIR"/bingx_futures_test_plugin-*.zip)"
-BINGX_SPOT_ZIP="$(latest_zip_or_empty "$SOURCE_DIR"/bingx_spot_test_plugin-*.zip)"
 CHAT_ZIP="$(ls "$SOURCE_DIR"/capsule_chat_test_plugin-*.zip | sort | tail -n1)"
 
 if [[ -n "$BINGX_FUTURES_ZIP" ]]; then
@@ -51,14 +50,8 @@ if [[ -n "$BINGX_FUTURES_ZIP" ]]; then
   BINGX_PLUGIN_ID="hivra.contract.bingx-futures-trading.v1"
   BINGX_DISPLAY_NAME="BingX Futures Trading (Test Plugin)"
   BINGX_VERSION="$(basename "$BINGX_ZIP" | sed -E 's/^bingx_futures_test_plugin-([0-9.]+)\.zip$/\1/')"
-elif [[ -n "$BINGX_SPOT_ZIP" ]]; then
-  BINGX_ZIP="$BINGX_SPOT_ZIP"
-  BINGX_ENTRY_ID="bingx-spot-test"
-  BINGX_PLUGIN_ID="hivra.contract.bingx-trading.v1"
-  BINGX_DISPLAY_NAME="BingX Spot Trading (Test Plugin)"
-  BINGX_VERSION="$(basename "$BINGX_ZIP" | sed -E 's/^bingx_spot_test_plugin-([0-9.]+)\.zip$/\1/')"
 else
-  echo "missing BingX plugin zip (expected bingx_futures_test_plugin-*.zip or bingx_spot_test_plugin-*.zip)"
+  echo "missing BingX plugin zip (expected bingx_futures_test_plugin-*.zip)"
   exit 1
 fi
 

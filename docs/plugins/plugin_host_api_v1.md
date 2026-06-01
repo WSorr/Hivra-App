@@ -11,62 +11,12 @@ This document defines the first deterministic host API boundary used before wasm
 
 ## Supported Contracts (v1)
 
-- `hivra.contract.bingx-trading.v1`
-  - method: `place_bingx_spot_order_intent`
 - `hivra.contract.bingx-futures-trading.v1`
   - method: `place_bingx_futures_order_intent`
 - `hivra.contract.capsule-chat.v1`
   - method: `post_capsule_chat_message`
 
 ## Request Shape
-
-```json
-{
-  "schema_version": 1,
-  "plugin_id": "hivra.contract.bingx-trading.v1",
-  "method": "place_bingx_spot_order_intent",
-  "args": {
-    "peer_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "client_order_id": "ord-1",
-    "symbol": "BTC-USDT",
-    "side": "buy",
-    "order_type": "limit",
-    "quantity_decimal": "0.01",
-    "limit_price_decimal": "60000",
-    "time_in_force": "GTC",
-    "entry_mode": "direct",
-    "created_at_utc": "2026-04-09T10:00:00Z",
-    "strategy_tag": "demo"
-  }
-}
-```
-
-```json
-{
-  "schema_version": 1,
-  "plugin_id": "hivra.contract.bingx-trading.v1",
-  "method": "place_bingx_spot_order_intent",
-  "args": {
-    "peer_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "client_order_id": "ord-zone-1",
-    "symbol": "BTC-USDT",
-    "side": "buy",
-    "order_type": "limit",
-    "quantity_decimal": "0.02",
-    "time_in_force": "GTC",
-    "entry_mode": "zone_pending",
-    "zone_side": "buyside",
-    "zone_low_decimal": "58000",
-    "zone_high_decimal": "60000",
-    "zone_price_rule": "zone_mid",
-    "trigger_price_decimal": "58900",
-    "stop_loss_decimal": "57500",
-    "take_profit_decimal": "62000",
-    "created_at_utc": "2026-04-09T10:00:00Z",
-    "strategy_tag": "zone-demo"
-  }
-}
-```
 
 ```json
 {
@@ -159,7 +109,6 @@ This document defines the first deterministic host API boundary used before wasm
   - when external package exposes capability metadata, host validates required capabilities for requested `(plugin_id, method)` and rejects missing/unsupported grants (`runtime_capability_mismatch`)
   - host canonical response includes normalized runtime capability metadata (`execution_capabilities`) for deterministic diagnostics
 - Runtime capability requirements are method-scoped:
-  - `place_bingx_spot_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.spot`
   - `place_bingx_futures_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.futures`
   - `post_capsule_chat_message` requires `consensus_guard.read`
 - Current runtime phase exposes deterministic invoke evidence via `wasm_stub_v1`:
@@ -182,9 +131,6 @@ This document defines the first deterministic host API boundary used before wasm
     - runtime execution is additionally bounded by fixed limits (instruction count and stack depth); overflow rejects invoke as invalid
   - manifest `runtime.module_path` with parent traversal is rejected by runtime invoke validation
   - host emits module digest + invoke digest without granting plugin-side side effects
-- `place_bingx_spot_order_intent` supports:
-  - `entry_mode=direct` (current flat spot intent)
-  - `entry_mode=zone_pending` (deterministic pending-entry parameters from `buyside/sellside` zones)
 - `place_bingx_futures_order_intent` supports:
   - `entry_mode=direct`
   - `entry_mode=zone_pending`
