@@ -578,6 +578,18 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     );
   }
 
+  BingxFuturesApiCredentials? _resolveBingxCredentialsOrNull() {
+    final apiKey = _bingxApiKeyController.text.trim();
+    final apiSecret = _bingxApiSecretController.text.trim();
+    if (apiKey.isEmpty || apiSecret.isEmpty) {
+      return null;
+    }
+    return BingxFuturesApiCredentials(
+      apiKey: apiKey,
+      apiSecret: apiSecret,
+    );
+  }
+
   Future<void> _executeLastBingxIntentOnExchange() async {
     if (_executingBingxOrder) return;
     final response = _lastBingxResponse;
@@ -1073,6 +1085,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     final snapshot = await _liveSnapshotBuilder.fetchAndBuild(
       exchange: _bingxExchangeService,
       symbol: symbol,
+      credentials: _resolveBingxCredentialsOrNull(),
     );
     if (!snapshot.isSuccess || snapshot.snapshotInput == null) {
       await _uiLog.log(

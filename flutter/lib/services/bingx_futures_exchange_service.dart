@@ -374,6 +374,232 @@ class BingxFuturesPublicKlinesResult {
   });
 }
 
+class BingxFuturesPublicOrderBookLevel {
+  final String priceDecimal;
+  final String quantityDecimal;
+
+  const BingxFuturesPublicOrderBookLevel({
+    required this.priceDecimal,
+    required this.quantityDecimal,
+  });
+}
+
+class BingxFuturesPublicOrderBookResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final String symbol;
+  final String? timestampMs;
+  final List<BingxFuturesPublicOrderBookLevel> bids;
+  final List<BingxFuturesPublicOrderBookLevel> asks;
+
+  const BingxFuturesPublicOrderBookResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.symbol,
+    required this.timestampMs,
+    required this.bids,
+    required this.asks,
+  });
+}
+
+class BingxFuturesPublicTrade {
+  final String? tradeId;
+  final String side;
+  final String priceDecimal;
+  final String quantityDecimal;
+  final String? timestampMs;
+
+  const BingxFuturesPublicTrade({
+    required this.tradeId,
+    required this.side,
+    required this.priceDecimal,
+    required this.quantityDecimal,
+    required this.timestampMs,
+  });
+}
+
+class BingxFuturesPublicTradesResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final String symbol;
+  final List<BingxFuturesPublicTrade> trades;
+
+  const BingxFuturesPublicTradesResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.symbol,
+    required this.trades,
+  });
+}
+
+class BingxFuturesPublicPremiumIndexResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final String symbol;
+  final String? markPriceDecimal;
+  final String? indexPriceDecimal;
+  final String? fundingRateDecimal;
+  final String? nextFundingTimeMs;
+  final String? timestampMs;
+
+  const BingxFuturesPublicPremiumIndexResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.symbol,
+    required this.markPriceDecimal,
+    required this.indexPriceDecimal,
+    required this.fundingRateDecimal,
+    required this.nextFundingTimeMs,
+    required this.timestampMs,
+  });
+}
+
+class BingxFuturesPublicOpenInterestResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final String symbol;
+  final String? openInterestDecimal;
+  final String? timestampMs;
+
+  const BingxFuturesPublicOpenInterestResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.symbol,
+    required this.openInterestDecimal,
+    required this.timestampMs,
+  });
+}
+
+class BingxFuturesPublicOpenInterestHistoryPoint {
+  final String openInterestDecimal;
+  final String timestampMs;
+
+  const BingxFuturesPublicOpenInterestHistoryPoint({
+    required this.openInterestDecimal,
+    required this.timestampMs,
+  });
+}
+
+class BingxFuturesPublicOpenInterestHistoryResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final String symbol;
+  final String period;
+  final List<BingxFuturesPublicOpenInterestHistoryPoint> points;
+
+  const BingxFuturesPublicOpenInterestHistoryResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.symbol,
+    required this.period,
+    required this.points,
+  });
+}
+
+class BingxFuturesForceOrder {
+  final String symbol;
+  final String side;
+  final String positionSide;
+  final String? avgPriceDecimal;
+  final String? priceDecimal;
+  final String? quantityDecimal;
+  final String? timestampMs;
+
+  const BingxFuturesForceOrder({
+    required this.symbol,
+    required this.side,
+    required this.positionSide,
+    required this.avgPriceDecimal,
+    required this.priceDecimal,
+    required this.quantityDecimal,
+    required this.timestampMs,
+  });
+}
+
+class BingxFuturesUserForceOrdersResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String signedPayloadHashHex;
+  final String responseBody;
+  final String symbol;
+  final List<BingxFuturesForceOrder> orders;
+
+  const BingxFuturesUserForceOrdersResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.signedPayloadHashHex,
+    required this.responseBody,
+    required this.symbol,
+    required this.orders,
+  });
+}
+
+class BingxFuturesPerpetualSymbolsResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final List<String> symbols;
+
+  const BingxFuturesPerpetualSymbolsResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.symbols,
+  });
+}
+
 class BingxHttpRequest {
   final String method;
   final Uri uri;
@@ -406,6 +632,13 @@ class BingxFuturesExchangeService {
   static const String _defaultBaseUrl = 'https://open-api.bingx.com';
   static const String _publicPricePath = '/openApi/swap/v2/quote/price';
   static const String _publicKlinesPath = '/openApi/swap/v3/quote/klines';
+  static const String _publicDepthPath = '/openApi/swap/v2/quote/depth';
+  static const String _publicTradesPath = '/openApi/swap/v2/quote/trades';
+  static const String _publicPremiumIndexPath =
+      '/openApi/swap/v2/quote/premiumIndex';
+  static const String _publicOpenInterestPath =
+      '/openApi/swap/v2/quote/openInterest';
+  static const String _publicContractsPath = '/openApi/swap/v2/quote/contracts';
   static const String _liveOrderPath = '/openApi/swap/v2/trade/order';
   static const String _testOrderPath = '/openApi/swap/v2/trade/order/test';
   static const String _switchLeveragePath = '/openApi/swap/v2/trade/leverage';
@@ -415,6 +648,7 @@ class BingxFuturesExchangeService {
   static const String _getMarginTypePath = '/openApi/swap/v2/trade/marginType';
   static const String _getOpenOrdersPath = '/openApi/swap/v2/trade/openOrders';
   static const String _cancelOrderPath = '/openApi/swap/v2/trade/order';
+  static const String _forceOrdersPath = '/openApi/swap/v2/trade/forceOrders';
 
   final BingxHttpRequestSender _requestSender;
   final int Function() _clockMs;
@@ -819,6 +1053,348 @@ class BingxFuturesExchangeService {
     );
   }
 
+  Future<BingxFuturesPublicOrderBookResult> getPublicDepth({
+    required String symbol,
+    int limit = 20,
+  }) async {
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    if (limit < 1 || limit > 200) {
+      throw const FormatException('Depth limit must be in range 1..200');
+    }
+    final requestUri = Uri.parse(
+      '$_baseUrl$_publicDepthPath'
+      '?symbol=${Uri.encodeQueryComponent(normalizedSymbol)}'
+      '&limit=$limit',
+    );
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'GET',
+        uri: requestUri,
+        headers: const <String, String>{},
+        body: '',
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+    final depth = _extractOrderBook(decoded);
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        (depth.bids.isNotEmpty || depth.asks.isNotEmpty);
+    return BingxFuturesPublicOrderBookResult(
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      endpointPath: _publicDepthPath,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      timestampMs: depth.timestampMs,
+      bids: depth.bids,
+      asks: depth.asks,
+    );
+  }
+
+  Future<BingxFuturesPublicTradesResult> getPublicTrades({
+    required String symbol,
+    int limit = 100,
+  }) async {
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    if (limit < 1 || limit > 1000) {
+      throw const FormatException('Trades limit must be in range 1..1000');
+    }
+    final requestUri = Uri.parse(
+      '$_baseUrl$_publicTradesPath'
+      '?symbol=${Uri.encodeQueryComponent(normalizedSymbol)}'
+      '&limit=$limit',
+    );
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'GET',
+        uri: requestUri,
+        headers: const <String, String>{},
+        body: '',
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+    final trades = _extractPublicTrades(decoded);
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        trades.isNotEmpty;
+    return BingxFuturesPublicTradesResult(
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      endpointPath: _publicTradesPath,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      trades: trades,
+    );
+  }
+
+  Future<BingxFuturesPublicPremiumIndexResult> getPublicPremiumIndex({
+    required String symbol,
+  }) async {
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final requestUri = Uri.parse(
+      '$_baseUrl$_publicPremiumIndexPath'
+      '?symbol=${Uri.encodeQueryComponent(normalizedSymbol)}',
+    );
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'GET',
+        uri: requestUri,
+        headers: const <String, String>{},
+        body: '',
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+    final data = decoded?['data'];
+    final row = _extractFirstRow(data);
+    final markPrice = _readStringField(row, const <String>[
+      'markPrice',
+      'mark_price',
+      'mark',
+    ]);
+    final indexPrice = _readStringField(row, const <String>[
+      'indexPrice',
+      'index_price',
+      'index',
+    ]);
+    final fundingRate = _readStringField(row, const <String>[
+      'lastFundingRate',
+      'fundingRate',
+      'funding_rate',
+    ]);
+    final nextFunding = _readStringField(row, const <String>[
+      'nextFundingTime',
+      'nextFundingTimeStamp',
+      'nextFundingAt',
+      'nextFunding',
+    ]);
+    final timestampMs = _readStringField(row, const <String>[
+      'time',
+      'timestamp',
+      'ts',
+    ]);
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        fundingRate != null &&
+        fundingRate.isNotEmpty;
+    return BingxFuturesPublicPremiumIndexResult(
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      endpointPath: _publicPremiumIndexPath,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      markPriceDecimal: markPrice,
+      indexPriceDecimal: indexPrice,
+      fundingRateDecimal: fundingRate,
+      nextFundingTimeMs: nextFunding,
+      timestampMs: timestampMs,
+    );
+  }
+
+  Future<BingxFuturesPublicOpenInterestResult> getPublicOpenInterest({
+    required String symbol,
+  }) async {
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final requestUri = Uri.parse(
+      '$_baseUrl$_publicOpenInterestPath'
+      '?symbol=${Uri.encodeQueryComponent(normalizedSymbol)}',
+    );
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'GET',
+        uri: requestUri,
+        headers: const <String, String>{},
+        body: '',
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+    final data = decoded?['data'];
+    final row = _extractFirstRow(data);
+    final openInterest = _readStringField(row, const <String>[
+      'openInterest',
+      'open_interest',
+      'openInterestAmount',
+      'amount',
+    ]);
+    final timestampMs = _readStringField(row, const <String>[
+      'time',
+      'timestamp',
+      'ts',
+    ]);
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        openInterest != null &&
+        openInterest.isNotEmpty;
+    return BingxFuturesPublicOpenInterestResult(
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      endpointPath: _publicOpenInterestPath,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      openInterestDecimal: openInterest,
+      timestampMs: timestampMs,
+    );
+  }
+
+  Future<BingxFuturesPublicOpenInterestHistoryResult>
+      getPublicOpenInterestHistory({
+    required String symbol,
+    String period = '5m',
+    int limit = 24,
+  }) async {
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final normalizedPeriod = period.trim().toLowerCase();
+    if (!RegExp(r'^\d+[mhdw]$').hasMatch(normalizedPeriod)) {
+      throw const FormatException(
+        'Open interest period format is invalid (expected 5m/15m/1h/4h/1d/1w)',
+      );
+    }
+    if (limit < 2 || limit > 200) {
+      throw const FormatException(
+        'Open interest history limit must be in range 2..200',
+      );
+    }
+    final requestUri = Uri.parse(
+      '$_baseUrl$_publicOpenInterestPath'
+      '?symbol=${Uri.encodeQueryComponent(normalizedSymbol)}'
+      '&period=${Uri.encodeQueryComponent(normalizedPeriod)}'
+      '&limit=$limit',
+    );
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'GET',
+        uri: requestUri,
+        headers: const <String, String>{},
+        body: '',
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+    final points = _extractOpenInterestHistory(decoded);
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        points.isNotEmpty;
+    return BingxFuturesPublicOpenInterestHistoryResult(
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      endpointPath: _publicOpenInterestPath,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      period: normalizedPeriod,
+      points: points,
+    );
+  }
+
+  Future<BingxFuturesUserForceOrdersResult> getUserForceOrders({
+    required BingxFuturesApiCredentials credentials,
+    required String symbol,
+    int limit = 50,
+  }) async {
+    final normalizedCredentials = credentials.normalized();
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    if (limit < 1 || limit > 200) {
+      throw const FormatException('Force orders limit must be in range 1..200');
+    }
+    final timestampMs = _clockMs();
+    final params = <String, String>{
+      'symbol': normalizedSymbol,
+      'limit': limit.toString(),
+      'recvWindow': recvWindowMs.toString(),
+      'timestamp': timestampMs.toString(),
+    };
+    final response = await _executeSignedGet(
+      credentials: normalizedCredentials,
+      endpointPath: _forceOrdersPath,
+      params: params,
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final orders = _extractForceOrders(
+      decoded: decoded,
+      fallbackSymbol: normalizedSymbol,
+    );
+    return BingxFuturesUserForceOrdersResult(
+      isSuccess: response.isSuccess,
+      httpStatusCode: response.httpStatusCode,
+      exchangeCode: response.exchangeCode,
+      exchangeMessage: response.exchangeMessage,
+      endpointPath: _forceOrdersPath,
+      signedPayloadHashHex: response.signedPayloadHashHex,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      orders: orders,
+    );
+  }
+
+  Future<BingxFuturesPerpetualSymbolsResult> getPerpetualSymbols() async {
+    final requestUri = Uri.parse('$_baseUrl$_publicContractsPath');
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'GET',
+        uri: requestUri,
+        headers: const <String, String>{},
+        body: '',
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+    final symbols = _extractPerpetualSymbols(decoded);
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        symbols.isNotEmpty;
+    return BingxFuturesPerpetualSymbolsResult(
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      endpointPath: _publicContractsPath,
+      responseBody: response.body,
+      symbols: symbols,
+    );
+  }
+
   Future<BingxFuturesControlActionResult> switchMarginType({
     required BingxFuturesApiCredentials credentials,
     required String symbol,
@@ -993,19 +1569,18 @@ class BingxFuturesExchangeService {
       canonicalParamString: canonicalParamString,
       apiSecret: credentials.apiSecret,
     );
-    final signedBody = '$canonicalParamString&signature=$signature';
+    final signedQuery = '$canonicalParamString&signature=$signature';
     final signedPayloadHashHex =
-        sha256.convert(utf8.encode(signedBody)).toString();
-    final requestUri = Uri.parse('$_baseUrl$endpointPath');
+        sha256.convert(utf8.encode(signedQuery)).toString();
+    final requestUri = Uri.parse('$_baseUrl$endpointPath?$signedQuery');
     final response = await _requestSender(
       BingxHttpRequest(
         method: 'DELETE',
         uri: requestUri,
         headers: <String, String>{
           'X-BX-APIKEY': credentials.apiKey,
-          'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: signedBody,
+        body: '',
       ),
     );
     final decoded = _tryDecodeMap(response.body);
@@ -1103,18 +1678,17 @@ class BingxFuturesExchangeService {
           map['positionSide']?.toString().trim().toUpperCase() ?? '';
       final orderType = map['type']?.toString().trim().toUpperCase() ?? '';
       final status = map['status']?.toString().trim().toUpperCase() ?? '';
-      final price =
-          map['price']?.toString().trim().isNotEmpty == true
-              ? map['price']?.toString().trim()
-              : map['avgPrice']?.toString().trim();
+      final price = map['price']?.toString().trim().isNotEmpty == true
+          ? map['price']?.toString().trim()
+          : map['avgPrice']?.toString().trim();
       final stopPrice = map['stopPrice']?.toString().trim();
       final quantity = map['origQty']?.toString().trim().isNotEmpty == true
           ? map['origQty']?.toString().trim()
           : map['quantity']?.toString().trim();
-      final executedQty = map['executedQty']?.toString().trim().isNotEmpty ==
-              true
-          ? map['executedQty']?.toString().trim()
-          : map['cumQuote']?.toString().trim();
+      final executedQty =
+          map['executedQty']?.toString().trim().isNotEmpty == true
+              ? map['executedQty']?.toString().trim()
+              : map['cumQuote']?.toString().trim();
       final createdAtMs = int.tryParse(
         map['time']?.toString() ??
             map['createTime']?.toString() ??
@@ -1124,8 +1698,7 @@ class BingxFuturesExchangeService {
       parsed.add(
         BingxFuturesOpenOrder(
           orderId: orderId,
-          symbol:
-              symbol == null || symbol.isEmpty ? fallbackSymbol : symbol,
+          symbol: symbol == null || symbol.isEmpty ? fallbackSymbol : symbol,
           side: side,
           positionSide: positionSide,
           orderType: orderType,
@@ -1199,6 +1772,392 @@ class BingxFuturesExchangeService {
       );
     }
     return null;
+  }
+
+  static ({
+    List<BingxFuturesPublicOrderBookLevel> bids,
+    List<BingxFuturesPublicOrderBookLevel> asks,
+    String? timestampMs,
+  }) _extractOrderBook(Map<String, dynamic>? decoded) {
+    if (decoded == null) {
+      return (
+        bids: const <BingxFuturesPublicOrderBookLevel>[],
+        asks: const <BingxFuturesPublicOrderBookLevel>[],
+        timestampMs: null,
+      );
+    }
+    final data = decoded['data'];
+    final row = _extractFirstRow(data);
+    if (row == null) {
+      return (
+        bids: const <BingxFuturesPublicOrderBookLevel>[],
+        asks: const <BingxFuturesPublicOrderBookLevel>[],
+        timestampMs: null,
+      );
+    }
+    final bids = _extractOrderBookSide(row, const <String>['bids', 'bid']);
+    final asks = _extractOrderBookSide(row, const <String>['asks', 'ask']);
+    final timestampMs = _readStringField(row, const <String>[
+      'time',
+      'timestamp',
+      'ts',
+    ]);
+    return (
+      bids: bids,
+      asks: asks,
+      timestampMs: timestampMs,
+    );
+  }
+
+  static List<BingxFuturesPublicOrderBookLevel> _extractOrderBookSide(
+    Map<String, dynamic> row,
+    List<String> keys,
+  ) {
+    List<dynamic>? rawLevels;
+    for (final key in keys) {
+      final value = row[key];
+      if (value is List) {
+        rawLevels = value;
+        break;
+      }
+    }
+    if (rawLevels == null || rawLevels.isEmpty) {
+      return const <BingxFuturesPublicOrderBookLevel>[];
+    }
+    final parsed = <BingxFuturesPublicOrderBookLevel>[];
+    for (final level in rawLevels) {
+      if (level is List && level.length >= 2) {
+        final price = level[0].toString().trim();
+        final quantity = level[1].toString().trim();
+        if (price.isEmpty || quantity.isEmpty) continue;
+        parsed.add(
+          BingxFuturesPublicOrderBookLevel(
+            priceDecimal: price,
+            quantityDecimal: quantity,
+          ),
+        );
+        continue;
+      }
+      if (level is Map) {
+        final map = Map<String, dynamic>.from(level);
+        final price = _readStringField(map, const <String>['price', 'p']);
+        final quantity = _readStringField(
+          map,
+          const <String>['qty', 'quantity', 'q', 'size'],
+        );
+        if (price == null || quantity == null) continue;
+        parsed.add(
+          BingxFuturesPublicOrderBookLevel(
+            priceDecimal: price,
+            quantityDecimal: quantity,
+          ),
+        );
+      }
+    }
+    return List<BingxFuturesPublicOrderBookLevel>.unmodifiable(parsed);
+  }
+
+  static List<BingxFuturesPublicTrade> _extractPublicTrades(
+    Map<String, dynamic>? decoded,
+  ) {
+    if (decoded == null) return const <BingxFuturesPublicTrade>[];
+    final data = decoded['data'];
+    final rows = <dynamic>[];
+    if (data is List) {
+      rows.addAll(data);
+    } else if (data is Map) {
+      final candidates = <dynamic>[
+        data['list'],
+        data['rows'],
+        data['trades'],
+      ];
+      for (final candidate in candidates) {
+        if (candidate is List) {
+          rows.addAll(candidate);
+          break;
+        }
+      }
+    }
+    if (rows.isEmpty) return const <BingxFuturesPublicTrade>[];
+    final parsed = <BingxFuturesPublicTrade>[];
+    for (final item in rows) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final price = _readStringField(map, const <String>['price', 'p']);
+      final quantity = _readStringField(
+        map,
+        const <String>['qty', 'quantity', 'q', 'size'],
+      );
+      if (price == null || quantity == null) continue;
+      final sideRaw = _readStringField(
+        map,
+        const <String>['side', 's', 'makerSide'],
+      );
+      final side = _normalizeTradeSide(sideRaw);
+      final tradeId = _readStringField(map, const <String>[
+        'id',
+        'tradeId',
+        't',
+      ]);
+      final timestampMs = _readStringField(map, const <String>[
+        'time',
+        'timestamp',
+        'ts',
+      ]);
+      parsed.add(
+        BingxFuturesPublicTrade(
+          tradeId: tradeId,
+          side: side,
+          priceDecimal: price,
+          quantityDecimal: quantity,
+          timestampMs: timestampMs,
+        ),
+      );
+    }
+    parsed.sort((a, b) {
+      final ta = int.tryParse(a.timestampMs ?? '') ?? 0;
+      final tb = int.tryParse(b.timestampMs ?? '') ?? 0;
+      return ta.compareTo(tb);
+    });
+    return List<BingxFuturesPublicTrade>.unmodifiable(parsed);
+  }
+
+  static String _normalizeTradeSide(String? raw) {
+    final normalized = raw?.trim().toLowerCase();
+    if (normalized == null || normalized.isEmpty) return 'unknown';
+    if (normalized == 'buy' || normalized == 'bid') return 'buy';
+    if (normalized == 'sell' || normalized == 'ask') return 'sell';
+    return normalized;
+  }
+
+  static List<BingxFuturesPublicOpenInterestHistoryPoint>
+      _extractOpenInterestHistory(Map<String, dynamic>? decoded) {
+    if (decoded == null) {
+      return const <BingxFuturesPublicOpenInterestHistoryPoint>[];
+    }
+    final data = decoded['data'];
+    final rows = <dynamic>[];
+    if (data is List) {
+      rows.addAll(data);
+    } else if (data is Map) {
+      final candidates = <dynamic>[
+        data['list'],
+        data['rows'],
+        data['history'],
+      ];
+      for (final candidate in candidates) {
+        if (candidate is List) {
+          rows.addAll(candidate);
+          break;
+        }
+      }
+      if (rows.isEmpty) {
+        rows.add(data);
+      }
+    }
+    if (rows.isEmpty) {
+      return const <BingxFuturesPublicOpenInterestHistoryPoint>[];
+    }
+    final parsed = <BingxFuturesPublicOpenInterestHistoryPoint>[];
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final map = Map<String, dynamic>.from(row);
+      final openInterest = _readStringField(map, const <String>[
+        'openInterest',
+        'open_interest',
+        'openInterestAmount',
+        'amount',
+      ]);
+      final timestamp = _readStringField(map, const <String>[
+        'time',
+        'timestamp',
+        'ts',
+      ]);
+      if (openInterest == null || timestamp == null) continue;
+      parsed.add(
+        BingxFuturesPublicOpenInterestHistoryPoint(
+          openInterestDecimal: openInterest,
+          timestampMs: timestamp,
+        ),
+      );
+    }
+    parsed.sort((a, b) {
+      final ta = int.tryParse(a.timestampMs) ?? 0;
+      final tb = int.tryParse(b.timestampMs) ?? 0;
+      return ta.compareTo(tb);
+    });
+    return List<BingxFuturesPublicOpenInterestHistoryPoint>.unmodifiable(
+        parsed);
+  }
+
+  static List<BingxFuturesForceOrder> _extractForceOrders({
+    required Map<String, dynamic>? decoded,
+    required String fallbackSymbol,
+  }) {
+    if (decoded == null) return const <BingxFuturesForceOrder>[];
+    final data = decoded['data'];
+    final rows = <dynamic>[];
+    if (data is List) {
+      rows.addAll(data);
+    } else if (data is Map) {
+      final candidates = <dynamic>[
+        data['orders'],
+        data['rows'],
+        data['list'],
+      ];
+      for (final candidate in candidates) {
+        if (candidate is List) {
+          rows.addAll(candidate);
+          break;
+        }
+      }
+      if (rows.isEmpty) rows.add(data);
+    }
+    if (rows.isEmpty) return const <BingxFuturesForceOrder>[];
+    final parsed = <BingxFuturesForceOrder>[];
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final map = Map<String, dynamic>.from(row);
+      final symbol =
+          _readStringField(map, const <String>['symbol']) ?? fallbackSymbol;
+      final side =
+          _readStringField(map, const <String>['side'])?.toUpperCase() ?? '';
+      final positionSide = _readStringField(
+            map,
+            const <String>['positionSide', 'posSide'],
+          )?.toUpperCase() ??
+          '';
+      final avgPrice = _readStringField(
+        map,
+        const <String>['avgPrice', 'averagePrice', 'avg_price'],
+      );
+      final price = _readStringField(
+        map,
+        const <String>['price', 'orderPrice'],
+      );
+      final qty = _readStringField(
+        map,
+        const <String>['origQty', 'quantity', 'qty', 'executedQty'],
+      );
+      final ts = _readStringField(
+        map,
+        const <String>['time', 'timestamp', 'ts', 'updateTime'],
+      );
+      if (side.isEmpty &&
+          positionSide.isEmpty &&
+          avgPrice == null &&
+          price == null) {
+        continue;
+      }
+      parsed.add(
+        BingxFuturesForceOrder(
+          symbol: _tryNormalizeSymbol(symbol) ?? fallbackSymbol,
+          side: side,
+          positionSide: positionSide,
+          avgPriceDecimal: avgPrice,
+          priceDecimal: price,
+          quantityDecimal: qty,
+          timestampMs: ts,
+        ),
+      );
+    }
+    parsed.sort((a, b) {
+      final ta = int.tryParse(a.timestampMs ?? '') ?? 0;
+      final tb = int.tryParse(b.timestampMs ?? '') ?? 0;
+      return tb.compareTo(ta);
+    });
+    return List<BingxFuturesForceOrder>.unmodifiable(parsed);
+  }
+
+  static Map<String, dynamic>? _extractFirstRow(dynamic data) {
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+    if (data is List) {
+      for (final item in data) {
+        if (item is Map) return Map<String, dynamic>.from(item);
+      }
+    }
+    return null;
+  }
+
+  static String? _readStringField(
+      Map<String, dynamic>? map, List<String> keys) {
+    if (map == null) return null;
+    for (final key in keys) {
+      final value = map[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  static List<String> _extractPerpetualSymbols(Map<String, dynamic>? decoded) {
+    if (decoded == null) return const <String>[];
+    final data = decoded['data'];
+    final rawItems = <dynamic>[];
+    if (data is List) {
+      rawItems.addAll(data);
+    } else if (data is Map) {
+      final contracts = data['contracts'];
+      if (contracts is List) {
+        rawItems.addAll(contracts);
+      } else {
+        final symbols = data['symbols'];
+        if (symbols is List) {
+          rawItems.addAll(symbols);
+        } else {
+          final list = data['list'];
+          if (list is List) {
+            rawItems.addAll(list);
+          } else {
+            final rows = data['rows'];
+            if (rows is List) {
+              rawItems.addAll(rows);
+            }
+          }
+        }
+      }
+    }
+
+    final out = <String>{};
+    for (final item in rawItems) {
+      if (item is String) {
+        final normalized = _tryNormalizeSymbol(item);
+        if (normalized != null) out.add(normalized);
+        continue;
+      }
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final candidates = <String?>[
+        map['symbol']?.toString(),
+        map['contractSymbol']?.toString(),
+        map['pair']?.toString(),
+        map['instrumentId']?.toString(),
+      ];
+      for (final raw in candidates) {
+        if (raw == null) continue;
+        final normalized = _tryNormalizeSymbol(raw);
+        if (normalized != null) {
+          out.add(normalized);
+          break;
+        }
+      }
+    }
+
+    final sorted = out.toList()..sort();
+    return List<String>.unmodifiable(sorted);
+  }
+
+  static String? _tryNormalizeSymbol(String raw) {
+    final normalized = raw.trim().toUpperCase();
+    if (normalized.isEmpty) return null;
+    if (!RegExp(r'^[A-Z0-9]{2,20}([-_/][A-Z0-9]{2,20})?$')
+        .hasMatch(normalized)) {
+      return null;
+    }
+    return normalized;
   }
 
   static int _defaultClockMs() => DateTime.now().millisecondsSinceEpoch;

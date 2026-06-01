@@ -340,9 +340,11 @@ void main() {
 
       expect(capturedRequest.method, 'DELETE');
       expect(capturedRequest.uri.path, '/openApi/swap/v2/trade/order');
-      expect(capturedRequest.body, contains('symbol=BTC-USDT'));
-      expect(capturedRequest.body, contains('orderId=111'));
-      expect(capturedRequest.body, contains('signature='));
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(capturedRequest.uri.query, contains('orderId=111'));
+      expect(capturedRequest.uri.query, contains('timestamp=1710000000000'));
+      expect(capturedRequest.uri.query, contains('signature='));
+      expect(capturedRequest.body, isEmpty);
       expect(result.isSuccess, isTrue);
       expect(result.requestedOrderId, '111');
       expect(result.canceledOrderId, '111');
@@ -379,6 +381,225 @@ void main() {
       expect(result.klines.first.openTimeMs, 1710000000000);
       expect(result.klines.first.highDecimal, '60100');
       expect(result.klines.last.closeDecimal, '60180');
+    });
+
+    test('reads perpetual symbols via unsigned contracts endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"contracts":[{"symbol":"BTC-USDT"},{"symbol":"ETH-USDT"},{"symbol":"SOL-USDT"}]}}',
+          );
+        },
+      );
+
+      final result = await service.getPerpetualSymbols();
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/contracts');
+      expect(capturedRequest.headers.isEmpty, isTrue);
+      expect(result.isSuccess, isTrue);
+      expect(
+        result.symbols,
+        <String>['BTC-USDT', 'ETH-USDT', 'SOL-USDT'],
+      );
+    });
+
+    test('reads perpetual symbols when data payload is list', () async {
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":"0","msg":"ok","data":[{"symbol":"DOGE-USDT"},"XRP-USDT",{"pair":"BNB-USDT"}]}',
+          );
+        },
+      );
+
+      final result = await service.getPerpetualSymbols();
+
+      expect(result.isSuccess, isTrue);
+      expect(
+        result.symbols,
+        <String>['BNB-USDT', 'DOGE-USDT', 'XRP-USDT'],
+      );
+    });
+
+    test('reads public depth via unsigned endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"time":1710000000123,"bids":[["60010","12.5"],["60000","3"]],"asks":[["60020","8.1"],["60030","1"]]}}',
+          );
+        },
+      );
+
+      final result = await service.getPublicDepth(
+        symbol: 'btc-usdt',
+        limit: 20,
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/depth');
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(capturedRequest.uri.query, contains('limit=20'));
+      expect(capturedRequest.headers.isEmpty, isTrue);
+      expect(result.isSuccess, isTrue);
+      expect(result.bids, hasLength(2));
+      expect(result.asks, hasLength(2));
+      expect(result.bids.first.priceDecimal, '60010');
+      expect(result.asks.first.quantityDecimal, '8.1');
+      expect(result.timestampMs, '1710000000123');
+    });
+
+    test('reads public trades via unsigned endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":"0","msg":"ok","data":[{"id":"t1","side":"BUY","price":"60001","qty":"0.5","time":1710000001000},{"id":"t2","side":"sell","price":"60002","qty":"1.0","time":1710000002000}]}',
+          );
+        },
+      );
+
+      final result = await service.getPublicTrades(
+        symbol: 'BTC-USDT',
+        limit: 2,
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/trades');
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(capturedRequest.uri.query, contains('limit=2'));
+      expect(result.isSuccess, isTrue);
+      expect(result.trades, hasLength(2));
+      expect(result.trades.first.tradeId, 't1');
+      expect(result.trades.first.side, 'buy');
+      expect(result.trades.last.side, 'sell');
+    });
+
+    test('reads premium index via unsigned endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"symbol":"BTC-USDT","markPrice":"60100.1","indexPrice":"60098.8","lastFundingRate":"0.0001","nextFundingTime":1710003600000,"time":1710000000000}}',
+          );
+        },
+      );
+
+      final result = await service.getPublicPremiumIndex(symbol: 'btc-usdt');
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/premiumIndex');
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(result.isSuccess, isTrue);
+      expect(result.markPriceDecimal, '60100.1');
+      expect(result.indexPriceDecimal, '60098.8');
+      expect(result.fundingRateDecimal, '0.0001');
+      expect(result.nextFundingTimeMs, '1710003600000');
+    });
+
+    test('reads open interest via unsigned endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"symbol":"BTC-USDT","openInterest":"123456.78","time":1710000009999}}',
+          );
+        },
+      );
+
+      final result = await service.getPublicOpenInterest(symbol: 'BTC-USDT');
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/openInterest');
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(result.isSuccess, isTrue);
+      expect(result.openInterestDecimal, '123456.78');
+      expect(result.timestampMs, '1710000009999');
+    });
+
+    test('reads open interest history via unsigned endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"list":[{"openInterest":"1000","time":1710000000000},{"openInterest":"1050","time":1710000300000},{"openInterest":"1100","time":1710000600000}]}}',
+          );
+        },
+      );
+
+      final result = await service.getPublicOpenInterestHistory(
+        symbol: 'btc-usdt',
+        period: '5m',
+        limit: 24,
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/openInterest');
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(capturedRequest.uri.query, contains('period=5m'));
+      expect(capturedRequest.uri.query, contains('limit=24'));
+      expect(result.isSuccess, isTrue);
+      expect(result.points, hasLength(3));
+      expect(result.points.first.openInterestDecimal, '1000');
+      expect(result.points.last.openInterestDecimal, '1100');
+      expect(result.points.last.timestampMs, '1710000600000');
+    });
+
+    test('reads user force orders via signed endpoint', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"orders":[{"symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","avgPrice":"60000","origQty":"0.1","time":1710000001000},{"symbol":"BTC-USDT","side":"SELL","positionSide":"SHORT","avgPrice":"62000","origQty":"0.2","time":1710000002000}]}}',
+          );
+        },
+      );
+
+      final result = await service.getUserForceOrders(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+        symbol: 'btc-usdt',
+        limit: 50,
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/trade/forceOrders');
+      expect(capturedRequest.uri.query, contains('symbol=BTC-USDT'));
+      expect(capturedRequest.uri.query, contains('limit=50'));
+      expect(capturedRequest.uri.query, contains('signature='));
+      expect(capturedRequest.headers['X-BX-APIKEY'], 'api-key');
+      expect(result.isSuccess, isTrue);
+      expect(result.orders, hasLength(2));
+      expect(result.orders.first.avgPriceDecimal, '62000');
+      expect(result.orders.last.avgPriceDecimal, '60000');
     });
   });
 }

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../services/app_runtime_service.dart';
 import '../services/bingx_futures_credential_store.dart';
+import '../services/bingx_futures_live_decision_service.dart';
+import '../services/bingx_futures_live_snapshot_builder_service.dart';
 import '../services/bingx_futures_exchange_service.dart';
 import '../services/bingx_futures_observability_envelope_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
@@ -23,12 +25,9 @@ class TradingDroneScreen extends StatefulWidget {
 
 class _TradingDroneScreenState extends State<TradingDroneScreen> {
   static const Duration _hostIntentTimeout = Duration(seconds: 20);
+  static const Duration _openOrdersPollInterval = Duration(seconds: 12);
   static const double _zoneNearBps = 15.0;
   static const double _zoneFarBps = 35.0;
-  static const String _microInterval = '5m';
-  static const String _macroInterval = '1h';
-  static const int _microLimit = 72;
-  static const int _macroLimit = 96;
   static const int _recentMicroBars = 8;
   static const List<String> _shortBreakdownSymbols = <String>[
     'BTC-USDT',
@@ -51,6 +50,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       const BingxFuturesRiskGovernorService();
   final BingxFuturesObservabilityEnvelopeService _observability =
       const BingxFuturesObservabilityEnvelopeService();
+  final BingxFuturesLiveSnapshotBuilderService _liveSnapshotBuilder =
+      const BingxFuturesLiveSnapshotBuilderService();
+  final BingxFuturesLiveDecisionService _liveDecision =
+      const BingxFuturesLiveDecisionService();
   final CapsuleChatDeliveryService _chatDelivery =
       AppRuntimeService().buildCapsuleChatDeliveryService();
   final UiEventLogService _uiLog = const UiEventLogService();
@@ -73,24 +76,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       TextEditingController(text: 'demo');
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _apiSecretController = TextEditingController();
-  final TextEditingController _leverageController =
-      TextEditingController(text: '3');
-  final TextEditingController _cancelOrderIdController = TextEditingController();
+  final TextEditingController _cancelOrderIdController =
+      TextEditingController();
 
   bool _runningIntent = false;
   bool _broadcastingSignal = false;
   bool _savingCredentials = false;
-  bool _readingCurrentSettings = false;
   bool _executing = false;
-  bool _switchingLeverage = false;
-  bool _switchingMarginType = false;
   bool _refreshingSignals = false;
   bool _fetchingOpenOrders = false;
+  bool _loadingPerpSymbols = false;
   bool _cancelingOrder = false;
   bool _useTestOrderEndpoint = true;
   bool _obscureApiSecret = true;
   bool _droneEnabled = true;
-  bool _advancedControlsEnabled = false;
 
   String _side = 'buy';
   String _orderType = 'limit';
@@ -98,22 +97,22 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   String _entryMode = 'direct';
   String _zoneSide = 'buyside';
   String _zonePriceRule = 'zone_mid';
-  String _leverageSide = 'LONG';
-  String _marginType = 'CROSSED';
 
   PluginHostApiResponse? _lastIntentResponse;
   BingxFuturesOrderExecutionResult? _lastExecution;
-  BingxFuturesControlActionResult? _lastLeverageSwitch;
-  BingxFuturesControlActionResult? _lastMarginSwitch;
-  BingxFuturesLeverageReadResult? _lastLeverageRead;
-  BingxFuturesMarginTypeReadResult? _lastMarginRead;
   BingxFuturesOpenOrdersResult? _lastOpenOrdersRead;
   BingxFuturesCancelOrderResult? _lastCancelOrder;
   List<BingxFuturesOpenOrder> _openOrders = const <BingxFuturesOpenOrder>[];
+  final Set<String> _managedOrderIds = <String>{};
+  int _lastOpenOrdersTotalCount = 0;
+  Timer? _openOrdersPollTimer;
+  String? _trackedOrdersSymbol;
+  String? _trackedOrderId;
   int _lastExecutionAttempts = 0;
   bool _lastExecutionFromCache = false;
   List<CapsuleTradeSignalInboxMessage> _signalInbox =
       const <CapsuleTradeSignalInboxMessage>[];
+  List<String> _availablePerpSymbols = const <String>[];
 
   static const BingxFuturesRiskPolicy _executionRiskPolicy =
       BingxFuturesRiskPolicy(
@@ -131,11 +130,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       exchangeService: _bingxExchangeService,
     );
     _loadCredentials();
+    _loadPerpetualSymbols(silent: true);
     _refreshSignalInbox(silentWhenEmpty: true);
   }
 
   @override
   void dispose() {
+    _openOrdersPollTimer?.cancel();
     _peerController.dispose();
     _symbolController.dispose();
     _maxNotionalUsdtController.dispose();
@@ -149,9 +150,109 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _strategyTagController.dispose();
     _apiKeyController.dispose();
     _apiSecretController.dispose();
-    _leverageController.dispose();
     _cancelOrderIdController.dispose();
     super.dispose();
+  }
+
+  bool get _isTrackingOpenOrders => _openOrdersPollTimer != null;
+
+  void _registerManagedOrderId(String? orderId) {
+    final normalized = orderId?.trim() ?? '';
+    if (normalized.isEmpty) return;
+    _managedOrderIds.add(normalized);
+  }
+
+  void _startOpenOrdersAutoTracking({
+    required String symbol,
+    String? orderId,
+  }) {
+    final normalizedSymbol = symbol.trim().toUpperCase();
+    if (normalizedSymbol.isEmpty) return;
+    final normalizedOrderId = orderId?.trim();
+    _openOrdersPollTimer?.cancel();
+    _trackedOrdersSymbol = normalizedSymbol;
+    if (normalizedOrderId != null && normalizedOrderId.isNotEmpty) {
+      _trackedOrderId = normalizedOrderId;
+      _registerManagedOrderId(normalizedOrderId);
+      _cancelOrderIdController.text = normalizedOrderId;
+    }
+    _openOrdersPollTimer = Timer.periodic(_openOrdersPollInterval, (_) {
+      if (!mounted) return;
+      unawaited(
+        _fetchOpenOrders(
+          silent: true,
+          symbolOverride: _trackedOrdersSymbol,
+        ),
+      );
+    });
+    unawaited(
+      _uiLog.log(
+        'bingx.exchange.tracking',
+        'enabled symbol=$normalizedSymbol orderId=${_trackedOrderId ?? "-"} '
+            'intervalSec=${_openOrdersPollInterval.inSeconds}',
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _stopOpenOrdersAutoTracking({String reason = 'manual'}) {
+    if (_openOrdersPollTimer == null) return;
+    _openOrdersPollTimer?.cancel();
+    _openOrdersPollTimer = null;
+    final symbol = _trackedOrdersSymbol ?? '-';
+    final orderId = _trackedOrderId ?? '-';
+    _trackedOrdersSymbol = null;
+    _trackedOrderId = null;
+    unawaited(
+      _uiLog.log(
+        'bingx.exchange.tracking',
+        'disabled reason=$reason symbol=$symbol orderId=$orderId',
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _maybeRetargetOpenOrdersTracking({
+    required String symbol,
+    required String source,
+    bool force = false,
+  }) async {
+    if (!_isTrackingOpenOrders) return;
+    final normalizedSymbol = symbol.trim().toUpperCase();
+    if (normalizedSymbol.isEmpty) return;
+    final trackedOrderId = _trackedOrderId?.trim() ?? '';
+    if (trackedOrderId.isNotEmpty) {
+      if (!force) {
+        await _uiLog.log(
+          'bingx.exchange.tracking.retarget.skip',
+          'source=$source symbol=$normalizedSymbol reason=tracked_order orderId=$trackedOrderId',
+        );
+        return;
+      }
+      _managedOrderIds.remove(trackedOrderId);
+      _trackedOrderId = null;
+      _cancelOrderIdController.clear();
+      await _uiLog.log(
+        'bingx.exchange.tracking.retarget.force',
+        'source=$source symbol=$normalizedSymbol previousOrderId=$trackedOrderId',
+      );
+    }
+    if (_trackedOrdersSymbol?.trim().toUpperCase() == normalizedSymbol) {
+      return;
+    }
+    _startOpenOrdersAutoTracking(symbol: normalizedSymbol);
+    await _uiLog.log(
+      'bingx.exchange.tracking.retarget',
+      'source=$source symbol=$normalizedSymbol',
+    );
+    await _fetchOpenOrders(
+      silent: true,
+      symbolOverride: normalizedSymbol,
+    );
   }
 
   Future<void> _showSnack(String message, {int seconds = 2}) async {
@@ -164,6 +265,24 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         duration: Duration(seconds: seconds),
       ),
     );
+  }
+
+  String _resolveIntentRejectedMessage(PluginHostApiResponse response) {
+    final code = response.errorCode?.trim() ?? '';
+    if (code == 'runtime_invoke_unavailable') {
+      return 'Futures runtime package is missing. Install/reinstall BingX Futures plugin in Plugins and retry.';
+    }
+    if (code == 'runtime_invoke_invalid') {
+      return 'Futures plugin package is invalid. Reinstall BingX Futures plugin.';
+    }
+    if (code == 'runtime_invoke_failed') {
+      return 'Futures runtime invoke failed. Reinstall plugin and retry.';
+    }
+    final message = response.errorMessage?.trim();
+    if (message != null && message.isNotEmpty) {
+      return message;
+    }
+    return 'BingX futures request rejected';
   }
 
   Future<void> _loadCredentials() async {
@@ -251,6 +370,145 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     });
   }
 
+  Future<void> _loadPerpetualSymbols({required bool silent}) async {
+    if (_loadingPerpSymbols) return;
+    if (mounted) {
+      setState(() {
+        _loadingPerpSymbols = true;
+      });
+    } else {
+      _loadingPerpSymbols = true;
+    }
+    try {
+      final result = await _bingxExchangeService.getPerpetualSymbols();
+      await _uiLog.log(
+        'bingx.symbols.perp',
+        'success=${result.isSuccess} http=${result.httpStatusCode} '
+            'code=${result.exchangeCode} count=${result.symbols.length} '
+            'endpoint=${result.endpointPath}',
+      );
+      if (!result.isSuccess || result.symbols.isEmpty) {
+        if (!silent) {
+          await _showSnack(
+            'Perp symbols failed: ${result.exchangeCode}',
+            seconds: 3,
+          );
+        }
+        return;
+      }
+      final merged = <String>{...result.symbols, ..._shortBreakdownSymbols};
+      final sorted = merged.toList()..sort();
+      if (!mounted) return;
+      setState(() {
+        _availablePerpSymbols = List<String>.unmodifiable(sorted);
+      });
+      if (!silent) {
+        await _showSnack('Perp symbols loaded: ${sorted.length}');
+      }
+    } catch (error) {
+      await _uiLog.log('bingx.symbols.perp.error', '$error');
+      if (!silent) {
+        await _showSnack('Perp symbols failed: $error', seconds: 3);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingPerpSymbols = false;
+        });
+      } else {
+        _loadingPerpSymbols = false;
+      }
+    }
+  }
+
+  Future<void> _openPerpetualSymbolPicker() async {
+    if (_availablePerpSymbols.isEmpty) {
+      await _loadPerpetualSymbols(silent: false);
+      if (!mounted) return;
+      if (_availablePerpSymbols.isEmpty) return;
+    }
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        var query = '';
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final filtered = _availablePerpSymbols.where((symbol) {
+              if (query.isEmpty) return true;
+              return symbol.toLowerCase().contains(query.toLowerCase());
+            }).toList(growable: false);
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 16,
+                  bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: 'Search perpetual symbol',
+                        hintText: 'BTC-USDT',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        filled: true,
+                        fillColor: const Color(0xFF0F141C),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onChanged: (value) {
+                        setSheetState(() {
+                          query = value.trim();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 420,
+                      child: filtered.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No symbols',
+                                style: TextStyle(color: Color(0xFF97A3B5)),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (context, index) {
+                                final symbol = filtered[index];
+                                return ListTile(
+                                  title: Text(symbol),
+                                  onTap: () =>
+                                      Navigator.of(sheetContext).pop(symbol),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (!mounted || selected == null || selected.isEmpty) return;
+    setState(() {
+      _symbolController.text = selected;
+    });
+    await _uiLog.log('bingx.symbols.select', 'symbol=$selected source=picker');
+    await _maybeRetargetOpenOrdersTracking(
+      symbol: selected,
+      source: 'picker',
+      force: true,
+    );
+  }
+
   String _playbookQtyForSymbol(String symbol) {
     return switch (symbol.toUpperCase()) {
       'BTC-USDT' => '0.001',
@@ -290,6 +548,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     await _uiLog.log(
       'bingx.playbook.apply',
       'name=short_breakdown_v1 symbol=$normalizedSymbol side=sell mode=zone_pending',
+    );
+    await _maybeRetargetOpenOrdersTracking(
+      symbol: normalizedSymbol,
+      source: 'playbook',
+      force: true,
     );
     await _showSnack('Playbook applied: short breakdown · $normalizedSymbol');
   }
@@ -362,12 +625,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
-  num _clamp(num value, num min, num max) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-  }
-
   num? _toNum(String raw) => num.tryParse(raw.trim());
 
   Future<bool> _applyRiskBudgetQuantity({required String symbol}) async {
@@ -412,172 +669,99 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return true;
   }
 
-  num _fallbackZoneWidth(num mid) =>
-      mid * ((_zoneFarBps - _zoneNearBps) / 10000.0);
+  ({bool isSignable, List<String> blockingCodes}) _consensusDecisionContext(
+    String peerHex,
+  ) {
+    final checks = _manualChecks.loadChecks();
+    final normalizedPeer = peerHex.trim().toLowerCase();
+    if (checks.isEmpty) {
+      return (isSignable: false, blockingCodes: const <String>[]);
+    }
 
-  Future<void> _applyZone({
-    required num zoneLow,
-    required num zoneHigh,
-  }) async {
-    final normalizedLow = zoneLow <= zoneHigh ? zoneLow : zoneHigh;
-    final normalizedHigh = zoneLow <= zoneHigh ? zoneHigh : zoneLow;
-    if (normalizedLow <= 0 || normalizedHigh <= 0) {
-      return;
+    if (normalizedPeer.isNotEmpty) {
+      for (final check in checks) {
+        if (check.peerHex.trim().toLowerCase() == normalizedPeer) {
+          final codes = check.blockingFacts
+              .map((fact) => fact.code.trim())
+              .where((code) => code.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+          return (isSignable: check.isSignable, blockingCodes: codes);
+        }
+      }
     }
-    final zoneLowDecimal = _formatDecimal(normalizedLow);
-    final zoneHighDecimal = _formatDecimal(normalizedHigh);
-    if (mounted) {
-      setState(() {
-        _zoneLowController.text = zoneLowDecimal;
-        _zoneHighController.text = zoneHighDecimal;
-      });
-    } else {
-      _zoneLowController.text = zoneLowDecimal;
-      _zoneHighController.text = zoneHighDecimal;
+
+    final hasSignable = checks.any((check) => check.isSignable);
+    if (hasSignable) {
+      return (isSignable: true, blockingCodes: const <String>[]);
     }
+
+    final first = checks.first;
+    final fallbackCodes = first.blockingFacts
+        .map((fact) => fact.code.trim())
+        .where((code) => code.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    return (isSignable: false, blockingCodes: fallbackCodes);
   }
 
-  Future<bool> _computeZoneFromMarketStructure({required String symbol}) async {
-    final quote = await _bingxExchangeService.getPublicPrice(symbol: symbol);
-    if (!quote.isSuccess || quote.priceDecimal == null) {
-      final message =
-          quote.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
+  Future<BingxFuturesLiveDecisionResult?> _computeLiveDecision({
+    required String symbol,
+    required String peerHex,
+  }) async {
+    final snapshot = await _liveSnapshotBuilder.fetchAndBuild(
+      exchange: _bingxExchangeService,
+      symbol: symbol,
+      credentials: _resolveCredentials(),
+    );
+    if (!snapshot.isSuccess || snapshot.snapshotInput == null) {
       await _uiLog.log(
-        'bingx.strategy.zone.error',
-        'symbol=${quote.symbol} code=${quote.exchangeCode} '
-            'http=${quote.httpStatusCode} endpoint=${quote.endpointPath} msg=$message',
+        'bingx.strategy.live_decision.error',
+        'symbol=${snapshot.symbol} code=${snapshot.errorCode} '
+            'message=${snapshot.errorMessage}',
       );
       await _showSnack(
-        'Strategy failed: quote unavailable (${quote.exchangeCode})',
+        'Strategy failed: ${snapshot.errorCode} ${snapshot.errorMessage}',
         seconds: 3,
       );
-      return false;
+      return null;
     }
 
-    final mid = _toNum(quote.priceDecimal!);
-    if (mid == null || mid <= 0) {
-      await _uiLog.log(
-        'bingx.strategy.zone.error',
-        'symbol=${quote.symbol} code=invalid_quote price=${quote.priceDecimal}',
+    final consensus = _consensusDecisionContext(peerHex);
+    try {
+      final decision = _liveDecision.decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: snapshot.snapshotInput!,
+          isConsensusSignable: consensus.isSignable,
+          blockingFactCodes: consensus.blockingCodes,
+          recentMicroBars: _recentMicroBars,
+          zoneNearBps: _zoneNearBps,
+          zoneFarBps: _zoneFarBps,
+        ),
       );
-      await _showSnack('Strategy failed: invalid quote price', seconds: 3);
-      return false;
-    }
-
-    final micro = await _bingxExchangeService.getPublicKlines(
-      symbol: symbol,
-      interval: _microInterval,
-      limit: _microLimit,
-    );
-    final macro = await _bingxExchangeService.getPublicKlines(
-      symbol: symbol,
-      interval: _macroInterval,
-      limit: _macroLimit,
-    );
-
-    if (!micro.isSuccess ||
-        !macro.isSuccess ||
-        micro.klines.length < 20 ||
-        macro.klines.length < 20) {
-      final nearDelta = mid * (_zoneNearBps / 10000.0);
-      final farDelta = mid * (_zoneFarBps / 10000.0);
-      final zoneLow = _side == 'buy' ? mid - farDelta : mid + nearDelta;
-      final zoneHigh = _side == 'buy' ? mid - nearDelta : mid + farDelta;
-      await _applyZone(zoneLow: zoneLow, zoneHigh: zoneHigh);
       await _uiLog.log(
-        'bingx.strategy.zone',
-        'symbol=${quote.symbol} side=$_side source=fallback_quote '
-            'mid=${quote.priceDecimal} low=${_zoneLowController.text} high=${_zoneHighController.text} '
-            'microOk=${micro.isSuccess} macroOk=${macro.isSuccess}',
+        'bingx.strategy.live_decision',
+        'symbol=${snapshot.symbol} '
+            'can_prepare=${decision.canPrepareIntent} decision=${decision.decision.name} '
+            'side=${decision.side ?? "-"} zone_side=${decision.zoneSide ?? "-"} '
+            'zone_low=${decision.zoneLowDecimal ?? "-"} zone_high=${decision.zoneHighDecimal ?? "-"} '
+            'consensus_signable=${consensus.isSignable} '
+            'market_hash=${decision.marketSnapshotHashHex.substring(0, 12)} '
+            'feature_hash=${decision.featureHashHex.substring(0, 12)} '
+            'tvh_hash=${decision.tvhDecisionHashHex.substring(0, 12)} '
+            'live_hash=${decision.liveDecisionHashHex.substring(0, 12)}',
       );
-      return true;
+      return decision;
+    } on FormatException catch (error) {
+      await _uiLog.log(
+        'bingx.strategy.live_decision.error',
+        'symbol=${snapshot.symbol} code=invalid_snapshot message=${error.message}',
+      );
+      await _showSnack('Strategy failed: ${error.message}', seconds: 3);
+      return null;
     }
-
-    final microHighs = <num>[];
-    final microLows = <num>[];
-    for (final candle in micro.klines) {
-      final high = _toNum(candle.highDecimal);
-      final low = _toNum(candle.lowDecimal);
-      if (high != null) microHighs.add(high);
-      if (low != null) microLows.add(low);
-    }
-    final macroHighs = <num>[];
-    final macroLows = <num>[];
-    for (final candle in macro.klines) {
-      final high = _toNum(candle.highDecimal);
-      final low = _toNum(candle.lowDecimal);
-      if (high != null) macroHighs.add(high);
-      if (low != null) macroLows.add(low);
-    }
-    if (microHighs.length < 20 ||
-        microLows.length < 20 ||
-        macroHighs.length < 20 ||
-        macroLows.length < 20) {
-      await _showSnack('Strategy failed: malformed kline data', seconds: 3);
-      return false;
-    }
-
-    final microSplit = microHighs.length - _recentMicroBars;
-    if (microSplit < 5) {
-      await _showSnack('Strategy failed: not enough structure bars',
-          seconds: 3);
-      return false;
-    }
-
-    final olderMicroHighs = microHighs.sublist(0, microSplit);
-    final olderMicroLows = microLows.sublist(0, microSplit);
-    final recentMicroHighs = microHighs.sublist(microSplit);
-    final recentMicroLows = microLows.sublist(microSplit);
-
-    final olderHigh = olderMicroHighs.reduce((a, b) => a > b ? a : b);
-    final olderLow = olderMicroLows.reduce((a, b) => a < b ? a : b);
-    final recentHigh = recentMicroHighs.reduce((a, b) => a > b ? a : b);
-    final recentLow = recentMicroLows.reduce((a, b) => a < b ? a : b);
-
-    final macroHigh = macroHighs.reduce((a, b) => a > b ? a : b);
-    final macroLow = macroLows.reduce((a, b) => a < b ? a : b);
-    final macroRange = macroHigh - macroLow;
-
-    final minWidth = mid * 0.0010; // 10 bps
-    final maxWidth = mid * 0.0040; // 40 bps
-    final widthFromMacro = macroRange * 0.08;
-    final width = _clamp(widthFromMacro, minWidth, maxWidth);
-    final fallbackWidth = _fallbackZoneWidth(mid);
-
-    final sweepUp = recentHigh > olderHigh;
-    final sweepDown = recentLow < olderLow;
-
-    num zoneLow;
-    num zoneHigh;
-    if (_side == 'sell') {
-      final anchorHigh = sweepUp ? recentHigh : olderHigh;
-      zoneLow = anchorHigh - width * 0.65;
-      zoneHigh = anchorHigh - width * 0.20;
-      if (zoneHigh <= 0 || zoneLow <= 0 || zoneHigh <= zoneLow) {
-        zoneLow = mid + (fallbackWidth * 0.40);
-        zoneHigh = mid + (fallbackWidth * 1.00);
-      }
-    } else {
-      final anchorLow = sweepDown ? recentLow : olderLow;
-      zoneLow = anchorLow + width * 0.20;
-      zoneHigh = anchorLow + width * 0.65;
-      if (zoneHigh <= 0 || zoneLow <= 0 || zoneHigh <= zoneLow) {
-        zoneLow = mid - (fallbackWidth * 1.00);
-        zoneHigh = mid - (fallbackWidth * 0.40);
-      }
-    }
-
-    await _applyZone(zoneLow: zoneLow, zoneHigh: zoneHigh);
-    await _uiLog.log(
-      'bingx.strategy.zone',
-      'symbol=${quote.symbol} side=$_side source=mtf_sweep_retest '
-          'mid=${quote.priceDecimal} low=${_zoneLowController.text} high=${_zoneHighController.text} '
-          'micro=$_microInterval/${micro.klines.length} macro=$_macroInterval/${macro.klines.length} '
-          'olderHigh=${_formatDecimal(olderHigh)} olderLow=${_formatDecimal(olderLow)} '
-          'recentHigh=${_formatDecimal(recentHigh)} recentLow=${_formatDecimal(recentLow)} '
-          'sweepUp=$sweepUp sweepDown=$sweepDown',
-    );
-    return true;
   }
 
   Future<void> _runIntent() async {
@@ -629,9 +813,62 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final isZonePending = _entryMode == 'zone_pending';
 
     if (_orderType == 'limit') {
-      final zoneReady = await _computeZoneFromMarketStructure(symbol: symbol);
-      if (!zoneReady) {
+      final live = await _computeLiveDecision(symbol: symbol, peerHex: peerHex);
+      if (live == null) return;
+      if (live.zoneLowDecimal != null && live.zoneHighDecimal != null) {
+        if (mounted) {
+          setState(() {
+            _zoneLowController.text = live.zoneLowDecimal!;
+            _zoneHighController.text = live.zoneHighDecimal!;
+            if (live.zoneSide != null) {
+              _zoneSide = live.zoneSide!;
+            }
+            if (live.side != null) {
+              _side = live.side!;
+            }
+          });
+        } else {
+          _zoneLowController.text = live.zoneLowDecimal!;
+          _zoneHighController.text = live.zoneHighDecimal!;
+          if (live.zoneSide != null) {
+            _zoneSide = live.zoneSide!;
+          }
+          if (live.side != null) {
+            _side = live.side!;
+          }
+        }
+      }
+      if (!live.canPrepareIntent ||
+          live.side == null ||
+          live.zoneSide == null ||
+          live.zoneLowDecimal == null ||
+          live.zoneHighDecimal == null) {
+        final reason =
+            live.reasons.where((r) => !r.passed).map((r) => r.code).join(',');
+        await _showSnack(
+          reason.isEmpty
+              ? 'No live signal for current market state'
+              : 'No live signal: $reason',
+          seconds: 3,
+        );
         return;
+      }
+      if (mounted) {
+        setState(() {
+          _side = live.side!;
+          _zoneSide = live.zoneSide!;
+          _entryMode = 'zone_pending';
+          _zonePriceRule = 'zone_mid';
+          _zoneLowController.text = live.zoneLowDecimal!;
+          _zoneHighController.text = live.zoneHighDecimal!;
+        });
+      } else {
+        _side = live.side!;
+        _zoneSide = live.zoneSide!;
+        _entryMode = 'zone_pending';
+        _zonePriceRule = 'zone_mid';
+        _zoneLowController.text = live.zoneLowDecimal!;
+        _zoneHighController.text = live.zoneHighDecimal!;
       }
     }
     final zoneLowDecimal = _zoneLowController.text.trim();
@@ -763,10 +1000,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           await _showSnack(reason);
           break;
         case PluginHostApiStatus.rejected:
-          final message = response.errorMessage?.trim().isNotEmpty == true
-              ? response.errorMessage!.trim()
-              : 'BingX futures request rejected';
-          await _showSnack(message);
+          final message = _resolveIntentRejectedMessage(response);
+          await _showSnack(message, seconds: 4);
           break;
       }
     } on TimeoutException {
@@ -1086,6 +1321,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       });
 
       if (queued.execution.isSuccess) {
+        _registerManagedOrderId(queued.execution.orderId);
+        _startOpenOrdersAutoTracking(
+          symbol: payload.symbol,
+          orderId: queued.execution.orderId,
+        );
+        unawaited(
+          _fetchOpenOrders(
+            silent: true,
+            symbolOverride: payload.symbol,
+          ),
+        );
         await _showSnack(
           'Order sent${queued.execution.orderId == null ? '' : ' · id ${queued.execution.orderId}'}'
           '${queued.fromIdempotentCache ? ' · idempotent cache' : ''}',
@@ -1169,199 +1415,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return decision;
   }
 
-  Future<void> _switchLeverage() async {
-    if (_switchingLeverage) return;
-    final credentials = _resolveCredentials();
-    if (credentials == null) {
-      await _showSnack('Save BingX API credentials first');
-      return;
-    }
-    final symbol = _symbolController.text.trim();
-    final leverage = int.tryParse(_leverageController.text.trim());
-    if (symbol.isEmpty || leverage == null) {
-      await _showSnack('Symbol and integer leverage are required');
-      return;
-    }
-
-    setState(() {
-      _switchingLeverage = true;
-    });
-    try {
-      final result = await _bingxExchangeService.switchLeverage(
-        credentials: credentials,
-        symbol: symbol,
-        side: _leverageSide == 'LONG'
-            ? BingxFuturesLeverageSide.long
-            : BingxFuturesLeverageSide.short,
-        leverage: leverage,
-      );
-      final safeMessage =
-          result.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
-      await _uiLog.log(
-        'bingx.exchange.switch_leverage',
-        'symbol=${result.symbol} side=$_leverageSide leverage=$leverage '
-            'success=${result.isSuccess} http=${result.httpStatusCode} '
-            'code=${result.exchangeCode} endpoint=${result.endpointPath} msg=$safeMessage',
-      );
-      if (!mounted) return;
-      setState(() {
-        _lastLeverageSwitch = result;
-      });
-      await _showSnack(
-        result.isSuccess
-            ? 'Leverage switched: $_leverageSide x$leverage'
-            : 'Switch leverage failed: ${result.exchangeCode} ${result.exchangeMessage}',
-        seconds: result.isSuccess ? 2 : 4,
-      );
-    } catch (error) {
-      await _showSnack('Switch leverage failed: $error', seconds: 3);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _switchingLeverage = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _switchMarginType() async {
-    if (_switchingMarginType) return;
-    final credentials = _resolveCredentials();
-    if (credentials == null) {
-      await _showSnack('Save BingX API credentials first');
-      return;
-    }
-    final symbol = _symbolController.text.trim();
-    if (symbol.isEmpty) {
-      await _showSnack('Symbol is required');
-      return;
-    }
-
-    setState(() {
-      _switchingMarginType = true;
-    });
-    try {
-      final result = await _bingxExchangeService.switchMarginType(
-        credentials: credentials,
-        symbol: symbol,
-        marginType: _marginType == 'ISOLATED'
-            ? BingxFuturesMarginType.isolated
-            : BingxFuturesMarginType.crossed,
-      );
-      final safeMessage =
-          result.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
-      await _uiLog.log(
-        'bingx.exchange.switch_margin_type',
-        'symbol=${result.symbol} margin=$_marginType '
-            'success=${result.isSuccess} http=${result.httpStatusCode} '
-            'code=${result.exchangeCode} endpoint=${result.endpointPath} msg=$safeMessage',
-      );
-      if (!mounted) return;
-      setState(() {
-        _lastMarginSwitch = result;
-      });
-      await _showSnack(
-        result.isSuccess
-            ? 'Margin mode switched: $_marginType'
-            : 'Switch margin mode failed: ${result.exchangeCode} ${result.exchangeMessage}',
-        seconds: result.isSuccess ? 2 : 4,
-      );
-    } catch (error) {
-      await _showSnack('Switch margin mode failed: $error', seconds: 3);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _switchingMarginType = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _fetchCurrent() async {
-    if (_readingCurrentSettings) return;
-    final credentials = _resolveCredentials();
-    if (credentials == null) {
-      await _showSnack('Save BingX API credentials first');
-      return;
-    }
-    final symbol = _symbolController.text.trim();
-    if (symbol.isEmpty) {
-      await _showSnack('Symbol is required');
-      return;
-    }
-
-    setState(() {
-      _readingCurrentSettings = true;
-    });
-    try {
-      final leverageResult = await _bingxExchangeService.getLeverage(
-        credentials: credentials,
-        symbol: symbol,
-      );
-      final marginResult = await _bingxExchangeService.getMarginType(
-        credentials: credentials,
-        symbol: symbol,
-      );
-      final levMsg = leverageResult.exchangeMessage
-          .replaceAll('\n', ' ')
-          .replaceAll('\r', ' ');
-      final marginMsg = marginResult.exchangeMessage
-          .replaceAll('\n', ' ')
-          .replaceAll('\r', ' ');
-      await _uiLog.log(
-        'bingx.exchange.fetch_current',
-        'symbol=${symbol.toUpperCase()} '
-            'lev=${leverageResult.exchangeCode} levEndpoint=${leverageResult.endpointPath} levMsg=$levMsg '
-            'margin=${marginResult.exchangeCode} marginEndpoint=${marginResult.endpointPath} marginMsg=$marginMsg',
-      );
-      if (!mounted) return;
-      setState(() {
-        _lastLeverageRead = leverageResult;
-        _lastMarginRead = marginResult;
-        if (marginResult.isSuccess &&
-            marginResult.marginType != null &&
-            (marginResult.marginType == 'CROSSED' ||
-                marginResult.marginType == 'ISOLATED')) {
-          _marginType = marginResult.marginType!;
-        }
-        if (leverageResult.isSuccess) {
-          final selected = _leverageSide == 'LONG'
-              ? leverageResult.longLeverage
-              : leverageResult.shortLeverage;
-          if (selected != null && selected > 0) {
-            _leverageController.text = selected.toString();
-          }
-        }
-      });
-      final levSummary = leverageResult.isSuccess
-          ? 'L:${leverageResult.longLeverage ?? "-"} / S:${leverageResult.shortLeverage ?? "-"}'
-          : 'err ${leverageResult.exchangeCode}';
-      final marginSummary = marginResult.isSuccess
-          ? (marginResult.marginType ?? '-')
-          : 'err ${marginResult.exchangeCode}';
-      await _showSnack(
-        'Current fetched · leverage $levSummary · margin $marginSummary',
-        seconds: 3,
-      );
-    } catch (error) {
-      await _showSnack('Fetch current failed: $error', seconds: 3);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _readingCurrentSettings = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _fetchOpenOrders({bool silent = false}) async {
+  Future<void> _fetchOpenOrders({
+    bool silent = false,
+    String? symbolOverride,
+  }) async {
     if (_fetchingOpenOrders) return;
     final credentials = _resolveCredentials();
     if (credentials == null) {
       await _showSnack('Save BingX API credentials first');
       return;
     }
-    final symbol = _symbolController.text.trim();
+    final symbol = (symbolOverride ?? _symbolController.text).trim();
     if (symbol.isEmpty) {
       await _showSnack('Symbol is required');
       return;
@@ -1375,9 +1439,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         credentials: credentials,
         symbol: symbol,
       );
-      final message = result.exchangeMessage
-          .replaceAll('\n', ' ')
-          .replaceAll('\r', ' ');
+      final message =
+          result.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
       await _uiLog.log(
         'bingx.exchange.open_orders',
         'symbol=${result.symbol} success=${result.isSuccess} '
@@ -1385,17 +1448,51 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'count=${result.orders.length} endpoint=${result.endpointPath} msg=$message',
       );
       if (!mounted) return;
+      final allOrders = result.orders;
+      final managedOrders = allOrders
+          .where((order) => _managedOrderIds.contains(order.orderId))
+          .toList(growable: false);
       setState(() {
         _lastOpenOrdersRead = result;
-        _openOrders = result.orders;
-        if (result.orders.isNotEmpty) {
-          _cancelOrderIdController.text = result.orders.first.orderId;
+        _lastOpenOrdersTotalCount = allOrders.length;
+        if (result.isSuccess) {
+          _openOrders = managedOrders;
+        }
+        if (result.isSuccess && managedOrders.isNotEmpty) {
+          _cancelOrderIdController.text = managedOrders.first.orderId;
         }
       });
+      final trackedOrderId = _trackedOrderId;
+      if (trackedOrderId != null && trackedOrderId.isNotEmpty) {
+        if (result.isSuccess) {
+          final trackedStillOpen =
+              allOrders.any((order) => order.orderId == trackedOrderId);
+          await _uiLog.log(
+            'bingx.exchange.tracking.check',
+            'symbol=${result.symbol} orderId=$trackedOrderId '
+                'open=${trackedStillOpen ? "yes" : "no"} '
+                'managedCount=${managedOrders.length} totalCount=${allOrders.length}',
+          );
+          if (!trackedStillOpen) {
+            _managedOrderIds.remove(trackedOrderId);
+            _stopOpenOrdersAutoTracking(reason: 'order_closed');
+            if (!silent) {
+              await _showSnack('Tracked order is no longer open');
+            }
+          }
+        } else {
+          await _uiLog.log(
+            'bingx.exchange.tracking.skip',
+            'symbol=${result.symbol} orderId=$trackedOrderId '
+                'reason=open_orders_failed code=${result.exchangeCode} '
+                'http=${result.httpStatusCode}',
+          );
+        }
+      }
       if (!silent) {
         await _showSnack(
           result.isSuccess
-              ? 'Open orders: ${result.orders.length}'
+              ? 'Drone open orders: ${managedOrders.length} (total ${allOrders.length})'
               : 'Open orders failed: ${result.exchangeCode}',
           seconds: result.isSuccess ? 2 : 4,
         );
@@ -1441,9 +1538,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         symbol: symbol,
         orderId: orderId,
       );
-      final message = result.exchangeMessage
-          .replaceAll('\n', ' ')
-          .replaceAll('\r', ' ');
+      final message =
+          result.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
       await _uiLog.log(
         'bingx.exchange.cancel_order',
         'symbol=${result.symbol} requestOrderId=${result.requestedOrderId} '
@@ -1456,6 +1552,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _lastCancelOrder = result;
         if (result.isSuccess) {
           final canceled = result.canceledOrderId ?? result.requestedOrderId;
+          _managedOrderIds.remove(canceled);
           _openOrders =
               _openOrders.where((order) => order.orderId != canceled).toList();
         }
@@ -1483,8 +1580,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   String _formatOrderTime(int? timestampMs) {
     if (timestampMs == null || timestampMs <= 0) return '-';
-    final dt = DateTime.fromMillisecondsSinceEpoch(timestampMs, isUtc: true)
-        .toLocal();
+    final dt =
+        DateTime.fromMillisecondsSinceEpoch(timestampMs, isUtc: true).toLocal();
     String two(int v) => v.toString().padLeft(2, '0');
     return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
         '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
@@ -1557,7 +1654,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isZonePending = _entryMode == 'zone_pending';
     final canBroadcast =
         _lastIntentResponse?.status == PluginHostApiStatus.executed;
     final shortIntentHash =
@@ -1622,18 +1718,62 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 runSpacing: 10,
                 children: [
                   SizedBox(
-                    width: 180,
-                    child: TextField(
-                      controller: _symbolController,
-                      decoration: InputDecoration(
-                        labelText: 'Symbol',
-                        hintText: 'BTC-USDT',
-                        filled: true,
-                        fillColor: const Color(0xFF0F141C),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    width: 320,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _symbolController,
+                            textInputAction: TextInputAction.done,
+                            decoration: InputDecoration(
+                              labelText: 'Perp Symbol',
+                              hintText: 'BTC-USDT',
+                              filled: true,
+                              fillColor: const Color(0xFF0F141C),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onSubmitted: (value) {
+                              final symbol = value.trim().toUpperCase();
+                              if (symbol.isEmpty) return;
+                              _symbolController.text = symbol;
+                              unawaited(
+                                _maybeRetargetOpenOrdersTracking(
+                                  symbol: symbol,
+                                  source: 'manual_input',
+                                  force: true,
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: _runningIntent
+                              ? null
+                              : _loadingPerpSymbols
+                                  ? null
+                                  : _openPerpetualSymbolPicker,
+                          icon: _loadingPerpSymbols
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.tune_rounded),
+                          label: const Text('Perp'),
+                        ),
+                        const SizedBox(width: 6),
+                        IconButton(
+                          onPressed: _loadingPerpSymbols
+                              ? null
+                              : () => _loadPerpetualSymbols(silent: false),
+                          tooltip: 'Refresh symbols',
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
+                      ],
                     ),
                   ),
                   SizedBox(
@@ -1655,6 +1795,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _availablePerpSymbols.isEmpty
+                    ? 'Perp symbols: not loaded (manual input available)'
+                    : 'Perp symbols loaded: ${_availablePerpSymbols.length}',
+                style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
               const SizedBox(height: 8),
               Text(
@@ -1679,343 +1826,43 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 ),
                 contentPadding: EdgeInsets.zero,
               ),
-              SwitchListTile.adaptive(
-                value: _advancedControlsEnabled,
-                onChanged: (value) {
-                  setState(() {
-                    _advancedControlsEnabled = value;
-                  });
-                },
-                title: const Text('Advanced controls (dev only)'),
-                subtitle: const Text(
-                  'Manual parameters for debugging. Keep OFF for normal use.',
-                  style: TextStyle(color: Color(0xFF97A3B5)),
-                ),
-                contentPadding: EdgeInsets.zero,
-              ),
-              if (_advancedControlsEnabled) ...[
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: 170,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey<String>('drone-entry-mode-$_entryMode'),
-                        initialValue: _entryMode,
-                        decoration: InputDecoration(
-                          labelText: 'Entry Mode',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem(
-                              value: 'direct', child: Text('Direct')),
-                          DropdownMenuItem(
-                            value: 'zone_pending',
-                            child: Text('Zone Pending'),
-                          ),
-                        ],
-                        onChanged: _runningIntent
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _entryMode = value;
-                                });
-                              },
-                      ),
-                    ),
-                    SizedBox(
-                      width: 150,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey<String>('drone-side-$_side'),
-                        initialValue: _side,
-                        decoration: InputDecoration(
-                          labelText: 'Side',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem(value: 'buy', child: Text('Buy')),
-                          DropdownMenuItem(value: 'sell', child: Text('Sell')),
-                        ],
-                        onChanged: _runningIntent
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _side = value;
-                                });
-                              },
-                      ),
-                    ),
-                    SizedBox(
-                      width: 160,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey<String>('drone-order-$_orderType'),
-                        initialValue: _orderType,
-                        decoration: InputDecoration(
-                          labelText: 'Order Type',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem(
-                              value: 'limit', child: Text('Limit')),
-                          DropdownMenuItem(
-                              value: 'market', child: Text('Market')),
-                        ],
-                        onChanged: _runningIntent || isZonePending
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _orderType = value;
-                                });
-                              },
-                      ),
-                    ),
-                    SizedBox(
-                      width: 150,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey<String>('drone-tif-$_timeInForce'),
-                        initialValue: _timeInForce,
-                        decoration: InputDecoration(
-                          labelText: 'TIF',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem(value: 'GTC', child: Text('GTC')),
-                          DropdownMenuItem(value: 'IOC', child: Text('IOC')),
-                          DropdownMenuItem(value: 'FOK', child: Text('FOK')),
-                        ],
-                        onChanged: _runningIntent
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _timeInForce = value;
-                                });
-                              },
-                      ),
-                    ),
-                    SizedBox(
-                      width: 180,
-                      child: TextField(
-                        controller: _quantityController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Manual Quantity',
-                          hintText: 'overridden by risk budget',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  SizedBox(
+                    width: 150,
+                    child: TextField(
+                      controller: _zoneLowController,
+                      readOnly: true,
+                      decoration: InputDecoration(
+                        labelText: 'Zone Low',
+                        filled: true,
+                        fillColor: const Color(0xFF0F141C),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                     ),
-                  ],
-                ),
-                if (isZonePending) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      SizedBox(
-                        width: 160,
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey<String>('drone-zone-side-$_zoneSide'),
-                          initialValue: _zoneSide,
-                          decoration: InputDecoration(
-                            labelText: 'Zone Side',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          items: const <DropdownMenuItem<String>>[
-                            DropdownMenuItem(
-                              value: 'buyside',
-                              child: Text('Buyside'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'sellside',
-                              child: Text('Sellside'),
-                            ),
-                          ],
-                          onChanged: _runningIntent
-                              ? null
-                              : (value) {
-                                  if (value == null) return;
-                                  setState(() {
-                                    _zoneSide = value;
-                                  });
-                                },
-                        ),
-                      ),
-                      SizedBox(
-                        width: 180,
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey<String>(
-                              'drone-zone-rule-$_zonePriceRule'),
-                          initialValue: _zonePriceRule,
-                          decoration: InputDecoration(
-                            labelText: 'Zone Price Rule',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          items: const <DropdownMenuItem<String>>[
-                            DropdownMenuItem(
-                              value: 'zone_low',
-                              child: Text('Zone Low'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'zone_mid',
-                              child: Text('Zone Mid'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'zone_high',
-                              child: Text('Zone High'),
-                            ),
-                          ],
-                          onChanged: _runningIntent
-                              ? null
-                              : (value) {
-                                  if (value == null) return;
-                                  setState(() {
-                                    _zonePriceRule = value;
-                                  });
-                                },
-                        ),
-                      ),
-                      SizedBox(
-                        width: 150,
-                        child: TextField(
-                          controller: _zoneLowController,
-                          readOnly: true,
-                          decoration: InputDecoration(
-                            labelText: 'Zone Low',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 150,
-                        child: TextField(
-                          controller: _zoneHighController,
-                          readOnly: true,
-                          decoration: InputDecoration(
-                            labelText: 'Zone High',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      SizedBox(
-                        width: 160,
-                        child: TextField(
-                          controller: _triggerPriceController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: InputDecoration(
-                            labelText: 'Trigger (opt)',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
+                  SizedBox(
+                    width: 150,
+                    child: TextField(
+                      controller: _zoneHighController,
+                      readOnly: true,
+                      decoration: InputDecoration(
+                        labelText: 'Zone High',
+                        filled: true,
+                        fillColor: const Color(0xFF0F141C),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      SizedBox(
-                        width: 160,
-                        child: TextField(
-                          controller: _stopLossController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: InputDecoration(
-                            labelText: 'Stop Loss (opt)',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 170,
-                        child: TextField(
-                          controller: _takeProfitController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: InputDecoration(
-                            labelText: 'Take Profit (opt)',
-                            filled: true,
-                            fillColor: const Color(0xFF0F141C),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ],
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _strategyTagController,
-                  maxLength: 64,
-                  decoration: InputDecoration(
-                    labelText: 'Strategy Tag (opt)',
-                    filled: true,
-                    fillColor: const Color(0xFF0F141C),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ],
+              ),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 10,
@@ -2167,24 +2014,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     label: Text(
                         _savingCredentials ? 'Saving' : 'Save Credentials'),
                   ),
-                  if (_advancedControlsEnabled)
-                    OutlinedButton.icon(
-                      onPressed: _readingCurrentSettings ? null : _fetchCurrent,
-                      icon: _readingCurrentSettings
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.download_rounded),
-                      label: Text(
-                        _readingCurrentSettings ? 'Fetching' : 'Fetch Current',
-                      ),
-                    ),
                   OutlinedButton.icon(
-                    onPressed: _fetchingOpenOrders
-                        ? null
-                        : () => _fetchOpenOrders(),
+                    onPressed:
+                        _fetchingOpenOrders ? null : () => _fetchOpenOrders(),
                     icon: _fetchingOpenOrders
                         ? const SizedBox(
                             width: 14,
@@ -2194,6 +2026,38 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         : const Icon(Icons.list_alt_rounded),
                     label: Text(
                       _fetchingOpenOrders ? 'Fetching Orders' : 'Open Orders',
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _fetchingOpenOrders
+                        ? null
+                        : _isTrackingOpenOrders
+                            ? () => _stopOpenOrdersAutoTracking(
+                                  reason: 'user_stop',
+                                )
+                            : () {
+                                final symbol = _symbolController.text.trim();
+                                if (symbol.isEmpty) {
+                                  unawaited(
+                                    _showSnack('Symbol is required'),
+                                  );
+                                  return;
+                                }
+                                _startOpenOrdersAutoTracking(symbol: symbol);
+                                unawaited(
+                                  _fetchOpenOrders(
+                                    silent: true,
+                                    symbolOverride: symbol,
+                                  ),
+                                );
+                              },
+                    icon: Icon(
+                      _isTrackingOpenOrders
+                          ? Icons.pause_circle_outline_rounded
+                          : Icons.radar_rounded,
+                    ),
+                    label: Text(
+                      _isTrackingOpenOrders ? 'Stop Tracking' : 'Track Orders',
                     ),
                   ),
                   FilledButton.icon(
@@ -2250,125 +2114,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   ),
                 ],
               ),
-              if (_advancedControlsEnabled) ...[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: 160,
-                      child: TextField(
-                        controller: _leverageController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: false,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Leverage',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 150,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey<String>('drone-lev-side-$_leverageSide'),
-                        initialValue: _leverageSide,
-                        decoration: InputDecoration(
-                          labelText: 'Lev Side',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem(value: 'LONG', child: Text('LONG')),
-                          DropdownMenuItem(
-                              value: 'SHORT', child: Text('SHORT')),
-                        ],
-                        onChanged: _switchingLeverage
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _leverageSide = value;
-                                });
-                              },
-                      ),
-                    ),
-                    FilledButton.tonalIcon(
-                      onPressed: _switchingLeverage ? null : _switchLeverage,
-                      icon: _switchingLeverage
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.tune_rounded),
-                      label: Text(
-                        _switchingLeverage ? 'Switching' : 'Switch Leverage',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: 180,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey<String>('drone-margin-$_marginType'),
-                        initialValue: _marginType,
-                        decoration: InputDecoration(
-                          labelText: 'Margin Type',
-                          filled: true,
-                          fillColor: const Color(0xFF0F141C),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: const <DropdownMenuItem<String>>[
-                          DropdownMenuItem(
-                              value: 'CROSSED', child: Text('CROSSED')),
-                          DropdownMenuItem(
-                            value: 'ISOLATED',
-                            child: Text('ISOLATED'),
-                          ),
-                        ],
-                        onChanged: _switchingMarginType
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _marginType = value;
-                                });
-                              },
-                      ),
-                    ),
-                    FilledButton.tonalIcon(
-                      onPressed:
-                          _switchingMarginType ? null : _switchMarginType,
-                      icon: _switchingMarginType
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.swap_horiz_rounded),
-                      label: Text(
-                        _switchingMarginType ? 'Switching' : 'Switch Margin',
-                      ),
-                    ),
-                  ],
-                ),
-              ],
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -2392,47 +2137,21 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         accent: const Color(0xFFFFC76A)),
                   if (_lastOpenOrdersRead != null)
                     _statusChip(
-                      'Open: ${_openOrders.length} (${_lastOpenOrdersRead!.exchangeCode})',
+                      'Drone Open: ${_openOrders.length}/$_lastOpenOrdersTotalCount (${_lastOpenOrdersRead!.exchangeCode})',
                       accent: _lastOpenOrdersRead!.isSuccess
                           ? const Color(0xFF75D98A)
                           : const Color(0xFFFF8A7A),
+                    ),
+                  if (_isTrackingOpenOrders)
+                    _statusChip(
+                      'Tracking ${_trackedOrdersSymbol ?? "-"}'
+                      '${_trackedOrderId == null ? '' : ' · id ${_trackedOrderId!}'}',
+                      accent: const Color(0xFF8DC2FF),
                     ),
                   if (_lastCancelOrder != null)
                     _statusChip(
                       'Cancel: ${_lastCancelOrder!.exchangeCode}',
                       accent: _lastCancelOrder!.isSuccess
-                          ? const Color(0xFF75D98A)
-                          : const Color(0xFFFF8A7A),
-                    ),
-                  if (_lastLeverageSwitch != null)
-                    _statusChip(
-                      'Lev: ${_lastLeverageSwitch!.exchangeCode}',
-                      accent: _lastLeverageSwitch!.isSuccess
-                          ? const Color(0xFF75D98A)
-                          : const Color(0xFFFF8A7A),
-                    ),
-                  if (_lastMarginSwitch != null)
-                    _statusChip(
-                      'Margin: ${_lastMarginSwitch!.exchangeCode}',
-                      accent: _lastMarginSwitch!.isSuccess
-                          ? const Color(0xFF75D98A)
-                          : const Color(0xFFFF8A7A),
-                    ),
-                  if (_lastLeverageRead != null)
-                    _statusChip(
-                      _lastLeverageRead!.isSuccess
-                          ? 'Current L:${_lastLeverageRead!.longLeverage ?? "-"} S:${_lastLeverageRead!.shortLeverage ?? "-"}'
-                          : 'Current lev err ${_lastLeverageRead!.exchangeCode}',
-                      accent: _lastLeverageRead!.isSuccess
-                          ? const Color(0xFF75D98A)
-                          : const Color(0xFFFF8A7A),
-                    ),
-                  if (_lastMarginRead != null)
-                    _statusChip(
-                      _lastMarginRead!.isSuccess
-                          ? 'Current margin ${_lastMarginRead!.marginType ?? "-"}'
-                          : 'Current margin err ${_lastMarginRead!.exchangeCode}',
-                      accent: _lastMarginRead!.isSuccess
                           ? const Color(0xFF75D98A)
                           : const Color(0xFFFF8A7A),
                     ),
@@ -2443,7 +2162,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Active Orders',
+                    'Managed Drone Orders',
                     style: TextStyle(
                       color: Color(0xFF9FAAC0),
                       fontWeight: FontWeight.w700,
