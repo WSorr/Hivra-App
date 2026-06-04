@@ -44,6 +44,7 @@ DOCS_README="$ROOT/docs/README.md"
 CHECKLIST="$ROOT/docs/checklists/architecture-review.md"
 ROADMAP="$ROOT/docs/roadmap.md"
 EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
+EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 
 RUNTIME="$ROOT/flutter/lib/services/app_runtime_service.dart"
 INV_INTENT="$ROOT/flutter/lib/services/invitation_intent_handler.dart"
@@ -88,6 +89,8 @@ require_present "$CHECKLIST" '## Engine Integrity' \
   "architecture checklist includes engine integrity section"
 require_present "$CHECKLIST" '## WASM Plugin Host' \
   "architecture checklist includes wasm plugin-host section"
+require_present "$CHECKLIST" 'Repo boundary is preserved: `Hivra-App` is host/runtime only; plugin implementation source/release flow lives in `hivra-plugins`\.' \
+  "architecture checklist enforces app-vs-plugin repo boundary"
 require_present "$EXEC_DISCIPLINE" '^# Hivra Architecture Execution Discipline v1' \
   "execution discipline doc exists"
 require_present "$EXEC_DISCIPLINE" '^## 1\. Three Non-Negotiable Laws' \
@@ -96,6 +99,14 @@ require_present "$EXEC_DISCIPLINE" 'UI intent -> use-case boundary -> runtime/FF
   "execution discipline defines canonical action path"
 require_present "$EXEC_DISCIPLINE" '^## 4\. Async Resolution Discipline' \
   "execution discipline defines async resolution rules"
+require_present "$EXEC_DISCIPLINE" '^## 7\. Plugin Repository Boundary' \
+  "execution discipline defines plugin repository boundary"
+require_present "$EXTERNAL_PLUGIN_SOURCE" '^## Repository boundary contract \(mandatory\)' \
+  "external plugin source doc defines mandatory repo boundary contract"
+require_present "$EXTERNAL_PLUGIN_SOURCE" '`Hivra-App` repository is host/runtime only\.' \
+  "external plugin source doc fixes Hivra-App host-only ownership"
+require_present "$EXTERNAL_PLUGIN_SOURCE" 'WASM plugin implementation source and plugin package release flow belong to `hivra-plugins` repository\.' \
+  "external plugin source doc fixes plugin-source ownership in hivra-plugins"
 require_present "$DOCS_README" 'architecture-execution-discipline\.md' \
   "docs index references execution discipline standard"
 require_present "$ROADMAP" '`9\.10 Execution Discipline Standard`' \

@@ -46,6 +46,8 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Plugins cannot bypass Engine validation/Core invariants.
 - [ ] Pair-scoped plugin execution is gated by consensus guard readiness.
 - [ ] Plugin inputs/outputs are deterministic for identical inputs.
+- [ ] Repo boundary is preserved: `Hivra-App` is host/runtime only; plugin implementation source/release flow lives in `hivra-plugins`.
+- [ ] Plugin changes in `Hivra-App` are limited to host API/runtime boundary, install/catalog projection, and execution guards (no plugin-source duplication).
 
 ## Execution Discipline v1
 

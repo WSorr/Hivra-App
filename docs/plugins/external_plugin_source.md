@@ -2,6 +2,13 @@
 
 This project now supports loading plugin packages from an external source catalog.
 
+## Repository boundary contract (mandatory)
+
+- `Hivra-App` repository is host/runtime only.
+- WASM plugin implementation source and plugin package release flow belong to `hivra-plugins` repository.
+- `Hivra-App` may contain plugin host API/contracts and UI install/run projections, but must not become a second plugin-source repository.
+- New plugin logic must be implemented and released from `hivra-plugins`, then installed into capsule through source catalog.
+
 ## Runtime behavior
 
 - Primary source catalog URL:

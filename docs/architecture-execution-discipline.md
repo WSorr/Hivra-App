@@ -82,7 +82,20 @@ Before adding a new module, verify:
 4. Its state output is reconstructible from ledger truth.
 5. It has regression tests for replay/idempotence where applicable.
 
-## 7. Acceptance Criteria For Refactors
+## 7. Plugin Repository Boundary
+
+Plugin platform work is split by ownership:
+
+- `Hivra-App` owns host/runtime boundaries, UI projection, policy guards, and catalog install flow.
+- `hivra-plugins` owns plugin implementation source and plugin package release artifacts.
+
+Rules:
+
+- no duplicate plugin-source implementation across both repositories
+- plugin behavior changes are authored in `hivra-plugins` and consumed by `Hivra-App` through host/runtime boundary
+- host changes in `Hivra-App` must remain generic to plugin execution boundary, not business logic forks per plugin
+
+## 8. Acceptance Criteria For Refactors
 
 A refactor is considered valid only when:
 
