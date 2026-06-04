@@ -71,6 +71,7 @@ class BingxFuturesLiveDecisionResult {
 
 class BingxFuturesLiveDecisionService {
   static const double _trendGateRetestPctThreshold = 0.07;
+  static const double _momentumGateZoneDistancePctThreshold = 0.018;
 
   final BingxFuturesMarketSnapshotService _snapshotService;
   final BingxFuturesFeatureExtractorService _featureExtractor;
@@ -280,6 +281,22 @@ class BingxFuturesLiveDecisionService {
             trend1d == 'bull';
 
     final targetRetestPct = zone.targetRetestPct.toDouble();
+    final zoneDistancePct = _zoneDistanceFromMid(
+      side: side,
+      zone: zone,
+    );
+    if (side == 'sell' &&
+        isStrongDownContinuation &&
+        !zone.sweepUp &&
+        zoneDistancePct >= _momentumGateZoneDistancePctThreshold) {
+      return 'momentum_gate_short_missed_retest';
+    }
+    if (side == 'buy' &&
+        isStrongUpContinuation &&
+        !zone.sweepDown &&
+        zoneDistancePct >= _momentumGateZoneDistancePctThreshold) {
+      return 'momentum_gate_long_missed_retest';
+    }
     if (side == 'sell' &&
         isStrongDownContinuation &&
         zone.needsFartherRetest &&
@@ -293,6 +310,20 @@ class BingxFuturesLiveDecisionService {
       return 'trend_gate_long_far_retest';
     }
     return 'ok';
+  }
+
+  double _zoneDistanceFromMid({
+    required String side,
+    required BingxFuturesZoneDecisionResult zone,
+  }) {
+    final mid = (zone.recentHigh + zone.recentLow) / 2;
+    if (mid <= 0) return 0;
+    if (side == 'sell') {
+      final distance = ((zone.zoneLow - mid) / mid).toDouble();
+      return distance.clamp(0, 1).toDouble();
+    }
+    final distance = ((mid - zone.zoneHigh) / mid).toDouble();
+    return distance.clamp(0, 1).toDouble();
   }
 
   List<num> _readHighs(List<BingxFuturesCandle> candles, String timeframe) {

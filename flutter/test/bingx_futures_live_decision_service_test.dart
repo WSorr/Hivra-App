@@ -149,6 +149,50 @@ void main() {
         isTrue,
       );
     });
+
+    test('blocks missed short retest after bearish momentum continuation', () {
+      final gatedService = BingxFuturesLiveDecisionService(
+        snapshotService: _StubSnapshotService(),
+        featureExtractor: _StubFeatureExtractor(
+          trendDirection: BingxTrendDirection.bearish,
+        ),
+        ruleEngine: _StubRuleEngine(
+          decision: BingxTvhDecisionKind.short,
+        ),
+        zoneDecision: _StubZoneDecision(
+          side: 'sell',
+          zoneSide: 'sellside',
+          trend4h: 'bear',
+          trend1d: 'bear',
+          needsFartherRetest: false,
+          targetRetestPct: 0.03,
+          zoneLow: 104,
+          zoneHigh: 105,
+          recentHigh: 100,
+          recentLow: 98,
+          sweepUp: false,
+        ),
+      );
+
+      final result = gatedService.decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: _buildMinimalInput(),
+          isConsensusSignable: true,
+        ),
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.short);
+      expect(result.side, 'sell');
+      expect(result.trendGateBlocked, isTrue);
+      expect(result.trendGateCode, 'momentum_gate_short_missed_retest');
+      expect(result.canPrepareIntent, isFalse);
+      expect(
+        result.reasons.any(
+          (reason) => reason.code == 'momentum_gate_short_missed_retest',
+        ),
+        isTrue,
+      );
+    });
   });
 }
 
@@ -708,6 +752,12 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
   final String trend1d;
   final bool needsFartherRetest;
   final num targetRetestPct;
+  final num zoneLow;
+  final num zoneHigh;
+  final num recentHigh;
+  final num recentLow;
+  final bool sweepUp;
+  final bool sweepDown;
 
   const _StubZoneDecision({
     required this.side,
@@ -716,6 +766,12 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
     required this.trend1d,
     required this.needsFartherRetest,
     required this.targetRetestPct,
+    this.zoneLow = 90,
+    this.zoneHigh = 91,
+    this.recentHigh = 105,
+    this.recentLow = 85,
+    this.sweepUp = true,
+    this.sweepDown = false,
   });
 
   @override
@@ -725,16 +781,16 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
     return BingxFuturesZoneDecisionResult(
       side: side,
       zoneSide: zoneSide,
-      zoneLow: 90,
-      zoneHigh: 91,
+      zoneLow: zoneLow,
+      zoneHigh: zoneHigh,
       source: 'stub',
       sideReason: 'stub',
       olderHigh: 110,
       olderLow: 80,
-      recentHigh: 105,
-      recentLow: 85,
-      sweepUp: true,
-      sweepDown: false,
+      recentHigh: recentHigh,
+      recentLow: recentLow,
+      sweepUp: sweepUp,
+      sweepDown: sweepDown,
       trend4h: trend4h,
       trend1d: trend1d,
       contextBias: -2,

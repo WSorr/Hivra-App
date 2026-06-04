@@ -310,6 +310,23 @@ Symmetric long-side rule applies with:
 
 - `trend_gate_long_far_retest`.
 
+### 6.4 Momentum-Missed Gate (Do Not Chase Dead Retests)
+
+To avoid leaving untouched pending orders after the market has already moved:
+
+- If decision side is `short`,
+- and trend bundle is strongly bearish (`trend_15m=bearish`, `trend_4h=bear`, `trend_1d=bear`),
+- and no fresh sweep-up/reversal signal exists,
+- and the proposed sell zone is already at least `1.8%` above current local mid,
+
+then live intent preparation must be blocked with deterministic code:
+
+- `momentum_gate_short_missed_retest`.
+
+Symmetric long-side rule applies when the market already continued upward and the buy zone is at least `1.8%` below current local mid:
+
+- `momentum_gate_long_missed_retest`.
+
 ---
 
 ## 7. Risk, Stop, Target Rules
