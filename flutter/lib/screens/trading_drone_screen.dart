@@ -11,6 +11,7 @@ import '../services/bingx_futures_exchange_risk_input_service.dart';
 import '../services/bingx_futures_exchange_service.dart';
 import '../services/bingx_futures_observability_envelope_service.dart';
 import '../services/bingx_futures_order_tracking_store.dart';
+import '../services/bingx_futures_order_revalidation_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
 import '../services/bingx_futures_risk_governor_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
@@ -69,6 +70,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       const BingxFuturesRiskGovernorService();
   final BingxFuturesObservabilityEnvelopeService _observability =
       const BingxFuturesObservabilityEnvelopeService();
+  final BingxFuturesOrderRevalidationService _orderRevalidation =
+      const BingxFuturesOrderRevalidationService();
   final BingxFuturesLiveSnapshotBuilderService _liveSnapshotBuilder =
       const BingxFuturesLiveSnapshotBuilderService();
   final BingxFuturesLiveDecisionService _liveDecision =
@@ -946,6 +949,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   Future<BingxFuturesLiveDecisionResult?> _computeLiveDecision({
     required String symbol,
     required String peerHex,
+    bool silent = false,
+    bool forceConsensusSignable = false,
   }) async {
     final snapshot = await _liveSnapshotBuilder.fetchAndBuild(
       exchange: _bingxExchangeService,
@@ -958,14 +963,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'symbol=${snapshot.symbol} code=${snapshot.errorCode} '
             'message=${snapshot.errorMessage}',
       );
-      await _showSnack(
-        'Strategy failed: ${snapshot.errorCode} ${snapshot.errorMessage}',
-        seconds: 3,
-      );
+      if (!silent) {
+        await _showSnack(
+          'Strategy failed: ${snapshot.errorCode} ${snapshot.errorMessage}',
+          seconds: 3,
+        );
+      }
       return null;
     }
 
-    final consensus = _consensusDecisionContext(peerHex);
+    final consensus = forceConsensusSignable
+        ? (isSignable: true, blockingCodes: const <String>[])
+        : _consensusDecisionContext(peerHex);
     try {
       final decision = _liveDecision.decide(
         BingxFuturesLiveDecisionInput(
@@ -997,7 +1006,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.strategy.live_decision.error',
         'symbol=${snapshot.symbol} code=invalid_snapshot message=${error.message}',
       );
-      await _showSnack('Strategy failed: ${error.message}', seconds: 3);
+      if (!silent) {
+        await _showSnack('Strategy failed: ${error.message}', seconds: 3);
+      }
       return null;
     }
   }
@@ -1784,14 +1795,23 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         }
         return trackedSymbol == result.symbol.toUpperCase();
       }).toList(growable: false);
+      if (result.isSuccess && managedOrders.isNotEmpty) {
+        await _revalidateManagedOpenOrders(
+          credentials: credentials,
+          managedOrders: managedOrders,
+          silent: silent,
+        );
+      }
       setState(() {
         _lastOpenOrdersRead = result;
         _lastOpenOrdersTotalCount = triggerOrders.length;
         if (result.isSuccess) {
-          _openOrders = triggerOrders;
+          _openOrders = triggerOrders
+              .where((order) => _managedOrderIds.contains(order.orderId))
+              .toList(growable: false);
         }
-        if (result.isSuccess && triggerOrders.isNotEmpty) {
-          _cancelOrderIdController.text = triggerOrders.first.orderId;
+        if (result.isSuccess && _openOrders.isNotEmpty) {
+          _cancelOrderIdController.text = _openOrders.first.orderId;
         }
       });
       final trackedOrderId = _trackedOrderId;
@@ -1854,6 +1874,78 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         setState(() {
           _fetchingOpenOrders = false;
         });
+      }
+    }
+  }
+
+  Future<void> _revalidateManagedOpenOrders({
+    required BingxFuturesApiCredentials credentials,
+    required List<BingxFuturesOpenOrder> managedOrders,
+    required bool silent,
+  }) async {
+    final bySymbol = <String, List<BingxFuturesOpenOrder>>{};
+    for (final order in managedOrders) {
+      final symbol = order.symbol.trim().toUpperCase();
+      if (symbol.isEmpty) continue;
+      bySymbol.putIfAbsent(symbol, () => <BingxFuturesOpenOrder>[]).add(order);
+    }
+
+    var canceled = 0;
+    for (final entry in bySymbol.entries) {
+      final decision = await _computeLiveDecision(
+        symbol: entry.key,
+        peerHex: '',
+        silent: true,
+        forceConsensusSignable: true,
+      );
+      if (decision == null) {
+        await _uiLog.log(
+          'bingx.exchange.revalidate.skip',
+          'symbol=${entry.key} reason=live_decision_unavailable '
+              'orders=${entry.value.length}',
+        );
+        continue;
+      }
+
+      for (final order in entry.value) {
+        if (!_managedOrderIds.contains(order.orderId)) continue;
+        final verdict = _orderRevalidation.revalidate(
+          order: order,
+          liveDecision: decision,
+        );
+        await _uiLog.log(
+          'bingx.exchange.revalidate',
+          'symbol=${order.symbol} orderId=${order.orderId} '
+              'action=${verdict.action.name} reason=${verdict.reasonCode} '
+              'live_hash=${decision.liveDecisionHashHex.substring(0, 12)}',
+        );
+        if (!verdict.shouldCancel) continue;
+
+        final cancel = await _bingxExchangeService.cancelOrder(
+          credentials: credentials,
+          symbol: order.symbol,
+          orderId: order.orderId,
+        );
+        await _uiLog.log(
+          'bingx.exchange.revalidate.cancel',
+          'symbol=${order.symbol} orderId=${order.orderId} '
+              'success=${cancel.isSuccess} code=${cancel.exchangeCode} '
+              'reason=${verdict.reasonCode}',
+        );
+        if (!cancel.isSuccess) continue;
+        canceled += 1;
+        _managedOrderIds.remove(order.orderId);
+        _managedOrderSymbols.remove(order.orderId);
+        if (_trackedOrderId == order.orderId) {
+          _trackedOrderId = null;
+        }
+      }
+    }
+
+    if (canceled > 0) {
+      await _persistOpenOrdersTrackingState(source: 'revalidate_cancel');
+      if (!silent && mounted) {
+        await _showSnack('Canceled stale drone orders: $canceled');
       }
     }
   }

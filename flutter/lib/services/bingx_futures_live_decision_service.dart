@@ -154,19 +154,15 @@ class BingxFuturesLiveDecisionService {
       zone: zone,
     );
     final trendGateBlocked = trendGateCode != 'ok';
-    final canPrepareIntent = side != null &&
-        zone != null &&
-        !zoneConflict &&
-        !trendGateBlocked;
+    final canPrepareIntent =
+        side != null && zone != null && !zoneConflict && !trendGateBlocked;
 
     final mergedReasons = <BingxTvhDecisionReason>[
       ...tvhDecision.reasons,
       BingxTvhDecisionReason(
         code: trendGateCode,
         passed: !trendGateBlocked,
-        detail: trendGateBlocked
-            ? 'trend_gate_blocked'
-            : 'trend_gate_ok',
+        detail: trendGateBlocked ? 'trend_gate_blocked' : 'trend_gate_ok',
       ),
     ];
     return _buildResult(
@@ -271,10 +267,10 @@ class BingxFuturesLiveDecisionService {
     if (side == null || zone == null) return 'ok';
     final trend4h = zone.trend4h.trim().toLowerCase();
     final trend1d = zone.trend1d.trim().toLowerCase();
-    final isStrongDownContinuation = features.trendDirection ==
-            BingxTrendDirection.bearish &&
-        trend4h == 'bear' &&
-        trend1d == 'bear';
+    final isStrongDownContinuation =
+        features.trendDirection == BingxTrendDirection.bearish &&
+            trend4h == 'bear' &&
+            trend1d == 'bear';
     final isStrongUpContinuation =
         features.trendDirection == BingxTrendDirection.bullish &&
             trend4h == 'bull' &&

@@ -24,6 +24,7 @@ Legend:
 | Exchange-backed risk inputs (equity/pnl/positions) | DONE | `BingxFuturesExchangeRiskInputService` wired in `TradingDroneScreen` and `WasmPluginsScreen` using `getUserBalance/getUserPositions` | Keep exchange payload variant tests green |
 | Runtime-only futures intent execution | DONE | `place_bingx_futures_order_intent` runtime path enforced (plugin host boundary) | Keep smoke+tests green |
 | Idempotency/TTL/retry discipline | DONE | `flutter/lib/services/bingx_futures_execution_queue_service.dart` | Keep regression green |
+| Managed order revalidation | DONE | `BingxFuturesOrderRevalidationService` cancels stale managed drone orders when live TVH invalidates the setup | Keep revalidation regressions green |
 | Decision/execution observability envelopes | DONE | envelope logs wired in both execution surfaces | Keep release smoke evidence |
 
 ## Hivra Laws (Non-Negotiable)
@@ -45,6 +46,7 @@ Legend:
 - [ ] Funding guard is applied before execution intent.
 - [ ] Risk governor is applied before exchange execution.
 - [ ] Execution queue enforces idempotency + TTL + deterministic retry classification.
+- [ ] Managed open orders are revalidated against fresh live TVH snapshots before being left active.
 - [ ] Observability envelopes are emitted (`drone.decision.envelope`, `drone.execution.envelope`).
 
 ## Runtime Boundary Checks
@@ -64,6 +66,7 @@ Legend:
 - [ ] `flutter test test/bingx_futures_deterministic_replay_harness_service_test.dart`
 - [ ] `flutter test test/bingx_futures_risk_governor_service_test.dart`
 - [ ] `flutter test test/bingx_futures_execution_queue_service_test.dart`
+- [ ] `flutter test test/bingx_futures_order_revalidation_service_test.dart`
 - [ ] `flutter test test/bingx_futures_observability_envelope_service_test.dart`
 - [ ] `flutter test test/plugin_host_api_service_test.dart`
 - [ ] `flutter test test/wasm_plugin_capability_policy_service_test.dart`

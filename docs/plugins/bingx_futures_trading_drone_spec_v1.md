@@ -327,6 +327,14 @@ Symmetric long-side rule applies when the market already continued upward and th
 
 - `momentum_gate_long_missed_retest`.
 
+Runtime implication:
+
+- already-open managed drone orders must be revalidated against a fresh live decision snapshot during order tracking,
+- only capsule-managed drone orders may be auto-canceled,
+- manual exchange orders must not be touched by this lifecycle,
+- market-dead reasons (`momentum_gate_*_missed_retest`, `trend_gate_*_far_retest`) require deterministic cancel of the stale pending order,
+- side mismatch or entry price leaving the current TVH zone also requires deterministic cancel.
+
 ---
 
 ## 7. Risk, Stop, Target Rules
