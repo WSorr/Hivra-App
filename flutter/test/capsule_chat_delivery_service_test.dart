@@ -119,6 +119,81 @@ void main() {
     });
   });
 
+  test('trade signals received by chat remain available to trading drone',
+      () async {
+    const peerHex =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    const localRootHex =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    final store = CapsuleTradeSignalInboxStore();
+    final runtime = _FakeRuntime(
+      capsuleRootKey: _hexToBytes(localRootHex),
+      workerBootstrap: const <String, Object?>{
+        'activeCapsuleHex': localRootHex,
+      },
+    );
+    final checks = _FakeManualConsensusCheckService(
+      <ManualConsensusCheck>[
+        const ManualConsensusCheck(
+          peerHex: peerHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      ],
+    );
+    final payloadJson = jsonEncode(<String, Object?>{
+      'contract_kind': 'bingx_trade_signal_v1',
+      'signal_id': 'sig-shared',
+      'symbol': 'BTC-USDT',
+      'side': 'buy',
+      'order_type': 'limit',
+      'quantity_decimal': '0.01',
+      'entry_mode': 'zone_pending',
+      'intent_hash_hex':
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'created_at_utc': '2026-06-13T09:00:00.000Z',
+      'canonical_intent_json': '{"symbol":"BTC-USDT"}',
+    });
+    final chatService = CapsuleChatDeliveryService(
+      runtime: runtime,
+      manualChecks: checks,
+      tradeSignalInboxStore: store,
+      receiveWorkerRunner: (_) async => <String, Object?>{
+        'result': 1,
+        'json': jsonEncode(
+          <Map<String, Object?>>[
+            <String, Object?>{
+              'from_hex': peerHex,
+              'payload_json': payloadJson,
+              'timestamp_ms': 1,
+            },
+          ],
+        ),
+        'lastError': null,
+      },
+    );
+    final droneService = CapsuleChatDeliveryService(
+      runtime: runtime,
+      manualChecks: checks,
+      tradeSignalInboxStore: store,
+    );
+
+    final received = await chatService.receiveAndFilter();
+
+    expect(received.tradeSignals, hasLength(1));
+    expect(droneService.loadCachedTradeSignals(), hasLength(1));
+    expect(
+      droneService.loadCachedTradeSignals().single.signalId,
+      equals('sig-shared'),
+    );
+  });
+
   group('CapsuleChatDeliveryService execution command flow', () {
     const peerHex =
         '1111111111111111111111111111111111111111111111111111111111111111';
@@ -285,9 +360,12 @@ class _FakeManualConsensusCheckService extends ManualConsensusCheckService {
 
 class _FakeRuntime implements AppRuntimeRuntime {
   final Uint8List? capsuleRootKey;
-  final Map<String, Object?> workerBootstrap = const <String, Object?>{};
+  final Map<String, Object?> workerBootstrap;
 
-  _FakeRuntime({required this.capsuleRootKey});
+  _FakeRuntime({
+    required this.capsuleRootKey,
+    this.workerBootstrap = const <String, Object?>{},
+  });
 
   @override
   LedgerViewRuntime get ledgerViewRuntime => const _FakeLedgerViewRuntime();

@@ -14,9 +14,7 @@ import '../services/bingx_futures_observability_envelope_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
 import '../services/bingx_futures_risk_governor_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
-import '../services/consensus_processor.dart';
 import '../services/manual_consensus_check_service.dart';
-import '../services/plugin_execution_guard_service.dart';
 import '../services/plugin_host_api_service.dart';
 import '../services/ui_event_log_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
@@ -39,8 +37,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   final WasmPluginRegistryService _registry = const WasmPluginRegistryService();
   final WasmPluginSourceCatalogService _sourceCatalog =
       const WasmPluginSourceCatalogService();
-  final PluginExecutionGuardService _guard =
-      AppRuntimeService().buildPluginExecutionGuardService();
   final ManualConsensusCheckService _manualChecks =
       AppRuntimeService().buildManualConsensusCheckService();
   final PluginHostApiService _pluginHostApi =
@@ -95,13 +91,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
   WasmPluginSourceCatalog? _sourceCatalogSnapshot;
   String? _sourceCatalogError;
-  PluginExecutionGuardSnapshot _guardSnapshot =
-      const PluginExecutionGuardSnapshot(
-    state: ConsensusGuardState.pending,
-    readyPairCount: 0,
-    blockedPairCount: 0,
-    blockingFacts: <ConsensusBlockingFact>[],
-  );
   bool _loading = true;
   bool _loadingSourceCatalog = true;
   bool _installing = false;
@@ -124,9 +113,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   BingxFuturesLeverageReadResult? _lastBingxLeverageReadResult;
   BingxFuturesMarginTypeReadResult? _lastBingxMarginTypeReadResult;
   PluginHostApiResponse? _lastChatResponse;
+  String? _chatWorkspaceNotice;
+  bool _chatWorkspaceNoticeIsError = false;
   List<CapsuleChatInboxMessage> _chatInbox = const <CapsuleChatInboxMessage>[];
-  List<CapsuleTradeSignalInboxMessage> _tradeSignalInbox =
-      const <CapsuleTradeSignalInboxMessage>[];
 
   static const BingxFuturesRiskPolicy _executionRiskPolicy =
       BingxFuturesRiskPolicy(
@@ -220,11 +209,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
   Future<void> _reload() async {
     final installed = await _registry.loadPlugins();
-    final guardSnapshot = _guard.inspectHostReadiness();
     if (!mounted) return;
     setState(() {
       _installed = installed;
-      _guardSnapshot = guardSnapshot;
       _loading = false;
     });
   }
@@ -1542,83 +1529,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     }
   }
 
-  Future<void> _repeatTradeSignalAsDraft(
-      CapsuleTradeSignalInboxMessage signal) async {
-    final decoded = _tryDecodeJsonMap(signal.canonicalIntentJson);
-    if (decoded == null) {
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Signal intent payload is invalid'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _bingxPeerController.text = signal.fromHex;
-      _bingxSymbolController.text =
-          decoded['symbol']?.toString() ?? signal.symbol;
-      _bingxQuantityController.text =
-          decoded['quantity_decimal']?.toString() ?? signal.quantityDecimal;
-      _bingxSide = decoded['side']?.toString() ?? signal.side;
-      _bingxOrderType = decoded['order_type']?.toString() ?? signal.orderType;
-      _bingxTimeInForce = decoded['time_in_force']?.toString() ?? 'GTC';
-      _bingxEntryMode = decoded['entry_mode']?.toString() ?? signal.entryMode;
-      _bingxStrategyTagController.text =
-          decoded['strategy_tag']?.toString() ?? '';
-
-      if (_bingxEntryMode == 'zone_pending') {
-        _bingxZoneSide = decoded['zone_side']?.toString() ??
-            (_bingxSide == 'buy' ? 'buyside' : 'sellside');
-        _bingxZoneLowController.text =
-            decoded['zone_low_decimal']?.toString() ?? '';
-        _bingxZoneHighController.text =
-            decoded['zone_high_decimal']?.toString() ?? '';
-        _bingxZonePriceRule =
-            decoded['zone_price_rule']?.toString() ?? 'zone_mid';
-        _bingxManualEntryPriceController.text =
-            decoded['manual_entry_price_decimal']?.toString() ?? '';
-        _bingxTriggerPriceController.text =
-            decoded['trigger_price_decimal']?.toString() ?? '';
-        _bingxStopLossController.text =
-            decoded['stop_loss_decimal']?.toString() ?? '';
-        _bingxTakeProfitController.text =
-            decoded['take_profit_decimal']?.toString() ?? '';
-        _bingxLimitPriceController.text =
-            decoded['limit_price_decimal']?.toString() ?? '';
-      } else {
-        _bingxLimitPriceController.text =
-            decoded['limit_price_decimal']?.toString() ?? '';
-      }
-    });
-
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-            'Draft loaded from signal ${signal.signalId.substring(0, signal.signalId.length < 12 ? signal.signalId.length : 12)}..'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Map<String, dynamic>? _tryDecodeJsonMap(String raw) {
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<void> _runCapsuleChat() async {
     if (_runningChat) return;
     if (!mounted) return;
@@ -1630,6 +1540,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
     setState(() {
       _runningChat = true;
+      _chatWorkspaceNotice = 'Preparing message...';
+      _chatWorkspaceNoticeIsError = false;
     });
 
     try {
@@ -1656,8 +1568,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         _lastChatResponse = response;
       });
 
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
       switch (response.status) {
         case PluginHostApiStatus.executed:
           final envelopeHash =
@@ -1676,29 +1586,21 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               'chat.send.transport.error',
               'code=${sendResult.code} blocked=${sendResult.blockedByConsensus} deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} message=${sendResult.errorMessage ?? "unknown"}',
             );
-            messenger.showSnackBar(
-              SnackBar(
-                content: Text(
-                  sendResult.errorMessage ??
-                      'Chat transport failed (code ${sendResult.code})',
-                ),
-                duration: const Duration(seconds: 2),
-              ),
-            );
+            setState(() {
+              _chatWorkspaceNotice = sendResult.errorMessage ??
+                  'Chat transport failed (code ${sendResult.code})';
+              _chatWorkspaceNoticeIsError = true;
+            });
             break;
           }
           await _uiLog.log(
             'chat.send.success',
             'peer=${peerHex.substring(0, 8)}.. deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} hash=${shortHash.isEmpty ? "none" : shortHash} source=${_executionSourceInfo(response)}',
           );
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                'Chat message sent: $shortHash',
-              ),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          setState(() {
+            _chatWorkspaceNotice = 'Message sent · $shortHash';
+            _chatWorkspaceNoticeIsError = false;
+          });
           await _refreshCapsuleChatInbox(silentWhenEmpty: true);
           break;
         case PluginHostApiStatus.blocked:
@@ -1709,12 +1611,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
             'chat.send.blocked',
             '$reason source=${_executionSourceInfo(response)}',
           );
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(reason),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          setState(() {
+            _chatWorkspaceNotice = reason;
+            _chatWorkspaceNoticeIsError = true;
+          });
           break;
         case PluginHostApiStatus.rejected:
           final rejectedMessage = _hostRejectedMessage(
@@ -1725,12 +1625,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
             'chat.send.rejected',
             '$rejectedMessage code=${response.errorCode ?? "none"} source=${_executionSourceInfo(response)}',
           );
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(rejectedMessage),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          setState(() {
+            _chatWorkspaceNotice = rejectedMessage;
+            _chatWorkspaceNoticeIsError = true;
+          });
           break;
       }
     } finally {
@@ -1742,45 +1640,161 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     }
   }
 
+  Future<void> _openCapsuleChatWorkspace() async {
+    if (!mounted) return;
+    var initialInboxRefreshStarted = false;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> runAndRefresh(
+              Future<void> Function() action,
+            ) async {
+              final pending = action();
+              setDialogState(() {});
+              await pending;
+              if (dialogContext.mounted) {
+                setDialogState(() {});
+              }
+            }
+
+            if (!initialInboxRefreshStarted) {
+              initialInboxRefreshStarted = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                if (!dialogContext.mounted) return;
+                await runAndRefresh(_refreshCapsuleChatInbox);
+              });
+            }
+
+            return Dialog(
+              insetPadding: const EdgeInsets.all(20),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 760,
+                  maxHeight: 820,
+                ),
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 10, 12),
+                      child: Row(
+                        children: [
+                          const _PluginIconPlate(
+                            icon: Icons.forum_outlined,
+                            accent: Color(0xFFC5A8FF),
+                            glow: Color(0xFF32254D),
+                            size: 38,
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Capsule Chat',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                Text(
+                                  'Plugin workspace',
+                                  style: TextStyle(
+                                    color: Color(0xFF8E98A7),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                            tooltip: 'Close',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(20),
+                        child: _CapsuleChatPanel(
+                          running: _runningChat,
+                          refreshingInbox: _refreshingChatInbox,
+                          lastResponse: _lastChatResponse,
+                          workspaceNotice: _chatWorkspaceNotice,
+                          workspaceNoticeIsError: _chatWorkspaceNoticeIsError,
+                          inbox: _chatInbox,
+                          droppedByConsensus: _chatDroppedByConsensus,
+                          peerController: _chatPeerController,
+                          messageController: _chatMessageController,
+                          onUsePeerPressed: () =>
+                              runAndRefresh(_fillPeerFromConsensus),
+                          onRefreshInboxPressed: () =>
+                              runAndRefresh(_refreshCapsuleChatInbox),
+                          onRunPressed: () => runAndRefresh(_runCapsuleChat),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _refreshCapsuleChatInbox({bool silentWhenEmpty = false}) async {
     if (_refreshingChatInbox) {
       if (!silentWhenEmpty && mounted) {
-        final messenger = ScaffoldMessenger.of(context);
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Inbox refresh already in progress'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        setState(() {
+          _chatWorkspaceNotice = 'Inbox refresh already in progress';
+          _chatWorkspaceNoticeIsError = true;
+        });
       }
       return;
     }
     _refreshingChatInbox = true;
+    if (!silentWhenEmpty && mounted) {
+      setState(() {
+        _chatWorkspaceNotice = 'Fetching inbox...';
+        _chatWorkspaceNoticeIsError = false;
+      });
+    }
     try {
       if (!mounted) return;
+      final stopwatch = Stopwatch()..start();
       final result = await _chatDelivery.receiveAndFilter();
+      stopwatch.stop();
       await _uiLog.log(
         'chat.fetch.result',
-        'code=${result.code} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus}'
+        'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus}'
             '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
       );
       if (!mounted) return;
       if (result.code < 0) {
-        final messenger = ScaffoldMessenger.of(context);
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              result.errorMessage ??
-                  'Chat receive failed (code ${result.code})',
-            ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        setState(() {
+          _chatWorkspaceNotice = result.errorMessage ??
+              'Chat receive failed (code ${result.code})';
+          _chatWorkspaceNoticeIsError = true;
+        });
         return;
       }
 
+      final hasUpdates = result.messages.isNotEmpty ||
+          result.tradeSignals.isNotEmpty ||
+          result.executionDecisions.isNotEmpty ||
+          result.executionReceipts.isNotEmpty;
+      final droppedNote = result.droppedByConsensus > 0
+          ? ' · dropped ${result.droppedByConsensus} by consensus'
+          : '';
+      final updateNotice =
+          'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}, cmd +${result.executionDecisions.length}, receipt +${result.executionReceipts.length}$droppedNote';
       setState(() {
         final byId = <String, CapsuleChatInboxMessage>{
           for (final message in _chatInbox) message.id: message,
@@ -1791,42 +1805,13 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         final merged = byId.values.toList()
           ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
 
-        final tradeById = <String, CapsuleTradeSignalInboxMessage>{
-          for (final signal in _tradeSignalInbox) signal.id: signal,
-        };
-        for (final signal in result.tradeSignals) {
-          tradeById[signal.id] = signal;
-        }
-        final mergedSignals = tradeById.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-
         _chatDroppedByConsensus = result.droppedByConsensus;
         _chatInbox = List<CapsuleChatInboxMessage>.unmodifiable(merged);
-        _tradeSignalInbox =
-            List<CapsuleTradeSignalInboxMessage>.unmodifiable(mergedSignals);
+        if (!silentWhenEmpty || hasUpdates) {
+          _chatWorkspaceNotice = updateNotice;
+          _chatWorkspaceNoticeIsError = false;
+        }
       });
-
-      if (result.messages.isEmpty &&
-          result.tradeSignals.isEmpty &&
-          result.executionDecisions.isEmpty &&
-          result.executionReceipts.isEmpty &&
-          silentWhenEmpty) {
-        return;
-      }
-
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      final droppedNote = result.droppedByConsensus > 0
-          ? ' · dropped ${result.droppedByConsensus} by consensus'
-          : '';
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}, cmd +${result.executionDecisions.length}, receipt +${result.executionReceipts.length}$droppedNote',
-          ),
-          duration: const Duration(seconds: 2),
-        ),
-      );
     } finally {
       _refreshingChatInbox = false;
     }
@@ -1834,7 +1819,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final content = LayoutBuilder(
       builder: (context, constraints) {
         final horizontalPadding = constraints.maxWidth < 600
@@ -1858,16 +1842,31 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _StatusBanner(theme: theme),
-                    const SizedBox(height: 20),
+                    _PluginScreenOverview(
+                      installedCount: _installed.length,
+                      catalogCount: _sourceCatalogSnapshot?.entries.length ?? 0,
+                      loading: _loading || _loadingSourceCatalog,
+                    ),
+                    const SizedBox(height: 16),
                     _InstalledSection(
                       loading: _loading,
                       installing: _installing,
                       installed: _installed,
                       onInstallPressed: _installPlugin,
                       onRemovePressed: _removePlugin,
+                      onOpenWorkspacePressed: (record) {
+                        switch (record.pluginId) {
+                          case PluginHostApiService.bingxFuturesTradingPluginId:
+                            return () => Navigator.of(context)
+                                .pushNamed('/trading_drone');
+                          case PluginHostApiService.capsuleChatPluginId:
+                            return _openCapsuleChatWorkspace;
+                          default:
+                            return null;
+                        }
+                      },
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     _SourceCatalogSection(
                       loading: _loadingSourceCatalog,
                       sourceName: _sourceCatalogSnapshot?.sourceName,
@@ -1879,203 +1878,173 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                       onRefreshPressed: _reloadSourceCatalog,
                       onInstallPressed: _installFromSource,
                     ),
-                    const SizedBox(height: 20),
-                    _TradingDroneLaunchPanel(
-                      onOpenPressed: () =>
-                          Navigator.of(context).pushNamed('/trading_drone'),
-                    ),
-                    const SizedBox(height: 20),
-                    const _SectionTitle(
-                      title: 'Plugin Host',
-                      subtitle:
-                          'A reserved shell for future wasm adapters and transport extensions.',
-                    ),
-                    const SizedBox(height: 10),
-                    _HostPanel(snapshot: _guardSnapshot),
-                    if (_showLegacyBingxIntentPanels) ...[
-                      const SizedBox(height: 20),
-                      _SectionTitle(
-                        title: 'BingX Futures Intent',
-                        subtitle:
-                            'Deterministic futures intent + optional signed execution on BingX Futures test/live endpoints.',
-                      ),
-                      const SizedBox(height: 10),
-                      _BingxIntentPanel(
-                        running: _runningBingx,
-                        broadcastingSignal: _broadcastingBingxSignal,
-                        canBroadcastSignal: _lastBingxResponse?.status ==
-                            PluginHostApiStatus.executed,
-                        lastResponse: _lastBingxResponse,
-                        peerController: _bingxPeerController,
-                        symbolController: _bingxSymbolController,
-                        quantityController: _bingxQuantityController,
-                        limitPriceController: _bingxLimitPriceController,
-                        zoneLowController: _bingxZoneLowController,
-                        zoneHighController: _bingxZoneHighController,
-                        manualEntryPriceController:
-                            _bingxManualEntryPriceController,
-                        triggerPriceController: _bingxTriggerPriceController,
-                        stopLossController: _bingxStopLossController,
-                        takeProfitController: _bingxTakeProfitController,
-                        strategyTagController: _bingxStrategyTagController,
-                        selectedSide: _bingxSide,
-                        selectedOrderType: _bingxOrderType,
-                        selectedTimeInForce: _bingxTimeInForce,
-                        selectedEntryMode: _bingxEntryMode,
-                        selectedZoneSide: _bingxZoneSide,
-                        selectedZonePriceRule: _bingxZonePriceRule,
-                        onUsePeerPressed: _fillBingxPeerFromConsensus,
-                        onRunPressed: _runBingxIntent,
-                        onBroadcastSignalPressed: _broadcastLastBingxIntent,
-                        onSideChanged: (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _bingxSide = value;
-                            if (_bingxEntryMode == 'zone_pending') {
-                              _bingxZoneSide =
-                                  value == 'buy' ? 'buyside' : 'sellside';
-                            }
-                          });
-                        },
-                        onOrderTypeChanged: (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _bingxOrderType = value;
-                          });
-                        },
-                        onTimeInForceChanged: (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _bingxTimeInForce = value;
-                          });
-                        },
-                        onEntryModeChanged: (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _bingxEntryMode = value;
-                            if (_bingxEntryMode == 'zone_pending') {
-                              _bingxOrderType = 'limit';
-                              _bingxZoneSide =
-                                  _bingxSide == 'buy' ? 'buyside' : 'sellside';
-                            }
-                          });
-                        },
-                        onZoneSideChanged: (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _bingxZoneSide = value;
-                          });
-                        },
-                        onZonePriceRuleChanged: (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _bingxZonePriceRule = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      _BingxExecutionPanel(
-                        savingCredentials: _savingBingxCredentials,
-                        readingCurrentSettings: _readingBingxCurrentSettings,
-                        executing: _executingBingxOrder,
-                        switchingLeverage: _switchingBingxLeverage,
-                        switchingMarginType: _switchingBingxMarginType,
-                        canExecuteIntent: _lastBingxResponse?.status ==
-                            PluginHostApiStatus.executed,
-                        useTestOrderEndpoint: _bingxUseTestOrderEndpoint,
-                        apiKeyController: _bingxApiKeyController,
-                        apiSecretController: _bingxApiSecretController,
-                        obscureApiSecret: _obscureBingxApiSecret,
-                        leverageController: _bingxLeverageController,
-                        leverageSide: _bingxLeverageSide,
-                        marginType: _bingxMarginType,
-                        lastExecution: _lastBingxExchangeResult,
-                        lastLeverageSwitch: _lastBingxLeverageResult,
-                        lastMarginTypeSwitch: _lastBingxMarginTypeResult,
-                        lastLeverageRead: _lastBingxLeverageReadResult,
-                        lastMarginTypeRead: _lastBingxMarginTypeReadResult,
-                        onUseTestEndpointChanged: (value) {
-                          setState(() {
-                            _bingxUseTestOrderEndpoint = value;
-                          });
-                        },
-                        onLeverageSideChanged: (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _bingxLeverageSide = value;
-                          });
-                        },
-                        onMarginTypeChanged: (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _bingxMarginType = value;
-                          });
-                        },
-                        onToggleApiSecretVisibility: () {
-                          setState(() {
-                            _obscureBingxApiSecret = !_obscureBingxApiSecret;
-                          });
-                        },
-                        onSaveCredentialsPressed: _saveBingxCredentials,
-                        onFetchCurrentPressed: _fetchBingxCurrentSettings,
-                        onExecutePressed: _executeLastBingxIntentOnExchange,
-                        onSwitchLeveragePressed: _switchBingxLeverage,
-                        onSwitchMarginTypePressed: _switchBingxMarginType,
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    _BingxSignalInboxPanel(
-                      signals: _tradeSignalInbox,
-                      onRefreshPressed: _refreshCapsuleChatInbox,
-                      onRepeatPressed: _repeatTradeSignalAsDraft,
-                    ),
-                    const SizedBox(height: 20),
-                    const _SectionTitle(
-                      title: 'Capsule Chat',
-                      subtitle:
-                          'Pre-host deterministic envelope call over plugin API boundary.',
-                    ),
-                    const SizedBox(height: 10),
-                    _CapsuleChatPanel(
-                      running: _runningChat,
-                      lastResponse: _lastChatResponse,
-                      inbox: _chatInbox,
-                      droppedByConsensus: _chatDroppedByConsensus,
-                      peerController: _chatPeerController,
-                      messageController: _chatMessageController,
-                      onUsePeerPressed: _fillPeerFromConsensus,
-                      onRefreshInboxPressed: _refreshCapsuleChatInbox,
-                      onRunPressed: _runCapsuleChat,
-                    ),
-                    const SizedBox(height: 20),
-                    const _SectionTitle(
-                      title: 'Transport Plugins',
-                      subtitle:
-                          'Current transport surface, kept narrow until the wasm host is wired in.',
-                    ),
-                    const SizedBox(height: 12),
-                    _PluginGrid(
-                      maxColumns: 3,
-                      children: _transportPlugins
-                          .map(
-                            (plugin) => _CatalogPluginTile(plugin: plugin),
-                          )
-                          .toList(),
-                    ),
-                    const SizedBox(height: 20),
-                    const _SectionTitle(
-                      title: 'Boundary Rules',
-                      subtitle:
-                          'The plugin layer stays useful only if it remains narrow, deterministic, and boring.',
-                    ),
-                    const SizedBox(height: 12),
-                    _PluginGrid(
-                      maxColumns: 3,
-                      children: _boundaryRules
-                          .map(
-                            (rule) => _RuleTile(rule: rule),
-                          )
-                          .toList(),
+                    const SizedBox(height: 16),
+                    _AdvancedPluginTools(
+                      children: [
+                        if (_showLegacyBingxIntentPanels) ...[
+                          _SectionTitle(
+                            title: 'BingX Futures Intent',
+                            subtitle:
+                                'Deterministic futures intent + optional signed execution on BingX Futures test/live endpoints.',
+                          ),
+                          const SizedBox(height: 10),
+                          _BingxIntentPanel(
+                            running: _runningBingx,
+                            broadcastingSignal: _broadcastingBingxSignal,
+                            canBroadcastSignal: _lastBingxResponse?.status ==
+                                PluginHostApiStatus.executed,
+                            lastResponse: _lastBingxResponse,
+                            peerController: _bingxPeerController,
+                            symbolController: _bingxSymbolController,
+                            quantityController: _bingxQuantityController,
+                            limitPriceController: _bingxLimitPriceController,
+                            zoneLowController: _bingxZoneLowController,
+                            zoneHighController: _bingxZoneHighController,
+                            manualEntryPriceController:
+                                _bingxManualEntryPriceController,
+                            triggerPriceController:
+                                _bingxTriggerPriceController,
+                            stopLossController: _bingxStopLossController,
+                            takeProfitController: _bingxTakeProfitController,
+                            strategyTagController: _bingxStrategyTagController,
+                            selectedSide: _bingxSide,
+                            selectedOrderType: _bingxOrderType,
+                            selectedTimeInForce: _bingxTimeInForce,
+                            selectedEntryMode: _bingxEntryMode,
+                            selectedZoneSide: _bingxZoneSide,
+                            selectedZonePriceRule: _bingxZonePriceRule,
+                            onUsePeerPressed: _fillBingxPeerFromConsensus,
+                            onRunPressed: _runBingxIntent,
+                            onBroadcastSignalPressed: _broadcastLastBingxIntent,
+                            onSideChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _bingxSide = value;
+                                if (_bingxEntryMode == 'zone_pending') {
+                                  _bingxZoneSide =
+                                      value == 'buy' ? 'buyside' : 'sellside';
+                                }
+                              });
+                            },
+                            onOrderTypeChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _bingxOrderType = value;
+                              });
+                            },
+                            onTimeInForceChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _bingxTimeInForce = value;
+                              });
+                            },
+                            onEntryModeChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _bingxEntryMode = value;
+                                if (_bingxEntryMode == 'zone_pending') {
+                                  _bingxOrderType = 'limit';
+                                  _bingxZoneSide = _bingxSide == 'buy'
+                                      ? 'buyside'
+                                      : 'sellside';
+                                }
+                              });
+                            },
+                            onZoneSideChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _bingxZoneSide = value;
+                              });
+                            },
+                            onZonePriceRuleChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _bingxZonePriceRule = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 10),
+                          _BingxExecutionPanel(
+                            savingCredentials: _savingBingxCredentials,
+                            readingCurrentSettings:
+                                _readingBingxCurrentSettings,
+                            executing: _executingBingxOrder,
+                            switchingLeverage: _switchingBingxLeverage,
+                            switchingMarginType: _switchingBingxMarginType,
+                            canExecuteIntent: _lastBingxResponse?.status ==
+                                PluginHostApiStatus.executed,
+                            useTestOrderEndpoint: _bingxUseTestOrderEndpoint,
+                            apiKeyController: _bingxApiKeyController,
+                            apiSecretController: _bingxApiSecretController,
+                            obscureApiSecret: _obscureBingxApiSecret,
+                            leverageController: _bingxLeverageController,
+                            leverageSide: _bingxLeverageSide,
+                            marginType: _bingxMarginType,
+                            lastExecution: _lastBingxExchangeResult,
+                            lastLeverageSwitch: _lastBingxLeverageResult,
+                            lastMarginTypeSwitch: _lastBingxMarginTypeResult,
+                            lastLeverageRead: _lastBingxLeverageReadResult,
+                            lastMarginTypeRead: _lastBingxMarginTypeReadResult,
+                            onUseTestEndpointChanged: (value) {
+                              setState(() {
+                                _bingxUseTestOrderEndpoint = value;
+                              });
+                            },
+                            onLeverageSideChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _bingxLeverageSide = value;
+                              });
+                            },
+                            onMarginTypeChanged: (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _bingxMarginType = value;
+                              });
+                            },
+                            onToggleApiSecretVisibility: () {
+                              setState(() {
+                                _obscureBingxApiSecret =
+                                    !_obscureBingxApiSecret;
+                              });
+                            },
+                            onSaveCredentialsPressed: _saveBingxCredentials,
+                            onFetchCurrentPressed: _fetchBingxCurrentSettings,
+                            onExecutePressed: _executeLastBingxIntentOnExchange,
+                            onSwitchLeveragePressed: _switchBingxLeverage,
+                            onSwitchMarginTypePressed: _switchBingxMarginType,
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        const _SectionTitle(
+                          title: 'Transport',
+                          subtitle: 'Built-in transport available to Hivra.',
+                        ),
+                        const SizedBox(height: 12),
+                        _PluginGrid(
+                          maxColumns: 3,
+                          children: _transportPlugins
+                              .map(
+                                (plugin) => _CatalogPluginTile(plugin: plugin),
+                              )
+                              .toList(),
+                        ),
+                        const SizedBox(height: 20),
+                        const _SectionTitle(
+                          title: 'Boundary Rules',
+                          subtitle:
+                              'The safety constraints applied to every plugin.',
+                        ),
+                        const SizedBox(height: 12),
+                        _PluginGrid(
+                          maxColumns: 3,
+                          children: _boundaryRules
+                              .map(
+                                (rule) => _RuleTile(rule: rule),
+                              )
+                              .toList(),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -2097,12 +2066,188 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   }
 }
 
+class _PluginScreenOverview extends StatelessWidget {
+  final int installedCount;
+  final int catalogCount;
+  final bool loading;
+
+  const _PluginScreenOverview({
+    required this.installedCount,
+    required this.catalogCount,
+    required this.loading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF151922),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF292F3A)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final description = Row(
+            children: [
+              const _PluginIconPlate(
+                icon: Icons.extension_rounded,
+                accent: Color(0xFFC5A8FF),
+                glow: Color(0xFF32254D),
+                size: 42,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Extend your capsule',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Install packages, open plugin workspaces and inspect runtime status.',
+                      style: TextStyle(
+                        color: Colors.grey.shade400,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+          final metrics = Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _OverviewMetric(
+                icon: Icons.inventory_2_outlined,
+                label: loading ? 'Loading' : '$installedCount installed',
+              ),
+              _OverviewMetric(
+                icon: Icons.cloud_download_outlined,
+                label: loading ? 'Catalog' : '$catalogCount available',
+              ),
+              const _OverviewMetric(
+                icon: Icons.shield_outlined,
+                label: 'Sandboxed',
+                accent: Color(0xFF72D98B),
+              ),
+            ],
+          );
+
+          if (constraints.maxWidth < 700) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                description,
+                const SizedBox(height: 14),
+                metrics,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: description),
+              const SizedBox(width: 24),
+              metrics,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _OverviewMetric extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? accent;
+
+  const _OverviewMetric({
+    required this.icon,
+    required this.label,
+    this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = accent ?? const Color(0xFFB8C0CD);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10141B),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdvancedPluginTools extends StatelessWidget {
+  final List<Widget> children;
+
+  const _AdvancedPluginTools({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF12161D),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF292F38)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(18, 2, 18, 18),
+          leading: const Icon(
+            Icons.tune_rounded,
+            color: Color(0xFF9FA8B6),
+          ),
+          title: const Text(
+            'Advanced tools',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: const Text(
+            'Host diagnostics, transport and boundary details',
+            style: TextStyle(color: Color(0xFF8E98A7)),
+          ),
+          children: children,
+        ),
+      ),
+    );
+  }
+}
+
 class _InstalledSection extends StatelessWidget {
   final bool loading;
   final bool installing;
   final List<WasmPluginRecord> installed;
   final Future<void> Function() onInstallPressed;
   final Future<void> Function(WasmPluginRecord record) onRemovePressed;
+  final VoidCallback? Function(WasmPluginRecord record) onOpenWorkspacePressed;
 
   const _InstalledSection({
     required this.loading,
@@ -2110,6 +2255,7 @@ class _InstalledSection extends StatelessWidget {
     required this.installed,
     required this.onInstallPressed,
     required this.onRemovePressed,
+    required this.onOpenWorkspacePressed,
   });
 
   @override
@@ -2117,13 +2263,9 @@ class _InstalledSection extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: <Color>[Color(0xFF141922), Color(0xFF0F141B)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: const Color(0xFF12161D),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF2A3340)),
+        border: Border.all(color: const Color(0xFF292F38)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2134,7 +2276,7 @@ class _InstalledSection extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Installed',
+                    'Installed plugins',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -2142,7 +2284,7 @@ class _InstalledSection extends StatelessWidget {
                   ),
                   SizedBox(height: 4),
                   Text(
-                    'Packages stored locally and ready for a future wasm host.',
+                    'Packages available to this device.',
                     style: TextStyle(
                       color: Color(0xFF9CA7B5),
                       height: 1.35,
@@ -2158,8 +2300,8 @@ class _InstalledSection extends StatelessWidget {
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.add_box_outlined),
-                label: Text(installing ? 'Installing' : 'Install package'),
+                    : const Icon(Icons.add_rounded),
+                label: Text(installing ? 'Installing' : 'Add package'),
               );
 
               if (constraints.maxWidth < 560) {
@@ -2194,6 +2336,7 @@ class _InstalledSection extends StatelessWidget {
                     (record) => _InstalledPluginTile(
                       record: record,
                       onRemovePressed: () => onRemovePressed(record),
+                      onOpenWorkspacePressed: onOpenWorkspacePressed(record),
                     ),
                   )
                   .toList(),
@@ -2231,13 +2374,9 @@ class _SourceCatalogSection extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: <Color>[Color(0xFF151A23), Color(0xFF10151D)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: const Color(0xFF12161D),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF2A3340)),
+        border: Border.all(color: const Color(0xFF292F38)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2248,7 +2387,7 @@ class _SourceCatalogSection extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Source Catalog',
+                    'Discover plugins',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -2257,8 +2396,8 @@ class _SourceCatalogSection extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     sourceName == null
-                        ? 'External plugin source (separate repo).'
-                        : '$sourceName (${sourceId ?? '-'})',
+                        ? 'Packages published by the configured source.'
+                        : sourceName!,
                     style: const TextStyle(
                       color: Color(0xFF9CA7B5),
                       height: 1.35,
@@ -2327,54 +2466,10 @@ class _SourceCatalogSection extends StatelessWidget {
               maxColumns: 3,
               children: entries.map((entry) {
                 final busy = installingEntryIds.contains(entry.id);
-                return Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF11161D),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF27313E)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        entry.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${entry.pluginId} · v${entry.version}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF93A0B1),
-                          height: 1.35,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton.icon(
-                          onPressed:
-                              busy ? null : () => onInstallPressed(entry),
-                          icon: busy
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.download_rounded),
-                          label: Text(busy ? 'Installing' : 'Install'),
-                        ),
-                      ),
-                    ],
-                  ),
+                return _CatalogEntryTile(
+                  entry: entry,
+                  busy: busy,
+                  onInstallPressed: () => onInstallPressed(entry),
                 );
               }).toList(),
             ),
@@ -2417,63 +2512,89 @@ class _EmptyInstalledState extends StatelessWidget {
   }
 }
 
-class _TradingDroneLaunchPanel extends StatelessWidget {
-  final VoidCallback onOpenPressed;
+class _CatalogEntryTile extends StatelessWidget {
+  final WasmPluginSourceCatalogEntry entry;
+  final bool busy;
+  final VoidCallback onInstallPressed;
 
-  const _TradingDroneLaunchPanel({
-    required this.onOpenPressed,
+  const _CatalogEntryTile({
+    required this.entry,
+    required this.busy,
+    required this.onInstallPressed,
   });
 
   @override
   Widget build(BuildContext context) {
+    final accent = _InstalledPluginTile._accentForName(entry.displayName);
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: <Color>[Color(0xFF171D27), Color(0xFF101722)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF2A3340)),
+        color: const Color(0xFF171B23),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF2B323D)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _PluginIconPlate(
-            icon: Icons.smart_toy_outlined,
-            accent: Color(0xFFFFC76A),
-            glow: Color(0xFF3E2D10),
-            size: 34,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _PluginIconPlate(
+                icon: Icons.extension_rounded,
+                accent: accent,
+                glow: accent.withAlpha(25),
+                size: 36,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.displayName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      entry.pluginId,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF8E98A7),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Trading Drone',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'BingX intent/execution moved to a dedicated workspace screen to keep plugin host focused and reduce UI layer coupling.',
-                  style: TextStyle(
-                    color: Color(0xFF9CA7B5),
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: onOpenPressed,
-                  icon: const Icon(Icons.open_in_new_rounded),
-                  label: const Text('Open Trading Drone'),
-                ),
-              ],
-            ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _OverviewMetric(
+                icon: Icons.sell_outlined,
+                label: 'v${entry.version}',
+              ),
+              const Spacer(),
+              FilledButton.tonalIcon(
+                onPressed: busy ? null : onInstallPressed,
+                icon: busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_rounded, size: 18),
+                label: Text(busy ? 'Installing' : 'Install'),
+              ),
+            ],
           ),
         ],
       ),
@@ -2487,10 +2608,12 @@ class _InstalledPluginTile extends StatelessWidget {
 
   final WasmPluginRecord record;
   final Future<void> Function() onRemovePressed;
+  final VoidCallback? onOpenWorkspacePressed;
 
   const _InstalledPluginTile({
     required this.record,
     required this.onRemovePressed,
+    required this.onOpenWorkspacePressed,
   });
 
   @override
@@ -2504,139 +2627,171 @@ class _InstalledPluginTile extends StatelessWidget {
     final runtimeEntryExport = record.runtimeEntryExport?.trim() ?? '';
     final abiMatches = runtimeAbi == _requiredRuntimeAbi;
     final entryMatches = runtimeEntryExport == _requiredRuntimeEntryExport;
-    final runtimePhaseLabel = !isZipPackage
-        ? 'Phase: raw_wasm'
-        : (abiMatches && entryMatches ? 'Phase: v1.1 ABI' : 'Phase: check ABI');
+    final ready = !isZipPackage || (abiMatches && entryMatches);
 
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: <Color>[
-            accent.withAlpha(34),
-            const Color(0xFF141A21),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: accent.withAlpha(70)),
+        color: const Color(0xFF171B23),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF2B323D)),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _PluginIconPlate(
-                icon: _iconForFileName(record.originalFileName),
-                accent: accent,
-                glow: accent.withAlpha(36),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      record.originalFileName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF9AA7B8),
-                      ),
-                    ),
-                  ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 8, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _PluginIconPlate(
+                  icon: _iconForFileName(record.originalFileName),
+                  accent: accent,
+                  glow: accent.withAlpha(30),
+                  size: 38,
                 ),
-              ),
-              IconButton(
-                onPressed: onRemovePressed,
-                icon: const Icon(Icons.delete_outline_rounded),
-                tooltip: 'Remove plugin',
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        record.pluginId?.trim().isNotEmpty == true
+                            ? record.pluginId!
+                            : record.originalFileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF8E98A7),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: onRemovePressed,
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  tooltip: 'Remove plugin',
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (record.pluginId != null && record.pluginId!.isNotEmpty)
-                _InfoChip(
-                  icon: Icons.badge_outlined,
-                  label: record.pluginId!,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _StatusPill(
+                        label: ready ? 'Ready' : 'Needs attention',
+                        accent: ready
+                            ? const Color(0xFF75D98A)
+                            : const Color(0xFFFFA06B),
+                      ),
+                      if (record.pluginVersion?.trim().isNotEmpty == true)
+                        _OverviewMetric(
+                          icon: Icons.sell_outlined,
+                          label: 'v${record.pluginVersion}',
+                        ),
+                    ],
+                  ),
                 ),
-              _InfoChip(
-                icon: Icons.account_tree_outlined,
-                label: runtimePhaseLabel,
+                if (onOpenWorkspacePressed != null) ...[
+                  const SizedBox(width: 10),
+                  FilledButton.tonalIcon(
+                    onPressed: ready ? onOpenWorkspacePressed : null,
+                    icon: const Icon(Icons.open_in_new_rounded, size: 17),
+                    label: const Text('Open'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              tilePadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              title: const Text(
+                'Technical details',
+                style: TextStyle(
+                  color: Color(0xFFAAB3C0),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-              if (record.contractKind != null &&
-                  record.contractKind!.isNotEmpty)
-                _InfoChip(
-                  icon: Icons.gavel_outlined,
-                  label: record.contractKind!,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _InfoChip(
+                        icon: Icons.inventory_2_outlined,
+                        label:
+                            '${record.packageKind.toUpperCase()} · ${_formatBytes(record.sizeBytes)}',
+                      ),
+                      _InfoChip(
+                        icon: Icons.schedule_rounded,
+                        label: _formatInstalledAt(record.installedAtIso),
+                      ),
+                      if (record.contractKind?.trim().isNotEmpty == true)
+                        _InfoChip(
+                          icon: Icons.gavel_outlined,
+                          label: record.contractKind!,
+                        ),
+                      if (isZipPackage)
+                        _InfoChip(
+                          icon: abiMatches
+                              ? Icons.check_circle_outline_rounded
+                              : Icons.error_outline_rounded,
+                          label:
+                              runtimeAbi.isEmpty ? 'ABI missing' : runtimeAbi,
+                          accent: abiMatches
+                              ? const Color(0xFF75D98A)
+                              : const Color(0xFFFF8A7A),
+                        ),
+                      if (isZipPackage)
+                        _InfoChip(
+                          icon: entryMatches
+                              ? Icons.check_circle_outline_rounded
+                              : Icons.error_outline_rounded,
+                          label: runtimeEntryExport.isEmpty
+                              ? 'Entry missing'
+                              : runtimeEntryExport,
+                          accent: entryMatches
+                              ? const Color(0xFF75D98A)
+                              : const Color(0xFFFF8A7A),
+                        ),
+                      if (record.capabilities.isNotEmpty)
+                        _InfoChip(
+                          icon: Icons.verified_user_outlined,
+                          label: '${record.capabilities.length} capabilities',
+                        ),
+                    ],
+                  ),
                 ),
-              if (isZipPackage)
-                _InfoChip(
-                  icon: Icons.integration_instructions_outlined,
-                  label:
-                      runtimeAbi.isEmpty ? 'ABI: missing' : 'ABI: $runtimeAbi',
-                ),
-              if (isZipPackage)
-                _InfoChip(
-                  icon: Icons.login_rounded,
-                  label: runtimeEntryExport.isEmpty
-                      ? 'Entry: missing'
-                      : 'Entry: $runtimeEntryExport',
-                ),
-              if (isZipPackage)
-                _InfoChip(
-                  icon: abiMatches
-                      ? Icons.check_circle_outline_rounded
-                      : Icons.error_outline_rounded,
-                  label: abiMatches ? 'ABI ok' : 'ABI mismatch',
-                  accent: abiMatches
-                      ? const Color(0xFF75D98A)
-                      : const Color(0xFFFF8A7A),
-                ),
-              if (isZipPackage)
-                _InfoChip(
-                  icon: entryMatches
-                      ? Icons.check_circle_outline_rounded
-                      : Icons.error_outline_rounded,
-                  label: entryMatches ? 'Entry ok' : 'Entry mismatch',
-                  accent: entryMatches
-                      ? const Color(0xFF75D98A)
-                      : const Color(0xFFFF8A7A),
-                ),
-              if (record.capabilities.isNotEmpty)
-                _InfoChip(
-                  icon: Icons.verified_user_outlined,
-                  label: '${record.capabilities.length} capabilities',
-                ),
-              _InfoChip(
-                icon: Icons.inventory_2_outlined,
-                label: record.packageKind.toUpperCase(),
-              ),
-              _InfoChip(
-                icon: Icons.memory_rounded,
-                label: _formatBytes(record.sizeBytes),
-              ),
-              _InfoChip(
-                icon: Icons.schedule_rounded,
-                label: _formatInstalledAt(record.installedAtIso),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -2680,6 +2835,10 @@ class _InstalledPluginTile extends StatelessWidget {
 
   static Color _accentForName(String name) {
     final lower = name.toLowerCase();
+    if (lower.contains('bingx') || lower.contains('trading')) {
+      return const Color(0xFFFFC76A);
+    }
+    if (lower.contains('chat')) return const Color(0xFFC5A8FF);
     if (lower.contains('matrix')) return const Color(0xFFFFB347);
     if (lower.contains('bluetooth') || lower.contains('ble')) {
       return const Color(0xFF69C7FF);
@@ -2693,6 +2852,10 @@ class _InstalledPluginTile extends StatelessWidget {
 
   static IconData _iconForFileName(String fileName) {
     final lower = fileName.toLowerCase();
+    if (lower.contains('bingx') || lower.contains('trading')) {
+      return Icons.candlestick_chart_rounded;
+    }
+    if (lower.contains('chat')) return Icons.forum_outlined;
     if (lower.contains('matrix')) return Icons.grid_view_rounded;
     if (lower.contains('bluetooth') || lower.contains('ble')) {
       return Icons.bluetooth_rounded;
@@ -2703,88 +2866,6 @@ class _InstalledPluginTile extends StatelessWidget {
     if (lower.contains('nostr')) return Icons.hub_rounded;
     if (lower.endsWith('.zip')) return Icons.archive_rounded;
     return Icons.extension_rounded;
-  }
-}
-
-class _StatusBanner extends StatelessWidget {
-  final ThemeData theme;
-
-  const _StatusBanner({required this.theme});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: <Color>[Color(0xFF1D2430), Color(0xFF151A23)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFF364559)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: <Color>[Color(0xFF253447), Color(0xFF17222F)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.auto_awesome_mosaic_rounded,
-              color: Color(0xFF8BC8FF),
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF46371A),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Text(
-                    'Host pending',
-                    style: TextStyle(
-                      color: Color(0xFFFFC76A),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'WASM plugins have a home now, but not a backdoor.',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'We can stage packages, inspect them, and shape the shell before execution exists. That keeps the plugin layer modular instead of magical.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFFBEC8D4),
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -2818,97 +2899,6 @@ class _SectionTitle extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _HostPanel extends StatelessWidget {
-  final PluginExecutionGuardSnapshot snapshot;
-
-  const _HostPanel({required this.snapshot});
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = switch (snapshot.state) {
-      ConsensusGuardState.ready => const Color(0xFF75D98A),
-      ConsensusGuardState.partial => const Color(0xFFFFC76A),
-      ConsensusGuardState.blocked => const Color(0xFFFF8A7A),
-      ConsensusGuardState.pending => const Color(0xFF75D2FF),
-    };
-    final title = switch (snapshot.state) {
-      ConsensusGuardState.ready => 'Consensus guard ready',
-      ConsensusGuardState.partial => 'Consensus guard partially blocked',
-      ConsensusGuardState.blocked => 'Consensus guard blocked',
-      ConsensusGuardState.pending => 'Runtime boundary reserved',
-    };
-    final summary = switch (snapshot.state) {
-      ConsensusGuardState.ready =>
-        'Read-only precondition checks found ${snapshot.readyPairCount} signable pairwise path(s). Execution is still disabled, but the guard boundary is now alive.',
-      ConsensusGuardState.partial =>
-        'Some pairwise paths are signable and some are blocked. Ready: ${snapshot.readyPairCount}, blocked: ${snapshot.blockedPairCount}.',
-      ConsensusGuardState.blocked =>
-        'Pairwise consensus checks are now wired into the future host boundary, but current ledger truth is blocking execution for ${snapshot.blockedPairCount} pair(s).',
-      ConsensusGuardState.pending =>
-        'Plugins are not mounted yet. This screen exists to keep the boundary explicit while transport, ledger and policy remain inside the current core stack.',
-    };
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF121821),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF2B3846)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _PluginIconPlate(
-            icon: Icons.shield_moon_rounded,
-            accent: accent,
-            glow: accent.withAlpha(20),
-            size: 34,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  summary,
-                  style: const TextStyle(
-                    color: Color(0xFF9FAABA),
-                    height: 1.4,
-                  ),
-                ),
-                if (snapshot.blockingFacts.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: snapshot.blockingFacts
-                        .take(3)
-                        .map(
-                          (fact) => _InfoChip(
-                            icon: Icons.lock_outline_rounded,
-                            label: fact.label,
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -4008,131 +3998,12 @@ class _BingxExecutionPanel extends StatelessWidget {
   }
 }
 
-class _BingxSignalInboxPanel extends StatelessWidget {
-  final List<CapsuleTradeSignalInboxMessage> signals;
-  final Future<void> Function({bool silentWhenEmpty}) onRefreshPressed;
-  final Future<void> Function(CapsuleTradeSignalInboxMessage signal)
-      onRepeatPressed;
-
-  const _BingxSignalInboxPanel({
-    required this.signals,
-    required this.onRefreshPressed,
-    required this.onRepeatPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111620),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF2A3342)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'BingX Signal Inbox',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () => onRefreshPressed(silentWhenEmpty: false),
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Refresh'),
-              ),
-            ],
-          ),
-          if (signals.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text(
-                'No trade signals yet.',
-                style: TextStyle(color: Color(0xFF93A0B3)),
-              ),
-            )
-          else
-            ...signals.reversed.take(10).map(
-                  (signal) => Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: _BingxSignalInboxRow(
-                      signal: signal,
-                      onRepeatPressed: () => onRepeatPressed(signal),
-                    ),
-                  ),
-                ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BingxSignalInboxRow extends StatelessWidget {
-  final CapsuleTradeSignalInboxMessage signal;
-  final VoidCallback onRepeatPressed;
-
-  const _BingxSignalInboxRow({
-    required this.signal,
-    required this.onRepeatPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final shortSignalId = signal.signalId.length <= 14
-        ? signal.signalId
-        : '${signal.signalId.substring(0, 14)}..';
-    final shortIntentHash = signal.intentHashHex.length <= 12
-        ? signal.intentHashHex
-        : '${signal.intentHashHex.substring(0, 12)}..';
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0D131C),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF263244)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${signal.symbol} · ${signal.side.toUpperCase()} · ${signal.orderType.toUpperCase()}',
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Qty ${signal.quantityDecimal} · mode ${signal.entryMode} · from ${signal.fromHex.substring(0, 8)}..',
-            style: const TextStyle(color: Color(0xFF9AA7BA), fontSize: 12),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Signal $shortSignalId · intent $shortIntentHash',
-            style: const TextStyle(color: Color(0xFF8093A9), fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: OutlinedButton.icon(
-              onPressed: onRepeatPressed,
-              icon: const Icon(Icons.copy_all_rounded),
-              label: const Text('Repeat as draft'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _CapsuleChatPanel extends StatelessWidget {
   final bool running;
+  final bool refreshingInbox;
   final PluginHostApiResponse? lastResponse;
+  final String? workspaceNotice;
+  final bool workspaceNoticeIsError;
   final List<CapsuleChatInboxMessage> inbox;
   final int droppedByConsensus;
   final TextEditingController peerController;
@@ -4143,7 +4014,10 @@ class _CapsuleChatPanel extends StatelessWidget {
 
   const _CapsuleChatPanel({
     required this.running,
+    required this.refreshingInbox,
     required this.lastResponse,
+    required this.workspaceNotice,
+    required this.workspaceNoticeIsError,
     required this.inbox,
     required this.droppedByConsensus,
     required this.peerController,
@@ -4197,6 +4071,52 @@ class _CapsuleChatPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (workspaceNotice != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: workspaceNoticeIsError
+                    ? const Color(0xFF2A1D1F)
+                    : const Color(0xFF173020),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: workspaceNoticeIsError
+                      ? const Color(0xFF6B3A3F)
+                      : const Color(0xFF315F3E),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    workspaceNoticeIsError
+                        ? Icons.error_outline_rounded
+                        : Icons.check_circle_outline_rounded,
+                    size: 18,
+                    color: workspaceNoticeIsError
+                        ? const Color(0xFFFFA4A4)
+                        : const Color(0xFF75D98A),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      workspaceNotice!,
+                      style: TextStyle(
+                        color: workspaceNoticeIsError
+                            ? const Color(0xFFFFB4B4)
+                            : const Color(0xFF9BE4AA),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -4271,9 +4191,16 @@ class _CapsuleChatPanel extends StatelessWidget {
                 label: const Text('Choose Consensus Peer'),
               ),
               OutlinedButton.icon(
-                onPressed: running ? null : onRefreshInboxPressed,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Fetch Inbox'),
+                onPressed:
+                    running || refreshingInbox ? null : onRefreshInboxPressed,
+                icon: refreshingInbox
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(refreshingInbox ? 'Fetching' : 'Fetch Inbox'),
               ),
               FilledButton.icon(
                 onPressed: running ? null : onRunPressed,
@@ -4385,10 +4312,11 @@ class _CapsuleChatPanel extends StatelessWidget {
                 icon: Icons.mail_outline,
                 label: 'Inbox: ${inbox.length}',
               ),
-              _InfoChip(
-                icon: Icons.shield_outlined,
-                label: 'Dropped: $droppedByConsensus',
-              ),
+              if (droppedByConsensus > 0)
+                _InfoChip(
+                  icon: Icons.filter_alt_off_outlined,
+                  label: 'Hidden by consensus: $droppedByConsensus',
+                ),
             ],
           ),
           if (inbox.isNotEmpty) ...[

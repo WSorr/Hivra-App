@@ -158,6 +158,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _loadCredentials();
     unawaited(_restoreOpenOrdersTrackingState());
     _loadPerpetualSymbols(silent: true);
+    _signalInbox = _chatDelivery.loadCachedTradeSignals();
     _refreshSignalInbox(silentWhenEmpty: true);
   }
 
@@ -1425,6 +1426,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       setState(() {
         final byId = <String, CapsuleTradeSignalInboxMessage>{
           for (final signal in _signalInbox) signal.id: signal,
+          for (final signal in _chatDelivery.loadCachedTradeSignals())
+            signal.id: signal,
         };
         for (final signal in result.tradeSignals) {
           byId[signal.id] = signal;
@@ -1449,6 +1452,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       CapsuleTradeSignalInboxMessage signal) async {
     final decoded = _tryDecodeJsonMap(signal.canonicalIntentJson);
     if (decoded == null) {
+      await _uiLog.log(
+        'bingx.signal.draft.rejected',
+        'signal=${signal.signalId} reason=invalid_canonical_intent',
+      );
       await _showSnack('Signal intent payload is invalid');
       return;
     }
@@ -1464,6 +1471,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _timeInForce = decoded['time_in_force']?.toString() ?? 'GTC';
       _entryMode = decoded['entry_mode']?.toString() ?? signal.entryMode;
       _strategyTagController.text = decoded['strategy_tag']?.toString() ?? '';
+      _lastIntentResponse = null;
 
       if (_entryMode == 'zone_pending') {
         _zoneSide = decoded['zone_side']?.toString() ??
@@ -1491,7 +1499,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final shortSignal = signal.signalId.length <= 12
         ? signal.signalId
         : '${signal.signalId.substring(0, 12)}..';
-    await _showSnack('Draft loaded from signal $shortSignal');
+    await _uiLog.log(
+      'bingx.signal.draft.loaded',
+      'signal=${signal.signalId} from=${signal.fromHex} '
+          'symbol=${_symbolController.text} side=$_side '
+          'type=$_orderType mode=$_entryMode qty=${_quantityController.text}',
+    );
+    await _showSnack(
+      'Draft loaded: ${_symbolController.text} · ${_side.toUpperCase()} · '
+      '${_quantityController.text} ($shortSignal)',
+      seconds: 3,
+    );
   }
 
   Future<void> _executeLastIntent() async {

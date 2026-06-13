@@ -14,7 +14,10 @@ import 'manual_consensus_check_service.dart';
 // Keep timeout above a single slow relay cycle to avoid false -1003 while
 // transport still completes on a later relay.
 const Duration _chatSendWorkerTimeout = Duration(seconds: 35);
-const Duration _chatReceiveWorkerTimeout = Duration(seconds: 12);
+// Quick Nostr receive can spend up to ~20 seconds on cold relay connection
+// plus event fetch. A shorter Dart timeout does not cancel the compute worker:
+// it can consume and mark events as seen after the caller has discarded them.
+const Duration _chatReceiveWorkerTimeout = Duration(seconds: 30);
 const Duration _chatSendRetryDelay = Duration(milliseconds: 900);
 
 bool chatSendShouldRetry({
@@ -157,6 +160,43 @@ class CapsuleTradeSignalInboxMessage {
   });
 }
 
+class CapsuleTradeSignalInboxStore {
+  static final CapsuleTradeSignalInboxStore shared =
+      CapsuleTradeSignalInboxStore();
+
+  final Map<String, Map<String, CapsuleTradeSignalInboxMessage>>
+      _signalsByCapsule =
+      <String, Map<String, CapsuleTradeSignalInboxMessage>>{};
+
+  CapsuleTradeSignalInboxStore();
+
+  List<CapsuleTradeSignalInboxMessage> load(String capsuleRootHex) {
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    final signals = _signalsByCapsule[normalized]?.values.toList() ??
+        <CapsuleTradeSignalInboxMessage>[];
+    signals.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    return List<CapsuleTradeSignalInboxMessage>.unmodifiable(signals);
+  }
+
+  void merge(
+    String capsuleRootHex,
+    Iterable<CapsuleTradeSignalInboxMessage> signals,
+  ) {
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    if (!_isHex64(normalized)) return;
+    final byId = _signalsByCapsule.putIfAbsent(
+      normalized,
+      () => <String, CapsuleTradeSignalInboxMessage>{},
+    );
+    for (final signal in signals) {
+      byId[signal.id] = signal;
+    }
+  }
+
+  static bool _isHex64(String value) =>
+      RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
+}
+
 class CapsuleExecutionCommandDecisionMessage {
   final String id;
   final String fromHex;
@@ -236,6 +276,7 @@ class CapsuleChatDeliveryService {
   final ChatTrustedCardsLoader _listTrustedCards;
   final ChatWorkerRunner _sendWorkerRunner;
   final ChatWorkerRunner _receiveWorkerRunner;
+  final CapsuleTradeSignalInboxStore _tradeSignalInboxStore;
   final BingxFuturesExecutionCommandService _executionCommandService;
   final ExecutionPolicyResolver _executionPolicyForPeer;
   final ExecutionKnownIntentLookup? _hasKnownIntentHash;
@@ -248,6 +289,7 @@ class CapsuleChatDeliveryService {
     ChatTrustedCardsLoader? listTrustedCards,
     ChatWorkerRunner sendWorkerRunner = _defaultSendWorkerRunner,
     ChatWorkerRunner receiveWorkerRunner = _defaultReceiveWorkerRunner,
+    CapsuleTradeSignalInboxStore? tradeSignalInboxStore,
     BingxFuturesExecutionCommandService? executionCommandService,
     ExecutionPolicyResolver? executionPolicyForPeer,
     ExecutionKnownIntentLookup? hasKnownIntentHash,
@@ -258,6 +300,8 @@ class CapsuleChatDeliveryService {
         _listTrustedCards = listTrustedCards ?? _emptyTrustedCards,
         _sendWorkerRunner = sendWorkerRunner,
         _receiveWorkerRunner = receiveWorkerRunner,
+        _tradeSignalInboxStore =
+            tradeSignalInboxStore ?? CapsuleTradeSignalInboxStore.shared,
         _executionCommandService = executionCommandService ??
             BingxFuturesExecutionCommandService(
               replayStore: InMemoryBingxExecutionCommandReplayStore(),
@@ -266,6 +310,14 @@ class CapsuleChatDeliveryService {
             executionPolicyForPeer ?? _defaultExecutionPolicyForPeer,
         _hasKnownIntentHash = hasKnownIntentHash,
         _nowUtc = nowUtc;
+
+  List<CapsuleTradeSignalInboxMessage> loadCachedTradeSignals() {
+    final root = _runtime.capsuleRootPublicKey();
+    if (root == null || root.length != 32) {
+      return const <CapsuleTradeSignalInboxMessage>[];
+    }
+    return _tradeSignalInboxStore.load(_hex(root));
+  }
 
   Future<CapsuleChatDeliverySendResult> sendCanonicalEnvelope({
     required String peerHex,
@@ -541,6 +593,8 @@ class CapsuleChatDeliveryService {
       ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     final tradeSignals = byTradeSignalId.values.toList()
       ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    final activeCapsuleHex = bootstrap['activeCapsuleHex']?.toString() ?? '';
+    _tradeSignalInboxStore.merge(activeCapsuleHex, tradeSignals);
     final executionDecisions = byExecutionDecisionId.values.toList()
       ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     final executionReceipts = byExecutionReceiptId.values.toList()
