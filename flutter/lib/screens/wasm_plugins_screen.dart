@@ -1835,230 +1835,255 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final content = ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _StatusBanner(theme: theme),
-        const SizedBox(height: 20),
-        _InstalledSection(
-          loading: _loading,
-          installing: _installing,
-          installed: _installed,
-          onInstallPressed: _installPlugin,
-          onRemovePressed: _removePlugin,
-        ),
-        const SizedBox(height: 20),
-        _SourceCatalogSection(
-          loading: _loadingSourceCatalog,
-          sourceName: _sourceCatalogSnapshot?.sourceName,
-          sourceId: _sourceCatalogSnapshot?.sourceId,
-          sourceError: _sourceCatalogError,
-          entries: _sourceCatalogSnapshot?.entries ??
-              const <WasmPluginSourceCatalogEntry>[],
-          installingEntryIds: _installingSourceEntryIds,
-          onRefreshPressed: _reloadSourceCatalog,
-          onInstallPressed: _installFromSource,
-        ),
-        const SizedBox(height: 20),
-        _TradingDroneLaunchPanel(
-          onOpenPressed: () =>
-              Navigator.of(context).pushNamed('/trading_drone'),
-        ),
-        const SizedBox(height: 20),
-        _SectionTitle(
-          title: 'Plugin Host',
-          subtitle:
-              'A reserved shell for future wasm adapters and transport extensions.',
-        ),
-        const SizedBox(height: 10),
-        _HostPanel(snapshot: _guardSnapshot),
-        if (_showLegacyBingxIntentPanels) ...[
-          const SizedBox(height: 20),
-          _SectionTitle(
-            title: 'BingX Futures Intent',
-            subtitle:
-                'Deterministic futures intent + optional signed execution on BingX Futures test/live endpoints.',
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final horizontalPadding = constraints.maxWidth < 600
+            ? 12.0
+            : constraints.maxWidth < 1000
+                ? 20.0
+                : 28.0;
+
+        return ListView(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            16,
+            horizontalPadding,
+            28,
           ),
-          const SizedBox(height: 10),
-          _BingxIntentPanel(
-            running: _runningBingx,
-            broadcastingSignal: _broadcastingBingxSignal,
-            canBroadcastSignal:
-                _lastBingxResponse?.status == PluginHostApiStatus.executed,
-            lastResponse: _lastBingxResponse,
-            peerController: _bingxPeerController,
-            symbolController: _bingxSymbolController,
-            quantityController: _bingxQuantityController,
-            limitPriceController: _bingxLimitPriceController,
-            zoneLowController: _bingxZoneLowController,
-            zoneHighController: _bingxZoneHighController,
-            manualEntryPriceController: _bingxManualEntryPriceController,
-            triggerPriceController: _bingxTriggerPriceController,
-            stopLossController: _bingxStopLossController,
-            takeProfitController: _bingxTakeProfitController,
-            strategyTagController: _bingxStrategyTagController,
-            selectedSide: _bingxSide,
-            selectedOrderType: _bingxOrderType,
-            selectedTimeInForce: _bingxTimeInForce,
-            selectedEntryMode: _bingxEntryMode,
-            selectedZoneSide: _bingxZoneSide,
-            selectedZonePriceRule: _bingxZonePriceRule,
-            onUsePeerPressed: _fillBingxPeerFromConsensus,
-            onRunPressed: _runBingxIntent,
-            onBroadcastSignalPressed: _broadcastLastBingxIntent,
-            onSideChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _bingxSide = value;
-                if (_bingxEntryMode == 'zone_pending') {
-                  _bingxZoneSide = value == 'buy' ? 'buyside' : 'sellside';
-                }
-              });
-            },
-            onOrderTypeChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _bingxOrderType = value;
-              });
-            },
-            onTimeInForceChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _bingxTimeInForce = value;
-              });
-            },
-            onEntryModeChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _bingxEntryMode = value;
-                if (_bingxEntryMode == 'zone_pending') {
-                  _bingxOrderType = 'limit';
-                  _bingxZoneSide = _bingxSide == 'buy' ? 'buyside' : 'sellside';
-                }
-              });
-            },
-            onZoneSideChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _bingxZoneSide = value;
-              });
-            },
-            onZonePriceRuleChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _bingxZonePriceRule = value;
-              });
-            },
-          ),
-          const SizedBox(height: 10),
-          _BingxExecutionPanel(
-            savingCredentials: _savingBingxCredentials,
-            readingCurrentSettings: _readingBingxCurrentSettings,
-            executing: _executingBingxOrder,
-            switchingLeverage: _switchingBingxLeverage,
-            switchingMarginType: _switchingBingxMarginType,
-            canExecuteIntent:
-                _lastBingxResponse?.status == PluginHostApiStatus.executed,
-            useTestOrderEndpoint: _bingxUseTestOrderEndpoint,
-            apiKeyController: _bingxApiKeyController,
-            apiSecretController: _bingxApiSecretController,
-            obscureApiSecret: _obscureBingxApiSecret,
-            leverageController: _bingxLeverageController,
-            leverageSide: _bingxLeverageSide,
-            marginType: _bingxMarginType,
-            lastExecution: _lastBingxExchangeResult,
-            lastLeverageSwitch: _lastBingxLeverageResult,
-            lastMarginTypeSwitch: _lastBingxMarginTypeResult,
-            lastLeverageRead: _lastBingxLeverageReadResult,
-            lastMarginTypeRead: _lastBingxMarginTypeReadResult,
-            onUseTestEndpointChanged: (value) {
-              setState(() {
-                _bingxUseTestOrderEndpoint = value;
-              });
-            },
-            onLeverageSideChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _bingxLeverageSide = value;
-              });
-            },
-            onMarginTypeChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _bingxMarginType = value;
-              });
-            },
-            onToggleApiSecretVisibility: () {
-              setState(() {
-                _obscureBingxApiSecret = !_obscureBingxApiSecret;
-              });
-            },
-            onSaveCredentialsPressed: _saveBingxCredentials,
-            onFetchCurrentPressed: _fetchBingxCurrentSettings,
-            onExecutePressed: _executeLastBingxIntentOnExchange,
-            onSwitchLeveragePressed: _switchBingxLeverage,
-            onSwitchMarginTypePressed: _switchBingxMarginType,
-          ),
-        ],
-        const SizedBox(height: 10),
-        _BingxSignalInboxPanel(
-          signals: _tradeSignalInbox,
-          onRefreshPressed: _refreshCapsuleChatInbox,
-          onRepeatPressed: _repeatTradeSignalAsDraft,
-        ),
-        const SizedBox(height: 20),
-        _SectionTitle(
-          title: 'Capsule Chat',
-          subtitle:
-              'Pre-host deterministic envelope call over plugin API boundary.',
-        ),
-        const SizedBox(height: 10),
-        _CapsuleChatPanel(
-          running: _runningChat,
-          lastResponse: _lastChatResponse,
-          inbox: _chatInbox,
-          droppedByConsensus: _chatDroppedByConsensus,
-          peerController: _chatPeerController,
-          messageController: _chatMessageController,
-          onUsePeerPressed: _fillPeerFromConsensus,
-          onRefreshInboxPressed: _refreshCapsuleChatInbox,
-          onRunPressed: _runCapsuleChat,
-        ),
-        const SizedBox(height: 20),
-        _SectionTitle(
-          title: 'Transport Plugins',
-          subtitle:
-              'Current transport surface, kept narrow until the wasm host is wired in.',
-        ),
-        const SizedBox(height: 12),
-        _PluginGrid(
-          maxColumns: 3,
-          desktopAspectRatio: 1.45,
-          mobileAspectRatio: 1.18,
-          children: _transportPlugins
-              .map(
-                (plugin) => _CatalogPluginTile(plugin: plugin),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 20),
-        _SectionTitle(
-          title: 'Boundary Rules',
-          subtitle:
-              'The plugin layer stays useful only if it remains narrow, deterministic, and boring.',
-        ),
-        const SizedBox(height: 12),
-        _PluginGrid(
-          maxColumns: 3,
-          desktopAspectRatio: 1.45,
-          mobileAspectRatio: 1.18,
-          children: _boundaryRules
-              .map(
-                (rule) => _RuleTile(rule: rule),
-              )
-              .toList(),
-        ),
-      ],
+          children: [
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1360),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _StatusBanner(theme: theme),
+                    const SizedBox(height: 20),
+                    _InstalledSection(
+                      loading: _loading,
+                      installing: _installing,
+                      installed: _installed,
+                      onInstallPressed: _installPlugin,
+                      onRemovePressed: _removePlugin,
+                    ),
+                    const SizedBox(height: 20),
+                    _SourceCatalogSection(
+                      loading: _loadingSourceCatalog,
+                      sourceName: _sourceCatalogSnapshot?.sourceName,
+                      sourceId: _sourceCatalogSnapshot?.sourceId,
+                      sourceError: _sourceCatalogError,
+                      entries: _sourceCatalogSnapshot?.entries ??
+                          const <WasmPluginSourceCatalogEntry>[],
+                      installingEntryIds: _installingSourceEntryIds,
+                      onRefreshPressed: _reloadSourceCatalog,
+                      onInstallPressed: _installFromSource,
+                    ),
+                    const SizedBox(height: 20),
+                    _TradingDroneLaunchPanel(
+                      onOpenPressed: () =>
+                          Navigator.of(context).pushNamed('/trading_drone'),
+                    ),
+                    const SizedBox(height: 20),
+                    const _SectionTitle(
+                      title: 'Plugin Host',
+                      subtitle:
+                          'A reserved shell for future wasm adapters and transport extensions.',
+                    ),
+                    const SizedBox(height: 10),
+                    _HostPanel(snapshot: _guardSnapshot),
+                    if (_showLegacyBingxIntentPanels) ...[
+                      const SizedBox(height: 20),
+                      _SectionTitle(
+                        title: 'BingX Futures Intent',
+                        subtitle:
+                            'Deterministic futures intent + optional signed execution on BingX Futures test/live endpoints.',
+                      ),
+                      const SizedBox(height: 10),
+                      _BingxIntentPanel(
+                        running: _runningBingx,
+                        broadcastingSignal: _broadcastingBingxSignal,
+                        canBroadcastSignal: _lastBingxResponse?.status ==
+                            PluginHostApiStatus.executed,
+                        lastResponse: _lastBingxResponse,
+                        peerController: _bingxPeerController,
+                        symbolController: _bingxSymbolController,
+                        quantityController: _bingxQuantityController,
+                        limitPriceController: _bingxLimitPriceController,
+                        zoneLowController: _bingxZoneLowController,
+                        zoneHighController: _bingxZoneHighController,
+                        manualEntryPriceController:
+                            _bingxManualEntryPriceController,
+                        triggerPriceController: _bingxTriggerPriceController,
+                        stopLossController: _bingxStopLossController,
+                        takeProfitController: _bingxTakeProfitController,
+                        strategyTagController: _bingxStrategyTagController,
+                        selectedSide: _bingxSide,
+                        selectedOrderType: _bingxOrderType,
+                        selectedTimeInForce: _bingxTimeInForce,
+                        selectedEntryMode: _bingxEntryMode,
+                        selectedZoneSide: _bingxZoneSide,
+                        selectedZonePriceRule: _bingxZonePriceRule,
+                        onUsePeerPressed: _fillBingxPeerFromConsensus,
+                        onRunPressed: _runBingxIntent,
+                        onBroadcastSignalPressed: _broadcastLastBingxIntent,
+                        onSideChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _bingxSide = value;
+                            if (_bingxEntryMode == 'zone_pending') {
+                              _bingxZoneSide =
+                                  value == 'buy' ? 'buyside' : 'sellside';
+                            }
+                          });
+                        },
+                        onOrderTypeChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _bingxOrderType = value;
+                          });
+                        },
+                        onTimeInForceChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _bingxTimeInForce = value;
+                          });
+                        },
+                        onEntryModeChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _bingxEntryMode = value;
+                            if (_bingxEntryMode == 'zone_pending') {
+                              _bingxOrderType = 'limit';
+                              _bingxZoneSide =
+                                  _bingxSide == 'buy' ? 'buyside' : 'sellside';
+                            }
+                          });
+                        },
+                        onZoneSideChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _bingxZoneSide = value;
+                          });
+                        },
+                        onZonePriceRuleChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _bingxZonePriceRule = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _BingxExecutionPanel(
+                        savingCredentials: _savingBingxCredentials,
+                        readingCurrentSettings: _readingBingxCurrentSettings,
+                        executing: _executingBingxOrder,
+                        switchingLeverage: _switchingBingxLeverage,
+                        switchingMarginType: _switchingBingxMarginType,
+                        canExecuteIntent: _lastBingxResponse?.status ==
+                            PluginHostApiStatus.executed,
+                        useTestOrderEndpoint: _bingxUseTestOrderEndpoint,
+                        apiKeyController: _bingxApiKeyController,
+                        apiSecretController: _bingxApiSecretController,
+                        obscureApiSecret: _obscureBingxApiSecret,
+                        leverageController: _bingxLeverageController,
+                        leverageSide: _bingxLeverageSide,
+                        marginType: _bingxMarginType,
+                        lastExecution: _lastBingxExchangeResult,
+                        lastLeverageSwitch: _lastBingxLeverageResult,
+                        lastMarginTypeSwitch: _lastBingxMarginTypeResult,
+                        lastLeverageRead: _lastBingxLeverageReadResult,
+                        lastMarginTypeRead: _lastBingxMarginTypeReadResult,
+                        onUseTestEndpointChanged: (value) {
+                          setState(() {
+                            _bingxUseTestOrderEndpoint = value;
+                          });
+                        },
+                        onLeverageSideChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _bingxLeverageSide = value;
+                          });
+                        },
+                        onMarginTypeChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _bingxMarginType = value;
+                          });
+                        },
+                        onToggleApiSecretVisibility: () {
+                          setState(() {
+                            _obscureBingxApiSecret = !_obscureBingxApiSecret;
+                          });
+                        },
+                        onSaveCredentialsPressed: _saveBingxCredentials,
+                        onFetchCurrentPressed: _fetchBingxCurrentSettings,
+                        onExecutePressed: _executeLastBingxIntentOnExchange,
+                        onSwitchLeveragePressed: _switchBingxLeverage,
+                        onSwitchMarginTypePressed: _switchBingxMarginType,
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    _BingxSignalInboxPanel(
+                      signals: _tradeSignalInbox,
+                      onRefreshPressed: _refreshCapsuleChatInbox,
+                      onRepeatPressed: _repeatTradeSignalAsDraft,
+                    ),
+                    const SizedBox(height: 20),
+                    const _SectionTitle(
+                      title: 'Capsule Chat',
+                      subtitle:
+                          'Pre-host deterministic envelope call over plugin API boundary.',
+                    ),
+                    const SizedBox(height: 10),
+                    _CapsuleChatPanel(
+                      running: _runningChat,
+                      lastResponse: _lastChatResponse,
+                      inbox: _chatInbox,
+                      droppedByConsensus: _chatDroppedByConsensus,
+                      peerController: _chatPeerController,
+                      messageController: _chatMessageController,
+                      onUsePeerPressed: _fillPeerFromConsensus,
+                      onRefreshInboxPressed: _refreshCapsuleChatInbox,
+                      onRunPressed: _runCapsuleChat,
+                    ),
+                    const SizedBox(height: 20),
+                    const _SectionTitle(
+                      title: 'Transport Plugins',
+                      subtitle:
+                          'Current transport surface, kept narrow until the wasm host is wired in.',
+                    ),
+                    const SizedBox(height: 12),
+                    _PluginGrid(
+                      maxColumns: 3,
+                      children: _transportPlugins
+                          .map(
+                            (plugin) => _CatalogPluginTile(plugin: plugin),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 20),
+                    const _SectionTitle(
+                      title: 'Boundary Rules',
+                      subtitle:
+                          'The plugin layer stays useful only if it remains narrow, deterministic, and boring.',
+                    ),
+                    const SizedBox(height: 12),
+                    _PluginGrid(
+                      maxColumns: 3,
+                      children: _boundaryRules
+                          .map(
+                            (rule) => _RuleTile(rule: rule),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
 
     if (widget.embedded) {
@@ -2090,7 +2115,7 @@ class _InstalledSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: <Color>[Color(0xFF141922), Color(0xFF0F141B)],
@@ -2103,31 +2128,29 @@ class _InstalledSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Installed',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final title = const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Installed',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Packages stored locally and ready for a future wasm host.',
-                      style: TextStyle(
-                        color: Color(0xFF9CA7B5),
-                        height: 1.35,
-                      ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Packages stored locally and ready for a future wasm host.',
+                    style: TextStyle(
+                      color: Color(0xFF9CA7B5),
+                      height: 1.35,
                     ),
-                  ],
-                ),
-              ),
-              FilledButton.icon(
+                  ),
+                ],
+              );
+              final action = FilledButton.icon(
                 onPressed: installing ? null : onInstallPressed,
                 icon: installing
                     ? const SizedBox(
@@ -2136,9 +2159,27 @@ class _InstalledSection extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.add_box_outlined),
-                label: Text(installing ? 'Installing' : 'Install'),
-              ),
-            ],
+                label: Text(installing ? 'Installing' : 'Install package'),
+              );
+
+              if (constraints.maxWidth < 560) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    title,
+                    const SizedBox(height: 14),
+                    Align(alignment: Alignment.centerLeft, child: action),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 16),
+                  action,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           if (loading)
@@ -2148,8 +2189,6 @@ class _InstalledSection extends StatelessWidget {
           else
             _PluginGrid(
               maxColumns: 3,
-              desktopAspectRatio: 1.42,
-              mobileAspectRatio: 1.14,
               children: installed
                   .map(
                     (record) => _InstalledPluginTile(
@@ -2190,7 +2229,7 @@ class _SourceCatalogSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: <Color>[Color(0xFF151A23), Color(0xFF10151D)],
@@ -2203,33 +2242,31 @@ class _SourceCatalogSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Source Catalog',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final title = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Source Catalog',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      sourceName == null
-                          ? 'External plugin source (separate repo).'
-                          : '$sourceName (${sourceId ?? '-'})',
-                      style: const TextStyle(
-                        color: Color(0xFF9CA7B5),
-                        height: 1.35,
-                      ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    sourceName == null
+                        ? 'External plugin source (separate repo).'
+                        : '$sourceName (${sourceId ?? '-'})',
+                    style: const TextStyle(
+                      color: Color(0xFF9CA7B5),
+                      height: 1.35,
                     ),
-                  ],
-                ),
-              ),
-              IconButton(
+                  ),
+                ],
+              );
+              final action = IconButton(
                 onPressed: loading ? null : onRefreshPressed,
                 tooltip: 'Refresh catalog',
                 icon: loading
@@ -2239,8 +2276,17 @@ class _SourceCatalogSection extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.refresh_rounded),
-              ),
-            ],
+              );
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 8),
+                  action,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 12),
           if (sourceError != null)
@@ -2279,8 +2325,6 @@ class _SourceCatalogSection extends StatelessWidget {
           else
             _PluginGrid(
               maxColumns: 3,
-              desktopAspectRatio: 2.65,
-              mobileAspectRatio: 1.92,
               children: entries.map((entry) {
                 final busy = installingEntryIds.contains(entry.id);
                 return Container(
@@ -4541,14 +4585,10 @@ String _runtimeModuleSelectionLabel(String value) {
 class _PluginGrid extends StatelessWidget {
   final List<Widget> children;
   final int? maxColumns;
-  final double desktopAspectRatio;
-  final double mobileAspectRatio;
 
   const _PluginGrid({
     required this.children,
     this.maxColumns,
-    this.desktopAspectRatio = 1.35,
-    this.mobileAspectRatio = 1.15,
   });
 
   @override
@@ -4556,26 +4596,32 @@ class _PluginGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        var columns = width >= 1080
+        var columns = width >= 1120
             ? 4
-            : width >= 760
+            : width >= 780
                 ? 3
-                : width >= 520
+                : width >= 540
                     ? 2
                     : 1;
         if (maxColumns != null && columns > maxColumns!) {
           columns = maxColumns!;
         }
 
-        return GridView.count(
-          crossAxisCount: columns,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio:
-              width < 520 ? mobileAspectRatio : desktopAspectRatio,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          children: children,
+        const gap = 12.0;
+        final itemWidth =
+            columns == 1 ? width : (width - (gap * (columns - 1))) / columns;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: children
+              .map(
+                (child) => SizedBox(
+                  width: itemWidth,
+                  child: child,
+                ),
+              )
+              .toList(),
         );
       },
     );
@@ -4618,7 +4664,7 @@ class _CatalogPluginTile extends StatelessWidget {
               ),
             ],
           ),
-          const Spacer(),
+          const SizedBox(height: 28),
           Text(
             plugin.title,
             style: const TextStyle(
@@ -4672,7 +4718,7 @@ class _RuleTile extends StatelessWidget {
             accent: rule.accent,
             glow: rule.accent.withAlpha(22),
           ),
-          const Spacer(),
+          const SizedBox(height: 28),
           Text(
             rule.title,
             style: const TextStyle(
@@ -4772,7 +4818,10 @@ class _InfoChip extends StatelessWidget {
         accent == null ? const Color(0xFF10161D) : accent!.withAlpha(28);
     final borderColor =
         accent == null ? const Color(0xFF29313D) : accent!.withAlpha(120);
+    final maxWidth =
+        (MediaQuery.sizeOf(context).width - 80).clamp(160.0, 520.0);
     return Container(
+      constraints: BoxConstraints(maxWidth: maxWidth),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         color: backgroundColor,
@@ -4784,12 +4833,16 @@ class _InfoChip extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: iconAndTextColor),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              color: iconAndTextColor,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: iconAndTextColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
