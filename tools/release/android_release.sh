@@ -88,6 +88,10 @@ done
 [ -n "$CHANNEL" ] || die "--channel is required"
 [[ "$CHANNEL" == "test" || "$CHANNEL" == "public" ]] || die "--channel must be test or public"
 
+"$ROOT/tools/release/release_version_guard.sh" \
+  --version "$VERSION" \
+  --channel "$CHANNEL"
+
 if [ -z "$OUTPUT_DIR" ]; then
   OUTPUT_DIR="$ROOT/dist/${VERSION}-${CHANNEL}-android"
 fi

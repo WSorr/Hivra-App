@@ -34,12 +34,20 @@ This directory contains deterministic release helpers for Hivra.
 
 ## Typical Flow
 
-1. Record rows during manual smoke:
+1. Ask the repository guard for the next test tag:
+   - `tools/release/release_version_guard.sh --suggest`
+   - The guard reads published releases from `WSorr/Hivra-App`; it deliberately
+     ignores legacy local tags.
+2. Record rows during manual smoke:
    - `tools/release/record_trading_drone_evidence.sh ...`
-2. Validate coverage:
+3. Validate coverage:
    - `tools/release/check_trading_drone_evidence.sh --build-tag <version-tag>`
-3. Run preflight with strict evidence gate:
+4. Run preflight with strict evidence gate:
    - `tools/release/preflight.sh --trading-evidence-build-tag <version-tag>`
-4. Build channel release:
+5. Build channel release:
    - `tools/release/macos_release.sh ...`
    - `tools/release/android_release.sh ...`
+
+Both packaging scripts reject a version that belongs to another major release
+line, already exists on GitHub, conflicts with a remote tag, or does not match
+the selected channel.

@@ -38,6 +38,7 @@ ROADMAP="$ROOT/docs/roadmap.md"
 PRECHECK="$ROOT/tools/release/preflight.sh"
 MAC_RELEASE_SCRIPT="$ROOT/tools/release/macos_release.sh"
 ANDROID_RELEASE_SCRIPT="$ROOT/tools/release/android_release.sh"
+RELEASE_VERSION_GUARD="$ROOT/tools/release/release_version_guard.sh"
 REVIEW_ALL="$ROOT/tools/review/review_all.sh"
 CHECKLIST_MAC="$ROOT/docs/checklists/release-macos.md"
 CHECKLIST_ANDROID="$ROOT/docs/checklists/release-android.md"
@@ -53,6 +54,7 @@ DRONE_EVIDENCE_CHECK="$ROOT/tools/release/check_trading_drone_evidence.sh"
 require_file "$PRECHECK" "preflight script exists"
 require_file "$MAC_RELEASE_SCRIPT" "macOS release script exists"
 require_file "$ANDROID_RELEASE_SCRIPT" "Android release script exists"
+require_file "$RELEASE_VERSION_GUARD" "release version guard exists"
 require_file "$CHECKLIST_MAC" "macOS release checklist exists"
 require_file "$CHECKLIST_ANDROID" "Android release checklist exists"
 require_file "$CHECKLIST_ANDROID_RUNTIME" "Android runtime hardening checklist exists"
@@ -75,6 +77,12 @@ require_present "$ROADMAP" '^### 8\.1 Android Runtime Hardening' \
 
 require_present "$CHECKLIST_MAC" 'tools/release/preflight\.sh' \
   "macOS checklist requires preflight run"
+require_present "$MAC_RELEASE_SCRIPT" 'release_version_guard\.sh' \
+  "macOS release packaging enforces the published version line"
+require_present "$ANDROID_RELEASE_SCRIPT" 'release_version_guard\.sh' \
+  "Android release packaging enforces the published version line"
+require_present "$RELEASE_VERSION_GUARD" 'EXPECTED_REPOSITORY="WSorr/Hivra-App"' \
+  "release version guard pins the canonical GitHub repository"
 require_present "$CHECKLIST_MAC" 'tools/release/macos_release\.sh' \
   "macOS checklist requires scripted release packaging"
 require_present "$CHECKLIST_MAC" 'explicit `--channel` \(`test` or `public`\)' \
