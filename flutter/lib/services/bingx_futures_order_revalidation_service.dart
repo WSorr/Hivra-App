@@ -37,10 +37,11 @@ class BingxFuturesOrderRevalidationService {
       );
     }
 
-    if (!liveDecision.canPrepareIntent ||
-        liveDecision.side == null ||
-        liveDecision.zoneLowDecimal == null ||
-        liveDecision.zoneHighDecimal == null) {
+    final effectiveSide = liveDecision.side ?? liveDecision.zoneEvaluationSide;
+    final hasStructuralEvaluation = liveDecision.zoneEvaluationSide != null &&
+        liveDecision.zoneLowDecimal != null &&
+        liveDecision.zoneHighDecimal != null;
+    if (!liveDecision.canPrepareIntent && !hasStructuralEvaluation) {
       return const BingxFuturesOrderRevalidationResult(
         action: BingxFuturesOrderRevalidationAction.keep,
         reasonCode: 'live_decision_not_actionable',
@@ -48,13 +49,24 @@ class BingxFuturesOrderRevalidationService {
       );
     }
 
+    if (!liveDecision.zoneAnchorExecutable) {
+      return const BingxFuturesOrderRevalidationResult(
+        action: BingxFuturesOrderRevalidationAction.cancel,
+        reasonCode: 'liquidity_anchor_unavailable',
+        reasonMessage:
+            'No executable liquidity anchor remains for the pending order.',
+      );
+    }
+
     final orderSide = _normalizeOrderSide(order.side);
-    if (orderSide != null && orderSide != liveDecision.side) {
+    if (orderSide != null &&
+        effectiveSide != null &&
+        orderSide != effectiveSide) {
       return BingxFuturesOrderRevalidationResult(
         action: BingxFuturesOrderRevalidationAction.cancel,
         reasonCode: 'live_side_mismatch',
         reasonMessage:
-            'Open order side $orderSide no longer matches live decision ${liveDecision.side}.',
+            'Open order side $orderSide no longer matches evaluated side $effectiveSide.',
       );
     }
 
@@ -81,10 +93,15 @@ class BingxFuturesOrderRevalidationService {
       );
     }
 
-    return const BingxFuturesOrderRevalidationResult(
+    final structuralOnly = !liveDecision.canPrepareIntent;
+    return BingxFuturesOrderRevalidationResult(
       action: BingxFuturesOrderRevalidationAction.keep,
-      reasonCode: 'live_setup_still_valid',
-      reasonMessage: 'Open order remains aligned with live TVH setup.',
+      reasonCode: structuralOnly
+          ? 'structural_setup_still_valid'
+          : 'live_setup_still_valid',
+      reasonMessage: structuralOnly
+          ? 'Open order remains aligned with its side-locked structural zone.'
+          : 'Open order remains aligned with live TVH setup.',
     );
   }
 
@@ -93,7 +110,8 @@ class BingxFuturesOrderRevalidationService {
     return code == 'momentum_gate_short_missed_retest' ||
         code == 'momentum_gate_long_missed_retest' ||
         code == 'trend_gate_short_far_retest' ||
-        code == 'trend_gate_long_far_retest';
+        code == 'trend_gate_long_far_retest' ||
+        code == 'liquidity_anchor_unavailable';
   }
 
   String? _normalizeOrderSide(String side) {

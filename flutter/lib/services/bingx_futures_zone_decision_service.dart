@@ -1,8 +1,10 @@
 class BingxFuturesZoneDecisionInput {
   final num midPrice;
   final String fallbackSide;
+  final String? requiredSide;
   final List<num> microHighs;
   final List<num> microLows;
+  final List<num> microCloses;
   final List<num> macroHighs;
   final List<num> macroLows;
   final List<num> higherHighs;
@@ -13,6 +15,7 @@ class BingxFuturesZoneDecisionInput {
   final List<num> dailyCloses;
   final List<num> weeklyHighs;
   final List<num> weeklyLows;
+  final List<num> weeklyCloses;
   final List<num> liquidationSellLevels;
   final List<num> liquidationBuyLevels;
   final num oiDeltaPct;
@@ -24,8 +27,10 @@ class BingxFuturesZoneDecisionInput {
   const BingxFuturesZoneDecisionInput({
     required this.midPrice,
     required this.fallbackSide,
+    this.requiredSide,
     required this.microHighs,
     required this.microLows,
+    this.microCloses = const <num>[],
     required this.macroHighs,
     required this.macroLows,
     required this.higherHighs,
@@ -36,6 +41,7 @@ class BingxFuturesZoneDecisionInput {
     required this.dailyCloses,
     required this.weeklyHighs,
     required this.weeklyLows,
+    this.weeklyCloses = const <num>[],
     this.liquidationSellLevels = const <num>[],
     this.liquidationBuyLevels = const <num>[],
     this.oiDeltaPct = 0,
@@ -73,6 +79,8 @@ class BingxFuturesZoneDecisionResult {
   final num? externalSellRetest;
   final num? externalBuyRetest;
   final String anchorSource;
+  final bool anchorExecutable;
+  final String anchorLifecycle;
   final int strength;
   final bool usedFallback;
 
@@ -103,6 +111,8 @@ class BingxFuturesZoneDecisionResult {
     required this.externalSellRetest,
     required this.externalBuyRetest,
     required this.anchorSource,
+    required this.anchorExecutable,
+    required this.anchorLifecycle,
     required this.strength,
     required this.usedFallback,
   });
@@ -117,6 +127,25 @@ class _ExternalLevelPoint {
     required this.price,
     required this.weight,
     required this.source,
+  });
+}
+
+enum _LiquidityLevelLifecycle {
+  fresh,
+  sweepOrigin,
+  postSweepReaction,
+  consumed,
+}
+
+class _SwingPivot {
+  final int index;
+  final num price;
+  final _LiquidityLevelLifecycle lifecycle;
+
+  const _SwingPivot({
+    required this.index,
+    required this.price,
+    required this.lifecycle,
   });
 }
 
@@ -147,7 +176,8 @@ class BingxFuturesZoneDecisionService {
         input.microLows.length < 20 ||
         input.macroHighs.length < 20 ||
         input.macroLows.length < 20) {
-      final fallbackSide = _normalizeSide(input.fallbackSide);
+      final fallbackSide =
+          _normalizeSide(input.requiredSide ?? input.fallbackSide);
       final nearDelta = mid * (input.zoneNearBps / 10000.0);
       final farDelta = mid * (input.zoneFarBps / 10000.0);
       final zoneLow = fallbackSide == 'buy' ? mid - farDelta : mid + nearDelta;
@@ -179,6 +209,8 @@ class BingxFuturesZoneDecisionService {
         externalSellRetest: null,
         externalBuyRetest: null,
         anchorSource: 'fallback',
+        anchorExecutable: false,
+        anchorLifecycle: 'unavailable',
         strength: 0,
         usedFallback: true,
       );
@@ -218,21 +250,34 @@ class BingxFuturesZoneDecisionService {
     final higherBias = _trendBiasFromCloses(input.higherCloses, window: 12);
     final dailyBias = _trendBiasFromCloses(input.dailyCloses, window: 10);
     final contextBias = higherBias + dailyBias;
-    final sideDecision = _selectAutoSide(
-      sweepUp: sweepUp,
-      sweepDown: sweepDown,
-      higherBias: higherBias,
-      dailyBias: dailyBias,
-      contextBias: contextBias,
-      mid: mid,
-      olderHigh: olderHigh,
-      olderLow: olderLow,
-      recentHigh: recentHigh,
-      recentLow: recentLow,
-    );
+    final sideDecision = input.requiredSide == null
+        ? _selectAutoSide(
+            sweepUp: sweepUp,
+            sweepDown: sweepDown,
+            higherBias: higherBias,
+            dailyBias: dailyBias,
+            contextBias: contextBias,
+            mid: mid,
+            olderHigh: olderHigh,
+            olderLow: olderLow,
+            recentHigh: recentHigh,
+            recentLow: recentLow,
+          )
+        : (
+            side: _normalizeSide(input.requiredSide!),
+            reason: 'tvh_side_locked',
+          );
 
     final selectedSide = sideDecision.side;
     final reversalSignal = selectedSide == 'sell' ? sweepUp : sweepDown;
+    final confirmedMicroReclaim = _hasConfirmedMicroReclaim(
+      side: selectedSide,
+      closes: input.microCloses,
+      olderHigh: olderHigh,
+      olderLow: olderLow,
+      sweepUp: sweepUp,
+      sweepDown: sweepDown,
+    );
     final aligned = (selectedSide == 'buy' && contextBias > 0) ||
         (selectedSide == 'sell' && contextBias < 0);
     final contrarian = (selectedSide == 'buy' && contextBias < 0) ||
@@ -289,45 +334,55 @@ class BingxFuturesZoneDecisionService {
     }
 
     final externalHighCandidates = <_ExternalLevelPoint>[
-      ...input.higherHighs.map(
-        (price) =>
-            _ExternalLevelPoint(price: price, weight: 1.00, source: '4h_high'),
+      ..._freshSwingLevels(
+        highs: input.higherHighs,
+        lows: input.higherLows,
+        closes: input.higherCloses,
+        side: 'high',
+        source: '4h_fresh_high',
+        weight: 1.00,
       ),
-      ...input.dailyHighs.map(
-        (price) =>
-            _ExternalLevelPoint(price: price, weight: 1.25, source: '1d_high'),
+      ..._freshSwingLevels(
+        highs: input.dailyHighs,
+        lows: input.dailyLows,
+        closes: input.dailyCloses,
+        side: 'high',
+        source: '1d_fresh_high',
+        weight: 1.25,
       ),
-      ...input.weeklyHighs.map(
-        (price) =>
-            _ExternalLevelPoint(price: price, weight: 1.55, source: '1w_high'),
-      ),
-      ...input.liquidationSellLevels.map(
-        (price) => _ExternalLevelPoint(
-          price: price,
-          weight: 1.75,
-          source: 'liq_sell',
-        ),
+      ..._freshSwingLevels(
+        highs: input.weeklyHighs,
+        lows: input.weeklyLows,
+        closes: input.weeklyCloses,
+        side: 'high',
+        source: '1w_fresh_high',
+        weight: 1.55,
       ),
     ];
     final externalLowCandidates = <_ExternalLevelPoint>[
-      ...input.higherLows.map(
-        (price) =>
-            _ExternalLevelPoint(price: price, weight: 1.00, source: '4h_low'),
+      ..._freshSwingLevels(
+        highs: input.higherHighs,
+        lows: input.higherLows,
+        closes: input.higherCloses,
+        side: 'low',
+        source: '4h_fresh_low',
+        weight: 1.00,
       ),
-      ...input.dailyLows.map(
-        (price) =>
-            _ExternalLevelPoint(price: price, weight: 1.25, source: '1d_low'),
+      ..._freshSwingLevels(
+        highs: input.dailyHighs,
+        lows: input.dailyLows,
+        closes: input.dailyCloses,
+        side: 'low',
+        source: '1d_fresh_low',
+        weight: 1.25,
       ),
-      ...input.weeklyLows.map(
-        (price) =>
-            _ExternalLevelPoint(price: price, weight: 1.55, source: '1w_low'),
-      ),
-      ...input.liquidationBuyLevels.map(
-        (price) => _ExternalLevelPoint(
-          price: price,
-          weight: 1.75,
-          source: 'liq_buy',
-        ),
+      ..._freshSwingLevels(
+        highs: input.weeklyHighs,
+        lows: input.weeklyLows,
+        closes: input.weeklyCloses,
+        side: 'low',
+        source: '1w_fresh_low',
+        weight: 1.55,
       ),
     ];
     final externalSellRetest = _selectRetestLevelAbove(
@@ -348,19 +403,25 @@ class BingxFuturesZoneDecisionService {
     );
 
     var usedExternalLiquidity = false;
-    var anchorSource = 'internal';
+    var anchorSource = 'internal_diagnostic';
+    var anchorExecutable = false;
+    var anchorLifecycle = 'unavailable';
 
     num zoneLow;
     num zoneHigh;
     if (selectedSide == 'sell') {
-      var anchorHigh = sweepUp ? recentHigh : olderHigh;
-      if (externalSellRetest != null &&
-          (!aligned ||
-              !reversalSignal ||
-              externalSellRetest.price > anchorHigh)) {
+      var anchorHigh = olderHigh;
+      if (confirmedMicroReclaim) {
+        anchorHigh = recentHigh;
+        anchorSource = 'micro_sweep_reclaim';
+        anchorExecutable = true;
+        anchorLifecycle = 'reclaimed';
+      } else if (externalSellRetest != null) {
         anchorHigh = externalSellRetest.price;
         usedExternalLiquidity = true;
         anchorSource = externalSellRetest.source;
+        anchorExecutable = true;
+        anchorLifecycle = 'fresh';
       }
       if (contrarian && !reversalSignal) {
         zoneLow = anchorHigh - width * 0.15;
@@ -382,14 +443,18 @@ class BingxFuturesZoneDecisionService {
         zoneHigh += shift;
       }
     } else {
-      var anchorLow = sweepDown ? recentLow : olderLow;
-      if (externalBuyRetest != null &&
-          (!aligned ||
-              !reversalSignal ||
-              externalBuyRetest.price < anchorLow)) {
+      var anchorLow = olderLow;
+      if (confirmedMicroReclaim) {
+        anchorLow = recentLow;
+        anchorSource = 'micro_sweep_reclaim';
+        anchorExecutable = true;
+        anchorLifecycle = 'reclaimed';
+      } else if (externalBuyRetest != null) {
         anchorLow = externalBuyRetest.price;
         usedExternalLiquidity = true;
         anchorSource = externalBuyRetest.source;
+        anchorExecutable = true;
+        anchorLifecycle = 'fresh';
       }
       if (contrarian && !reversalSignal) {
         zoneLow = anchorLow - width * 0.35;
@@ -462,6 +527,8 @@ class BingxFuturesZoneDecisionService {
       externalSellRetest: externalSellRetest?.price,
       externalBuyRetest: externalBuyRetest?.price,
       anchorSource: anchorSource,
+      anchorExecutable: anchorExecutable,
+      anchorLifecycle: anchorLifecycle,
       strength: strength,
       usedFallback: false,
     );
@@ -471,6 +538,91 @@ class BingxFuturesZoneDecisionService {
     final normalized = side.trim().toLowerCase();
     if (normalized == 'buy' || normalized == 'sell') return normalized;
     return 'sell';
+  }
+
+  bool _hasConfirmedMicroReclaim({
+    required String side,
+    required List<num> closes,
+    required num olderHigh,
+    required num olderLow,
+    required bool sweepUp,
+    required bool sweepDown,
+  }) {
+    if (closes.length < 2) return false;
+    final lastClose = closes.last;
+    final previousClose = closes[closes.length - 2];
+    if (side == 'buy') {
+      return sweepDown && lastClose > olderLow && lastClose > previousClose;
+    }
+    return sweepUp && lastClose < olderHigh && lastClose < previousClose;
+  }
+
+  List<_ExternalLevelPoint> _freshSwingLevels({
+    required List<num> highs,
+    required List<num> lows,
+    required List<num> closes,
+    required String side,
+    required String source,
+    required num weight,
+  }) {
+    if (highs.length != lows.length ||
+        highs.length != closes.length ||
+        highs.length < 5) {
+      return const <_ExternalLevelPoint>[];
+    }
+    final pivots = <_SwingPivot>[];
+    _SwingPivot? previousPivot;
+    for (var index = 2; index < highs.length - 2; index += 1) {
+      final isHigh = side == 'high';
+      final price = isHigh ? highs[index] : lows[index];
+      final isPivot = isHigh
+          ? price > highs[index - 1] &&
+              price >= highs[index - 2] &&
+              price > highs[index + 1] &&
+              price >= highs[index + 2]
+          : price < lows[index - 1] &&
+              price <= lows[index - 2] &&
+              price < lows[index + 1] &&
+              price <= lows[index + 2];
+      if (!isPivot) continue;
+
+      final isSweepOrigin = previousPivot != null &&
+          (isHigh ? price > previousPivot.price : price < previousPivot.price);
+      final isPostSweepReaction =
+          previousPivot?.lifecycle == _LiquidityLevelLifecycle.sweepOrigin &&
+              !isSweepOrigin;
+      var consumed = false;
+      for (var later = index + 1; later < highs.length; later += 1) {
+        if (isHigh ? highs[later] > price : lows[later] < price) {
+          consumed = true;
+          break;
+        }
+      }
+      final lifecycle = consumed
+          ? _LiquidityLevelLifecycle.consumed
+          : isSweepOrigin
+              ? _LiquidityLevelLifecycle.sweepOrigin
+              : isPostSweepReaction
+                  ? _LiquidityLevelLifecycle.postSweepReaction
+                  : _LiquidityLevelLifecycle.fresh;
+      final pivot = _SwingPivot(
+        index: index,
+        price: price,
+        lifecycle: lifecycle,
+      );
+      pivots.add(pivot);
+      previousPivot = pivot;
+    }
+    return pivots
+        .where((pivot) => pivot.lifecycle == _LiquidityLevelLifecycle.fresh)
+        .map(
+          (pivot) => _ExternalLevelPoint(
+            price: pivot.price,
+            weight: weight,
+            source: source,
+          ),
+        )
+        .toList(growable: false);
   }
 
   num _fallbackZoneWidth({

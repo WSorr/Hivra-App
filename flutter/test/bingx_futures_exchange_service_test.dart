@@ -481,6 +481,34 @@ void main() {
       );
     });
 
+    test('reads deterministic contract order limits', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","tradeMinQuantity":0.001},{"symbol":"ETH-USDT","tradeMinQuantity":0.01,"tradeMinUSDT":2,"quantityPrecision":2,"pricePrecision":2}]}',
+          );
+        },
+      );
+
+      final result = await service.getPerpetualContractRules(
+        symbol: 'eth-usdt',
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/contracts');
+      expect(capturedRequest.uri.queryParameters['symbol'], 'ETH-USDT');
+      expect(result.isSuccess, isTrue);
+      expect(result.rules?.symbol, 'ETH-USDT');
+      expect(result.rules?.minimumQuantityDecimal, '0.01');
+      expect(result.rules?.minimumNotionalQuoteDecimal, '2');
+      expect(result.rules?.quantityPrecision, 2);
+      expect(result.rules?.pricePrecision, 2);
+    });
+
     test('reads public depth via unsigned endpoint', () async {
       late BingxHttpRequest capturedRequest;
       final service = BingxFuturesExchangeService(
@@ -539,6 +567,46 @@ void main() {
       expect(result.trades.first.tradeId, 't1');
       expect(result.trades.first.side, 'buy');
       expect(result.trades.last.side, 'sell');
+    });
+
+    test('maps BingX isBuyerMaker to public trade aggressor side', () async {
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async => const BingxHttpResponse(
+          statusCode: 200,
+          body: '''
+{"code":0,"msg":"","data":[
+  {"time":1710000000002,"isBuyerMaker":true,"price":"63001","qty":"0.2","fillId":"2"},
+  {"time":1710000000001,"isBuyerMaker":false,"price":"63000","qty":"0.1","fillId":"1"}
+]}''',
+        ),
+      );
+
+      final result = await service.getPublicTrades(
+        symbol: 'BTC-USDT',
+        limit: 200,
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.trades.map((trade) => trade.side), <String>['buy', 'sell']);
+      expect(result.trades.map((trade) => trade.tradeId), <String>['1', '2']);
+    });
+
+    test('drops public trades with no deterministic aggressor side', () async {
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async => const BingxHttpResponse(
+          statusCode: 200,
+          body:
+              '{"code":0,"msg":"","data":[{"time":1710000000000,"price":"63000","qty":"0.1"}]}',
+        ),
+      );
+
+      final result = await service.getPublicTrades(
+        symbol: 'BTC-USDT',
+        limit: 200,
+      );
+
+      expect(result.isSuccess, isFalse);
+      expect(result.trades, isEmpty);
     });
 
     test('reads premium index via unsigned endpoint', () async {

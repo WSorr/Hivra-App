@@ -8,6 +8,7 @@ void main() {
 
     test('builds snapshot with OI history and liquidation proxy levels',
         () async {
+      var requestedExtended4hHistory = false;
       final exchange = BingxFuturesExchangeService(
         requestSender: (request) async {
           final path = request.uri.path;
@@ -19,6 +20,10 @@ void main() {
             );
           }
           if (path == '/openApi/swap/v3/quote/klines') {
+            if (request.uri.queryParameters['interval'] == '4h' &&
+                request.uri.queryParameters['limit'] == '500') {
+              requestedExtended4hHistory = true;
+            }
             return const BingxHttpResponse(
               statusCode: 200,
               body:
@@ -79,6 +84,7 @@ void main() {
         snapshot.liquidityLevels.any((item) => item.kind == 'liquidation'),
         isTrue,
       );
+      expect(requestedExtended4hHistory, isTrue);
     });
 
     test('prefers force-orders liquidation feed when credentials are provided',

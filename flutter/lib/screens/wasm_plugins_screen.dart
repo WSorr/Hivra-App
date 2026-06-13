@@ -7,15 +7,18 @@ import 'package:flutter/material.dart';
 import '../services/app_runtime_service.dart';
 import '../services/bingx_futures_credential_store.dart';
 import '../services/bingx_futures_live_decision_service.dart';
-import '../services/bingx_futures_live_snapshot_builder_service.dart';
+import '../services/bingx_futures_intent_use_case_service.dart';
+import '../services/bingx_futures_live_strategy_use_case_service.dart';
 import '../services/bingx_futures_exchange_risk_input_service.dart';
 import '../services/bingx_futures_exchange_service.dart';
+import '../services/bingx_futures_exchange_execution_use_case_service.dart';
 import '../services/bingx_futures_observability_envelope_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
 import '../services/bingx_futures_risk_governor_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
 import '../services/manual_consensus_check_service.dart';
 import '../services/plugin_host_api_service.dart';
+import '../services/plugin_contract_handlers.dart';
 import '../services/ui_event_log_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
 import '../services/wasm_plugin_source_catalog_service.dart';
@@ -51,10 +54,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       const BingxFuturesRiskGovernorService();
   final BingxFuturesObservabilityEnvelopeService _observability =
       const BingxFuturesObservabilityEnvelopeService();
-  final BingxFuturesLiveSnapshotBuilderService _liveSnapshotBuilder =
-      const BingxFuturesLiveSnapshotBuilderService();
-  final BingxFuturesLiveDecisionService _liveDecision =
-      const BingxFuturesLiveDecisionService();
+  late final BingxFuturesIntentUseCaseService _intentUseCase;
+  late final BingxFuturesExchangeExecutionUseCaseService _executionUseCase;
+  late final BingxFuturesLiveStrategyUseCaseService _liveStrategyUseCase;
   late final BingxFuturesExecutionQueueService _bingxExecutionQueue;
   final CapsuleChatDeliveryService _chatDelivery =
       AppRuntimeService().buildCapsuleChatDeliveryService();
@@ -180,6 +182,20 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     super.initState();
     _bingxExecutionQueue = BingxFuturesExecutionQueueService(
       exchangeService: _bingxExchangeService,
+    );
+    _intentUseCase = BingxFuturesIntentUseCaseService(
+      hostApi: _pluginHostApi,
+      observability: _observability,
+    );
+    _liveStrategyUseCase = BingxFuturesLiveStrategyUseCaseService(
+      exchange: _bingxExchangeService,
+    );
+    _executionUseCase = BingxFuturesExchangeExecutionUseCaseService(
+      exchange: _bingxExchangeService,
+      queue: _bingxExecutionQueue,
+      riskInput: _exchangeRiskInput,
+      riskGovernor: _riskGovernor,
+      observability: _observability,
     );
     _reload();
     _reloadSourceCatalog();
@@ -580,6 +596,18 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     );
   }
 
+  void _showBingxMessage(String message, {int seconds = 4}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: Duration(seconds: seconds),
+      ),
+    );
+  }
+
   Future<void> _executeLastBingxIntentOnExchange() async {
     if (_executingBingxOrder) return;
     final response = _lastBingxResponse;
@@ -600,83 +628,52 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     final credentials = _resolveBingxCredentialsOrNotify();
     if (credentials == null) return;
 
-    late final BingxFuturesIntentPayload payload;
-    try {
-      payload = BingxFuturesIntentPayload.fromPluginResult(result);
-    } on FormatException catch (error) {
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(error.message),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    final riskDecision = await _evaluateBingxExecutionRisk(
-      payload: payload,
-      rawIntentResult: result,
-    );
-    if (riskDecision == null) return;
-    if (riskDecision.status == BingxFuturesRiskDecisionStatus.blocked) {
-      final shortHash = riskDecision.decisionHashHex.substring(0, 12);
-      await _uiLog.log(
-        'bingx.exchange.risk_blocked',
-        'code=${riskDecision.reasonCode} hash=$shortHash',
-      );
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content:
-              Text('Risk blocked: ${riskDecision.reasonCode} ($shortHash)'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-    await _uiLog.log(
-      'bingx.exchange.risk_allowed',
-      'hash=${riskDecision.decisionHashHex.substring(0, 12)}',
-    );
-
     if (!mounted) return;
     setState(() {
       _executingBingxOrder = true;
     });
     try {
-      final queued = await _bingxExecutionQueue.enqueueOrderExecution(
+      final useCaseResult = await _executionUseCase.execute(
+        screen: 'wasm_plugins',
+        rawIntentResult: result,
         credentials: credentials,
-        intent: payload,
+        riskPolicy: _executionRiskPolicy,
+        fallbackEquityQuote: 10000,
         testOrder: _bingxUseTestOrderEndpoint,
       );
-      final executionEnvelope = _observability.buildExecutionEnvelope(
-        screen: 'wasm_plugins',
-        symbol: payload.symbol,
-        side: payload.side,
-        orderType: payload.orderType,
-        idempotencyKey: queued.idempotencyKey,
-        attempts: queued.attempts,
-        fromIdempotentCache: queued.fromIdempotentCache,
-        isSuccess: queued.execution.isSuccess,
-        httpStatusCode: queued.execution.httpStatusCode,
-        exchangeCode: queued.execution.exchangeCode,
-        endpointPath: queued.execution.endpointPath,
-        orderId: queued.execution.orderId,
-        intentHashHex: payload.intentHashHex,
-        riskDecisionCode: riskDecision.reasonCode,
-        riskDecisionHashHex: riskDecision.decisionHashHex,
-        marketSnapshotHashHex:
-            result['market_snapshot_hash_hex']?.toString().trim(),
-        featureHashHex: result['feature_hash_hex']?.toString().trim(),
-        tvhDecisionHashHex: result['tvh_decision_hash_hex']?.toString().trim(),
-        liveDecisionHashHex:
-            result['live_decision_hash_hex']?.toString().trim(),
+      for (final diagnostic in useCaseResult.diagnostics) {
+        await _uiLog.log('bingx.exchange.risk_detail', diagnostic);
+      }
+      if (useCaseResult.status ==
+          BingxFuturesExchangeExecutionUseCaseStatus.invalidIntent) {
+        _showBingxMessage(useCaseResult.errorMessage ?? 'Invalid intent');
+        return;
+      }
+      if (useCaseResult.status ==
+          BingxFuturesExchangeExecutionUseCaseStatus.riskUnavailable) {
+        _showBingxMessage(
+          useCaseResult.errorMessage ?? 'Risk check unavailable',
+        );
+        return;
+      }
+      final riskDecision = useCaseResult.riskDecision!;
+      if (useCaseResult.status ==
+          BingxFuturesExchangeExecutionUseCaseStatus.riskBlocked) {
+        final shortHash = riskDecision.decisionHashHex.substring(0, 12);
+        await _uiLog.log(
+          'bingx.exchange.risk_blocked',
+          'code=${riskDecision.reasonCode} hash=$shortHash',
+        );
+        _showBingxMessage('${riskDecision.reasonMessage} ($shortHash)');
+        return;
+      }
+      await _uiLog.log(
+        'bingx.exchange.risk_allowed',
+        'hash=${riskDecision.decisionHashHex.substring(0, 12)}',
       );
+      final payload = useCaseResult.payload!;
+      final queued = useCaseResult.queuedExecution!;
+      final executionEnvelope = useCaseResult.executionEnvelope!;
       final execution = queued.execution;
       await _uiLog.log(
         'bingx.exchange.execute',
@@ -740,80 +737,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         });
       }
     }
-  }
-
-  Future<BingxFuturesRiskDecision?> _evaluateBingxExecutionRisk({
-    required BingxFuturesIntentPayload payload,
-    required Map<String, dynamic> rawIntentResult,
-  }) async {
-    String? entryPriceDecimal = payload.limitPriceDecimal;
-    entryPriceDecimal ??= payload.triggerPriceDecimal;
-    if (entryPriceDecimal == null || entryPriceDecimal.trim().isEmpty) {
-      final quote = await _bingxExchangeService.getPublicPrice(
-        symbol: payload.symbol,
-      );
-      if (quote.isSuccess &&
-          quote.priceDecimal != null &&
-          quote.priceDecimal!.trim().isNotEmpty) {
-        entryPriceDecimal = quote.priceDecimal!.trim();
-      }
-    }
-    if (entryPriceDecimal == null || entryPriceDecimal.trim().isEmpty) {
-      await _uiLog.log(
-        'bingx.exchange.risk_error',
-        'entry_price_unavailable symbol=${payload.symbol}',
-      );
-      return null;
-    }
-
-    var stopLossDecimal =
-        rawIntentResult['stop_loss_decimal']?.toString().trim() ?? '';
-    if (stopLossDecimal.isEmpty) {
-      if (payload.side == 'buy') {
-        stopLossDecimal =
-            rawIntentResult['zone_low_decimal']?.toString().trim() ?? '';
-      } else {
-        stopLossDecimal =
-            rawIntentResult['zone_high_decimal']?.toString().trim() ?? '';
-      }
-    }
-    if (stopLossDecimal.isEmpty) {
-      stopLossDecimal = entryPriceDecimal;
-    }
-
-    final credentials = _resolveBingxCredentialsOrNotify();
-    if (credentials == null) return null;
-    final exchangeRiskInput = await _exchangeRiskInput.read(
-      exchangeService: _bingxExchangeService,
-      credentials: credentials,
-      fallbackEquityQuote: 10000,
-    );
-    await _uiLog.log(
-      'bingx.exchange.risk_inputs',
-      'symbol=${payload.symbol} '
-          'equity=${exchangeRiskInput.accountEquityQuoteDecimal} '
-          'pnl=${exchangeRiskInput.realizedDailyPnlQuoteDecimal} '
-          'positions=${exchangeRiskInput.concurrentPositions} '
-          'fallbacks=${exchangeRiskInput.usedBalanceFallback ? "balance" : "-"},'
-          '${exchangeRiskInput.usedPnlFallback ? "pnl" : "-"},'
-          '${exchangeRiskInput.usedPositionsFallback ? "positions" : "-"}',
-    );
-    return _riskGovernor.evaluate(
-      input: BingxFuturesRiskGovernorInput(
-        symbol: payload.symbol,
-        quantityDecimal: payload.quantityDecimal,
-        entryPriceDecimal: entryPriceDecimal,
-        stopLossDecimal: stopLossDecimal,
-        accountEquityQuoteDecimal: exchangeRiskInput.accountEquityQuoteDecimal,
-        realizedDailyPnlQuoteDecimal:
-            exchangeRiskInput.realizedDailyPnlQuoteDecimal,
-        concurrentPositions: exchangeRiskInput.concurrentPositions,
-        lossStreakCount: 0,
-        lastLossAtUtc: null,
-        nowUtc: DateTime.now().toUtc().toIso8601String(),
-      ),
-      policy: _executionRiskPolicy,
-    );
   }
 
   Future<void> _switchBingxLeverage() async {
@@ -1096,54 +1019,29 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     required String symbol,
     required String peerHex,
   }) async {
-    final snapshot = await _liveSnapshotBuilder.fetchAndBuild(
-      exchange: _bingxExchangeService,
-      symbol: symbol,
-      credentials: _resolveBingxCredentialsOrNull(),
+    final consensus = _consensusDecisionContext(peerHex);
+    final result = await _liveStrategyUseCase.execute(
+      BingxFuturesLiveStrategyCommand(
+        symbol: symbol,
+        credentials: _resolveBingxCredentialsOrNull(),
+        isConsensusSignable: consensus.isSignable,
+        blockingFactCodes: consensus.blockingCodes,
+        recentMicroBars: _recentMicroBars,
+        zoneNearBps: _zoneNearBps,
+        zoneFarBps: _zoneFarBps,
+        zoneEvaluationSide: null,
+      ),
     );
-    if (!snapshot.isSuccess || snapshot.snapshotInput == null) {
+    if (!result.isSuccess) {
       await _uiLog.log(
         'bingx.strategy.live_decision.error',
-        'symbol=${snapshot.symbol} code=${snapshot.errorCode} '
-            'message=${snapshot.errorMessage}',
+        result.diagnostic,
       );
       return null;
     }
 
-    final consensus = _consensusDecisionContext(peerHex);
-    try {
-      final decision = _liveDecision.decide(
-        BingxFuturesLiveDecisionInput(
-          snapshotInput: snapshot.snapshotInput!,
-          isConsensusSignable: consensus.isSignable,
-          blockingFactCodes: consensus.blockingCodes,
-          recentMicroBars: _recentMicroBars,
-          zoneNearBps: _zoneNearBps,
-          zoneFarBps: _zoneFarBps,
-        ),
-      );
-      await _uiLog.log(
-        'bingx.strategy.live_decision',
-        'symbol=${snapshot.symbol} '
-            'can_prepare=${decision.canPrepareIntent} decision=${decision.decision.name} '
-            'side=${decision.side ?? "-"} zone_side=${decision.zoneSide ?? "-"} '
-            'zone_low=${decision.zoneLowDecimal ?? "-"} zone_high=${decision.zoneHighDecimal ?? "-"} '
-            'trend15m=${decision.trend15m} trend4h=${decision.trend4h} trend1d=${decision.trend1d} '
-            'trend_gate=${decision.trendGateCode} trend_blocked=${decision.trendGateBlocked} '
-            'consensus_signable=${consensus.isSignable} '
-            'market_hash=${decision.marketSnapshotHashHex.substring(0, 12)} '
-            'feature_hash=${decision.featureHashHex.substring(0, 12)} '
-            'tvh_hash=${decision.tvhDecisionHashHex.substring(0, 12)} '
-            'live_hash=${decision.liveDecisionHashHex.substring(0, 12)}',
-      );
-      return decision;
-    } on FormatException catch (error) {
-      await _uiLog.log(
-        'bingx.strategy.live_decision.error',
-        'symbol=${snapshot.symbol} code=invalid_snapshot message=${error.message}',
-      );
-      return null;
-    }
+    await _uiLog.log('bingx.strategy.live_decision', result.diagnostic);
+    return result.decision;
   }
 
   Future<void> _runBingxIntent() async {
@@ -1267,80 +1165,38 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} symbol=$symbol side=$side type=$_bingxOrderType entry=$entryMode qty=$quantityDecimal',
       );
 
-      final response = await _pluginHostApi.executeWithRuntimeHook(
-        PluginHostApiRequest(
-          schemaVersion: PluginHostApiService.schemaVersion,
-          pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
-          method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
-          args: <String, dynamic>{
-            'peer_hex': peerHex,
-            'client_order_id': clientOrderId,
-            'symbol': symbol,
-            'side': side,
-            'order_type': _bingxOrderType,
-            'quantity_decimal': quantityDecimal,
-            'limit_price_decimal': limitPriceDecimal,
-            'time_in_force': timeInForce,
-            'entry_mode': entryMode,
-            'zone_side': isZonePending ? zoneSide : null,
-            'zone_low_decimal': isZonePending && zoneLowDecimal.isNotEmpty
-                ? zoneLowDecimal
-                : null,
-            'zone_high_decimal': isZonePending && zoneHighDecimal.isNotEmpty
-                ? zoneHighDecimal
-                : null,
-            'zone_price_rule': isZonePending ? zonePriceRule : null,
-            'manual_entry_price_decimal': isZonePending &&
-                    zonePriceRule == 'manual' &&
-                    manualEntryPriceDecimal.isNotEmpty
-                ? manualEntryPriceDecimal
-                : null,
-            'trigger_price_decimal':
-                isZonePending && triggerPriceDecimal.isNotEmpty
-                    ? triggerPriceDecimal
-                    : null,
-            'stop_loss_decimal': isZonePending && stopLossDecimal.isNotEmpty
-                ? stopLossDecimal
-                : null,
-            'take_profit_decimal': isZonePending && takeProfitDecimal.isNotEmpty
-                ? takeProfitDecimal
-                : null,
-            'created_at_utc': nowUtc,
-            'strategy_tag': strategyTag.isEmpty ? null : strategyTag,
-            'market_snapshot_hash_hex': liveDecision?.marketSnapshotHashHex,
-            'feature_hash_hex': liveDecision?.featureHashHex,
-            'tvh_decision_hash_hex': liveDecision?.tvhDecisionHashHex,
-            'live_decision_hash_hex': liveDecision?.liveDecisionHashHex,
-          },
+      final useCaseResult = await _intentUseCase.execute(
+        BingxFuturesIntentCommand(
+          screen: 'wasm_plugins',
+          peerHex: peerHex,
+          clientOrderId: clientOrderId,
+          symbol: symbol,
+          side: side,
+          orderType: _bingxOrderType,
+          quantityDecimal: quantityDecimal,
+          limitPriceDecimal: limitPriceDecimal,
+          timeInForce: timeInForce,
+          entryMode: entryMode,
+          zoneSide: zoneSide,
+          zoneLowDecimal: zoneLowDecimal,
+          zoneHighDecimal: zoneHighDecimal,
+          zonePriceRule: zonePriceRule,
+          manualEntryPriceDecimal: manualEntryPriceDecimal,
+          triggerPriceDecimal: triggerPriceDecimal,
+          stopLossDecimal: stopLossDecimal,
+          takeProfitDecimal: takeProfitDecimal,
+          createdAtUtc: nowUtc,
+          strategyTag: strategyTag,
+          liveDecision: liveDecision,
         ),
       );
+      final response = useCaseResult.response;
 
       if (!mounted) return;
       setState(() {
         _lastBingxResponse = response;
       });
-      final decisionEnvelope = _observability.buildDecisionEnvelope(
-        screen: 'wasm_plugins',
-        pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
-        method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
-        status: response.status.name,
-        symbol: symbol,
-        side: side,
-        orderType: _bingxOrderType,
-        entryMode: entryMode,
-        executionSource: response.executionSource,
-        intentHashHex: response.result?['intent_hash_hex']?.toString(),
-        errorCode: response.errorCode,
-        marketSnapshotHashHex: liveDecision?.marketSnapshotHashHex ??
-            response.result?['market_snapshot_hash_hex']?.toString(),
-        featureHashHex: liveDecision?.featureHashHex ??
-            response.result?['feature_hash_hex']?.toString(),
-        tvhDecisionHashHex: liveDecision?.tvhDecisionHashHex ??
-            response.result?['tvh_decision_hash_hex']?.toString(),
-        liveDecisionHashHex: liveDecision?.liveDecisionHashHex ??
-            response.result?['live_decision_hash_hex']?.toString(),
-        blockingFactCodes: response.blockingFacts.map((f) => f.key).toList(),
-      );
+      final decisionEnvelope = useCaseResult.decisionEnvelope;
       await _uiLog.log(
         'drone.decision.envelope',
         'hash=${decisionEnvelope.envelopeHashHex.substring(0, 12)} '
@@ -1447,7 +1303,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     final signalId = 'sig-${DateTime.now().microsecondsSinceEpoch}';
     final payloadJson = jsonEncode(<String, dynamic>{
       'schema_version': 1,
-      'plugin_id': PluginHostApiService.bingxFuturesTradingPluginId,
+      'plugin_id': bingxFuturesTradingPluginId,
       'contract_kind': 'bingx_trade_signal_v1',
       'signal_type': 'intent_prepared',
       'signal_id': signalId,
@@ -1552,8 +1408,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       final response = await _pluginHostApi.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: PluginHostApiService.schemaVersion,
-          pluginId: PluginHostApiService.capsuleChatPluginId,
-          method: PluginHostApiService.postCapsuleChatMethod,
+          pluginId: capsuleChatPluginId,
+          method: postCapsuleChatMethod,
           args: <String, dynamic>{
             'peer_hex': peerHex,
             'client_message_id': clientMessageId,
@@ -1856,10 +1712,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                       onRemovePressed: _removePlugin,
                       onOpenWorkspacePressed: (record) {
                         switch (record.pluginId) {
-                          case PluginHostApiService.bingxFuturesTradingPluginId:
+                          case bingxFuturesTradingPluginId:
                             return () => Navigator.of(context)
                                 .pushNamed('/trading_drone');
-                          case PluginHostApiService.capsuleChatPluginId:
+                          case capsuleChatPluginId:
                             return _openCapsuleChatWorkspace;
                           default:
                             return null;

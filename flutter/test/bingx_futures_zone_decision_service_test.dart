@@ -61,7 +61,7 @@ void main() {
       expect(first.strength, second.strength);
     });
 
-    test('uses liquidation proxy level as external anchor when available', () {
+    test('does not use liquidation proxy as executable entry anchor', () {
       final base = _inputForSweepUp();
       final result = service.decide(
         input: BingxFuturesZoneDecisionInput(
@@ -90,8 +90,388 @@ void main() {
       );
 
       expect(result.usedFallback, isFalse);
-      expect(result.anchorSource, anyOf('liq_sell', 'liq_buy'));
+      expect(result.anchorSource, isNot(anyOf('liq_sell', 'liq_buy')));
       expect(result.strength, greaterThanOrEqualTo(50));
+    });
+
+    test('locks zone calculation to upstream TVH side', () {
+      final base = _inputForSweepUp();
+      final result = service.decide(
+        input: BingxFuturesZoneDecisionInput(
+          midPrice: base.midPrice,
+          fallbackSide: base.fallbackSide,
+          requiredSide: 'buy',
+          microHighs: base.microHighs,
+          microLows: base.microLows,
+          macroHighs: base.macroHighs,
+          macroLows: base.macroLows,
+          higherHighs: base.higherHighs,
+          higherLows: base.higherLows,
+          higherCloses: base.higherCloses,
+          dailyHighs: base.dailyHighs,
+          dailyLows: base.dailyLows,
+          dailyCloses: base.dailyCloses,
+          weeklyHighs: base.weeklyHighs,
+          weeklyLows: base.weeklyLows,
+          recentMicroBars: base.recentMicroBars,
+          zoneNearBps: base.zoneNearBps,
+          zoneFarBps: base.zoneFarBps,
+        ),
+      );
+
+      expect(result.side, 'buy');
+      expect(result.zoneSide, 'buyside');
+      expect(result.sideReason, 'tvh_side_locked');
+      expect(result.zoneHigh, lessThan(base.midPrice));
+    });
+
+    test('does not reuse a pivot formed by sweeping prior liquidity', () {
+      final base = _inputForSweepUp();
+      final result = service.decide(
+        input: BingxFuturesZoneDecisionInput(
+          midPrice: 110,
+          fallbackSide: 'buy',
+          requiredSide: 'buy',
+          microHighs: base.microHighs,
+          microLows: base.microLows,
+          macroHighs: base.macroHighs,
+          macroLows: base.macroLows,
+          higherHighs: const <num>[
+            120,
+            119,
+            118,
+            119,
+            120,
+            118,
+            117,
+            118,
+            119,
+            117,
+            116,
+            117
+          ],
+          higherLows: const <num>[
+            105,
+            104,
+            100,
+            103,
+            106,
+            102,
+            98,
+            101,
+            104,
+            100,
+            95,
+            99
+          ],
+          higherCloses: const <num>[
+            112,
+            110,
+            104,
+            108,
+            114,
+            109,
+            103,
+            107,
+            113,
+            105,
+            101,
+            108
+          ],
+          dailyHighs: const <num>[],
+          dailyLows: const <num>[],
+          dailyCloses: const <num>[],
+          weeklyHighs: const <num>[],
+          weeklyLows: const <num>[],
+          recentMicroBars: base.recentMicroBars,
+          zoneNearBps: base.zoneNearBps,
+          zoneFarBps: base.zoneFarBps,
+        ),
+      );
+
+      expect(result.externalBuyRetest, isNull);
+      expect(result.anchorSource, 'internal_diagnostic');
+    });
+
+    test('does not reuse a fresh pivot after a later breach', () {
+      final base = _inputForSweepUp();
+      final result = service.decide(
+        input: BingxFuturesZoneDecisionInput(
+          midPrice: 110,
+          fallbackSide: 'buy',
+          requiredSide: 'buy',
+          microHighs: base.microHighs,
+          microLows: base.microLows,
+          macroHighs: base.macroHighs,
+          macroLows: base.macroLows,
+          higherHighs: const <num>[
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+            119
+          ],
+          higherLows: const <num>[
+            105,
+            104,
+            100,
+            103,
+            106,
+            105,
+            104,
+            102,
+            105,
+            104,
+            99,
+            103
+          ],
+          higherCloses: const <num>[
+            112,
+            110,
+            104,
+            108,
+            114,
+            111,
+            109,
+            106,
+            113,
+            108,
+            104,
+            109
+          ],
+          dailyHighs: const <num>[],
+          dailyLows: const <num>[],
+          dailyCloses: const <num>[],
+          weeklyHighs: const <num>[],
+          weeklyLows: const <num>[],
+          recentMicroBars: base.recentMicroBars,
+          zoneNearBps: base.zoneNearBps,
+          zoneFarBps: base.zoneFarBps,
+        ),
+      );
+
+      expect(result.externalBuyRetest, isNull);
+      expect(result.anchorSource, 'internal_diagnostic');
+    });
+
+    test('does not promote first post-sweep reaction pivot to fresh', () {
+      final base = _inputForSweepUp();
+      final result = service.decide(
+        input: BingxFuturesZoneDecisionInput(
+          midPrice: 110,
+          fallbackSide: 'buy',
+          requiredSide: 'buy',
+          microHighs: base.microHighs,
+          microLows: base.microLows,
+          macroHighs: base.macroHighs,
+          macroLows: base.macroLows,
+          higherHighs: const <num>[
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+          ],
+          higherLows: const <num>[
+            105,
+            103,
+            100,
+            103,
+            105,
+            100,
+            95,
+            100,
+            103,
+            101,
+            98,
+            102,
+            104,
+            105,
+            106,
+          ],
+          higherCloses: const <num>[
+            112,
+            110,
+            104,
+            108,
+            114,
+            109,
+            101,
+            107,
+            113,
+            106,
+            103,
+            108,
+            114,
+            112,
+            111,
+          ],
+          dailyHighs: const <num>[],
+          dailyLows: const <num>[],
+          dailyCloses: const <num>[],
+          weeklyHighs: const <num>[],
+          weeklyLows: const <num>[],
+          recentMicroBars: base.recentMicroBars,
+          zoneNearBps: base.zoneNearBps,
+          zoneFarBps: base.zoneFarBps,
+        ),
+      );
+
+      expect(result.externalBuyRetest, isNull);
+      expect(result.anchorSource, 'internal_diagnostic');
+      expect(result.anchorExecutable, isFalse);
+    });
+
+    test('uses an untouched confirmed swing pivot as fresh liquidity', () {
+      final base = _inputForSweepUp();
+      final result = service.decide(
+        input: BingxFuturesZoneDecisionInput(
+          midPrice: 110,
+          fallbackSide: 'buy',
+          requiredSide: 'buy',
+          microHighs: base.microHighs,
+          microLows: base.microLows,
+          macroHighs: base.macroHighs,
+          macroLows: base.macroLows,
+          higherHighs: const <num>[
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+            119
+          ],
+          higherLows: const <num>[
+            105,
+            104,
+            100,
+            103,
+            106,
+            105,
+            104,
+            102,
+            105,
+            104,
+            103,
+            104
+          ],
+          higherCloses: const <num>[
+            112,
+            110,
+            104,
+            108,
+            114,
+            111,
+            109,
+            106,
+            113,
+            108,
+            107,
+            109
+          ],
+          dailyHighs: const <num>[],
+          dailyLows: const <num>[],
+          dailyCloses: const <num>[],
+          weeklyHighs: const <num>[],
+          weeklyLows: const <num>[],
+          recentMicroBars: base.recentMicroBars,
+          zoneNearBps: base.zoneNearBps,
+          zoneFarBps: base.zoneFarBps,
+        ),
+      );
+
+      expect(result.externalBuyRetest, 100);
+      expect(result.anchorSource, '4h_fresh_low');
+      expect(result.anchorExecutable, isTrue);
+      expect(result.anchorLifecycle, 'fresh');
+    });
+
+    test('internal diagnostic low cannot authorize pending entry', () {
+      final base = _inputForSweepUp();
+      final result = service.decide(
+        input: BingxFuturesZoneDecisionInput(
+          midPrice: base.midPrice,
+          fallbackSide: base.fallbackSide,
+          requiredSide: 'buy',
+          microHighs: base.microHighs,
+          microLows: base.microLows,
+          microCloses: List<num>.filled(base.microHighs.length, 110),
+          macroHighs: base.macroHighs,
+          macroLows: base.macroLows,
+          higherHighs: const <num>[],
+          higherLows: const <num>[],
+          higherCloses: const <num>[],
+          dailyHighs: const <num>[],
+          dailyLows: const <num>[],
+          dailyCloses: const <num>[],
+          weeklyHighs: const <num>[],
+          weeklyLows: const <num>[],
+          recentMicroBars: base.recentMicroBars,
+          zoneNearBps: base.zoneNearBps,
+          zoneFarBps: base.zoneFarBps,
+        ),
+      );
+
+      expect(result.anchorSource, 'internal_diagnostic');
+      expect(result.anchorExecutable, isFalse);
+      expect(result.anchorLifecycle, 'unavailable');
+    });
+
+    test('current sweep reclaim is an executable new event', () {
+      final base = _inputForSweepDown();
+      final closes = List<num>.filled(base.microHighs.length, 88)
+        ..[base.microHighs.length - 2] = 84
+        ..[base.microHighs.length - 1] = 96;
+      final result = service.decide(
+        input: BingxFuturesZoneDecisionInput(
+          midPrice: base.midPrice,
+          fallbackSide: base.fallbackSide,
+          requiredSide: 'buy',
+          microHighs: base.microHighs,
+          microLows: base.microLows,
+          microCloses: closes,
+          macroHighs: base.macroHighs,
+          macroLows: base.macroLows,
+          higherHighs: const <num>[],
+          higherLows: const <num>[],
+          higherCloses: const <num>[],
+          dailyHighs: const <num>[],
+          dailyLows: const <num>[],
+          dailyCloses: const <num>[],
+          weeklyHighs: const <num>[],
+          weeklyLows: const <num>[],
+          recentMicroBars: base.recentMicroBars,
+          zoneNearBps: base.zoneNearBps,
+          zoneFarBps: base.zoneFarBps,
+        ),
+      );
+
+      expect(result.anchorSource, 'micro_sweep_reclaim');
+      expect(result.anchorExecutable, isTrue);
+      expect(result.anchorLifecycle, 'reclaimed');
     });
   });
 }
@@ -156,6 +536,7 @@ BingxFuturesZoneDecisionInput _inputForSweepUp() {
     fallbackSide: 'buy',
     microHighs: microHighs,
     microLows: microLows,
+    microCloses: List<num>.generate(25, (i) => 98 + i * 0.5),
     macroHighs: List<num>.generate(96, (i) => 104 + (i % 18)),
     macroLows: List<num>.generate(96, (i) => 88 + (i % 12)),
     higherHighs: List<num>.generate(96, (i) => 106 + (i % 20)),
@@ -166,6 +547,7 @@ BingxFuturesZoneDecisionInput _inputForSweepUp() {
     dailyCloses: List<num>.generate(90, (i) => 96 + i * 0.18),
     weeklyHighs: List<num>.generate(52, (i) => 112 + (i % 14)),
     weeklyLows: List<num>.generate(52, (i) => 82 + (i % 10)),
+    weeklyCloses: List<num>.generate(52, (i) => 96 + i * 0.2),
     recentMicroBars: 8,
     zoneNearBps: 15.0,
     zoneFarBps: 35.0,
@@ -232,6 +614,7 @@ BingxFuturesZoneDecisionInput _inputForSweepDown() {
     fallbackSide: 'sell',
     microHighs: microHighs,
     microLows: microLows,
+    microCloses: List<num>.generate(26, (i) => 108 - i * 0.5),
     macroHighs: List<num>.generate(96, (i) => 110 - (i % 17)),
     macroLows: List<num>.generate(96, (i) => 82 - (i % 8) * 0.2),
     higherHighs: List<num>.generate(96, (i) => 108 - (i % 12) * 0.3),
@@ -242,6 +625,7 @@ BingxFuturesZoneDecisionInput _inputForSweepDown() {
     dailyCloses: List<num>.generate(90, (i) => 108 - i * 0.17),
     weeklyHighs: List<num>.generate(52, (i) => 112 - (i % 9) * 0.5),
     weeklyLows: List<num>.generate(52, (i) => 76 - (i % 6) * 0.4),
+    weeklyCloses: List<num>.generate(52, (i) => 108 - i * 0.2),
     recentMicroBars: 8,
     zoneNearBps: 15.0,
     zoneFarBps: 35.0,

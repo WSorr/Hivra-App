@@ -34,6 +34,21 @@ void main() {
             'ord-1': 'BNB-USDT',
             'ord-2': 'BNB-USDT',
           },
+          managedOrderProvenance: <String, BingxManagedOrderProvenance>{
+            'ord-1': BingxManagedOrderProvenance(
+              orderId: 'ord-1',
+              symbol: 'BNB-USDT',
+              side: 'sell',
+              testOrder: false,
+              intentHashHex: 'intent-1',
+              canonicalIntentJson: '{"symbol":"BNB-USDT","side":"sell"}',
+              marketSnapshotHashHex: 'market-1',
+              featureHashHex: 'feature-1',
+              tvhDecisionHashHex: 'tvh-1',
+              liveDecisionHashHex: 'live-1',
+              recordedAtUtc: '2026-06-12T12:00:00.000Z',
+            ),
+          },
           stopLossPercent: 10.0,
           takeProfitRiskReward: 2.0,
         ),
@@ -48,6 +63,12 @@ void main() {
         'ord-1': 'BNB-USDT',
         'ord-2': 'BNB-USDT',
       });
+      expect(restored.managedOrderProvenance.keys, <String>['ord-1']);
+      expect(
+        restored.managedOrderProvenance['ord-1']!.liveDecisionHashHex,
+        'live-1',
+      );
+      expect(restored.managedOrderProvenance['ord-1']!.testOrder, isFalse);
       expect(restored.stopLossPercent, 10.0);
       expect(restored.takeProfitRiskReward, 2.0);
     });
@@ -76,6 +97,45 @@ void main() {
       );
       final restored = await store.load();
       expect(restored, isNull);
+    });
+
+    test('loads v1 state without managed order provenance', () {
+      final restored = BingxFuturesOrderTrackingState.fromJsonMap(
+        <String, dynamic>{
+          'version': 1,
+          'tracked_symbol': 'BTC-USDT',
+          'tracked_order_id': 'ord-legacy',
+          'managed_order_ids': <String>['ord-legacy'],
+          'managed_order_symbols': <String, String>{
+            'ord-legacy': 'BTC-USDT',
+          },
+        },
+      );
+
+      expect(restored, isNotNull);
+      expect(restored!.managedOrderIds, <String>['ord-legacy']);
+      expect(restored.managedOrderProvenance, isEmpty);
+    });
+
+    test('drops malformed provenance without losing valid tracking state', () {
+      final restored = BingxFuturesOrderTrackingState.fromJsonMap(
+        <String, dynamic>{
+          'version': 2,
+          'managed_order_ids': <String>['ord-1'],
+          'managed_order_symbols': <String, String>{'ord-1': 'SOL-USDT'},
+          'managed_order_provenance': <String, dynamic>{
+            'ord-1': <String, dynamic>{
+              'order_id': 'ord-1',
+              'symbol': 'SOL-USDT',
+              'side': 'invalid',
+            },
+          },
+        },
+      );
+
+      expect(restored, isNotNull);
+      expect(restored!.managedOrderIds, <String>['ord-1']);
+      expect(restored.managedOrderProvenance, isEmpty);
     });
 
     test('isolates state by capsule scope', () async {

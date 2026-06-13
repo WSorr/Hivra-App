@@ -49,6 +49,7 @@ EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 RUNTIME="$ROOT/flutter/lib/services/app_runtime_service.dart"
 INV_INTENT="$ROOT/flutter/lib/services/invitation_intent_handler.dart"
 PLUGIN_GUARD="$ROOT/flutter/lib/services/plugin_execution_guard_service.dart"
+PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
 WASM_REGISTRY="$ROOT/flutter/lib/services/wasm_plugin_registry_service.dart"
 SCREENS="$ROOT/flutter/lib/screens"
 SERVICES="$ROOT/flutter/lib/services"
@@ -135,6 +136,14 @@ require_present "$PLUGIN_GUARD" 'class PluginExecutionGuardService' \
   "plugin execution guard service exists"
 require_present "$PLUGIN_GUARD" 'inspectHostReadiness' \
   "plugin guard exposes readiness inspection"
+require_absent "$PLUGIN_HOST" 'bingx_trading_contract_service|capsule_chat_contract_service' \
+  "generic plugin host does not import concrete plugin contracts"
+require_absent "$PLUGIN_HOST" 'Bingx|CapsuleChat|bingx|capsule_chat' \
+  "generic plugin host does not branch on concrete plugin identities"
+require_absent "$SCREENS" 'BingxFuturesLiveSnapshotBuilderService|BingxFuturesLiveDecisionInput' \
+  "screens do not orchestrate BingX snapshot and live decision pipeline"
+require_absent "$SCREENS" 'BingxFuturesRiskGovernorInput|_riskGovernor\.evaluate' \
+  "screens do not construct or evaluate BingX risk governor inputs"
 
 # 6) Projection discipline: shared kind mapping only.
 require_present "$SUPPORT" 'String kindLabel\(dynamic kind\)' \

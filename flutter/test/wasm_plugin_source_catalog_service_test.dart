@@ -289,6 +289,36 @@ void main() {
     );
   });
 
+  test('fetchCatalog version 2 requires sha256_hex', () async {
+    final catalogPath = '${tempDocsDir.path}/plugin_catalog_v2_no_sha.json';
+    File(catalogPath).writeAsStringSync(
+      jsonEncode(
+        {
+          'schema': 'hivra.plugin.catalog',
+          'version': 2,
+          'source_id': 'local.hivra.plugins',
+          'source_name': 'Local Hivra Plugins',
+          'entries': [
+            {
+              'id': 'missing-sha',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'display_name': 'Missing SHA',
+              'version': '0.1.0',
+              'download_url': 'https://example.com/plugin.zip',
+              'package_kind': 'zip',
+            }
+          ],
+        },
+      ),
+      flush: true,
+    );
+
+    await expectLater(
+      () => service.fetchCatalog(catalogUrl: catalogPath),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
   test('fetchCatalog filters unsupported download_url schemes', () async {
     final catalogPath =
         '${tempDocsDir.path}/plugin_catalog_bad_url_scheme.json';

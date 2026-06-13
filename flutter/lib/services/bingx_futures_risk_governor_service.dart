@@ -38,6 +38,9 @@ class BingxFuturesRiskGovernorInput {
   final int lossStreakCount;
   final String? lastLossAtUtc;
   final String nowUtc;
+  final String? exchangeMinimumQuantityDecimal;
+  final String? exchangeMinimumNotionalQuoteDecimal;
+  final String? exchangeReferencePriceDecimal;
 
   const BingxFuturesRiskGovernorInput({
     required this.symbol,
@@ -50,6 +53,9 @@ class BingxFuturesRiskGovernorInput {
     required this.lossStreakCount,
     required this.lastLossAtUtc,
     required this.nowUtc,
+    this.exchangeMinimumQuantityDecimal,
+    this.exchangeMinimumNotionalQuoteDecimal,
+    this.exchangeReferencePriceDecimal,
   });
 }
 
@@ -173,6 +179,48 @@ class BingxFuturesRiskGovernorService {
       input.entryPriceDecimal,
       field: 'entry_price_decimal',
     );
+    final referencePrice = input.exchangeReferencePriceDecimal == null
+        ? entryPrice
+        : _parsePositiveDecimal(
+            input.exchangeReferencePriceDecimal!,
+            field: 'exchange_reference_price_decimal',
+          );
+    final minimumQuantity = _parseOptionalNonNegativeDecimal(
+      input.exchangeMinimumQuantityDecimal,
+      field: 'exchange_minimum_quantity_decimal',
+    );
+    final minimumNotional = _parseOptionalNonNegativeDecimal(
+      input.exchangeMinimumNotionalQuoteDecimal,
+      field: 'exchange_minimum_notional_quote_decimal',
+    );
+    final effectiveMinimumNotional = [
+      minimumNotional,
+      minimumQuantity * referencePrice,
+    ].reduce((left, right) => left > right ? left : right);
+    if (minimumQuantity > 0 && quantity < minimumQuantity) {
+      return _decision(
+        input: input,
+        policy: policy,
+        status: BingxFuturesRiskDecisionStatus.blocked,
+        reasonCode: 'exchange_min_quantity',
+        reasonMessage:
+            'Order quantity ${_fmtDecimal(quantity, scale: 8)} is below '
+            'BingX minimum ${_fmtDecimal(minimumQuantity, scale: 8)} '
+            '(about ${_fmtDecimal(effectiveMinimumNotional, scale: 8)} USDT)',
+      );
+    }
+    final orderNotional = quantity * referencePrice;
+    if (minimumNotional > 0 && orderNotional < minimumNotional) {
+      return _decision(
+        input: input,
+        policy: policy,
+        status: BingxFuturesRiskDecisionStatus.blocked,
+        reasonCode: 'exchange_min_notional',
+        reasonMessage:
+            'Order notional ${_fmtDecimal(orderNotional, scale: 8)} USDT is '
+            'below BingX minimum ${_fmtDecimal(minimumNotional, scale: 8)} USDT',
+      );
+    }
     final stopLoss = _parsePositiveDecimal(
       input.stopLossDecimal,
       field: 'stop_loss_decimal',
@@ -249,6 +297,12 @@ class BingxFuturesRiskGovernorService {
         'cooldown_minutes': policy.cooldownMinutes,
       },
       'metrics': <String, dynamic>{
+        'exchange_minimum_quantity_decimal':
+            input.exchangeMinimumQuantityDecimal?.trim() ?? '',
+        'exchange_minimum_notional_quote_decimal':
+            input.exchangeMinimumNotionalQuoteDecimal?.trim() ?? '',
+        'exchange_reference_price_decimal':
+            input.exchangeReferencePriceDecimal?.trim() ?? '',
         'max_allowed_quantity_decimal':
             _fmtDecimal(maxAllowedQuantity, scale: 8),
         'trade_risk_quote_decimal': _fmtDecimal(tradeRiskQuote, scale: 8),
@@ -284,6 +338,18 @@ class BingxFuturesRiskGovernorService {
     final value = _parseDecimal(raw, field: field);
     if (value <= 0) {
       throw FormatException('$field must be > 0');
+    }
+    return value;
+  }
+
+  double _parseOptionalNonNegativeDecimal(
+    String? raw, {
+    required String field,
+  }) {
+    if (raw == null || raw.trim().isEmpty) return 0;
+    final value = _parseDecimal(raw, field: field);
+    if (value < 0) {
+      throw FormatException('$field must be >= 0');
     }
     return value;
   }

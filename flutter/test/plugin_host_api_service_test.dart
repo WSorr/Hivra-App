@@ -4,6 +4,8 @@ import 'package:hivra_app/services/bingx_trading_contract_service.dart';
 import 'package:hivra_app/services/capsule_chat_contract_service.dart';
 import 'package:hivra_app/services/consensus_processor.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
+import 'package:hivra_app/services/plugin_contract_handlers.dart';
+import 'package:hivra_app/services/plugin_host_contract_handler.dart';
 
 void main() {
   group('PluginHostApiService', () {
@@ -76,8 +78,8 @@ void main() {
       final response = await service.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
-          method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
+          pluginId: bingxFuturesTradingPluginId,
+          method: placeBingxFuturesOrderIntentMethod,
           args: _validBingxArgs(),
         ),
       );
@@ -122,8 +124,8 @@ void main() {
       final response = service.execute(
         PluginHostApiRequest(
           schemaVersion: 1,
-          pluginId: PluginHostApiService.capsuleChatPluginId,
-          method: PluginHostApiService.postCapsuleChatMethod,
+          pluginId: capsuleChatPluginId,
+          method: postCapsuleChatMethod,
           args: _validChatArgs(),
         ),
       );
@@ -140,18 +142,24 @@ PluginHostApiService _service({
   CapsuleChatRunner? runCapsuleChat,
 }) {
   return PluginHostApiService(
-    runBingxFuturesOrder: runBingxFuturesOrder ?? _noopBingx,
-    runCapsuleChat: runCapsuleChat ??
-        ({
-          required peerHex,
-          required clientMessageId,
-          required messageText,
-          required createdAtUtc,
-        }) =>
-            const CapsuleChatExecutionResult(
-              envelope: null,
-              blockingFacts: <ConsensusBlockingFact>[],
-            ),
+    handlers: <PluginHostContractHandler>[
+      BingxFuturesPluginContractHandler(
+        run: runBingxFuturesOrder ?? _noopBingx,
+      ),
+      CapsuleChatPluginContractHandler(
+        run: runCapsuleChat ??
+            ({
+              required peerHex,
+              required clientMessageId,
+              required messageText,
+              required createdAtUtc,
+            }) =>
+                const CapsuleChatExecutionResult(
+                  envelope: null,
+                  blockingFacts: <ConsensusBlockingFact>[],
+                ),
+      ),
+    ],
     resolveRuntimeBinding: (_) => Future<PluginRuntimeBinding>.value(
       const PluginRuntimeBinding.externalPackage(
         packageId: 'pkg-futures-1',

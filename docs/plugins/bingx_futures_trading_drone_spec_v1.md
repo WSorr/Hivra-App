@@ -230,6 +230,31 @@ Determinism constraints:
   - local liquidity pockets inside current dealing range.
 - liquidation levels:
   - cluster proximity score near planned entry/invalidation area.
+  - liquidation/force-order/orderbook proxy levels are contextual evidence only
+    and MUST NOT become executable entry anchors.
+
+External HTF levels MUST have an explicit deterministic lifecycle:
+
+- `fresh`: a confirmed swing pivot that has not been swept after confirmation;
+- `sweep_origin`: a new pivot that itself breaks the previous same-side pivot;
+- `post_sweep_reaction`: the first same-side pivot formed after a
+  `sweep_origin`; it belongs to the reaction leg and is not new external
+  liquidity;
+- `consumed`: a confirmed pivot breached by a later candle.
+
+Only `fresh` HTF pivots may be used as pending-entry retest anchors.
+The `4h` lifecycle window MUST cover at least 80 days of closed candles so a
+level cannot appear fresh merely because an older sweep fell outside a short
+runtime lookback.
+Raw candle highs/lows MUST NOT be treated as executable liquidity levels.
+`sweep_origin`, `post_sweep_reaction`, and `consumed` levels MUST NOT become
+fresh again merely because price moved away from them. A trade after a sweep
+requires the separate current microstructure path
+(`sweep -> reclaim -> displacement`) and a new live decision.
+Local `olderHigh/recentHigh/olderLow/recentLow` values may be emitted as
+`internal_diagnostic`, but MUST NOT authorize a pending order. If neither a
+`fresh` HTF pivot nor a current confirmed micro sweep/reclaim exists, the live
+decision MUST emit `liquidity_anchor_unavailable`.
 
 If liquidation-level feed is unavailable:
 
@@ -260,6 +285,7 @@ All conditions below MUST pass in one evaluation cycle.
 1. Trend context bullish (EMA50 > EMA200, 15m).
 2. A sellside sweep is detected within last 3 closed 5m candles.
 3. Price re-enters zone and closes above sweep reclaim level.
+   Historical `sweep_origin`/`consumed` HTF levels do not satisfy this rule.
 4. Microstructure confirms:
    - delta > 0,
    - open-interest delta >= 0,
@@ -279,6 +305,7 @@ Entry anchor:
 1. Trend context bearish (EMA50 < EMA200, 15m).
 2. A buyside sweep is detected within last 3 closed 5m candles.
 3. Price re-enters zone and closes below sweep reclaim level.
+   Historical `sweep_origin`/`consumed` HTF levels do not satisfy this rule.
 4. Microstructure confirms:
    - delta < 0,
    - open-interest delta >= 0 (new positioning) or policy-allowed weakening regime,
@@ -330,10 +357,25 @@ Symmetric long-side rule applies when the market already continued upward and th
 Runtime implication:
 
 - already-open managed drone orders must be revalidated against a fresh live decision snapshot during order tracking,
+- each managed order must persist capsule-scoped provenance (canonical intent and decision hash lineage) before it can participate in replacement lifecycle,
 - only capsule-managed drone orders may be auto-canceled,
 - manual exchange orders must not be touched by this lifecycle,
-- market-dead reasons (`momentum_gate_*_missed_retest`, `trend_gate_*_far_retest`) require deterministic cancel of the stale pending order,
+- market-dead reasons (`momentum_gate_*_missed_retest`, `trend_gate_*_far_retest`, `liquidity_anchor_unavailable`) require deterministic cancel of the stale pending order,
 - side mismatch or entry price leaving the current TVH zone also requires deterministic cancel.
+- `NO_SIGNAL` alone must neither cancel nor preserve a managed order blindly: revalidation must lock the existing order side and evaluate the current structural zone independently from trade-delta signal eligibility,
+- a side-locked structural evaluation may only keep or cancel the existing order; it must never authorize a new or replacement order,
+- when the side-locked structural anchor is executable and the order remains inside its zone, the order is kept even if transient flow inputs produce `NO_SIGNAL`,
+- when the side-locked anchor is unavailable or the order price left its structural zone, the order is canceled without replacement unless a separate normal actionable live decision exists.
+- replacement must never reuse an unprovenanced order or bypass fresh decision, risk, idempotency, and execution gates.
+
+Automatic replacement policy:
+
+- `live_zone_mismatch` may produce one same-side replacement per `(peer, symbol, side)` lifecycle cycle,
+- replacement uses the fresh live TVH zone and retains original quantity,
+- original stop-distance percentage and risk/reward ratio are projected onto the fresh zone midpoint,
+- replacement receives a deterministic client id derived from old intent hash + fresh live decision hash,
+- consensus/host preparation, risk governor, execution idempotency, and exchange receipt are evaluated again,
+- `live_side_mismatch`, `momentum_gate_*`, `trend_gate_*`, and `liquidity_anchor_unavailable` are cancel-only and must never auto-reverse or auto-replace.
 
 ---
 

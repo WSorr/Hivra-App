@@ -1046,3 +1046,84 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - release preflight includes drone smoke checks for both platforms.
     - operators can trace any order to its deterministic decision record.
   - Status: completed (2026-05-14).
+
+- `11.7 Managed Order Provenance Journal`
+  - Goal:
+    - preserve enough capsule-scoped lineage to revalidate and eventually replace a managed exchange order without guessing from mutable UI state.
+  - Current progress:
+    - tracking state schema v2 persists canonical intent JSON plus intent/snapshot/feature/TVH/live decision hashes per managed order.
+    - successful exchange receipts register provenance; cancel/close paths remove it with the managed order id.
+    - v1 tracking files remain readable and produce empty provenance rather than fabricated lineage.
+  - Definition of done:
+    - app restart retains deterministic origin for every newly placed managed order.
+    - API credentials and exchange secrets are never written to the provenance journal.
+    - future replacement may only proceed from valid provenance through fresh decision, risk, idempotency, and execution gates.
+  - Status: completed (2026-06-12).
+
+- `11.10 Side-Locked Structural Order Revalidation`
+  - Goal:
+    - prevent stale managed orders from surviving only because transient flow
+      inputs produce `NO_SIGNAL`, without canceling valid structural orders on
+      every temporary signal loss.
+  - Current progress:
+    - live decision accepts an explicit existing-order side for structural
+      zone evaluation while preserving `side=null` and
+      `can_prepare_intent=false` for `NO_SIGNAL`.
+    - managed order revalidation compares the existing trigger price with that
+      side-locked executable zone.
+    - missing anchors and zone mismatch cancel; an in-zone structural order is
+      kept.
+    - structural-only cancellation is cancel-only and cannot place a
+      replacement order.
+  - Definition of done:
+    - transient trade-delta `NO_SIGNAL` does not churn a structurally valid
+      order.
+    - an order on a consumed or obsolete level cannot survive behind
+      `live_decision_not_actionable`.
+  - Status: completed (2026-06-12).
+
+- `11.8 Deterministic Managed Order Replacement`
+  - Goal:
+    - replace a stale-zone managed order without copying mutable UI state or bypassing normal execution safety.
+  - Current progress:
+    - added pure `BingxFuturesOrderReplacementService` planner.
+    - only `live_zone_mismatch` can auto-replace; side flips and market-dead gates remain cancel-only.
+    - replacement keeps original quantity and projects original stop-distance percentage + risk/reward ratio onto the fresh TVH zone.
+    - runtime replacement path repeats plugin host/consensus preparation, risk governor, idempotent execution queue, exchange receipt, and provenance registration.
+    - one replacement per `(peer, symbol, side)` is allowed in a revalidation cycle.
+    - open-order polling uses a lifecycle revision guard so a pre-cancel exchange snapshot cannot delete the newly registered replacement receipt.
+  - Definition of done:
+    - identical provenance + live decision + cycle timestamp yields identical replacement args/client id.
+    - no unprovenanced, side-flipped, or market-dead order is automatically replaced.
+    - successful replacement produces a new managed receipt and capsule-scoped provenance.
+  - Status: completed (2026-06-12).
+
+- `11.9 HTF Liquidity Lifecycle Gate`
+  - Goal:
+    - prevent already swept or later consumed higher-timeframe levels from
+      being reused as fresh pending-entry anchors.
+  - Current progress:
+    - replaced raw `4h/1d/1w` high/low candidates with confirmed swing pivots.
+    - added deterministic `fresh`, `sweep_origin`, `post_sweep_reaction`, and
+      `consumed` lifecycle classification from ordered closed candles.
+    - only untouched `fresh` pivots reach external retest selection.
+    - post-sweep entries remain on the separate current
+      `sweep -> reclaim -> displacement` path.
+    - local older/recent high/low fallback remains available for diagnostics,
+      but cannot authorize an executable pending-entry intent.
+    - liquidation, force-order, and orderbook proxy levels remain contextual
+      evidence only and cannot become executable entry anchors.
+    - expanded `4h` lifecycle input from 120 to 500 closed candles (about
+      83 days) so older sweeps cannot disappear outside a 20-day lookback.
+    - the first same-side pivot after a sweep-origin remains part of the
+      reaction leg and cannot be promoted to fresh external liquidity.
+    - no fresh HTF or confirmed current micro anchor emits
+      `liquidity_anchor_unavailable`; managed-order revalidation treats it as
+      cancel-only and does not fabricate a replacement.
+    - added regression coverage for untouched, sweep-origin, and later-breached
+      pivots plus non-executable internal fallback.
+  - Definition of done:
+    - a sweep-origin or consumed level cannot produce an external pending-entry
+      zone from the same normalized snapshot.
+    - identical ordered candle inputs produce identical candidate selection.
+  - Status: completed (2026-06-12).

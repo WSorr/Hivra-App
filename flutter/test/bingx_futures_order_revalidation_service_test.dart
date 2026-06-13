@@ -85,6 +85,92 @@ void main() {
       expect(result.shouldCancel, isTrue);
       expect(result.reasonCode, 'live_zone_mismatch');
     });
+
+    test('cancels NO_SIGNAL order outside side-locked structural zone', () {
+      final result = service.revalidate(
+        order: _openOrder(
+          side: 'BUY',
+          priceDecimal: '560.0',
+          triggerPriceDecimal: '560.0',
+        ),
+        liveDecision: _decision(
+          side: null,
+          zoneEvaluationSide: 'buy',
+          zoneLowDecimal: '595.0',
+          zoneHighDecimal: '597.0',
+          canPrepareIntent: false,
+          decision: BingxTvhDecisionKind.noSignal,
+        ),
+      );
+
+      expect(result.shouldCancel, isTrue);
+      expect(result.reasonCode, 'live_zone_mismatch');
+    });
+
+    test('cancels NO_SIGNAL order when structural anchor is unavailable', () {
+      final result = service.revalidate(
+        order: _openOrder(
+          side: 'BUY',
+          priceDecimal: '560.0',
+          triggerPriceDecimal: '560.0',
+        ),
+        liveDecision: _decision(
+          side: null,
+          zoneEvaluationSide: 'buy',
+          zoneLowDecimal: '559.0',
+          zoneHighDecimal: '561.0',
+          canPrepareIntent: false,
+          decision: BingxTvhDecisionKind.noSignal,
+          zoneAnchorExecutable: false,
+        ),
+      );
+
+      expect(result.shouldCancel, isTrue);
+      expect(result.reasonCode, 'liquidity_anchor_unavailable');
+    });
+
+    test('keeps NO_SIGNAL order inside side-locked structural zone', () {
+      final result = service.revalidate(
+        order: _openOrder(
+          side: 'BUY',
+          priceDecimal: '560.0',
+          triggerPriceDecimal: '560.0',
+        ),
+        liveDecision: _decision(
+          side: null,
+          zoneEvaluationSide: 'buy',
+          zoneLowDecimal: '559.0',
+          zoneHighDecimal: '561.0',
+          canPrepareIntent: false,
+          decision: BingxTvhDecisionKind.noSignal,
+        ),
+      );
+
+      expect(result.shouldCancel, isFalse);
+      expect(result.reasonCode, 'structural_setup_still_valid');
+    });
+
+    test('keeps plain NO_SIGNAL when no structural evaluation was requested',
+        () {
+      final result = service.revalidate(
+        order: _openOrder(
+          side: 'BUY',
+          priceDecimal: '560.0',
+          triggerPriceDecimal: '560.0',
+        ),
+        liveDecision: _decision(
+          side: null,
+          zoneLowDecimal: null,
+          zoneHighDecimal: null,
+          canPrepareIntent: false,
+          decision: BingxTvhDecisionKind.noSignal,
+          zoneAnchorExecutable: false,
+        ),
+      );
+
+      expect(result.shouldCancel, isFalse);
+      expect(result.reasonCode, 'live_decision_not_actionable');
+    });
   });
 }
 
@@ -109,19 +195,28 @@ BingxFuturesOpenOrder _openOrder({
 }
 
 BingxFuturesLiveDecisionResult _decision({
-  required String side,
-  required String zoneLowDecimal,
-  required String zoneHighDecimal,
+  required String? side,
+  required String? zoneLowDecimal,
+  required String? zoneHighDecimal,
   required bool canPrepareIntent,
+  BingxTvhDecisionKind? decision,
+  String? zoneEvaluationSide,
+  bool zoneAnchorExecutable = true,
   bool trendGateBlocked = false,
   String trendGateCode = 'ok',
 }) {
   return BingxFuturesLiveDecisionResult(
     canPrepareIntent: canPrepareIntent,
-    decision:
-        side == 'buy' ? BingxTvhDecisionKind.long : BingxTvhDecisionKind.short,
+    decision: decision ??
+        (side == 'buy'
+            ? BingxTvhDecisionKind.long
+            : BingxTvhDecisionKind.short),
     side: side,
-    zoneSide: side == 'buy' ? 'buyside' : 'sellside',
+    zoneSide: (side ?? zoneEvaluationSide) == 'buy'
+        ? 'buyside'
+        : (side ?? zoneEvaluationSide) == 'sell'
+            ? 'sellside'
+            : null,
     zoneLowDecimal: zoneLowDecimal,
     zoneHighDecimal: zoneHighDecimal,
     zoneConflict: false,
@@ -146,5 +241,7 @@ BingxFuturesLiveDecisionResult _decision({
     trend1d: side == 'buy' ? 'bull' : 'bear',
     trendGateBlocked: trendGateBlocked,
     trendGateCode: trendGateCode,
+    zoneEvaluationSide: zoneEvaluationSide ?? side,
+    zoneAnchorExecutable: zoneAnchorExecutable,
   );
 }

@@ -95,6 +95,40 @@ void main() {
       expect(decision.maxAllowedQuantityDecimal, isNot('0'));
     });
 
+    test('blocks quantity below exchange minimum before local risk', () {
+      final decision = service.evaluate(
+        input: _input(
+          quantityDecimal: '0.001801',
+          entryPriceDecimal: '1503.50',
+          stopLossDecimal: '1428.33',
+          exchangeMinimumQuantityDecimal: '0.01',
+          exchangeMinimumNotionalQuoteDecimal: '2',
+          exchangeReferencePriceDecimal: '1665.48',
+        ),
+        policy: policy,
+      );
+
+      expect(decision.status, BingxFuturesRiskDecisionStatus.blocked);
+      expect(decision.reasonCode, 'exchange_min_quantity');
+      expect(decision.reasonMessage, contains('16.6548 USDT'));
+    });
+
+    test('blocks notional below exchange minimum', () {
+      final decision = service.evaluate(
+        input: _input(
+          quantityDecimal: '0.01',
+          entryPriceDecimal: '100',
+          stopLossDecimal: '95',
+          exchangeMinimumNotionalQuoteDecimal: '2',
+          exchangeReferencePriceDecimal: '100',
+        ),
+        policy: policy,
+      );
+
+      expect(decision.status, BingxFuturesRiskDecisionStatus.blocked);
+      expect(decision.reasonCode, 'exchange_min_notional');
+    });
+
     test('is deterministic for identical inputs', () {
       final first = service.evaluate(
         input: _input(),
@@ -124,6 +158,9 @@ BingxFuturesRiskGovernorInput _input({
   int lossStreakCount = 0,
   String? lastLossAtUtc,
   String nowUtc = '2026-05-13T12:00:00Z',
+  String? exchangeMinimumQuantityDecimal,
+  String? exchangeMinimumNotionalQuoteDecimal,
+  String? exchangeReferencePriceDecimal,
 }) {
   return BingxFuturesRiskGovernorInput(
     symbol: symbol,
@@ -136,5 +173,8 @@ BingxFuturesRiskGovernorInput _input({
     lossStreakCount: lossStreakCount,
     lastLossAtUtc: lastLossAtUtc,
     nowUtc: nowUtc,
+    exchangeMinimumQuantityDecimal: exchangeMinimumQuantityDecimal,
+    exchangeMinimumNotionalQuoteDecimal: exchangeMinimumNotionalQuoteDecimal,
+    exchangeReferencePriceDecimal: exchangeReferencePriceDecimal,
   );
 }

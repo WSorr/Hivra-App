@@ -15,6 +15,7 @@ class BingxFuturesLiveDecisionInput {
   final double zoneNearBps;
   final double zoneFarBps;
   final BingxTvhPolicy policy;
+  final String? zoneEvaluationSide;
 
   const BingxFuturesLiveDecisionInput({
     required this.snapshotInput,
@@ -24,6 +25,7 @@ class BingxFuturesLiveDecisionInput {
     this.zoneNearBps = 15.0,
     this.zoneFarBps = 35.0,
     this.policy = const BingxTvhPolicy(),
+    this.zoneEvaluationSide,
   });
 }
 
@@ -46,6 +48,10 @@ class BingxFuturesLiveDecisionResult {
   final String trend1d;
   final bool trendGateBlocked;
   final String trendGateCode;
+  final String? zoneAnchorSource;
+  final bool zoneAnchorExecutable;
+  final String? zoneAnchorLifecycle;
+  final String? zoneEvaluationSide;
 
   const BingxFuturesLiveDecisionResult({
     required this.canPrepareIntent,
@@ -66,6 +72,10 @@ class BingxFuturesLiveDecisionResult {
     required this.trend1d,
     required this.trendGateBlocked,
     required this.trendGateCode,
+    this.zoneAnchorSource,
+    this.zoneAnchorExecutable = false,
+    this.zoneAnchorLifecycle,
+    this.zoneEvaluationSide,
   });
 }
 
@@ -103,23 +113,27 @@ class BingxFuturesLiveDecisionService {
       policy: input.policy,
     );
 
-    final side = switch (tvhDecision.decision) {
+    final decisionSide = switch (tvhDecision.decision) {
       BingxTvhDecisionKind.long => 'buy',
       BingxTvhDecisionKind.short => 'sell',
       BingxTvhDecisionKind.noSignal || BingxTvhDecisionKind.blocked => null,
     };
+    final requestedZoneSide = _normalizeSide(input.zoneEvaluationSide);
+    final zoneEvaluationSide = decisionSide ?? requestedZoneSide;
 
     BingxFuturesZoneDecisionResult? zone;
-    if (side != null) {
+    if (zoneEvaluationSide != null) {
       zone = _zoneDecision.decide(
         input: BingxFuturesZoneDecisionInput(
           midPrice: _parsePositiveDecimal(
             input.snapshotInput.prices.lastTradePriceDecimal,
             field: 'last_trade_price_decimal',
           ),
-          fallbackSide: side,
+          fallbackSide: zoneEvaluationSide,
+          requiredSide: zoneEvaluationSide,
           microHighs: _readHighs(input.snapshotInput.candles, '5m'),
           microLows: _readLows(input.snapshotInput.candles, '5m'),
+          microCloses: _readCloses(input.snapshotInput.candles, '5m'),
           macroHighs: _readHighs(input.snapshotInput.candles, '1h'),
           macroLows: _readLows(input.snapshotInput.candles, '1h'),
           higherHighs: _readHighs(input.snapshotInput.candles, '4h'),
@@ -130,6 +144,7 @@ class BingxFuturesLiveDecisionService {
           dailyCloses: _readCloses(input.snapshotInput.candles, '1d'),
           weeklyHighs: _readHighs(input.snapshotInput.candles, '1w'),
           weeklyLows: _readLows(input.snapshotInput.candles, '1w'),
+          weeklyCloses: _readCloses(input.snapshotInput.candles, '1w'),
           liquidationSellLevels: _readLiquidationLevels(
             input.snapshotInput.liquidityLevels,
             side: 'sellside',
@@ -147,18 +162,27 @@ class BingxFuturesLiveDecisionService {
       );
     }
 
-    final zoneConflict = zone != null && zone.side != side;
+    final zoneConflict = zone != null && zone.side != zoneEvaluationSide;
     final trendGateCode = _evaluateTrendGate(
-      side: side,
+      side: decisionSide,
       features: features,
       zone: zone,
     );
     final trendGateBlocked = trendGateCode != 'ok';
-    final canPrepareIntent =
-        side != null && zone != null && !zoneConflict && !trendGateBlocked;
+    final canPrepareIntent = decisionSide != null &&
+        zone != null &&
+        !zoneConflict &&
+        !trendGateBlocked;
 
     final mergedReasons = <BingxTvhDecisionReason>[
       ...tvhDecision.reasons,
+      BingxTvhDecisionReason(
+        code: 'zone_side_alignment',
+        passed: !zoneConflict,
+        detail: zone == null
+            ? 'zone_unavailable'
+            : 'evaluation_side=$zoneEvaluationSide zone_side=${zone.side}',
+      ),
       BingxTvhDecisionReason(
         code: trendGateCode,
         passed: !trendGateBlocked,
@@ -168,7 +192,8 @@ class BingxFuturesLiveDecisionService {
     return _buildResult(
       snapshot: snapshot,
       tvhDecision: tvhDecision,
-      side: side,
+      side: decisionSide,
+      zoneEvaluationSide: zoneEvaluationSide,
       zone: zone,
       zoneConflict: zoneConflict,
       trendGateBlocked: trendGateBlocked,
@@ -185,6 +210,7 @@ class BingxFuturesLiveDecisionService {
     required BingxFuturesMarketSnapshotDigest snapshot,
     required BingxTvhDecisionResult tvhDecision,
     required String? side,
+    required String? zoneEvaluationSide,
     required BingxFuturesZoneDecisionResult? zone,
     required bool zoneConflict,
     required bool trendGateBlocked,
@@ -217,6 +243,7 @@ class BingxFuturesLiveDecisionService {
         'code': trendGateCode,
       },
       'side': side,
+      'zone_evaluation_side': zoneEvaluationSide,
       'zone': zone == null
           ? null
           : <String, dynamic>{
@@ -228,6 +255,9 @@ class BingxFuturesLiveDecisionService {
               'conflict': zoneConflict,
               'target_retest_pct': zone.targetRetestPct,
               'needs_farther_retest': zone.needsFartherRetest,
+              'anchor_source': zone.anchorSource,
+              'anchor_executable': zone.anchorExecutable,
+              'anchor_lifecycle': zone.anchorLifecycle,
             },
       'reason_codes': reasons
           .map((reason) => <String, dynamic>{
@@ -256,7 +286,19 @@ class BingxFuturesLiveDecisionService {
       trend1d: trend1d,
       trendGateBlocked: trendGateBlocked,
       trendGateCode: trendGateCode,
+      zoneAnchorSource: zone?.anchorSource,
+      zoneAnchorExecutable: zone?.anchorExecutable ?? false,
+      zoneAnchorLifecycle: zone?.anchorLifecycle,
+      zoneEvaluationSide: zoneEvaluationSide,
     );
+  }
+
+  String? _normalizeSide(String? value) {
+    return switch (value?.trim().toLowerCase()) {
+      'buy' => 'buy',
+      'sell' => 'sell',
+      _ => null,
+    };
   }
 
   String _evaluateTrendGate({
@@ -265,6 +307,9 @@ class BingxFuturesLiveDecisionService {
     required BingxFuturesZoneDecisionResult? zone,
   }) {
     if (side == null || zone == null) return 'ok';
+    if (!zone.anchorExecutable) {
+      return 'liquidity_anchor_unavailable';
+    }
     final trend4h = zone.trend4h.trim().toLowerCase();
     final trend1d = zone.trend1d.trim().toLowerCase();
     final isStrongDownContinuation =

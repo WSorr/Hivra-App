@@ -68,7 +68,7 @@ class BingxFuturesLiveSnapshotBuilderService {
     final k4h = await exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '4h',
-      limit: 120,
+      limit: 500,
     );
     final k1d = await exchange.getPublicKlines(
       symbol: normalizedSymbol,
@@ -300,13 +300,14 @@ class BingxFuturesLiveSnapshotBuilderService {
 
   List<BingxFuturesTrade> _mapTrades(List<BingxFuturesPublicTrade> input) {
     return input
+        .where((trade) => trade.side == 'buy' || trade.side == 'sell')
         .map((trade) => BingxFuturesTrade(
               tradeId: trade.tradeId ?? '-',
               timestampUtc: _msToUtcIso(
                 trade.timestampMs ??
                     DateTime.now().millisecondsSinceEpoch.toString(),
               ),
-              side: trade.side == 'buy' ? 'buy' : 'sell',
+              side: trade.side,
               priceDecimal: trade.priceDecimal,
               quantityDecimal: trade.quantityDecimal,
             ))

@@ -110,6 +110,31 @@ void main() {
       );
     });
 
+    test('NO_SIGNAL can evaluate a side-locked structural zone without intent',
+        () {
+      final input = BingxFuturesLiveDecisionInput(
+        snapshotInput: _buildInput(permuted: false),
+        isConsensusSignable: true,
+        zoneEvaluationSide: 'buy',
+        policy: const BingxTvhPolicy(
+          maxAbsFundingRate: 0.00001,
+        ),
+      );
+
+      final first = service.decide(input);
+      final second = service.decide(input);
+
+      expect(first.decision, BingxTvhDecisionKind.noSignal);
+      expect(first.canPrepareIntent, isFalse);
+      expect(first.side, isNull);
+      expect(first.zoneEvaluationSide, 'buy');
+      expect(first.zoneSide, 'buyside');
+      expect(first.zoneLowDecimal, isNotNull);
+      expect(first.zoneHighDecimal, isNotNull);
+      expect(first.liveDecisionHashHex, second.liveDecisionHashHex);
+      expect(first.canonicalJson, second.canonicalJson);
+    });
+
     test('blocks far retest short in strong bearish continuation trend gate',
         () {
       final gatedService = BingxFuturesLiveDecisionService(
@@ -243,16 +268,14 @@ BingxFuturesMarketSnapshotInput _buildInput({required bool permuted}) {
   final candles = <BingxFuturesCandle>[
     ..._generate15mCandles(count: 220),
     ..._generate5mCandles(count: 80),
-    _singleCandle('1m', '2026-04-25T09:59:00Z', '2026-04-25T10:00:00Z',
-        102, 103, 101, 102.2),
-    _singleCandle('1h', '2026-04-25T09:00:00Z', '2026-04-25T10:00:00Z',
-        99, 104, 98, 102),
-    _singleCandle('4h', '2026-04-25T08:00:00Z', '2026-04-25T12:00:00Z',
-        97, 105, 96, 102.5),
-    _singleCandle('1d', '2026-04-24T00:00:00Z', '2026-04-25T00:00:00Z',
-        95, 106, 94, 101.8),
-    _singleCandle('1w', '2026-04-18T00:00:00Z', '2026-04-25T00:00:00Z',
-        92, 108, 90, 101.8),
+    ..._generate1hCandles(count: 24),
+    ..._generate4hCandlesWithFreshLow(),
+    _singleCandle('1m', '2026-04-25T09:59:00Z', '2026-04-25T10:00:00Z', 102,
+        103, 101, 102.2),
+    _singleCandle('1d', '2026-04-24T00:00:00Z', '2026-04-25T00:00:00Z', 95, 106,
+        94, 101.8),
+    _singleCandle('1w', '2026-04-18T00:00:00Z', '2026-04-25T00:00:00Z', 92, 108,
+        90, 101.8),
   ];
   final trades = <BingxFuturesTrade>[
     const BingxFuturesTrade(
@@ -310,6 +333,12 @@ BingxFuturesMarketSnapshotInput _buildInput({required bool permuted}) {
     ),
     const BingxFuturesLiquidityLevel(
       kind: 'external',
+      side: 'buyside',
+      timeframe: '1h',
+      priceDecimal: '94.00',
+    ),
+    const BingxFuturesLiquidityLevel(
+      kind: 'liquidation',
       side: 'buyside',
       timeframe: '1h',
       priceDecimal: '94.00',
@@ -393,12 +422,10 @@ BingxFuturesMarketSnapshotInput _buildShortInput({required bool permuted}) {
   final candles = <BingxFuturesCandle>[
     ..._generate15mCandlesBearish(count: 220),
     ..._generate5mCandlesBearish(count: 80),
-    _singleCandle('1m', '2026-04-25T09:59:00Z', '2026-04-25T10:00:00Z',
-        97, 97.2, 95.8, 96.0),
-    _singleCandle('1h', '2026-04-25T09:00:00Z', '2026-04-25T10:00:00Z', 101,
-        102, 95.5, 96.2),
-    _singleCandle('4h', '2026-04-25T08:00:00Z', '2026-04-25T12:00:00Z', 103,
-        104, 94.8, 96.4),
+    ..._generate1hCandlesBearish(count: 24),
+    ..._generate4hCandlesWithFreshHigh(),
+    _singleCandle('1m', '2026-04-25T09:59:00Z', '2026-04-25T10:00:00Z', 97,
+        97.2, 95.8, 96.0),
     _singleCandle('1d', '2026-04-24T00:00:00Z', '2026-04-25T00:00:00Z', 106,
         107, 93.8, 96.1),
     _singleCandle('1w', '2026-04-18T00:00:00Z', '2026-04-25T00:00:00Z', 110,
@@ -447,6 +474,12 @@ BingxFuturesMarketSnapshotInput _buildShortInput({required bool permuted}) {
   final liquidityLevels = <BingxFuturesLiquidityLevel>[
     const BingxFuturesLiquidityLevel(
       kind: 'external',
+      side: 'sellside',
+      timeframe: '1h',
+      priceDecimal: '102.00',
+    ),
+    const BingxFuturesLiquidityLevel(
+      kind: 'liquidation',
       side: 'sellside',
       timeframe: '1h',
       priceDecimal: '102.00',
@@ -642,6 +675,113 @@ List<BingxFuturesCandle> _generate5mCandlesBearish({required int count}) {
   return result;
 }
 
+List<BingxFuturesCandle> _generate1hCandles({required int count}) {
+  final result = <BingxFuturesCandle>[];
+  var close = 98.0;
+  for (var i = 0; i < count; i++) {
+    final open = close;
+    close += 0.16;
+    final openTime = DateTime.utc(2026, 4, 24, 10).add(Duration(hours: i));
+    final closeTime = openTime.add(const Duration(hours: 1));
+    result.add(
+      BingxFuturesCandle(
+        timeframe: '1h',
+        openTimeUtc: openTime.toIso8601String(),
+        closeTimeUtc: closeTime.toIso8601String(),
+        openDecimal: open.toStringAsFixed(4),
+        highDecimal: (close + 0.7).toStringAsFixed(4),
+        lowDecimal: (open - 0.7).toStringAsFixed(4),
+        closeDecimal: close.toStringAsFixed(4),
+        volumeBaseDecimal: '500.0',
+        volumeQuoteDecimal: '50000.0',
+        isClosed: true,
+      ),
+    );
+  }
+  return result;
+}
+
+List<BingxFuturesCandle> _generate1hCandlesBearish({required int count}) {
+  final result = <BingxFuturesCandle>[];
+  var close = 102.0;
+  for (var i = 0; i < count; i++) {
+    final open = close;
+    close -= 0.16;
+    final openTime = DateTime.utc(2026, 4, 24, 10).add(Duration(hours: i));
+    final closeTime = openTime.add(const Duration(hours: 1));
+    result.add(
+      BingxFuturesCandle(
+        timeframe: '1h',
+        openTimeUtc: openTime.toIso8601String(),
+        closeTimeUtc: closeTime.toIso8601String(),
+        openDecimal: open.toStringAsFixed(4),
+        highDecimal: (open + 0.7).toStringAsFixed(4),
+        lowDecimal: (close - 0.7).toStringAsFixed(4),
+        closeDecimal: close.toStringAsFixed(4),
+        volumeBaseDecimal: '500.0',
+        volumeQuoteDecimal: '50000.0',
+        isClosed: true,
+      ),
+    );
+  }
+  return result;
+}
+
+List<BingxFuturesCandle> _generate4hCandlesWithFreshLow() {
+  const highs = <double>[101, 102, 100, 103, 104, 105, 106];
+  const lows = <double>[99, 98, 94, 98, 99, 100, 101];
+  const closes = <double>[100, 99, 98, 100, 101, 102, 103];
+  return _generateFixedCandles(
+    timeframe: '4h',
+    interval: const Duration(hours: 4),
+    highs: highs,
+    lows: lows,
+    closes: closes,
+  );
+}
+
+List<BingxFuturesCandle> _generate4hCandlesWithFreshHigh() {
+  const highs = <double>[99, 100, 104, 100, 99, 98, 97];
+  const lows = <double>[97, 98, 99, 96, 95, 94, 93];
+  const closes = <double>[98, 99, 101, 98, 97, 96, 95];
+  return _generateFixedCandles(
+    timeframe: '4h',
+    interval: const Duration(hours: 4),
+    highs: highs,
+    lows: lows,
+    closes: closes,
+  );
+}
+
+List<BingxFuturesCandle> _generateFixedCandles({
+  required String timeframe,
+  required Duration interval,
+  required List<double> highs,
+  required List<double> lows,
+  required List<double> closes,
+}) {
+  final result = <BingxFuturesCandle>[];
+  final start = DateTime.utc(2026, 4, 24, 8);
+  for (var i = 0; i < closes.length; i++) {
+    final openTime = start.add(Duration(seconds: interval.inSeconds * i));
+    result.add(
+      BingxFuturesCandle(
+        timeframe: timeframe,
+        openTimeUtc: openTime.toIso8601String(),
+        closeTimeUtc: openTime.add(interval).toIso8601String(),
+        openDecimal: closes[i].toStringAsFixed(4),
+        highDecimal: highs[i].toStringAsFixed(4),
+        lowDecimal: lows[i].toStringAsFixed(4),
+        closeDecimal: closes[i].toStringAsFixed(4),
+        volumeBaseDecimal: '800.0',
+        volumeQuoteDecimal: '80000.0',
+        isClosed: true,
+      ),
+    );
+  }
+  return result;
+}
+
 BingxFuturesCandle _singleCandle(
   String timeframe,
   String openTimeUtc,
@@ -667,7 +807,8 @@ BingxFuturesCandle _singleCandle(
 
 class _StubSnapshotService extends BingxFuturesMarketSnapshotService {
   @override
-  BingxFuturesMarketSnapshotDigest build(BingxFuturesMarketSnapshotInput input) {
+  BingxFuturesMarketSnapshotDigest build(
+      BingxFuturesMarketSnapshotInput input) {
     return const BingxFuturesMarketSnapshotDigest(
       normalizedSnapshot: <String, dynamic>{
         'schema_version': 1,
@@ -757,7 +898,6 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
   final num recentHigh;
   final num recentLow;
   final bool sweepUp;
-  final bool sweepDown;
 
   const _StubZoneDecision({
     required this.side,
@@ -771,7 +911,6 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
     this.recentHigh = 105,
     this.recentLow = 85,
     this.sweepUp = true,
-    this.sweepDown = false,
   });
 
   @override
@@ -790,7 +929,7 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
       recentHigh: recentHigh,
       recentLow: recentLow,
       sweepUp: sweepUp,
-      sweepDown: sweepDown,
+      sweepDown: false,
       trend4h: trend4h,
       trend1d: trend1d,
       contextBias: -2,
@@ -805,6 +944,8 @@ class _StubZoneDecision extends BingxFuturesZoneDecisionService {
       externalSellRetest: 90,
       externalBuyRetest: 80,
       anchorSource: 'stub',
+      anchorExecutable: true,
+      anchorLifecycle: 'fresh',
       strength: 70,
       usedFallback: false,
     );

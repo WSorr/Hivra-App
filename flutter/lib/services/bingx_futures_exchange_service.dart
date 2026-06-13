@@ -669,6 +669,44 @@ class BingxFuturesPerpetualSymbolsResult {
   });
 }
 
+class BingxFuturesContractRules {
+  final String symbol;
+  final String? minimumQuantityDecimal;
+  final String? minimumNotionalQuoteDecimal;
+  final int? quantityPrecision;
+  final int? pricePrecision;
+
+  const BingxFuturesContractRules({
+    required this.symbol,
+    required this.minimumQuantityDecimal,
+    required this.minimumNotionalQuoteDecimal,
+    required this.quantityPrecision,
+    required this.pricePrecision,
+  });
+}
+
+class BingxFuturesContractRulesResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final String symbol;
+  final BingxFuturesContractRules? rules;
+
+  const BingxFuturesContractRulesResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.symbol,
+    required this.rules,
+  });
+}
+
 class BingxHttpRequest {
   final String method;
   final Uri uri;
@@ -1577,6 +1615,45 @@ class BingxFuturesExchangeService {
     );
   }
 
+  Future<BingxFuturesContractRulesResult> getPerpetualContractRules({
+    required String symbol,
+  }) async {
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final requestUri = Uri.parse(
+      '$_baseUrl$_publicContractsPath'
+      '?symbol=${Uri.encodeQueryComponent(normalizedSymbol)}',
+    );
+    final response = await _requestSender(
+      BingxHttpRequest(
+        method: 'GET',
+        uri: requestUri,
+        headers: const <String, String>{},
+        body: '',
+      ),
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final exchangeCode =
+        decoded?['code']?.toString() ?? 'http_${response.statusCode}';
+    final exchangeMessage = decoded?['msg']?.toString() ??
+        decoded?['message']?.toString() ??
+        (response.body.trim().isEmpty ? 'No response body' : response.body);
+    final rules = _extractContractRules(decoded, normalizedSymbol);
+    final isSuccess = response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        rules != null;
+    return BingxFuturesContractRulesResult(
+      isSuccess: isSuccess,
+      httpStatusCode: response.statusCode,
+      exchangeCode: exchangeCode,
+      exchangeMessage: exchangeMessage,
+      endpointPath: _publicContractsPath,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      rules: rules,
+    );
+  }
+
   Future<BingxFuturesControlActionResult> switchMarginType({
     required BingxFuturesApiCredentials credentials,
     required String symbol,
@@ -2075,10 +2152,12 @@ class BingxFuturesExchangeService {
         map,
         const <String>['side', 's', 'makerSide'],
       );
-      final side = _normalizeTradeSide(sideRaw);
+      final side = _normalizePublicTradeSide(map, sideRaw);
+      if (side == 'unknown') continue;
       final tradeId = _readStringField(map, const <String>[
         'id',
         'tradeId',
+        'fillId',
         't',
       ]);
       final timestampMs = _readStringField(map, const <String>[
@@ -2110,6 +2189,30 @@ class BingxFuturesExchangeService {
     if (normalized == 'buy' || normalized == 'bid') return 'buy';
     if (normalized == 'sell' || normalized == 'ask') return 'sell';
     return normalized;
+  }
+
+  static String _normalizePublicTradeSide(
+    Map<String, dynamic> map,
+    String? explicitSide,
+  ) {
+    final normalized = _normalizeTradeSide(explicitSide);
+    if (normalized == 'buy' || normalized == 'sell') {
+      return normalized;
+    }
+
+    final rawBuyerMaker = map['isBuyerMaker'];
+    final isBuyerMaker = switch (rawBuyerMaker) {
+      bool value => value,
+      String value when value.trim().toLowerCase() == 'true' => true,
+      String value when value.trim().toLowerCase() == 'false' => false,
+      num value when value == 1 => true,
+      num value when value == 0 => false,
+      _ => null,
+    };
+    if (isBuyerMaker == null) return 'unknown';
+
+    // BingX reports maker side; TVH consumes the aggressor side.
+    return isBuyerMaker ? 'sell' : 'buy';
   }
 
   static List<BingxFuturesPublicOpenInterestHistoryPoint>
@@ -2350,32 +2453,7 @@ class BingxFuturesExchangeService {
   }
 
   static List<String> _extractPerpetualSymbols(Map<String, dynamic>? decoded) {
-    if (decoded == null) return const <String>[];
-    final data = decoded['data'];
-    final rawItems = <dynamic>[];
-    if (data is List) {
-      rawItems.addAll(data);
-    } else if (data is Map) {
-      final contracts = data['contracts'];
-      if (contracts is List) {
-        rawItems.addAll(contracts);
-      } else {
-        final symbols = data['symbols'];
-        if (symbols is List) {
-          rawItems.addAll(symbols);
-        } else {
-          final list = data['list'];
-          if (list is List) {
-            rawItems.addAll(list);
-          } else {
-            final rows = data['rows'];
-            if (rows is List) {
-              rawItems.addAll(rows);
-            }
-          }
-        }
-      }
-    }
+    final rawItems = _extractContractItems(decoded);
 
     final out = <String>{};
     for (final item in rawItems) {
@@ -2404,6 +2482,55 @@ class BingxFuturesExchangeService {
 
     final sorted = out.toList()..sort();
     return List<String>.unmodifiable(sorted);
+  }
+
+  static BingxFuturesContractRules? _extractContractRules(
+    Map<String, dynamic>? decoded,
+    String symbol,
+  ) {
+    for (final item in _extractContractItems(decoded)) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final rawSymbol = _readStringField(
+        map,
+        const <String>['symbol', 'contractSymbol', 'pair', 'instrumentId'],
+      );
+      if (rawSymbol == null || _tryNormalizeSymbol(rawSymbol) != symbol) {
+        continue;
+      }
+      return BingxFuturesContractRules(
+        symbol: symbol,
+        minimumQuantityDecimal: _readStringField(
+          map,
+          const <String>['tradeMinQuantity', 'minQty', 'minimumQuantity'],
+        ),
+        minimumNotionalQuoteDecimal: _readStringField(
+          map,
+          const <String>['tradeMinUSDT', 'minNotional', 'minimumNotional'],
+        ),
+        quantityPrecision: int.tryParse(
+          _readStringField(map, const <String>['quantityPrecision']) ?? '',
+        ),
+        pricePrecision: int.tryParse(
+          _readStringField(map, const <String>['pricePrecision']) ?? '',
+        ),
+      );
+    }
+    return null;
+  }
+
+  static List<dynamic> _extractContractItems(
+    Map<String, dynamic>? decoded,
+  ) {
+    if (decoded == null) return const <dynamic>[];
+    final data = decoded['data'];
+    if (data is List) return List<dynamic>.from(data);
+    if (data is! Map) return const <dynamic>[];
+    for (final key in const <String>['contracts', 'symbols', 'list', 'rows']) {
+      final items = data[key];
+      if (items is List) return List<dynamic>.from(items);
+    }
+    return const <dynamic>[];
   }
 
   static String? _tryNormalizeSymbol(String raw) {

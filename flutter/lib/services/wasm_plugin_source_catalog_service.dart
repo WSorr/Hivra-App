@@ -191,7 +191,8 @@ class WasmPluginSourceCatalogService {
     if (json['schema'] != 'hivra.plugin.catalog') {
       throw const FormatException('Unsupported plugin source catalog schema');
     }
-    if (json['version'] != 1) {
+    final catalogVersion = json['version'];
+    if (catalogVersion != 1 && catalogVersion != 2) {
       throw const FormatException('Unsupported plugin source catalog version');
     }
 
@@ -253,6 +254,11 @@ class WasmPluginSourceCatalogService {
       }
 
       final normalizedSha = _normalizeSha256Hex(sha256, entryId: id);
+      if (catalogVersion == 2 && normalizedSha == null) {
+        throw FormatException(
+          'Missing sha256_hex in source catalog entry: $id',
+        );
+      }
       seenEntryIds.add(id);
       seenPluginVersionKinds.add(pluginVersionKindKey);
       entries.add(

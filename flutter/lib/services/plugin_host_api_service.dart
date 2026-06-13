@@ -2,9 +2,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
-import 'bingx_trading_contract_service.dart';
-import 'capsule_chat_contract_service.dart';
 import 'consensus_processor.dart';
+import 'plugin_host_contract_handler.dart';
 import 'wasm_plugin_capability_policy_service.dart';
 
 enum PluginHostApiStatus {
@@ -78,34 +77,6 @@ class PluginHostApiResponse {
     required this.responseHashHex,
   });
 }
-
-typedef CapsuleChatRunner = CapsuleChatExecutionResult Function({
-  required String peerHex,
-  required String clientMessageId,
-  required String messageText,
-  required String createdAtUtc,
-});
-typedef BingxFuturesOrderRunner = BingxTradingExecutionResult Function({
-  required String peerHex,
-  required String clientOrderId,
-  required String symbol,
-  required String side,
-  required String orderType,
-  required String quantityDecimal,
-  required String? limitPriceDecimal,
-  required String? timeInForce,
-  required String? entryMode,
-  required String? zoneSide,
-  required String? zoneLowDecimal,
-  required String? zoneHighDecimal,
-  required String? zonePriceRule,
-  required String? manualEntryPriceDecimal,
-  required String? triggerPriceDecimal,
-  required String? stopLossDecimal,
-  required String? takeProfitDecimal,
-  required String createdAtUtc,
-  required String? strategyTag,
-});
 
 class PluginRuntimeBinding {
   final String source;
@@ -191,28 +162,19 @@ typedef PluginRuntimeInvokeResolver = Future<PluginRuntimeInvokeEvidence?>
 
 class PluginHostApiService {
   static const int schemaVersion = 1;
-  static const String bingxFuturesTradingPluginId =
-      BingxTradingContractService.futuresPluginId;
-  static const String placeBingxFuturesOrderIntentMethod =
-      'place_bingx_futures_order_intent';
-  static const String capsuleChatPluginId = CapsuleChatContractService.pluginId;
-  static const String postCapsuleChatMethod = 'post_capsule_chat_message';
 
-  final BingxFuturesOrderRunner _runBingxFuturesOrder;
-  final CapsuleChatRunner _runCapsuleChat;
+  final List<PluginHostContractHandler> _handlers;
   final PluginRuntimeBindingResolver? _resolveRuntimeBinding;
   final PluginRuntimeInvokeResolver? _resolveRuntimeInvoke;
   final WasmPluginCapabilityPolicyService _capabilityPolicy;
 
   const PluginHostApiService({
-    required BingxFuturesOrderRunner runBingxFuturesOrder,
-    required CapsuleChatRunner runCapsuleChat,
+    required List<PluginHostContractHandler> handlers,
     PluginRuntimeBindingResolver? resolveRuntimeBinding,
     PluginRuntimeInvokeResolver? resolveRuntimeInvoke,
     WasmPluginCapabilityPolicyService capabilityPolicy =
         const WasmPluginCapabilityPolicyService(),
-  })  : _runBingxFuturesOrder = runBingxFuturesOrder,
-        _runCapsuleChat = runCapsuleChat,
+  })  : _handlers = handlers,
         _resolveRuntimeBinding = resolveRuntimeBinding,
         _resolveRuntimeInvoke = resolveRuntimeInvoke,
         _capabilityPolicy = capabilityPolicy;
@@ -282,8 +244,10 @@ class PluginHostApiService {
   }
 
   bool _requiresExternalRuntimeExecution(PluginHostApiRequest request) {
-    return request.pluginId == bingxFuturesTradingPluginId &&
-        request.method == placeBingxFuturesOrderIntentMethod;
+    final handler = _handlerFor(request.pluginId);
+    return handler != null &&
+        handler.methods.contains(request.method) &&
+        handler.requiresExternalRuntime;
   }
 
   String? _validateRuntimeBindingShape(PluginRuntimeBinding binding) {
@@ -367,11 +331,43 @@ class PluginHostApiService {
         runtimeInvoke: runtimeInvoke,
       );
     }
-    if (request.pluginId == bingxFuturesTradingPluginId) {
-      return _executeBingx(request, runtimeBinding, runtimeInvoke);
-    }
-    if (request.pluginId == capsuleChatPluginId) {
-      return _executeCapsuleChat(request, runtimeBinding, runtimeInvoke);
+    final handler = _handlerFor(request.pluginId);
+    if (handler != null) {
+      if (!handler.methods.contains(request.method)) {
+        return _rejected(
+          pluginId: request.pluginId,
+          method: request.method,
+          code: 'unsupported_method',
+          message: 'Unsupported plugin method',
+          runtimeBinding: runtimeBinding,
+          runtimeInvoke: runtimeInvoke,
+        );
+      }
+      final result = handler.execute(request);
+      return switch (result.status) {
+        PluginHostApiStatus.executed => _executed(
+            pluginId: request.pluginId,
+            method: request.method,
+            runtimeBinding: runtimeBinding,
+            runtimeInvoke: runtimeInvoke,
+            result: result.result!,
+          ),
+        PluginHostApiStatus.blocked => _blocked(
+            pluginId: request.pluginId,
+            method: request.method,
+            blockingFacts: result.blockingFacts,
+            runtimeBinding: runtimeBinding,
+            runtimeInvoke: runtimeInvoke,
+          ),
+        PluginHostApiStatus.rejected => _rejected(
+            pluginId: request.pluginId,
+            method: request.method,
+            code: result.errorCode!,
+            message: result.errorMessage!,
+            runtimeBinding: runtimeBinding,
+            runtimeInvoke: runtimeInvoke,
+          ),
+      };
     }
     return _rejected(
       pluginId: request.pluginId,
@@ -406,13 +402,7 @@ class PluginHostApiService {
   }
 
   String? _expectedContractKindForPlugin(String pluginId) {
-    if (pluginId == bingxFuturesTradingPluginId) {
-      return BingxTradingContractService.futuresContractKind;
-    }
-    if (pluginId == capsuleChatPluginId) {
-      return 'capsule_chat';
-    }
-    return null;
+    return _handlerFor(pluginId)?.contractKind;
   }
 
   String? _validateRuntimeCapabilities({
@@ -452,268 +442,15 @@ class PluginHostApiService {
     required String pluginId,
     required String method,
   }) {
-    if (pluginId == bingxFuturesTradingPluginId &&
-        method == placeBingxFuturesOrderIntentMethod) {
-      return const <String>{
-        'consensus_guard.read',
-        'exchange.trade.bingx.futures',
-      };
-    }
-    if (pluginId == capsuleChatPluginId && method == postCapsuleChatMethod) {
-      return const <String>{
-        'consensus_guard.read',
-      };
-    }
-    return const <String>{};
+    return _handlerFor(pluginId)?.requiredCapabilities(method) ??
+        const <String>{};
   }
 
-  PluginHostApiResponse _executeCapsuleChat(
-    PluginHostApiRequest request,
-    PluginRuntimeBinding runtimeBinding,
-    PluginRuntimeInvokeEvidence? runtimeInvoke,
-  ) {
-    if (request.method != postCapsuleChatMethod) {
-      return _rejected(
-        pluginId: request.pluginId,
-        method: request.method,
-        code: 'unsupported_method',
-        message: 'Unsupported plugin method',
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-      );
+  PluginHostContractHandler? _handlerFor(String pluginId) {
+    for (final handler in _handlers) {
+      if (handler.pluginId == pluginId) return handler;
     }
-
-    final peerHex = request.args['peer_hex']?.toString().trim().toLowerCase();
-    final clientMessageId =
-        request.args['client_message_id']?.toString().trim();
-    final messageText = request.args['message_text']?.toString();
-    final createdAtUtc = request.args['created_at_utc']?.toString().trim();
-
-    if (peerHex == null ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex) ||
-        clientMessageId == null ||
-        clientMessageId.isEmpty ||
-        messageText == null ||
-        messageText.trim().isEmpty ||
-        createdAtUtc == null ||
-        createdAtUtc.isEmpty) {
-      return _rejected(
-        pluginId: request.pluginId,
-        method: request.method,
-        code: 'invalid_args',
-        message:
-            'peer_hex/client_message_id/message_text/created_at_utc are required',
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-      );
-    }
-
-    late final CapsuleChatExecutionResult runResult;
-    try {
-      runResult = _runCapsuleChat(
-        peerHex: peerHex,
-        clientMessageId: clientMessageId,
-        messageText: messageText,
-        createdAtUtc: createdAtUtc,
-      );
-    } on FormatException catch (error) {
-      return _rejected(
-        pluginId: request.pluginId,
-        method: request.method,
-        code: 'invalid_args',
-        message: error.message,
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-      );
-    }
-
-    if (runResult.envelope != null) {
-      return _executed(
-        pluginId: request.pluginId,
-        method: request.method,
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-        result: <String, dynamic>{
-          'peer_hex': runResult.envelope!.peerHex,
-          'client_message_id': runResult.envelope!.clientMessageId,
-          'message_text': runResult.envelope!.messageText,
-          'created_at_utc': runResult.envelope!.createdAtUtc,
-          'envelope_hash_hex': runResult.envelope!.envelopeHashHex,
-          'canonical_envelope_json': runResult.envelope!.canonicalJson,
-        },
-      );
-    }
-
-    return _blocked(
-      pluginId: request.pluginId,
-      method: request.method,
-      blockingFacts: runResult.blockingFacts,
-      runtimeBinding: runtimeBinding,
-      runtimeInvoke: runtimeInvoke,
-    );
-  }
-
-  PluginHostApiResponse _executeBingx(
-    PluginHostApiRequest request,
-    PluginRuntimeBinding runtimeBinding,
-    PluginRuntimeInvokeEvidence? runtimeInvoke,
-  ) {
-    if (request.method != placeBingxFuturesOrderIntentMethod) {
-      return _rejected(
-        pluginId: request.pluginId,
-        method: request.method,
-        code: 'unsupported_method',
-        message: 'Unsupported plugin method',
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-      );
-    }
-
-    final peerHex = request.args['peer_hex']?.toString().trim().toLowerCase();
-    final clientOrderId = request.args['client_order_id']?.toString().trim();
-    final symbol = request.args['symbol']?.toString().trim();
-    final side = request.args['side']?.toString().trim();
-    final orderType = request.args['order_type']?.toString().trim();
-    final quantityDecimal = request.args['quantity_decimal']?.toString().trim();
-    final limitPriceDecimal =
-        request.args['limit_price_decimal']?.toString().trim();
-    final timeInForce = request.args['time_in_force']?.toString().trim();
-    final entryMode = request.args['entry_mode']?.toString().trim();
-    final zoneSide = request.args['zone_side']?.toString().trim();
-    final zoneLowDecimal = request.args['zone_low_decimal']?.toString().trim();
-    final zoneHighDecimal =
-        request.args['zone_high_decimal']?.toString().trim();
-    final zonePriceRule = request.args['zone_price_rule']?.toString().trim();
-    final manualEntryPriceDecimal =
-        request.args['manual_entry_price_decimal']?.toString().trim();
-    final triggerPriceDecimal =
-        request.args['trigger_price_decimal']?.toString().trim();
-    final stopLossDecimal =
-        request.args['stop_loss_decimal']?.toString().trim();
-    final takeProfitDecimal =
-        request.args['take_profit_decimal']?.toString().trim();
-    final createdAtUtc = request.args['created_at_utc']?.toString().trim();
-    final strategyTag = request.args['strategy_tag']?.toString().trim();
-    final marketSnapshotHashHex =
-        request.args['market_snapshot_hash_hex']?.toString().trim();
-    final featureHashHex = request.args['feature_hash_hex']?.toString().trim();
-    final tvhDecisionHashHex =
-        request.args['tvh_decision_hash_hex']?.toString().trim();
-    final liveDecisionHashHex =
-        request.args['live_decision_hash_hex']?.toString().trim();
-
-    if (peerHex == null ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex) ||
-        clientOrderId == null ||
-        clientOrderId.isEmpty ||
-        symbol == null ||
-        symbol.isEmpty ||
-        side == null ||
-        side.isEmpty ||
-        orderType == null ||
-        orderType.isEmpty ||
-        quantityDecimal == null ||
-        quantityDecimal.isEmpty ||
-        createdAtUtc == null ||
-        createdAtUtc.isEmpty) {
-      return _rejected(
-        pluginId: request.pluginId,
-        method: request.method,
-        code: 'invalid_args',
-        message:
-            'peer_hex/client_order_id/symbol/side/order_type/quantity_decimal/created_at_utc are required',
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-      );
-    }
-
-    late final BingxTradingExecutionResult runResult;
-    try {
-      runResult = _runBingxFuturesOrder(
-        peerHex: peerHex,
-        clientOrderId: clientOrderId,
-        symbol: symbol,
-        side: side,
-        orderType: orderType,
-        quantityDecimal: quantityDecimal,
-        limitPriceDecimal: limitPriceDecimal,
-        timeInForce: timeInForce,
-        entryMode: entryMode,
-        zoneSide: zoneSide,
-        zoneLowDecimal: zoneLowDecimal,
-        zoneHighDecimal: zoneHighDecimal,
-        zonePriceRule: zonePriceRule,
-        manualEntryPriceDecimal: manualEntryPriceDecimal,
-        triggerPriceDecimal: triggerPriceDecimal,
-        stopLossDecimal: stopLossDecimal,
-        takeProfitDecimal: takeProfitDecimal,
-        createdAtUtc: createdAtUtc,
-        strategyTag: strategyTag,
-      );
-    } on FormatException catch (error) {
-      return _rejected(
-        pluginId: request.pluginId,
-        method: request.method,
-        code: 'invalid_args',
-        message: error.message,
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-      );
-    }
-
-    if (runResult.intent != null) {
-      return _executed(
-        pluginId: request.pluginId,
-        method: request.method,
-        runtimeBinding: runtimeBinding,
-        runtimeInvoke: runtimeInvoke,
-        result: <String, dynamic>{
-          'plugin_id': runResult.intent!.pluginId,
-          'contract_kind': BingxTradingContractService.futuresContractKind,
-          'peer_hex': runResult.intent!.peerHex,
-          'client_order_id': runResult.intent!.clientOrderId,
-          'symbol': runResult.intent!.symbol,
-          'side': runResult.intent!.side.name,
-          'order_type': runResult.intent!.orderType.name,
-          'quantity_decimal': runResult.intent!.quantityDecimal,
-          'limit_price_decimal': runResult.intent!.limitPriceDecimal,
-          'time_in_force': runResult.intent!.timeInForce,
-          'entry_mode':
-              runResult.intent!.entryMode == BingxEntryMode.zonePending
-                  ? 'zone_pending'
-                  : 'direct',
-          'zone_side': runResult.intent!.zoneSide?.name,
-          'zone_low_decimal': runResult.intent!.zoneLowDecimal,
-          'zone_high_decimal': runResult.intent!.zoneHighDecimal,
-          'zone_price_rule': switch (runResult.intent!.zonePriceRule) {
-            BingxZonePriceRule.zoneLow => 'zone_low',
-            BingxZonePriceRule.zoneMid => 'zone_mid',
-            BingxZonePriceRule.zoneHigh => 'zone_high',
-            BingxZonePriceRule.manual => 'manual',
-            null => null,
-          },
-          'trigger_price_decimal': runResult.intent!.triggerPriceDecimal,
-          'stop_loss_decimal': runResult.intent!.stopLossDecimal,
-          'take_profit_decimal': runResult.intent!.takeProfitDecimal,
-          'created_at_utc': runResult.intent!.createdAtUtc,
-          'strategy_tag': runResult.intent!.strategyTag,
-          'intent_hash_hex': runResult.intent!.intentHashHex,
-          'canonical_intent_json': runResult.intent!.canonicalJson,
-          'market_snapshot_hash_hex': marketSnapshotHashHex,
-          'feature_hash_hex': featureHashHex,
-          'tvh_decision_hash_hex': tvhDecisionHashHex,
-          'live_decision_hash_hex': liveDecisionHashHex,
-        },
-      );
-    }
-
-    return _blocked(
-      pluginId: request.pluginId,
-      method: request.method,
-      blockingFacts: runResult.blockingFacts,
-      runtimeBinding: runtimeBinding,
-      runtimeInvoke: runtimeInvoke,
-    );
+    return null;
   }
 
   PluginHostApiResponse _executed({

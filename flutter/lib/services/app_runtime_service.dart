@@ -22,6 +22,8 @@ import 'plugin_execution_guard_service.dart';
 import 'relationship_service.dart';
 import 'settings_service.dart';
 import 'plugin_host_api_service.dart';
+import 'plugin_contract_handlers.dart';
+import 'plugin_host_contract_handler.dart';
 import 'wasm_plugin_registry_service.dart';
 import 'wasm_plugin_runtime_stub_service.dart';
 
@@ -116,8 +118,10 @@ class AppRuntimeService {
     );
     final wasmRuntime = const WasmPluginRuntimeStubService();
     return PluginHostApiService(
-      runBingxFuturesOrder: bingxFutures.execute,
-      runCapsuleChat: chat.execute,
+      handlers: <PluginHostContractHandler>[
+        BingxFuturesPluginContractHandler(run: bingxFutures.execute),
+        CapsuleChatPluginContractHandler(run: chat.execute),
+      ],
       resolveRuntimeBinding: _resolvePluginRuntimeBinding,
       resolveRuntimeInvoke: (request, binding) => wasmRuntime.invoke(
         request: request,

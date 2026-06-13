@@ -6,17 +6,22 @@ import 'package:flutter/material.dart';
 import '../services/app_runtime_service.dart';
 import '../services/bingx_futures_credential_store.dart';
 import '../services/bingx_futures_live_decision_service.dart';
-import '../services/bingx_futures_live_snapshot_builder_service.dart';
+import '../services/bingx_futures_intent_use_case_service.dart';
+import '../services/bingx_futures_live_strategy_use_case_service.dart';
 import '../services/bingx_futures_exchange_risk_input_service.dart';
 import '../services/bingx_futures_exchange_service.dart';
+import '../services/bingx_futures_exchange_execution_use_case_service.dart';
 import '../services/bingx_futures_observability_envelope_service.dart';
 import '../services/bingx_futures_order_tracking_store.dart';
 import '../services/bingx_futures_order_revalidation_service.dart';
+import '../services/bingx_futures_order_replacement_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
 import '../services/bingx_futures_risk_governor_service.dart';
+import '../services/bingx_futures_strategy_naming_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
 import '../services/manual_consensus_check_service.dart';
 import '../services/plugin_host_api_service.dart';
+import '../services/plugin_contract_handlers.dart';
 import '../services/ui_event_log_service.dart';
 
 class TradingDroneScreen extends StatefulWidget {
@@ -70,12 +75,15 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       const BingxFuturesRiskGovernorService();
   final BingxFuturesObservabilityEnvelopeService _observability =
       const BingxFuturesObservabilityEnvelopeService();
+  late final BingxFuturesIntentUseCaseService _intentUseCase;
+  late final BingxFuturesExchangeExecutionUseCaseService _executionUseCase;
   final BingxFuturesOrderRevalidationService _orderRevalidation =
       const BingxFuturesOrderRevalidationService();
-  final BingxFuturesLiveSnapshotBuilderService _liveSnapshotBuilder =
-      const BingxFuturesLiveSnapshotBuilderService();
-  final BingxFuturesLiveDecisionService _liveDecision =
-      const BingxFuturesLiveDecisionService();
+  final BingxFuturesOrderReplacementService _orderReplacement =
+      const BingxFuturesOrderReplacementService();
+  late final BingxFuturesLiveStrategyUseCaseService _liveStrategyUseCase;
+  final BingxFuturesStrategyNamingService _strategyNaming =
+      const BingxFuturesStrategyNamingService();
   final CapsuleChatDeliveryService _chatDelivery =
       AppRuntimeService().buildCapsuleChatDeliveryService();
   final UiEventLogService _uiLog = const UiEventLogService();
@@ -130,6 +138,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   List<BingxFuturesOpenOrder> _openOrders = const <BingxFuturesOpenOrder>[];
   final Set<String> _managedOrderIds = <String>{};
   final Map<String, String> _managedOrderSymbols = <String, String>{};
+  final Map<String, BingxManagedOrderProvenance> _managedOrderProvenance =
+      <String, BingxManagedOrderProvenance>{};
+  int _managedOrderLifecycleRevision = 0;
   int _lastOpenOrdersTotalCount = 0;
   Timer? _openOrdersPollTimer;
   String? _trackedOrdersSymbol;
@@ -154,6 +165,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     super.initState();
     _bingxExecutionQueue = BingxFuturesExecutionQueueService(
       exchangeService: _bingxExchangeService,
+    );
+    _intentUseCase = BingxFuturesIntentUseCaseService(
+      hostApi: _pluginHostApi,
+      observability: _observability,
+    );
+    _liveStrategyUseCase = BingxFuturesLiveStrategyUseCaseService(
+      exchange: _bingxExchangeService,
+    );
+    _executionUseCase = BingxFuturesExchangeExecutionUseCaseService(
+      exchange: _bingxExchangeService,
+      queue: _bingxExecutionQueue,
+      riskInput: _exchangeRiskInput,
+      riskGovernor: _riskGovernor,
+      observability: _observability,
     );
     _loadCredentials();
     unawaited(_restoreOpenOrdersTrackingState());
@@ -184,7 +209,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   bool get _isTrackingOpenOrders => _openOrdersPollTimer != null;
 
-  void _registerManagedOrderId(String? orderId, {String? symbol}) {
+  void _registerManagedOrderId(
+    String? orderId, {
+    String? symbol,
+    BingxManagedOrderProvenance? provenance,
+  }) {
     final normalized = orderId?.trim() ?? '';
     if (normalized.isEmpty) return;
     final normalizedSymbol = symbol?.trim().toUpperCase();
@@ -196,9 +225,47 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         updated = true;
       }
     }
+    if (provenance != null && provenance.orderId == normalized) {
+      _managedOrderProvenance[normalized] = provenance;
+      updated = true;
+    }
     if (updated) {
+      _managedOrderLifecycleRevision += 1;
       unawaited(_persistOpenOrdersTrackingState(source: 'register_order_id'));
     }
+  }
+
+  BingxManagedOrderProvenance? _buildManagedOrderProvenance({
+    required String orderId,
+    required BingxFuturesIntentPayload payload,
+    required Map<String, dynamic> result,
+    required bool testOrder,
+  }) {
+    final intentHash = payload.intentHashHex?.trim() ?? '';
+    final canonicalIntent = result['canonical_intent_json']?.toString() ?? '';
+    if (intentHash.isEmpty || canonicalIntent.trim().isEmpty) {
+      unawaited(
+        _uiLog.log(
+          'bingx.exchange.provenance.skip',
+          'orderId=$orderId symbol=${payload.symbol} '
+              'reason=missing_intent_lineage',
+        ),
+      );
+      return null;
+    }
+    return BingxManagedOrderProvenance(
+      orderId: orderId,
+      symbol: payload.symbol,
+      side: payload.side,
+      testOrder: testOrder,
+      intentHashHex: intentHash,
+      canonicalIntentJson: canonicalIntent,
+      marketSnapshotHashHex: result['market_snapshot_hash_hex']?.toString(),
+      featureHashHex: result['feature_hash_hex']?.toString(),
+      tvhDecisionHashHex: result['tvh_decision_hash_hex']?.toString(),
+      liveDecisionHashHex: result['live_decision_hash_hex']?.toString(),
+      recordedAtUtc: DateTime.now().toUtc().toIso8601String(),
+    );
   }
 
   void _startOpenOrdersAutoTracking({
@@ -308,6 +375,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         managedOrderIds: _managedOrderIds.toList(growable: false),
         managedOrderSymbols:
             Map<String, String>.unmodifiable(_managedOrderSymbols),
+        managedOrderProvenance:
+            Map<String, BingxManagedOrderProvenance>.unmodifiable(
+          _managedOrderProvenance,
+        ),
         stopLossPercent: _stopLossPercent,
         takeProfitRiskReward: _takeProfitRiskReward,
       );
@@ -317,7 +388,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'source=$source trackedSymbol=${state.trackedSymbol ?? "-"} '
             'trackedOrderId=${state.trackedOrderId ?? "-"} '
             'managedCount=${state.managedOrderIds.length} '
-            'symbolCount=${state.managedOrderSymbols.length}',
+            'symbolCount=${state.managedOrderSymbols.length} '
+            'provenanceCount=${state.managedOrderProvenance.length}',
       );
     } catch (error) {
       await _uiLog.log(
@@ -337,6 +409,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _managedOrderSymbols
         ..clear()
         ..addAll(state.managedOrderSymbols);
+      _managedOrderProvenance
+        ..clear()
+        ..addAll(state.managedOrderProvenance);
       final restoredStopLossPercent = state.stopLossPercent;
       if (restoredStopLossPercent != null &&
           _stopLossPercentOptions.contains(restoredStopLossPercent)) {
@@ -357,6 +432,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           'bingx.exchange.tracking.restore',
           'tracked=no managedCount=${_managedOrderIds.length} '
               'symbolCount=${_managedOrderSymbols.length} '
+              'provenanceCount=${_managedOrderProvenance.length} '
               'slPct=${_stopLossPercent.toStringAsFixed(2)} '
               'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
         );
@@ -372,6 +448,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'tracked=yes symbol=$trackedSymbol '
             'orderId=${trackedOrderId ?? "-"} managedCount=${_managedOrderIds.length} '
             'symbolCount=${_managedOrderSymbols.length} '
+            'provenanceCount=${_managedOrderProvenance.length} '
             'slPct=${_stopLossPercent.toStringAsFixed(2)} '
             'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
       );
@@ -952,66 +1029,39 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     required String peerHex,
     bool silent = false,
     bool forceConsensusSignable = false,
+    String? zoneEvaluationSide,
   }) async {
-    final snapshot = await _liveSnapshotBuilder.fetchAndBuild(
-      exchange: _bingxExchangeService,
-      symbol: symbol,
-      credentials: _resolveCredentials(),
+    final consensus = forceConsensusSignable
+        ? (isSignable: true, blockingCodes: const <String>[])
+        : _consensusDecisionContext(peerHex);
+    final result = await _liveStrategyUseCase.execute(
+      BingxFuturesLiveStrategyCommand(
+        symbol: symbol,
+        credentials: _resolveCredentials(),
+        isConsensusSignable: consensus.isSignable,
+        blockingFactCodes: consensus.blockingCodes,
+        recentMicroBars: _recentMicroBars,
+        zoneNearBps: _zoneNearBps,
+        zoneFarBps: _zoneFarBps,
+        zoneEvaluationSide: zoneEvaluationSide,
+      ),
     );
-    if (!snapshot.isSuccess || snapshot.snapshotInput == null) {
+    if (!result.isSuccess) {
       await _uiLog.log(
         'bingx.strategy.live_decision.error',
-        'symbol=${snapshot.symbol} code=${snapshot.errorCode} '
-            'message=${snapshot.errorMessage}',
+        result.diagnostic,
       );
       if (!silent) {
         await _showSnack(
-          'Strategy failed: ${snapshot.errorCode} ${snapshot.errorMessage}',
+          'Strategy failed: ${result.errorCode} ${result.errorMessage}',
           seconds: 3,
         );
       }
       return null;
     }
 
-    final consensus = forceConsensusSignable
-        ? (isSignable: true, blockingCodes: const <String>[])
-        : _consensusDecisionContext(peerHex);
-    try {
-      final decision = _liveDecision.decide(
-        BingxFuturesLiveDecisionInput(
-          snapshotInput: snapshot.snapshotInput!,
-          isConsensusSignable: consensus.isSignable,
-          blockingFactCodes: consensus.blockingCodes,
-          recentMicroBars: _recentMicroBars,
-          zoneNearBps: _zoneNearBps,
-          zoneFarBps: _zoneFarBps,
-        ),
-      );
-      await _uiLog.log(
-        'bingx.strategy.live_decision',
-        'symbol=${snapshot.symbol} '
-            'can_prepare=${decision.canPrepareIntent} decision=${decision.decision.name} '
-            'side=${decision.side ?? "-"} zone_side=${decision.zoneSide ?? "-"} '
-            'zone_low=${decision.zoneLowDecimal ?? "-"} zone_high=${decision.zoneHighDecimal ?? "-"} '
-            'trend15m=${decision.trend15m} trend4h=${decision.trend4h} trend1d=${decision.trend1d} '
-            'trend_gate=${decision.trendGateCode} trend_blocked=${decision.trendGateBlocked} '
-            'consensus_signable=${consensus.isSignable} '
-            'market_hash=${decision.marketSnapshotHashHex.substring(0, 12)} '
-            'feature_hash=${decision.featureHashHex.substring(0, 12)} '
-            'tvh_hash=${decision.tvhDecisionHashHex.substring(0, 12)} '
-            'live_hash=${decision.liveDecisionHashHex.substring(0, 12)}',
-      );
-      return decision;
-    } on FormatException catch (error) {
-      await _uiLog.log(
-        'bingx.strategy.live_decision.error',
-        'symbol=${snapshot.symbol} code=invalid_snapshot message=${error.message}',
-      );
-      if (!silent) {
-        await _showSnack('Strategy failed: ${error.message}', seconds: 3);
-      }
-      return null;
-    }
+    await _uiLog.log('bingx.strategy.live_decision', result.diagnostic);
+    return result.decision;
   }
 
   Future<void> _runIntent() async {
@@ -1022,7 +1072,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     final peerHex = _peerController.text.trim().toLowerCase();
     final symbol = _symbolController.text.trim();
-    final strategyTag = _strategyTagController.text.trim();
+    var strategyTag = _strategyTagController.text.trim();
     var triggerPriceDecimal = _triggerPriceController.text.trim();
     var stopLossDecimal = _stopLossController.text.trim();
     var takeProfitDecimal = _takeProfitController.text.trim();
@@ -1123,6 +1173,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _zoneLowController.text = live.zoneLowDecimal!;
         _zoneHighController.text = live.zoneHighDecimal!;
       }
+      strategyTag = _strategyNaming.tagForDecision(live.decision) ?? '';
+      _strategyTagController.text = strategyTag;
+      triggerPriceDecimal =
+          live.side == 'buy' ? live.zoneHighDecimal! : live.zoneLowDecimal!;
+      _triggerPriceController.text = triggerPriceDecimal;
     }
     final zoneLowDecimal = _zoneLowController.text.trim();
     final zoneHighDecimal = _zoneHighController.text.trim();
@@ -1143,8 +1198,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
     }
     final timeInForce = _orderType == 'limit' ? _timeInForce : null;
-    if (isZonePending &&
-        (stopLossDecimal.isEmpty || takeProfitDecimal.isEmpty)) {
+    if (isZonePending) {
       final entryPrice = _deriveZoneEntryPrice(
         zonePriceRule: _zonePriceRule,
         zoneLowDecimal: zoneLowDecimal,
@@ -1159,14 +1213,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           stopLossPercent: _stopLossPercent,
           riskReward: _takeProfitRiskReward,
         );
-        if (stopLossDecimal.isEmpty) {
-          stopLossDecimal = derived.stopLossDecimal;
-          _stopLossController.text = stopLossDecimal;
-        }
-        if (takeProfitDecimal.isEmpty) {
-          takeProfitDecimal = derived.takeProfitDecimal;
-          _takeProfitController.text = takeProfitDecimal;
-        }
+        stopLossDecimal = derived.stopLossDecimal;
+        _stopLossController.text = stopLossDecimal;
+        takeProfitDecimal = derived.takeProfitDecimal;
+        _takeProfitController.text = takeProfitDecimal;
         await _uiLog.log(
           'bingx.intent.risk_targets.auto',
           'entry=$entryPrice side=$_side '
@@ -1188,78 +1238,40 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} symbol=$symbol side=$_side type=$_orderType entry=$_entryMode qty=$quantityDecimal',
       );
 
-      final response = await _pluginHostApi
-          .executeWithRuntimeHook(
-            PluginHostApiRequest(
-              schemaVersion: PluginHostApiService.schemaVersion,
-              pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
-              method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
-              args: <String, dynamic>{
-                'peer_hex': peerHex,
-                'client_order_id': clientOrderId,
-                'symbol': symbol,
-                'side': _side,
-                'order_type': _orderType,
-                'quantity_decimal': quantityDecimal,
-                'limit_price_decimal': limitPriceDecimal,
-                'time_in_force': timeInForce,
-                'entry_mode': _entryMode,
-                'zone_side': isZonePending ? _zoneSide : null,
-                'zone_low_decimal': isZonePending && zoneLowDecimal.isNotEmpty
-                    ? zoneLowDecimal
-                    : null,
-                'zone_high_decimal': isZonePending && zoneHighDecimal.isNotEmpty
-                    ? zoneHighDecimal
-                    : null,
-                'zone_price_rule': isZonePending ? _zonePriceRule : null,
-                'trigger_price_decimal':
-                    isZonePending && triggerPriceDecimal.isNotEmpty
-                        ? triggerPriceDecimal
-                        : null,
-                'stop_loss_decimal': isZonePending && stopLossDecimal.isNotEmpty
-                    ? stopLossDecimal
-                    : null,
-                'take_profit_decimal':
-                    isZonePending && takeProfitDecimal.isNotEmpty
-                        ? takeProfitDecimal
-                        : null,
-                'created_at_utc': nowUtc,
-                'strategy_tag': strategyTag.isEmpty ? null : strategyTag,
-                'market_snapshot_hash_hex': liveDecision?.marketSnapshotHashHex,
-                'feature_hash_hex': liveDecision?.featureHashHex,
-                'tvh_decision_hash_hex': liveDecision?.tvhDecisionHashHex,
-                'live_decision_hash_hex': liveDecision?.liveDecisionHashHex,
-              },
+      final useCaseResult = await _intentUseCase
+          .execute(
+            BingxFuturesIntentCommand(
+              screen: 'trading_drone',
+              peerHex: peerHex,
+              clientOrderId: clientOrderId,
+              symbol: symbol,
+              side: _side,
+              orderType: _orderType,
+              quantityDecimal: quantityDecimal,
+              limitPriceDecimal: limitPriceDecimal,
+              timeInForce: timeInForce,
+              entryMode: _entryMode,
+              zoneSide: _zoneSide,
+              zoneLowDecimal: zoneLowDecimal,
+              zoneHighDecimal: zoneHighDecimal,
+              zonePriceRule: _zonePriceRule,
+              manualEntryPriceDecimal: null,
+              triggerPriceDecimal: triggerPriceDecimal,
+              stopLossDecimal: stopLossDecimal,
+              takeProfitDecimal: takeProfitDecimal,
+              createdAtUtc: nowUtc,
+              strategyTag: strategyTag,
+              liveDecision: liveDecision,
             ),
           )
           .timeout(_hostIntentTimeout);
+      final response = useCaseResult.response;
       if (!mounted) return;
       setState(() {
         _lastIntentResponse = response;
       });
       finalStatus = response.status;
-      final decisionEnvelope = _observability.buildDecisionEnvelope(
-        screen: 'trading_drone',
-        pluginId: PluginHostApiService.bingxFuturesTradingPluginId,
-        method: PluginHostApiService.placeBingxFuturesOrderIntentMethod,
-        status: response.status.name,
-        symbol: symbol,
-        side: _side,
-        orderType: _orderType,
-        entryMode: _entryMode,
-        executionSource: response.executionSource,
-        intentHashHex: response.result?['intent_hash_hex']?.toString(),
-        errorCode: response.errorCode,
-        marketSnapshotHashHex: liveDecision?.marketSnapshotHashHex ??
-            response.result?['market_snapshot_hash_hex']?.toString(),
-        featureHashHex: liveDecision?.featureHashHex ??
-            response.result?['feature_hash_hex']?.toString(),
-        tvhDecisionHashHex: liveDecision?.tvhDecisionHashHex ??
-            response.result?['tvh_decision_hash_hex']?.toString(),
-        liveDecisionHashHex: liveDecision?.liveDecisionHashHex ??
-            response.result?['live_decision_hash_hex']?.toString(),
-        blockingFactCodes: response.blockingFacts.map((f) => f.key).toList(),
-      );
+      final decisionEnvelope = useCaseResult.decisionEnvelope;
       await _uiLog.log(
         'bingx.intent.response',
         'status=${response.status.name} '
@@ -1354,7 +1366,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final signalId = 'sig-${DateTime.now().microsecondsSinceEpoch}';
     final payloadJson = jsonEncode(<String, dynamic>{
       'schema_version': 1,
-      'plugin_id': PluginHostApiService.bingxFuturesTradingPluginId,
+      'plugin_id': bingxFuturesTradingPluginId,
       'contract_kind': 'bingx_trade_signal_v1',
       'signal_type': 'intent_prepared',
       'signal_id': signalId,
@@ -1539,50 +1551,69 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return;
     }
 
-    late final BingxFuturesIntentPayload payload;
-    try {
-      payload = BingxFuturesIntentPayload.fromPluginResult(result);
-    } on FormatException catch (error) {
-      await _uiLog.log(
-        'bingx.exchange.execute.parse_error',
-        error.message,
-      );
-      await _showSnack(error.message, seconds: 3);
-      return;
-    }
-
-    final riskDecision = await _evaluateExecutionRisk(
-      payload: payload,
-      rawIntentResult: result,
-    );
-    if (riskDecision == null) {
-      return;
-    }
-    if (riskDecision.status == BingxFuturesRiskDecisionStatus.blocked) {
-      final shortHash = riskDecision.decisionHashHex.substring(0, 12);
-      await _uiLog.log(
-        'bingx.exchange.risk_blocked',
-        'code=${riskDecision.reasonCode} hash=$shortHash '
-            'risk=${riskDecision.tradeRiskQuoteDecimal} '
-            'limit=${riskDecision.tradeRiskLimitQuoteDecimal}',
-      );
-      await _showSnack(
-        'Risk blocked: ${riskDecision.reasonCode} ($shortHash)',
-        seconds: 3,
-      );
-      return;
-    }
-    await _uiLog.log(
-      'bingx.exchange.risk_allowed',
-      'hash=${riskDecision.decisionHashHex.substring(0, 12)} '
-          'max_qty=${riskDecision.maxAllowedQuantityDecimal} '
-          'risk=${riskDecision.tradeRiskQuoteDecimal}',
-    );
-
     setState(() {
       _executing = true;
     });
     try {
+      final equityProxy =
+          double.tryParse(_maxNotionalUsdtController.text.trim()) ?? 100.0;
+      final useCaseResult = await _executionUseCase.execute(
+        screen: 'trading_drone',
+        rawIntentResult: result,
+        credentials: credentials,
+        riskPolicy: _executionRiskPolicy,
+        fallbackEquityQuote: equityProxy,
+        testOrder: _useTestOrderEndpoint,
+      );
+      for (final diagnostic in useCaseResult.diagnostics) {
+        await _uiLog.log('bingx.exchange.risk_detail', diagnostic);
+      }
+      if (useCaseResult.status ==
+          BingxFuturesExchangeExecutionUseCaseStatus.invalidIntent) {
+        await _uiLog.log(
+          'bingx.exchange.execute.parse_error',
+          useCaseResult.errorMessage ?? 'invalid intent',
+        );
+        await _showSnack(
+          useCaseResult.errorMessage ?? 'Invalid intent',
+          seconds: 3,
+        );
+        return;
+      }
+      if (useCaseResult.status ==
+          BingxFuturesExchangeExecutionUseCaseStatus.riskUnavailable) {
+        await _uiLog.log(
+          'bingx.exchange.risk_error',
+          useCaseResult.errorCode ?? 'risk_unavailable',
+        );
+        await _showSnack(
+          useCaseResult.errorMessage ?? 'Risk check unavailable',
+        );
+        return;
+      }
+      final riskDecision = useCaseResult.riskDecision!;
+      if (useCaseResult.status ==
+          BingxFuturesExchangeExecutionUseCaseStatus.riskBlocked) {
+        final shortHash = riskDecision.decisionHashHex.substring(0, 12);
+        await _uiLog.log(
+          'bingx.exchange.risk_blocked',
+          'code=${riskDecision.reasonCode} hash=$shortHash '
+              'risk=${riskDecision.tradeRiskQuoteDecimal} '
+              'limit=${riskDecision.tradeRiskLimitQuoteDecimal}',
+        );
+        await _showSnack(
+          '${riskDecision.reasonMessage} ($shortHash)',
+          seconds: 4,
+        );
+        return;
+      }
+      await _uiLog.log(
+        'bingx.exchange.risk_allowed',
+        'hash=${riskDecision.decisionHashHex.substring(0, 12)} '
+            'max_qty=${riskDecision.maxAllowedQuantityDecimal} '
+            'risk=${riskDecision.tradeRiskQuoteDecimal}',
+      );
+      final payload = useCaseResult.payload!;
       await _uiLog.log(
         'bingx.exchange.execute.intent',
         'symbol=${payload.symbol} side=${payload.side} type=${payload.orderType} '
@@ -1592,34 +1623,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'tp=${payload.takeProfitDecimal ?? "-"} '
             'tif=${payload.timeInForce ?? "-"}',
       );
-      final queued = await _bingxExecutionQueue.enqueueOrderExecution(
-        credentials: credentials,
-        intent: payload,
-        testOrder: _useTestOrderEndpoint,
-      );
-      final executionEnvelope = _observability.buildExecutionEnvelope(
-        screen: 'trading_drone',
-        symbol: payload.symbol,
-        side: payload.side,
-        orderType: payload.orderType,
-        idempotencyKey: queued.idempotencyKey,
-        attempts: queued.attempts,
-        fromIdempotentCache: queued.fromIdempotentCache,
-        isSuccess: queued.execution.isSuccess,
-        httpStatusCode: queued.execution.httpStatusCode,
-        exchangeCode: queued.execution.exchangeCode,
-        endpointPath: queued.execution.endpointPath,
-        orderId: queued.execution.orderId,
-        intentHashHex: payload.intentHashHex,
-        riskDecisionCode: riskDecision.reasonCode,
-        riskDecisionHashHex: riskDecision.decisionHashHex,
-        marketSnapshotHashHex:
-            result['market_snapshot_hash_hex']?.toString().trim(),
-        featureHashHex: result['feature_hash_hex']?.toString().trim(),
-        tvhDecisionHashHex: result['tvh_decision_hash_hex']?.toString().trim(),
-        liveDecisionHashHex:
-            result['live_decision_hash_hex']?.toString().trim(),
-      );
+      final queued = useCaseResult.queuedExecution!;
+      final executionEnvelope = useCaseResult.executionEnvelope!;
       final safeMessage = queued.execution.exchangeMessage
           .replaceAll('\n', ' ')
           .replaceAll('\r', ' ');
@@ -1645,9 +1650,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       });
 
       if (queued.execution.isSuccess) {
+        final orderId = queued.execution.orderId?.trim();
         _registerManagedOrderId(
-          queued.execution.orderId,
+          orderId,
           symbol: payload.symbol,
+          provenance: orderId == null || orderId.isEmpty
+              ? null
+              : _buildManagedOrderProvenance(
+                  orderId: orderId,
+                  payload: payload,
+                  result: result,
+                  testOrder: _useTestOrderEndpoint,
+                ),
         );
         _startOpenOrdersAutoTracking(
           symbol: payload.symbol,
@@ -1685,42 +1699,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     required BingxFuturesIntentPayload payload,
     required Map<String, dynamic> rawIntentResult,
   }) async {
-    String? entryPriceDecimal = payload.limitPriceDecimal;
-    entryPriceDecimal ??= payload.triggerPriceDecimal;
-    if (entryPriceDecimal == null || entryPriceDecimal.trim().isEmpty) {
-      final quote = await _bingxExchangeService.getPublicPrice(
-        symbol: payload.symbol,
-      );
-      if (quote.isSuccess &&
-          quote.priceDecimal != null &&
-          quote.priceDecimal!.trim().isNotEmpty) {
-        entryPriceDecimal = quote.priceDecimal!.trim();
-      }
-    }
-    if (entryPriceDecimal == null || entryPriceDecimal.trim().isEmpty) {
-      await _uiLog.log(
-        'bingx.exchange.risk_error',
-        'entry_price_unavailable symbol=${payload.symbol}',
-      );
-      await _showSnack('Risk check failed: entry price unavailable');
-      return null;
-    }
-
-    var stopLossDecimal =
-        rawIntentResult['stop_loss_decimal']?.toString().trim() ?? '';
-    if (stopLossDecimal.isEmpty) {
-      if (payload.side == 'buy') {
-        stopLossDecimal =
-            rawIntentResult['zone_low_decimal']?.toString().trim() ?? '';
-      } else {
-        stopLossDecimal =
-            rawIntentResult['zone_high_decimal']?.toString().trim() ?? '';
-      }
-    }
-    if (stopLossDecimal.isEmpty) {
-      stopLossDecimal = entryPriceDecimal;
-    }
-
     final credentials = _resolveCredentials();
     if (credentials == null) {
       await _showSnack('Save BingX API credentials first');
@@ -1728,38 +1706,26 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     final equityProxy =
         double.tryParse(_maxNotionalUsdtController.text.trim()) ?? 100.0;
-    final exchangeRiskInput = await _exchangeRiskInput.read(
-      exchangeService: _bingxExchangeService,
+    final evaluation = await _executionUseCase.evaluateRisk(
+      payload: payload,
+      rawIntentResult: rawIntentResult,
       credentials: credentials,
+      riskPolicy: _executionRiskPolicy,
       fallbackEquityQuote: equityProxy,
     );
-    await _uiLog.log(
-      'bingx.exchange.risk_inputs',
-      'symbol=${payload.symbol} '
-          'equity=${exchangeRiskInput.accountEquityQuoteDecimal} '
-          'pnl=${exchangeRiskInput.realizedDailyPnlQuoteDecimal} '
-          'positions=${exchangeRiskInput.concurrentPositions} '
-          'fallbacks=${exchangeRiskInput.usedBalanceFallback ? "balance" : "-"},'
-          '${exchangeRiskInput.usedPnlFallback ? "pnl" : "-"},'
-          '${exchangeRiskInput.usedPositionsFallback ? "positions" : "-"}',
-    );
-    final decision = _riskGovernor.evaluate(
-      input: BingxFuturesRiskGovernorInput(
-        symbol: payload.symbol,
-        quantityDecimal: payload.quantityDecimal,
-        entryPriceDecimal: entryPriceDecimal,
-        stopLossDecimal: stopLossDecimal,
-        accountEquityQuoteDecimal: exchangeRiskInput.accountEquityQuoteDecimal,
-        realizedDailyPnlQuoteDecimal:
-            exchangeRiskInput.realizedDailyPnlQuoteDecimal,
-        concurrentPositions: exchangeRiskInput.concurrentPositions,
-        lossStreakCount: 0,
-        lastLossAtUtc: null,
-        nowUtc: DateTime.now().toUtc().toIso8601String(),
-      ),
-      policy: _executionRiskPolicy,
-    );
-    return decision;
+    for (final diagnostic in evaluation.diagnostics) {
+      await _uiLog.log('bingx.exchange.risk_detail', diagnostic);
+    }
+    if (evaluation.decision == null) {
+      await _uiLog.log(
+        'bingx.exchange.risk_error',
+        evaluation.errorCode ?? 'risk_unavailable',
+      );
+      await _showSnack(
+        evaluation.errorMessage ?? 'Risk check unavailable',
+      );
+    }
+    return evaluation.decision;
   }
 
   Future<void> _fetchOpenOrders({
@@ -1813,6 +1779,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         }
         return trackedSymbol == result.symbol.toUpperCase();
       }).toList(growable: false);
+      final lifecycleRevisionBeforeRevalidation =
+          _managedOrderLifecycleRevision;
       if (result.isSuccess && managedOrders.isNotEmpty) {
         await _revalidateManagedOpenOrders(
           credentials: credentials,
@@ -1820,6 +1788,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           silent: silent,
         );
       }
+      final snapshotInvalidatedByLifecycle =
+          lifecycleRevisionBeforeRevalidation != _managedOrderLifecycleRevision;
       setState(() {
         _lastOpenOrdersRead = result;
         _lastOpenOrdersTotalCount = triggerOrders.length;
@@ -1835,6 +1805,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       final trackedOrderId = _trackedOrderId;
       if (trackedOrderId != null && trackedOrderId.isNotEmpty) {
         if (result.isSuccess) {
+          if (snapshotInvalidatedByLifecycle) {
+            await _uiLog.log(
+              'bingx.exchange.tracking.skip',
+              'symbol=${result.symbol} orderId=$trackedOrderId '
+                  'reason=stale_snapshot_after_lifecycle_change',
+            );
+            return;
+          }
           final trackedStillOpen =
               triggerOrders.any((order) => order.orderId == trackedOrderId);
           await _uiLog.log(
@@ -1846,6 +1824,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           if (!trackedStillOpen) {
             _managedOrderIds.remove(trackedOrderId);
             _managedOrderSymbols.remove(trackedOrderId);
+            _managedOrderProvenance.remove(trackedOrderId);
+            _managedOrderLifecycleRevision += 1;
             if (triggerOrders.isNotEmpty) {
               final nextTrackedOrderId = triggerOrders.first.orderId;
               _trackedOrderId = nextTrackedOrderId;
@@ -1909,14 +1889,15 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
 
     var canceled = 0;
+    final replacementLifecycleKeys = <String>{};
     for (final entry in bySymbol.entries) {
-      final decision = await _computeLiveDecision(
+      final actionableDecision = await _computeLiveDecision(
         symbol: entry.key,
         peerHex: '',
         silent: true,
         forceConsensusSignable: true,
       );
-      if (decision == null) {
+      if (actionableDecision == null) {
         await _uiLog.log(
           'bingx.exchange.revalidate.skip',
           'symbol=${entry.key} reason=live_decision_unavailable '
@@ -1924,18 +1905,47 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         );
         continue;
       }
+      final structuralDecisions = <String, BingxFuturesLiveDecisionResult?>{};
 
       for (final order in entry.value) {
         if (!_managedOrderIds.contains(order.orderId)) continue;
+        final orderSide = switch (order.side.trim().toLowerCase()) {
+          'buy' => 'buy',
+          'sell' => 'sell',
+          _ => null,
+        };
+        var revalidationDecision = actionableDecision;
+        if (!actionableDecision.canPrepareIntent && orderSide != null) {
+          if (!structuralDecisions.containsKey(orderSide)) {
+            structuralDecisions[orderSide] = await _computeLiveDecision(
+              symbol: entry.key,
+              peerHex: '',
+              silent: true,
+              forceConsensusSignable: true,
+              zoneEvaluationSide: orderSide,
+            );
+          }
+          final structuralDecision = structuralDecisions[orderSide];
+          if (structuralDecision == null) {
+            await _uiLog.log(
+              'bingx.exchange.revalidate.skip',
+              'symbol=${entry.key} orderId=${order.orderId} '
+                  'reason=structural_decision_unavailable side=$orderSide',
+            );
+            continue;
+          }
+          revalidationDecision = structuralDecision;
+        }
+        final provenance = _managedOrderProvenance[order.orderId];
         final verdict = _orderRevalidation.revalidate(
           order: order,
-          liveDecision: decision,
+          liveDecision: revalidationDecision,
         );
         await _uiLog.log(
           'bingx.exchange.revalidate',
           'symbol=${order.symbol} orderId=${order.orderId} '
               'action=${verdict.action.name} reason=${verdict.reasonCode} '
-              'live_hash=${decision.liveDecisionHashHex.substring(0, 12)}',
+              'live_hash=${revalidationDecision.liveDecisionHashHex.substring(0, 12)}',
         );
         if (!verdict.shouldCancel) continue;
 
@@ -1954,8 +1964,41 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         canceled += 1;
         _managedOrderIds.remove(order.orderId);
         _managedOrderSymbols.remove(order.orderId);
+        _managedOrderProvenance.remove(order.orderId);
+        _managedOrderLifecycleRevision += 1;
         if (_trackedOrderId == order.orderId) {
           _trackedOrderId = null;
+        }
+        if (provenance == null) {
+          await _uiLog.log(
+            'bingx.exchange.replace.skip',
+            'symbol=${order.symbol} orderId=${order.orderId} '
+                'reason=replacement_provenance_missing',
+          );
+          continue;
+        }
+        if (!actionableDecision.canPrepareIntent) {
+          await _uiLog.log(
+            'bingx.exchange.replace.skip',
+            'symbol=${order.symbol} orderId=${order.orderId} '
+                'reason=structural_revalidation_cancel_only',
+          );
+          continue;
+        }
+        try {
+          await _replaceCanceledManagedOrder(
+            credentials: credentials,
+            provenance: provenance,
+            liveDecision: actionableDecision,
+            cancellationReasonCode: verdict.reasonCode,
+            replacementLifecycleKeys: replacementLifecycleKeys,
+          );
+        } catch (error) {
+          await _uiLog.log(
+            'bingx.exchange.replace.error',
+            'oldOrderId=${provenance.orderId} symbol=${provenance.symbol} '
+                'error=$error',
+          );
         }
       }
     }
@@ -1966,6 +2009,170 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         await _showSnack('Canceled stale drone orders: $canceled');
       }
     }
+  }
+
+  Future<void> _replaceCanceledManagedOrder({
+    required BingxFuturesApiCredentials credentials,
+    required BingxManagedOrderProvenance provenance,
+    required BingxFuturesLiveDecisionResult liveDecision,
+    required String cancellationReasonCode,
+    required Set<String> replacementLifecycleKeys,
+  }) async {
+    final cycleAtUtc = DateTime.now().toUtc().toIso8601String();
+    final plan = _orderReplacement.plan(
+      provenance: provenance,
+      liveDecision: liveDecision,
+      cancellationReasonCode: cancellationReasonCode,
+      cycleAtUtc: cycleAtUtc,
+    );
+    await _uiLog.log(
+      'bingx.exchange.replace.plan',
+      'oldOrderId=${provenance.orderId} symbol=${provenance.symbol} '
+          'status=${plan.status.name} reason=${plan.reasonCode} '
+          'liveHash=${liveDecision.liveDecisionHashHex.substring(0, 12)}',
+    );
+    if (!plan.isReady) return;
+    final peerHex = plan.hostArgs!['peer_hex']?.toString().trim() ?? '';
+    final lifecycleKey =
+        '$peerHex|${provenance.symbol.toUpperCase()}|${provenance.side}';
+    if (!replacementLifecycleKeys.add(lifecycleKey)) {
+      await _uiLog.log(
+        'bingx.exchange.replace.skip',
+        'oldOrderId=${provenance.orderId} symbol=${provenance.symbol} '
+            'reason=replacement_lifecycle_duplicate key=$lifecycleKey',
+      );
+      return;
+    }
+
+    final runtime = await _orderReplacement.execute(
+      provenance: provenance,
+      liveDecision: liveDecision,
+      cancellationReasonCode: cancellationReasonCode,
+      cycleAtUtc: cycleAtUtc,
+      prepareIntent: (hostArgs) {
+        return _pluginHostApi
+            .executeWithRuntimeHook(
+              PluginHostApiRequest(
+                schemaVersion: PluginHostApiService.schemaVersion,
+                pluginId: bingxFuturesTradingPluginId,
+                method: placeBingxFuturesOrderIntentMethod,
+                args: hostArgs,
+              ),
+            )
+            .timeout(_hostIntentTimeout);
+      },
+      evaluateRisk: (payload, rawIntentResult) {
+        return _evaluateExecutionRisk(
+          payload: payload,
+          rawIntentResult: rawIntentResult,
+        );
+      },
+      executeOrder: (payload, testOrder) {
+        return _bingxExecutionQueue.enqueueOrderExecution(
+          credentials: credentials,
+          intent: payload,
+          testOrder: testOrder,
+        );
+      },
+    );
+    final response = runtime.hostResponse;
+    await _uiLog.log(
+      'bingx.exchange.replace.intent',
+      'oldOrderId=${provenance.orderId} runtime=${runtime.status.name} '
+          'status=${response?.status.name ?? "-"} '
+          'source=${response?.executionSource ?? "-"} '
+          'code=${response?.errorCode ?? "-"}',
+    );
+    final riskDecision = runtime.riskDecision;
+    if (runtime.status == BingxFuturesReplacementRuntimeStatus.riskBlocked ||
+        runtime.status ==
+            BingxFuturesReplacementRuntimeStatus.riskUnavailable) {
+      await _uiLog.log(
+        'bingx.exchange.replace.risk_blocked',
+        'oldOrderId=${provenance.orderId} '
+            'code=${riskDecision?.reasonCode ?? "risk_unavailable"}',
+      );
+    }
+    final payload = runtime.payload;
+    final queued = runtime.queuedExecution;
+    final result = response?.result;
+    if (payload == null ||
+        queued == null ||
+        riskDecision == null ||
+        result == null) {
+      return;
+    }
+
+    final executionEnvelope = _observability.buildExecutionEnvelope(
+      screen: 'trading_drone_replacement',
+      symbol: payload.symbol,
+      side: payload.side,
+      orderType: payload.orderType,
+      idempotencyKey: queued.idempotencyKey,
+      attempts: queued.attempts,
+      fromIdempotentCache: queued.fromIdempotentCache,
+      isSuccess: queued.execution.isSuccess,
+      httpStatusCode: queued.execution.httpStatusCode,
+      exchangeCode: queued.execution.exchangeCode,
+      endpointPath: queued.execution.endpointPath,
+      orderId: queued.execution.orderId,
+      intentHashHex: payload.intentHashHex,
+      riskDecisionCode: riskDecision.reasonCode,
+      riskDecisionHashHex: riskDecision.decisionHashHex,
+      marketSnapshotHashHex:
+          result['market_snapshot_hash_hex']?.toString().trim(),
+      featureHashHex: result['feature_hash_hex']?.toString().trim(),
+      tvhDecisionHashHex: result['tvh_decision_hash_hex']?.toString().trim(),
+      liveDecisionHashHex: result['live_decision_hash_hex']?.toString().trim(),
+    );
+    await _uiLog.log(
+      'bingx.exchange.replace.execute',
+      'oldOrderId=${provenance.orderId} '
+          'success=${queued.execution.isSuccess} '
+          'newOrderId=${queued.execution.orderId ?? "-"} '
+          'attempts=${queued.attempts} code=${queued.execution.exchangeCode}',
+    );
+    await _uiLog.log(
+      'drone.execution.envelope',
+      'hash=${executionEnvelope.envelopeHashHex.substring(0, 12)} '
+          'kind=execution screen=trading_drone_replacement',
+    );
+    if (!queued.execution.isSuccess) return;
+
+    final newOrderId = queued.execution.orderId?.trim();
+    if (newOrderId == null || newOrderId.isEmpty) {
+      await _uiLog.log(
+        'bingx.exchange.replace.skip',
+        'oldOrderId=${provenance.orderId} '
+            'reason=replacement_receipt_missing_order_id',
+      );
+      return;
+    }
+    _registerManagedOrderId(
+      newOrderId,
+      symbol: payload.symbol,
+      provenance: _buildManagedOrderProvenance(
+        orderId: newOrderId,
+        payload: payload,
+        result: result,
+        testOrder: provenance.testOrder,
+      ),
+    );
+    _startOpenOrdersAutoTracking(
+      symbol: payload.symbol,
+      orderId: newOrderId,
+    );
+    await _uiLog.log(
+      'bingx.exchange.replace.complete',
+      'oldOrderId=${provenance.orderId} newOrderId=$newOrderId '
+          'intentHash=${_shortHash(payload.intentHashHex)}',
+    );
+  }
+
+  String _shortHash(String? value) {
+    final normalized = value?.trim() ?? '';
+    if (normalized.isEmpty) return '-';
+    return normalized.length <= 12 ? normalized : normalized.substring(0, 12);
   }
 
   Future<void> _cancelOrder() async {
@@ -2011,6 +2218,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           final canceled = result.canceledOrderId ?? result.requestedOrderId;
           _managedOrderIds.remove(canceled);
           _managedOrderSymbols.remove(canceled);
+          _managedOrderProvenance.remove(canceled);
+          _managedOrderLifecycleRevision += 1;
           _openOrders =
               _openOrders.where((order) => order.orderId != canceled).toList();
         }
@@ -2550,6 +2759,23 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
+                  FilledButton.icon(
+                    onPressed: _executing ? null : _executeLastIntent,
+                    icon: _executing
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send_rounded),
+                    label: Text(
+                      _executing
+                          ? 'Sending to BingX'
+                          : _useTestOrderEndpoint
+                              ? 'Send Test Order to BingX'
+                              : 'Send Live Order to BingX',
+                    ),
+                  ),
                   OutlinedButton.icon(
                     onPressed: _savingCredentials ? null : _saveCredentials,
                     icon: _savingCredentials
@@ -2576,57 +2802,19 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       _fetchingOpenOrders ? 'Fetching Orders' : 'Open Orders',
                     ),
                   ),
-                  OutlinedButton.icon(
-                    onPressed: _fetchingOpenOrders
-                        ? null
-                        : _isTrackingOpenOrders
-                            ? () => _stopOpenOrdersAutoTracking(
-                                  reason: 'user_stop',
-                                )
-                            : () {
-                                final symbol = _symbolController.text.trim();
-                                if (symbol.isEmpty) {
-                                  unawaited(
-                                    _showSnack('Symbol is required'),
-                                  );
-                                  return;
-                                }
-                                _startOpenOrdersAutoTracking(symbol: symbol);
-                                unawaited(
-                                  _fetchOpenOrders(
-                                    silent: true,
-                                    symbolOverride: symbol,
-                                  ),
-                                );
-                              },
-                    icon: Icon(
-                      _isTrackingOpenOrders
-                          ? Icons.pause_circle_outline_rounded
-                          : Icons.radar_rounded,
-                    ),
-                    label: Text(
-                      _isTrackingOpenOrders ? 'Stop Tracking' : 'Track Orders',
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed: _executing ? null : _executeLastIntent,
-                    icon: _executing
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_rounded),
-                    label: Text(
-                      _executing
-                          ? 'Executing'
-                          : _useTestOrderEndpoint
-                              ? 'Execute Test Order'
-                              : 'Execute Live Order',
-                    ),
-                  ),
                 ],
               ),
+              if (_isTrackingOpenOrders) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Managed order tracking is active and stops automatically '
+                  'when the order closes.',
+                  style: const TextStyle(
+                    color: Color(0xFF97A3B5),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               Wrap(
                 spacing: 10,
