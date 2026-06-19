@@ -885,6 +885,39 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
+  String _formatLiveDecisionBlockedMessage(
+    BingxFuturesLiveDecisionResult live,
+  ) {
+    final zone = live.zoneLowDecimal != null && live.zoneHighDecimal != null
+        ? ' zone ${live.zoneLowDecimal}-${live.zoneHighDecimal}'
+        : '';
+    if (live.trendGateBlocked) {
+      return switch (live.trendGateCode) {
+        'momentum_gate_short_missed_retest' =>
+          'Short blocked: retest already missed.$zone',
+        'momentum_gate_long_missed_retest' =>
+          'Long blocked: retest already missed.$zone',
+        'trend_gate_short_far_retest' =>
+          'Short blocked: retest is too far.$zone',
+        'trend_gate_long_far_retest' =>
+          'Long blocked: retest is too far.$zone',
+        'liquidity_anchor_unavailable' =>
+          'No executable liquidity anchor for this symbol.',
+        _ => 'Signal blocked: ${live.trendGateCode}.$zone',
+      };
+    }
+
+    final failed = live.reasons
+        .where((reason) => !reason.passed)
+        .map((reason) => reason.code)
+        .where((code) => code.isNotEmpty)
+        .toList();
+    if (failed.isEmpty) {
+      return 'No executable signal for current market state.';
+    }
+    return 'No executable signal: ${failed.join(', ')}.';
+  }
+
   num? _toNum(String raw) => num.tryParse(raw.trim());
 
   Future<bool> _applyRiskBudgetQuantity({required String symbol}) async {
@@ -1156,14 +1189,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           live.zoneSide == null ||
           live.zoneLowDecimal == null ||
           live.zoneHighDecimal == null) {
-        final reason =
-            live.reasons.where((r) => !r.passed).map((r) => r.code).join(',');
-        await _showSnack(
-          reason.isEmpty
-              ? 'No live signal for current market state'
-              : 'No live signal: $reason',
-          seconds: 3,
+        final message = _formatLiveDecisionBlockedMessage(live);
+        await _uiLog.log(
+          'bingx.strategy.live_decision.blocked',
+          'symbol=$symbol message=$message '
+              'decision=${live.decision.name} side=${live.side ?? "-"} '
+              'zone=${live.zoneLowDecimal ?? "-"}-${live.zoneHighDecimal ?? "-"} '
+              'trend_gate=${live.trendGateCode} '
+              'live_hash=${live.liveDecisionHashHex.substring(0, 12)}',
         );
+        await _showSnack(message, seconds: 4);
         return;
       }
       if (mounted) {
