@@ -65,11 +65,11 @@ This document defines the first deterministic host API boundary used before wasm
   - `execution_package_version`: nullable package version
   - `execution_package_kind`: nullable package kind (`wasm` / `zip`)
   - `execution_package_digest_hex`: nullable SHA-256 of resolved package bytes
-  - `execution_contract_kind`: nullable manifest contract kind
+  - `execution_contract_kind`: required manifest contract kind for external packages
   - `execution_capabilities`: normalized/sorted capability list from runtime binding metadata
-  - `execution_runtime_mode`: nullable runtime mode (`wasm_stub_v1` in current phase)
-  - `execution_runtime_abi`: nullable runtime ABI id (`hivra_host_abi_v1`)
-  - `execution_runtime_entry_export`: nullable entry export symbol (`hivra_entry_v1`)
+  - `execution_runtime_mode`: nullable runtime mode (`wasmi_v1`)
+  - `execution_runtime_abi`: nullable runtime ABI id (`hivra_host_abi_v2`)
+  - `execution_runtime_entry_export`: nullable entry export symbol (`hivra_evaluate_v1`)
   - `execution_runtime_module_path`: nullable selected runtime module path
     - if runtime hook resolves module path explicitly, this reflects selected module
     - otherwise falls back to manifest `runtime.module_path` when available
@@ -105,34 +105,39 @@ This document defines the first deterministic host API boundary used before wasm
     - if runtime invoke evidence is missing, request is rejected (`runtime_invoke_unavailable`)
   - external-package runtime binding shape is validated before invoke (`package_id` required, `package_kind` must be `wasm|zip`); invalid metadata is rejected (`runtime_binding_invalid`)
   - when external package is resolved, host includes deterministic package digest (`execution_package_digest_hex`)
-  - when external package exposes `execution_contract_kind`, host rejects mismatches against requested `plugin_id` (`runtime_contract_kind_mismatch`)
-  - when external package exposes capability metadata, host validates required capabilities for requested `(plugin_id, method)` and rejects missing/unsupported grants (`runtime_capability_mismatch`)
+  - external packages must expose a non-empty `execution_contract_kind`; missing or mismatched values are rejected (`runtime_contract_kind_mismatch`)
+  - external packages must expose capability metadata; host validates all required capabilities for requested `(plugin_id, method)` and rejects missing/unsupported grants (`runtime_capability_mismatch`)
+  - no legacy fail-open path exists for missing contract or capability metadata
   - host canonical response includes normalized runtime capability metadata (`execution_capabilities`) for deterministic diagnostics
 - Runtime capability requirements are method-scoped:
   - `place_bingx_futures_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.futures`
   - `post_capsule_chat_message` requires `consensus_guard.read`
-- Current runtime phase exposes deterministic invoke evidence via `wasm_stub_v1`:
+- Current runtime executes plugin-owned semantics through bounded `wasmi_v1`:
   - when `execution_package_digest_hex` is present, host verifies installed package bytes against that digest before runtime module extraction
     - digest shape mismatch or digest mismatch rejects runtime invoke as invalid
   - host reads module bytes from resolved package:
     - direct `.wasm` package bytes, or
-    - `runtime.module_path` from zip manifest when provided, otherwise first `.wasm` in lexical order
-    - zip entries containing parent-traversal segments (`..`) are ignored for runtime module selection
-    - when a zip contains `.wasm` entries but all candidate module paths are traversal-shaped, runtime invoke is rejected as invalid
-  - runtime metadata is strict for external packages: `runtime.abi=hivra_host_abi_v1` and `runtime.entry_export=hivra_entry_v1`
-  - runtime invoke validates that selected wasm module exports function `hivra_entry_v1` with `() -> ()` signature; missing export or signature mismatch is rejected as invalid runtime invoke
-  - runtime invoke rejects modules declaring imports in `wasm_stub_v1` phase (import-enabled ABI execution is deferred until full runtime host stage)
-  - runtime invoke rejects modules declaring `start` section in `wasm_stub_v1` phase (auto-start semantics deferred to full runtime host stage)
-  - runtime invoke executes `hivra_entry_v1` through a deterministic no-host instruction subset in `wasm_stub_v1`:
-    - allowed: `nop`, `drop`, `i32.const`, `i64.const`, `f32.const`, `f64.const`, `i32.add`, `i32.sub`, `i32.mul`, `block`, `if`, `else`, `br`, `br_if`, `end`
-    - structured control-flow is currently limited to empty block type (`0x40`); non-void block types are rejected
-    - `loop` remains explicitly unsupported in `wasm_stub_v1`
-    - disallowed opcodes reject invoke as invalid (explicit diagnostics)
-    - runtime execution is additionally bounded by fixed limits (instruction count and stack depth); overflow rejects invoke as invalid
+    - exact `runtime.module_path` from the zip manifest
+    - parent-traversal segments (`..`) are rejected
+  - runtime metadata is strict for external packages: `runtime.abi=hivra_host_abi_v2` and `runtime.entry_export=hivra_evaluate_v1`
+  - ABI exports are:
+    - `hivra_alloc_v1(len: u32) -> u32`
+    - `hivra_evaluate_v1(ptr: u32, len: u32) -> u64`
+    - `hivra_dealloc_v1(ptr: u32, len: u32)`
+  - the packed evaluate result is `(output_ptr << 32) | output_len`
+  - request and response are canonical UTF-8 JSON with explicit schema/status
+  - runtime rejects all module imports and enforces module/input/output size plus fuel limits
+  - missing exports, signature mismatch, traps, fuel exhaustion, invalid UTF-8,
+    malformed envelopes and output hash mismatch fail closed
   - manifest `runtime.module_path` with parent traversal is rejected by runtime invoke validation
-  - host emits module digest + invoke digest without granting plugin-side side effects
+  - host emits module digest + invoke digest that binds canonical input and output
+  - plugin owns deterministic contract semantics; host owns package integrity,
+    capabilities, consensus guard, risk and effectful exchange/transport adapters
 - `place_bingx_futures_order_intent` supports:
   - `entry_mode=direct`
   - `entry_mode=zone_pending`
-- In `zone_pending`, host API computes the final limit entry price from zone rules and returns it in deterministic result payload; no live-trading execution is performed in host API v1.
-- `post_capsule_chat_message` currently returns a deterministic envelope hash only; transport delivery remains outside this host API boundary.
+- In `zone_pending`, the BingX plugin computes the final limit entry price from
+  zone rules and returns canonical intent JSON; exchange execution remains
+  outside the plugin boundary.
+- `post_capsule_chat_message` returns plugin-owned canonical envelope JSON and
+  hash; transport delivery remains outside this host API boundary.

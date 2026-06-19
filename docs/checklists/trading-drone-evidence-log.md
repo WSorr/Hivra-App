@@ -6,8 +6,6 @@ Record one row per platform/mode verification cycle.
 
 | Build Tag | Date (UTC) | Platform | Mode | Decision Envelope Hash | Execution Envelope Hash | Risk Path | Notes |
 |---|---|---|---|---|---|---|---|
-| v1.0.3-test2 | 2026-06-01T12:00:00Z | macOS | situational | `abc...` | `def...` | `risk_allowed` | baseline smoke |
-| v1.0.3-test2 | 2026-06-01T12:15:00Z | Android | interactive | `abc...` | `def...` | `risk_blocked` | retry path exercised |
 
 ## Required Coverage Per Candidate
 
@@ -17,6 +15,7 @@ Record one row per platform/mode verification cycle.
 - `interactive` on Android
 - at least one deterministic `risk_blocked` record
 - at least one execution receipt trace (`drone.execution.envelope`)
+- every decision/execution hash is exactly 64 hexadecimal characters
 
 Verification command:
 

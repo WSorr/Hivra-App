@@ -127,8 +127,8 @@ void main() {
               'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
               'contract': {'kind': 'bingx_futures_order_intent'},
               'runtime': {
-                'abi': 'hivra_host_abi_v1',
-                'entry_export': 'hivra_entry_v1',
+                'abi': 'hivra_host_abi_v2',
+                'entry_export': 'hivra_evaluate_v1',
                 'module_path': 'plugin/module.wasm',
               },
               'capabilities': [
@@ -149,8 +149,8 @@ void main() {
     expect(installed.pluginId, 'hivra.contract.bingx-futures-trading.v1');
     expect(installed.pluginVersion, '0.1.0');
     expect(installed.contractKind, 'bingx_futures_order_intent');
-    expect(installed.runtimeAbi, 'hivra_host_abi_v1');
-    expect(installed.runtimeEntryExport, 'hivra_entry_v1');
+    expect(installed.runtimeAbi, 'hivra_host_abi_v2');
+    expect(installed.runtimeEntryExport, 'hivra_evaluate_v1');
     expect(installed.runtimeModulePath, 'plugin/module.wasm');
     expect(
       installed.capabilities,
@@ -178,8 +178,8 @@ void main() {
                 'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
                 'contract': {'kind': 'bingx_futures_order_intent'},
                 'runtime': {
-                  'abi': 'hivra_host_abi_v1',
-                  'entry_export': 'hivra_entry_v1',
+                  'abi': 'hivra_host_abi_v2',
+                  'entry_export': 'hivra_evaluate_v1',
                 },
                 'capabilities': [
                   'exchange.read.bingx.market',

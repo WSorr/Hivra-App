@@ -144,6 +144,10 @@ class PluginRuntimeInvokeEvidence {
   final String? moduleSelection;
   final String moduleDigestHex;
   final String invokeDigestHex;
+  final PluginHostApiStatus semanticStatus;
+  final Map<String, dynamic>? semanticResult;
+  final String? semanticErrorCode;
+  final String? semanticErrorMessage;
 
   const PluginRuntimeInvokeEvidence({
     required this.mode,
@@ -151,6 +155,10 @@ class PluginRuntimeInvokeEvidence {
     required this.moduleSelection,
     required this.moduleDigestHex,
     required this.invokeDigestHex,
+    required this.semanticStatus,
+    required this.semanticResult,
+    required this.semanticErrorCode,
+    required this.semanticErrorMessage,
   });
 }
 
@@ -206,6 +214,13 @@ class PluginHostApiService {
         runtimeInvoke: null,
       );
     }
+    final preflightResponse = _preflightBeforeRuntime(
+      request,
+      runtimeBinding,
+    );
+    if (preflightResponse != null) {
+      return preflightResponse;
+    }
     PluginRuntimeInvokeEvidence? runtimeInvoke;
     if (_resolveRuntimeInvoke != null) {
       try {
@@ -241,6 +256,110 @@ class PluginHostApiService {
       );
     }
     return _executeResolved(request, runtimeBinding, runtimeInvoke);
+  }
+
+  PluginHostApiResponse? _preflightBeforeRuntime(
+    PluginHostApiRequest request,
+    PluginRuntimeBinding runtimeBinding,
+  ) {
+    if (request.schemaVersion != schemaVersion) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'invalid_schema_version',
+        message: 'Plugin host API schema version mismatch',
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      );
+    }
+    final handler = _handlerFor(request.pluginId);
+    if (handler == null) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'unsupported_plugin',
+        message: 'Unsupported plugin id',
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      );
+    }
+    if (!handler.methods.contains(request.method)) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'unsupported_method',
+        message: 'Unsupported plugin method',
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      );
+    }
+    if (handler.requiresExternalRuntime &&
+        runtimeBinding.source != 'external_package') {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'runtime_invoke_unavailable',
+        message: 'External runtime package is required',
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      );
+    }
+    final contractKindMismatch = _validateRuntimeContractKind(
+      pluginId: request.pluginId,
+      runtimeBinding: runtimeBinding,
+    );
+    if (contractKindMismatch != null) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'runtime_contract_kind_mismatch',
+        message: contractKindMismatch,
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      );
+    }
+    final capabilityMismatch = _validateRuntimeCapabilities(
+      pluginId: request.pluginId,
+      method: request.method,
+      runtimeBinding: runtimeBinding,
+    );
+    if (capabilityMismatch != null) {
+      return _rejected(
+        pluginId: request.pluginId,
+        method: request.method,
+        code: 'runtime_capability_mismatch',
+        message: capabilityMismatch,
+        runtimeBinding: runtimeBinding,
+        runtimeInvoke: null,
+      );
+    }
+    final result = handler.preflight(request);
+    if (result == null) return null;
+    return switch (result.status) {
+      PluginHostApiStatus.blocked => _blocked(
+          pluginId: request.pluginId,
+          method: request.method,
+          blockingFacts: result.blockingFacts,
+          runtimeBinding: runtimeBinding,
+          runtimeInvoke: null,
+        ),
+      PluginHostApiStatus.rejected => _rejected(
+          pluginId: request.pluginId,
+          method: request.method,
+          code: result.errorCode!,
+          message: result.errorMessage!,
+          runtimeBinding: runtimeBinding,
+          runtimeInvoke: null,
+        ),
+      PluginHostApiStatus.executed => _rejected(
+          pluginId: request.pluginId,
+          method: request.method,
+          code: 'preflight_invalid',
+          message: 'Plugin preflight must not execute a contract',
+          runtimeBinding: runtimeBinding,
+          runtimeInvoke: null,
+        ),
+    };
   }
 
   bool _requiresExternalRuntimeExecution(PluginHostApiRequest request) {
@@ -343,7 +462,7 @@ class PluginHostApiService {
           runtimeInvoke: runtimeInvoke,
         );
       }
-      final result = handler.execute(request);
+      final result = handler.execute(request, runtimeInvoke: runtimeInvoke);
       return switch (result.status) {
         PluginHostApiStatus.executed => _executed(
             pluginId: request.pluginId,
@@ -392,8 +511,7 @@ class PluginHostApiService {
     }
     final actual = runtimeBinding.contractKind?.trim() ?? '';
     if (actual.isEmpty) {
-      // Keep compatibility with legacy installed records without contractKind.
-      return null;
+      return 'Runtime contract kind is missing';
     }
     if (actual != expected) {
       return 'Runtime contract kind does not match requested plugin id';
@@ -415,9 +533,7 @@ class PluginHostApiService {
     }
     final declared = runtimeBinding.capabilities;
     if (declared.isEmpty) {
-      // Backward-compatible for legacy registry entries installed
-      // before capability metadata started being persisted.
-      return null;
+      return 'Runtime capabilities are missing required grants';
     }
     List<String> normalized;
     try {

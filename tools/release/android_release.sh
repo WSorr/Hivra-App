@@ -8,9 +8,6 @@ APK_SOURCE_PATH="$FLUTTER_DIR/build/app/outputs/flutter-apk/app-release.apk"
 VERSION=""
 CHANNEL=""
 OUTPUT_DIR=""
-RUN_PREFLIGHT=1
-RUN_BUILD=1
-TRADING_EVIDENCE_BUILD_TAG=""
 
 usage() {
   cat <<'EOF'
@@ -21,11 +18,6 @@ Options:
   --version <version>      Required. Release version label (for example: v1.0.1-test5).
   --channel <channel>      Required. test | public.
   --output-dir <dir>       Optional. Defaults to dist/<version>-<channel>-android.
-  --skip-preflight         Optional. Skip tools/release/preflight.sh.
-  --skip-build             Optional. Skip flutter build apk --release.
-  --trading-evidence-build-tag <tag>
-                           Optional. Forward build-tag coverage check to preflight:
-                           tools/release/preflight.sh --trading-evidence-build-tag <tag>
   --help                   Show this help.
 
 Notes:
@@ -62,18 +54,6 @@ while [ $# -gt 0 ]; do
       OUTPUT_DIR="${2:-}"
       shift 2
       ;;
-    --skip-preflight)
-      RUN_PREFLIGHT=0
-      shift
-      ;;
-    --skip-build)
-      RUN_BUILD=0
-      shift
-      ;;
-    --trading-evidence-build-tag)
-      TRADING_EVIDENCE_BUILD_TAG="${2:-}"
-      shift 2
-      ;;
     --help|-h)
       usage
       exit 0
@@ -88,6 +68,11 @@ done
 [ -n "$CHANNEL" ] || die "--channel is required"
 [[ "$CHANNEL" == "test" || "$CHANNEL" == "public" ]] || die "--channel must be test or public"
 
+FLUTTER_BUILD_NAME="$("$ROOT/tools/release/derive_flutter_version.sh" \
+  --version "$VERSION" --field name)"
+FLUTTER_BUILD_NUMBER="$("$ROOT/tools/release/derive_flutter_version.sh" \
+  --version "$VERSION" --field number)"
+
 "$ROOT/tools/release/release_version_guard.sh" \
   --version "$VERSION" \
   --channel "$CHANNEL"
@@ -100,23 +85,17 @@ require_cmd flutter
 require_cmd unzip
 require_cmd shasum
 
-if [ "$RUN_PREFLIGHT" -eq 1 ]; then
-  info "Release preflight"
-  if [ -n "$TRADING_EVIDENCE_BUILD_TAG" ]; then
-    "$ROOT/tools/release/preflight.sh" \
-      --trading-evidence-build-tag "$TRADING_EVIDENCE_BUILD_TAG"
-  else
-    "$ROOT/tools/release/preflight.sh"
-  fi
-fi
+info "Release preflight"
+"$ROOT/tools/release/preflight.sh" \
+  --trading-evidence-build-tag "$VERSION"
 
-if [ "$RUN_BUILD" -eq 1 ]; then
-  info "Build Android release APK"
-  (
-    cd "$FLUTTER_DIR"
-    flutter build apk --release
-  )
-fi
+info "Build Android release APK"
+(
+  cd "$FLUTTER_DIR"
+  flutter build apk --release \
+    --build-name "$FLUTTER_BUILD_NAME" \
+    --build-number "$FLUTTER_BUILD_NUMBER"
+)
 
 [ -f "$APK_SOURCE_PATH" ] || die "Release APK not found at $APK_SOURCE_PATH"
 
@@ -143,6 +122,8 @@ printf '%s  %s\n' "$APK_SHA" "$ASSET_NAME" > "$SHA_PATH"
 
 cat > "$META_PATH" <<EOF
 version=$VERSION
+flutter_build_name=$FLUTTER_BUILD_NAME
+flutter_build_number=$FLUTTER_BUILD_NUMBER
 channel=$CHANNEL
 pre_release_expected=$([ "$CHANNEL" = "test" ] && echo "yes" || echo "no")
 asset=$ASSET_NAME

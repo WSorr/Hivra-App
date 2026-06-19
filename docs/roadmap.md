@@ -561,20 +561,21 @@ Scope:
   - Host response canonical boundary now includes normalized runtime capability metadata (`execution_capabilities`) for deterministic diagnostics and hash traceability.
   - Added host API v1 documentation (`docs/plugins/plugin_host_api_v1.md`) and regression coverage for deterministic hash, blocked guard path, unsupported plugin/method, and invalid-args rejection.
   - Host API runtime-binding path now supports `executeWithRuntimeHook(...)` with deterministic execution-source metadata (`host_fallback` vs `external_package` + package fields), including package-byte digest (`execution_package_digest_hex`) for resolved external packages; plugin screen panels/logs now surface source + digest hint for manual diagnostics.
-  - Added deterministic `wasm_stub_v1` runtime invoke evidence path for external packages:
+  - Added deterministic plugin runtime path for external packages, later
+    replaced by semantic ABI v2:
     - validates installed package bytes against binding digest (`execution_package_digest_hex`) before module extraction; digest mismatch is rejected as invalid runtime invoke
     - reads module bytes from resolved package (`.wasm` or first `.wasm` in `.zip`)
     - when zip manifest declares `runtime.module_path`, runtime stub resolves that exact module path and rejects missing targets
     - runtime module-path validation now rejects parent-traversal segments (`..`) while keeping deterministic support for normal dotted path segments
     - zip module auto-selection now ignores archive entries containing parent-traversal segments (`..`) so runtime evidence cannot bind to traversal-shaped module paths
     - runtime invoke now rejects zip packages where `.wasm` entries exist but all module paths are traversal-shaped (no safe runtime module candidates), producing explicit invalid-runtime diagnostics instead of ambiguous unavailable state
-    - enforces strict runtime contract for zip manifests (`runtime.abi=hivra_host_abi_v1`, `runtime.entry_export=hivra_entry_v1`)
-    - validates that selected wasm module exports required entry symbol (`hivra_entry_v1`) with `() -> ()` signature before emitting runtime invoke evidence
-    - rejects wasm modules declaring imports in `wasm_stub_v1` phase to keep current runtime evidence path side-effect free and host-ABI minimal until full runtime execution stage
-    - rejects wasm modules declaring `start` section in `wasm_stub_v1` phase to prevent implicit auto-start semantics before full host runtime execution policy is mounted
-    - `wasm_stub_v1` now executes `hivra_entry_v1` through a deterministic no-host opcode subset (`nop/drop/const/i32.add/i32.sub/i32.mul/block/if/else/br/br_if/end`) and rejects unsupported opcodes with explicit invalid-runtime diagnostics
-    - structured control-flow in `wasm_stub_v1` is currently limited to empty block type (`0x40`); non-void block types and `loop` opcode are explicitly rejected
-    - `wasm_stub_v1` entry execution now enforces deterministic safety limits (max instruction count + max stack depth), rejecting over-limit modules as invalid runtime invoke
+    - enforces strict ABI v2 manifest contract
+      (`runtime.abi=hivra_host_abi_v2`,
+      `runtime.entry_export=hivra_evaluate_v1`)
+    - executes JSON-in/JSON-out semantics in the isolated Rust
+      `hivra-wasm-runtime` adapter using import-free, fuel-bounded `wasmi`
+    - validates alloc/evaluate/dealloc signatures, module/input/output limits,
+      canonical output identity and SHA-256 integrity
     - emits `execution_runtime_mode`, `execution_runtime_module_digest_hex`, and `execution_runtime_invoke_digest_hex` in host response canonical boundary
     - keeps execution side-effect free and capability-neutral while wiring end-to-end runtime call path semantics
   - Host API/runtime diagnostics now also carry explicit runtime module path (`execution_runtime_module_path`), and plugin panels show that path alongside ABI/entry/invoke diagnostics for deterministic manual verification.
@@ -1137,3 +1138,25 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       zone from the same normalized snapshot.
     - identical ordered candle inputs produce identical candidate selection.
   - Status: completed (2026-06-12).
+
+- `11.11 Plugin-Owned Semantic WASM ABI`
+  - Goal:
+    - make the installed `hivra-plugins` package the authoritative evaluator
+      of its deterministic contract instead of using WASM only as an entry
+      probe before host-side evaluation.
+  - Implemented:
+    - bounded deterministic JSON-in/JSON-out ABI v2 with explicit
+      alloc/evaluate/dealloc memory ownership and result/error envelope.
+    - import-free, fuel-bounded and size-bounded `wasmi` runtime in the lower
+      platform layer, exposed through FFI for macOS and Android builds.
+    - canonical output schema/identity/hash validation in the host.
+    - BingX and Capsule Chat semantic evaluators live in `hivra-plugins`;
+      mirrored Flutter evaluators were removed.
+  - Definition of done:
+    - changing plugin evaluator code changes runtime result without rebuilding
+      Hivra-App.
+    - identical package digest + canonical input yields identical output hash.
+    - host owns only validation, capabilities, consensus, risk and exchange
+      adapters; plugin owns contract semantics.
+    - `trading_drone_parity_gate.sh` is green and release evidence is recorded.
+  - Status: completed (2026-06-14).

@@ -6,20 +6,22 @@ This directory contains deterministic release helpers for Hivra.
 
 - `preflight.sh`
   - Runs review gates, tests, analyze, and artifact sanity checks.
-  - Optional evidence coverage check:
+  - Requires evidence coverage for the exact release tag:
     - `tools/release/preflight.sh --trading-evidence-build-tag <version-tag>`
 
 - `macos_release.sh`
   - Channel-aware macOS packaging (`test` / `public`).
   - Produces ZIP + `SHA256SUMS.txt` + `RELEASE-METADATA.txt`.
-  - Optional evidence forwarding to preflight:
-    - `tools/release/macos_release.sh --version <v> --channel <test|public> --trading-evidence-build-tag <v>`
+  - Always runs preflight and a fresh versioned build.
+  - Derives the embedded Flutter build name/number from `--version`.
+    - `tools/release/macos_release.sh --version <v> --channel <test|public>`
 
 - `android_release.sh`
   - Channel-aware Android packaging (`test` / `public`).
   - Produces APK + `SHA256SUMS.txt` + `RELEASE-METADATA.txt`.
-  - Optional evidence forwarding to preflight:
-    - `tools/release/android_release.sh --version <v> --channel <test|public> --trading-evidence-build-tag <v>`
+  - Always runs preflight and a fresh versioned build.
+  - Derives the embedded Flutter build name/number from `--version`.
+    - `tools/release/android_release.sh --version <v> --channel <test|public>`
 
 - `record_trading_drone_evidence.sh`
   - Appends one build-tagged evidence row to:
@@ -50,4 +52,8 @@ This directory contains deterministic release helpers for Hivra.
 
 Both packaging scripts reject a version that belongs to another major release
 line, already exists on GitHub, conflicts with a remote tag, or does not match
-the selected channel.
+the selected channel. They do not expose preflight/build bypass flags.
+
+Release remains blocked while the trading-drone parity table contains any
+status other than `DONE`. Plugin-owned execution requires the bounded semantic
+ABI v2 runtime; package presence or entry-probe evidence alone is insufficient.

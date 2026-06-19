@@ -397,6 +397,14 @@ class _FakeRuntime implements AppRuntimeRuntime {
   String? exportLedger() => null;
 
   @override
+  String? invokeWasmJson({
+    required Uint8List moduleBytes,
+    required String entryExport,
+    required Uint8List inputJsonBytes,
+  }) =>
+      null;
+
+  @override
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs() async =>
       workerBootstrap;
 

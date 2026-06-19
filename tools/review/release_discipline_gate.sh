@@ -50,6 +50,7 @@ CHECKLIST_DRONE_EVIDENCE="$ROOT/docs/checklists/trading-drone-evidence-log.md"
 DRONE_GOAL_CONTRACT="$ROOT/docs/plugins/bingx_futures_trading_drone_goal_contract_v1.md"
 DRONE_EVIDENCE_RECORD="$ROOT/tools/release/record_trading_drone_evidence.sh"
 DRONE_EVIDENCE_CHECK="$ROOT/tools/release/check_trading_drone_evidence.sh"
+FLUTTER_VERSION_DERIVER="$ROOT/tools/release/derive_flutter_version.sh"
 
 require_file "$PRECHECK" "preflight script exists"
 require_file "$MAC_RELEASE_SCRIPT" "macOS release script exists"
@@ -65,6 +66,7 @@ require_file "$CHECKLIST_DRONE_EVIDENCE" "trading drone evidence log exists"
 require_file "$DRONE_GOAL_CONTRACT" "trading drone goal contract exists"
 require_file "$DRONE_EVIDENCE_RECORD" "trading drone evidence-record script exists"
 require_file "$DRONE_EVIDENCE_CHECK" "trading drone evidence-check script exists"
+require_file "$FLUTTER_VERSION_DERIVER" "Flutter artifact version derivation exists"
 
 require_present "$ROADMAP" '^### 6\. Release Preflight as a Gate' \
   "roadmap tracks release preflight gate"
@@ -237,6 +239,8 @@ require_present "$CHECKLIST_DRONE_EVIDENCE" 'Required Coverage Per Candidate' \
   "drone evidence log includes per-candidate coverage requirements"
 require_present "$CHECKLIST_DRONE_EVIDENCE" 'tools/release/check_trading_drone_evidence\.sh --build-tag <version-tag>' \
   "drone evidence log includes coverage verification command"
+require_present "$DRONE_EVIDENCE_CHECK" '\^\[0-9a-fA-F\]\{64\}\$' \
+  "drone evidence checker requires canonical 64-hex hashes"
 require_present "$DRONE_GOAL_CONTRACT" '## 2\. Three Hivra Laws \(Mandatory\)' \
   "drone goal contract includes Hivra laws section"
 require_present "$DRONE_GOAL_CONTRACT" '## 3\. Source-of-Truth Stack \(Order of Authority\)' \
@@ -280,12 +284,30 @@ require_present "$PRECHECK" 'Trading Drone Evidence Coverage' \
   "preflight includes trading drone evidence coverage step"
 require_present "$PRECHECK" 'check_trading_drone_evidence_coverage' \
   "preflight wires trading drone evidence coverage"
-require_present "$PRECHECK" 'trading-evidence-build-tag' \
-  "preflight exposes trading evidence build-tag option"
-require_present "$MAC_RELEASE_SCRIPT" 'trading-evidence-build-tag' \
-  "macOS release script supports forwarding trading evidence build-tag"
-require_present "$ANDROID_RELEASE_SCRIPT" 'trading-evidence-build-tag' \
-  "Android release script supports forwarding trading evidence build-tag"
+require_present "$PRECHECK" 'Missing required --trading-evidence-build-tag' \
+  "preflight requires trading evidence build tag"
+require_present "$MAC_RELEASE_SCRIPT" 'trading-evidence-build-tag "\$VERSION"' \
+  "macOS release binds evidence coverage to release version"
+require_present "$ANDROID_RELEASE_SCRIPT" 'trading-evidence-build-tag "\$VERSION"' \
+  "Android release binds evidence coverage to release version"
+require_present "$MAC_RELEASE_SCRIPT" '\-\-build-name "\$FLUTTER_BUILD_NAME"' \
+  "macOS release embeds derived release version"
+require_present "$ANDROID_RELEASE_SCRIPT" '\-\-build-name "\$FLUTTER_BUILD_NAME"' \
+  "Android release embeds derived release version"
+if rg -q -- '--skip-preflight|--skip-build' \
+  "$MAC_RELEASE_SCRIPT" "$ANDROID_RELEASE_SCRIPT"; then
+  fail "release scripts expose forbidden preflight/build bypass flags"
+else
+  pass "release scripts do not expose preflight/build bypass flags"
+fi
+if [ "$("$FLUTTER_VERSION_DERIVER" \
+  --version v1.0.3-test4 --field name)" = "1.0.3" ] &&
+   [ "$("$FLUTTER_VERSION_DERIVER" \
+  --version v1.0.3-test4 --field number)" = "100000304" ]; then
+  pass "Flutter artifact version derivation is deterministic"
+else
+  fail "Flutter artifact version derivation is deterministic"
+fi
 require_present "$PRECHECK" 'user_lifetime_safety_gate\.sh' \
   "preflight includes user lifetime safety gate"
 require_present "$REVIEW_ALL" 'release_discipline_gate\.sh' \

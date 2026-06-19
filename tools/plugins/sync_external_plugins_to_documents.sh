@@ -21,7 +21,6 @@ echo "Building external plugin packages..."
 "$EXTERNAL_REPO/scripts/build_all_plugins.sh"
 
 mkdir -p "$SOURCE_DIR"
-cp -f "$EXTERNAL_REPO"/dist/plugins/*.zip "$SOURCE_DIR"/
 
 zip_uri() {
   python3 - "$1" <<'PY'
@@ -34,26 +33,34 @@ sha256_hex() {
   shasum -a 256 "$1" | awk '{print tolower($1)}'
 }
 
-latest_zip_or_empty() {
-  local pattern="$1"
-  local latest
-  latest="$(ls $pattern 2>/dev/null | sort | tail -n1 || true)"
-  echo "$latest"
+current_plugin_zip() {
+  local plugin_name="$1"
+  local manifest="$EXTERNAL_REPO/plugins/$plugin_name/manifest.json"
+  local version
+  version="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("release_version", d.get("version")))' "$manifest")"
+  echo "$EXTERNAL_REPO/dist/plugins/${plugin_name}-${version}.zip"
 }
 
-BINGX_FUTURES_ZIP="$(latest_zip_or_empty "$SOURCE_DIR"/bingx_futures_test_plugin-*.zip)"
-CHAT_ZIP="$(ls "$SOURCE_DIR"/capsule_chat_test_plugin-*.zip | sort | tail -n1)"
+BINGX_SOURCE_ZIP="$(current_plugin_zip bingx_futures_test_plugin)"
+CHAT_SOURCE_ZIP="$(current_plugin_zip capsule_chat_test_plugin)"
 
-if [[ -n "$BINGX_FUTURES_ZIP" ]]; then
-  BINGX_ZIP="$BINGX_FUTURES_ZIP"
-  BINGX_ENTRY_ID="bingx-futures-test"
-  BINGX_PLUGIN_ID="hivra.contract.bingx-futures-trading.v1"
-  BINGX_DISPLAY_NAME="BingX Futures Trading (Test Plugin)"
-  BINGX_VERSION="$(basename "$BINGX_ZIP" | sed -E 's/^bingx_futures_test_plugin-([0-9.]+)\.zip$/\1/')"
-else
-  echo "missing BingX plugin zip (expected bingx_futures_test_plugin-*.zip)"
-  exit 1
-fi
+for source_zip in "$BINGX_SOURCE_ZIP" "$CHAT_SOURCE_ZIP"; do
+  if [[ ! -f "$source_zip" ]]; then
+    echo "missing current plugin zip: $source_zip"
+    exit 1
+  fi
+done
+
+rm -f "$SOURCE_DIR"/bingx_futures_test_plugin-*.zip
+rm -f "$SOURCE_DIR"/capsule_chat_test_plugin-*.zip
+cp -f "$BINGX_SOURCE_ZIP" "$CHAT_SOURCE_ZIP" "$SOURCE_DIR"/
+
+BINGX_ZIP="$SOURCE_DIR/$(basename "$BINGX_SOURCE_ZIP")"
+CHAT_ZIP="$SOURCE_DIR/$(basename "$CHAT_SOURCE_ZIP")"
+BINGX_ENTRY_ID="bingx-futures-test"
+BINGX_PLUGIN_ID="hivra.contract.bingx-futures-trading.v1"
+BINGX_DISPLAY_NAME="BingX Futures Trading (Test Plugin)"
+BINGX_VERSION="$(basename "$BINGX_ZIP" | sed -E 's/^bingx_futures_test_plugin-([0-9.]+)\.zip$/\1/')"
 
 BINGX_SHA256="$(sha256_hex "$BINGX_ZIP")"
 CHAT_SHA256="$(sha256_hex "$CHAT_ZIP")"
@@ -63,7 +70,7 @@ CHAT_VERSION="$(basename "$CHAT_ZIP" | sed -E 's/^capsule_chat_test_plugin-([0-9
 cat > "$CATALOG_PATH" <<JSON
 {
   "schema": "hivra.plugin.catalog",
-  "version": 1,
+  "version": 2,
   "source_id": "local.hivra.plugins",
   "source_name": "Local Hivra Plugins",
   "entries": [

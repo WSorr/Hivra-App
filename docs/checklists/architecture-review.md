@@ -48,6 +48,8 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Plugin inputs/outputs are deterministic for identical inputs.
 - [ ] Repo boundary is preserved: `Hivra-App` is host/runtime only; plugin implementation source/release flow lives in `hivra-plugins`.
 - [ ] Plugin changes in `Hivra-App` are limited to host API/runtime boundary, install/catalog projection, and execution guards (no plugin-source duplication).
+- [ ] External contract semantics execute inside ABI v2 WASM; Flutter does not mirror plugin evaluators.
+- [ ] WASM execution is import-free, fuel-bounded, size-bounded, and validates canonical output hashes.
 
 ## Execution Discipline v1
 

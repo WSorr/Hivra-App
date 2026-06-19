@@ -12,12 +12,12 @@ TRADING_EVIDENCE_BUILD_TAG=""
 usage() {
   cat <<'USAGE'
 Usage:
-  tools/release/preflight.sh [--trading-evidence-build-tag <tag>]
+  tools/release/preflight.sh --trading-evidence-build-tag <tag>
 
 Options:
   --trading-evidence-build-tag <tag>
-      If provided, preflight additionally validates trading-drone
-      evidence coverage for the specified build tag using:
+      Required. Preflight validates trading-drone evidence coverage for the
+      specified build tag using:
       tools/release/check_trading_drone_evidence.sh
 USAGE
 }
@@ -161,8 +161,8 @@ check_android_release_bundle() {
 
 check_trading_drone_evidence_coverage() {
   if [ -z "$TRADING_EVIDENCE_BUILD_TAG" ]; then
-    echo "SKIP: No --trading-evidence-build-tag provided"
-    return 0
+    echo "FAIL: --trading-evidence-build-tag is required"
+    return 1
   fi
   "$ROOT/tools/release/check_trading_drone_evidence.sh" \
     --build-tag "$TRADING_EVIDENCE_BUILD_TAG"
@@ -210,4 +210,9 @@ main() {
 }
 
 parse_args "$@"
+[ -n "$TRADING_EVIDENCE_BUILD_TAG" ] || {
+  echo "Missing required --trading-evidence-build-tag" >&2
+  usage
+  exit 1
+}
 main

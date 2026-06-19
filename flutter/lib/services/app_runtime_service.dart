@@ -7,8 +7,6 @@ import '../ffi/app_runtime_runtime.dart';
 import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
-import 'bingx_trading_contract_service.dart';
-import 'capsule_chat_contract_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_state_manager.dart';
 import 'capsule_chat_delivery_service.dart';
@@ -25,7 +23,7 @@ import 'plugin_host_api_service.dart';
 import 'plugin_contract_handlers.dart';
 import 'plugin_host_contract_handler.dart';
 import 'wasm_plugin_registry_service.dart';
-import 'wasm_plugin_runtime_stub_service.dart';
+import 'wasm_plugin_runtime_service.dart';
 
 class AppRuntimeService {
   final AppRuntimeRuntime _runtime;
@@ -110,17 +108,17 @@ class AppRuntimeService {
 
   PluginHostApiService buildPluginHostApiService() {
     final consensus = buildConsensusRuntimeService();
-    final bingxFutures = BingxTradingContractService(
-      readSignable: consensus.signable,
+    final wasmRuntime = WasmPluginRuntimeService(
+      invokeJson: _runtime.invokeWasmJson,
     );
-    final chat = CapsuleChatContractService(
-      readSignable: consensus.signable,
-    );
-    final wasmRuntime = const WasmPluginRuntimeStubService();
     return PluginHostApiService(
       handlers: <PluginHostContractHandler>[
-        BingxFuturesPluginContractHandler(run: bingxFutures.execute),
-        CapsuleChatPluginContractHandler(run: chat.execute),
+        BingxFuturesPluginContractHandler(
+          readSignable: consensus.signable,
+        ),
+        CapsuleChatPluginContractHandler(
+          readSignable: consensus.signable,
+        ),
       ],
       resolveRuntimeBinding: _resolvePluginRuntimeBinding,
       resolveRuntimeInvoke: (request, binding) => wasmRuntime.invoke(

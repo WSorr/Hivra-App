@@ -112,7 +112,13 @@ class _CapturingHandler implements PluginHostContractHandler {
   Set<String> requiredCapabilities(String method) => const <String>{};
 
   @override
-  PluginHostContractResult execute(PluginHostApiRequest request) {
+  PluginHostContractResult? preflight(PluginHostApiRequest request) => null;
+
+  @override
+  PluginHostContractResult execute(
+    PluginHostApiRequest request, {
+    PluginRuntimeInvokeEvidence? runtimeInvoke,
+  }) {
     lastRequest = request;
     return const PluginHostContractResult.executed(<String, dynamic>{
       'intent_hash_hex':

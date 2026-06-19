@@ -44,6 +44,7 @@ ENGINE_TOML="$ROOT/engine/hivra-engine/Cargo.toml"
 TRANSPORT_TOML="$ROOT/adapters/hivra-transport/Cargo.toml"
 CRYPTO_TOML="$ROOT/adapters/hivra-nostr-crypto/Cargo.toml"
 FFI_TOML="$ROOT/platform/hivra-ffi/Cargo.toml"
+WASM_RUNTIME_TOML="$ROOT/platform/hivra-wasm-runtime/Cargo.toml"
 
 require_absent "$CORE_TOML" 'hivra-(engine|transport|nostr-crypto|ffi|keystore)' \
   "hivra-core must not depend on engine/transport/crypto/ffi/keystore"
@@ -73,6 +74,10 @@ require_present "$FFI_TOML" 'hivra-nostr-crypto' \
   "hivra-ffi depends on hivra-nostr-crypto"
 require_present "$FFI_TOML" 'hivra-keystore' \
   "hivra-ffi depends on hivra-keystore"
+require_present "$FFI_TOML" 'hivra-wasm-runtime' \
+  "hivra-ffi depends downward on hivra-wasm-runtime"
+require_absent "$WASM_RUNTIME_TOML" 'hivra-(core|engine|transport|ffi|keystore|nostr)' \
+  "hivra-wasm-runtime is isolated from capsule/domain/transport layers"
 
 if rg -q 'path = "../../core/(hivra-transport|hivra-nostr-crypto)"' "$FFI_TOML"; then
   fail "hivra-ffi still points adapter dependencies into core/"

@@ -39,5 +39,10 @@ abstract interface class PluginHostContractHandler {
 
   Set<String> requiredCapabilities(String method);
 
-  PluginHostContractResult execute(PluginHostApiRequest request);
+  PluginHostContractResult? preflight(PluginHostApiRequest request);
+
+  PluginHostContractResult execute(
+    PluginHostApiRequest request, {
+    PluginRuntimeInvokeEvidence? runtimeInvoke,
+  });
 }

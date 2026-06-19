@@ -189,6 +189,23 @@ typedef HivraLedgerAppendEventDart = int Function(
   int payloadLen,
 );
 
+typedef HivraWasmInvokeJsonC = Int32 Function(
+  Pointer<Uint8> module,
+  Uint64 moduleLen,
+  Pointer<Int8> entryExport,
+  Pointer<Uint8> input,
+  Uint64 inputLen,
+  Pointer<Pointer<Int8>> outJson,
+);
+typedef HivraWasmInvokeJsonDart = int Function(
+  Pointer<Uint8> module,
+  int moduleLen,
+  Pointer<Int8> entryExport,
+  Pointer<Uint8> input,
+  int inputLen,
+  Pointer<Pointer<Int8>> outJson,
+);
+
 class HivraBindings {
   static final HivraBindings _instance = HivraBindings._internal();
 
@@ -259,6 +276,7 @@ class HivraBindings {
   late final HivraExportLedgerDart _exportLedger;
   late final HivraImportLedgerDart _importLedger;
   late final HivraLedgerAppendEventDart _ledgerAppendEvent;
+  late final HivraWasmInvokeJsonDart _wasmInvokeJson;
 
   HivraBindings._internal() {
     _seedToMnemonic = _lib
@@ -437,6 +455,10 @@ class HivraBindings {
     _ledgerAppendEvent = _lib
         .lookup<NativeFunction<HivraLedgerAppendEventC>>(
             'hivra_ledger_append_event')
+        .asFunction();
+
+    _wasmInvokeJson = _lib
+        .lookup<NativeFunction<HivraWasmInvokeJsonC>>('hivra_wasm_invoke_json')
         .asFunction();
 
     try {
@@ -637,7 +659,9 @@ class HivraBindings {
     Uint8List pubkey32,
     Uint8List signature64,
   ) {
-    if (message32.length != 32 || pubkey32.length != 32 || signature64.length != 64) {
+    if (message32.length != 32 ||
+        pubkey32.length != 32 ||
+        signature64.length != 64) {
       return -1;
     }
     final verifyFn = _verifyEd25519Signature32;
@@ -818,6 +842,51 @@ class HivraBindings {
       _freeString(cstr);
       return json;
     } finally {
+      calloc.free(outPtr);
+    }
+  }
+
+  String? invokeWasmJson({
+    required Uint8List moduleBytes,
+    required String entryExport,
+    required Uint8List inputJsonBytes,
+  }) {
+    if (moduleBytes.isEmpty ||
+        entryExport.trim().isEmpty ||
+        inputJsonBytes.isEmpty) {
+      return null;
+    }
+    final modulePtr = calloc<Uint8>(moduleBytes.length);
+    final entryPtr = entryExport.trim().toNativeUtf8();
+    final inputPtr = calloc<Uint8>(inputJsonBytes.length);
+    final outPtr = calloc<Pointer<Int8>>();
+    try {
+      modulePtr.asTypedList(moduleBytes.length).setAll(0, moduleBytes);
+      inputPtr.asTypedList(inputJsonBytes.length).setAll(0, inputJsonBytes);
+      final code = _wasmInvokeJson(
+        modulePtr,
+        moduleBytes.length,
+        entryPtr.cast<Int8>(),
+        inputPtr,
+        inputJsonBytes.length,
+        outPtr,
+      );
+      if (code != 0) {
+        throw FormatException(
+          lastErrorMessage() ?? 'WASM runtime invocation failed',
+        );
+      }
+      if (outPtr.value == nullptr) {
+        throw const FormatException('WASM runtime returned no output');
+      }
+      return outPtr.value.cast<Utf8>().toDartString();
+    } finally {
+      if (outPtr.value != nullptr) {
+        _freeString(outPtr.value);
+      }
+      calloc.free(modulePtr);
+      calloc.free(entryPtr);
+      calloc.free(inputPtr);
       calloc.free(outPtr);
     }
   }

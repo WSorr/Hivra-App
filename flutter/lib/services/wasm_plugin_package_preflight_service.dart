@@ -29,8 +29,12 @@ class WasmPluginPackagePreflight {
 }
 
 class WasmPluginPackagePreflightService {
-  static const String requiredRuntimeAbi = 'hivra_host_abi_v1';
-  static const String requiredRuntimeEntryExport = 'hivra_entry_v1';
+  static const String requiredRuntimeAbi = 'hivra_host_abi_v2';
+  static const String requiredRuntimeEntryExport = 'hivra_evaluate_v1';
+  static const int _maxPackageBytes = 8 * 1024 * 1024;
+  static const int _maxModuleBytes = 4 * 1024 * 1024;
+  static const int _maxArchiveEntries = 128;
+  static const int _maxExpandedArchiveBytes = 16 * 1024 * 1024;
 
   final WasmPluginCapabilityPolicyService _capabilityPolicy;
 
@@ -40,6 +44,9 @@ class WasmPluginPackagePreflightService {
   }) : _capabilityPolicy = capabilityPolicy;
 
   Future<WasmPluginPackagePreflight> inspect(File sourceFile) async {
+    if (await sourceFile.length() > _maxPackageBytes) {
+      throw const FormatException('Plugin package exceeds the size limit');
+    }
     final fileName = _fileNameOnly(sourceFile.path);
     final extension = _fileExtension(fileName).toLowerCase();
     if (extension == '.wasm') {
@@ -59,6 +66,9 @@ class WasmPluginPackagePreflightService {
 
   Future<void> _validateWasmBinary(File sourceFile) async {
     final bytes = await sourceFile.readAsBytes();
+    if (bytes.length > _maxModuleBytes) {
+      throw const FormatException('WASM module exceeds the size limit');
+    }
     if (bytes.length < 8) {
       throw const FormatException('WASM package is too small');
     }
@@ -82,6 +92,16 @@ class WasmPluginPackagePreflightService {
 
     if (archive.isEmpty) {
       throw const FormatException('Plugin package archive is empty');
+    }
+    if (archive.files.length > _maxArchiveEntries) {
+      throw const FormatException('Plugin package has too many entries');
+    }
+    final expandedBytes = archive.files.fold<int>(
+      0,
+      (total, file) => total + file.size,
+    );
+    if (expandedBytes > _maxExpandedArchiveBytes) {
+      throw const FormatException('Expanded plugin package is too large');
     }
 
     final manifestFile = archive.files.firstWhere(
@@ -110,10 +130,17 @@ class WasmPluginPackagePreflightService {
     }
     final pluginVersion = _parsePluginVersion(manifest);
 
-    String? contractKind;
     final contract = manifest['contract'];
-    if (contract is Map) {
-      contractKind = contract['kind']?.toString();
+    if (contract is! Map) {
+      throw const FormatException(
+        'Plugin manifest is missing contract section',
+      );
+    }
+    final contractKind = contract['kind']?.toString().trim() ?? '';
+    if (contractKind.isEmpty) {
+      throw const FormatException(
+        'Plugin manifest contract.kind must be a non-empty string',
+      );
     }
     final runtime = manifest['runtime'];
     if (runtime is! Map) {
@@ -144,6 +171,9 @@ class WasmPluginPackagePreflightService {
       final normalizedPath = _normalizeArchivePath(file.name);
       if (normalizedPath == null) continue;
       if (!normalizedPath.toLowerCase().endsWith('.wasm')) continue;
+      if (_archiveFileBytes(file).length > _maxModuleBytes) {
+        throw const FormatException('WASM module exceeds the size limit');
+      }
       wasmModulePaths.add(normalizedPath);
     }
     if (wasmModulePaths.isEmpty) {
@@ -165,6 +195,11 @@ class WasmPluginPackagePreflightService {
       }
     }
     final capabilities = _parseCapabilities(manifest['capabilities']);
+    if (capabilities.isEmpty) {
+      throw const FormatException(
+        'Plugin manifest must declare at least one capability',
+      );
+    }
 
     return WasmPluginPackagePreflight(
       packageKind: 'zip',

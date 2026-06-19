@@ -48,8 +48,8 @@ void main() {
           'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
           'contract': {'kind': 'bingx_futures_order_intent'},
           'runtime': {
-            'abi': 'hivra_host_abi_v1',
-            'entry_export': 'hivra_entry_v1',
+            'abi': 'hivra_host_abi_v2',
+            'entry_export': 'hivra_evaluate_v1',
           },
           'capabilities': ['consensus_guard.read'],
         },
@@ -67,8 +67,8 @@ void main() {
           'plugin_id': 'hivra.contract.capsule-chat.v1',
           'contract': {'kind': 'capsule_chat'},
           'runtime': {
-            'abi': 'hivra_host_abi_v1',
-            'entry_export': 'hivra_entry_v1',
+            'abi': 'hivra_host_abi_v2',
+            'entry_export': 'hivra_evaluate_v1',
           },
           'capabilities': ['capsule.chat.post'],
         },

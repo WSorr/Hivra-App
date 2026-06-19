@@ -202,7 +202,7 @@ PluginHostApiResponse _hostExecuted(Map<String, dynamic> hostArgs) {
     executionPackageKind: 'wasm',
     executionPackageDigestHex: 'pkg-digest',
     executionContractKind: 'bingx_futures_order_intent',
-    executionRuntimeMode: 'wasm_stub_v1',
+    executionRuntimeMode: 'wasmi_v1',
     executionRuntimeAbi: 'hivra_plugin_v1',
     executionRuntimeEntryExport: 'hivra_invoke',
     executionRuntimeModulePath: 'plugin/module.wasm',

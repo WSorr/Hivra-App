@@ -26,9 +26,13 @@ If the remote source is not reachable (for example private GitHub repo), app fal
 - Hash mismatch blocks installation.
 - Installed package metadata must match catalog entry (`plugin_id`, `package_kind`, and `version` when package version is available); mismatch triggers install rollback.
 - Zip manifests must declare strict runtime contract:
-  - `runtime.abi = hivra_host_abi_v1`
-  - `runtime.entry_export = hivra_entry_v1`
+  - non-empty `contract.kind`
+  - non-empty `capabilities` list
+  - `runtime.abi = hivra_host_abi_v2`
+  - `runtime.entry_export = hivra_evaluate_v1`
   - optional `runtime.module_path = <path/to/module.wasm>` for explicit module selection
+- Missing contract or capability metadata is rejected. Legacy compatibility must
+  be handled by reinstalling a current package, never by bypassing permissions.
 
 ## Local private-repo workflow
 
@@ -45,3 +49,10 @@ This script:
 3. Generates `~/Documents/Hivra/Plugins/plugin_catalog.json` with `file://` URLs and per-package `sha256_hex`
 
 Then open `WASM Plugins` screen and install from `Source Catalog`.
+
+## Release readiness
+
+Package installation and semantic execution use the deterministic ABI v2
+JSON-in/JSON-out boundary. The Rust runtime is import-free, fuel-bounded and
+size-bounded. The host validates package/module digests, manifest grants,
+canonical output identity and output hash before consuming plugin results.

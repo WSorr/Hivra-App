@@ -58,6 +58,9 @@ PAIRWISE="$ROOT/flutter/lib/services/pairwise_snapshot_service.dart"
 SUPPORT="$ROOT/flutter/lib/services/ledger_view_support.dart"
 CONSENSUS="$ROOT/flutter/lib/services/consensus_processor.dart"
 BINDINGS="$ROOT/flutter/lib/ffi/hivra_bindings.dart"
+WASM_RUNTIME="$ROOT/platform/hivra-wasm-runtime/src/lib.rs"
+WASM_RUNTIME_SERVICE="$ROOT/flutter/lib/services/wasm_plugin_runtime_service.dart"
+FFI_TOML="$ROOT/platform/hivra-ffi/Cargo.toml"
 
 # 1) Dependency law for transport adapter.
 require_absent "$TRANSPORT_TOML" 'hivra-core' \
@@ -108,6 +111,18 @@ require_present "$EXTERNAL_PLUGIN_SOURCE" '`Hivra-App` repository is host/runtim
   "external plugin source doc fixes Hivra-App host-only ownership"
 require_present "$EXTERNAL_PLUGIN_SOURCE" 'WASM plugin implementation source and plugin package release flow belong to `hivra-plugins` repository\.' \
   "external plugin source doc fixes plugin-source ownership in hivra-plugins"
+if find "$ROOT/tools/plugins" -maxdepth 1 -type f \
+  -name 'build_*_plugin_zip.sh' | grep -q .; then
+  fail "Hivra-App contains plugin package build scripts owned by hivra-plugins"
+else
+  pass "Hivra-App does not duplicate external plugin package build sources"
+fi
+if rg -q 'bingx_futures_(credential|exchange|intent|live|risk|execution)' \
+  "$ROOT/flutter/lib/screens/wasm_plugins_screen.dart"; then
+  fail "plugin catalog screen contains trading-drone orchestration"
+else
+  pass "plugin catalog screen is free of trading-drone orchestration"
+fi
 require_present "$DOCS_README" 'architecture-execution-discipline\.md' \
   "docs index references execution discipline standard"
 require_present "$ROADMAP" '`9\.10 Execution Discipline Standard`' \
@@ -140,6 +155,16 @@ require_absent "$PLUGIN_HOST" 'bingx_trading_contract_service|capsule_chat_contr
   "generic plugin host does not import concrete plugin contracts"
 require_absent "$PLUGIN_HOST" 'Bingx|CapsuleChat|bingx|capsule_chat' \
   "generic plugin host does not branch on concrete plugin identities"
+require_present "$FFI_TOML" 'hivra-wasm-runtime = \{ path = "../hivra-wasm-runtime" \}' \
+  "FFI depends downward on isolated wasm runtime"
+require_present "$WASM_RUNTIME" 'pub fn invoke_json' \
+  "isolated wasm runtime exposes semantic JSON invocation"
+require_present "$WASM_RUNTIME" 'module\.imports\(\)\.next\(\)\.is_some\(\)' \
+  "wasm runtime rejects host imports"
+require_present "$WASM_RUNTIME_SERVICE" "hivra_host_abi_v2" \
+  "Flutter runtime boundary requires semantic ABI v2"
+require_absent "$SERVICES" 'class BingxTradingContractService|class CapsuleChatContractService' \
+  "Flutter does not mirror external plugin contract evaluators"
 require_absent "$SCREENS" 'BingxFuturesLiveSnapshotBuilderService|BingxFuturesLiveDecisionInput' \
   "screens do not orchestrate BingX snapshot and live decision pipeline"
 require_absent "$SCREENS" 'BingxFuturesRiskGovernorInput|_riskGovernor\.evaluate' \

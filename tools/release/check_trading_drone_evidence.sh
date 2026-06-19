@@ -87,7 +87,8 @@ while IFS='|' read -r platform mode decision execution risk; do
   decision_clean="${decision//\`/}"
   execution_clean="${execution//\`/}"
   risk_clean="${risk//\`/}"
-  if [ -z "$decision_clean" ] || [ -z "$execution_clean" ]; then
+  if [[ ! "$decision_clean" =~ ^[0-9a-fA-F]{64}$ ]] ||
+     [[ ! "$execution_clean" =~ ^[0-9a-fA-F]{64}$ ]]; then
     invalid_hash_rows=$((invalid_hash_rows + 1))
   fi
   if [ "$risk_clean" = "risk_blocked" ]; then
@@ -114,7 +115,7 @@ if [ "$has_android_interactive" -ne 1 ]; then
 fi
 
 if [ "$invalid_hash_rows" -gt 0 ]; then
-  printf 'FAIL evidence-check: %d rows have empty decision/execution hash fields\n' "$invalid_hash_rows" >&2
+  printf 'FAIL evidence-check: %d rows have invalid decision/execution hashes (expected 64 hex chars)\n' "$invalid_hash_rows" >&2
   missing=1
 fi
 

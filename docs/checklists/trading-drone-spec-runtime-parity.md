@@ -2,7 +2,7 @@
 
 Use this checklist after any trading-drone logic change and before release packaging.
 
-## Current Runtime Status (2026-06-12)
+## Current Runtime Status (2026-06-14)
 
 Legend:
 - `DONE`: implemented and wired in live runtime path
@@ -16,20 +16,21 @@ Legend:
 | Feature extractor (EMA/ATR/liquidity/whale) | DONE | `flutter/lib/services/bingx_futures_feature_extractor_service.dart` | Keep regression green |
 | TVH rule engine (`LONG/SHORT/NO_SIGNAL/BLOCKED`) | DONE | `flutter/lib/services/bingx_futures_tvh_rule_engine_service.dart` | Keep regression green |
 | Deterministic replay harness | DONE | `flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart` | Keep fixture parity checks |
-| Live entry uses TVH decision as primary gate | DONE | `TradingDroneScreen` and `WasmPluginsScreen` resolve limit intents via `BingxFuturesLiveDecisionService` before host call | Keep live-decision replay checks green |
+| Live entry uses TVH decision as primary gate | DONE | `TradingDroneScreen` resolves limit intents via `BingxFuturesLiveDecisionService` before host call | Keep live-decision replay checks green |
 | Side/zone provenance linked to TVH decision hash | DONE | `snapshot/feature/tvh/live` hashes are propagated into host result and decision/execution envelopes | Keep provenance envelope regression tests green |
 | Trend bundle + far-retest continuation gate | DONE | `BingxFuturesLiveDecisionService` emits `trend_15m/4h/1d` and deterministic `trend_gate_*` block codes | Keep live-decision regressions green |
 | Momentum-missed continuation gate | DONE | `BingxFuturesLiveDecisionService` blocks untouched far pending entries with deterministic `momentum_gate_*_missed_retest` codes | Keep missed-retest regressions green |
 | HTF liquidity lifecycle gate | DONE | `BingxFuturesZoneDecisionService` accepts only untouched confirmed swing pivots or a current confirmed micro sweep/reclaim; internal fallback levels are diagnostic-only | Keep fresh/sweep-origin/consumed/non-executable-fallback regressions green |
-| Risk governor before execution | DONE | `TradingDroneScreen._evaluateExecutionRisk`, `WasmPluginsScreen._evaluateBingxExecutionRisk` | Keep policy regression and envelope checks green |
+| Risk governor before execution | DONE | `TradingDroneScreen` delegates execution risk to `BingxFuturesExchangeExecutionUseCaseService` | Keep policy regression and envelope checks green |
 | Exchange contract minimums before execution | DONE | Public contract rules feed minimum quantity/notional into `BingxFuturesRiskGovernorService` | Keep ETH-style minimum-size regression green |
-| Exchange-backed risk inputs (equity/pnl/positions) | DONE | `BingxFuturesExchangeRiskInputService` wired in `TradingDroneScreen` and `WasmPluginsScreen` using `getUserBalance/getUserPositions` | Keep exchange payload variant tests green |
-| Runtime-only futures intent execution | DONE | `place_bingx_futures_order_intent` runtime path enforced (plugin host boundary) | Keep smoke+tests green |
+| Exchange-backed risk inputs (equity/pnl/positions) | DONE | `BingxFuturesExchangeRiskInputService` is consumed by the trading-drone execution use case using `getUserBalance/getUserPositions` | Keep exchange payload variant tests green |
+| External package binding and invoke evidence | DONE | `place_bingx_futures_order_intent` requires an installed package, strict contract/capabilities, package digest and runtime invoke evidence | Keep fail-closed security tests green |
+| Plugin-owned semantic contract execution | DONE | `hivra-plugins` owns BingX/chat evaluators; `hivra-wasm-runtime` executes ABI v2 JSON-in/JSON-out through bounded `wasmi`; Flutter validates canonical output and no longer contains mirrored contract evaluators | Keep ABI, runtime, integrity and cross-platform regressions green |
 | Idempotency/TTL/retry discipline | DONE | `flutter/lib/services/bingx_futures_execution_queue_service.dart` | Keep regression green |
 | Managed order revalidation | DONE | `BingxFuturesOrderRevalidationService` cancels stale managed drone orders when live TVH invalidates the setup | Keep revalidation regressions green |
 | Managed order provenance journal | DONE | Capsule-scoped tracking state persists canonical intent + decision hash lineage for each managed order | Use provenance as the mandatory input for future deterministic replacement |
 | Deterministic stale-zone replacement | DONE | `BingxFuturesOrderReplacementService` plans same-side replacement; runtime repeats host/consensus, risk, idempotency, and exchange gates | Keep replacement planner and manual exchange smoke green |
-| Decision/execution observability envelopes | DONE | envelope logs wired in both execution surfaces | Keep release smoke evidence |
+| Decision/execution observability envelopes | DONE | envelope logs wired through the dedicated trading-drone execution surface | Keep release smoke evidence |
 
 ## Hivra Laws (Non-Negotiable)
 
@@ -70,6 +71,9 @@ Legend:
 
 - [ ] Futures intent method is `place_bingx_futures_order_intent`.
 - [ ] Runtime invoke path is used for futures execution (no host fallback execution path).
+- [ ] Runtime ABI is `hivra_host_abi_v2` with `hivra_alloc_v1`, `hivra_evaluate_v1`, and `hivra_dealloc_v1`.
+- [ ] Runtime rejects imports, oversized modules/input/output, invalid signatures, and fuel exhaustion.
+- [ ] Host validates plugin canonical JSON identity and SHA-256 before using the result.
 - [ ] Capability guard includes:
 - [ ] `consensus_guard.read`
 - [ ] `exchange.trade.bingx.futures`

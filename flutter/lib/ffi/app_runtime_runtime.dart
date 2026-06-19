@@ -26,6 +26,12 @@ abstract class AppRuntimeRuntime {
 
   String? exportLedger();
 
+  String? invokeWasmJson({
+    required Uint8List moduleBytes,
+    required String entryExport,
+    required Uint8List inputJsonBytes,
+  });
+
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs();
 
   bool breakRelationship(
@@ -91,6 +97,19 @@ class HivraAppRuntimeRuntime implements AppRuntimeRuntime {
 
   @override
   String? exportLedger() => _hivra.exportLedger();
+
+  @override
+  String? invokeWasmJson({
+    required Uint8List moduleBytes,
+    required String entryExport,
+    required Uint8List inputJsonBytes,
+  }) {
+    return _hivra.invokeWasmJson(
+      moduleBytes: moduleBytes,
+      entryExport: entryExport,
+      inputJsonBytes: inputJsonBytes,
+    );
+  }
 
   @override
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs() {

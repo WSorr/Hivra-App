@@ -33,7 +33,7 @@ in_table && $0 ~ /^\|/ {
   if (area == "" || status == "" || area == "Area" || status == "Status") next
   rows += 1
   if (status == "DONE") done_rows += 1
-  if (status == "TODO" || status == "PARTIAL") {
+  if (status != "DONE") {
     print area " [" status "]"
   }
 }
@@ -51,7 +51,7 @@ elif [ -n "$UNRESOLVED" ]; then
   fail "runtime status table still has unresolved rows:"
   printf '%s\n' "$UNRESOLVED" | sed 's/^/  - /'
 else
-  pass "runtime status table has no TODO/PARTIAL rows"
+  pass "runtime status table contains DONE rows only"
 fi
 
 exit "$STATUS"

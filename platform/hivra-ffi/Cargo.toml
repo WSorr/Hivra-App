@@ -9,6 +9,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 hivra-keystore = { path = "../hivra-keystore" }
+hivra-wasm-runtime = { path = "../hivra-wasm-runtime" }
 hivra-core = { path = "../../core/hivra-core" }
 hivra-engine = { path = "../../engine/hivra-engine" }
 hivra-ed25519-crypto = { path = "../../adapters/hivra-ed25519-crypto" }

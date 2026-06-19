@@ -57,4 +57,30 @@ else
   pass "no obvious sensitive logging patterns detected"
 fi
 
+PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
+PLUGIN_PREFLIGHT="$ROOT/flutter/lib/services/wasm_plugin_package_preflight_service.dart"
+WASM_RUNTIME="$ROOT/platform/hivra-wasm-runtime/src/lib.rs"
+if rg -q 'legacy installed records|Backward-compatible for legacy registry' \
+  "$PLUGIN_HOST"; then
+  fail "external plugin permissions contain a legacy fail-open bypass"
+else
+  pass "external plugin permissions have no legacy fail-open bypass"
+fi
+if rg -q 'Runtime contract kind is missing' "$PLUGIN_HOST" &&
+   rg -q 'Runtime capabilities are missing required grants' "$PLUGIN_HOST" &&
+   rg -q 'must declare at least one capability' "$PLUGIN_PREFLIGHT"; then
+  pass "external plugin contract and capabilities fail closed"
+else
+  fail "external plugin contract and capabilities are not enforced fail closed"
+fi
+if rg -q "hivra_host_abi_v2" "$PLUGIN_PREFLIGHT" &&
+   rg -q "consume_fuel\\(true\\)" "$WASM_RUNTIME" &&
+   rg -q "ImportsNotAllowed" "$WASM_RUNTIME" &&
+   rg -q "MAX_OUTPUT_BYTES" "$WASM_RUNTIME" &&
+   rg -q "MAX_LINEAR_MEMORY_BYTES" "$WASM_RUNTIME"; then
+  pass "semantic WASM runtime is ABI-pinned, import-free, fuel-bounded and size-bounded"
+else
+  fail "semantic WASM runtime safety boundaries are incomplete"
+fi
+
 exit "$STATUS"

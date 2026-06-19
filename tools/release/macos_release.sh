@@ -8,9 +8,6 @@ APP_PATH="$FLUTTER_DIR/build/macos/Build/Products/Release/hivra_app.app"
 VERSION=""
 CHANNEL=""
 OUTPUT_DIR=""
-RUN_PREFLIGHT=1
-RUN_BUILD=1
-TRADING_EVIDENCE_BUILD_TAG=""
 
 usage() {
   cat <<'EOF'
@@ -21,11 +18,6 @@ Options:
   --version <version>      Required. Release version label (for example: v1.0.1-test5).
   --channel <channel>      Required. test | public.
   --output-dir <dir>       Optional. Defaults to dist/<version>-<channel>-macos.
-  --skip-preflight         Optional. Skip tools/release/preflight.sh.
-  --skip-build             Optional. Skip flutter build macos --release.
-  --trading-evidence-build-tag <tag>
-                           Optional. Forward build-tag coverage check to preflight:
-                           tools/release/preflight.sh --trading-evidence-build-tag <tag>
   --help                   Show this help.
 
 Environment:
@@ -70,6 +62,23 @@ verify_macos_app_bundle() {
   codesign --verify --deep --strict "$app_path"
 }
 
+verify_macos_app_version() {
+  local app_path="$1"
+  local expected_name="$2"
+  local expected_number="$3"
+  local plist="$app_path/Contents/Info.plist"
+  local actual_name
+  local actual_number
+
+  [ -f "$plist" ] || die "Missing Info.plist: $plist"
+  actual_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
+  actual_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")"
+  [ "$actual_name" = "$expected_name" ] ||
+    die "Embedded macOS version is $actual_name, expected $expected_name"
+  [ "$actual_number" = "$expected_number" ] ||
+    die "Embedded macOS build is $actual_number, expected $expected_number"
+}
+
 verify_packaged_zip_bundle() {
   local zip_path="$1"
   local tmp_dir
@@ -102,18 +111,6 @@ while [ $# -gt 0 ]; do
       OUTPUT_DIR="${2:-}"
       shift 2
       ;;
-    --skip-preflight)
-      RUN_PREFLIGHT=0
-      shift
-      ;;
-    --skip-build)
-      RUN_BUILD=0
-      shift
-      ;;
-    --trading-evidence-build-tag)
-      TRADING_EVIDENCE_BUILD_TAG="${2:-}"
-      shift 2
-      ;;
     --help|-h)
       usage
       exit 0
@@ -127,6 +124,11 @@ done
 [ -n "$VERSION" ] || die "--version is required"
 [ -n "$CHANNEL" ] || die "--channel is required"
 [[ "$CHANNEL" == "test" || "$CHANNEL" == "public" ]] || die "--channel must be test or public"
+
+FLUTTER_BUILD_NAME="$("$ROOT/tools/release/derive_flutter_version.sh" \
+  --version "$VERSION" --field name)"
+FLUTTER_BUILD_NUMBER="$("$ROOT/tools/release/derive_flutter_version.sh" \
+  --version "$VERSION" --field number)"
 
 "$ROOT/tools/release/release_version_guard.sh" \
   --version "$VERSION" \
@@ -146,23 +148,17 @@ if [ "$CHANNEL" = "public" ]; then
   [ -n "$NOTARY_PROFILE" ] || die "public channel requires HIVRA_MAC_NOTARY_PROFILE"
 fi
 
-if [ "$RUN_PREFLIGHT" -eq 1 ]; then
-  info "Release preflight"
-  if [ -n "$TRADING_EVIDENCE_BUILD_TAG" ]; then
-    "$ROOT/tools/release/preflight.sh" \
-      --trading-evidence-build-tag "$TRADING_EVIDENCE_BUILD_TAG"
-  else
-    "$ROOT/tools/release/preflight.sh"
-  fi
-fi
+info "Release preflight"
+"$ROOT/tools/release/preflight.sh" \
+  --trading-evidence-build-tag "$VERSION"
 
-if [ "$RUN_BUILD" -eq 1 ]; then
-  info "Build macOS release bundle"
-  (
-    cd "$FLUTTER_DIR"
-    flutter build macos --release
-  )
-fi
+info "Build macOS release bundle"
+(
+  cd "$FLUTTER_DIR"
+  flutter build macos --release \
+    --build-name "$FLUTTER_BUILD_NAME" \
+    --build-number "$FLUTTER_BUILD_NUMBER"
+)
 
 [ -d "$APP_PATH" ] || die "Release app bundle not found: $APP_PATH"
 
@@ -175,6 +171,8 @@ else
 fi
 
 verify_macos_app_bundle "$APP_PATH" "build-tree"
+verify_macos_app_version \
+  "$APP_PATH" "$FLUTTER_BUILD_NAME" "$FLUTTER_BUILD_NUMBER"
 
 info "Gatekeeper assessment (recorded)"
 set +e
@@ -222,6 +220,8 @@ printf '%s  %s\n' "$ZIP_SHA" "$ASSET_NAME" > "$SHA_PATH"
 
 cat > "$META_PATH" <<EOF
 version=$VERSION
+flutter_build_name=$FLUTTER_BUILD_NAME
+flutter_build_number=$FLUTTER_BUILD_NUMBER
 channel=$CHANNEL
 signed=$SIGNED
 notarized=$NOTARIZED

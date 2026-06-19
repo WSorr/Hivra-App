@@ -48,6 +48,7 @@ mod ffi_support;
 mod invitation_api;
 mod invitation_support;
 mod ledger_api;
+mod plugin_runtime_api;
 mod relationship_api;
 mod runtime_support;
 mod seed_api;
