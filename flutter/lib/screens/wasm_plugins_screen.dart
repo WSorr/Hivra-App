@@ -119,13 +119,19 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       _loadingSourceCatalog = true;
       _sourceCatalogError = null;
     });
+    await _uiLog.log('plugin.source.catalog.refresh', 'start');
     try {
       final catalog = await _sourceCatalog.fetchCatalogWithFallback();
+      await _uiLog.log(
+        'plugin.source.catalog.refresh',
+        'success source=${catalog.sourceId} count=${catalog.entries.length}',
+      );
       if (!mounted) return;
       setState(() {
         _sourceCatalogSnapshot = catalog;
       });
     } catch (error) {
+      await _uiLog.log('plugin.source.catalog.refresh', 'error=$error');
       if (!mounted) return;
       setState(() {
         _sourceCatalogError = error.toString();
@@ -149,36 +155,66 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       ],
     );
     if (file == null) return;
+    await _uiLog.log(
+      'plugin.install.pick',
+      'path=${file.path} name=${file.name} mime=${file.mimeType ?? "-"}',
+    );
 
     setState(() {
       _installing = true;
     });
 
+    Directory? tempDir;
     try {
-      final source = File(file.path);
+      tempDir = await Directory.systemTemp.createTemp('hivra_plugin_import_');
+      final safeName = _safePluginImportFileName(file.name, file.path);
+      final source = File('${tempDir.path}/$safeName');
+      await source.writeAsBytes(await file.readAsBytes(), flush: true);
       final record = await _registry.installPluginFromFile(source);
+      await _uiLog.log(
+        'plugin.install.success',
+        'id=${record.id} plugin=${record.pluginId ?? "-"} '
+            'version=${record.pluginVersion ?? "-"} kind=${record.packageKind} '
+            'file=${record.originalFileName}',
+      );
       await _reload();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Installed ${record.displayName}')),
       );
     } on FormatException catch (error) {
+      await _uiLog.log('plugin.install.error', 'format=${error.message}');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error.message)),
       );
-    } catch (_) {
+    } catch (error) {
+      await _uiLog.log('plugin.install.error', 'exception=$error');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to install plugin package')),
+        SnackBar(content: Text('Failed to install plugin package: $error')),
       );
     } finally {
+      if (tempDir != null && await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
       if (mounted) {
         setState(() {
           _installing = false;
         });
       }
     }
+  }
+
+  String _safePluginImportFileName(String name, String fallbackPath) {
+    final rawName = name.trim().isNotEmpty ? name.trim() : fallbackPath.trim();
+    final normalized = rawName.replaceAll('\\', '/');
+    final slash = normalized.lastIndexOf('/');
+    final fileName = slash >= 0 ? normalized.substring(slash + 1) : normalized;
+    final safe = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    return safe.endsWith('.zip') || safe.endsWith('.wasm')
+        ? safe
+        : 'plugin.zip';
   }
 
   Future<void> _removePlugin(WasmPluginRecord record) async {
@@ -212,6 +248,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
   Future<void> _installFromSource(WasmPluginSourceCatalogEntry entry) async {
     if (_installingSourceEntryIds.contains(entry.id)) return;
+    await _uiLog.log(
+      'plugin.source.install.start',
+      'id=${entry.id} plugin=${entry.pluginId} version=${entry.version}',
+    );
     setState(() {
       _installingSourceEntryIds = <String>{
         ..._installingSourceEntryIds,
@@ -221,6 +261,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
     try {
       final record = await _sourceCatalog.installFromSourceEntry(entry);
+      await _uiLog.log(
+        'plugin.source.install.success',
+        'id=${entry.id} plugin=${record.pluginId ?? "-"} '
+            'version=${record.pluginVersion ?? "-"} kind=${record.packageKind}',
+      );
       await _reload();
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
@@ -232,6 +277,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         ),
       );
     } on FormatException catch (error) {
+      await _uiLog.log(
+        'plugin.source.install.error',
+        'id=${entry.id} format=${error.message}',
+      );
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
@@ -241,13 +290,19 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
-    } catch (_) {
+    } catch (error) {
+      await _uiLog.log(
+        'plugin.source.install.error',
+        'id=${entry.id} exception=$error',
+      );
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Failed to install ${entry.displayName} from source'),
+          content: Text(
+            'Failed to install ${entry.displayName}: $error',
+          ),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -688,6 +743,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                       sourceError: _sourceCatalogError,
                       entries: _sourceCatalogSnapshot?.entries ??
                           const <WasmPluginSourceCatalogEntry>[],
+                      installed: _installed,
                       installingEntryIds: _installingSourceEntryIds,
                       onRefreshPressed: _reloadSourceCatalog,
                       onInstallPressed: _installFromSource,
@@ -1033,6 +1089,7 @@ class _SourceCatalogSection extends StatelessWidget {
   final String? sourceId;
   final String? sourceError;
   final List<WasmPluginSourceCatalogEntry> entries;
+  final List<WasmPluginRecord> installed;
   final Set<String> installingEntryIds;
   final Future<void> Function() onRefreshPressed;
   final Future<void> Function(WasmPluginSourceCatalogEntry entry)
@@ -1044,6 +1101,7 @@ class _SourceCatalogSection extends StatelessWidget {
     required this.sourceId,
     required this.sourceError,
     required this.entries,
+    required this.installed,
     required this.installingEntryIds,
     required this.onRefreshPressed,
     required this.onInstallPressed,
@@ -1146,9 +1204,11 @@ class _SourceCatalogSection extends StatelessWidget {
               maxColumns: 3,
               children: entries.map((entry) {
                 final busy = installingEntryIds.contains(entry.id);
+                final installedAlready = _isEntryInstalled(entry);
                 return _CatalogEntryTile(
                   entry: entry,
                   busy: busy,
+                  installed: installedAlready,
                   onInstallPressed: () => onInstallPressed(entry),
                 );
               }).toList(),
@@ -1156,6 +1216,20 @@ class _SourceCatalogSection extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  bool _isEntryInstalled(WasmPluginSourceCatalogEntry entry) {
+    final pluginId = entry.pluginId.trim().toLowerCase();
+    final version = entry.version.trim().toLowerCase();
+    final packageKind = entry.packageKind.trim().toLowerCase();
+    return installed.any((record) {
+      final recordPluginId = (record.pluginId ?? '').trim().toLowerCase();
+      final recordVersion = (record.pluginVersion ?? '').trim().toLowerCase();
+      final recordPackageKind = record.packageKind.trim().toLowerCase();
+      return recordPluginId == pluginId &&
+          recordVersion == version &&
+          recordPackageKind == packageKind;
+    });
   }
 }
 
@@ -1195,11 +1269,13 @@ class _EmptyInstalledState extends StatelessWidget {
 class _CatalogEntryTile extends StatelessWidget {
   final WasmPluginSourceCatalogEntry entry;
   final bool busy;
+  final bool installed;
   final VoidCallback onInstallPressed;
 
   const _CatalogEntryTile({
     required this.entry,
     required this.busy,
+    required this.installed,
     required this.onInstallPressed,
   });
 
@@ -1264,15 +1340,23 @@ class _CatalogEntryTile extends StatelessWidget {
               ),
               const Spacer(),
               FilledButton.tonalIcon(
-                onPressed: busy ? null : onInstallPressed,
-                icon: busy
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.download_rounded, size: 18),
-                label: Text(busy ? 'Installing' : 'Install'),
+                onPressed: busy || installed ? null : onInstallPressed,
+                icon: installed
+                    ? const Icon(Icons.check_circle_rounded, size: 18)
+                    : busy
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_rounded, size: 18),
+                label: Text(
+                  installed
+                      ? 'Installed'
+                      : busy
+                          ? 'Installing'
+                          : 'Install',
+                ),
               ),
             ],
           ),

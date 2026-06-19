@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -42,7 +43,10 @@ class WasmPluginSourceCatalog {
 
 class WasmPluginSourceCatalogService {
   static const String defaultCatalogUrl =
+      'https://cdn.jsdelivr.net/gh/WSorr/hivra-plugins@main/catalog/plugin_catalog.json';
+  static const String githubRawCatalogUrl =
       'https://raw.githubusercontent.com/WSorr/hivra-plugins/main/catalog/plugin_catalog.json';
+  static const Duration _networkTimeout = Duration(seconds: 8);
 
   final WasmPluginRegistryService _registry;
   final UserVisibleDataDirectoryService _dataDirs;
@@ -82,10 +86,14 @@ class WasmPluginSourceCatalogService {
     }
 
     final client = _httpClientFactory();
+    client.autoUncompress = false;
+    client.connectionTimeout = _networkTimeout;
     try {
-      final request = await client.getUrl(uri);
-      final response = await request.close();
-      final body = await utf8.decoder.bind(response).join();
+      final request = await client.getUrl(uri).timeout(_networkTimeout);
+      request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      final response = await request.close().timeout(_networkTimeout);
+      final body =
+          await utf8.decoder.bind(response).join().timeout(_networkTimeout);
       if (response.statusCode != HttpStatus.ok) {
         throw HttpException(
           'Failed to fetch plugin catalog (HTTP ${response.statusCode})',
@@ -101,14 +109,19 @@ class WasmPluginSourceCatalogService {
 
   Future<WasmPluginSourceCatalog> fetchCatalogWithFallback({
     String primaryCatalogUrl = defaultCatalogUrl,
+    String secondaryCatalogUrl = githubRawCatalogUrl,
     String? localCatalogPathOverride,
   }) async {
     try {
       return await fetchCatalog(catalogUrl: primaryCatalogUrl);
     } catch (_) {
-      final localCatalogPath =
-          localCatalogPathOverride ?? await _defaultLocalCatalogPath();
-      return fetchCatalog(catalogUrl: localCatalogPath);
+      try {
+        return await fetchCatalog(catalogUrl: secondaryCatalogUrl);
+      } catch (_) {
+        final localCatalogPath =
+            localCatalogPathOverride ?? await _defaultLocalCatalogPath();
+        return fetchCatalog(catalogUrl: localCatalogPath);
+      }
     }
   }
 
@@ -149,9 +162,12 @@ class WasmPluginSourceCatalogService {
         File('${tempDir.path}/${entry.id}_v${entry.version}$extension');
 
     final client = _httpClientFactory();
+    client.autoUncompress = false;
+    client.connectionTimeout = _networkTimeout;
     try {
-      final request = await client.getUrl(uri);
-      final response = await request.close();
+      final request = await client.getUrl(uri).timeout(_networkTimeout);
+      request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      final response = await request.close().timeout(_networkTimeout);
       if (response.statusCode != HttpStatus.ok) {
         throw HttpException(
           'Failed to download plugin package (HTTP ${response.statusCode})',
@@ -159,7 +175,7 @@ class WasmPluginSourceCatalogService {
         );
       }
       final sink = tempFile.openWrite();
-      await response.pipe(sink);
+      await response.pipe(sink).timeout(_networkTimeout);
       await sink.flush();
       await sink.close();
 
@@ -319,8 +335,10 @@ class WasmPluginSourceCatalogService {
     }
     final actual = sha256.convert(await file.readAsBytes()).toString();
     if (actual != expected) {
+      final sizeBytes = await file.length();
       throw FormatException(
-        'Plugin source package checksum mismatch for entry: $sourceEntryId',
+        'Plugin source package checksum mismatch for entry: $sourceEntryId '
+        '(expected=$expected actual=$actual size=$sizeBytes)',
       );
     }
   }

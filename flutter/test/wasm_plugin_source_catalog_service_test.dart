@@ -229,6 +229,7 @@ void main() {
 
     final catalog = await service.fetchCatalogWithFallback(
       primaryCatalogUrl: 'http://127.0.0.1:1/not-available.json',
+      secondaryCatalogUrl: 'http://127.0.0.1:1/not-available-secondary.json',
       localCatalogPathOverride: localCatalogPath,
     );
 
