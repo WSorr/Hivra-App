@@ -736,6 +736,7 @@ typedef BingxHttpRequestSender = Future<BingxHttpResponse> Function(
 );
 
 class BingxFuturesExchangeService {
+  static const Duration _httpTimeout = Duration(seconds: 12);
   static const String _defaultBaseUrl = 'https://open-api.bingx.com';
   static const String _publicPricePath = '/openApi/swap/v2/quote/price';
   static const String _publicKlinesPath = '/openApi/swap/v3/quote/klines';
@@ -2549,20 +2550,21 @@ class BingxFuturesExchangeService {
     BingxHttpRequest request,
   ) async {
     final client = HttpClient();
+    client.connectionTimeout = _httpTimeout;
     try {
       final method = request.method.trim().toUpperCase();
       final httpRequest = switch (method) {
-        'GET' => await client.getUrl(request.uri),
-        'POST' => await client.postUrl(request.uri),
-        'DELETE' => await client.deleteUrl(request.uri),
+        'GET' => await client.getUrl(request.uri).timeout(_httpTimeout),
+        'POST' => await client.postUrl(request.uri).timeout(_httpTimeout),
+        'DELETE' => await client.deleteUrl(request.uri).timeout(_httpTimeout),
         _ => throw FormatException('Unsupported HTTP method: $method'),
       };
       request.headers.forEach(httpRequest.headers.set);
       if (request.body.isNotEmpty) {
         httpRequest.write(request.body);
       }
-      final httpResponse = await httpRequest.close();
-      final body = await utf8.decodeStream(httpResponse);
+      final httpResponse = await httpRequest.close().timeout(_httpTimeout);
+      final body = await utf8.decodeStream(httpResponse).timeout(_httpTimeout);
       return BingxHttpResponse(
         statusCode: httpResponse.statusCode,
         body: body,
