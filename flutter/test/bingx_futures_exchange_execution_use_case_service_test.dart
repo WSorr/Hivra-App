@@ -80,6 +80,72 @@ void main() {
       expect(result.errorCode, 'entry_price_unavailable');
       expect(placeOrderCalled, isFalse);
     });
+
+    test('returns deterministic execution envelope when risk blocks', () async {
+      var placeOrderCalled = false;
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          if (request.uri.path.endsWith('/quote/contracts')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","tradeMinQuantity":0.001,"tradeMinUSDT":2,"quantityPrecision":3,"pricePrecision":2}]}',
+            );
+          }
+          if (request.uri.path.endsWith('/quote/price')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":{"price":"100"}}',
+            );
+          }
+          return const BingxHttpResponse(
+            statusCode: 404,
+            body: '{"code":404,"msg":"unexpected"}',
+          );
+        },
+      );
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            placeOrderCalled = true;
+            throw StateError('must not execute');
+          },
+        ),
+      );
+
+      final result = await service.execute(
+        screen: 'test',
+        rawIntentResult: <String, dynamic>{
+          ..._marketIntent,
+          'quantity_decimal': '10',
+        },
+        credentials: _credentials,
+        riskPolicy: _policy,
+        fallbackEquityQuote: 100,
+        testOrder: true,
+      );
+
+      expect(
+        result.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.riskBlocked,
+      );
+      expect(result.executionEnvelope, isNotNull);
+      expect(
+        result.executionEnvelope!.envelopeHashHex,
+        matches(RegExp(r'^[0-9a-f]{64}$')),
+      );
+      expect(
+        result.executionEnvelope!.canonicalJson,
+        contains('"endpoint_path":"risk_governor"'),
+      );
+      expect(placeOrderCalled, isFalse);
+    });
   });
 }
 

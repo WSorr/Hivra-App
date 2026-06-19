@@ -91,10 +91,36 @@ class BingxFuturesExchangeExecutionUseCaseService {
       );
     }
     if (risk.decision!.status == BingxFuturesRiskDecisionStatus.blocked) {
+      final envelope = _observability.buildExecutionEnvelope(
+        screen: screen,
+        symbol: payload.symbol,
+        side: payload.side,
+        orderType: payload.orderType,
+        idempotencyKey:
+            'risk_blocked:${payload.intentHashHex}:${risk.decision!.decisionHashHex}',
+        attempts: 0,
+        fromIdempotentCache: false,
+        isSuccess: false,
+        httpStatusCode: 0,
+        exchangeCode: risk.decision!.reasonCode,
+        endpointPath: 'risk_governor',
+        orderId: null,
+        intentHashHex: payload.intentHashHex,
+        riskDecisionCode: risk.decision!.reasonCode,
+        riskDecisionHashHex: risk.decision!.decisionHashHex,
+        marketSnapshotHashHex:
+            rawIntentResult['market_snapshot_hash_hex']?.toString().trim(),
+        featureHashHex: rawIntentResult['feature_hash_hex']?.toString().trim(),
+        tvhDecisionHashHex:
+            rawIntentResult['tvh_decision_hash_hex']?.toString().trim(),
+        liveDecisionHashHex:
+            rawIntentResult['live_decision_hash_hex']?.toString().trim(),
+      );
       return _result(
         status: BingxFuturesExchangeExecutionUseCaseStatus.riskBlocked,
         payload: payload,
         riskDecision: risk.decision,
+        executionEnvelope: envelope,
         diagnostics: risk.diagnostics,
       );
     }

@@ -1649,12 +1649,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       if (useCaseResult.status ==
           BingxFuturesExchangeExecutionUseCaseStatus.riskBlocked) {
         final shortHash = riskDecision.decisionHashHex.substring(0, 12);
+        final executionEnvelope = useCaseResult.executionEnvelope;
         await _uiLog.log(
           'bingx.exchange.risk_blocked',
           'code=${riskDecision.reasonCode} hash=$shortHash '
               'risk=${riskDecision.tradeRiskQuoteDecimal} '
               'limit=${riskDecision.tradeRiskLimitQuoteDecimal}',
         );
+        if (executionEnvelope != null) {
+          await _uiLog.log(
+            'drone.execution.envelope',
+            'hash=${executionEnvelope.envelopeHashHex} '
+                'kind=execution screen=trading_drone risk=blocked',
+          );
+        }
         await _showSnack(
           '${riskDecision.reasonMessage} ($shortHash)',
           seconds: 4,
