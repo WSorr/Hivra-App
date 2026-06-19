@@ -1311,7 +1311,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
       await _uiLog.log(
         'drone.decision.envelope',
-        'hash=${decisionEnvelope.envelopeHashHex.substring(0, 12)} '
+        'hash=${decisionEnvelope.envelopeHashHex} '
             'kind=decision screen=trading_drone',
       );
 
@@ -1658,7 +1658,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       );
       await _uiLog.log(
         'drone.execution.envelope',
-        'hash=${executionEnvelope.envelopeHashHex.substring(0, 12)} '
+        'hash=${executionEnvelope.envelopeHashHex} '
             'kind=execution screen=trading_drone',
       );
       if (!mounted) return;
@@ -2153,7 +2153,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     );
     await _uiLog.log(
       'drone.execution.envelope',
-      'hash=${executionEnvelope.envelopeHashHex.substring(0, 12)} '
+      'hash=${executionEnvelope.envelopeHashHex} '
           'kind=execution screen=trading_drone_replacement',
     );
     if (!queued.execution.isSuccess) return;
