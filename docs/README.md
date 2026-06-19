@@ -20,7 +20,7 @@ If there is any conflict, `specification.md` wins.
 Use this to understand product intent, user-facing mechanics, and behavior scenarios.
 
 Contains:
-- conceptual framing of Capsules/Starters/Relationships
+- conceptual framing of Capsules, Starters, the Core Trust Layer, and drones
 - invitation mechanics and edge-case behavior
 - relay and trust model from product perspective
 - documentation/comment language policy rationale

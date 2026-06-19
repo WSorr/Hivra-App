@@ -11,6 +11,12 @@ Hive Integrated Value & Relationship Architecture
 
 This document is the single source of truth for the architecture and implementation of the Hivra protocol. It defines a strict layered architecture, domain invariants, data formats, and participant roles.
 
+Hivra is a local-first personal runtime for user-owned Capsules. A Capsule can operate independently, keep its own ledger, run WASM drones, and optionally establish trusted links with other Capsules through invitations.
+
+These trusted links form a **Core Trust Layer**, not a social network. They are internal ledger facts used for safe capsule-to-capsule interaction and pair-scoped consensus. There is no global discovery, no people search, no public social graph, and no global network statistics.
+
+Chat, trading, staking, AI, and other user-facing capabilities are drones/plugins, not Core. Core remains minimal: Capsule, Ledger, Invitations, Trust Layer facts, Pair Consensus inputs, and deterministic domain transitions.
+
 The key architectural rule in this revision is strict layer isolation: Core knows nothing about transport, cryptography, time, or RNG. All external dependencies are injected through the Engine.
 
 ---
@@ -20,7 +26,7 @@ The key architectural rule in this revision is strict layer isolation: Core know
 ### 1.1 Core Values
 
 1. No global discovery — only manual add by public key.
-2. The network is built on invitations, not search.
+2. Trusted links are built on real-world invitations, not search.
 3. Starters are unique identifiers, not economic tokens. They cannot be transferred.
 4. Transport is an abstraction layer. Nostr now, but Matrix, BLE, and others can be added.
 5. Reputation is local only (for relay scoring).
@@ -234,7 +240,9 @@ Ledger is an append-only log of signed events.
 
 #### 3.3.5 Relationship
 
-Relationship is the fact of mutual recognition between two capsules.
+Relationship is a Core Trust Layer fact of mutual recognition between two capsules.
+
+It is not a social-network feature, not a discovery record, and not a public graph edge. It is ledger-derived internal state used by Pair Consensus and by drones that need trusted interaction with another Capsule.
 
 ```rust
 struct Relationship {

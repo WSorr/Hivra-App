@@ -1,14 +1,21 @@
 # Hivra Protocol
 
-Hivra is an infrastructure for relationships, not a social network. No likes, no followers, no algorithmic feeds. Only you, your 5 unique starters, and people you trust.
+Hivra is a local-first runtime for user-owned Capsules.
+
+A Capsule is a persistent digital extension of a user. It can operate independently, keep its own ledger, run WASM drones, and optionally establish trusted links with other Capsules through invitations.
 
 Hivra is best understood as a personal capsule computer:
 
 - not a global shared world computer
 - not an account inside someone else's network
-- but a local-first runtime for your own capsule state, history, recovery, and relationships
+- not a social network, public graph, or discovery product
+- but a local-first runtime for your own capsule state, history, recovery, drones, and optional trusted links
 
 The capsule is the center of truth. Transport adapters move messages, but they do not define identity or replace local truth.
+
+Trusted links form a **Core Trust Layer**, not a social network. They are internal trust facts created only through real-world invitations. There is no global discovery, no people search, and no public network map.
+
+Applications normally own their own user relationships. Hivra moves trusted interaction state into the user-owned Capsule, so WASM drones can reuse the same Trust Layer instead of rebuilding isolated contact systems.
 
 ## Architecture
 
@@ -18,7 +25,10 @@ This repository implements Hivra v1.0.0 specification:
 - **Engine** — Orchestration layer (time, RNG, crypto provider)
 - **Transport** — Abstract transport layer (Nostr, Matrix, BLE)
 - **Platform** — OS-specific implementations (SecureKeyStore)
+- **Plugin Host** — WASM drone runtime with capability gates
 - **Flutter UI** — Cross-platform interface
+
+Chat, trading, staking, AI, and other user-facing features are drones, not Core. Core stays minimal: Capsule, Ledger, Invitations, Trust Layer, Pair Consensus, and the runtime contracts required for safe drone execution.
 
 ### Compile-Time Dependency Contract
 

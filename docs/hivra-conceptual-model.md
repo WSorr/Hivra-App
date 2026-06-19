@@ -64,15 +64,21 @@ Commits containing non-English documentation or comments (in production-bound fi
 
 ## 0. Introduction
 
-Hivra is infrastructure for relationships, not a social network. There are no likes, followers, or algorithmic feeds. There is only you, your 5 unique starters, and people you trust.
+Hivra is a local-first runtime for user-owned Capsules.
+
+A Capsule is a persistent digital extension of a user. It can exist and work alone: it keeps its own ledger, owns its recovery path, runs WASM drones, and does not require relationships to be useful.
 
 Hivra is not a global shared computer. It is closer to a pocket capsule computer:
 
 - a personal runtime for local-first truth
 - a capsule-owned history and recovery model
-- a relationship system built on invitations rather than discovery
+- a Core Trust Layer built from optional trusted links, not discovery
 
 The important architectural point is that capsule state is primary. Transport exists to exchange messages between capsules, but capsule identity, ledger truth, and recovery must remain owned by the capsule itself.
+
+Trusted links are not the product and Hivra is not a social network. There are no likes, followers, algorithmic feeds, global discovery, people search, or public network maps. Trusted links are internal trust facts created through real-world invitations and reused by drones when they need safe interaction with other Capsules.
+
+Applications normally own user relationships. Hivra moves trusted relationships into the user-owned Capsule. A Chat Drone can use the Trust Layer to know which Capsules can communicate; a Trading Drone can use it for trusted counterparties; an AI Drone can use it for shared context; a Staking Drone may work alone and not use it at all.
 
 Metaphor: Imagine you have 5 unique slippers. Each has its own distinct pattern (Juice, Spark, Seed, Pulse, Kick). You cannot give your slipper away — it always stays with you. But you can invite someone so they create their own slipper with the same pattern. When you both have slippers with the same pattern, a relationship forms.
 
@@ -83,7 +89,7 @@ If you invite someone who does not have that slipper and they refuse to create i
 ## 1. Fundamental Principles (DO NOT VIOLATE)
 
 1. No global discovery — only manual add via pubkey
-2. Network is built on invitations, not search
+2. Trusted links are created through invitations, not search
 3. Android can be Relay, iOS only Leaf (optional)
 4. Starters are unique identifiers, not economic tokens
 5. Starter names are just names (Juice/Spark/Seed/Pulse/Kick), not functions
@@ -177,7 +183,9 @@ Event types:
 
 ### 2.5 Relationship
 
-Relationship is the fact of mutual recognition between two capsules.
+Relationship is an internal Trust Layer fact of mutual recognition between two capsules.
+
+It is not a social-network edge and not a public graph entry. It is a ledger-derived trust fact that drones may consume through the Trust Layer API when they need pair-scoped safety.
 
 Properties:
 

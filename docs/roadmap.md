@@ -4,6 +4,16 @@ This roadmap tracks the main engineering work needed to move Hivra from a workin
 
 It is intentionally focused on architecture, determinism, release hygiene, and recovery safety rather than feature volume.
 
+## Product Framing
+
+Hivra is a local-first runtime for user-owned Capsules, not a social network or relationship product.
+
+- A Capsule can work alone with its own ledger, recovery state, and WASM drones.
+- Trusted links are optional Core Trust Layer facts created through real-world invitations.
+- There is no global discovery, people search, public network map, or global relationship statistics.
+- Drones are the primary extension model; chat, trading, staking, AI, and future tools must stay outside Core.
+- Core remains minimal: Capsule, Ledger, Invitations, Trust Layer facts, Pair Consensus inputs, and deterministic transitions.
+
 ## Current Priorities
 
 ### 1. Replay Safety
