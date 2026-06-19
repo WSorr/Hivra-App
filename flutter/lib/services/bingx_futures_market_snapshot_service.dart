@@ -552,7 +552,10 @@ class BingxFuturesMarketSnapshotService {
 
   String _normalizeLiquidityKind(String raw) {
     final value = raw.trim().toLowerCase();
-    if (value == 'external' || value == 'internal' || value == 'liquidation') {
+    if (value == 'external' ||
+        value == 'internal' ||
+        value == 'liquidation' ||
+        value == 'liquidation_proxy') {
       return value;
     }
     throw FormatException('unsupported liquidity kind: $raw');

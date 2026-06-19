@@ -151,15 +151,6 @@ class BingxFuturesLiveSnapshotBuilderService {
         message: 'Depth unavailable: ${depth.exchangeMessage}',
       );
     }
-    BingxFuturesUserForceOrdersResult? forceOrders;
-    if (credentials != null) {
-      forceOrders = await exchange.getUserForceOrders(
-        credentials: credentials,
-        symbol: normalizedSymbol,
-        limit: 50,
-      );
-    }
-
     try {
       final allCandles = <BingxFuturesCandle>[
         ..._mapCandles('1m', k1m.klines),
@@ -193,7 +184,6 @@ class BingxFuturesLiveSnapshotBuilderService {
         depth: depth,
         trades: trades.trades,
         priceDecimal: price.priceDecimal!,
-        forceOrders: forceOrders?.orders ?? const <BingxFuturesForceOrder>[],
       );
       final sessions = _deriveSessions(tradeRows);
       final orderBookLevels = _mapOrderBook(depth);
@@ -332,7 +322,6 @@ class BingxFuturesLiveSnapshotBuilderService {
     required BingxFuturesPublicOrderBookResult depth,
     required List<BingxFuturesPublicTrade> trades,
     required String priceDecimal,
-    required List<BingxFuturesForceOrder> forceOrders,
   }) {
     final highs1h = candles1h
         .map((k) => num.tryParse(k.highDecimal) ?? 0)
@@ -389,16 +378,11 @@ class BingxFuturesLiveSnapshotBuilderService {
         priceDecimal: _fmt(intLow > 0 ? intLow : extLow),
       ),
     ];
-    final liquidation = forceOrders.isNotEmpty
-        ? _deriveLiquidationFromForceOrders(
-            forceOrders: forceOrders,
-            priceDecimal: priceDecimal,
-          )
-        : _deriveLiquidationProxyLevels(
-            depth: depth,
-            trades: trades,
-            priceDecimal: priceDecimal,
-          );
+    final liquidation = _deriveLiquidationProxyLevels(
+      depth: depth,
+      trades: trades,
+      priceDecimal: priceDecimal,
+    );
     return <BingxFuturesLiquidityLevel>[
       ...baseLevels,
       ...liquidation,
@@ -542,7 +526,7 @@ class BingxFuturesLiveSnapshotBuilderService {
         (buyAggression >= sellAggression * 0.8 || sellAggression == 0)) {
       levels.add(
         BingxFuturesLiquidityLevel(
-          kind: 'liquidation',
+          kind: 'liquidation_proxy',
           side: 'sellside',
           timeframe: '5m',
           priceDecimal: _fmt(bestAsk.price),
@@ -553,59 +537,10 @@ class BingxFuturesLiveSnapshotBuilderService {
         (sellAggression >= buyAggression * 0.8 || buyAggression == 0)) {
       levels.add(
         BingxFuturesLiquidityLevel(
-          kind: 'liquidation',
+          kind: 'liquidation_proxy',
           side: 'buyside',
           timeframe: '5m',
           priceDecimal: _fmt(bestBid.price),
-        ),
-      );
-    }
-    return levels;
-  }
-
-  List<BingxFuturesLiquidityLevel> _deriveLiquidationFromForceOrders({
-    required List<BingxFuturesForceOrder> forceOrders,
-    required String priceDecimal,
-  }) {
-    final mid = num.tryParse(priceDecimal) ?? 0;
-    if (mid <= 0) return const <BingxFuturesLiquidityLevel>[];
-    final upper = <num>[];
-    final lower = <num>[];
-    for (final order in forceOrders) {
-      final raw = order.avgPriceDecimal ?? order.priceDecimal;
-      final px = num.tryParse(raw ?? '') ?? 0;
-      if (px <= 0) continue;
-      if (px >= mid) {
-        upper.add(px);
-      } else {
-        lower.add(px);
-      }
-    }
-    if (upper.isEmpty && lower.isEmpty) {
-      return const <BingxFuturesLiquidityLevel>[];
-    }
-    final levels = <BingxFuturesLiquidityLevel>[];
-    if (upper.isNotEmpty) {
-      upper.sort();
-      final idx = (upper.length * 0.7).floor().clamp(0, upper.length - 1);
-      levels.add(
-        BingxFuturesLiquidityLevel(
-          kind: 'liquidation',
-          side: 'sellside',
-          timeframe: '5m',
-          priceDecimal: _fmt(upper[idx]),
-        ),
-      );
-    }
-    if (lower.isNotEmpty) {
-      lower.sort();
-      final idx = (lower.length * 0.3).floor().clamp(0, lower.length - 1);
-      levels.add(
-        BingxFuturesLiquidityLevel(
-          kind: 'liquidation',
-          side: 'buyside',
-          timeframe: '5m',
-          priceDecimal: _fmt(lower[idx]),
         ),
       );
     }

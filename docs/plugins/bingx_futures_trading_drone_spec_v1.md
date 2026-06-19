@@ -232,6 +232,10 @@ Determinism constraints:
   - cluster proximity score near planned entry/invalidation area.
   - liquidation/force-order/orderbook proxy levels are contextual evidence only
     and MUST NOT become executable entry anchors.
+  - account-scoped `forceOrders` history is not a market liquidation map and
+    MUST NOT be normalized as liquidation-level evidence.
+  - orderbook-derived estimates MUST be labeled `liquidation_proxy`; only a
+    dedicated market-wide feed may set liquidation state to `known`.
 
 External HTF levels MUST have an explicit deterministic lifecycle:
 

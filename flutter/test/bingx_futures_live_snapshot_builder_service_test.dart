@@ -81,14 +81,16 @@ void main() {
       final snapshot = result.snapshotInput!;
       expect(snapshot.openInterest.length, 3);
       expect(
-        snapshot.liquidityLevels.any((item) => item.kind == 'liquidation'),
+        snapshot.liquidityLevels
+            .any((item) => item.kind == 'liquidation_proxy'),
         isTrue,
       );
       expect(requestedExtended4hHistory, isTrue);
     });
 
-    test('prefers force-orders liquidation feed when credentials are provided',
+    test('does not treat account force-orders as market liquidation feed',
         () async {
+      var requestedAccountForceOrders = false;
       final exchange = BingxFuturesExchangeService(
         clockMs: () => 1710009999000,
         requestSender: (request) async {
@@ -143,6 +145,7 @@ void main() {
             );
           }
           if (path == '/openApi/swap/v2/trade/forceOrders') {
+            requestedAccountForceOrders = true;
             return const BingxHttpResponse(
               statusCode: 200,
               body:
@@ -167,12 +170,17 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       final snapshot = result.snapshotInput!;
-      final liq = snapshot.liquidityLevels
+      final liquidationFeed = snapshot.liquidityLevels
           .where((item) => item.kind == 'liquidation')
           .toList(growable: false);
-      expect(liq, isNotEmpty);
-      expect(liq.any((item) => item.priceDecimal == '101.8'), isTrue);
-      expect(liq.any((item) => item.priceDecimal == '99.2'), isTrue);
+      final proxy = snapshot.liquidityLevels
+          .where((item) => item.kind == 'liquidation_proxy')
+          .toList(growable: false);
+      expect(requestedAccountForceOrders, isFalse);
+      expect(liquidationFeed, isEmpty);
+      expect(proxy, isNotEmpty);
+      expect(proxy.any((item) => item.priceDecimal == '101.8'), isFalse);
+      expect(proxy.any((item) => item.priceDecimal == '99.2'), isFalse);
     });
   });
 }

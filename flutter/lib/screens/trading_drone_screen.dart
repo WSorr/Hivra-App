@@ -12,6 +12,7 @@ import '../services/bingx_futures_exchange_risk_input_service.dart';
 import '../services/bingx_futures_exchange_service.dart';
 import '../services/bingx_futures_exchange_execution_use_case_service.dart';
 import '../services/bingx_futures_observability_envelope_service.dart';
+import '../services/bingx_futures_order_sizing_service.dart';
 import '../services/bingx_futures_order_tracking_store.dart';
 import '../services/bingx_futures_order_revalidation_service.dart';
 import '../services/bingx_futures_order_replacement_service.dart';
@@ -71,6 +72,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       AppRuntimeService().buildBingxFuturesOrderTrackingStore();
   final BingxFuturesExchangeRiskInputService _exchangeRiskInput =
       const BingxFuturesExchangeRiskInputService();
+  late final BingxFuturesOrderSizingService _orderSizing;
   final BingxFuturesRiskGovernorService _riskGovernor =
       const BingxFuturesRiskGovernorService();
   final BingxFuturesObservabilityEnvelopeService _observability =
@@ -163,6 +165,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   @override
   void initState() {
     super.initState();
+    _orderSizing = BingxFuturesOrderSizingService(
+      exchange: _bingxExchangeService,
+    );
     _bingxExecutionQueue = BingxFuturesExecutionQueueService(
       exchangeService: _bingxExchangeService,
     );
@@ -889,27 +894,28 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return false;
     }
 
-    final quote = await _bingxExchangeService.getPublicPrice(symbol: symbol);
-    if (!quote.isSuccess || quote.priceDecimal == null) {
-      await _showSnack(
-        'Cannot compute quantity: quote unavailable (${quote.exchangeCode})',
-        seconds: 3,
-      );
-      return false;
-    }
-    final mid = _toNum(quote.priceDecimal!);
-    if (mid == null || mid <= 0) {
-      await _showSnack('Cannot compute quantity: invalid quote price',
-          seconds: 3);
+    final sizing = await _orderSizing.size(
+      symbol: symbol,
+      maximumNotionalQuote: maxNotional,
+    );
+    await _uiLog.log(
+      'bingx.risk.sizing',
+      'symbol=${symbol.trim().toUpperCase()} '
+          'status=${sizing.status.name} code=${sizing.reasonCode} '
+          'risk_notional=$maxNotional '
+          'quantity=${sizing.quantityDecimal ?? "-"} '
+          'order_notional=${sizing.orderNotionalQuoteDecimal ?? "-"} '
+          'min_quantity=${sizing.minimumQuantityDecimal ?? "-"} '
+          'min_notional=${sizing.minimumNotionalQuoteDecimal ?? "-"}',
+    );
+    if (sizing.status != BingxFuturesOrderSizingStatus.sized ||
+        sizing.quantityDecimal == null) {
+      _quantityController.clear();
+      await _showSnack(sizing.reasonMessage, seconds: 4);
       return false;
     }
 
-    final quantity = maxNotional / mid;
-    if (quantity <= 0) {
-      await _showSnack('Cannot compute quantity: max notional too small');
-      return false;
-    }
-    final quantityDecimal = _formatDecimal(quantity, scale: 6);
+    final quantityDecimal = sizing.quantityDecimal!;
     if (mounted) {
       setState(() {
         _quantityController.text = quantityDecimal;
@@ -919,7 +925,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     await _uiLog.log(
       'bingx.risk.quantity',
-      'symbol=${quote.symbol} max_notional_usdt=$maxNotional mid=${quote.priceDecimal} quantity=$quantityDecimal',
+      'symbol=${symbol.trim().toUpperCase()} '
+          'max_notional_usdt=$maxNotional '
+          'order_notional_usdt=${sizing.orderNotionalQuoteDecimal} '
+          'quantity=$quantityDecimal',
     );
     return true;
   }
@@ -964,7 +973,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _maxNotionalUsdtController.text = fitted;
       final symbol = _symbolController.text.trim();
       if (symbol.isNotEmpty) {
-        await _applyRiskBudgetQuantity(symbol: symbol);
+        final quantityReady = await _applyRiskBudgetQuantity(symbol: symbol);
+        if (!quantityReady) {
+          await _uiLog.log(
+            'bingx.risk.autofit.blocked',
+            'symbol=${symbol.toUpperCase()} max_notional=$fitted',
+          );
+          return;
+        }
       }
       await _uiLog.log(
         'bingx.risk.autofit',
@@ -1082,12 +1098,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack('Symbol is required');
       return;
     }
-    final riskReady = await _applyRiskBudgetQuantity(symbol: symbol);
-    if (!riskReady) {
-      return;
-    }
-    final quantityDecimal = _quantityController.text.trim();
-
     final forceAutoZonePending = _orderType == 'limit';
     if (forceAutoZonePending &&
         (_entryMode != 'zone_pending' ||
@@ -1179,6 +1189,15 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           live.side == 'buy' ? live.zoneHighDecimal! : live.zoneLowDecimal!;
       _triggerPriceController.text = triggerPriceDecimal;
     }
+
+    // Market analysis is independent from exchange sizing. A valid setup must
+    // remain observable even when the account cannot safely meet minQty.
+    final riskReady = await _applyRiskBudgetQuantity(symbol: symbol);
+    if (!riskReady) {
+      return;
+    }
+    final quantityDecimal = _quantityController.text.trim();
+
     final zoneLowDecimal = _zoneLowController.text.trim();
     final zoneHighDecimal = _zoneHighController.text.trim();
     String? limitPriceDecimal = _orderType == 'limit' && !isZonePending
