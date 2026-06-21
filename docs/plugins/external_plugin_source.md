@@ -11,12 +11,15 @@ This project now supports loading plugin packages from an external source catalo
 
 ## Runtime behavior
 
-- Primary source catalog URL:
-  - `https://raw.githubusercontent.com/WSorr/hivra-plugins/main/catalog/plugin_catalog.json`
-- Local fallback catalog path:
+- Local source catalog path, used first when present:
   - `~/Documents/Hivra/Plugins/plugin_catalog.json`
+- Published source catalog URL:
+  - `https://raw.githubusercontent.com/WSorr/hivra-plugins/main/catalog/plugin_catalog.json`
 
-If the remote source is not reachable (for example private GitHub repo), app falls back to local catalog automatically.
+If a local catalog exists, app uses it as the explicit user/developer source.
+If it does not exist, app loads the published source catalog. If published
+sources are not reachable (for example private GitHub repo), app falls back to
+the local catalog path and surfaces a clear error if it is missing too.
 
 ## Integrity checks
 

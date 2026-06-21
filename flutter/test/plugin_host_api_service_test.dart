@@ -89,6 +89,43 @@ void main() {
       expect(runtimeInvokeCount, 0);
     });
 
+    test('executes plugin-owned futures signal ranking without peer preflight',
+        () async {
+      var runtimeInvokeCount = 0;
+      final response = await _service(
+        readSignable: (_) => const ConsensusSignableResult(
+          preview: null,
+          blockingFacts: <ConsensusBlockingFact>[
+            ConsensusBlockingFact(code: 'must_not_be_checked'),
+          ],
+        ),
+        runtimeInvoke: _rankRuntimeEvidence(),
+        onRuntimeInvoke: () => runtimeInvokeCount += 1,
+      ).executeWithRuntimeHook(
+        const PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: bingxFuturesTradingPluginId,
+          method: rankBingxFuturesSignalsMethod,
+          args: <String, dynamic>{
+            'candidates': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'symbol': 'SOL-USDT',
+                'can_prepare_intent': true,
+                'decision': 'short',
+              },
+            ],
+          },
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.executed);
+      expect(runtimeInvokeCount, 1);
+      expect(response.result?['scan_hash_hex'], _scanHash);
+      expect(response.result?['entries'], isA<List>());
+      final entries = response.result?['entries'] as List;
+      expect((entries.first as Map)['symbol'], 'SOL-USDT');
+    });
+
     test('executes plugin-owned chat envelope with runtime hook', () async {
       final response = await _service().executeWithRuntimeHook(
         PluginHostApiRequest(
@@ -180,8 +217,10 @@ PluginHostApiService _service({
                 : bingxFuturesContractKind,
             capabilities: <String>[
               'consensus_guard.read',
-              if (pluginId != capsuleChatPluginId)
+              if (pluginId != capsuleChatPluginId) ...<String>[
+                'exchange.read.bingx.market',
                 'exchange.trade.bingx.futures',
+              ],
             ],
           ),
     ),
@@ -193,6 +232,30 @@ PluginHostApiService _service({
               ? _chatRuntimeEvidence()
               : _runtimeEvidence());
     }),
+  );
+}
+
+PluginRuntimeInvokeEvidence _rankRuntimeEvidence() {
+  return _runtimeEvidence(
+    result: <String, dynamic>{
+      'canonical_json': _canonicalScan,
+      'scan_hash_hex': _scanHash,
+      'entries': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'symbol': 'SOL-USDT',
+          'bucket': 'ready',
+          'score': 10800,
+          'decision': 'short',
+          'side': 'sell',
+          'zone_low_decimal': '89',
+          'zone_high_decimal': '91',
+          'trend_gate_code': 'ok',
+          'can_prepare_intent': true,
+          'live_decision_hash_hex': _hex('2'),
+          'failed_reason_codes': <String>[],
+        },
+      ],
+    },
   );
 }
 
@@ -296,5 +359,15 @@ const String _canonicalChat =
     '"created_at_utc":"2026-01-01T00:00:00Z"}';
 final String _intentHash =
     sha256.convert(utf8.encode(_canonicalIntent)).toString();
+const String _canonicalScan =
+    '{"schema_version":1,"plugin_id":"hivra.contract.bingx-futures-trading.v1",'
+    '"contract_kind":"bingx_futures_signal_scan_rank",'
+    '"entries":[{"symbol":"SOL-USDT","bucket":"ready","score":10800,'
+    '"decision":"short","side":"sell","zone_low_decimal":"89",'
+    '"zone_high_decimal":"91","trend_gate_code":"ok",'
+    '"can_prepare_intent":true,'
+    '"live_decision_hash_hex":"2222222222222222222222222222222222222222222222222222222222222222",'
+    '"failed_reason_codes":[]}]}';
+final String _scanHash = sha256.convert(utf8.encode(_canonicalScan)).toString();
 
 String _hex(String character) => List<String>.filled(64, character).join();

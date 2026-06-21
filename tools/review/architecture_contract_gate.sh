@@ -45,11 +45,13 @@ CHECKLIST="$ROOT/docs/checklists/architecture-review.md"
 ROADMAP="$ROOT/docs/roadmap.md"
 EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
+PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
 
 RUNTIME="$ROOT/flutter/lib/services/app_runtime_service.dart"
 INV_INTENT="$ROOT/flutter/lib/services/invitation_intent_handler.dart"
 PLUGIN_GUARD="$ROOT/flutter/lib/services/plugin_execution_guard_service.dart"
 PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
+PLUGIN_CONTRACT_HANDLERS="$ROOT/flutter/lib/services/plugin_contract_handlers.dart"
 WASM_REGISTRY="$ROOT/flutter/lib/services/wasm_plugin_registry_service.dart"
 SCREENS="$ROOT/flutter/lib/screens"
 SERVICES="$ROOT/flutter/lib/services"
@@ -111,6 +113,10 @@ require_present "$EXTERNAL_PLUGIN_SOURCE" '`Hivra-App` repository is host/runtim
   "external plugin source doc fixes Hivra-App host-only ownership"
 require_present "$EXTERNAL_PLUGIN_SOURCE" 'WASM plugin implementation source and plugin package release flow belong to `hivra-plugins` repository\.' \
   "external plugin source doc fixes plugin-source ownership in hivra-plugins"
+require_present "$PLUGIN_HOST_API_DOC" 'rank_bingx_futures_signals' \
+  "host API docs include plugin-owned futures signal ranking method"
+require_present "$PLUGIN_HOST_API_DOC" 'host must not mirror plugin-side ranking/scoring semantics' \
+  "host API docs forbid mirrored signal ranking semantics"
 if find "$ROOT/tools/plugins" -maxdepth 1 -type f \
   -name 'build_*_plugin_zip.sh' | grep -q .; then
   fail "Hivra-App contains plugin package build scripts owned by hivra-plugins"
@@ -165,6 +171,10 @@ require_present "$WASM_RUNTIME_SERVICE" "hivra_host_abi_v2" \
   "Flutter runtime boundary requires semantic ABI v2"
 require_absent "$SERVICES" 'class BingxTradingContractService|class CapsuleChatContractService' \
   "Flutter does not mirror external plugin contract evaluators"
+require_present "$PLUGIN_CONTRACT_HANDLERS" 'rankBingxFuturesSignalsMethod' \
+  "Flutter host exposes futures signal ranking method boundary"
+require_absent "$SERVICES" 'fn signal_score|signal_score\(|signal_bucket\(|bucket_priority\(|rank_signal_candidate\(' \
+  "Flutter services do not mirror plugin futures signal ranking scorer"
 require_absent "$SCREENS" 'BingxFuturesLiveSnapshotBuilderService|BingxFuturesLiveDecisionInput' \
   "screens do not orchestrate BingX snapshot and live decision pipeline"
 require_absent "$SCREENS" 'BingxFuturesRiskGovernorInput|_riskGovernor\.evaluate' \

@@ -35,6 +35,7 @@ class _TestUserVisibleDataDirectoryService
 
 void main() {
   late Directory tempDocsDir;
+  late _TestUserVisibleDataDirectoryService dataDirs;
   late HttpServer server;
   late WasmPluginRegistryService registry;
   late WasmPluginSourceCatalogService service;
@@ -79,10 +80,14 @@ void main() {
 
   setUp(() async {
     tempDocsDir = await Directory.systemTemp.createTemp('hivra_source_cat_');
+    dataDirs = _TestUserVisibleDataDirectoryService(tempDocsDir);
     registry = WasmPluginRegistryService(
-      dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      dataDirs: dataDirs,
     );
-    service = WasmPluginSourceCatalogService(registry: registry);
+    service = WasmPluginSourceCatalogService(
+      registry: registry,
+      dataDirs: dataDirs,
+    );
 
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
@@ -235,6 +240,48 @@ void main() {
 
     expect(catalog.sourceId, 'local.hivra.plugins');
     expect(catalog.entries.length, 1);
+  });
+
+  test('fetchCatalogWithFallback prefers existing local catalog over remote',
+      () async {
+    final sourceDir = Directory('${tempDocsDir.path}/Plugins/source')
+      ..createSync(recursive: true);
+    final packagePath = '${sourceDir.path}/local-first.zip';
+    File(packagePath).writeAsBytesSync(packageBytes, flush: true);
+
+    final localCatalogPath = '${tempDocsDir.path}/Plugins/plugin_catalog.json';
+    File(localCatalogPath).writeAsStringSync(
+      jsonEncode(
+        {
+          'schema': 'hivra.plugin.catalog',
+          'version': 1,
+          'source_id': 'local.hivra.plugins',
+          'source_name': 'Local Hivra Plugins',
+          'entries': [
+            {
+              'id': 'local-first',
+              'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+              'display_name': 'BingX Futures Local First',
+              'version': '0.2.2',
+              'download_url': File(packagePath).uri.toString(),
+              'package_kind': 'zip',
+              'sha256_hex': packageSha256Hex,
+            }
+          ],
+        },
+      ),
+      flush: true,
+    );
+
+    final remoteUrl = 'http://127.0.0.1:${server.port}/catalog.json';
+    final catalog = await service.fetchCatalogWithFallback(
+      primaryCatalogUrl: remoteUrl,
+      secondaryCatalogUrl: remoteUrl,
+    );
+
+    expect(catalog.sourceId, 'local.hivra.plugins');
+    expect(catalog.entries.single.id, 'local-first');
+    expect(catalog.entries.single.version, '0.2.2');
   });
 
   test('installFromSourceEntry fails when sha256 mismatches', () async {

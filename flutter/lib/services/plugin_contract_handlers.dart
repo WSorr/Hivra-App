@@ -9,8 +9,11 @@ import 'plugin_host_contract_handler.dart';
 const String bingxFuturesTradingPluginId =
     'hivra.contract.bingx-futures-trading.v1';
 const String bingxFuturesContractKind = 'bingx_futures_order_intent';
+const String bingxFuturesSignalScanContractKind =
+    'bingx_futures_signal_scan_rank';
 const String placeBingxFuturesOrderIntentMethod =
     'place_bingx_futures_order_intent';
+const String rankBingxFuturesSignalsMethod = 'rank_bingx_futures_signals';
 const String capsuleChatPluginId = 'hivra.contract.capsule-chat.v1';
 const String postCapsuleChatMethod = 'post_capsule_chat_message';
 
@@ -113,19 +116,30 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
   String get contractKind => bingxFuturesContractKind;
 
   @override
-  Set<String> get methods => const <String>{placeBingxFuturesOrderIntentMethod};
+  Set<String> get methods => const <String>{
+        placeBingxFuturesOrderIntentMethod,
+        rankBingxFuturesSignalsMethod,
+      };
 
   @override
   bool get requiresExternalRuntime => true;
 
   @override
-  Set<String> requiredCapabilities(String method) => const <String>{
-        'consensus_guard.read',
-        'exchange.trade.bingx.futures',
+  Set<String> requiredCapabilities(String method) {
+    if (method == rankBingxFuturesSignalsMethod) {
+      return const <String>{
+        'exchange.read.bingx.market',
       };
+    }
+    return const <String>{
+      'consensus_guard.read',
+      'exchange.trade.bingx.futures',
+    };
+  }
 
   @override
   PluginHostContractResult? preflight(PluginHostApiRequest request) {
+    if (request.method == rankBingxFuturesSignalsMethod) return null;
     return _consensusPreflight(
       request: request,
       readSignable: _readSignable,
@@ -137,6 +151,9 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
     PluginHostApiRequest request, {
     PluginRuntimeInvokeEvidence? runtimeInvoke,
   }) {
+    if (request.method == rankBingxFuturesSignalsMethod) {
+      return _executeSignalRank(request, runtimeInvoke: runtimeInvoke);
+    }
     final args = request.args;
     final peerHex = args['peer_hex']?.toString().trim().toLowerCase();
     if (peerHex == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex)) {
@@ -187,6 +204,47 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
 
   String? _optional(Map<String, dynamic> args, String key) =>
       args[key]?.toString().trim();
+
+  PluginHostContractResult _executeSignalRank(
+    PluginHostApiRequest request, {
+    PluginRuntimeInvokeEvidence? runtimeInvoke,
+  }) {
+    if (runtimeInvoke == null) {
+      return const PluginHostContractResult.rejected(
+        code: 'runtime_invoke_unavailable',
+        message: 'WASM semantic result is required',
+      );
+    }
+    if (runtimeInvoke.semanticStatus == PluginHostApiStatus.rejected) {
+      return PluginHostContractResult.rejected(
+        code: runtimeInvoke.semanticErrorCode ?? 'plugin_rejected',
+        message:
+            runtimeInvoke.semanticErrorMessage ?? 'Plugin rejected the request',
+      );
+    }
+    final semantic = runtimeInvoke.semanticResult;
+    final canonicalJson = semantic?['canonical_json']?.toString() ?? '';
+    final scanHashHex = semantic?['scan_hash_hex']?.toString() ?? '';
+    final scan = _validatedCanonicalObject(
+      canonicalJson: canonicalJson,
+      expectedHashHex: scanHashHex,
+      expectedPluginId: pluginId,
+      expectedContractKind: bingxFuturesSignalScanContractKind,
+      expectedPeerHex: null,
+    );
+    final entries = semantic?['entries'];
+    if (scan == null || entries is! List) {
+      return const PluginHostContractResult.rejected(
+        code: 'runtime_result_invalid',
+        message: 'WASM signal scan integrity check failed',
+      );
+    }
+    return PluginHostContractResult.executed(<String, dynamic>{
+      'entries': entries,
+      'scan_hash_hex': scanHashHex,
+      'canonical_scan_json': canonicalJson,
+    });
+  }
 }
 
 PluginHostContractResult? _consensusPreflight({
@@ -212,7 +270,7 @@ Map<String, dynamic>? _validatedCanonicalObject({
   required String expectedHashHex,
   required String expectedPluginId,
   required String expectedContractKind,
-  required String expectedPeerHex,
+  required String? expectedPeerHex,
 }) {
   if (canonicalJson.isEmpty ||
       !RegExp(r'^[0-9a-f]{64}$').hasMatch(expectedHashHex) ||
@@ -225,8 +283,10 @@ Map<String, dynamic>? _validatedCanonicalObject({
     if (decoded is! Map) return null;
     final value = Map<String, dynamic>.from(decoded);
     if (value['plugin_id'] != expectedPluginId ||
-        value['contract_kind'] != expectedContractKind ||
-        value['peer_hex'] != expectedPeerHex) {
+        value['contract_kind'] != expectedContractKind) {
+      return null;
+    }
+    if (expectedPeerHex != null && value['peer_hex'] != expectedPeerHex) {
       return null;
     }
     return value;

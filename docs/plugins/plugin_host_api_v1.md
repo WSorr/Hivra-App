@@ -13,6 +13,7 @@ This document defines the first deterministic host API boundary used before wasm
 
 - `hivra.contract.bingx-futures-trading.v1`
   - method: `place_bingx_futures_order_intent`
+  - method: `rank_bingx_futures_signals`
 - `hivra.contract.capsule-chat.v1`
   - method: `post_capsule_chat_message`
 
@@ -139,5 +140,11 @@ This document defines the first deterministic host API boundary used before wasm
 - In `zone_pending`, the BingX plugin computes the final limit entry price from
   zone rules and returns canonical intent JSON; exchange execution remains
   outside the plugin boundary.
+- `rank_bingx_futures_signals` ranks precomputed live-decision summaries:
+  - host/runtime owns exchange reads, TVH live-decision summaries and UI projection
+  - plugin owns deterministic bucket/score ordering and returns `canonical_json`
+    plus `scan_hash_hex`
+  - ranking is market-scan scoped and does not require `consensus_guard.read`
+  - host must not mirror plugin-side ranking/scoring semantics
 - `post_capsule_chat_message` returns plugin-owned canonical envelope JSON and
   hash; transport delivery remains outside this host API boundary.

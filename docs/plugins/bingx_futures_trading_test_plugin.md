@@ -40,7 +40,7 @@ cd ../hivra-plugins
 
 Generated file:
 
-- `hivra-plugins/dist/plugins/bingx_futures_test_plugin-0.2.0.zip`
+- `hivra-plugins/dist/plugins/bingx_futures_test_plugin-0.2.2.zip`
 
 ## Host API Binding
 

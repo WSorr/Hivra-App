@@ -18,6 +18,7 @@ import '../services/bingx_futures_order_revalidation_service.dart';
 import '../services/bingx_futures_order_replacement_service.dart';
 import '../services/bingx_futures_execution_queue_service.dart';
 import '../services/bingx_futures_risk_governor_service.dart';
+import '../services/bingx_futures_signal_rank_use_case_service.dart';
 import '../services/bingx_futures_strategy_naming_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
 import '../services/manual_consensus_check_service.dart';
@@ -79,6 +80,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       const BingxFuturesObservabilityEnvelopeService();
   late final BingxFuturesIntentUseCaseService _intentUseCase;
   late final BingxFuturesExchangeExecutionUseCaseService _executionUseCase;
+  late final BingxFuturesSignalRankUseCaseService _signalRankUseCase;
   final BingxFuturesOrderRevalidationService _orderRevalidation =
       const BingxFuturesOrderRevalidationService();
   final BingxFuturesOrderReplacementService _orderReplacement =
@@ -118,6 +120,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _refreshingSignals = false;
   bool _fetchingOpenOrders = false;
   bool _loadingPerpSymbols = false;
+  bool _scanningSignals = false;
+  bool _signalRankExpanded = true;
   bool _cancelingOrder = false;
   bool _fittingMaxNotional = false;
   bool _useTestOrderEndpoint = true;
@@ -152,6 +156,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   List<CapsuleTradeSignalInboxMessage> _signalInbox =
       const <CapsuleTradeSignalInboxMessage>[];
   List<String> _availablePerpSymbols = const <String>[];
+  List<BingxFuturesSignalRankEntry> _signalRankEntries =
+      const <BingxFuturesSignalRankEntry>[];
 
   static const BingxFuturesRiskPolicy _executionRiskPolicy =
       BingxFuturesRiskPolicy(
@@ -174,6 +180,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _intentUseCase = BingxFuturesIntentUseCaseService(
       hostApi: _pluginHostApi,
       observability: _observability,
+    );
+    _signalRankUseCase = BingxFuturesSignalRankUseCaseService(
+      hostApi: _pluginHostApi,
     );
     _liveStrategyUseCase = BingxFuturesLiveStrategyUseCaseService(
       exchange: _bingxExchangeService,
@@ -723,6 +732,144 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     );
   }
 
+  Future<void> _scanSignalWatchlist() async {
+    if (_scanningSignals) return;
+    if (_signalRankEntries.isNotEmpty && _signalRankExpanded) {
+      setState(() {
+        _signalRankExpanded = false;
+      });
+      return;
+    }
+    final currentSymbol = _symbolController.text.trim().toUpperCase();
+    final peerHex = _peerController.text.trim().toLowerCase();
+    final symbols = <String>{
+      ..._shortBreakdownSymbols,
+      if (currentSymbol.isNotEmpty) currentSymbol,
+    }.toList()
+      ..sort();
+    if (symbols.isEmpty) {
+      await _showSnack('No symbols to scan');
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _scanningSignals = true;
+      });
+    } else {
+      _scanningSignals = true;
+    }
+    try {
+      final candidates = <BingxFuturesSignalRankCandidate>[];
+      var skipped = 0;
+      for (final symbol in symbols) {
+        BingxFuturesLiveDecisionResult? decision;
+        try {
+          decision = await _computeLiveDecision(
+            symbol: symbol,
+            peerHex: peerHex,
+            silent: true,
+            forceConsensusSignable: peerHex.isEmpty,
+          );
+        } catch (error) {
+          skipped += 1;
+          await _uiLog.log(
+            'bingx.signal.rank.candidate_error',
+            'symbol=$symbol error=$error',
+          );
+          continue;
+        }
+        if (decision == null) continue;
+        candidates.add(
+          BingxFuturesSignalRankCandidate(
+            symbol: symbol,
+            decision: decision,
+          ),
+        );
+      }
+      if (candidates.isEmpty) {
+        await _showSnack('Signal scan failed: no live decisions', seconds: 3);
+        return;
+      }
+      final ranked = await _signalRankUseCase.execute(
+        BingxFuturesSignalRankCommand(candidates: candidates),
+      );
+      if (!ranked.isSuccess) {
+        await _uiLog.log(
+          'bingx.signal.rank.rejected',
+          'status=${ranked.response.status.name} code=${ranked.response.errorCode ?? "-"} '
+              'message=${ranked.response.errorMessage ?? "-"}',
+        );
+        await _showSnack(
+          'Signal rank failed: ${ranked.response.errorCode ?? ranked.response.status.name}',
+          seconds: 4,
+        );
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _signalRankEntries = ranked.entries;
+        _signalRankExpanded = true;
+      });
+      final top = ranked.entries.isEmpty ? null : ranked.entries.first;
+      await _uiLog.log(
+        'bingx.signal.rank',
+        'symbols=${symbols.length} candidates=${candidates.length} '
+            'skipped=$skipped '
+            'entries=${ranked.entries.length} scan_hash=${_shortHash(ranked.scanHashHex)} '
+            'top=${top == null ? "-" : "${top.symbol}:${top.bucket}:${top.score}"}',
+      );
+      await _showSnack(
+        ranked.entries.any((entry) => entry.bucket == 'ready')
+            ? 'Signal scan complete: ready found'
+            : skipped > 0
+                ? 'Signal scan partial: no ready signals, skipped $skipped'
+                : 'Signal scan complete: no ready signals',
+        seconds: 2,
+      );
+    } catch (error) {
+      await _uiLog.log('bingx.signal.rank.error', '$error');
+      if (mounted) {
+        await _showSnack('Signal scan failed: $error', seconds: 3);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _scanningSignals = false;
+        });
+      } else {
+        _scanningSignals = false;
+      }
+    }
+  }
+
+  Future<void> _applySignalRankEntry(BingxFuturesSignalRankEntry entry) async {
+    if (!mounted) return;
+    setState(() {
+      _symbolController.text = entry.symbol;
+      if (entry.side != null) {
+        _side = entry.side!;
+        _zoneSide = entry.side == 'buy' ? 'sellside' : 'buyside';
+      }
+      if (entry.zoneLowDecimal != null && entry.zoneHighDecimal != null) {
+        _entryMode = 'zone_pending';
+        _zonePriceRule = 'zone_mid';
+        _zoneLowController.text = entry.zoneLowDecimal!;
+        _zoneHighController.text = entry.zoneHighDecimal!;
+      }
+      _signalRankExpanded = false;
+    });
+    await _uiLog.log(
+      'bingx.signal.rank.select',
+      'symbol=${entry.symbol} bucket=${entry.bucket} score=${entry.score} '
+          'side=${entry.side ?? "-"} live_hash=${_shortHash(entry.liveDecisionHashHex)}',
+    );
+    await _maybeRetargetOpenOrdersTracking(
+      symbol: entry.symbol,
+      source: 'signal_rank',
+      force: true,
+    );
+  }
+
   String _playbookQtyForSymbol(String symbol) {
     return switch (symbol.toUpperCase()) {
       'BTC-USDT' => '0.001',
@@ -899,8 +1046,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           'Long blocked: retest already missed.$zone',
         'trend_gate_short_far_retest' =>
           'Short blocked: retest is too far.$zone',
-        'trend_gate_long_far_retest' =>
-          'Long blocked: retest is too far.$zone',
+        'trend_gate_long_far_retest' => 'Long blocked: retest is too far.$zone',
         'liquidity_anchor_unavailable' =>
           'No executable liquidity anchor for this symbol.',
         _ => 'Signal blocked: ${live.trendGateCode}.$zone',
@@ -1002,25 +1148,70 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         await _showSnack('Cannot auto-fit risk: limit too small');
         return;
       }
-      final fitted = _formatDecimal(conservativeNotional, scale: 4);
-      _maxNotionalUsdtController.text = fitted;
       final symbol = _symbolController.text.trim();
+      num fittedNotional = conservativeNotional;
+      BingxFuturesOrderSizingResult? sizing;
       if (symbol.isNotEmpty) {
-        final quantityReady = await _applyRiskBudgetQuantity(symbol: symbol);
-        if (!quantityReady) {
+        sizing = await _orderSizing.size(
+          symbol: symbol,
+          maximumNotionalQuote: fittedNotional,
+        );
+        if (sizing.status == BingxFuturesOrderSizingStatus.blocked &&
+            sizing.reasonCode == 'exchange_minimum_exceeds_risk_budget') {
+          final minimumNotional =
+              _toNum(sizing.minimumNotionalQuoteDecimal ?? '');
+          if (minimumNotional != null &&
+              minimumNotional > fittedNotional &&
+              minimumNotional <= safeNotional) {
+            fittedNotional = minimumNotional;
+            sizing = await _orderSizing.size(
+              symbol: symbol,
+              maximumNotionalQuote: fittedNotional,
+            );
+          }
+        }
+      }
+      final fitted = _formatDecimal(fittedNotional, scale: 4);
+      _maxNotionalUsdtController.text = fitted;
+      if (symbol.isNotEmpty && sizing != null) {
+        await _uiLog.log(
+          'bingx.risk.sizing',
+          'symbol=${symbol.toUpperCase()} '
+              'status=${sizing.status.name} code=${sizing.reasonCode} '
+              'risk_notional=$fitted '
+              'quantity=${sizing.quantityDecimal ?? "-"} '
+              'order_notional=${sizing.orderNotionalQuoteDecimal ?? "-"} '
+              'min_quantity=${sizing.minimumQuantityDecimal ?? "-"} '
+              'min_notional=${sizing.minimumNotionalQuoteDecimal ?? "-"}',
+        );
+        if (sizing.status != BingxFuturesOrderSizingStatus.sized ||
+            sizing.quantityDecimal == null) {
+          _quantityController.clear();
           await _uiLog.log(
             'bingx.risk.autofit.blocked',
-            'symbol=${symbol.toUpperCase()} max_notional=$fitted',
+            'symbol=${symbol.toUpperCase()} max_notional=$fitted '
+                'safe_notional=${_formatDecimal(safeNotional, scale: 4)} '
+                'code=${sizing.reasonCode}',
           );
+          await _showSnack(sizing.reasonMessage, seconds: 4);
           return;
         }
+        _quantityController.text = sizing.quantityDecimal!;
+        await _uiLog.log(
+          'bingx.risk.quantity',
+          'symbol=${symbol.toUpperCase()} '
+              'max_notional_usdt=$fitted '
+              'order_notional_usdt=${sizing.orderNotionalQuoteDecimal} '
+              'quantity=${sizing.quantityDecimal}',
+        );
       }
       await _uiLog.log(
         'bingx.risk.autofit',
         'equity=${riskInput.accountEquityQuoteDecimal} '
             'risk_pct=${_executionRiskPolicy.maxRiskPerTradePercent.toStringAsFixed(2)} '
             'sl_pct=${_stopLossPercent.toStringAsFixed(2)} '
-            'max_notional=$fitted',
+            'max_notional=$fitted '
+            'safe_notional=${_formatDecimal(safeNotional, scale: 4)}',
       );
       await _showSnack('Max notional auto-fit: $fitted USDT');
     } catch (error) {
@@ -2389,6 +2580,128 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     );
   }
 
+  Color _signalBucketColor(String bucket) {
+    return switch (bucket) {
+      'ready' => Colors.green,
+      'near' => Colors.amber,
+      'blocked' => Colors.orange,
+      'no_signal' => const Color(0xFF97A3B5),
+      _ => Colors.redAccent,
+    };
+  }
+
+  String _signalBucketLabel(String bucket) {
+    return switch (bucket) {
+      'ready' => 'READY',
+      'near' => 'NEAR',
+      'blocked' => 'BLOCKED',
+      'no_signal' => 'NO SIGNAL',
+      _ => 'ERROR',
+    };
+  }
+
+  Widget _signalRankList() {
+    if (_signalRankEntries.isEmpty) {
+      return const Text(
+        'No scan yet. Host computes live summaries; plugin ranks signals.',
+        style: TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
+      );
+    }
+    final top = _signalRankEntries.first;
+    if (!_signalRankExpanded) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => _signalRankExpanded = true),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F141C),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF263343)),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.unfold_more_rounded,
+                size: 18,
+                color: _signalBucketColor(top.bucket),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Top ${top.symbol} · ${_signalBucketLabel(top.bucket)} · score ${top.score}',
+                  style: const TextStyle(
+                    color: Color(0xFFCAD2E1),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Text(
+                'Show',
+                style: TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final entry in _signalRankEntries.take(8))
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F141C),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF263343)),
+            ),
+            child: ListTile(
+              dense: true,
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      entry.symbol,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _signalBucketColor(entry.bucket).withValues(
+                        alpha: 0.15,
+                      ),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      _signalBucketLabel(entry.bucket),
+                      style: TextStyle(
+                        color: _signalBucketColor(entry.bucket),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              subtitle: Text(
+                'score ${entry.score} · side ${entry.side ?? "-"} · '
+                'zone ${entry.zoneLowDecimal ?? "-"}-${entry.zoneHighDecimal ?? "-"} · '
+                'gate ${entry.trendGateCode}'
+                '${entry.failedReasonCodes.isEmpty ? "" : " · failed ${entry.failedReasonCodes.join(",")}"}',
+                style: const TextStyle(color: Color(0xFF97A3B5)),
+              ),
+              onTap: () => _applySignalRankEntry(entry),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canBroadcast =
@@ -2540,6 +2853,65 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     : 'Perp symbols loaded: ${_availablePerpSymbols.length}',
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  FilledButton.icon(
+                    onPressed: _runningIntent || _scanningSignals
+                        ? null
+                        : _scanSignalWatchlist,
+                    icon: _scanningSignals
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _signalRankEntries.isNotEmpty &&
+                                    _signalRankExpanded
+                                ? Icons.unfold_less_rounded
+                                : Icons.radar_rounded,
+                          ),
+                    label: Text(
+                      _scanningSignals
+                          ? 'Scanning'
+                          : (_signalRankEntries.isNotEmpty &&
+                                  _signalRankExpanded
+                              ? 'Hide Watchlist'
+                              : 'Scan Watchlist'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    _signalRankEntries.isEmpty
+                        ? 'Signals not ranked'
+                        : 'Ranked ${_signalRankEntries.length}',
+                    style: const TextStyle(
+                      color: Color(0xFF97A3B5),
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (_signalRankEntries.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _signalRankExpanded = !_signalRankExpanded;
+                        });
+                      },
+                      icon: Icon(
+                        _signalRankExpanded
+                            ? Icons.unfold_less_rounded
+                            : Icons.unfold_more_rounded,
+                        size: 16,
+                      ),
+                      label: Text(_signalRankExpanded ? 'Collapse' : 'Show'),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              _signalRankList(),
               const SizedBox(height: 8),
               Text(
                 'Estimated order quantity: ${_quantityController.text}',

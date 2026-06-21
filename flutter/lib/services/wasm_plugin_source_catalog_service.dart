@@ -112,14 +112,23 @@ class WasmPluginSourceCatalogService {
     String secondaryCatalogUrl = githubRawCatalogUrl,
     String? localCatalogPathOverride,
   }) async {
+    final localCatalogPath =
+        localCatalogPathOverride ?? await _defaultLocalCatalogPath();
+    if (await File(localCatalogPath).exists()) {
+      try {
+        return await fetchCatalog(catalogUrl: localCatalogPath);
+      } catch (_) {
+        // A malformed local catalog must not permanently block the published
+        // source. If remote sources are unavailable too, the final local
+        // fallback below will surface the local error.
+      }
+    }
     try {
       return await fetchCatalog(catalogUrl: primaryCatalogUrl);
     } catch (_) {
       try {
         return await fetchCatalog(catalogUrl: secondaryCatalogUrl);
       } catch (_) {
-        final localCatalogPath =
-            localCatalogPathOverride ?? await _defaultLocalCatalogPath();
         return fetchCatalog(catalogUrl: localCatalogPath);
       }
     }

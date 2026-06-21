@@ -26,6 +26,7 @@ Legend:
 | Exchange-backed risk inputs (equity/pnl/positions) | DONE | `BingxFuturesExchangeRiskInputService` is consumed by the trading-drone execution use case using `getUserBalance/getUserPositions` | Keep exchange payload variant tests green |
 | External package binding and invoke evidence | DONE | `place_bingx_futures_order_intent` requires an installed package, strict contract/capabilities, package digest and runtime invoke evidence | Keep fail-closed security tests green |
 | Plugin-owned semantic contract execution | DONE | `hivra-plugins` owns BingX/chat evaluators; `hivra-wasm-runtime` executes ABI v2 JSON-in/JSON-out through bounded `wasmi`; Flutter validates canonical output and no longer contains mirrored contract evaluators | Keep ABI, runtime, integrity and cross-platform regressions green |
+| Plugin-owned signal ranking | DONE | `rank_bingx_futures_signals` is implemented in the external BingX futures plugin; Flutter sends deterministic live-decision summaries and renders the returned `entries`/`scan_hash_hex` without mirroring score logic | Keep plugin ABI tests and host boundary tests green |
 | Idempotency/TTL/retry discipline | DONE | `flutter/lib/services/bingx_futures_execution_queue_service.dart` | Keep regression green |
 | Managed order revalidation | DONE | `BingxFuturesOrderRevalidationService` cancels stale managed drone orders when live TVH invalidates the setup | Keep revalidation regressions green |
 | Managed order provenance journal | DONE | Capsule-scoped tracking state persists canonical intent + decision hash lineage for each managed order | Use provenance as the mandatory input for future deterministic replacement |
@@ -71,12 +72,14 @@ Legend:
 
 - [ ] Futures intent method is `place_bingx_futures_order_intent`.
 - [ ] Runtime invoke path is used for futures execution (no host fallback execution path).
+- [ ] Runtime invoke path is used for futures signal ranking (no Flutter-side plugin scoring mirror).
 - [ ] Runtime ABI is `hivra_host_abi_v2` with `hivra_alloc_v1`, `hivra_evaluate_v1`, and `hivra_dealloc_v1`.
 - [ ] Runtime rejects imports, oversized modules/input/output, invalid signatures, and fuel exhaustion.
 - [ ] Host validates plugin canonical JSON identity and SHA-256 before using the result.
 - [ ] Capability guard includes:
 - [ ] `consensus_guard.read`
 - [ ] `exchange.trade.bingx.futures`
+- [ ] `rank_bingx_futures_signals` requires `exchange.read.bingx.market`, not pair consensus.
 - [ ] Pair-scoped execution is blocked when consensus guard is not signable.
 
 ## Test Evidence (Required)
