@@ -300,8 +300,16 @@ class CapsuleAddressService {
   }
 
   Map<String, dynamic>? _parseJsonMap(String rawJson) {
-    final decoded = jsonDecode(rawJson);
+    final decoded = jsonDecode(_normalizePastedJson(rawJson));
     return _coerceJsonMap(decoded);
+  }
+
+  String _normalizePastedJson(String rawJson) {
+    return rawJson
+        .replaceAll('\uFEFF', '')
+        .replaceAll('\u00A0', ' ')
+        .replaceAll('\u2007', ' ')
+        .replaceAll('\u202F', ' ');
   }
 
   Map<String, dynamic>? _coerceJsonMap(Object? value) {

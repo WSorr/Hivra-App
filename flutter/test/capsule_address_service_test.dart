@@ -85,6 +85,38 @@ void main() {
     );
   });
 
+  test('imports contact card pasted with non-breaking JSON whitespace',
+      () async {
+    final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 1));
+    final nostrBytes =
+        Uint8List.fromList(List<int>.generate(32, (i) => 254 - i));
+    final rootKey = HivraIdFormat.formatCapsuleKeyBytes(rootBytes);
+    final rootHex = _toHex(rootBytes);
+    final nostrHex = _toHex(nostrBytes);
+    final nbsp = String.fromCharCode(0x00A0);
+
+    final rawCard = '''
+{
+$nbsp$nbsp"version": 1,
+$nbsp$nbsp"rootKey": "$rootKey",
+$nbsp$nbsp"rootHex": "$rootHex",
+$nbsp$nbsp"transports": {
+$nbsp$nbsp$nbsp$nbsp"nostr": {
+$nbsp$nbsp$nbsp$nbsp$nbsp$nbsp"npub": "$nostrHex",
+$nbsp$nbsp$nbsp$nbsp$nbsp$nbsp"hex": "$nostrHex"
+$nbsp$nbsp$nbsp$nbsp}
+$nbsp$nbsp}
+}
+''';
+
+    await service.importCardJson(rawCard);
+
+    expect(await service.contactCount(), 1);
+    final resolved = await service.resolveNostrRecipient(rootKey);
+    expect(resolved, isNotNull);
+    expect(_toHex(resolved!), nostrHex);
+  });
+
   test('gracefully handles malformed cards file root shape', () async {
     final cardsFile = File('${tempDocsDir.path}/capsule_contact_cards.json');
     await cardsFile.writeAsString('["bad-root-shape"]', flush: true);
