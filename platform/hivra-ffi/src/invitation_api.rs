@@ -56,6 +56,9 @@ fn describe_transport_error(err: &TransportError) -> Option<String> {
         TransportError::EncodingFailed => Some("encoding failed".to_string()),
         TransportError::DecodingFailed => Some("decoding failed".to_string()),
         TransportError::InvalidKey => Some("invalid key".to_string()),
+        TransportError::SenderMismatch => {
+            Some("decrypted sender does not match signed transport event".to_string())
+        }
         TransportError::NotImplemented => Some("transport not implemented".to_string()),
     }
 }

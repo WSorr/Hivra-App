@@ -60,6 +60,8 @@ fi
 PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
 PLUGIN_PREFLIGHT="$ROOT/flutter/lib/services/wasm_plugin_package_preflight_service.dart"
 WASM_RUNTIME="$ROOT/platform/hivra-wasm-runtime/src/lib.rs"
+CREDENTIAL_STORE="$ROOT/flutter/lib/services/bingx_futures_credential_store.dart"
+SEED_STORE="$ROOT/flutter/lib/services/capsule_seed_store.dart"
 if rg -q 'legacy installed records|Backward-compatible for legacy registry' \
   "$PLUGIN_HOST"; then
   fail "external plugin permissions contain a legacy fail-open bypass"
@@ -81,6 +83,19 @@ if rg -q "hivra_host_abi_v2" "$PLUGIN_PREFLIGHT" &&
   pass "semantic WASM runtime is ABI-pinned, import-free, fuel-bounded and size-bounded"
 else
   fail "semantic WASM runtime safety boundaries are incomplete"
+fi
+
+if rg -q '_writeScopeFallback|api_secret.*writeAsString|apiSecret.*writeAsString' \
+  "$CREDENTIAL_STORE"; then
+  fail "BingX credentials can be written to plaintext file storage"
+else
+  pass "BingX credentials are secure-storage only"
+fi
+
+if rg -q '_writeSeedFallback|encodedSeed.*writeAsString' "$SEED_STORE"; then
+  fail "capsule recovery seed can be written to plaintext file storage"
+else
+  pass "capsule recovery seed is secure-storage only"
 fi
 
 exit "$STATUS"

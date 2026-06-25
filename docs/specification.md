@@ -266,6 +266,11 @@ Users can have multiple independent capsules.
 Storage:
 
 - Each capsule has its own seed in Keychain.
+- Recovery seeds MUST NOT be persisted in plaintext files. If platform secure
+  storage is unavailable, seed persistence fails closed.
+- Legacy plaintext seed files MAY be consumed only for one-time migration:
+  every valid entry is written to secure storage, verified by read-back, and
+  the plaintext file is deleted before normal use continues.
 - Capsule metadata stored under "capsule_metadata".
 
 Selector screen:
@@ -402,6 +407,10 @@ struct Message {
 ```
 Core bytes → base64 → Nostr content
 ```
+
+After NIP-04 decryption, the adapter MUST require the embedded
+`Message.from` key to equal the public key that signed the outer Nostr event.
+Self-declared sender identity inside encrypted JSON is never authoritative.
 
 ```rust
 // NostrTransport uses NostrCryptoProvider (secp256k1)

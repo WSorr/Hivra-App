@@ -421,6 +421,9 @@ impl NostrTransport {
 
         let message: Message =
             serde_json::from_str(&content).map_err(|_| TransportError::InvalidMessage)?;
+        if message.from != event.pubkey.to_bytes() {
+            return Err(TransportError::SenderMismatch);
+        }
         Ok(message)
     }
 }
@@ -488,5 +491,59 @@ impl Transport for NostrTransport {
 
     fn name(&self) -> &'static str {
         "nostr"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_decrypted_message_with_spoofed_sender() {
+        let receiver_secret = [7u8; 32];
+        let attacker_secret = [8u8; 32];
+        let claimed_sender = [9u8; 32];
+        let receiver = NostrTransport::new(
+            NostrConfig {
+                relays: Vec::new(),
+                ephemeral: true,
+                timeout: 2,
+            },
+            &receiver_secret,
+        )
+        .expect("receiver transport");
+        let attacker_keys =
+            Keys::new(SecretKey::from_slice(&attacker_secret).expect("attacker key"));
+        let message = Message {
+            from: claimed_sender,
+            to: receiver.public_key_bytes(),
+            kind: 1,
+            payload: vec![1, 2, 3],
+            timestamp: 1,
+            invitation_id: None,
+        };
+        let plaintext = serde_json::to_string(&message).expect("message json");
+        let content = nip04::encrypt(
+            attacker_keys.secret_key(),
+            &receiver.public_key,
+            plaintext,
+        )
+        .expect("encrypt");
+        let event = receiver
+            .runtime
+            .block_on(
+                EventBuilder::new(
+                    APP_EVENT_KIND,
+                    content,
+                    [Tag::public_key(receiver.public_key)],
+                )
+                .sign(&attacker_keys),
+            )
+            .expect("signed event");
+
+        assert_eq!(
+            receiver.decode_event(event),
+            Err(TransportError::SenderMismatch),
+        );
     }
 }

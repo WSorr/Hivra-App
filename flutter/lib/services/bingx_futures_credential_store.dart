@@ -12,14 +12,14 @@ class BingxFuturesCredentialStore {
   static const String _apiSecretSuffix = 'api_secret';
   static const String _globalScope = 'global';
   static const String _fallbackFileName = 'bingx_futures_credentials.json';
-  static final Map<String, BingxFuturesApiCredentials> _sessionCache =
+  final Map<String, BingxFuturesApiCredentials> _sessionCache =
       <String, BingxFuturesApiCredentials>{};
 
   final FlutterSecureStorage _secureStorage;
   final String? Function() _readActiveCapsuleRootHex;
   final UserVisibleDataDirectoryService _dirs;
 
-  const BingxFuturesCredentialStore({
+  BingxFuturesCredentialStore({
     required String? Function() readActiveCapsuleRootHex,
     FlutterSecureStorage? secureStorage,
     UserVisibleDataDirectoryService? dirs,
@@ -28,6 +28,7 @@ class BingxFuturesCredentialStore {
         _dirs = dirs ?? const UserVisibleDataDirectoryService();
 
   Future<void> save(BingxFuturesApiCredentials credentials) async {
+    await _migrateLegacyFallbackFile();
     final normalized = credentials.normalized();
     final primaryScope = _scopeKey();
     await _writeScope(primaryScope, normalized);
@@ -42,6 +43,7 @@ class BingxFuturesCredentialStore {
   }
 
   Future<BingxFuturesApiCredentials?> load() async {
+    await _migrateLegacyFallbackFile();
     final primaryScope = _scopeKey();
     final scopes = <String>[
       primaryScope,
@@ -114,6 +116,14 @@ class BingxFuturesCredentialStore {
     String scope,
     BingxFuturesApiCredentials credentials,
   ) async {
+    await _writeSecureScope(scope, credentials);
+    await _deleteScopeFallback(scope);
+  }
+
+  Future<void> _writeSecureScope(
+    String scope,
+    BingxFuturesApiCredentials credentials,
+  ) async {
     try {
       await _secureStorage.write(
         key: _apiKeyForScope(scope),
@@ -123,12 +133,19 @@ class BingxFuturesCredentialStore {
         key: _apiSecretForScope(scope),
         value: credentials.apiSecret,
       );
-    } catch (_) {
-      // Secure storage may be unavailable in some release/signing contexts.
+      final storedKey = await _secureStorage.read(
+        key: _apiKeyForScope(scope),
+      );
+      final storedSecret = await _secureStorage.read(
+        key: _apiSecretForScope(scope),
+      );
+      if (storedKey != credentials.apiKey ||
+          storedSecret != credentials.apiSecret) {
+        throw StateError('Secure credential read-back mismatch');
+      }
+    } catch (error) {
+      throw StateError('Secure credential storage is unavailable: $error');
     }
-    // Keep file fallback as durability layer across keychain availability
-    // changes between app launches/builds.
-    await _writeScopeFallback(scope, credentials);
   }
 
   Future<BingxFuturesApiCredentials?> _readScope(String scope) async {
@@ -149,7 +166,7 @@ class BingxFuturesCredentialStore {
         );
       }
     } catch (_) {
-      // Secure storage unavailable for current build/signing.
+      // Continue into one-time migration of legacy plaintext storage.
     }
 
     final fallback = await _readScopeFallback(scope);
@@ -182,22 +199,16 @@ class BingxFuturesCredentialStore {
 
   Future<void> _writeFallbackMap(Map<String, dynamic> map) async {
     final file = await _fallbackFile();
+    if (map.isEmpty) {
+      if (await file.exists()) {
+        await file.delete();
+      }
+      return;
+    }
     if (!await file.parent.exists()) {
       await file.parent.create(recursive: true);
     }
     await file.writeAsString(jsonEncode(map), flush: true);
-  }
-
-  Future<void> _writeScopeFallback(
-    String scope,
-    BingxFuturesApiCredentials credentials,
-  ) async {
-    final map = await _readFallbackMap();
-    map[scope] = <String, String>{
-      _apiKeySuffix: credentials.apiKey,
-      _apiSecretSuffix: credentials.apiSecret,
-    };
-    await _writeFallbackMap(map);
   }
 
   Future<(String, String)?> _readScopeFallback(String scope) async {
@@ -222,21 +233,40 @@ class BingxFuturesCredentialStore {
     String scope,
     BingxFuturesApiCredentials credentials,
   ) async {
-    try {
-      await _secureStorage.write(
-        key: _apiKeyForScope(scope),
-        value: credentials.apiKey,
+    await _writeScope(scope, credentials);
+  }
+
+  Future<void> _migrateLegacyFallbackFile() async {
+    final file = await _fallbackFile();
+    if (!await file.exists()) return;
+    final map = await _readFallbackMap();
+    final credentialsByScope = <String, BingxFuturesApiCredentials>{};
+    for (final entry in map.entries) {
+      final scope = entry.key.trim().toLowerCase();
+      final value = entry.value;
+      if (value is! Map ||
+          (scope != _globalScope &&
+              !RegExp(r'^[0-9a-f]{64}$').hasMatch(scope))) {
+        continue;
+      }
+      final scoped = Map<String, dynamic>.from(value);
+      final apiKey = scoped[_apiKeySuffix]?.toString().trim() ?? '';
+      final apiSecret = scoped[_apiSecretSuffix]?.toString().trim() ?? '';
+      if (apiKey.isEmpty || apiSecret.isEmpty) continue;
+      credentialsByScope[scope] = BingxFuturesApiCredentials(
+        apiKey: apiKey,
+        apiSecret: apiSecret,
       );
-      await _secureStorage.write(
-        key: _apiSecretForScope(scope),
-        value: credentials.apiSecret,
-      );
-    } catch (_) {
-      // Keep fallback as source of truth when keychain is unavailable.
     }
-    // Never delete fallback automatically: keychain availability may change
-    // across launches and signatures, and fallback keeps credentials durable.
-    await _writeScopeFallback(scope, credentials);
+
+    try {
+      for (final entry in credentialsByScope.entries) {
+        await _writeSecureScope(entry.key, entry.value);
+      }
+    } catch (error) {
+      throw StateError('Secure credential migration failed: $error');
+    }
+    await file.delete();
   }
 
   Future<BingxFuturesApiCredentials?> _readScopeAndPromote(String scope) async {

@@ -98,34 +98,6 @@ class _ThrowingSecureStorage extends FlutterSecureStorage {
   }
 }
 
-class _FailingReadSecureStorage extends _FakeSecureStorage {
-  bool failRead = false;
-
-  @override
-  Future<String?> read({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {
-    if (failRead) {
-      throw Exception('secure storage read unavailable');
-    }
-    return super.read(
-      key: key,
-      iOptions: iOptions,
-      aOptions: aOptions,
-      lOptions: lOptions,
-      webOptions: webOptions,
-      mOptions: mOptions,
-      wOptions: wOptions,
-    );
-  }
-}
-
 void main() {
   group('BingxFuturesCredentialStore', () {
     test('loads global credentials and promotes to capsule scope', () async {
@@ -192,7 +164,7 @@ void main() {
       );
     });
 
-    test('falls back to file storage when secure storage is unavailable',
+    test('fails closed when secure storage is unavailable',
         () async {
       final tempHome =
           await Directory.systemTemp.createTemp('hivra-cred-store-test-');
@@ -210,19 +182,23 @@ void main() {
         dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
       );
 
-      await store.save(
-        const BingxFuturesApiCredentials(
-          apiKey: 'fallback-key',
-          apiSecret: 'fallback-secret',
+      await expectLater(
+        store.save(
+          const BingxFuturesApiCredentials(
+            apiKey: 'fallback-key',
+            apiSecret: 'fallback-secret',
+          ),
         ),
+        throwsA(isA<StateError>()),
       );
-      final loaded = await store.load();
-      expect(loaded, isNotNull);
-      expect(loaded!.apiKey, 'fallback-key');
-      expect(loaded.apiSecret, 'fallback-secret');
+      expect(
+        File('${tempHome.path}/Documents/Hivra/bingx_futures_credentials.json')
+            .existsSync(),
+        isFalse,
+      );
     });
 
-    test('loads from fallback when secure read fails after prior save', () async {
+    test('migrates legacy plaintext credentials into secure storage', () async {
       final tempHome =
           await Directory.systemTemp.createTemp('hivra-cred-store-test-');
       addTearDown(() async {
@@ -233,25 +209,33 @@ void main() {
 
       final scope =
           'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
-      final secureStorage = _FailingReadSecureStorage();
+      final fallbackFile = File(
+        '${tempHome.path}/Documents/Hivra/bingx_futures_credentials.json',
+      );
+      await fallbackFile.parent.create(recursive: true);
+      await fallbackFile.writeAsString(
+        '{"$scope":{"api_key":"durable-key","api_secret":"durable-secret"}}',
+      );
+      final secureStorage = _FakeSecureStorage();
       final store = BingxFuturesCredentialStore(
         readActiveCapsuleRootHex: () => scope,
         secureStorage: secureStorage,
         dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
       );
 
-      await store.save(
-        const BingxFuturesApiCredentials(
-          apiKey: 'durable-key',
-          apiSecret: 'durable-secret',
-        ),
-      );
-      secureStorage.failRead = true;
-
       final loaded = await store.load();
       expect(loaded, isNotNull);
       expect(loaded!.apiKey, 'durable-key');
       expect(loaded.apiSecret, 'durable-secret');
+      expect(
+        secureStorage.values['hivra.bingx.futures.$scope.api_key'],
+        'durable-key',
+      );
+      expect(
+        secureStorage.values['hivra.bingx.futures.$scope.api_secret'],
+        'durable-secret',
+      );
+      expect(await fallbackFile.exists(), isFalse);
     });
   });
 }

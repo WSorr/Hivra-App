@@ -24,6 +24,7 @@ pub enum TransportError {
     EncodingFailed,
     DecodingFailed,
     InvalidKey,
+    SenderMismatch,
     Timeout,
     Other(String),
 }

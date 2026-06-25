@@ -11,6 +11,8 @@ Use this checklist to validate Android runtime behavior against the same ledger-
 ## Storage
 
 - [ ] Keystore-backed seed access is validated after cold restart.
+- [ ] Unavailable Keystore fails closed and does not create `capsule_seeds.json`.
+- [ ] Any legacy plaintext seed file is migrated completely into Keystore and deleted.
 - [ ] Reinstall path does not silently reuse stale app-private seed state.
 - [ ] Backup import path reconstructs the same ledger truth as before reinstall.
 

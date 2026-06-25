@@ -728,6 +728,8 @@ If gate passes:
 
 - only the local capsule that holds exchange credentials executes the order,
 - execution adapter uses local secret storage only,
+- exchange API credentials MUST NOT be mirrored into user-visible or
+  app-private plaintext files; unavailable secure storage blocks persistence,
 - no remote capsule can force direct exchange mutation.
 
 ### 15.4 Receipt Envelope (outgoing)
