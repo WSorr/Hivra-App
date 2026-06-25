@@ -29,11 +29,17 @@ Root/transport identity split is implemented and live:
 - root and Nostr identities are exposed through explicit FFI APIs
 - diagnostics/bootstrap track identity mode (`root_owner` / `legacy_nostr_owner`)
 
-Remaining compatibility debt:
+Intentional compatibility surface:
 
-- `legacy_nostr_owner` mode still exists for controlled migration/recovery scenarios
+- `legacy_nostr_owner` mode remains only for controlled migration/recovery of
+  ledgers created before root-owner identity became canonical
 - invitation/relationship transport flows still derive Nostr keys locally (adapter boundary), which is expected
 - old ledger/index artifacts can still carry legacy identity mode and must remain readable
+
+This is not an active v1 architecture debt: new capsules use `root_owner`, and
+the legacy mode must not be selected unless persisted ledger/index identity
+requires it. Removal belongs to an explicit future ledger-format migration,
+never to opportunistic cleanup.
 
 ## Required Invariants
 
@@ -179,16 +185,15 @@ Two strategies are possible:
 
 The project should not choose between these implicitly inside scattered code changes.
 
-## Recommendation
+## Current Decision
 
-Start with compatibility-first discovery work:
+The root/transport split is complete for v1. Keep the compatibility reader
+until a future format migration has an explicit cutoff and user recovery plan:
 
-1. add root derivation helpers
-2. split FFI API between root and transport keys
-3. instrument bootstrap and diagnostics to show which identity layer is active
-4. only then decide whether old ledgers migrate or remain legacy-owned
-
-This keeps the work modular and reversible while preserving determinism.
+1. all newly created capsules use `root_owner`
+2. existing `legacy_nostr_owner` ledgers remain readable without history rewrite
+3. runtime diagnostics continue to expose the selected identity mode
+4. removal requires a versioned migration with deterministic fixtures
 
 ## What Not To Do
 

@@ -40,6 +40,8 @@ This directory contains deterministic release helpers for Hivra.
    - `tools/release/release_version_guard.sh --suggest`
    - The guard reads published releases from `WSorr/Hivra-App`; it deliberately
      ignores legacy local tags.
+   - Test releases are strictly sequential: if the guard suggests `test9`,
+     packaging rejects `test10` or any other skipped number.
 2. Record rows during manual smoke:
    - `tools/release/record_trading_drone_evidence.sh ...`
 3. Validate coverage:

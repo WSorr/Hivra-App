@@ -102,6 +102,9 @@ fi
 if [ "$CHANNEL" = "test" ]; then
   [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-test[0-9]+$ ]] ||
     die "test releases must use vMAJOR.MINOR.PATCH-testN"
+  expected_test_version="$(suggest_next_tag "$latest")"
+  [ "$VERSION" = "$expected_test_version" ] ||
+    die "next test release after $latest must be exactly $expected_test_version"
 else
   [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
     die "public releases must use vMAJOR.MINOR.PATCH"

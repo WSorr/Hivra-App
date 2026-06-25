@@ -447,6 +447,9 @@ Current progress:
   - runtime owner in `root` mode equals root derivation
   - runtime owner in `legacy_nostr` mode equals Nostr derivation
 - Flutter/runtime diagnostics and bootstrap paths now track identity mode explicitly (`root_owner` / `legacy_nostr_owner`) instead of assuming one transport key as canonical capsule identity.
+- `legacy_nostr_owner` is retained as an intentional read-compatibility mode
+  only; new capsules use `root_owner`, and removal is deferred to an explicit
+  versioned ledger migration rather than treated as active v1 debt.
 
 Definition of done:
 - Capsule identity is transport-agnostic.
@@ -537,24 +540,24 @@ Scope:
   - execution boundaries
 - Only introduce execution after the shell and safety model are explicit.
 - Current progress:
-  - Added deterministic pre-host test-contract service for `bingx_futures_order_intent` with manifest parsing and consensus-signable execution gate.
+  - Added deterministic contract execution with manifest parsing and consensus-signable execution gate.
   - Added regression coverage for:
     - manifest validation
     - deterministic settlement hash
     - proposer/counterparty/draw outcomes
     - blocked execution when consensus is unresolved
-  - Added plugin draft documentation for the first test smart-contract package (`docs/plugins/bingx_futures_order_intent_test_plugin.md`).
-  - Added manual dry-run action in WASM Plugins screen so contract execution can be exercised through consensus guard without introducing wasm runtime execution yet.
+  - Added external plugin package documentation and source-catalog installation flow.
+  - Added manual runtime actions in the plugin surfaces so contract execution can be exercised through the consensus guard and semantic WASM ABI.
   - Added package-install preflight validation (`WasmPluginPackagePreflightService`) for `.wasm` magic/version and `.zip` manifest/module shape, wired into `WasmPluginRegistryService.installPluginFromFile` with regression coverage for malformed packages.
   - Zip preflight module discovery now considers only safe normalized `.wasm` paths (entries with parent-traversal segments are ignored), and install fails when no safe runtime module candidates remain.
   - External plugin source-catalog install path now verifies optional `sha256_hex` integrity before install (both remote download and local `file://` package flows); catalog entries with malformed `sha256_hex` shape are rejected, checksum mismatch blocks installation, and metadata mismatch (`plugin_id` / `package_kind` + `version` when available) triggers install rollback.
   - Source catalog parsing now drops entries with unsupported `download_url` schemes and deduplicates duplicate `entry.id` rows deterministically (first entry wins), reducing install-time ambiguity from malformed catalogs.
   - Source catalog parsing now also deduplicates duplicate package offers by `(plugin_id, version, package_kind)` (first entry wins), preventing one package release from appearing multiple times under different catalog entry IDs.
   - Source catalog parsing now filters malformed package identity metadata (`plugin_id`, `version`) before install flows, so only semantically valid plugin release entries reach source-install path.
-  - Plugin install path now carries manifest metadata (`pluginId`, `contractKind`, `capabilities`) into the local registry model so capability/contract inspection is available before wasm runtime execution exists.
+  - Plugin install path carries manifest metadata (`pluginId`, `contractKind`, `capabilities`) into the local registry model so capability/contract inspection is available before runtime invocation.
   - Plugin registry loading now self-heals stale entries whose stored package files are missing, rewriting registry to only file-backed records so runtime binding resolution cannot stick on dead package pointers.
   - Added capability policy boundary (`WasmPluginCapabilityPolicyService`) and wired preflight to reject unknown manifest capabilities at install-time.
-  - Added deterministic `PluginHostApiService` request/response boundary (`executed` / `blocked` / `rejected`) with response hashing and guard-gated contract execution as Host API v1 (no wasm runtime execution yet).
+  - Added deterministic `PluginHostApiService` request/response boundary (`executed` / `blocked` / `rejected`) with response hashing and guard-gated semantic WASM execution as Host API v1.
   - Host API external-package boundary now validates `contractKind` against requested `plugin_id`; mismatched package metadata is rejected (`runtime_contract_kind_mismatch`) before contract execution.
   - Host API now validates external runtime binding shape (`package_id`, `package_kind`) before invoke and rejects malformed metadata as `runtime_binding_invalid`.
   - Host API external-package boundary now also validates declared runtime capabilities against required grants for requested `(plugin_id, method)` and rejects missing/unsupported capability sets (`runtime_capability_mismatch`) before contract execution.
@@ -706,7 +709,7 @@ When tradeoffs are unclear, prefer:
     - any future pair-scoped contract with that capsule remains blocked until the old pending break is resolved
     - disagreement about one peer must not affect relationships or contracts with other capsules
   - UI implication: break-notification should be presented as a pending state transition to accept, not as a bidirectional accept/reject negotiation.
-  - Current local/runtime behavior may auto-apply remote break immediately, especially in single-app local testing; target behavior should preserve a pending remote break until explicit acceptance.
+  - Runtime preserves a remote-signed break as `pending_remote_break` until explicit local acceptance; only the initiating capsule finalizes its local break immediately.
   - Pairwise event reading should remain layered:
     - invitation events record transit/history and terminal responses
     - starter events record local anatomy only

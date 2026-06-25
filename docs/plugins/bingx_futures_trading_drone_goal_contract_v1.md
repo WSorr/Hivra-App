@@ -138,19 +138,20 @@ all point to the same behavior.
 
 ---
 
-## 10. Current Status Snapshot (2026-05-18)
+## 10. Current Status Snapshot (2026-06-25)
 
 ### 10.1 Already in Place
 
 - Dedicated futures drone services exist for snapshot/feature/rule/replay/mode/risk/queue/observability.
-- Plugin host runtime boundary exists for futures intent execution.
+- Semantic WASM ABI v2 is live; plugin packages own contract evaluation and signal ranking.
+- Plugin host runtime boundary validates package identity, capabilities, canonical output, consensus, risk, and exchange execution.
 - Deterministic observability envelopes exist and are release-gated.
-- Side/zone decision source is now service-level (`BingxFuturesZoneDecisionService`) and consumed by Trading Drone UI as a single contract.
+- Live entry, managed-order revalidation, provenance, and deterministic replacement are wired through shared service boundaries.
 
 ### 10.2 Active Gaps to Close
 
 1. End-to-end parity evidence discipline
-   - Test suites exist, but per-build manual parity records are not always captured consistently across both platforms.
+   - Runtime/spec parity is complete; every release candidate still requires fresh manual records across both platforms.
    - Target: mandatory build-tagged evidence for `situational`, `interactive`, `risk_blocked`, retry, receipt.
 
 ### 10.2.1 Gap Progress
@@ -164,9 +165,7 @@ all point to the same behavior.
 
 ### 10.3 Ordered Execution Plan
 
-1. Lock deterministic replay:
-   - add/extend fixtures for side/zone regressions and drift detection.
-2. Update normative docs:
-   - align drone spec and host-boundary wording with implemented runtime behavior.
-3. Release-candidate parity run:
+1. Keep deterministic replay, ABI, risk, and managed-order regressions green.
+2. Reject any runtime change that reintroduces screen-owned decision semantics or host-side plugin evaluator mirrors.
+3. For every release candidate:
    - macOS + Android evidence captured with build tag/date in parity checklist.
