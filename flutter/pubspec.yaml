@@ -20,6 +20,7 @@ dependencies:
   file_selector: ^1.1.0
   archive: ^3.6.1
   connectivity_plus: ^6.0.5
+  cryptography: ^2.7.0
 
 dev_dependencies:
   flutter_test:

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
 
 import 'user_visible_data_directory_service.dart';
 import 'wasm_plugin_registry_service.dart';
@@ -49,12 +50,14 @@ class WasmPluginSourceCatalogService {
   static const Set<String> defaultTrustedRemoteCatalogSha256Hexes = {
     '07275bd8fb567ef5f9072f47fb132605264090efcc1014340b79785b4c411a43',
   };
+  static const Set<String> defaultTrustedRemoteCatalogPublicKeyHexes = {};
   static const Duration _networkTimeout = Duration(seconds: 8);
 
   final WasmPluginRegistryService _registry;
   final UserVisibleDataDirectoryService _dataDirs;
   final HttpClient Function() _httpClientFactory;
   final Set<String> _trustedRemoteCatalogSha256Hexes;
+  final Set<String> _trustedRemoteCatalogPublicKeyHexes;
 
   const WasmPluginSourceCatalogService({
     WasmPluginRegistryService registry = const WasmPluginRegistryService(),
@@ -63,10 +66,14 @@ class WasmPluginSourceCatalogService {
     HttpClient Function()? httpClientFactory,
     Set<String> trustedRemoteCatalogSha256Hexes =
         defaultTrustedRemoteCatalogSha256Hexes,
+    Set<String> trustedRemoteCatalogPublicKeyHexes =
+        defaultTrustedRemoteCatalogPublicKeyHexes,
   })  : _registry = registry,
         _dataDirs = dataDirs,
         _httpClientFactory = httpClientFactory ?? _defaultHttpClientFactory,
-        _trustedRemoteCatalogSha256Hexes = trustedRemoteCatalogSha256Hexes;
+        _trustedRemoteCatalogSha256Hexes = trustedRemoteCatalogSha256Hexes,
+        _trustedRemoteCatalogPublicKeyHexes =
+            trustedRemoteCatalogPublicKeyHexes;
 
   static HttpClient _defaultHttpClientFactory() => HttpClient();
 
@@ -108,7 +115,7 @@ class WasmPluginSourceCatalogService {
         );
       }
 
-      _verifyRemoteCatalogDigest(body);
+      await _verifyRemoteCatalogTrust(body);
       return _parseCatalogJson(body);
     } finally {
       client.close(force: true);
@@ -324,6 +331,78 @@ class WasmPluginSourceCatalogService {
         uri.scheme == 'https';
   }
 
+  Future<void> _verifyRemoteCatalogTrust(String body) async {
+    if (await _verifyRemoteCatalogSignature(body)) {
+      return;
+    }
+    _verifyRemoteCatalogDigest(body);
+  }
+
+  Future<bool> _verifyRemoteCatalogSignature(String body) async {
+    final trustedKeys = _trustedRemoteCatalogPublicKeyHexes
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => RegExp(r'^[0-9a-f]{64}$').hasMatch(value))
+        .toSet();
+    if (trustedKeys.isEmpty) {
+      return false;
+    }
+
+    final decoded = jsonDecode(body);
+    if (decoded is! Map) {
+      throw const FormatException('Plugin source catalog must be a JSON map');
+    }
+    final catalog = Map<String, dynamic>.from(decoded);
+    final rawSignatures = catalog['signatures'];
+    if (rawSignatures is! List || rawSignatures.isEmpty) {
+      throw const FormatException(
+        'Remote plugin source catalog is not signed',
+      );
+    }
+
+    final unsignedCatalog = Map<String, dynamic>.from(catalog)
+      ..remove('signatures');
+    final payload = utf8.encode(_canonicalJson(unsignedCatalog));
+    final verifier = Ed25519();
+
+    for (final item in rawSignatures) {
+      if (item is! Map) continue;
+      final signature = Map<String, dynamic>.from(item);
+      final algorithm =
+          (signature['algorithm']?.toString().trim().toLowerCase() ?? '');
+      if (algorithm != 'ed25519') continue;
+      final keyId =
+          (signature['key_id']?.toString().trim().toLowerCase() ?? '');
+      final signatureHex =
+          (signature['signature_hex']?.toString().trim().toLowerCase() ?? '');
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(keyId) ||
+          !RegExp(r'^[0-9a-f]{128}$').hasMatch(signatureHex)) {
+        continue;
+      }
+
+      for (final publicKeyHex in trustedKeys) {
+        final publicKeyBytes = _decodeHex(publicKeyHex);
+        final publicKeyId =
+            sha256.convert(publicKeyBytes).toString().toLowerCase();
+        if (keyId != publicKeyId) continue;
+        final valid = await verifier.verify(
+          payload,
+          signature: Signature(
+            _decodeHex(signatureHex),
+            publicKey: SimplePublicKey(
+              publicKeyBytes,
+              type: KeyPairType.ed25519,
+            ),
+          ),
+        );
+        if (valid) return true;
+      }
+    }
+
+    throw const FormatException(
+      'Remote plugin source catalog signature is not trusted',
+    );
+  }
+
   void _verifyRemoteCatalogDigest(String body) {
     final trusted = _trustedRemoteCatalogSha256Hexes
         .map((value) => value.trim().toLowerCase())
@@ -340,6 +419,36 @@ class WasmPluginSourceCatalogService {
         'Remote plugin source catalog digest is not trusted: $actual',
       );
     }
+  }
+
+  String _canonicalJson(Object? value) {
+    if (value is Map) {
+      final keys = value.keys.map((key) => key.toString()).toList()..sort();
+      final entries = keys.map((key) {
+        return '${jsonEncode(key)}:${_canonicalJson(value[key])}';
+      }).join(',');
+      return '{$entries}';
+    }
+    if (value is List) {
+      return '[${value.map(_canonicalJson).join(',')}]';
+    }
+    return jsonEncode(value);
+  }
+
+  List<int> _decodeHex(String hex) {
+    final normalized = hex.trim().toLowerCase();
+    if (normalized.length.isOdd ||
+        !RegExp(r'^[0-9a-f]*$').hasMatch(normalized)) {
+      throw const FormatException('Invalid hex value');
+    }
+    return List<int>.generate(
+      normalized.length ~/ 2,
+      (index) => int.parse(
+        normalized.substring(index * 2, index * 2 + 2),
+        radix: 16,
+      ),
+      growable: false,
+    );
   }
 
   bool _isValidPluginId(String value) {

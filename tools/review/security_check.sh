@@ -86,13 +86,18 @@ if rg -q "hivra_host_abi_v2" "$PLUGIN_PREFLIGHT" &&
 else
   fail "semantic WASM runtime safety boundaries are incomplete"
 fi
-if rg -q 'defaultTrustedRemoteCatalogSha256Hexes' "$PLUGIN_SOURCE_CATALOG" &&
+if rg -q 'defaultTrustedRemoteCatalogPublicKeyHexes' "$PLUGIN_SOURCE_CATALOG" &&
+   rg -q '_verifyRemoteCatalogSignature' "$PLUGIN_SOURCE_CATALOG" &&
+   rg -q 'Ed25519' "$PLUGIN_SOURCE_CATALOG" &&
+   rg -q 'fetchCatalog accepts remote catalog signed by pinned public key' "$PLUGIN_SOURCE_CATALOG_TEST" &&
+   rg -q 'fetchCatalog rejects signed remote catalog with untrusted public key' "$PLUGIN_SOURCE_CATALOG_TEST" &&
+   rg -q 'defaultTrustedRemoteCatalogSha256Hexes' "$PLUGIN_SOURCE_CATALOG" &&
    rg -q '_verifyRemoteCatalogDigest' "$PLUGIN_SOURCE_CATALOG" &&
    rg -q 'fetchCatalog rejects remote catalog when digest is not pinned' "$PLUGIN_SOURCE_CATALOG_TEST" &&
    rg -q 'fetchCatalog rejects remote catalog without any trusted digest pin' "$PLUGIN_SOURCE_CATALOG_TEST"; then
-  pass "remote plugin catalog is pinned independently from package checksums"
+  pass "remote plugin catalog supports signed trust and pinned-digest fallback"
 else
-  fail "remote plugin catalog lacks independent trust pinning"
+  fail "remote plugin catalog lacks signed trust or independent digest fallback"
 fi
 
 if rg -q '_writeScopeFallback|api_secret.*writeAsString|apiSecret.*writeAsString' \

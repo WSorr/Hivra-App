@@ -23,11 +23,17 @@ the local catalog path and surfaces a clear error if it is missing too.
 
 ## Integrity checks
 
-- Remote HTTP/HTTPS source catalogs are accepted only when their full JSON body
-  SHA256 matches a digest pinned in `Hivra-App`. This pin is independent from
-  per-package checksums embedded in the catalog.
+- Remote HTTP/HTTPS source catalogs are accepted only through an independent
+  trust root in `Hivra-App`:
+  - preferred path: Ed25519 catalog signature verified against a pinned public
+    key,
+  - compatibility path: full JSON body SHA256 matches a digest pinned in
+    `Hivra-App`.
+- Catalog trust is evaluated before per-package checksums are trusted.
 - Local `file://` catalogs are treated as explicit user/developer overrides and
   are not remote-trust pinned.
+- Signed catalogs use a top-level `signatures` array. Each signature covers the
+  canonical JSON form of the catalog with `signatures` removed.
 - Source catalog entries can include optional `sha256_hex`.
 - If `sha256_hex` is present, Hivra verifies package bytes before install.
 - Invalid hash shape in catalog (`not 64 hex chars`) is rejected.

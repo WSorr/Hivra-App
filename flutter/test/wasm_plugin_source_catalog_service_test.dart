@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
@@ -39,6 +40,8 @@ void main() {
   late HttpServer server;
   late WasmPluginRegistryService registry;
   late WasmPluginSourceCatalogService service;
+  late SimpleKeyPair catalogSigningKey;
+  late String catalogPublicKeyHex;
 
   final packageBytes = _zipBytes(
     files: {
@@ -84,6 +87,9 @@ void main() {
     registry = WasmPluginRegistryService(
       dataDirs: dataDirs,
     );
+    catalogSigningKey = await Ed25519().newKeyPair();
+    catalogPublicKeyHex =
+        _hexEncode((await catalogSigningKey.extractPublicKey()).bytes);
 
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final downloadUrl =
@@ -181,6 +187,112 @@ void main() {
 
     await expectLater(
       () => unpinnedService.fetchCatalog(catalogUrl: url),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('fetchCatalog accepts remote catalog signed by pinned public key',
+      () async {
+    final downloadUrl =
+        'http://127.0.0.1:${server.port}/packages/demo-plugin.zip';
+    final unsignedCatalog = _catalogMap(
+      sourceId: 'wsorr.hivra.plugins',
+      sourceName: 'Hivra Plugins',
+      entries: [
+        {
+          'id': 'bingx-futures-catalog',
+          'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+          'display_name': 'BingX Futures Trading',
+          'version': '0.1.0',
+          'download_url': downloadUrl,
+          'package_kind': 'zip',
+          'sha256_hex': packageSha256Hex,
+        }
+      ],
+    );
+    final signedBody = await _signedCatalogJson(
+      unsignedCatalog,
+      signingKey: catalogSigningKey,
+    );
+    final signedCatalogPath = '${tempDocsDir.path}/signed_catalog.json';
+    File(signedCatalogPath).writeAsStringSync(signedBody, flush: true);
+    final signedServerPath = '/signed_catalog.json';
+
+    final signedServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    signedServer.listen((request) async {
+      if (request.uri.path == signedServerPath) {
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(signedBody);
+        await request.response.close();
+        return;
+      }
+      request.response.statusCode = HttpStatus.notFound;
+      await request.response.close();
+    });
+    addTearDown(() => signedServer.close(force: true));
+
+    final signedService = WasmPluginSourceCatalogService(
+      registry: registry,
+      dataDirs: dataDirs,
+      trustedRemoteCatalogSha256Hexes: const {},
+      trustedRemoteCatalogPublicKeyHexes: {catalogPublicKeyHex},
+    );
+
+    final catalog = await signedService.fetchCatalog(
+      catalogUrl: 'http://127.0.0.1:${signedServer.port}$signedServerPath',
+    );
+
+    expect(catalog.sourceId, 'wsorr.hivra.plugins');
+    expect(catalog.entries.single.id, 'bingx-futures-catalog');
+  });
+
+  test('fetchCatalog rejects signed remote catalog with untrusted public key',
+      () async {
+    final unsignedCatalog = _catalogMap(
+      sourceId: 'wsorr.hivra.plugins',
+      sourceName: 'Hivra Plugins',
+      entries: [
+        {
+          'id': 'bingx-futures-catalog',
+          'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+          'display_name': 'BingX Futures Trading',
+          'version': '0.1.0',
+          'download_url':
+              'http://127.0.0.1:${server.port}/packages/demo-plugin.zip',
+          'package_kind': 'zip',
+          'sha256_hex': packageSha256Hex,
+        }
+      ],
+    );
+    final signedBody = await _signedCatalogJson(
+      unsignedCatalog,
+      signingKey: catalogSigningKey,
+    );
+    final signedServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    signedServer.listen((request) async {
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.json
+        ..write(signedBody);
+      await request.response.close();
+    });
+    addTearDown(() => signedServer.close(force: true));
+
+    final otherPublicKey = _hexEncode(
+        (await (await Ed25519().newKeyPair()).extractPublicKey()).bytes);
+    final untrustedService = WasmPluginSourceCatalogService(
+      registry: registry,
+      dataDirs: dataDirs,
+      trustedRemoteCatalogSha256Hexes: const {},
+      trustedRemoteCatalogPublicKeyHexes: {otherPublicKey},
+    );
+
+    await expectLater(
+      () => untrustedService.fetchCatalog(
+        catalogUrl: 'http://127.0.0.1:${signedServer.port}/catalog.json',
+      ),
       throwsA(isA<FormatException>()),
     );
   });
@@ -628,15 +740,69 @@ String _catalogJson({
   required List<Map<String, Object?>> entries,
   int version = 1,
 }) {
-  return jsonEncode(
+  return jsonEncode(_catalogMap(
+    sourceId: sourceId,
+    sourceName: sourceName,
+    entries: entries,
+    version: version,
+  ));
+}
+
+Map<String, Object?> _catalogMap({
+  required String sourceId,
+  required String sourceName,
+  required List<Map<String, Object?>> entries,
+  int version = 1,
+}) {
+  return {
+    'schema': 'hivra.plugin.catalog',
+    'version': version,
+    'source_id': sourceId,
+    'source_name': sourceName,
+    'entries': entries,
+  };
+}
+
+Future<String> _signedCatalogJson(
+  Map<String, Object?> unsignedCatalog, {
+  required SimpleKeyPair signingKey,
+}) async {
+  final publicKey = await signingKey.extractPublicKey();
+  final payload = utf8.encode(_canonicalJson(unsignedCatalog));
+  final signature = await Ed25519().sign(payload, keyPair: signingKey);
+  final signedCatalog = Map<String, Object?>.from(unsignedCatalog);
+  signedCatalog['signatures'] = [
     {
-      'schema': 'hivra.plugin.catalog',
-      'version': version,
-      'source_id': sourceId,
-      'source_name': sourceName,
-      'entries': entries,
-    },
-  );
+      'algorithm': 'ed25519',
+      'key_id': sha256.convert(publicKey.bytes).toString(),
+      'signature_hex': _hexEncode(signature.bytes),
+    }
+  ];
+  return jsonEncode(signedCatalog);
+}
+
+String _canonicalJson(Object? value) {
+  if (value is Map) {
+    final keys = value.keys.map((key) => key.toString()).toList()..sort();
+    return '{${keys.map((key) {
+      return '${jsonEncode(key)}:${_canonicalJson(value[key])}';
+    }).join(',')}}';
+  }
+  if (value is List) {
+    return '[${value.map(_canonicalJson).join(',')}]';
+  }
+  return jsonEncode(value);
+}
+
+String _hexEncode(List<int> bytes) {
+  const chars = '0123456789abcdef';
+  final buffer = StringBuffer();
+  for (final byte in bytes) {
+    buffer
+      ..write(chars[(byte >> 4) & 0x0f])
+      ..write(chars[byte & 0x0f]);
+  }
+  return buffer.toString();
 }
 
 List<int> _zipBytes({required Map<String, Object> files}) {
