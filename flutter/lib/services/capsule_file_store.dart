@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'atomic_file_write_service.dart';
 import 'user_visible_data_directory_service.dart';
 
 class CapsuleFileStore {
@@ -11,9 +12,13 @@ class CapsuleFileStore {
   static const String capsulesDirName = 'capsules';
 
   final UserVisibleDataDirectoryService _dirs;
+  final AtomicFileWriteService _atomicWrites;
 
-  const CapsuleFileStore({UserVisibleDataDirectoryService? dirs})
-      : _dirs = dirs ?? const UserVisibleDataDirectoryService();
+  const CapsuleFileStore({
+    UserVisibleDataDirectoryService? dirs,
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
+  })  : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+        _atomicWrites = atomicWrites;
 
   Future<Directory> docsDirectory() async {
     return _dirs.rootDirectory(create: true);
@@ -85,7 +90,7 @@ class CapsuleFileStore {
   }
 
   Future<void> writeState(Directory dir, Map<String, dynamic> state) async {
-    await stateFile(dir).writeAsString(jsonEncode(state), flush: true);
+    await _atomicWrites.writeString(stateFile(dir), jsonEncode(state));
   }
 
   Future<String?> readLedger(Directory dir) async {
@@ -96,7 +101,7 @@ class CapsuleFileStore {
   }
 
   Future<void> writeLedger(Directory dir, String ledgerJson) async {
-    await ledgerFile(dir).writeAsString(ledgerJson, flush: true);
+    await _atomicWrites.writeString(ledgerFile(dir), ledgerJson);
   }
 
   Future<String?> readBackup(Directory dir) async {
@@ -107,7 +112,7 @@ class CapsuleFileStore {
   }
 
   Future<void> writeBackup(Directory dir, String backupJson) async {
-    await backupFile(dir).writeAsString(backupJson, flush: true);
+    await _atomicWrites.writeString(backupFile(dir), backupJson);
   }
 
   Future<void> clearPersisted(

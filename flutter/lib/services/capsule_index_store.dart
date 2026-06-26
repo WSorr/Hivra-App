@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'atomic_file_write_service.dart';
 import 'capsule_persistence_models.dart';
 import 'user_visible_data_directory_service.dart';
 
@@ -17,9 +18,13 @@ class CapsulesIndex {
 class CapsuleIndexStore {
   static const String _indexFileName = 'capsules_index.json';
   final UserVisibleDataDirectoryService _dirs;
+  final AtomicFileWriteService _atomicWrites;
 
-  const CapsuleIndexStore({UserVisibleDataDirectoryService? dirs})
-      : _dirs = dirs ?? const UserVisibleDataDirectoryService();
+  const CapsuleIndexStore({
+    UserVisibleDataDirectoryService? dirs,
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
+  })  : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+        _atomicWrites = atomicWrites;
 
   Future<CapsulesIndex> read() async {
     final capsulesRoot = await _dirs.capsulesDirectory(create: false);
@@ -46,7 +51,7 @@ class CapsuleIndexStore {
   Future<void> write(CapsulesIndex index) async {
     final capsulesRoot = await _dirs.capsulesDirectory(create: true);
     final indexFile = File('${capsulesRoot.path}/$_indexFileName');
-    await indexFile.writeAsString(_toJson(index), flush: true);
+    await _atomicWrites.writeString(indexFile, _toJson(index));
   }
 
   Future<void> setActive(String pubKeyHex) async {

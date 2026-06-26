@@ -68,4 +68,24 @@ void main() {
 
     expect(state, isNull);
   });
+
+  test('writes state ledger and backup without leaving temp files', () async {
+    final dir = await store.capsuleDirForHex(capsuleHex, create: true);
+
+    await store.writeState(dir, <String, dynamic>{'isNeste': true});
+    await store.writeLedger(dir, '{"owner":[],"events":[]}');
+    await store.writeBackup(dir, '{"schema":"hivra.capsule_backup"}');
+
+    expect(await store.stateFile(dir).readAsString(), contains('isNeste'));
+    expect(await store.ledgerFile(dir).readAsString(), contains('events'));
+    expect(await store.backupFile(dir).readAsString(), contains('schema'));
+
+    final tempFiles = <FileSystemEntity>[];
+    await for (final entry in dir.list()) {
+      if (entry is File && entry.path.contains('.tmp.')) {
+        tempFiles.add(entry);
+      }
+    }
+    expect(tempFiles, isEmpty);
+  });
 }

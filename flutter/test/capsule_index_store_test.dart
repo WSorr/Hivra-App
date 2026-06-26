@@ -64,6 +64,27 @@ void main() {
     expect(index.capsules.keys.toSet(), equals({capsuleA, capsuleB}));
   });
 
+  test('writes index without leaving temp files', () async {
+    const capsuleA =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+    await store.upsert(capsuleA, isGenesis: true, isNeste: true);
+    await store.setActive(capsuleA);
+
+    final capsulesRoot = Directory('${tempDocsDir.path}/capsules');
+    final indexFile = File('${capsulesRoot.path}/capsules_index.json');
+    expect(await indexFile.exists(), isTrue);
+    expect(await indexFile.readAsString(), contains(capsuleA));
+
+    final tempFiles = <FileSystemEntity>[];
+    await for (final entry in capsulesRoot.list()) {
+      if (entry is File && entry.path.contains('.tmp.')) {
+        tempFiles.add(entry);
+      }
+    }
+    expect(tempFiles, isEmpty);
+  });
+
   test('drops stale active pointer when capsule entry is missing', () async {
     const staleActive =
         'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
