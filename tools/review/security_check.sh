@@ -59,6 +59,8 @@ fi
 
 PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
 PLUGIN_PREFLIGHT="$ROOT/flutter/lib/services/wasm_plugin_package_preflight_service.dart"
+PLUGIN_SOURCE_CATALOG="$ROOT/flutter/lib/services/wasm_plugin_source_catalog_service.dart"
+PLUGIN_SOURCE_CATALOG_TEST="$ROOT/flutter/test/wasm_plugin_source_catalog_service_test.dart"
 WASM_RUNTIME="$ROOT/platform/hivra-wasm-runtime/src/lib.rs"
 CREDENTIAL_STORE="$ROOT/flutter/lib/services/bingx_futures_credential_store.dart"
 SEED_STORE="$ROOT/flutter/lib/services/capsule_seed_store.dart"
@@ -83,6 +85,14 @@ if rg -q "hivra_host_abi_v2" "$PLUGIN_PREFLIGHT" &&
   pass "semantic WASM runtime is ABI-pinned, import-free, fuel-bounded and size-bounded"
 else
   fail "semantic WASM runtime safety boundaries are incomplete"
+fi
+if rg -q 'defaultTrustedRemoteCatalogSha256Hexes' "$PLUGIN_SOURCE_CATALOG" &&
+   rg -q '_verifyRemoteCatalogDigest' "$PLUGIN_SOURCE_CATALOG" &&
+   rg -q 'fetchCatalog rejects remote catalog when digest is not pinned' "$PLUGIN_SOURCE_CATALOG_TEST" &&
+   rg -q 'fetchCatalog rejects remote catalog without any trusted digest pin' "$PLUGIN_SOURCE_CATALOG_TEST"; then
+  pass "remote plugin catalog is pinned independently from package checksums"
+else
+  fail "remote plugin catalog lacks independent trust pinning"
 fi
 
 if rg -q '_writeScopeFallback|api_secret.*writeAsString|apiSecret.*writeAsString' \

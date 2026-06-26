@@ -46,20 +46,27 @@ class WasmPluginSourceCatalogService {
       'https://cdn.jsdelivr.net/gh/WSorr/hivra-plugins@main/catalog/plugin_catalog.json';
   static const String githubRawCatalogUrl =
       'https://raw.githubusercontent.com/WSorr/hivra-plugins/main/catalog/plugin_catalog.json';
+  static const Set<String> defaultTrustedRemoteCatalogSha256Hexes = {
+    '07275bd8fb567ef5f9072f47fb132605264090efcc1014340b79785b4c411a43',
+  };
   static const Duration _networkTimeout = Duration(seconds: 8);
 
   final WasmPluginRegistryService _registry;
   final UserVisibleDataDirectoryService _dataDirs;
   final HttpClient Function() _httpClientFactory;
+  final Set<String> _trustedRemoteCatalogSha256Hexes;
 
   const WasmPluginSourceCatalogService({
     WasmPluginRegistryService registry = const WasmPluginRegistryService(),
     UserVisibleDataDirectoryService dataDirs =
         const UserVisibleDataDirectoryService(),
     HttpClient Function()? httpClientFactory,
+    Set<String> trustedRemoteCatalogSha256Hexes =
+        defaultTrustedRemoteCatalogSha256Hexes,
   })  : _registry = registry,
         _dataDirs = dataDirs,
-        _httpClientFactory = httpClientFactory ?? _defaultHttpClientFactory;
+        _httpClientFactory = httpClientFactory ?? _defaultHttpClientFactory,
+        _trustedRemoteCatalogSha256Hexes = trustedRemoteCatalogSha256Hexes;
 
   static HttpClient _defaultHttpClientFactory() => HttpClient();
 
@@ -101,6 +108,7 @@ class WasmPluginSourceCatalogService {
         );
       }
 
+      _verifyRemoteCatalogDigest(body);
       return _parseCatalogJson(body);
     } finally {
       client.close(force: true);
@@ -314,6 +322,24 @@ class WasmPluginSourceCatalogService {
     return uri.scheme == 'file' ||
         uri.scheme == 'http' ||
         uri.scheme == 'https';
+  }
+
+  void _verifyRemoteCatalogDigest(String body) {
+    final trusted = _trustedRemoteCatalogSha256Hexes
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => RegExp(r'^[0-9a-f]{64}$').hasMatch(value))
+        .toSet();
+    if (trusted.isEmpty) {
+      throw const FormatException(
+        'Remote plugin source catalog has no trusted digest pin',
+      );
+    }
+    final actual = sha256.convert(utf8.encode(body)).toString();
+    if (!trusted.contains(actual)) {
+      throw FormatException(
+        'Remote plugin source catalog digest is not trusted: $actual',
+      );
+    }
   }
 
   bool _isValidPluginId(String value) {

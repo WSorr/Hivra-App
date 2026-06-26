@@ -84,40 +84,39 @@ void main() {
     registry = WasmPluginRegistryService(
       dataDirs: dataDirs,
     );
+
+    server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final downloadUrl =
+        'http://127.0.0.1:${server.port}/packages/demo-plugin.zip';
+    final remoteCatalogBody = _catalogJson(
+      sourceId: 'wsorr.hivra.plugins',
+      sourceName: 'Hivra Plugins',
+      entries: [
+        {
+          'id': 'bingx-futures-catalog',
+          'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
+          'display_name': 'BingX Futures Trading',
+          'version': '0.1.0',
+          'download_url': downloadUrl,
+          'package_kind': 'zip',
+          'sha256_hex': packageSha256Hex,
+        }
+      ],
+    );
     service = WasmPluginSourceCatalogService(
       registry: registry,
       dataDirs: dataDirs,
+      trustedRemoteCatalogSha256Hexes: {
+        sha256.convert(utf8.encode(remoteCatalogBody)).toString(),
+      },
     );
 
-    server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
       if (request.uri.path == '/catalog.json') {
-        final downloadUrl =
-            'http://127.0.0.1:${server.port}/packages/demo-plugin.zip';
         request.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.json
-          ..write(
-            jsonEncode(
-              {
-                'schema': 'hivra.plugin.catalog',
-                'version': 1,
-                'source_id': 'wsorr.hivra.plugins',
-                'source_name': 'Hivra Plugins',
-                'entries': [
-                  {
-                    'id': 'bingx-futures-catalog',
-                    'plugin_id': 'hivra.contract.bingx-futures-trading.v1',
-                    'display_name': 'BingX Futures Trading',
-                    'version': '0.1.0',
-                    'download_url': downloadUrl,
-                    'package_kind': 'zip',
-                    'sha256_hex': packageSha256Hex,
-                  }
-                ],
-              },
-            ),
-          );
+          ..write(remoteCatalogBody);
         await request.response.close();
         return;
       }
@@ -151,6 +150,38 @@ void main() {
     expect(
       catalog.entries.first.pluginId,
       'hivra.contract.bingx-futures-trading.v1',
+    );
+  });
+
+  test('fetchCatalog rejects remote catalog when digest is not pinned',
+      () async {
+    final untrustedService = WasmPluginSourceCatalogService(
+      registry: registry,
+      dataDirs: dataDirs,
+      trustedRemoteCatalogSha256Hexes: const {
+        '0000000000000000000000000000000000000000000000000000000000000000',
+      },
+    );
+    final url = 'http://127.0.0.1:${server.port}/catalog.json';
+
+    await expectLater(
+      () => untrustedService.fetchCatalog(catalogUrl: url),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('fetchCatalog rejects remote catalog without any trusted digest pin',
+      () async {
+    final unpinnedService = WasmPluginSourceCatalogService(
+      registry: registry,
+      dataDirs: dataDirs,
+      trustedRemoteCatalogSha256Hexes: const {},
+    );
+    final url = 'http://127.0.0.1:${server.port}/catalog.json';
+
+    await expectLater(
+      () => unpinnedService.fetchCatalog(catalogUrl: url),
+      throwsA(isA<FormatException>()),
     );
   });
 
@@ -589,6 +620,23 @@ void main() {
     final installed = await registry.loadPlugins();
     expect(installed, isEmpty);
   });
+}
+
+String _catalogJson({
+  required String sourceId,
+  required String sourceName,
+  required List<Map<String, Object?>> entries,
+  int version = 1,
+}) {
+  return jsonEncode(
+    {
+      'schema': 'hivra.plugin.catalog',
+      'version': version,
+      'source_id': sourceId,
+      'source_name': sourceName,
+      'entries': entries,
+    },
+  );
 }
 
 List<int> _zipBytes({required Map<String, Object> files}) {
