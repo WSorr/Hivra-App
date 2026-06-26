@@ -232,6 +232,20 @@ fn is_locked(starter_id: StarterId, ledger: &Ledger) -> bool {
 
 #### 3.3.4 Ledger
 
+Signed event protocol v4:
+
+- Every Core ledger event is signed by a capsule root key.
+- Nostr `npub` is a transport routing identity, not a Core event signer.
+- Transported Core events carry an explicit root-signature proof. A Core
+  message without this proof is not eligible for ledger projection.
+- Ledger import verifies both the hash chain and every Ed25519 event signature
+  before replacing runtime state.
+- Protocol v3 and earlier unsigned test ledgers are intentionally incompatible
+  with protocol v4. Before the first stable release, those test capsules must
+  be recreated or have their trusted links re-established from the root phrase.
+- New protocol v4 runtime state MUST NOT be initialized with legacy Nostr owner
+  identity. Nostr keys are transport keys only.
+
 Ledger is an append-only log of signed events.
 
 - Single source of truth.
@@ -566,7 +580,8 @@ To support future root-scoped pairwise consensus, invitation lineage SHOULD also
 Root-lineage trust rule:
 
 - `InvitationAccepted.accepter_root_pubkey` MUST influence peer-root anchoring only when `InvitationAccepted` has a valid remote signer.
-- Unsigned/imported `InvitationAccepted` rows MAY remain in ledger history but MUST NOT rewrite peer-root mapping for relationship projection or pairwise-consensus derivation.
+- Unsigned `InvitationAccepted` rows are invalid in protocol v4 and MUST be
+  rejected before ledger projection or import.
 
 These fields are lineage provenance, not delivery routing. Transport delivery may remain transport-key based even when root provenance is preserved in ledger history.
 - `invitation_id`
@@ -717,11 +732,11 @@ Identity derivation must follow this order:
 
 Transport-specific keys MUST be treated as adapter-level identities, not as the canonical capsule identity.
 
-### 10.4 Current Implementation Note
+### 10.4 Legacy Identity Note
 
-Current implementation still contains a legacy path where the exposed capsule public key is derived from the Nostr transport key.
-
-This is an implementation debt, not the intended architecture.
+Older test capsules may expose the Nostr transport key as the capsule public key.
+This is a legacy test format, not the intended architecture. Protocol v4 runtime
+state rejects new legacy-owner initialization.
 
 The target architecture is:
 

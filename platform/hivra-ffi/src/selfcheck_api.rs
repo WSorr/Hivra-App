@@ -111,6 +111,7 @@ pub unsafe extern "C" fn hivra_nostr_send_prepared_self_check() -> i32 {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0),
         invitation_id: None,
+        domain_event: None,
     };
 
     match transport.prepare_event(&message, |builder| {

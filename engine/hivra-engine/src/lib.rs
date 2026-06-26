@@ -316,6 +316,19 @@ where
         self.prepare_event(EventKind::InvitationExpired, payload.to_bytes(), None)
     }
 
+    /// Prepares a signed Core event without adding domain-specific policy.
+    ///
+    /// Platform orchestration uses this for local projections and transport
+    /// envelopes after domain payloads have already been validated.
+    pub fn prepare_domain_event(
+        &self,
+        kind: EventKind,
+        payload: Vec<u8>,
+        recipient: Option<PubKey>,
+    ) -> Result<PreparedEvent, EngineError<K::Error>> {
+        self.prepare_event(kind, payload, recipient)
+    }
+
     pub fn prepare_starter_created(
         &self,
         starter_id: StarterId,

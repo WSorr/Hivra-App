@@ -102,6 +102,7 @@ pub unsafe extern "C" fn hivra_break_relationship(
         payload: remote_prepared.event.payload().to_vec(),
         timestamp: remote_prepared.event.timestamp().as_u64(),
         invitation_id: None,
+        domain_event: Some(domain_event_proof(&remote_prepared.event)),
     };
 
     if append_prepared_event(local_prepared).is_err() {

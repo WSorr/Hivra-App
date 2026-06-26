@@ -101,8 +101,51 @@ fn send_delivery_message(
     Ok(())
 }
 
+fn verified_event_from_message(
+    message: &Message,
+    expected_kind: EventKind,
+) -> Result<Event, &'static str> {
+    let proof = message
+        .domain_event
+        .as_ref()
+        .ok_or("missing domain event proof")?;
+    if proof.kind != expected_kind as u8 {
+        return Err("domain event kind mismatch");
+    }
+    let signature_bytes: [u8; 64] = proof
+        .signature
+        .as_slice()
+        .try_into()
+        .map_err(|_| "invalid domain event signature length")?;
+
+    Ok(Event::new(
+        expected_kind,
+        message.payload.clone(),
+        Timestamp::from(message.timestamp),
+        Signature::from(signature_bytes),
+        PubKey::from(proof.signer),
+    ))
+}
+
+fn proof_signer_matches_payload(kind: EventKind, payload: &[u8], signer: PubKey) -> bool {
+    match kind {
+        EventKind::InvitationReceived if payload.len() >= 128 => {
+            payload[96..128] == signer.as_bytes()[..]
+        }
+        EventKind::InvitationAccepted if payload.len() == 128 => {
+            payload[96..128] == signer.as_bytes()[..]
+        }
+        EventKind::RelationshipBroken if payload.len() == 96 => {
+            payload[64..96] == signer.as_bytes()[..]
+        }
+        EventKind::InvitationRejected => true,
+        _ => false,
+    }
+}
+
 fn retry_pending_outgoing_invitations_over_transport(
     transport: &NostrTransport,
+    engine: &FfiEngine,
     sender_pubkey: [u8; 32],
 ) -> Result<i32, i32> {
     let pending = crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime(
@@ -115,6 +158,17 @@ fn retry_pending_outgoing_invitations_over_transport(
     let mut delivered_count: i32 = 0;
     let mut first_delivery_error: Option<(i32, Option<String>)> = None;
     for pending_delivery in pending {
+        let remote_prepared = match engine.prepare_domain_event(
+            EventKind::InvitationReceived,
+            pending_delivery.payload.clone(),
+            Some(PubKey::from(pending_delivery.to_pubkey)),
+        ) {
+            Ok(prepared) => prepared,
+            Err(_) => {
+                first_delivery_error.get_or_insert((-7, Some("event signing failed".to_string())));
+                continue;
+            }
+        };
         let message = Message {
             from: sender_pubkey,
             to: pending_delivery.to_pubkey,
@@ -122,6 +176,7 @@ fn retry_pending_outgoing_invitations_over_transport(
             payload: pending_delivery.payload,
             timestamp: pending_delivery.timestamp,
             invitation_id: Some(pending_delivery.invitation_id),
+            domain_event: Some(domain_event_proof(&remote_prepared.event)),
         };
 
         match send_delivery_message(transport, &message, -7, "InvitationSentRetry") {
@@ -206,14 +261,14 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
             return -6;
         }
     };
-    let prepared = match engine.prepare_invitation_sent(starter_id, PubKey::from(to_pubkey)) {
+    let invitation = match engine.prepare_invitation_sent(starter_id, PubKey::from(to_pubkey)) {
         Ok(prepared) => prepared,
         Err(_) => {
             set_last_error("Send invitation failed: prepare_invitation_sent failed");
             return -6;
         }
     };
-    let payload = match InvitationSentPayload::from_bytes(prepared.event.payload()) {
+    let payload = match InvitationSentPayload::from_bytes(invitation.event.payload()) {
         Ok(payload) => payload,
         Err(_) => {
             set_last_error("Send invitation failed: InvitationSent payload encoding failed");
@@ -221,7 +276,7 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
         }
     };
     let invitation_id = payload.invitation_id;
-    let mut payload_bytes = prepared.event.payload().to_vec();
+    let mut payload_bytes = invitation.event.payload().to_vec();
     if payload_bytes.len() == 96 {
         if let Ok(sender_root_pubkey) = derive_root_public_key(&seed) {
             payload_bytes.extend_from_slice(&sender_root_pubkey);
@@ -229,26 +284,43 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
     }
     // Include starter kind byte so receiver can render correct kind for incoming invitation.
     payload_bytes.push(starter_kind.to_byte());
+    // Core signer is the root key; retain Nostr routing identity explicitly.
+    payload_bytes.extend_from_slice(&sender_pubkey);
+
+    let local_prepared = match engine.prepare_domain_event(
+        EventKind::InvitationSent,
+        payload_bytes.clone(),
+        Some(PubKey::from(to_pubkey)),
+    ) {
+        Ok(prepared) => prepared,
+        Err(_) => {
+            set_last_error("Send invitation failed: final local event signing failed");
+            return -6;
+        }
+    };
+    let remote_prepared = match engine.prepare_domain_event(
+        EventKind::InvitationReceived,
+        payload_bytes.clone(),
+        Some(PubKey::from(to_pubkey)),
+    ) {
+        Ok(prepared) => prepared,
+        Err(_) => {
+            set_last_error("Send invitation failed: remote event signing failed");
+            return -6;
+        }
+    };
 
     let message = Message {
         from: sender_pubkey,
         to: to_pubkey,
         kind: EventKind::InvitationSent as u32,
         payload: payload_bytes.clone(),
-        timestamp: prepared.event.timestamp().as_u64(),
+        timestamp: local_prepared.event.timestamp().as_u64(),
         invitation_id: Some(invitation_id),
+        domain_event: Some(domain_event_proof(&remote_prepared.event)),
     };
 
-    match append_prepared_event(PreparedEvent {
-        event: Event::new(
-            EventKind::InvitationSent,
-            payload_bytes.clone(),
-            prepared.event.timestamp(),
-            *prepared.event.signature(),
-            *prepared.event.signer(),
-        ),
-        recipient: prepared.recipient,
-    }) {
+    match append_prepared_event(local_prepared) {
         Ok(_) => {}
         Err(_) => {
             set_last_error("Send invitation failed: append InvitationSent to local ledger failed");
@@ -320,8 +392,9 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
     }
 
     let received = match with_cached_nostr_transport(sender_secret, profile, -4, |transport| {
+        let engine = build_engine(&seed);
         if let Err(code) =
-            retry_pending_outgoing_invitations_over_transport(transport, local_pubkey)
+            retry_pending_outgoing_invitations_over_transport(transport, &engine, local_pubkey)
         {
             eprintln!(
                 "[Delivery/Nostr] InvitationSentRetry pre-receive failed (code {})",
@@ -402,7 +475,18 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
             kind
         };
 
-        let message_signer = PubKey::from(message.from);
+        let verified_event = match verified_event_from_message(&message, local_kind) {
+            Ok(event) => event,
+            Err(err) => {
+                eprintln!("[Delivery/Nostr] Skip message: {}", err);
+                continue;
+            }
+        };
+        let message_signer = *verified_event.signer();
+        if !proof_signer_matches_payload(local_kind, &local_payload, message_signer) {
+            eprintln!("[Delivery/Nostr] Skip message: proof signer does not match payload root");
+            continue;
+        }
         if should_skip_incoming_delivery_append_with_timestamp(
             local_kind,
             &local_payload,
@@ -413,7 +497,7 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
             continue;
         }
 
-        match append_runtime_event_with_signer(local_kind, &local_payload, message_signer) {
+        match append_verified_runtime_event(verified_event) {
             Ok(_) => {
                 appended += 1;
             }
@@ -585,6 +669,7 @@ pub unsafe extern "C" fn hivra_accept_invitation(
 
     let delivery_payload = payload_bytes.clone();
     let delivery_timestamp = prepared.event.timestamp().as_u64();
+    let delivery_proof = domain_event_proof(&prepared.event);
 
     if append_prepared_event(prepared).is_err() {
         eprintln!(
@@ -623,6 +708,7 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         payload: delivery_payload,
         timestamp: delivery_timestamp,
         invitation_id: Some(invitation_id),
+        domain_event: Some(delivery_proof),
     };
 
     eprintln!(
@@ -708,6 +794,7 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
     let delivery_payload = payload_bytes.clone();
     let delivery_timestamp = prepared.event.timestamp().as_u64();
     let delivery_to = *peer_pubkey.as_bytes();
+    let delivery_proof = domain_event_proof(&prepared.event);
 
     match append_prepared_event(prepared) {
         Ok(_) => {
@@ -723,6 +810,7 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
                         payload: delivery_payload,
                         timestamp: delivery_timestamp,
                         invitation_id: Some(invitation_id),
+                        domain_event: Some(delivery_proof),
                     };
                     set_last_delivery_reason(None);
                     if let Err(code) = with_cached_nostr_transport(

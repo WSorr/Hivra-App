@@ -49,6 +49,25 @@ pub struct Message {
 
     /// Optional invitation ID
     pub invitation_id: Option<[u8; 32]>,
+
+    /// Signed Core event carried by this transport message.
+    ///
+    /// Non-Core channels such as chat leave this empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_event: Option<DomainEventProof>,
+}
+
+/// Cryptographic proof for a Core event transported between capsules.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DomainEventProof {
+    /// Core EventKind encoded as u8.
+    pub kind: u8,
+
+    /// Root key that signed the Core event.
+    pub signer: [u8; 32],
+
+    /// Ed25519 signature over the canonical Core event ID.
+    pub signature: Vec<u8>,
 }
 
 /// Transport trait - all transport implementations must implement this

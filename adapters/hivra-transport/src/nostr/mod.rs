@@ -521,14 +521,11 @@ mod tests {
             payload: vec![1, 2, 3],
             timestamp: 1,
             invitation_id: None,
+            domain_event: None,
         };
         let plaintext = serde_json::to_string(&message).expect("message json");
-        let content = nip04::encrypt(
-            attacker_keys.secret_key(),
-            &receiver.public_key,
-            plaintext,
-        )
-        .expect("encrypt");
+        let content = nip04::encrypt(attacker_keys.secret_key(), &receiver.public_key, plaintext)
+            .expect("encrypt");
         let event = receiver
             .runtime
             .block_on(

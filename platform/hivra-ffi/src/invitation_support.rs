@@ -22,7 +22,11 @@ pub(crate) struct PendingOutgoingInvitationDelivery {
 }
 
 fn invitation_payload_has_known_shape(payload: &[u8]) -> bool {
-    payload.len() == 96 || payload.len() == 97 || payload.len() == 128 || payload.len() == 129
+    payload.len() == 96
+        || payload.len() == 97
+        || payload.len() == 128
+        || payload.len() == 129
+        || payload.len() == 161
 }
 
 fn invitation_id_from_outgoing_payload(payload: &[u8]) -> Option<[u8; 32]> {
@@ -48,10 +52,19 @@ fn invitation_payload_starter_kind(payload: &[u8]) -> Option<StarterKind> {
     if payload.len() == 97 {
         return starter_kind_from_slot(payload[96]);
     }
-    if payload.len() == 129 {
+    if payload.len() == 129 || payload.len() == 161 {
         return starter_kind_from_slot(payload[128]);
     }
     None
+}
+
+fn invitation_payload_sender_transport(payload: &[u8]) -> Option<PubKey> {
+    if payload.len() != 161 {
+        return None;
+    }
+    let mut transport = [0u8; 32];
+    transport.copy_from_slice(&payload[129..161]);
+    Some(PubKey::from(transport))
 }
 
 fn find_starter_kind_by_id_in_ledger(
@@ -252,10 +265,6 @@ pub(crate) fn pending_outgoing_invitation_deliveries_in_runtime(
         if event.kind() != EventKind::InvitationSent {
             continue;
         }
-        if event.signer().as_bytes() != local_bytes {
-            continue;
-        }
-
         let payload = event.payload();
         let Some(invitation_id) = invitation_id_from_outgoing_payload(payload) else {
             continue;
@@ -323,7 +332,11 @@ pub(crate) fn should_skip_incoming_delivery_append_with_timestamp(
         let Some(parsed) = RelationshipBrokenPayload::from_bytes(payload).ok() else {
             return true;
         };
-        if parsed.peer_pubkey != signer {
+        let signer_matches = parsed
+            .peer_root_pubkey
+            .map(|root| root == signer)
+            .unwrap_or(parsed.peer_pubkey == signer);
+        if !signer_matches {
             return true;
         }
         let key = RelationshipKey {
@@ -475,7 +488,9 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
 
         let mut peer_pubkey = [0u8; 32];
         if is_incoming {
-            peer_pubkey.copy_from_slice(&signer);
+            let sender_transport =
+                invitation_payload_sender_transport(payload).unwrap_or(PubKey::from(signer));
+            peer_pubkey.copy_from_slice(sender_transport.as_bytes());
         } else {
             peer_pubkey.copy_from_slice(&addressed_to);
         }

@@ -24,7 +24,7 @@ use hivra_keystore::{
     mnemonic_to_seed, seed_exists, seed_to_mnemonic, store_seed, Seed,
 };
 use hivra_transport::nostr::{NostrConfig, NostrTransport};
-use hivra_transport::{Message, Transport, TransportError};
+use hivra_transport::{DomainEventProof, Message, Transport, TransportError};
 use nostr_sdk::prelude::{Keys, SecretKey};
 use once_cell::sync::Lazy;
 use rand::RngCore;
@@ -67,14 +67,17 @@ pub(crate) use invitation_support::{
 };
 pub(crate) use runtime_support::{
     active_starter_id_for_slot, append_prepared_event, append_runtime_event,
-    append_runtime_event_with_signer, build_engine, capsule_network, clear_runtime_state,
-    current_capsule_state, derive_nostr_public_key, event_exists_in_runtime,
+    append_verified_runtime_event, build_engine, capsule_network, clear_runtime_state,
+    current_capsule_state, derive_nostr_public_key, domain_event_proof, event_exists_in_runtime,
     event_exists_in_runtime_with_signer, event_kind_from_u8, export_runtime_ledger,
     find_starter_kind_by_id_in_runtime, import_runtime_ledger, init_runtime_state,
     starter_kind_from_slot, CapsuleOwnerMode, FfiEngine, RUNTIME,
 };
 #[cfg(test)]
-pub(crate) use runtime_support::{derive_starter_id, derive_starter_nonce};
+pub(crate) use runtime_support::{
+    append_runtime_event_with_signer, derive_starter_id, derive_starter_nonce,
+    verify_ledger_event_signatures,
+};
 pub(crate) use transport_cache::{
     clear_cached_nostr_transports, with_cached_nostr_transport, TransportProfile,
 };

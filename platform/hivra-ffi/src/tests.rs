@@ -1083,6 +1083,35 @@ fn relationship_broken_payload_tracks_specific_local_starter() {
 }
 
 #[test]
+fn ledger_signature_validation_rejects_tampered_event() {
+    let seed = test_seed(240);
+    let engine = build_engine(&seed);
+    let owner = engine.public_key().unwrap();
+    let prepared = engine
+        .prepare_domain_event(EventKind::InvitationExpired, vec![7u8; 32], None)
+        .unwrap();
+
+    let mut valid = Ledger::new(owner);
+    valid.append(prepared.event.clone()).unwrap();
+    verify_ledger_event_signatures(&valid).unwrap();
+
+    let tampered = Event::new(
+        prepared.event.kind(),
+        vec![8u8; 32],
+        prepared.event.timestamp(),
+        *prepared.event.signature(),
+        *prepared.event.signer(),
+    );
+    let mut invalid = Ledger::new(owner);
+    invalid.append(tampered).unwrap();
+
+    assert_eq!(
+        verify_ledger_event_signatures(&invalid),
+        Err("ledger event signature invalid")
+    );
+}
+
+#[test]
 fn build_engine_uses_root_identity_for_signer() {
     let seed = test_seed(91);
     let engine = build_engine(&seed);
@@ -1134,22 +1163,14 @@ fn ffi_identity_boundary_keeps_root_and_transport_split() {
     assert_eq!(runtime_owner_root, root_pubkey);
     clear_runtime_state();
 
-    init_runtime_state(
+    let legacy_result = init_runtime_state(
         &seed,
         Network::Neste,
         CapsuleType::Leaf,
         CapsuleOwnerMode::LegacyNostr,
-    )
-    .expect("init runtime legacy nostr owner");
-    let mut runtime_owner_legacy = [0u8; 32];
-    unsafe {
-        assert_eq!(
-            hivra_capsule_runtime_owner_public_key(runtime_owner_legacy.as_mut_ptr()),
-            0
-        );
-    }
-    assert_eq!(runtime_owner_legacy, nostr_pubkey);
-    clear_runtime_state();
+    );
+    assert_eq!(legacy_result, Err("legacy owner mode unsupported"));
+    assert!(current_capsule_state().is_none());
 }
 
 #[test]

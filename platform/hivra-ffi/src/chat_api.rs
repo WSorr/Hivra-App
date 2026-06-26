@@ -175,6 +175,7 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
         payload: payload_json.as_bytes().to_vec(),
         timestamp: now_ms(),
         invitation_id: None,
+        domain_event: None,
     };
 
     if let Err(code) =

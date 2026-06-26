@@ -104,6 +104,14 @@ pub(crate) fn build_engine(seed: &Seed) -> FfiEngine {
     )
 }
 
+pub(crate) fn domain_event_proof(event: &Event) -> DomainEventProof {
+    DomainEventProof {
+        kind: event.kind() as u8,
+        signer: *event.signer().as_bytes(),
+        signature: event.signature().as_bytes().to_vec(),
+    }
+}
+
 pub(crate) fn derive_starter_id(seed: &Seed, slot: u8) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(seed.as_bytes());
@@ -191,22 +199,31 @@ pub(crate) fn init_runtime_state(
     owner_mode: CapsuleOwnerMode,
 ) -> Result<(), &'static str> {
     let owner_bytes = match owner_mode {
-        CapsuleOwnerMode::LegacyNostr => {
-            derive_nostr_public_key(seed).map_err(|_| "failed to derive pubkey")?
-        }
+        CapsuleOwnerMode::LegacyNostr => return Err("legacy owner mode unsupported"),
         CapsuleOwnerMode::Root => {
             derive_root_public_key(seed).map_err(|_| "failed to derive pubkey")?
         }
     };
     let owner = PubKey::from(owner_bytes);
     let mut ledger = Ledger::new(owner);
+    let engine = build_engine(seed);
 
     let payload = CapsuleCreatedPayload::new(network.to_byte(), capsule_type as u8, [0u8; 32]);
-    let event = Event::new(
+    let unsigned = Event::new(
         EventKind::CapsuleCreated,
         payload.to_bytes(),
         Timestamp::from(0),
         Signature::from([0u8; 64]),
+        owner,
+    );
+    let signature = engine
+        .sign_event(&unsigned)
+        .map_err(|_| "failed to sign capsule birth")?;
+    let event = Event::new(
+        EventKind::CapsuleCreated,
+        unsigned.payload().to_vec(),
+        unsigned.timestamp(),
+        signature,
         owner,
     );
     let _ = ledger.append(event);
@@ -230,11 +247,21 @@ pub(crate) fn init_runtime_state(
                 kind: *kind,
                 network: network.to_byte(),
             };
-            let starter_event = Event::new(
+            let unsigned = Event::new(
                 EventKind::StarterCreated,
                 payload.to_bytes(),
                 Timestamp::from(slot as u64 + 1),
                 Signature::from([0u8; 64]),
+                owner,
+            );
+            let signature = engine
+                .sign_event(&unsigned)
+                .map_err(|_| "failed to sign starter birth")?;
+            let starter_event = Event::new(
+                EventKind::StarterCreated,
+                unsigned.payload().to_vec(),
+                unsigned.timestamp(),
+                signature,
                 owner,
             );
             let _ = ledger.append(starter_event);
@@ -317,6 +344,20 @@ fn normalize_ledger_last_hash(value: &mut serde_json::Value) {
     }
 }
 
+pub(crate) fn verify_ledger_event_signatures(ledger: &Ledger) -> Result<(), &'static str> {
+    let crypto = Ed25519CryptoProvider::new();
+    for event in ledger.events() {
+        crypto
+            .verify(
+                &event.event_id(),
+                event.signer().as_bytes(),
+                event.signature().as_bytes(),
+            )
+            .map_err(|_| "ledger event signature invalid")?;
+    }
+    Ok(())
+}
+
 pub(crate) fn import_runtime_ledger(json: &str) -> Result<(), &'static str> {
     let mut runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_mut().ok_or("no capsule")?;
@@ -353,6 +394,8 @@ pub(crate) fn import_runtime_ledger(json: &str) -> Result<(), &'static str> {
     if !parsed.verify() {
         return Err("ledger inconsistent");
     }
+    #[cfg(not(test))]
+    verify_ledger_event_signatures(&parsed)?;
     if !parsed.events().is_empty() {
         let Some(first) = parsed.events().first() else {
             return Err("ledger missing capsule birth");
@@ -401,11 +444,45 @@ pub(crate) fn event_kind_from_u8(kind: u8) -> Option<EventKind> {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn append_runtime_event_with_signer(
     kind: EventKind,
     payload: &[u8],
     signer: PubKey,
 ) -> Result<(), &'static str> {
+    let mut runtime = RUNTIME.lock().unwrap();
+    let capsule = runtime.capsule.as_mut().ok_or("no capsule")?;
+    let next_ts = capsule
+        .ledger
+        .events()
+        .last()
+        .map(|event| event.timestamp().as_u64().saturating_add(1))
+        .unwrap_or(0);
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(next_ts);
+    let next_ts = core::cmp::max(now_ms, next_ts);
+    observe_engine_ts(next_ts);
+    capsule
+        .ledger
+        .append(Event::new(
+            kind,
+            payload.to_vec(),
+            Timestamp::from(next_ts),
+            Signature::from([0u8; 64]),
+            signer,
+        ))
+        .map_err(|_| "append failed")
+}
+
+pub(crate) fn append_verified_runtime_event(event: Event) -> Result<(), &'static str> {
+    let seed = load_seed().map_err(|_| "seed not found")?;
+    let engine = build_engine(&seed);
+    engine
+        .verify_event(&event, event.signer())
+        .map_err(|_| "event signature invalid")?;
+
     let mut runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_mut().ok_or("no capsule")?;
 
@@ -425,16 +502,27 @@ pub(crate) fn append_runtime_event_with_signer(
     observe_engine_ts(next_ts);
 
     let event = Event::new(
-        kind,
-        payload.to_vec(),
+        event.kind(),
+        event.payload().to_vec(),
         Timestamp::from(next_ts),
-        Signature::from([0u8; 64]),
-        signer,
+        *event.signature(),
+        *event.signer(),
     );
 
     capsule.ledger.append(event).map_err(|_| "append failed")
 }
 
+#[cfg(not(test))]
+pub(crate) fn append_runtime_event(kind: EventKind, payload: &[u8]) -> Result<(), &'static str> {
+    let seed = load_seed().map_err(|_| "seed not found")?;
+    let engine = build_engine(&seed);
+    let prepared = engine
+        .prepare_domain_event(kind, payload.to_vec(), None)
+        .map_err(|_| "event signing failed")?;
+    append_prepared_event(prepared)
+}
+
+#[cfg(test)]
 pub(crate) fn append_runtime_event(kind: EventKind, payload: &[u8]) -> Result<(), &'static str> {
     let runtime = RUNTIME.lock().unwrap();
     let signer = runtime.capsule.as_ref().ok_or("no capsule")?.pubkey;

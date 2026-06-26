@@ -93,7 +93,12 @@ impl EventPayload for InvitationSentPayload {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
-        if bytes.len() != 96 && bytes.len() != 97 && bytes.len() != 128 && bytes.len() != 129 {
+        if bytes.len() != 96
+            && bytes.len() != 97
+            && bytes.len() != 128
+            && bytes.len() != 129
+            && bytes.len() != 161
+        {
             return Err("invalid invitation_sent payload length");
         }
         Ok(Self {
