@@ -83,10 +83,14 @@ require_present "$MAC_RELEASE_SCRIPT" 'release_version_guard\.sh' \
   "macOS release packaging enforces the published version line"
 require_present "$ANDROID_RELEASE_SCRIPT" 'release_version_guard\.sh' \
   "Android release packaging enforces the published version line"
-require_present "$RELEASE_VERSION_GUARD" 'expected_test_version="\$\(suggest_next_tag "\$latest"\)"' \
-  "release version guard derives the exact next test tag"
-require_present "$RELEASE_VERSION_GUARD" '\[ "\$VERSION" = "\$expected_test_version" \]' \
+require_present "$RELEASE_VERSION_GUARD" 'allowed_next_test_versions\(\)' \
+  "release version guard derives allowed next test tags"
+require_present "$RELEASE_VERSION_GUARD" 'next_patch_base\(\)' \
+  "release version guard allows next patch test train"
+require_present "$RELEASE_VERSION_GUARD" 'is_allowed_next_test_version "\$latest" "\$VERSION"' \
   "release version guard rejects skipped test release numbers"
+require_present "$RELEASE_VERSION_GUARD" 'self-test' \
+  "release version guard has network-free self-test"
 require_present "$RELEASE_VERSION_GUARD" 'EXPECTED_REPOSITORY="WSorr/Hivra-App"' \
   "release version guard pins the canonical GitHub repository"
 require_present "$CHECKLIST_MAC" 'tools/release/macos_release\.sh' \
