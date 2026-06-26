@@ -1,6 +1,7 @@
 # Identity Decoupling Migration
 
-This note describes how to move Hivra from the current legacy identity exposure path to the target architecture where capsule identity is transport-agnostic.
+This note records how Hivra moved from the legacy identity exposure path to the
+target architecture where capsule identity is transport-agnostic.
 
 Use this note before changing root identity derivation, capsule public key exposure, or transport key generation.
 
@@ -28,18 +29,20 @@ Root/transport identity split is implemented and live:
 - runtime signing key path is root-backed (`SeedBackedKeyStore`)
 - root and Nostr identities are exposed through explicit FFI APIs
 - diagnostics/bootstrap track identity mode (`root_owner` / `legacy_nostr_owner`)
+- protocol v4 runtime initialization rejects `legacy_nostr_owner`
+- Flutter refresh/worker bootstrap paths fail closed for legacy-owner runtime rebuilds
 
 Intentional compatibility surface:
 
-- `legacy_nostr_owner` mode remains only for controlled migration/recovery of
-  ledgers created before root-owner identity became canonical
+- `legacy_nostr_owner` remains only a diagnostic label for old test artifacts
 - invitation/relationship transport flows still derive Nostr keys locally (adapter boundary), which is expected
-- old ledger/index artifacts can still carry legacy identity mode and must remain readable
+- old ledger/index artifacts can still carry legacy identity mode, but they are
+  not an active v4 runtime mode
 
-This is not an active v1 architecture debt: new capsules use `root_owner`, and
-the legacy mode must not be selected unless persisted ledger/index identity
-requires it. Removal belongs to an explicit future ledger-format migration,
-never to opportunistic cleanup.
+This is not an active v1 architecture debt: new capsules use `root_owner`.
+Before stable public release, legacy test capsules should be recreated or their
+trusted links re-established from the root phrase instead of silently rebuilding
+runtime state with a transport owner.
 
 ## Required Invariants
 
@@ -61,10 +64,11 @@ The migration must keep these rules true:
    - the same seed must always produce the same root identity
    - the same seed must always produce the same transport key for the same derivation label
 
-5. Existing ledgers remain valid during migration.
+5. Existing root-owned ledgers remain valid during migration.
    - no history rewrite
    - no event re-signing
    - no starter ID recalculation from a peer identity
+   - legacy-owner test ledgers fail closed under protocol v4
 
 ## Proposed Shape
 
@@ -163,37 +167,28 @@ Definition of done:
 
 - diagnostics and UI labels refer to root identity unless transport is explicitly requested
 - docs and comments stop treating Nostr identity as the capsule identity
+- runtime and worker bootstrap paths no longer create legacy-owner capsules
 
 ## Upgrade Safety Notes
 
-This migration has one especially sensitive question:
+Protocol v4 chooses a clean root-owned runtime cutoff before stable public
+release:
 
-- do existing ledgers remain owned by the legacy Nostr-derived public key, or do they migrate to the root identity owner?
-
-That decision must be made explicitly before Phase 2 lands.
-
-Two strategies are possible:
-
-1. Compatibility-first
-   - preserve ledger owner as-is for existing capsules
-   - use root identity only for newly created capsules
-   - lower migration risk, higher long-term complexity
-
-2. Full migration
-   - move runtime owner to root identity for existing capsules too
-   - cleaner target model, higher upgrade risk
-
-The project should not choose between these implicitly inside scattered code changes.
+1. root-owned ledgers remain importable when signatures and hash chain verify
+2. legacy-owner runtime rebuilds are rejected before FFI import/append
+3. there is no silent history rewrite from transport owner to root owner
+4. old test capsules can be recreated from phrase and trusted links
+   re-established through normal invitations
 
 ## Current Decision
 
-The root/transport split is complete for v1. Keep the compatibility reader
-until a future format migration has an explicit cutoff and user recovery plan:
+The root/transport split is complete for v1:
 
 1. all newly created capsules use `root_owner`
-2. existing `legacy_nostr_owner` ledgers remain readable without history rewrite
-3. runtime diagnostics continue to expose the selected identity mode
-4. removal requires a versioned migration with deterministic fixtures
+2. `legacy_nostr_owner` is a diagnostic label only
+3. runtime diagnostics continue to expose the detected identity mode
+4. protocol v4 ledger import verifies hash chain plus Ed25519 event signatures
+5. legacy-owner runtime initialization fails closed
 
 ## What Not To Do
 
@@ -201,4 +196,6 @@ until a future format migration has an explicit cutoff and user recovery plan:
 - Do not let Flutter decide which identity is canonical.
 - Do not replace transport derivation by ad hoc UI logic.
 - Do not rewrite historical events or starter IDs during migration.
+- Do not silently rebuild a legacy-owner capsule as root-owned state in the same
+  directory.
 - Do not mix the identity refactor with unrelated Android transport or backup work.
