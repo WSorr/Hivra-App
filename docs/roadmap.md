@@ -445,11 +445,12 @@ Current progress:
 - Added FFI regression coverage (`ffi_identity_boundary_keeps_root_and_transport_split`) that locks:
   - root and Nostr derivations are distinct for the same seed
   - runtime owner in `root` mode equals root derivation
-  - runtime owner in `legacy_nostr` mode equals Nostr derivation
 - Flutter/runtime diagnostics and bootstrap paths now track identity mode explicitly (`root_owner` / `legacy_nostr_owner`) instead of assuming one transport key as canonical capsule identity.
-- `legacy_nostr_owner` is retained as an intentional read-compatibility mode
-  only; new capsules use `root_owner`, and removal is deferred to an explicit
-  versioned ledger migration rather than treated as active v1 debt.
+- Protocol v4 rejects new `legacy_nostr_owner` runtime initialization:
+  - Rust runtime creation fails closed for legacy owner mode.
+  - Flutter refresh/worker bootstrap paths refuse legacy-owner runtime rebuilds.
+  - `legacy_nostr_owner` remains a diagnostic label for old test artifacts, not
+    an active runtime mode.
 
 Definition of done:
 - Capsule identity is transport-agnostic.

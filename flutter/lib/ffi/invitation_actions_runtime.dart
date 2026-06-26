@@ -10,14 +10,13 @@ bool _bootstrapWorkerRuntime(HivraBindings hivra, Map<String, Object?> args) {
   final identityMode = args['identityMode'] as String? ?? 'root_owner';
   final ledgerJson = args['ledgerJson'] as String?;
 
+  if (identityMode == 'legacy_nostr_owner') return false;
   if (!hivra.saveSeed(seed)) return false;
   if (!hivra.createCapsule(
     seed,
     isGenesis: isGenesis,
     isNeste: isNeste,
-    ownerMode: identityMode == 'legacy_nostr_owner'
-        ? HivraBindings.legacyNostrOwnerMode
-        : HivraBindings.rootOwnerMode,
+    ownerMode: HivraBindings.rootOwnerMode,
   )) {
     return false;
   }

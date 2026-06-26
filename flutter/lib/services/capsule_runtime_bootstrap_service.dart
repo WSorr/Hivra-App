@@ -149,6 +149,8 @@ class CapsuleRuntimeBootstrapService {
     String identityMode = 'root_owner',
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
+    if (identityMode == 'legacy_nostr_owner') return false;
+
     final seed = await _seedStore.loadValidatedSeed(
       pubKeyHex,
       isValidSeed: (seed) => _seedMatchesCapsule(
@@ -204,9 +206,7 @@ class CapsuleRuntimeBootstrapService {
       seed,
       isGenesis: isGenesis,
       isNeste: isNeste,
-      ownerMode: identityMode == 'legacy_nostr_owner'
-          ? runtime.legacyNostrOwnerMode
-          : runtime.rootOwnerMode,
+      ownerMode: runtime.rootOwnerMode,
     )) {
       return false;
     }

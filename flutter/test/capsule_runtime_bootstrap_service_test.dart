@@ -690,7 +690,7 @@ void main() {
     );
 
     test(
-      'refreshCapsuleSnapshot uses legacy owner mode when identityMode is legacy_nostr_owner',
+      'refreshCapsuleSnapshot fails closed for legacy_nostr_owner',
       () async {
         final legacyPubKeyHex =
             bytesToHex(Uint8List.fromList(List<int>.filled(32, 0xbb)));
@@ -718,12 +718,9 @@ void main() {
           bytesToHex: bytesToHex,
         );
 
-        expect(restored, isTrue);
-        expect(runtime.createCapsuleCalled, isTrue);
-        expect(
-          runtime.createCapsuleOwnerMode,
-          equals(runtime.legacyNostrOwnerMode),
-        );
+        expect(restored, isFalse);
+        expect(runtime.createCapsuleCalled, isFalse);
+        expect(runtime.importAttempts, isEmpty);
       },
     );
 
