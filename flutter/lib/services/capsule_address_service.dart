@@ -137,6 +137,28 @@ class CapsuleAddressService {
     await _writeCards(cards);
   }
 
+  Future<bool> upsertTrustedCardFromKeys({
+    required Uint8List rootPubkey,
+    required Uint8List nostrPubkey,
+  }) async {
+    if (rootPubkey.length != 32 || nostrPubkey.length != 32) {
+      return false;
+    }
+    final rootBytes = Uint8List.fromList(rootPubkey);
+    final nostrBytes = Uint8List.fromList(nostrPubkey);
+    final card = CapsuleAddressCard(
+      rootKey: HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
+      rootHex: _toHex(rootBytes),
+      nostrNpub: _encodeBech32('npub', nostrBytes),
+      nostrHex: _toHex(nostrBytes),
+    );
+
+    final cards = await _readCards();
+    cards[card.rootHex] = card.toJson();
+    await _writeCards(cards);
+    return true;
+  }
+
   Future<bool> removeTrustedCard(String rootKey) async {
     final rootBytes = decodeRootKey(rootKey);
     if (rootBytes == null) return false;

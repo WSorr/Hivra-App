@@ -457,6 +457,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       if (!_isOperationForActiveCapsule(operationCapsuleHex)) {
         return;
       }
+      if (result.isSuccess) {
+        await _rememberAcceptedInvitationContact(invitation);
+      }
       await _refreshAfterLedgerMutation();
       if (mounted) {
         await _showUserMessage(result.message, source: 'invitations.accept');
@@ -468,6 +471,33 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           retainLocallyResolved: retainLocallyResolved,
         );
       }
+    }
+  }
+
+  Future<void> _rememberAcceptedInvitationContact(Invitation invitation) async {
+    final rootPubkey = _decodeOptionalB64_32(invitation.fromRootPubkey);
+    final nostrPubkey = _decodeB64_32(invitation.fromPubkey);
+    if (rootPubkey == null || nostrPubkey == null) {
+      return;
+    }
+    try {
+      final saved = await widget.runtime
+          .buildCapsuleAddressService()
+          .upsertTrustedCardFromKeys(
+            rootPubkey: rootPubkey,
+            nostrPubkey: nostrPubkey,
+          );
+      if (saved) {
+        unawaited(_uiLog.log(
+          'invitations.accept.contact_card_saved',
+          'peerRoot=${HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(rootPubkey))}',
+        ));
+      }
+    } catch (error) {
+      unawaited(_uiLog.log(
+        'invitations.accept.contact_card_save_failed',
+        '$error',
+      ));
     }
   }
 
@@ -1150,5 +1180,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         onTap: onTap,
       ),
     );
+  }
+
+  Uint8List? _decodeOptionalB64_32(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    return _decodeB64_32(value);
   }
 }

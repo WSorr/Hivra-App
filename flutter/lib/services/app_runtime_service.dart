@@ -106,6 +106,12 @@ class AppRuntimeService {
     );
   }
 
+  CapsuleAddressService buildCapsuleAddressService() {
+    return CapsuleAddressService(
+      runtime: _runtime.capsuleAddressRuntime,
+    );
+  }
+
   PluginHostApiService buildPluginHostApiService() {
     final consensus = buildConsensusRuntimeService();
     final wasmRuntime = WasmPluginRuntimeService(

@@ -117,6 +117,40 @@ $nbsp$nbsp}
     expect(_toHex(resolved!), nostrHex);
   });
 
+  test('upserts trusted card from invitation root and transport keys',
+      () async {
+    final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 7));
+    final nostrBytes =
+        Uint8List.fromList(List<int>.generate(32, (i) => 180 - i));
+    final rootKey = HivraIdFormat.formatCapsuleKeyBytes(rootBytes);
+
+    final saved = await service.upsertTrustedCardFromKeys(
+      rootPubkey: rootBytes,
+      nostrPubkey: nostrBytes,
+    );
+
+    expect(saved, isTrue);
+    expect(await service.contactCount(), 1);
+    final listed = await service.listTrustedCards();
+    expect(listed.single.rootKey, rootKey);
+    expect(listed.single.rootHex, _toHex(rootBytes));
+    expect(listed.single.nostrHex, _toHex(nostrBytes));
+
+    final resolved = await service.resolveNostrRecipient(rootKey);
+    expect(resolved, isNotNull);
+    expect(_toHex(resolved!), _toHex(nostrBytes));
+  });
+
+  test('does not upsert trusted card from malformed key lengths', () async {
+    final saved = await service.upsertTrustedCardFromKeys(
+      rootPubkey: Uint8List(31),
+      nostrPubkey: Uint8List(32),
+    );
+
+    expect(saved, isFalse);
+    expect(await service.contactCount(), 0);
+  });
+
   test('gracefully handles malformed cards file root shape', () async {
     final cardsFile = File('${tempDocsDir.path}/capsule_contact_cards.json');
     await cardsFile.writeAsString('["bad-root-shape"]', flush: true);

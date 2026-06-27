@@ -74,6 +74,9 @@ class InvitationProjectionService {
         final kindFromPayload = hasKindByte
             ? _support.starterKindFromByte(payload[payload.length - 1])
             : null;
+        final senderRoot = payload.length >= 128
+            ? Uint8List.fromList(payload.sublist(96, 128))
+            : null;
 
         final id = base64.encode(invitationId);
         final current = offersById[id];
@@ -123,6 +126,9 @@ class InvitationProjectionService {
         final candidateOffer = _ProjectedInvitationOffer(
           id: id,
           fromPubkey: base64.encode(signer),
+          fromRootPubkey: isIncoming && senderRoot != null
+              ? base64.encode(senderRoot)
+              : null,
           toPubkey: isIncoming ? null : base64.encode(toPubkey),
           kind: kindFromPayload ??
               starterKinds[starterIdB64] ??
@@ -196,6 +202,7 @@ class InvitationProjectionService {
       return Invitation(
         id: offer.id,
         fromPubkey: offer.fromPubkey,
+        fromRootPubkey: offer.fromRootPubkey,
         toPubkey: offer.toPubkey,
         kind: offer.kind,
         starterSlot: offer.starterSlot,
@@ -255,6 +262,7 @@ class InvitationProjectionService {
 class _ProjectedInvitationOffer {
   final String id;
   final String fromPubkey;
+  final String? fromRootPubkey;
   final String? toPubkey;
   final StarterKind kind;
   final int? starterSlot;
@@ -264,6 +272,7 @@ class _ProjectedInvitationOffer {
   const _ProjectedInvitationOffer({
     required this.id,
     required this.fromPubkey,
+    required this.fromRootPubkey,
     required this.toPubkey,
     required this.kind,
     required this.starterSlot,

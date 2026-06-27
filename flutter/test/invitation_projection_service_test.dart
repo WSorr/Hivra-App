@@ -1126,6 +1126,37 @@ void main() {
       expect(invitations.single.kind, StarterKind.kick);
     });
 
+    test('projects incoming sender root for contact-card bootstrap', () {
+      final invitationId = _bytes32(17);
+      final starterId = _bytes32(37);
+      final senderRoot = _bytes32(67);
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceForSelf(self);
+
+      final invitations = service.loadInvitations(<String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          _event(
+            kind: 'InvitationReceived',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: self,
+              senderRootPubkey: senderRoot,
+              kindByte: 2,
+            ),
+            signer: peer,
+            timestamp: t0 + 1,
+          ),
+        ],
+      });
+
+      expect(invitations, hasLength(1));
+      final invitation = invitations.single;
+      expect(invitation.isIncoming, isTrue);
+      expect(invitation.fromPubkey, _base64(peer));
+      expect(invitation.fromRootPubkey, _base64(senderRoot));
+    });
+
     test(
         'auto-expire timeout applies to overdue outgoing only, not overdue incoming',
         () {

@@ -24,6 +24,7 @@ enum RejectionReason {
 class Invitation {
   final String id;
   final String fromPubkey;
+  final String? fromRootPubkey;
   final String? toPubkey; // null if incoming
   final StarterKind kind;
   final int? starterSlot; // which slot is locked
@@ -36,6 +37,7 @@ class Invitation {
   Invitation({
     required this.id,
     required this.fromPubkey,
+    this.fromRootPubkey,
     this.toPubkey,
     required this.kind,
     this.starterSlot,
