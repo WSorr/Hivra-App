@@ -87,6 +87,7 @@ else
   fail "semantic WASM runtime safety boundaries are incomplete"
 fi
 if rg -q 'defaultTrustedRemoteCatalogPublicKeyHexes' "$PLUGIN_SOURCE_CATALOG" &&
+   rg -q "f36408d70b8a5b2069815a862a8f6f111e74b450226a0511058055f2969812ac" "$PLUGIN_SOURCE_CATALOG" &&
    rg -q '_verifyRemoteCatalogSignature' "$PLUGIN_SOURCE_CATALOG" &&
    rg -q 'Ed25519' "$PLUGIN_SOURCE_CATALOG" &&
    rg -q 'fetchCatalog accepts remote catalog signed by pinned public key' "$PLUGIN_SOURCE_CATALOG_TEST" &&

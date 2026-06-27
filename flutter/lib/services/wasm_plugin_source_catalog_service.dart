@@ -48,9 +48,11 @@ class WasmPluginSourceCatalogService {
   static const String githubRawCatalogUrl =
       'https://raw.githubusercontent.com/WSorr/hivra-plugins/main/catalog/plugin_catalog.json';
   static const Set<String> defaultTrustedRemoteCatalogSha256Hexes = {
-    '07275bd8fb567ef5f9072f47fb132605264090efcc1014340b79785b4c411a43',
+    'aaa9c2204aa213965472a8a874abfbc340c0cef1259476e5d808e6e0474d8b12',
   };
-  static const Set<String> defaultTrustedRemoteCatalogPublicKeyHexes = {};
+  static const Set<String> defaultTrustedRemoteCatalogPublicKeyHexes = {
+    'f36408d70b8a5b2069815a862a8f6f111e74b450226a0511058055f2969812ac',
+  };
   static const Duration _networkTimeout = Duration(seconds: 8);
 
   final WasmPluginRegistryService _registry;
@@ -354,9 +356,7 @@ class WasmPluginSourceCatalogService {
     final catalog = Map<String, dynamic>.from(decoded);
     final rawSignatures = catalog['signatures'];
     if (rawSignatures is! List || rawSignatures.isEmpty) {
-      throw const FormatException(
-        'Remote plugin source catalog is not signed',
-      );
+      return false;
     }
 
     final unsignedCatalog = Map<String, dynamic>.from(catalog)
