@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/capsule_selector_service.dart';
+import '../services/ui_event_log_service.dart';
 import 'main_screen.dart';
 import 'first_launch_screen.dart';
 
@@ -17,8 +19,10 @@ class CapsuleSelectorScreen extends StatefulWidget {
 
 class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   final CapsuleSelectorService _service = CapsuleSelectorService();
+  final UiEventLogService _uiLog = const UiEventLogService();
   List<CapsuleSelectorItem> _capsules = [];
   bool _isLoading = true;
+  String? _loadError;
   final TextEditingController _seedController = TextEditingController();
 
   @override
@@ -34,7 +38,38 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   }
 
   Future<void> _loadCapsules() async {
-    _capsules = await _service.loadCapsules();
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+
+    try {
+      await _uiLog.log('capsule.selector.load', 'start');
+      _capsules =
+          await _service.loadCapsules().timeout(const Duration(seconds: 12));
+      await _uiLog.log(
+        'capsule.selector.load',
+        'success count=${_capsules.length}',
+      );
+    } on TimeoutException {
+      await _uiLog.log('capsule.selector.load', 'timeout seconds=12');
+      if (!mounted) return;
+      setState(() {
+        _capsules = const <CapsuleSelectorItem>[];
+        _isLoading = false;
+        _loadError = 'Capsule list loading timed out.';
+      });
+      return;
+    } catch (error) {
+      await _uiLog.log('capsule.selector.load', 'error $error');
+      if (!mounted) return;
+      setState(() {
+        _capsules = const <CapsuleSelectorItem>[];
+        _isLoading = false;
+        _loadError = 'Failed to load capsules: $error';
+      });
+      return;
+    }
 
     if (_capsules.isEmpty && _service.seedExists()) {
       // If we still don't have an index, stay empty and let user create/recover.
@@ -252,6 +287,52 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       );
     }
 
+    if (_loadError != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Select Capsule')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.warning_amber_rounded, size: 56),
+                const SizedBox(height: 16),
+                const Text(
+                  'Capsules did not load',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _loadError!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade400),
+                ),
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: _loadCapsules,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _createNewCapsule,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create / Recover'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_capsules.isEmpty) {
       // No capsules, go to first launch
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -412,5 +493,4 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       return '${difference.inMinutes}m ago';
     }
   }
-
 }

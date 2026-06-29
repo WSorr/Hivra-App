@@ -10,11 +10,7 @@ import 'user_visible_data_directory_service.dart';
 class UiEventLogService {
   static Future<void> _writeQueue = Future<void>.value();
   static bool _didSanitizeLogFile = false;
-  static String? _cachedActiveCapsuleHex;
-  static DateTime? _cachedActiveCapsuleAt;
-  static const Duration _activeCapsuleCacheTtl = Duration(seconds: 2);
-  static final RegExp _logLinePattern =
-      RegExp(r'^\[[^\]]+\] \[[^\]]+\] .+$');
+  static final RegExp _logLinePattern = RegExp(r'^\[[^\]]+\] \[[^\]]+\] .+$');
 
   final UserVisibleDataDirectoryService _directories;
   final CapsuleIndexStore _indexStore;
@@ -43,9 +39,8 @@ class UiEventLogService {
   }
 
   Future<void> _enqueueWrite(String line) {
-    final next = _writeQueue
-        .catchError((_) {})
-        .then<void>((_) => _appendLine(line));
+    final next =
+        _writeQueue.catchError((_) {}).then<void>((_) => _appendLine(line));
     _writeQueue = next.catchError((_) {});
     return next;
   }
@@ -88,24 +83,10 @@ class UiEventLogService {
   }
 
   Future<String> _activeCapsuleHex() async {
-    final now = DateTime.now();
-    final cached = _cachedActiveCapsuleHex;
-    final cachedAt = _cachedActiveCapsuleAt;
-    if (cached != null &&
-        cachedAt != null &&
-        now.difference(cachedAt) <= _activeCapsuleCacheTtl) {
-      return cached;
-    }
-
     try {
       final index = await _indexStore.read();
-      final value = _normalize(index.activePubKeyHex ?? 'none');
-      _cachedActiveCapsuleHex = value;
-      _cachedActiveCapsuleAt = now;
-      return value;
+      return _normalize(index.activePubKeyHex ?? 'none');
     } catch (_) {
-      _cachedActiveCapsuleHex = 'unknown';
-      _cachedActiveCapsuleAt = now;
       return 'unknown';
     }
   }
@@ -114,7 +95,5 @@ class UiEventLogService {
   static void resetForTest() {
     _writeQueue = Future<void>.value();
     _didSanitizeLogFile = false;
-    _cachedActiveCapsuleHex = null;
-    _cachedActiveCapsuleAt = null;
   }
 }

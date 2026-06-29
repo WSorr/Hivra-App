@@ -35,6 +35,31 @@ fn map_delivery_error(err: TransportError, default_code: i32) -> i32 {
     }
 }
 
+fn describe_transport_error(err: &TransportError) -> Option<String> {
+    match err {
+        TransportError::Other(reason) => {
+            let trimmed = reason.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        TransportError::Timeout => Some("transport timeout".to_string()),
+        TransportError::ConnectionFailed => Some("connection failed".to_string()),
+        TransportError::SendFailed => Some("send failed".to_string()),
+        TransportError::ReceiveFailed => Some("receive failed".to_string()),
+        TransportError::InvalidMessage => Some("invalid message".to_string()),
+        TransportError::EncodingFailed => Some("encoding failed".to_string()),
+        TransportError::DecodingFailed => Some("decoding failed".to_string()),
+        TransportError::InvalidKey => Some("invalid key".to_string()),
+        TransportError::SenderMismatch => {
+            Some("decrypted sender does not match signed transport event".to_string())
+        }
+        TransportError::NotImplemented => Some("transport not implemented".to_string()),
+    }
+}
+
 fn bytes_to_hex(bytes: &[u8; 32]) -> String {
     let mut out = String::with_capacity(64);
     for value in bytes {
@@ -178,15 +203,35 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
         domain_event: None,
     };
 
+    let delivery_reason = Mutex::new(None::<String>);
     if let Err(code) =
         with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
             transport
                 .send(message.clone())
-                .map_err(|err| map_delivery_error(err, -6))
+                .map_err(|err| {
+                    let reason = describe_transport_error(&err);
+                    eprintln!(
+                        "[Chat/Nostr] send failed: {:?}{}",
+                        err,
+                        reason
+                            .as_deref()
+                            .map(|value| format!(" | reason={value}"))
+                            .unwrap_or_default()
+                    );
+                    if let Ok(mut guard) = delivery_reason.lock() {
+                        *guard = reason;
+                    }
+                    map_delivery_error(err, -6)
+                })
         })
     {
+        let reason_suffix = delivery_reason
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_deref().map(|value| format!(": {value}")))
+            .unwrap_or_default();
         set_last_error(format!(
-            "Capsule chat send failed: transport rejected message (code {code})"
+            "Capsule chat send failed: transport rejected message (code {code}{reason_suffix})"
         ));
         return code;
     }

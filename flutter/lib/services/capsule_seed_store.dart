@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'hivra_secure_storage_options.dart';
 import 'user_visible_data_directory_service.dart';
 
 class CapsuleSeedStore {
@@ -12,11 +13,15 @@ class CapsuleSeedStore {
 
   final FlutterSecureStorage _secureStorage;
   final UserVisibleDataDirectoryService _dirs;
+  final Map<String, Uint8List> _memoryCache = <String, Uint8List>{};
 
-  const CapsuleSeedStore({
+  CapsuleSeedStore({
     FlutterSecureStorage? secureStorage,
     UserVisibleDataDirectoryService? dirs,
-  })  : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+  })  : _secureStorage = secureStorage ??
+            const FlutterSecureStorage(
+              mOptions: hivraMacOsSecureStorageOptions,
+            ),
         _dirs = dirs ?? const UserVisibleDataDirectoryService();
 
   Future<void> storeSeed(String pubKeyHex, Uint8List seed) async {
@@ -32,6 +37,7 @@ class CapsuleSeedStore {
     } catch (error) {
       throw StateError('Secure seed storage is unavailable: $error');
     }
+    _memoryCache[pubKeyHex] = Uint8List.fromList(seed);
     await deleteFallback(pubKeyHex);
   }
 
@@ -45,18 +51,27 @@ class CapsuleSeedStore {
   }
 
   Future<Uint8List?> loadSeed(String pubKeyHex) async {
+    final cached = _memoryCache[pubKeyHex];
+    if (cached != null) return Uint8List.fromList(cached);
+
     await _migrateLegacyFallbackFile();
     final secureSeed = _decodeSeedString(await readSecureEncoded(pubKeyHex));
     if (secureSeed != null) {
+      _memoryCache[pubKeyHex] = Uint8List.fromList(secureSeed);
       return secureSeed;
     }
     return null;
   }
 
   Future<bool> hasStoredSeed(String pubKeyHex) async {
+    if (_memoryCache.containsKey(pubKeyHex)) return true;
+
     await _migrateLegacyFallbackFile();
     var encoded = await readSecureEncoded(pubKeyHex);
-    return _decodeSeedString(encoded) != null;
+    final seed = _decodeSeedString(encoded);
+    if (seed == null) return false;
+    _memoryCache[pubKeyHex] = Uint8List.fromList(seed);
+    return true;
   }
 
   Future<bool> hasFallback(String pubKeyHex) async {
@@ -64,6 +79,7 @@ class CapsuleSeedStore {
   }
 
   Future<void> deleteSeed(String pubKeyHex) async {
+    _memoryCache.remove(pubKeyHex);
     try {
       await _secureStorage.delete(key: '$_seedKeyPrefix$pubKeyHex');
     } catch (_) {
@@ -134,9 +150,17 @@ class CapsuleSeedStore {
     required Future<bool> Function(Uint8List seed) isValidSeed,
     required Future<void> Function(Uint8List seed) persistValidatedSeed,
   }) async {
+    final cached = _memoryCache[pubKeyHex];
+    if (cached != null) {
+      final copy = Uint8List.fromList(cached);
+      if (await isValidSeed(copy)) return copy;
+      _memoryCache.remove(pubKeyHex);
+    }
+
     await _migrateLegacyFallbackFile();
     final secureSeed = _decodeSeedString(await readSecureEncoded(pubKeyHex));
     if (secureSeed != null && await isValidSeed(secureSeed)) {
+      _memoryCache[pubKeyHex] = Uint8List.fromList(secureSeed);
       await deleteFallback(pubKeyHex);
       return secureSeed;
     }

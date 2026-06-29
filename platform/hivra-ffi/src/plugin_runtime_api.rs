@@ -76,14 +76,7 @@ mod tests {
     fn rejects_empty_arguments() {
         let mut out = ptr::null_mut();
         let code = unsafe {
-            hivra_wasm_invoke_json(
-                ptr::null(),
-                0,
-                ptr::null(),
-                ptr::null(),
-                0,
-                &mut out,
-            )
+            hivra_wasm_invoke_json(ptr::null(), 0, ptr::null(), ptr::null(), 0, &mut out)
         };
         assert_eq!(code, INVALID_ARGUMENT);
         assert!(out.is_null());

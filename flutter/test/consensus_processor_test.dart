@@ -196,6 +196,99 @@ void main() {
       );
     });
 
+    test('pending second peer does not inherit signable consensus', () {
+      final acceptedInvitationId = Uint8List.fromList(bytes32(44));
+      final pendingInvitationId = Uint8List.fromList(bytes32(45));
+      final localRoot = Uint8List.fromList(bytes32(46));
+      final localTransport = Uint8List.fromList(bytes32(47));
+      final localCreatedStarter = Uint8List.fromList(bytes32(48));
+      final localRelationshipStarter = Uint8List.fromList(bytes32(49));
+      final peerATransport = Uint8List.fromList(bytes32(50));
+      final peerARoot = Uint8List.fromList(bytes32(51));
+      final peerAStarter = Uint8List.fromList(bytes32(52));
+      final peerBTransport = Uint8List.fromList(bytes32(53));
+      final peerBRoot = Uint8List.fromList(bytes32(54));
+      final peerBStarter = Uint8List.fromList(bytes32(55));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...acceptedInvitationId,
+            ...peerAStarter,
+            ...localTransport,
+            ...peerARoot,
+            1,
+            ...peerATransport,
+          ],
+          'signer': peerATransport,
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...acceptedInvitationId,
+            ...peerARoot,
+            ...localCreatedStarter,
+            ...localRoot,
+          ],
+          'signer': localRoot,
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerATransport,
+            ...localRelationshipStarter,
+            ...peerAStarter,
+            1,
+            ...acceptedInvitationId,
+            ...peerATransport,
+            1,
+            ...peerAStarter,
+            ...peerARoot,
+            ...localRoot,
+          ],
+          'signer': localRoot,
+        },
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...pendingInvitationId,
+            ...peerBStarter,
+            ...localTransport,
+            ...peerBRoot,
+            1,
+            ...peerBTransport,
+          ],
+          'signer': peerBTransport,
+        },
+      ];
+
+      final previews = processor.preview(
+        events,
+        localTransport,
+        localRootKey: localRoot,
+      )..sort((a, b) => a.peerHex.compareTo(b.peerHex));
+
+      expect(previews, hasLength(2));
+
+      final peerAPreview = previews.singleWhere(
+        (preview) => preview.peerHex == hex(peerARoot),
+      );
+      expect(peerAPreview.isSignable, isTrue);
+      expect(peerAPreview.relationshipCount, 1);
+      expect(peerAPreview.blockingFacts, isEmpty);
+
+      final peerBPreview = previews.singleWhere(
+        (preview) => preview.peerHex == hex(peerBRoot),
+      );
+      expect(peerBPreview.isSignable, isFalse);
+      expect(peerBPreview.relationshipCount, 0);
+      expect(
+        peerBPreview.blockingFacts.map((fact) => fact.code),
+        containsAll(<String>['pending_invitation', 'no_active_relationship']),
+      );
+    });
+
     test('signable accepts uppercase peer hex input', () {
       final invitationId = Uint8List.fromList(bytes32(36));
       final ownStarter = Uint8List.fromList(bytes32(37));

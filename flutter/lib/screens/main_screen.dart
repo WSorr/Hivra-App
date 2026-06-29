@@ -6,6 +6,7 @@ import 'dart:async';
 import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/invitation_intent_handler.dart';
+import '../services/ui_event_log_service.dart';
 import '../models/invitation.dart';
 import 'starters_screen.dart';
 import 'invitations_screen.dart';
@@ -23,6 +24,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   final AppRuntimeService _runtime = AppRuntimeService();
+  final UiEventLogService _uiLog = const UiEventLogService();
   late final CapsuleStateManager _stateManager;
   late final InvitationIntentHandler _invitationIntents;
 
@@ -125,6 +127,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       capsuleHex: operationCapsuleHex,
     );
     if (!mounted) return;
+    if (_isStaleCapsuleSyncRequest(operationCapsuleHex)) {
+      debugPrint(
+        '[StartupTiming] network_change_refresh_stale_skip '
+        'opCapsule=$operationCapsuleHex activeCapsule=$_activeCapsuleHex',
+      );
+      return;
+    }
     if (result.code >= 0) {
       _loadCapsuleData();
     }
@@ -156,7 +165,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     await _runtime.persistLedgerSnapshot();
   }
 
-  Future<void> _receiveTransportOnLaunch() async {
+  Future<bool> _receiveTransportOnLaunch() async {
     final operationCapsuleHex = _activeCapsuleHex;
     final startedAtMs = _launchStopwatch?.elapsedMilliseconds;
 
@@ -167,6 +176,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         reason: 'launch',
         capsuleHex: operationCapsuleHex,
       );
+      final staleAfterReceive = _isStaleCapsuleSyncRequest(operationCapsuleHex);
       if (result.code < 0) {
         debugPrint(
           '[StartupTiming] launch_receive_failed_code=${result.code}',
@@ -177,6 +187,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         '${_launchStopwatch?.elapsedMilliseconds ?? -1} '
         'started_ms=${startedAtMs ?? -1}',
       );
+      if (staleAfterReceive) {
+        debugPrint(
+          '[StartupTiming] launch_receive_stale_result '
+          'opCapsule=$operationCapsuleHex activeCapsule=$_activeCapsuleHex',
+        );
+        return false;
+      }
       unawaited(
         _runDelayedQuickTransportSync(
           reason: 'launch_follow_up',
@@ -184,6 +201,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           capsuleHex: operationCapsuleHex,
         ),
       );
+      return true;
     } catch (_) {
       // Launch-time receive is best-effort only.
       debugPrint(
@@ -191,6 +209,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         '${_launchStopwatch?.elapsedMilliseconds ?? -1} '
         'started_ms=${startedAtMs ?? -1}',
       );
+      return !_isStaleCapsuleSyncRequest(operationCapsuleHex);
     }
   }
 
@@ -202,6 +221,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         capsuleHex: operationCapsuleHex,
       );
       if (!mounted) return;
+      if (_isStaleCapsuleSyncRequest(operationCapsuleHex)) {
+        debugPrint(
+          '[StartupTiming] resume_refresh_stale_skip '
+          'opCapsule=$operationCapsuleHex activeCapsule=$_activeCapsuleHex',
+        );
+        return;
+      }
       if (result.code >= 0) {
         _loadCapsuleData();
       }
@@ -237,6 +263,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       capsuleHex: capsuleHex,
     );
     if (!mounted) return;
+    if (_isStaleCapsuleSyncRequest(capsuleHex)) {
+      debugPrint(
+        '[StartupTiming] quick_sync_delayed_refresh_stale_skip reason=$reason '
+        'opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
+      );
+      return;
+    }
     if (result.code >= 0) {
       _loadCapsuleData();
     }
@@ -312,9 +345,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         '[StartupTiming] first_frame_ms='
         '${_launchStopwatch?.elapsedMilliseconds ?? -1}',
       );
-      await _receiveTransportOnLaunch();
+      final canRefreshAfterReceive = await _receiveTransportOnLaunch();
       if (!mounted) return;
-      _loadCapsuleData();
+      if (canRefreshAfterReceive) {
+        _loadCapsuleData();
+      }
       debugPrint(
         '[StartupTiming] post_receive_refresh_ms='
         '${_launchStopwatch?.elapsedMilliseconds ?? -1}',
@@ -426,7 +461,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _bootstrapActiveRuntime() async {
     _launchStopwatch = Stopwatch()..start();
-    final ok = await _runtime.bootstrapActiveCapsuleRuntime();
+    await _uiLog.log('startup.bootstrap', 'start');
+
+    var ok = false;
+    Object? failure;
+    try {
+      ok = await _runtime.bootstrapActiveCapsuleRuntime();
+    } catch (error) {
+      failure = error;
+      await _uiLog.log('startup.bootstrap', 'error $error');
+    }
     if (!mounted) return;
 
     if (!ok) {
@@ -434,11 +478,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         _bootstrapping = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to bootstrap active capsule')),
+        SnackBar(
+          content: Text(
+            failure == null
+                ? 'Failed to bootstrap active capsule'
+                : 'Failed to bootstrap active capsule: $failure',
+          ),
+        ),
       );
       return;
     }
 
+    await _uiLog.log(
+      'startup.bootstrap',
+      'done elapsedMs=${_launchStopwatch?.elapsedMilliseconds ?? -1}',
+    );
     debugPrint(
       '[StartupTiming] bootstrap_done_ms='
       '${_launchStopwatch?.elapsedMilliseconds ?? -1}',

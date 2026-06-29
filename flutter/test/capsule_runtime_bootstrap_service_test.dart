@@ -645,6 +645,41 @@ void main() {
     );
 
     test(
+      'refreshCapsuleSnapshot does not overwrite a richer stored ledger with a shorter runtime export',
+      () async {
+        final storedLedger = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+          <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
+        ]);
+        final shorterExport = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'CapsuleCreated', 'timestamp': 10},
+        ]);
+        final fileStore = _FakeCapsuleFileStore(
+          state: <String, dynamic>{'isGenesis': false, 'isNeste': true},
+          ledgerJson: storedLedger,
+        );
+        final seedStore = _FakeCapsuleSeedStore(seed);
+        final runtime = _FakeBootstrapRuntime(
+          seedRootPubkey: Uint8List.fromList(List<int>.filled(32, 0xaa)),
+          seedNostrPubkey: Uint8List.fromList(List<int>.filled(32, 0xbb)),
+          exportedLedger: shorterExport,
+          importResultsByLedger: <String, bool>{storedLedger: true},
+        );
+        final service = CapsuleRuntimeBootstrapService(fileStore, seedStore);
+
+        final restored = await service.refreshCapsuleSnapshot(
+          runtime,
+          pubKeyHex,
+          bytesToHex: bytesToHex,
+        );
+
+        expect(restored, isFalse);
+        expect(runtime.importAttempts, equals(<String>[storedLedger]));
+        expect(fileStore.writtenLedgerJson, isNull);
+      },
+    );
+
+    test(
       'refreshCapsuleSnapshot fails when stored history exists and no candidate imports',
       () async {
         final ledger = ledgerWithEvents(0xaa, <Map<String, dynamic>>[

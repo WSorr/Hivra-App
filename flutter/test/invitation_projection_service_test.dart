@@ -16,6 +16,7 @@ List<int> _offerPayload({
   required List<int> starterId,
   required List<int> toPubkey,
   List<int>? senderRootPubkey,
+  List<int>? senderTransportPubkey,
   int? kindByte = 0,
 }) {
   return <int>[
@@ -24,6 +25,7 @@ List<int> _offerPayload({
     ...toPubkey,
     if (senderRootPubkey != null) ...senderRootPubkey,
     if (kindByte != null) kindByte,
+    if (senderTransportPubkey != null) ...senderTransportPubkey,
   ];
 }
 
@@ -374,6 +376,51 @@ void main() {
       expect(invitations.single.isIncoming, isFalse);
       expect(invitations.single.starterSlot, 0);
       expect(invitations.single.status, InvitationStatus.pending);
+    });
+
+    test(
+        'projects lineage outgoing InvitationSent payload with sender transport',
+        () {
+      final invitationId = _bytes32(221);
+      final localStarter = Uint8List.fromList(_bytes32(222));
+      final recipientTransport = Uint8List.fromList(_bytes32(223));
+      final senderTransport = Uint8List.fromList(_bytes32(224));
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceForSelf(self);
+
+      final invitations = service.loadInvitations(
+        <String, dynamic>{
+          'owner': self.toList(),
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: localStarter,
+                toPubkey: recipientTransport,
+                senderRootPubkey: self,
+                senderTransportPubkey: senderTransport,
+                kindByte: 3,
+              ),
+              signer: self,
+              timestamp: t0 + 1,
+            ),
+          ],
+        },
+        starterIds: <Uint8List?>[
+          localStarter,
+          null,
+          null,
+          null,
+          null,
+        ],
+      );
+
+      expect(invitations, hasLength(1));
+      expect(invitations.single.isOutgoing, isTrue);
+      expect(invitations.single.status, InvitationStatus.pending);
+      expect(invitations.single.starterSlot, 0);
+      expect(invitations.single.kind, StarterKind.pulse);
     });
 
     test(

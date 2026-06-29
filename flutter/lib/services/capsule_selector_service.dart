@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../ffi/capsule_selector_runtime.dart';
+import 'capsule_persistence_models.dart';
+import 'ui_event_log_service.dart';
 
 class CapsuleSelectorItem {
   final String id;
@@ -32,66 +36,53 @@ class CapsuleSelectorItem {
 
 class CapsuleSelectorService {
   final CapsuleSelectorRuntime _runtime;
+  final UiEventLogService _uiLog;
 
-  CapsuleSelectorService([CapsuleSelectorRuntime? runtime])
-      : _runtime = runtime ?? HivraCapsuleSelectorRuntime();
+  CapsuleSelectorService([
+    CapsuleSelectorRuntime? runtime,
+    UiEventLogService uiLog = const UiEventLogService(),
+  ])  : _runtime = runtime ?? HivraCapsuleSelectorRuntime(),
+        _uiLog = uiLog;
 
   Future<List<CapsuleSelectorItem>> loadCapsules() async {
+    await _uiLog.log('capsule.selector.service', 'list.start');
     final entries = await _runtime.listCapsules();
-    final seedByHex = <String, bool>{};
-    final ownerByHex = <String, String?>{};
-    final bootstrapNesteByHex = <String, bool?>{};
-
-    for (final entry in entries) {
-      seedByHex[entry.pubKeyHex] =
-          await _runtime.hasStoredSeed(entry.pubKeyHex);
-      ownerByHex[entry.pubKeyHex] =
-          await _runtime.loadCapsuleLedgerOwnerHex(entry.pubKeyHex);
-      bootstrapNesteByHex[entry.pubKeyHex] = null;
-      if (seedByHex[entry.pubKeyHex] == true) {
-        final bootstrap = await _runtime.loadRuntimeBootstrap(entry.pubKeyHex);
-        bootstrapNesteByHex[entry.pubKeyHex] = bootstrap?.isNeste;
-      }
-    }
-
-    final filteredEntries = entries.where((entry) {
-      final pubKeyHex = entry.pubKeyHex;
-      if (seedByHex[pubKeyHex] == true) return true;
-
-      // Hide ghost aliases without seed when other seeded capsules clearly
-      // point to them as ledger owner.
-      final hasSeededOwnerRef = entries.any((other) {
-        if (other.pubKeyHex == pubKeyHex) return false;
-        return seedByHex[other.pubKeyHex] == true &&
-            ownerByHex[other.pubKeyHex] == pubKeyHex;
-      });
-      return !hasSeededOwnerRef;
-    }).toList();
+    await _uiLog.log(
+      'capsule.selector.service',
+      'list.done count=${entries.length}',
+    );
+    final filteredEntries = entries;
 
     final capsules = <CapsuleSelectorItem>[];
 
     for (final entry in filteredEntries) {
-      var summary = await _runtime.loadCapsuleSummary(entry.pubKeyHex);
+      final shortHex = _shortHex(entry.pubKeyHex);
+      await _uiLog.log('capsule.selector.service', 'summary.start $shortHex');
+      var summary = await _withSelectorTimeout(
+        'summary',
+        shortHex,
+        () => _runtime.loadCapsuleSummary(entry.pubKeyHex),
+        fallback: CapsuleLedgerSummary.empty(),
+      );
+      await _uiLog.log(
+        'capsule.selector.service',
+        'summary.done $shortHex ledgerVersion=${summary.ledgerVersion}',
+      );
       if (summary.ledgerHashHex == '7fffffffffffffff') {
-        final hasSeed = await _runtime.hasStoredSeed(entry.pubKeyHex);
-        if (hasSeed) {
-          final refreshed =
-              await _runtime.refreshCapsuleSnapshot(entry.pubKeyHex);
-          if (refreshed) {
-            summary = await _runtime.loadCapsuleSummary(entry.pubKeyHex);
-          }
-        }
+        await _uiLog.log(
+          'capsule.selector.service',
+          'summary.placeholder $shortHex',
+        );
       }
 
       capsules.add(
         CapsuleSelectorItem(
           id: entry.pubKeyHex,
           publicKeyHex: entry.pubKeyHex,
-          displayKeyText:
-              await _runtime.resolveDisplayCapsuleKey(entry.pubKeyHex),
+          displayKeyText: entry.pubKeyHex,
           network: networkLabelForCapsule(
             indexIsNeste: entry.isNeste,
-            bootstrapIsNeste: bootstrapNesteByHex[entry.pubKeyHex],
+            bootstrapIsNeste: null,
           ),
           starterCount: summary.starterCount,
           relationshipCount: summary.relationshipCount,
@@ -104,14 +95,50 @@ class CapsuleSelectorService {
       );
     }
 
-    return collapseDisplayDuplicates(
+    final collapsed = collapseDisplayDuplicates(
       capsules,
-      hasSeedByPubKey: seedByHex,
+      hasSeedByPubKey: {
+        for (final entry in filteredEntries) entry.pubKeyHex: true,
+      },
       identityModeByPubKey: {
         for (final entry in filteredEntries)
           entry.pubKeyHex: entry.identityMode,
       },
     );
+    await _uiLog.log(
+      'capsule.selector.service',
+      'collapse.done count=${collapsed.length}',
+    );
+    return collapsed;
+  }
+
+  String _shortHex(String? value) {
+    final hex = value?.trim() ?? '';
+    if (hex.length <= 12) return hex.isEmpty ? '-' : hex;
+    return '${hex.substring(0, 8)}..${hex.substring(hex.length - 4)}';
+  }
+
+  Future<T> _withSelectorTimeout<T>(
+    String phase,
+    String shortHex,
+    Future<T> Function() operation, {
+    required T fallback,
+  }) async {
+    try {
+      return await operation().timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      await _uiLog.log(
+        'capsule.selector.service',
+        '$phase.timeout $shortHex seconds=2',
+      );
+      return fallback;
+    } catch (error) {
+      await _uiLog.log(
+        'capsule.selector.service',
+        '$phase.error $shortHex $error',
+      );
+      return fallback;
+    }
   }
 
   @visibleForTesting

@@ -91,10 +91,18 @@ require_present "$SPEC" 'Flutter Boundary Direction' \
   "spec defines downward direction inside Flutter boundary"
 require_present "$SPEC" 'WASM Plugin Host Contract' \
   "spec defines wasm plugin-host contract"
+require_present "$SPEC" 'Drone Consensus Guard Standard' \
+  "spec defines drone consensus guard standard"
+require_present "$SPEC" '`pair_scoped` methods MUST call the shared Consensus Guard boundary' \
+  "spec requires pair-scoped methods to use shared consensus guard"
 require_present "$CHECKLIST" '## Engine Integrity' \
   "architecture checklist includes engine integrity section"
 require_present "$CHECKLIST" '## WASM Plugin Host' \
   "architecture checklist includes wasm plugin-host section"
+require_present "$CHECKLIST" 'Every drone method declares exactly one scope: `solo`, `market_scan`, or `pair_scoped`\.' \
+  "architecture checklist requires explicit drone consensus scope"
+require_present "$CHECKLIST" 'No pair-scoped path treats "any signable peer" as authorization for a missing or different peer\.' \
+  "architecture checklist forbids any-signable-peer consensus fallback"
 require_present "$CHECKLIST" 'Repo boundary is preserved: `Hivra-App` is host/runtime only; plugin implementation source/release flow lives in `hivra-plugins`\.' \
   "architecture checklist enforces app-vs-plugin repo boundary"
 require_present "$EXEC_DISCIPLINE" '^# Hivra Architecture Execution Discipline v1' \
@@ -117,6 +125,10 @@ require_present "$PLUGIN_HOST_API_DOC" 'rank_bingx_futures_signals' \
   "host API docs include plugin-owned futures signal ranking method"
 require_present "$PLUGIN_HOST_API_DOC" 'host must not mirror plugin-side ranking/scoring semantics' \
   "host API docs forbid mirrored signal ranking semantics"
+require_present "$PLUGIN_HOST_API_DOC" 'Drone consensus scopes are explicit' \
+  "host API docs define explicit drone consensus scopes"
+require_present "$PLUGIN_HOST_API_DOC" 'host code must never replace a missing or unresolved `peer_hex` with "any' \
+  "host API docs forbid peer fallback for pair-scoped consensus"
 if find "$ROOT/tools/plugins" -maxdepth 1 -type f \
   -name 'build_*_plugin_zip.sh' | grep -q .; then
   fail "Hivra-App contains plugin package build scripts owned by hivra-plugins"

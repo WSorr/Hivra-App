@@ -677,6 +677,31 @@ Rules:
 5. Pair-scoped smart-contract execution MUST be blocked when consensus state is `mismatch` or unresolved for required participants.
 6. Consensus logic MUST NOT be embedded in invitation form policy or screen-local UI orchestration.
 
+### 8.5 Drone Consensus Guard Standard
+
+Every WASM drone method MUST declare one execution scope:
+
+- `solo`: the method uses only the local Capsule state and does not require a peer.
+- `market_scan`: the method reads public/external data and may rank opportunities, but does not mutate a pair-scoped contract.
+- `pair_scoped`: the method acts with, for, or toward a specific peer Capsule.
+
+Rules:
+
+1. `pair_scoped` methods MUST require an explicit `peer_hex` root identity.
+2. `pair_scoped` methods MUST call the shared Consensus Guard boundary before
+   execution. The only valid runtime truth is `ConsensusRuntimeService.signable(peer_hex)`
+   over ledger-derived events.
+3. A method MUST NOT treat "any signable peer" as permission for a different,
+   missing, or unresolved peer.
+4. A method MUST NOT use UI-selected peer lists, contact cards, transport
+   mappings, or plugin-local memory as consensus truth. Those inputs may help
+   route or display, but not authorize execution.
+5. `market_scan` and diagnostic flows MAY bypass pair consensus only when they
+   do not send peer-scoped commands, do not broadcast pair-scoped intent, and do
+   not create exchange/transport effects on behalf of a peer.
+6. Host and plugin outputs MUST include deterministic blocker codes when pair
+   consensus is absent, unresolved, pending, broken, or peer selection is missing.
+
 ---
 
 ## 9. Invariants (DO NOT VIOLATE)

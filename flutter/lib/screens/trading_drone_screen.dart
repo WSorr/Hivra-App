@@ -1235,6 +1235,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return (isSignable: false, blockingCodes: const <String>[]);
     }
 
+    if (normalizedPeer.isEmpty) {
+      return (
+        isSignable: false,
+        blockingCodes: const <String>['consensus_peer_not_selected'],
+      );
+    }
+
     if (normalizedPeer.isNotEmpty) {
       for (final check in checks) {
         if (check.peerHex.trim().toLowerCase() == normalizedPeer) {
@@ -1249,19 +1256,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
     }
 
-    final hasSignable = checks.any((check) => check.isSignable);
-    if (hasSignable) {
-      return (isSignable: true, blockingCodes: const <String>[]);
-    }
-
-    final first = checks.first;
-    final fallbackCodes = first.blockingFacts
-        .map((fact) => fact.code.trim())
-        .where((code) => code.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
-    return (isSignable: false, blockingCodes: fallbackCodes);
+    return (
+      isSignable: false,
+      blockingCodes: const <String>['consensus_peer_not_found'],
+    );
   }
 
   Future<BingxFuturesLiveDecisionResult?> _computeLiveDecision({

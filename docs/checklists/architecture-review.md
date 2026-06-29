@@ -44,7 +44,10 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Plugin registry/storage remains sandboxed and isolated from ledger storage.
 - [ ] Plugins do not append ledger events directly.
 - [ ] Plugins cannot bypass Engine validation/Core invariants.
-- [ ] Pair-scoped plugin execution is gated by consensus guard readiness.
+- [ ] Every drone method declares exactly one scope: `solo`, `market_scan`, or `pair_scoped`.
+- [ ] Pair-scoped plugin execution requires explicit `peer_hex` and is gated by `ConsensusRuntimeService.signable(peer_hex)`.
+- [ ] No pair-scoped path treats "any signable peer" as authorization for a missing or different peer.
+- [ ] Market-scan/diagnostic bypasses do not send peer-scoped commands, broadcast pair-scoped intent, or execute peer-scoped effects.
 - [ ] Plugin inputs/outputs are deterministic for identical inputs.
 - [ ] Repo boundary is preserved: `Hivra-App` is host/runtime only; plugin implementation source/release flow lives in `hivra-plugins`.
 - [ ] Plugin changes in `Hivra-App` are limited to host API/runtime boundary, install/catalog projection, and execution guards (no plugin-source duplication).

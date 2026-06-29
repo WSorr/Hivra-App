@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'bingx_futures_exchange_service.dart';
+import 'hivra_secure_storage_options.dart';
 import 'user_visible_data_directory_service.dart';
 
 class BingxFuturesCredentialStore {
@@ -24,7 +25,10 @@ class BingxFuturesCredentialStore {
     FlutterSecureStorage? secureStorage,
     UserVisibleDataDirectoryService? dirs,
   })  : _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
-        _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+        _secureStorage = secureStorage ??
+            const FlutterSecureStorage(
+              mOptions: hivraMacOsSecureStorageOptions,
+            ),
         _dirs = dirs ?? const UserVisibleDataDirectoryService();
 
   Future<void> save(BingxFuturesApiCredentials credentials) async {

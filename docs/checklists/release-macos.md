@@ -37,6 +37,9 @@ Use this checklist before publishing any macOS build to testers or end users.
 - [ ] Release channel was selected intentionally:
   - `test` allows unsigned / non-notarized artifacts for internal testing only.
   - `public` requires signed + notarized artifacts.
+- [ ] macOS signing capability scope is intentional:
+  - `test` ad-hoc builds do not add certificate-only entitlements.
+  - `public` signed builds validate Keychain-related capabilities with the signing identity.
 - [ ] Release asset name clearly indicates version and target.
 - [ ] ZIP or DMG was rebuilt from the latest `.app`.
 - [ ] `SHA256SUMS.txt` was regenerated.

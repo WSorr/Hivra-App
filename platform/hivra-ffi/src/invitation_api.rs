@@ -701,9 +701,10 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         &invitation_id[..4]
     );
 
+    let delivery_to_pubkey = *acceptance_plan.sender_pubkey.as_bytes();
     let message = Message {
         from: sender_pubkey,
-        to: from_pubkey,
+        to: delivery_to_pubkey,
         kind: EventKind::InvitationAccepted as u32,
         payload: delivery_payload,
         timestamp: delivery_timestamp,
@@ -713,7 +714,7 @@ pub unsafe extern "C" fn hivra_accept_invitation(
 
     eprintln!(
         "[Delivery/Nostr] Sending InvitationAccepted to_prefix={:02x?} invitation_prefix={:02x?}",
-        &from_pubkey[..4],
+        &delivery_to_pubkey[..4],
         &invitation_id[..4]
     );
 

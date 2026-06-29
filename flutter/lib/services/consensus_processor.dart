@@ -32,6 +32,7 @@ class ConsensusBlockingFact {
             : 'No active relationship with ${_shortId(subjectId!)}',
         'consensus_runtime_unavailable' => 'Consensus runtime unavailable',
         'invalid_local_transport_key' => 'Invalid local transport key',
+        'consensus_peer_not_selected' => 'Consensus peer not selected',
         'consensus_peer_not_found' => 'Consensus peer not found',
         'invalid_peer_id' => 'Invalid peer id',
         'invalid_expected_hash' => 'Invalid expected hash',
@@ -277,15 +278,15 @@ class ConsensusProcessor {
           invitationId,
           () => _PairwiseInviteFact(invitationId),
         );
-        final transportPeerHex = isIncoming
-            ? signerHex
-            : toPubkeyHex;
+        final transportPeerHex = isIncoming ? signerHex : toPubkeyHex;
         if (transportPeerHex != null && transportPeerHex.isNotEmpty) {
           inviteTransportPeerById[invitationId] = transportPeerHex;
         }
-        final starterKind = (payload.length == 97 || payload.length == 129)
-            ? payload[payload.length - 1]
-            : null;
+        final starterKind = switch (payload.length) {
+          97 => payload[96],
+          129 || 161 => payload[128],
+          _ => null,
+        };
         if (starterKind != null) {
           fact.starterKinds.add(starterKind);
         }

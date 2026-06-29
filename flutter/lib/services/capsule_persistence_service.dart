@@ -141,7 +141,7 @@ class CapsulePersistenceService {
   final CapsuleIdentityReconcilerService _identityReconciler =
       const CapsuleIdentityReconcilerService();
   final LedgerViewSupport _support = const LedgerViewSupport();
-  final CapsuleSeedStore _seedStore = const CapsuleSeedStore();
+  final CapsuleSeedStore _seedStore = CapsuleSeedStore();
   final UserVisibleDataDirectoryService _userVisibleDirs =
       const UserVisibleDataDirectoryService();
   late final CapsuleRuntimeBootstrapService _runtimeBootstrapService;
@@ -242,7 +242,15 @@ class CapsulePersistenceService {
     if (ledger == null || ledger.isEmpty) return false;
 
     final dir = await _currentCapsuleDir(hivra, create: true);
+    final existingLedger = await _fileStore.readLedger(dir);
+    if (_isIncomingLedgerStale(
+      incomingLedgerJson: ledger,
+      existingLedgerJson: existingLedger,
+    )) {
+      return false;
+    }
     await _fileStore.writeLedger(dir, ledger);
+    await _writeBackupEnvelopeForLedger(dir, ledger);
     await _touchActiveCapsule(hivra);
     return true;
   }
@@ -284,6 +292,7 @@ class CapsulePersistenceService {
       return false;
     }
     await _fileStore.writeLedger(dir, ledgerJson);
+    await _writeBackupEnvelopeForLedger(dir, ledgerJson);
     // Keep index heartbeat fresh for the capsule that actually produced worker output,
     // but do not switch active capsule.
     await _upsertCapsuleIndex(targetPubKeyHex);
@@ -360,6 +369,19 @@ class CapsulePersistenceService {
     return imported;
   }
 
+  Future<void> _writeBackupEnvelopeForLedger(
+    Directory dir,
+    String ledgerJson,
+  ) async {
+    final state = await _fileStore.readState(dir);
+    final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
+      ledgerJson: ledgerJson,
+      isGenesis: state?['isGenesis'] == true,
+      isNeste: state?['isNeste'] != false,
+    );
+    await _fileStore.writeBackup(dir, backupJson);
+  }
+
   Future<void> clearPersistedData(CapsulePersistenceBindings hivra,
       {bool includeBackup = false}) async {
     final dir = await _currentCapsuleDir(hivra);
@@ -397,7 +419,14 @@ class CapsulePersistenceService {
 
   Future<bool> bootstrapActiveCapsuleRuntime(
       CapsulePersistenceBindings hivra) async {
-    var activeHex = await resolveActiveCapsuleHex(hivra);
+    await _reconcileCapsuleIdentityIndex(hivra);
+    final index = await _readIndex();
+    final selectedActiveHex = index.activePubKeyHex?.trim().toLowerCase();
+    final hasExplicitActive =
+        selectedActiveHex != null && selectedActiveHex.isNotEmpty;
+    var activeHex = hasExplicitActive
+        ? selectedActiveHex
+        : await resolveActiveCapsuleHex(hivra);
     if (activeHex == null || activeHex.isEmpty) {
       return bootstrapRuntimeFromDisk(hivra);
     }
@@ -407,7 +436,9 @@ class CapsulePersistenceService {
       hivra: hivra,
     );
     if (bootstrap == null) {
-      final index = await _readIndex();
+      if (hasExplicitActive) {
+        return false;
+      }
       final recovered = await _recoverActiveCapsuleHexFromIndex(
         index,
         exclude: {activeHex},
@@ -438,6 +469,18 @@ class CapsulePersistenceService {
     }
 
     if (!_importBootstrapLedgerCandidates(hivra, bootstrap)) {
+      return false;
+    }
+
+    final runtimeRoot = hivra.capsuleRootPublicKey();
+    final runtimeOwner = hivra.capsuleRuntimeOwnerPublicKey();
+    final runtimeRootHex = runtimeRoot != null && runtimeRoot.length == 32
+        ? _bytesToHex(runtimeRoot)
+        : null;
+    final runtimeOwnerHex = runtimeOwner != null && runtimeOwner.length == 32
+        ? _bytesToHex(runtimeOwner)
+        : null;
+    if (runtimeRootHex != activeHex && runtimeOwnerHex != activeHex) {
       return false;
     }
 
@@ -685,10 +728,6 @@ class CapsulePersistenceService {
 
   Future<List<CapsuleIndexEntry>> listCapsules(
       {CapsulePersistenceBindings? hivra}) async {
-    if (hivra != null) {
-      await _ensureIndexFromCurrentSeed(hivra);
-      await _reconcileCapsuleIdentityIndex(hivra);
-    }
     final index = await _readIndex();
     final entries = <CapsuleIndexEntry>[];
     for (final entry in index.capsules.values) {
@@ -812,14 +851,33 @@ class CapsulePersistenceService {
     final activeHex = await resolveActiveCapsuleHex(hivra);
     var bootstrapCapsuleHex = requestedCapsuleHex;
     CapsuleRuntimeBootstrap? bootstrap;
-    if (bootstrapCapsuleHex != null && bootstrapCapsuleHex.isNotEmpty) {
+
+    final currentBootstrap = await loadRuntimeBootstrapForCurrent(hivra);
+    final currentRuntimeHex = currentBootstrap?.pubKeyHex;
+    final requestedCurrentRuntime = requestedCapsuleHex != null &&
+        currentRuntimeHex != null &&
+        requestedCapsuleHex == currentRuntimeHex;
+    final activeCurrentRuntime = activeHex != null &&
+        currentRuntimeHex != null &&
+        activeHex == currentRuntimeHex;
+
+    if (currentBootstrap != null &&
+        (requestedCapsuleHex == null ||
+            requestedCurrentRuntime ||
+            (activeCurrentRuntime && requestedCapsuleHex == activeHex))) {
+      bootstrapCapsuleHex = currentRuntimeHex;
+      bootstrap = currentBootstrap;
+    }
+
+    if (bootstrap == null &&
+        bootstrapCapsuleHex != null &&
+        bootstrapCapsuleHex.isNotEmpty) {
       bootstrap = await loadRuntimeBootstrap(bootstrapCapsuleHex);
     }
     if (bootstrap == null && activeHex != null && activeHex.isNotEmpty) {
       bootstrapCapsuleHex = activeHex;
       bootstrap = await loadRuntimeBootstrap(activeHex);
     }
-    bootstrap ??= await loadRuntimeBootstrapForCurrent(hivra);
     if (bootstrap == null) return null;
 
     return <String, Object?>{
@@ -1588,30 +1646,6 @@ class CapsulePersistenceService {
     await _indexStore.write(index);
   }
 
-  Future<void> _ensureIndexFromCurrentSeed(
-      CapsulePersistenceBindings hivra) async {
-    final index = await _readIndex();
-    if (index.capsules.isNotEmpty) return;
-    if (!hivra.seedExists()) return;
-    final pubKey = hivra.capsuleRuntimeOwnerPublicKey();
-    if (pubKey == null || pubKey.length != 32) return;
-    final pubKeyHex = _bytesToHex(pubKey);
-
-    await _capsuleDirForHex(pubKeyHex, create: true);
-    final currentSeed = hivra.loadSeed();
-    if (currentSeed != null) {
-      await _storeSeedForCapsule(pubKeyHex, currentSeed);
-    }
-    final state = await _readStateForCapsuleHex(pubKeyHex);
-    await _upsertCapsuleIndex(
-      pubKeyHex,
-      isGenesis: state?['isGenesis'] == true,
-      isNeste: state?['isNeste'] != false,
-      identityMode: _detectIdentityMode(hivra, pubKeyHex),
-    );
-    await _setActiveCapsule(pubKeyHex);
-  }
-
   String _detectIdentityMode(
       CapsulePersistenceBindings hivra, String pubKeyHex) {
     final rootPubKey = hivra.capsuleRootPublicKey();
@@ -1631,12 +1665,6 @@ class CapsulePersistenceService {
     }
 
     return 'mixed_or_unknown';
-  }
-
-  Future<Map<String, dynamic>?> _readStateForCapsuleHex(
-      String pubKeyHex) async {
-    final dir = await _capsuleDirForHex(pubKeyHex);
-    return _fileStore.readState(dir);
   }
 
   String _bytesToHex(Uint8List bytes) {

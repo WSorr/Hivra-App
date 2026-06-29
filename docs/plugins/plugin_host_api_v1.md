@@ -113,6 +113,15 @@ This document defines the first deterministic host API boundary used before wasm
 - Runtime capability requirements are method-scoped:
   - `place_bingx_futures_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.futures`
   - `post_capsule_chat_message` requires `consensus_guard.read`
+- Drone consensus scopes are explicit:
+  - `solo` methods do not require a peer and must not read pair consensus.
+  - `market_scan` methods may read public/external data and rank opportunities
+    without pair consensus, but must not mutate pair-scoped state or execute
+    peer-scoped effects.
+  - `pair_scoped` methods require `peer_hex` and must call
+    `ConsensusRuntimeService.signable(peer_hex)` through the host guard.
+  - host code must never replace a missing or unresolved `peer_hex` with "any
+    signable peer".
 - Current runtime executes plugin-owned semantics through bounded `wasmi_v1`:
   - when `execution_package_digest_hex` is present, host verifies installed package bytes against that digest before runtime module extraction
     - digest shape mismatch or digest mismatch rejects runtime invoke as invalid

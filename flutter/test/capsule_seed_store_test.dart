@@ -9,6 +9,7 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
+  final Map<String, int> readCounts = <String, int>{};
 
   @override
   Future<void> write({
@@ -38,6 +39,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    readCounts[key] = (readCounts[key] ?? 0) + 1;
     return values[key];
   }
 
@@ -154,5 +156,23 @@ void main() {
       base64.encode(seed),
     );
     expect(await fallbackFile.exists(), isFalse);
+  });
+
+  test('caches loaded seed for the current process', () async {
+    final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
+    addTearDown(() => tempHome.delete(recursive: true));
+    final secureStorage = _FakeSecureStorage();
+    secureStorage.values['hivra.seed.$capsuleHex'] = base64.encode(seed);
+    final store = CapsuleSeedStore(
+      secureStorage: secureStorage,
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+
+    final first = await store.loadSeed(capsuleHex);
+    final second = await store.loadSeed(capsuleHex);
+
+    expect(first, orderedEquals(seed));
+    expect(second, orderedEquals(seed));
+    expect(secureStorage.readCounts['hivra.seed.$capsuleHex'], equals(1));
   });
 }

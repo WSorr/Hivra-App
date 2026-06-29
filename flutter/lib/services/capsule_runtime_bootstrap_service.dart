@@ -222,6 +222,24 @@ class CapsuleRuntimeBootstrapService {
 
     final exported = runtime.exportLedger();
     if (exported == null || exported.isEmpty) return false;
+    final exportedCandidate = _ledgerCandidateForCapsule(
+      exported,
+      pubKeyHex,
+      bytesToHex,
+      source: _LedgerSource.ledger,
+    );
+    if (ledgerCandidate != null &&
+        exportedCandidate != null &&
+        exportedCandidate.eventCount < ledgerCandidate.eventCount) {
+      return false;
+    }
+    if (ledgerCandidate != null &&
+        exportedCandidate != null &&
+        exportedCandidate.eventCount == ledgerCandidate.eventCount &&
+        _parseLedgerLastHash(exportedCandidate.json) !=
+            _parseLedgerLastHash(ledgerCandidate.json)) {
+      return false;
+    }
     await _fileStore.writeLedger(dir, exported);
     return true;
   }
@@ -350,6 +368,10 @@ class CapsuleRuntimeBootstrapService {
 
   Map<String, dynamic>? _parseLedgerRoot(String? ledgerJson) {
     return _support.exportLedgerRoot(ledgerJson);
+  }
+
+  String? _parseLedgerLastHash(String ledgerJson) {
+    return _parseLedgerRoot(ledgerJson)?['last_hash']?.toString();
   }
 
   bool? _stateGenesis(Map<String, dynamic>? state) {

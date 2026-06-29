@@ -1165,3 +1165,29 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       adapters; plugin owns contract semantics.
     - `trading_drone_parity_gate.sh` is green and release evidence is recorded.
   - Status: completed (2026-06-14).
+
+- `11.12 Pair-Scoped Trading Consensus Guard`
+  - Goal:
+    - keep Trading Drone execution diagnostics pair-scoped instead of treating
+      any signable peer as permission for an unspecified peer.
+  - Implemented:
+    - `TradingDroneScreen` now reports `consensus_peer_not_selected` when a
+      live intent path has no explicit peer, and `consensus_peer_not_found`
+      when the selected peer is absent from the current consensus projection.
+    - market scan and managed-order structural revalidation keep their explicit
+      diagnostic bypass path (`forceConsensusSignable`) because they do not
+      mutate a pair-scoped contract by themselves.
+    - `ConsensusProcessor` regression coverage now locks the ledger truth that
+      an active relationship with one peer does not make a pending invitation
+      from another peer signable.
+  - Status: completed (2026-06-28).
+
+- `11.13 Local Backup Follows Ledger`
+  - Goal:
+    - prevent local capsule backups from becoming a stale second truth after
+      normal ledger mutations.
+  - Implemented:
+    - every persisted runtime ledger snapshot now refreshes the local
+      `capsule-backup.v1.json` envelope from the same ledger and capsule state.
+    - worker-provided capsule ledger snapshots follow the same rule.
+  - Status: completed (2026-06-29).

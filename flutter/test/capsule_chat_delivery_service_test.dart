@@ -6,7 +6,10 @@ import 'package:hivra_app/ffi/app_runtime_runtime.dart';
 import 'package:hivra_app/ffi/capsule_address_runtime.dart';
 import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
 import 'package:hivra_app/ffi/ledger_view_runtime.dart';
+import 'package:hivra_app/models/relationship.dart';
+import 'package:hivra_app/models/starter.dart';
 import 'package:hivra_app/services/bingx_futures_execution_command_service.dart';
+import 'package:hivra_app/services/capsule_address_service.dart';
 import 'package:hivra_app/services/consensus_processor.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
 import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
@@ -192,6 +195,82 @@ void main() {
       droneService.loadCachedTradeSignals().single.signalId,
       equals('sig-shared'),
     );
+  });
+
+  test(
+      'prefers contact-card transport when root also appears as relationship peer',
+      () async {
+    const peerRootHex =
+        '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+    const peerTransportHex =
+        'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627';
+    const localRootHex =
+        '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+    Uint8List? sentToPubkey;
+
+    final service = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(
+        <ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerRootHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ],
+      ),
+      loadRelationships: () => <Relationship>[
+        Relationship(
+          // Regression shape: a mixed root/transport ledger can expose the
+          // root as peerPubkey. Sending must still prefer the contact card
+          // transport endpoint for a root-addressed peer.
+          peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
+          peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+          kind: StarterKind.juice,
+          ownStarterId: base64Encode(Uint8List(32)),
+          peerStarterId:
+              base64Encode(Uint8List.fromList(List<int>.filled(32, 1))),
+          establishedAt: DateTime.utc(2026, 6, 28),
+        ),
+      ],
+      listTrustedCards: () async => const <CapsuleAddressCard>[
+        CapsuleAddressCard(
+          rootKey:
+              'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
+          rootHex: peerRootHex,
+          nostrNpub:
+              'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
+          nostrHex: peerTransportHex,
+        ),
+      ],
+      sendWorkerRunner: (args) async {
+        sentToPubkey = args['toPubkey'] as Uint8List;
+        return <String, Object?>{
+          'result': 0,
+          'lastError': null,
+        };
+      },
+    );
+
+    final result = await service.sendCanonicalEnvelope(
+      peerHex: peerRootHex,
+      canonicalEnvelopeJson: '{"message_text":"hello"}',
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.deliveryPeerHex, equals(peerTransportHex));
+    expect(_bytesToHex(sentToPubkey!), equals(peerTransportHex));
   });
 
   group('CapsuleChatDeliveryService execution command flow', () {
@@ -536,4 +615,12 @@ Uint8List _hexToBytes(String hex) {
     out[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
   }
   return out;
+}
+
+String _bytesToHex(Uint8List bytes) {
+  final buffer = StringBuffer();
+  for (final byte in bytes) {
+    buffer.write(byte.toRadixString(16).padLeft(2, '0'));
+  }
+  return buffer.toString();
 }

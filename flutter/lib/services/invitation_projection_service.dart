@@ -59,7 +59,8 @@ class InvitationProjectionService {
           (payload.length == 96 ||
               payload.length == 97 ||
               payload.length == 128 ||
-              payload.length == 129)) {
+              payload.length == 129 ||
+              payload.length == 161)) {
         final signerBytes = _support.payloadBytes(e['signer']);
         if (signerBytes.length != 32) {
           continue;
@@ -70,10 +71,14 @@ class InvitationProjectionService {
         final toPubkey = payload.sublist(64, 96);
         final starterIdB64 = base64.encode(starterId);
 
-        final hasKindByte = payload.length == 97 || payload.length == 129;
-        final kindFromPayload = hasKindByte
-            ? _support.starterKindFromByte(payload[payload.length - 1])
-            : null;
+        final kindByteOffset = switch (payload.length) {
+          97 => 96,
+          129 || 161 => 128,
+          _ => null,
+        };
+        final kindFromPayload = kindByteOffset == null
+            ? null
+            : _support.starterKindFromByte(payload[kindByteOffset]);
         final senderRoot = payload.length >= 128
             ? Uint8List.fromList(payload.sublist(96, 128))
             : null;

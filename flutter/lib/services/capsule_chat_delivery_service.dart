@@ -718,8 +718,8 @@ class CapsuleChatDeliveryService {
       final transportHex = _normalizeHex32(card.nostrHex);
       if (rootHex == null || transportHex == null) continue;
       transportPeers.add(transportHex);
-      transportToRoot.putIfAbsent(transportHex, () => rootHex);
-      rootToTransport.putIfAbsent(rootHex, () => transportHex);
+      transportToRoot[transportHex] = rootHex;
+      rootToTransport[rootHex] = transportHex;
     }
 
     return _PeerIdentityIndex(
@@ -934,10 +934,10 @@ class _PeerIdentityIndex {
   String? resolveTransportForSend(String peerHex) {
     final normalized = peerHex.trim().toLowerCase();
     if (!_isHex64(normalized)) return null;
-    if (_transportPeers.contains(normalized)) {
-      return normalized;
-    }
-    return _rootToTransport[normalized];
+    final mappedTransport = _rootToTransport[normalized];
+    if (mappedTransport != null) return mappedTransport;
+    if (_transportPeers.contains(normalized)) return normalized;
+    return null;
   }
 
   String resolveConsensusForIncoming(String transportPeerHex) {
