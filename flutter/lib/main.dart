@@ -7,7 +7,9 @@ import 'screens/recovery_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/ledger_inspector_screen.dart';
 import 'screens/trading_drone_screen.dart';
+import 'screens/transports_screen.dart';
 import 'screens/wasm_plugins_screen.dart';
+import 'services/app_runtime_service.dart';
 import 'services/recovery_service.dart';
 
 void main() {
@@ -55,6 +57,12 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(builder: (_) => LedgerInspectorScreen());
           case '/wasm_plugins':
             return MaterialPageRoute(builder: (_) => const WasmPluginsScreen());
+          case '/transports':
+            return MaterialPageRoute(
+              builder: (_) => TransportsScreen(
+                runtime: AppRuntimeService(),
+              ),
+            );
           case '/trading_drone':
             return MaterialPageRoute(
                 builder: (_) => const TradingDroneScreen());

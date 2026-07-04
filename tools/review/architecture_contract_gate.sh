@@ -91,6 +91,14 @@ require_present "$SPEC" 'Flutter Boundary Direction' \
   "spec defines downward direction inside Flutter boundary"
 require_present "$SPEC" 'WASM Plugin Host Contract' \
   "spec defines wasm plugin-host contract"
+require_present "$SPEC" 'Transport adapters are host-level system adapters, not WASM drones' \
+  "spec separates transport adapters from wasm drones"
+require_present "$CHECKLIST" 'Transport adapters are not modeled as WASM drones; drones request delivery only through host APIs\.' \
+  "architecture checklist separates transport adapters from wasm drones"
+require_absent "$SPEC" 'Supported transports \(plugins\)|Matrix \(plugin|BLE \(plugin|Local network \(plugin' \
+  "spec does not describe transport adapters as ordinary plugins"
+require_absent "$README" 'Supported transports \(plugins\)|Matrix \(plugin|BLE \(plugin|Local network \(plugin' \
+  "root README does not describe transport adapters as ordinary plugins"
 require_present "$SPEC" 'Drone Consensus Guard Standard' \
   "spec defines drone consensus guard standard"
 require_present "$SPEC" '`pair_scoped` methods MUST call the shared Consensus Guard boundary' \

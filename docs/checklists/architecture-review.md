@@ -44,6 +44,7 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Plugin registry/storage remains sandboxed and isolated from ledger storage.
 - [ ] Plugins do not append ledger events directly.
 - [ ] Plugins cannot bypass Engine validation/Core invariants.
+- [ ] Transport adapters are not modeled as WASM drones; drones request delivery only through host APIs.
 - [ ] Every drone method declares exactly one scope: `solo`, `market_scan`, or `pair_scoped`.
 - [ ] Pair-scoped plugin execution requires explicit `peer_hex` and is gated by `ConsensusRuntimeService.signable(peer_hex)`.
 - [ ] No pair-scoped path treats "any signable peer" as authorization for a missing or different peer.

@@ -372,14 +372,16 @@ fn validate_incoming_event(
 ### 5.2 Supported Transports
 
 - Nostr (built-in, secp256k1)
-- Matrix (plugin, ed25519)
-- BLE (plugin)
-- Local network (plugin)
+- Matrix (planned host adapter, ed25519)
+- BLE (planned host adapter)
+- Local network (planned host adapter)
 
 Each transport provides:
 
 1. Transport implementation (send/receive bytes).
 2. CryptoProvider implementation (for its curve).
+
+Transport adapters are host-level system adapters, not WASM drones. A drone can request delivery through the host boundary, but it MUST NOT receive direct network, keychain, relay, or transport-session access. This keeps effectful delivery below the application boundary while preserving deterministic plugin execution.
 
 ### 5.2.1 WASM Plugin Host Contract
 

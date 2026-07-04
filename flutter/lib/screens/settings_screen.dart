@@ -7,7 +7,8 @@ class SettingsScreen extends StatefulWidget {
   final SettingsService service;
   final Future<void> Function()? onLedgerChanged;
 
-  const SettingsScreen({super.key, required this.service, this.onLedgerChanged});
+  const SettingsScreen(
+      {super.key, required this.service, this.onLedgerChanged});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -261,8 +262,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           icon: const Icon(Icons.delete_outline),
                           tooltip: 'Remove',
                           onPressed: () async {
-                            final removed =
-                                await widget.service.removeTrustedCard(card.rootKey);
+                            final removed = await widget.service
+                                .removeTrustedCard(card.rootKey);
                             if (!removed) return;
                             cards.removeAt(index);
                             await _loadContactCount();
@@ -291,7 +292,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         children: [
           const SizedBox(height: 16),
-          
           _buildSection(
             title: 'Security',
             children: [
@@ -316,7 +316,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 leading: const Icon(Icons.storage),
                 title: const Text('Ledger inspector'),
-                subtitle: const Text('View owner, hash and recent ledger events'),
+                subtitle:
+                    const Text('View owner, hash and recent ledger events'),
                 onTap: () async {
                   await Navigator.pushNamed(context, '/ledger_inspector');
                   await _notifyLedgerChanged();
@@ -338,9 +339,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-
           const Divider(),
-
           _buildSection(
             title: 'Network',
             children: [
@@ -358,10 +357,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               ListTile(
+                leading: const Icon(Icons.cable),
+                title: const Text('Transports'),
+                subtitle: const Text(
+                  'Inspect host transport adapters and delivery boundary',
+                ),
+                onTap: () async {
+                  await Navigator.pushNamed(context, '/transports');
+                  await _notifyLedgerChanged();
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.extension),
                 title: const Text('WASM plugins'),
                 subtitle: const Text(
-                  'Inspect plugin host status and planned transport adapters',
+                  'Install and inspect sandboxed drone packages',
                 ),
                 onTap: () async {
                   await Navigator.pushNamed(context, '/wasm_plugins');
@@ -377,11 +387,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.sensors),
                   title: const Text('Relay mode'),
-                  subtitle: Text(
-                    _isRelay
-                        ? 'Active (stores messages for trusted peers)'
-                        : 'Inactive (leaf node only)'
-                  ),
+                  subtitle: Text(_isRelay
+                      ? 'Active (stores messages for trusted peers)'
+                      : 'Inactive (leaf node only)'),
                   trailing: Switch(
                     value: _isRelay,
                     onChanged: (value) {
@@ -395,7 +403,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const Divider(),
           ],
-
           _buildSection(
             title: 'Trusted Peers',
             children: [
@@ -425,9 +432,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-
           const Divider(),
-
           _buildSection(
             title: 'About',
             children: [
@@ -443,7 +448,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSection({required String title, required List<Widget> children}) {
+  Widget _buildSection(
+      {required String title, required List<Widget> children}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

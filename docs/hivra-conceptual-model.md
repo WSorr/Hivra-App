@@ -386,18 +386,24 @@ Invite with locked starter | Error: starter busy
 
 Hivra currently ships with Nostr as the main transport, but the architecture allows others:
 
-Supported transports (plugins):
+Supported host transport adapters:
 
 - Nostr (built-in)
-- Matrix (plugin)
-- Bluetooth LE (plugin, mesh)
-- Local network (plugin, offline enclaves)
+- Matrix (planned host adapter)
+- Bluetooth LE (planned host adapter, mesh)
+- Local network (planned host adapter, offline enclaves)
 
 How it works:
 
 - Capsule can use one or multiple transports
 - Message is broadcast to all recipient transports
 - Recipient accepts the first delivered
+
+Boundary:
+
+- transport adapters are not WASM drones
+- transport adapters perform effectful delivery work: network, relay, retry, and transport-specific routing
+- WASM drones may ask the host to deliver deterministic envelopes, but never receive direct network or keychain access
 
 Guarantees:
 

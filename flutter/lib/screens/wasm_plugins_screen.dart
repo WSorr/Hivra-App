@@ -55,18 +55,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
   int _chatDroppedByConsensus = 0;
 
-  static const List<_CatalogPlugin> _transportPlugins = <_CatalogPlugin>[
-    _CatalogPlugin(
-      title: 'Nostr',
-      subtitle: 'Native transport already mounted',
-      status: 'Built-in',
-      accent: Color(0xFF5FD16F),
-      icon: Icons.hub,
-      glow: Color(0xFF1F3E27),
-      note: 'Current active transport',
-    ),
-  ];
-
   static const List<_BoundaryRule> _boundaryRules = <_BoundaryRule>[
     _BoundaryRule(
       title: 'Bytes Only',
@@ -751,21 +739,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                     const SizedBox(height: 16),
                     _AdvancedPluginTools(
                       children: [
-                        const SizedBox(height: 20),
-                        const _SectionTitle(
-                          title: 'Transport',
-                          subtitle: 'Built-in transport available to Hivra.',
-                        ),
-                        const SizedBox(height: 12),
-                        _PluginGrid(
-                          maxColumns: 3,
-                          children: _transportPlugins
-                              .map(
-                                (plugin) => _CatalogPluginTile(plugin: plugin),
-                              )
-                              .toList(),
-                        ),
-                        const SizedBox(height: 20),
                         const _SectionTitle(
                           title: 'Boundary Rules',
                           subtitle:
@@ -967,7 +940,7 @@ class _AdvancedPluginTools extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
           subtitle: const Text(
-            'Host diagnostics, transport and boundary details',
+            'Host diagnostics and plugin boundary details',
             style: TextStyle(color: Color(0xFF8E98A7)),
           ),
           children: children,
@@ -2225,74 +2198,6 @@ class _PluginGrid extends StatelessWidget {
   }
 }
 
-class _CatalogPluginTile extends StatelessWidget {
-  final _CatalogPlugin plugin;
-
-  const _CatalogPluginTile({required this.plugin});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: <Color>[plugin.glow, const Color(0xFF131920)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: plugin.accent.withAlpha(70)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _PluginIconPlate(
-                icon: plugin.icon,
-                accent: plugin.accent,
-                glow: plugin.accent.withAlpha(28),
-              ),
-              const Spacer(),
-              _StatusPill(
-                label: plugin.status,
-                accent: plugin.accent,
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
-          Text(
-            plugin.title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            plugin.subtitle,
-            style: const TextStyle(
-              color: Color(0xFFA5B0BE),
-              height: 1.35,
-            ),
-          ),
-          if (plugin.note != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              plugin.note!,
-              style: TextStyle(
-                color: plugin.accent.withAlpha(220),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _RuleTile extends StatelessWidget {
   final _BoundaryRule rule;
 
@@ -2446,26 +2351,6 @@ class _InfoChip extends StatelessWidget {
       ),
     );
   }
-}
-
-class _CatalogPlugin {
-  final String title;
-  final String subtitle;
-  final String status;
-  final Color accent;
-  final IconData icon;
-  final Color glow;
-  final String? note;
-
-  const _CatalogPlugin({
-    required this.title,
-    required this.subtitle,
-    required this.status,
-    required this.accent,
-    required this.icon,
-    required this.glow,
-    this.note,
-  });
 }
 
 class _BoundaryRule {

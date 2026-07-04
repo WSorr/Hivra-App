@@ -594,7 +594,8 @@ Scope:
   - WASM Plugins catalog/installed grids now use compact bounded layout (`maxColumns=3` with tighter aspect ratios), preventing oversized "skyscraper" plugin cards on wide desktop windows while keeping deterministic package diagnostics visible.
 
 Definition of done:
-- Plugins extend transport capabilities without bypassing core rules or rewriting local truth.
+- WASM drones extend user-facing behavior without bypassing core rules or rewriting local truth.
+- Transport capabilities extend through host transport adapters, not through ordinary WASM drone packages.
 - Status: completed (2026-04-19, v1 scope pre-runtime-execution).
 
 ## Working Rule

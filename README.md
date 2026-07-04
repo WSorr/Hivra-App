@@ -23,12 +23,14 @@ This repository implements Hivra v1.0.0 specification:
 
 - **Core** — Pure domain logic (deterministic, no I/O, no crypto knowledge)
 - **Engine** — Orchestration layer (time, RNG, crypto provider)
-- **Transport** — Abstract transport layer (Nostr, Matrix, BLE)
+- **Transport** — Host adapter layer for delivery (Nostr now; Matrix, BLE, and local mesh later)
 - **Platform** — OS-specific implementations (SecureKeyStore)
 - **Plugin Host** — WASM drone runtime with capability gates
 - **Flutter UI** — Cross-platform interface
 
 Chat, trading, staking, AI, and other user-facing features are drones, not Core. Core stays minimal: Capsule, Ledger, Invitations, Trust Layer, Pair Consensus, and the runtime contracts required for safe drone execution.
+
+Transport adapters are not WASM drones. They are host-level system adapters that move signed capsule envelopes through external networks. WASM drones can request delivery through host APIs, but they do not get direct network, keychain, relay, or transport-session access.
 
 ### Compile-Time Dependency Contract
 

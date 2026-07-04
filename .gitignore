@@ -28,6 +28,7 @@ Cargo.lock
 
 # Local release artifacts
 /dist/
+/outputs/
 *.dmg
 *.zip
 SHA256SUMS.txt
