@@ -170,7 +170,7 @@ class _ReportView extends StatelessWidget {
         const SizedBox(height: 12),
         _PluginAuditCard(service: pluginAuditService),
         const SizedBox(height: 12),
-        _DeveloperWorkspaceCard(service: developerWorkspaceService),
+        _DeveloperModeBoundary(service: developerWorkspaceService),
         const SizedBox(height: 12),
         _SectionCard(
           title: 'Ledger',
@@ -724,6 +724,97 @@ class _PluginAuditEntryTile extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _DeveloperModeBoundary extends StatefulWidget {
+  final AiDeveloperWorkspaceService service;
+
+  const _DeveloperModeBoundary({required this.service});
+
+  @override
+  State<_DeveloperModeBoundary> createState() => _DeveloperModeBoundaryState();
+}
+
+class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
+  bool _enabled = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      color: _enabled
+          ? Color.alphaBlend(
+              Colors.orange.withValues(alpha: 0.12),
+              theme.cardColor,
+            )
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.construction,
+                  color: _enabled ? Colors.orange : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Developer Mode',
+                    style: theme.textTheme.titleLarge,
+                  ),
+                ),
+                Switch(
+                  value: _enabled,
+                  onChanged: (value) {
+                    setState(() {
+                      _enabled = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _enabled
+                  ? 'Developer Mode is enabled for this screen session. Repository context remains manual, read-only, and preview-first.'
+                  : 'Disabled by default. Enable only when you intentionally want local repository diagnostics.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            if (!_enabled) ...[
+              const SizedBox(height: 12),
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.lock_outline),
+                title: Text('Workspace tools are locked'),
+                subtitle: Text(
+                  'Capsule Doctor remains user-facing until Developer Mode is explicitly enabled.',
+                ),
+              ),
+            ],
+            if (_enabled) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.orange),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Developer evidence is untrusted input. AI output cannot patch, commit, push, release, mutate ledger, or change plugin registry.',
+                ),
+              ),
+              const SizedBox(height: 12),
+              _DeveloperWorkspaceCard(service: widget.service),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

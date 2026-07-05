@@ -332,6 +332,9 @@ Diagnostics:
   capabilities are findings, not authorization inputs.
 - Developer Workspace Preview MAY scan explicit local repository paths supplied
   by the developer.
+- Developer Workspace UI MUST be behind an explicit Developer Mode boundary
+  that is disabled by default and visually distinct from user-facing Capsule
+  Doctor diagnostics.
 - Developer Workspace Preview MUST be read-only and MUST expose only
   allowlisted file paths, file sizes, hashes, skip counts, and denylist
   findings.

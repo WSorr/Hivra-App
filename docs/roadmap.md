@@ -1348,3 +1348,22 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `tools/review/review_all.sh`
     - `flutter build macos --release`
   - Status: completed (2026-07-05).
+
+- `11.20 Explicit Developer Mode Boundary`
+  - Goal:
+    - prevent developer repository tooling from appearing as ordinary
+      user-facing Capsule Doctor diagnostics.
+  - Scope:
+    - added a Developer Mode card that is disabled by default.
+    - workspace scan/selected-context tools are rendered only after explicit
+      per-screen enablement.
+    - enabled state is visually distinct and repeats the no-mutation rule.
+  - Constraints:
+    - no new repository read capability was added in this step.
+    - no provider upload, patching, committing, pushing, releasing, ledger
+      mutation, or plugin registry mutation.
+  - Verification:
+    - `flutter analyze`
+    - `tools/review/review_all.sh`
+    - `flutter build macos --release`
+  - Status: completed (2026-07-06).
