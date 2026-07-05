@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/ai_capsule_inspection_service.dart';
+import '../services/ai_doctor_chat_service.dart';
+import '../services/ai_doctor_prompt_service.dart';
 import '../services/app_runtime_service.dart';
 
 class CapsuleDoctorScreen extends StatefulWidget {
@@ -18,12 +20,14 @@ class CapsuleDoctorScreen extends StatefulWidget {
 
 class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
   late final AiCapsuleInspectionService _service;
+  late final AiDoctorChatService _chatService;
   Future<AiCapsuleInspectionReport>? _reportFuture;
 
   @override
   void initState() {
     super.initState();
     _service = widget.runtime.buildAiCapsuleInspectionService();
+    _chatService = widget.runtime.buildAiDoctorChatService();
     _reportFuture = _service.inspect();
   }
 
@@ -77,6 +81,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
           }
           return _ReportView(
             report: report,
+            chatService: _chatService,
             onCopySnapshot: () => _copySnapshot(report),
           );
         },
@@ -87,10 +92,12 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
 
 class _ReportView extends StatelessWidget {
   final AiCapsuleInspectionReport report;
+  final AiDoctorChatService chatService;
   final VoidCallback onCopySnapshot;
 
   const _ReportView({
     required this.report,
+    required this.chatService,
     required this.onCopySnapshot,
   });
 
@@ -142,6 +149,11 @@ class _ReportView extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         ...report.findings.map(_FindingCard.new),
+        const SizedBox(height: 12),
+        _AiDoctorChatCard(
+          snapshot: report.snapshot,
+          chatService: chatService,
+        ),
         const SizedBox(height: 12),
         _SectionCard(
           title: 'Ledger',
@@ -243,6 +255,299 @@ class _FindingCard extends StatelessWidget {
       'warning' => Colors.orange,
       _ => Colors.blue,
     };
+  }
+}
+
+class _AiDoctorChatCard extends StatefulWidget {
+  final AiCapsuleInspectionSnapshot snapshot;
+  final AiDoctorChatService chatService;
+
+  const _AiDoctorChatCard({
+    required this.snapshot,
+    required this.chatService,
+  });
+
+  @override
+  State<_AiDoctorChatCard> createState() => _AiDoctorChatCardState();
+}
+
+class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
+  final TextEditingController _apiKeyController = TextEditingController();
+  final TextEditingController _modelController =
+      TextEditingController(text: AiDoctorChatService.defaultModel);
+  final TextEditingController _queryController = TextEditingController(
+    text: 'What should I check next in this capsule?',
+  );
+  final Set<AiDoctorContextSection> _sections =
+      AiDoctorContextSection.values.toSet();
+
+  AiDoctorOutboundPreview? _preview;
+  String? _answer;
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    _modelController.dispose();
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveKey() async {
+    await _run(() async {
+      await widget.chatService.saveOpenAiApiKey(_apiKeyController.text);
+      _apiKeyController.clear();
+      _showSnack('AI Doctor key saved in secure storage');
+    });
+  }
+
+  Future<void> _clearKey() async {
+    await _run(() async {
+      await widget.chatService.clearOpenAiApiKey();
+      _apiKeyController.clear();
+      _showSnack('AI Doctor key cleared');
+    });
+  }
+
+  void _previewContext() {
+    try {
+      final preview = widget.chatService.preview(
+        snapshot: widget.snapshot,
+        userQuery: _queryController.text,
+        sections: _sections,
+      );
+      setState(() {
+        _preview = preview;
+        _error = null;
+      });
+    } catch (error) {
+      setState(() {
+        _error = error.toString();
+      });
+    }
+  }
+
+  Future<void> _askDoctor() async {
+    await _run(() async {
+      final result = await widget.chatService.ask(
+        snapshot: widget.snapshot,
+        userQuery: _queryController.text,
+        sections: _sections,
+        model: _modelController.text,
+      );
+      setState(() {
+        _preview = result.preview;
+        _answer = result.providerResponse.text;
+      });
+    });
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await action();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.psychology_alt),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'AI Doctor Chat',
+                    style: theme.textTheme.titleLarge,
+                  ),
+                ),
+                if (_busy)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Optional provider call over selected redacted sections. Advisory only; no ledger mutation and no repository access.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _apiKeyController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'OpenAI API key',
+                helperText:
+                    'Stored only in secure storage. No plaintext fallback.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: _busy ? null : _saveKey,
+                  icon: const Icon(Icons.key),
+                  label: const Text('Save key'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _clearKey,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Clear key'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _modelController,
+              decoration: const InputDecoration(
+                labelText: 'Model',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _queryController,
+              minLines: 2,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                labelText: 'Question',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text('Outbound sections', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: AiDoctorContextSection.values
+                  .map(
+                    (section) => FilterChip(
+                      label: Text(section.label),
+                      selected: _sections.contains(section),
+                      onSelected: _busy
+                          ? null
+                          : (selected) {
+                              setState(() {
+                                if (selected) {
+                                  _sections.add(section);
+                                } else {
+                                  _sections.remove(section);
+                                }
+                              });
+                            },
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _previewContext,
+                  icon: const Icon(Icons.visibility),
+                  label: const Text('Preview outbound context'),
+                ),
+                FilledButton.icon(
+                  onPressed: _busy ? null : _askDoctor,
+                  icon: const Icon(Icons.send),
+                  label: const Text('Ask AI Doctor'),
+                ),
+              ],
+            ),
+            if (_preview != null) ...[
+              const SizedBox(height: 12),
+              _PreviewPanel(preview: _preview!),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.redAccent,
+                ),
+              ),
+            ],
+            if (_answer != null) ...[
+              const SizedBox(height: 12),
+              SelectableText(
+                _answer!,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewPanel extends StatelessWidget {
+  final AiDoctorOutboundPreview preview;
+
+  const _PreviewPanel({required this.preview});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Outbound preview', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 6),
+          SelectableText('Snapshot ${preview.snapshotHashHex}'),
+          Text('Sections: ${preview.sectionsLabel}'),
+          Text('Payload: ${preview.payloadBytes} bytes'),
+          Text('Query: ${preview.userQueryBytes} bytes'),
+          Text('Secrets redacted: ${preview.secretsRedacted}'),
+        ],
+      ),
+    );
   }
 }
 

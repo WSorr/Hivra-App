@@ -1247,3 +1247,32 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `flutter analyze`
     - `tools/review/review_all.sh`
   - Status: completed (2026-07-05).
+
+- `11.16 Scoped AI Doctor Chat`
+  - Goal:
+    - add an optional AI-provider advisory path to Capsule Doctor without
+      turning any external model into ledger truth or a runtime actor.
+    - keep the first AI integration scoped to redacted, user-selected
+      diagnostic summaries instead of repository access or raw capsule data.
+  - Scope:
+    - added secure-storage-only provider credential storage.
+    - added deterministic outbound prompt/preview construction with bounded
+      payload size and explicit selected sections.
+    - added OpenAI Responses API adapter with `store: false` request payloads
+      and strict empty/malformed response rejection.
+    - added Capsule Doctor UI controls for provider key save/clear, model,
+      question, selected context sections, outbound preview, and advisory
+      response rendering.
+  - Constraints:
+    - no plaintext provider-key fallback.
+    - no ledger/runtime/plugin/contact/outbox mutation from provider response.
+    - no repository access in this phase.
+    - no dependencies from core/engine/platform back into Flutter provider
+      code.
+  - Verification:
+    - `flutter test test/ai_doctor_credential_store_test.dart test/ai_doctor_prompt_service_test.dart test/ai_doctor_provider_adapter_test.dart`
+    - `flutter test`
+    - `flutter analyze`
+    - `tools/review/review_all.sh`
+    - `flutter build macos --release`
+  - Status: completed (2026-07-05).

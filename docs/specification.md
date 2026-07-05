@@ -313,6 +313,16 @@ Diagnostics:
   inputs.
 - Capsule Doctor MUST NOT upload recovery seed, ledger contents, transport
   secrets, or plugin credentials to any AI/provider service.
+- Capsule Doctor MAY provide an optional scoped AI chat over a user-selected,
+  redacted diagnostic snapshot.
+- Scoped AI chat MUST show an outbound preview before provider submission,
+  including selected sections, payload size, and snapshot hash.
+- Scoped AI chat MUST store provider API keys only in platform secure storage
+  and MUST NOT create plaintext fallback files.
+- Scoped AI chat output is advisory only. It MUST NOT mutate ledger, runtime,
+  plugin registry, transport outbox, contact cards, or capsule credentials.
+- Scoped AI chat MUST NOT receive repository access in this phase. Repository
+  inspection belongs to a later explicit developer-mode boundary.
 
 ---
 

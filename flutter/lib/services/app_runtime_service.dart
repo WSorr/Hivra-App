@@ -8,6 +8,8 @@ import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
 import 'ai_capsule_inspection_service.dart';
+import 'ai_doctor_chat_service.dart';
+import 'ai_doctor_credential_store.dart';
 import 'capsule_address_service.dart';
 import 'capsule_diagnostics_service.dart';
 import 'capsule_state_manager.dart';
@@ -105,6 +107,12 @@ class AppRuntimeService {
         diagnoseTrace: _runtime.diagnoseCapsuleTraces,
       ),
       readActiveCapsuleHex: activeCapsuleRootHex,
+    );
+  }
+
+  AiDoctorChatService buildAiDoctorChatService() {
+    return AiDoctorChatService(
+      credentialStore: AiDoctorCredentialStore(),
     );
   }
 
