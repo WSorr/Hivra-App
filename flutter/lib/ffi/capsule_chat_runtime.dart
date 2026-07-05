@@ -43,6 +43,7 @@ Map<String, Object?> sendCapsuleChatInWorker(Map<String, Object?> args) {
   return <String, Object?>{
     'result': result,
     'lastError': lastError,
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
   };
 }
 

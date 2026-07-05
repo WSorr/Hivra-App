@@ -140,52 +140,78 @@ fn append_incoming_invitation_with_root_for_test(
 }
 
 #[test]
-fn pending_outgoing_retry_candidates_include_only_unresolved_outgoing() {
+fn pending_relationship_break_retry_candidates_clear_after_remote_confirmation() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
 
-    let local_seed = test_seed(201);
-    let local_pubkey = derived_pubkey(&local_seed);
-    let local_starter_id = derive_starter_id(&local_seed, 0);
-    let accepted_id = [211u8; 32];
-    let pending_id = [212u8; 32];
-    let incoming_id = [213u8; 32];
-    let accepted_peer = [221u8; 32];
-    let pending_peer = [222u8; 32];
-    let incoming_peer = [223u8; 32];
+    let local_seed = test_seed(231);
+    let local_root = derived_pubkey(&local_seed);
+    let local_transport = PubKey::from([232u8; 32]);
+    let peer_transport = PubKey::from([233u8; 32]);
+    let peer_root = PubKey::from([234u8; 32]);
+    let own_starter = StarterId::from([235u8; 32]);
+    let peer_starter = StarterId::from([236u8; 32]);
+    let invitation_id = [237u8; 32];
 
-    set_runtime_capsule(local_pubkey, Network::Neste);
+    set_runtime_capsule(local_root, Network::Neste);
 
-    append_invitation_sent_for_test(accepted_id, local_starter_id, accepted_peer, Some(0), None);
-    append_invitation_sent_for_test(pending_id, local_starter_id, pending_peer, Some(0), None);
-    append_invitation_sent_for_test(
-        incoming_id,
-        local_starter_id,
-        *local_pubkey.as_bytes(),
-        Some(0),
-        Some(incoming_peer),
-    );
-
-    let accepted_payload = InvitationAcceptedPayload {
-        invitation_id: accepted_id,
-        from_pubkey: local_pubkey,
-        created_starter_id: StarterId::from(derive_starter_id(&test_seed(202), 0)),
-        accepter_root_pubkey: None,
+    let established = RelationshipEstablishedPayload {
+        peer_pubkey: peer_transport,
+        own_starter_id: own_starter,
+        peer_starter_id: peer_starter,
+        kind: StarterKind::Juice,
+        invitation_id,
+        sender_pubkey: peer_transport,
+        sender_starter_type: StarterKind::Juice,
+        sender_starter_id: peer_starter,
+        peer_root_pubkey: Some(peer_root),
+        sender_root_pubkey: Some(local_root),
     };
     append_runtime_event_with_signer(
-        EventKind::InvitationAccepted,
-        &accepted_payload.to_bytes(),
-        PubKey::from(accepted_peer),
+        EventKind::RelationshipEstablished,
+        &established.to_bytes(),
+        local_root,
+    )
+    .unwrap();
+
+    let local_break = RelationshipBrokenPayload {
+        peer_pubkey: peer_transport,
+        own_starter_id: own_starter,
+        peer_root_pubkey: Some(peer_root),
+    };
+    append_runtime_event_with_signer(
+        EventKind::RelationshipBroken,
+        &local_break.to_bytes(),
+        local_root,
     )
     .unwrap();
 
     let pending =
-        crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime(local_pubkey);
-    let pending_ids: Vec<[u8; 32]> = pending.iter().map(|entry| entry.invitation_id).collect();
-
+        crate::invitation_support::pending_outgoing_relationship_break_deliveries_in_runtime(
+            local_transport,
+        );
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending_ids, vec![pending_id]);
-    assert_eq!(pending[0].to_pubkey, pending_peer);
+    assert_eq!(pending[0].to_pubkey, *peer_transport.as_bytes());
+    assert_eq!(pending[0].peer_starter_id, peer_starter);
+    assert_eq!(pending[0].local_root_pubkey, local_root);
+
+    let remote_confirmation = RelationshipBrokenPayload {
+        peer_pubkey: peer_transport,
+        own_starter_id: own_starter,
+        peer_root_pubkey: Some(peer_root),
+    };
+    append_runtime_event_with_signer(
+        EventKind::RelationshipBroken,
+        &remote_confirmation.to_bytes(),
+        peer_root,
+    )
+    .unwrap();
+
+    let pending_after_confirmation =
+        crate::invitation_support::pending_outgoing_relationship_break_deliveries_in_runtime(
+            local_transport,
+        );
+    assert!(pending_after_confirmation.is_empty());
 }
 
 #[test]
@@ -934,6 +960,96 @@ fn burned_starter_id_is_not_reused_on_later_accept() {
         .count();
 
     assert_eq!(created_with_old_id, 1);
+}
+
+#[test]
+fn replay_policy_skips_incoming_offer_reusing_empty_slot_rejected_sender_starter() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(231);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let inviter_pubkey = [71u8; 32];
+    let first_invitation_id = [72u8; 32];
+    let second_invitation_id = [73u8; 32];
+    let peer_starter_id = derive_starter_id(&test_seed(232), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        first_invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(0),
+        Some(inviter_pubkey),
+    );
+    append_runtime_event(
+        EventKind::InvitationRejected,
+        &InvitationRejectedPayload {
+            invitation_id: first_invitation_id,
+            reason: RejectReason::EmptySlot,
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    let second_offer = InvitationSentPayload {
+        invitation_id: second_invitation_id,
+        starter_id: StarterId::from(peer_starter_id),
+        to_pubkey: local_pubkey,
+        sender_root_pubkey: None,
+    };
+    let mut second_offer_bytes = second_offer.to_bytes();
+    second_offer_bytes.push(0);
+
+    assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationReceived,
+        &second_offer_bytes,
+        PubKey::from(inviter_pubkey),
+    ));
+}
+
+#[test]
+fn accept_plan_rejects_incoming_offer_reusing_empty_slot_rejected_sender_starter() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(233);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let inviter_pubkey = [74u8; 32];
+    let first_invitation_id = [75u8; 32];
+    let second_invitation_id = [76u8; 32];
+    let peer_starter_id = derive_starter_id(&test_seed(234), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        first_invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(0),
+        Some(inviter_pubkey),
+    );
+    append_runtime_event(
+        EventKind::InvitationRejected,
+        &InvitationRejectedPayload {
+            invitation_id: first_invitation_id,
+            reason: RejectReason::EmptySlot,
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+    append_invitation_sent_for_test(
+        second_invitation_id,
+        peer_starter_id,
+        local_pubkey.as_bytes().to_owned(),
+        Some(0),
+        Some(inviter_pubkey),
+    );
+
+    let err = match resolve_local_acceptance_plan(&local_seed, second_invitation_id) {
+        Ok(_) => panic!("reused burned sender starter must not be accepted"),
+        Err(err) => err,
+    };
+    assert_eq!(err, "incoming invitation reuses burned sender starter");
 }
 
 #[test]

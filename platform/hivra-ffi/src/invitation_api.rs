@@ -1,4 +1,5 @@
 use super::*;
+use hivra_core::event_payloads::RelationshipBrokenPayload;
 use std::sync::{Mutex, OnceLock};
 
 static LAST_DELIVERY_REASON: OnceLock<Mutex<Option<String>>> = OnceLock::new();
@@ -82,23 +83,30 @@ fn send_delivery_message(
     message: &Message,
     failure_code: i32,
     debug_label: &str,
-) -> Result<(), (i32, Option<String>)> {
-    if let Err(err) = transport.send(message.clone()) {
-        let reason = describe_transport_error(&err);
-        eprintln!(
-            "[Delivery/Nostr] {} failed: {:?}{}",
-            debug_label,
-            err,
-            reason
-                .as_deref()
-                .map(|value| format!(" | reason={value}"))
-                .unwrap_or_default()
-        );
-        return Err((map_delivery_error(err, failure_code), reason));
-    }
+) -> Result<DeliveryReceipt, (i32, Option<String>)> {
+    let receipt = match transport.send_with_receipt(message.clone()) {
+        Ok(receipt) => receipt,
+        Err(err) => {
+            let reason = describe_transport_error(&err);
+            eprintln!(
+                "[Delivery/Nostr] {} failed: {:?}{}",
+                debug_label,
+                err,
+                reason
+                    .as_deref()
+                    .map(|value| format!(" | reason={value}"))
+                    .unwrap_or_default()
+            );
+            return Err((map_delivery_error(err, failure_code), reason));
+        }
+    };
 
-    eprintln!("[Delivery/Nostr] {} delivered", debug_label);
-    Ok(())
+    eprintln!(
+        "[Delivery/Nostr] {} accepted envelope={} by={}",
+        debug_label, receipt.envelope_id, receipt.accepted_by
+    );
+    record_delivery_receipt(debug_label, receipt.clone());
+    Ok(receipt)
 }
 
 fn verified_event_from_message(
@@ -143,14 +151,15 @@ fn proof_signer_matches_payload(kind: EventKind, payload: &[u8], signer: PubKey)
     }
 }
 
-fn retry_pending_outgoing_invitations_over_transport(
+fn retry_pending_outgoing_relationship_breaks_over_transport(
     transport: &NostrTransport,
     engine: &FfiEngine,
     sender_pubkey: [u8; 32],
 ) -> Result<i32, i32> {
-    let pending = crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime(
-        PubKey::from(sender_pubkey),
-    );
+    let pending =
+        crate::invitation_support::pending_outgoing_relationship_break_deliveries_in_runtime(
+            PubKey::from(sender_pubkey),
+        );
     if pending.is_empty() {
         return Ok(0);
     }
@@ -158,9 +167,15 @@ fn retry_pending_outgoing_invitations_over_transport(
     let mut delivered_count: i32 = 0;
     let mut first_delivery_error: Option<(i32, Option<String>)> = None;
     for pending_delivery in pending {
+        let payload = RelationshipBrokenPayload {
+            peer_pubkey: PubKey::from(sender_pubkey),
+            own_starter_id: pending_delivery.peer_starter_id,
+            peer_root_pubkey: Some(pending_delivery.local_root_pubkey),
+        }
+        .to_bytes();
         let remote_prepared = match engine.prepare_domain_event(
-            EventKind::InvitationReceived,
-            pending_delivery.payload.clone(),
+            EventKind::RelationshipBroken,
+            payload.clone(),
             Some(PubKey::from(pending_delivery.to_pubkey)),
         ) {
             Ok(prepared) => prepared,
@@ -172,14 +187,14 @@ fn retry_pending_outgoing_invitations_over_transport(
         let message = Message {
             from: sender_pubkey,
             to: pending_delivery.to_pubkey,
-            kind: EventKind::InvitationSent as u32,
-            payload: pending_delivery.payload,
+            kind: EventKind::RelationshipBroken as u32,
+            payload,
             timestamp: pending_delivery.timestamp,
-            invitation_id: Some(pending_delivery.invitation_id),
+            invitation_id: None,
             domain_event: Some(domain_event_proof(&remote_prepared.event)),
         };
 
-        match send_delivery_message(transport, &message, -7, "InvitationSentRetry") {
+        match send_delivery_message(transport, &message, -7, "RelationshipBrokenRetry") {
             Ok(_) => {
                 delivered_count += 1;
             }
@@ -193,7 +208,7 @@ fn retry_pending_outgoing_invitations_over_transport(
 
     if delivered_count > 0 {
         eprintln!(
-            "[Delivery/Nostr] InvitationSentRetry delivered count={}",
+            "[Delivery/Nostr] RelationshipBrokenRetry delivered count={}",
             delivered_count
         );
         return Ok(delivered_count);
@@ -212,6 +227,7 @@ fn retry_pending_outgoing_invitations_over_transport(
 #[no_mangle]
 pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter_slot: u8) -> i32 {
     clear_last_error();
+    clear_delivery_receipts();
     if to_pubkey_ptr.is_null() || starter_slot >= 5 {
         set_last_error("Send invitation failed: invalid arguments");
         return -1;
@@ -332,7 +348,7 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
     if let Err(code) =
         with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
             match send_delivery_message(transport, &message, -7, "InvitationSent") {
-                Ok(()) => Ok(()),
+                Ok(_) => Ok(()),
                 Err((code, reason)) => {
                     set_last_delivery_reason(reason);
                     Err(code)
@@ -369,6 +385,7 @@ pub unsafe extern "C" fn hivra_transport_receive_quick() -> i32 {
 }
 
 fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
+    clear_delivery_receipts();
     let seed = match load_seed() {
         Ok(seed) => seed,
         Err(_) => return -1,
@@ -393,11 +410,13 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
 
     let received = match with_cached_nostr_transport(sender_secret, profile, -4, |transport| {
         let engine = build_engine(&seed);
-        if let Err(code) =
-            retry_pending_outgoing_invitations_over_transport(transport, &engine, local_pubkey)
-        {
+        if let Err(code) = retry_pending_outgoing_relationship_breaks_over_transport(
+            transport,
+            &engine,
+            local_pubkey,
+        ) {
             eprintln!(
-                "[Delivery/Nostr] InvitationSentRetry pre-receive failed (code {})",
+                "[Delivery/Nostr] RelationshipBrokenRetry pre-receive failed (code {})",
                 code
             );
         }
@@ -722,7 +741,7 @@ pub unsafe extern "C" fn hivra_accept_invitation(
     if let Err(code) =
         with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -6, |transport| {
             match send_delivery_message(transport, &message, -7, "InvitationAccepted") {
-                Ok(()) => Ok(()),
+                Ok(_) => Ok(()),
                 Err((code, reason)) => {
                     set_last_delivery_reason(reason);
                     Err(code)
@@ -824,7 +843,7 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
                             -6,
                             "InvitationRejected",
                         ) {
-                            Ok(()) => Ok(()),
+                            Ok(_) => Ok(()),
                             Err((code, reason)) => {
                                 set_last_delivery_reason(reason);
                                 Err(code)

@@ -57,6 +57,32 @@ pub struct Message {
     pub domain_event: Option<DomainEventProof>,
 }
 
+/// Transport-level delivery receipt.
+///
+/// This confirms only that a host transport adapter accepted/published the
+/// envelope. It does not mean the peer capsule received, validated, or appended
+/// the domain event to its ledger.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeliveryReceipt {
+    /// Adapter that accepted the envelope (`nostr`, later `matrix`, `ble`, ...).
+    pub transport: String,
+
+    /// Adapter-specific endpoint that accepted the envelope.
+    pub accepted_by: String,
+
+    /// Adapter-specific envelope/event id.
+    pub envelope_id: String,
+
+    /// Hivra message kind carried by this envelope.
+    pub message_kind: u32,
+
+    /// Transport recipient endpoint.
+    pub recipient: Vec<u8>,
+
+    /// Number of adapter endpoints that failed before the first acceptance.
+    pub failed_before_accept: u32,
+}
+
 /// Cryptographic proof for a Core event transported between capsules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DomainEventProof {
@@ -74,6 +100,20 @@ pub struct DomainEventProof {
 pub trait Transport: Send + Sync {
     /// Send a message
     fn send(&self, message: Message) -> Result<(), TransportError>;
+
+    /// Send a message and return adapter-level delivery evidence.
+    fn send_with_receipt(&self, message: Message) -> Result<DeliveryReceipt, TransportError> {
+        let receipt = DeliveryReceipt {
+            transport: self.name().to_string(),
+            accepted_by: self.name().to_string(),
+            envelope_id: String::new(),
+            message_kind: message.kind,
+            recipient: message.to.to_vec(),
+            failed_before_accept: 0,
+        };
+        self.send(message)?;
+        Ok(receipt)
+    }
 
     /// Receive messages
     fn receive(&self) -> Result<Vec<Message>, TransportError>;
@@ -105,11 +145,16 @@ impl TransportManager {
 
     /// Send message via all transports
     pub fn send(&self, message: Message) -> Result<(), TransportError> {
+        self.send_with_receipt(message).map(|_| ())
+    }
+
+    /// Send message via all transports and return the adapter receipt.
+    pub fn send_with_receipt(&self, message: Message) -> Result<DeliveryReceipt, TransportError> {
         let mut last_error = None;
 
         for transport in &self.transports {
-            match transport.send(message.clone()) {
-                Ok(()) => return Ok(()),
+            match transport.send_with_receipt(message.clone()) {
+                Ok(receipt) => return Ok(receipt),
                 Err(e) => last_error = Some(e),
             }
         }
@@ -178,5 +223,20 @@ mod tests {
 
         manager.add_transport(transport);
         assert_eq!(manager.connected_transports(), vec!["mock"]);
+
+        let receipt = manager
+            .send_with_receipt(Message {
+                from: [1u8; 32],
+                to: [2u8; 32],
+                kind: 42,
+                payload: Vec::new(),
+                timestamp: 7,
+                invitation_id: None,
+                domain_event: None,
+            })
+            .expect("transport receipt");
+        assert_eq!(receipt.transport, "mock");
+        assert_eq!(receipt.message_kind, 42);
+        assert_eq!(receipt.recipient, vec![2u8; 32]);
     }
 }

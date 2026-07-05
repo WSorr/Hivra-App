@@ -418,6 +418,9 @@ Scope:
   - Pending-remote-break notification projection in Relationships UI is now extracted into testable helper functions (`computeNewPendingRemoteBreakKeys`, `pruneNotifiedPendingRemoteBreakKeys`) with regression tests preventing duplicate snackbar alerts during repeated refresh/sync cycles.
   - Relationships pending-remote notifications now establish a first-load baseline before alerting; persisted pre-existing pending break rows are no longer surfaced as newly received break requests on initial screen open/switch.
   - Relationships screen bootstrap path now uses a single startup sync flow (`_syncTransportAndReload`) instead of parallel initial load + sync kickoff, reducing first-frame projection races and duplicate notification windows.
+  - Relationship break delivery now has a ledger-derived retry path in FFI: unresolved locally signed `RelationshipBroken` events are re-sent before receive cycles until the remote peer's confirming break event or a later re-establish supersedes them.
+  - Added a capsule-scoped durable delivery outbox (`delivery_outbox.json`) for transport retry intent. It tracks retry/backoff metadata only; ledger projection remains the single source of truth for invitations, relationships, consensus, and UI state.
+  - Transport adapters now expose adapter-level `DeliveryReceipt` evidence (`transport`, accepted endpoint, envelope id, message kind, recipient). FFI publishes the latest receipts as diagnostics JSON so outbox handling can distinguish adapter acceptance from peer ledger confirmation.
 
 Definition of done:
 - Flutter consumes projections and initiates actions, but does not own domain truth.

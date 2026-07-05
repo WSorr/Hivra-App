@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
 import '../ffi/invitation_actions_runtime.dart';
+import 'delivery_outbox_store.dart';
+import 'delivery_transport_contract.dart';
 
 // Keep invitation actions responsive under unstable transport.
 // Local truth is still protected by ledger projection + retry pumps.
@@ -36,12 +39,16 @@ class InvitationWorkerResult {
 
 class InvitationActionsService {
   final InvitationActionsRuntime _runtime;
+  final DeliveryOutboxStore _outboxStore;
   Future<void> _operationChain = Future<void>.value();
   static final Map<String, Future<void>> _pendingRetryPumpByCapsule =
       <String, Future<void>>{};
 
-  InvitationActionsService({InvitationActionsRuntime? runtime})
-      : _runtime = runtime ?? HivraInvitationActionsRuntime();
+  InvitationActionsService({
+    InvitationActionsRuntime? runtime,
+    DeliveryOutboxStore outboxStore = const DeliveryOutboxStore(),
+  })  : _runtime = runtime ?? HivraInvitationActionsRuntime(),
+        _outboxStore = outboxStore;
 
   Future<T> _serialize<T>(Future<T> Function() operation) {
     final completer = Completer<T>();
@@ -132,6 +139,78 @@ class InvitationActionsService {
     );
   }
 
+  Future<void> _recordOutboxTransportCycle({
+    required String? capsuleHex,
+    required int code,
+    required String? lastError,
+    required String? deliveryReceiptsJson,
+  }) async {
+    final normalizedCapsuleHex = capsuleHex?.trim().toLowerCase();
+    if (normalizedCapsuleHex == null || normalizedCapsuleHex.isEmpty) return;
+    final now = DateTime.now().toUtc();
+    final dueItems = await _outboxStore.due(
+      capsuleHex: normalizedCapsuleHex,
+      now: now,
+    );
+    if (dueItems.isEmpty) return;
+    for (final item in dueItems) {
+      if (_deliveryReceiptsContainItem(
+        deliveryReceiptsJson: deliveryReceiptsJson,
+        item: item,
+      )) {
+        await _outboxStore.markDelivered(
+          capsuleHex: normalizedCapsuleHex,
+          itemId: item.id,
+        );
+        continue;
+      }
+      await _outboxStore.markAttempt(
+        capsuleHex: normalizedCapsuleHex,
+        itemId: item.id,
+        nextAttemptAt: now.add(_retryBackoffForAttempt(item.attempts + 1)),
+        lastError: code >= 0 ? null : lastError,
+      );
+    }
+  }
+
+  bool _deliveryReceiptsContainItem({
+    required String? deliveryReceiptsJson,
+    required DeliveryOutboxItem item,
+  }) {
+    if (deliveryReceiptsJson == null || deliveryReceiptsJson.isEmpty) {
+      return false;
+    }
+    try {
+      final decoded = jsonDecode(deliveryReceiptsJson);
+      if (decoded is! Map) return false;
+      final receipts = decoded['receipts'];
+      if (receipts is! List) return false;
+      for (final raw in receipts) {
+        if (raw is! Map) continue;
+        final label = raw['label']?.toString() ?? '';
+        final receipt = raw['receipt'];
+        if (receipt is! Map) continue;
+        final transport = receipt['transport']?.toString() ?? '';
+        if (transport != item.transport) continue;
+        if (_receiptLabelMatchesOutboxKind(label, item.kind)) {
+          return true;
+        }
+      }
+    } catch (_) {
+      return false;
+    }
+    return false;
+  }
+
+  bool _receiptLabelMatchesOutboxKind(String label, String kind) {
+    return switch (kind) {
+      DeliveryOutboxKind.invitationSent => label == 'InvitationSent',
+      DeliveryOutboxKind.relationshipBroken =>
+        label == 'RelationshipBroken' || label == 'RelationshipBrokenRetry',
+      _ => false,
+    };
+  }
+
   void _schedulePendingOutgoingRetryPump({
     required Map<String, Object?> bootstrap,
     required String? bootstrapActiveHex,
@@ -177,6 +256,8 @@ class InvitationActionsService {
         );
         final code = (workerResult['result'] as int?) ?? -1003;
         final lastError = (workerResult['lastError'] as String?)?.trim();
+        final deliveryReceiptsJson =
+            workerResult['deliveryReceiptsJson'] as String?;
         debugPrint(
           '[InvitationActions] pending retry pump result attempt=${attempt + 1}/${retryDelays.length} '
           'capsule=$capsuleHex code=$code error=${lastError ?? '-'}',
@@ -186,6 +267,12 @@ class InvitationActionsService {
         await _applyWorkerLedgerResult(
           bootstrapActiveHex: attemptCapsuleHex,
           ledgerJson: ledgerJson,
+        );
+        await _recordOutboxTransportCycle(
+          capsuleHex: attemptCapsuleHex,
+          code: code,
+          lastError: lastError,
+          deliveryReceiptsJson: deliveryReceiptsJson,
         );
       }
     }();
@@ -234,22 +321,51 @@ class InvitationActionsService {
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
+      final deliveryReceiptsJson =
+          workerResult['deliveryReceiptsJson'] as String?;
       await _applyWorkerLedgerResult(
         bootstrapActiveHex: bootstrapActiveHex,
         ledgerJson: ledgerJson,
       );
       if (code != 0) {
+        final capsuleHex = bootstrapActiveHex?.trim().toLowerCase();
+        if (capsuleHex != null && capsuleHex.isNotEmpty) {
+          await _outboxStore.enqueue(
+            capsuleHex: capsuleHex,
+            transport: DeliveryTransportId.nostr,
+            kind: DeliveryOutboxKind.invitationSent,
+            reason: DeliveryOutboxReason.sendInvitationRetry,
+            now: DateTime.now().toUtc(),
+          );
+        }
         _schedulePendingOutgoingRetryPump(
           bootstrap: bootstrap,
           bootstrapActiveHex: bootstrapActiveHex,
         );
       }
+      await _recordOutboxTransportCycle(
+        capsuleHex: bootstrapActiveHex,
+        code: code,
+        lastError: lastError,
+        deliveryReceiptsJson: deliveryReceiptsJson,
+      );
       return InvitationWorkerResult(
         code: code,
         ledgerJson: ledgerJson,
         lastError: lastError,
       );
     });
+  }
+
+  Duration _retryBackoffForAttempt(int attempt) {
+    return switch (attempt) {
+      <= 1 => const Duration(seconds: 2),
+      2 => const Duration(seconds: 8),
+      3 => const Duration(seconds: 20),
+      4 => const Duration(seconds: 45),
+      5 => const Duration(seconds: 90),
+      _ => const Duration(minutes: 3),
+    };
   }
 
   Future<InvitationWorkerResult> fetchInvitations({String? capsuleHex}) async {
@@ -282,12 +398,20 @@ class InvitationActionsService {
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
+      final deliveryReceiptsJson =
+          workerResult['deliveryReceiptsJson'] as String?;
       if (code >= 0) {
         await _applyWorkerLedgerResult(
           bootstrapActiveHex: bootstrapActiveHex,
           ledgerJson: ledgerJson,
         );
       }
+      await _recordOutboxTransportCycle(
+        capsuleHex: bootstrapActiveHex,
+        code: code,
+        lastError: lastError,
+        deliveryReceiptsJson: deliveryReceiptsJson,
+      );
       return InvitationWorkerResult(
         code: code,
         ledgerJson: ledgerJson,
@@ -327,12 +451,20 @@ class InvitationActionsService {
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
+      final deliveryReceiptsJson =
+          workerResult['deliveryReceiptsJson'] as String?;
       if (code >= 0) {
         await _applyWorkerLedgerResult(
           bootstrapActiveHex: bootstrapActiveHex,
           ledgerJson: ledgerJson,
         );
       }
+      await _recordOutboxTransportCycle(
+        capsuleHex: bootstrapActiveHex,
+        code: code,
+        lastError: lastError,
+        deliveryReceiptsJson: deliveryReceiptsJson,
+      );
       return InvitationWorkerResult(
         code: code,
         ledgerJson: ledgerJson,

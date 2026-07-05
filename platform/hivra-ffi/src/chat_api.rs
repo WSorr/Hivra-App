@@ -146,6 +146,7 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
     payload_json_ptr: *const c_char,
 ) -> i32 {
     clear_last_error();
+    clear_delivery_receipts();
     if to_pubkey_ptr.is_null() || payload_json_ptr.is_null() {
         set_last_error("Capsule chat send failed: invalid arguments");
         return -1;
@@ -207,7 +208,14 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
     if let Err(code) =
         with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
             transport
-                .send(message.clone())
+                .send_with_receipt(message.clone())
+                .map(|receipt| {
+                    eprintln!(
+                        "[Chat/Nostr] accepted envelope={} by={}",
+                        receipt.envelope_id, receipt.accepted_by
+                    );
+                    record_delivery_receipt("CapsuleChat", receipt);
+                })
                 .map_err(|err| {
                     let reason = describe_transport_error(&err);
                     eprintln!(

@@ -528,7 +528,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       case 2:
         return RelationshipsScreen(
           key: ValueKey('relationships-$_activeCapsuleHex'),
-          service: _runtime.buildRelationshipService(),
+          service: _runtime.buildRelationshipService(
+            activeCapsuleHex: _activeCapsuleHex,
+          ),
           onLedgerChanged: _handleLedgerChanged,
           onSyncTransport: _syncRelationshipsTransport,
         );

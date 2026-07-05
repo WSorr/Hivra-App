@@ -1630,12 +1630,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     var sent = 0;
     var blocked = 0;
     var failed = 0;
+    var receipts = 0;
     try {
       for (final peerHex in peers) {
         final sendResult = await _chatDelivery.sendCanonicalEnvelope(
           peerHex: peerHex,
           canonicalEnvelopeJson: payloadJson,
         );
+        receipts += sendResult.deliveryReceiptCount;
         if (sendResult.isSuccess) {
           sent += 1;
         } else if (sendResult.blockedByConsensus) {
@@ -1646,7 +1648,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
       await _uiLog.log(
         'bingx.signal.broadcast',
-        'signal=$signalId peers=${peers.length} sent=$sent blocked=$blocked failed=$failed',
+        'signal=$signalId peers=${peers.length} sent=$sent blocked=$blocked failed=$failed receipts=$receipts',
       );
       await _refreshSignalInbox(silentWhenEmpty: true);
       await _showSnack(
@@ -2865,8 +2867,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : Icon(
-                            _signalRankEntries.isNotEmpty &&
-                                    _signalRankExpanded
+                            _signalRankEntries.isNotEmpty && _signalRankExpanded
                                 ? Icons.unfold_less_rounded
                                 : Icons.radar_rounded,
                           ),

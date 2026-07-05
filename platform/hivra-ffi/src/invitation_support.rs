@@ -3,7 +3,7 @@ use crate::runtime_support::{
     derive_starter_id_lineage, derive_starter_nonce_lineage, starter_is_active_in_runtime,
 };
 use hivra_core::event_payloads::{RelationshipBrokenPayload, RelationshipEstablishedPayload};
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 pub(crate) struct InvitationLookupRecord {
@@ -14,28 +14,12 @@ pub(crate) struct InvitationLookupRecord {
     pub(crate) sender_root_pubkey: Option<PubKey>,
 }
 
-pub(crate) struct PendingOutgoingInvitationDelivery {
-    pub(crate) invitation_id: [u8; 32],
-    pub(crate) to_pubkey: [u8; 32],
-    pub(crate) payload: Vec<u8>,
-    pub(crate) timestamp: u64,
-}
-
 fn invitation_payload_has_known_shape(payload: &[u8]) -> bool {
     payload.len() == 96
         || payload.len() == 97
         || payload.len() == 128
         || payload.len() == 129
         || payload.len() == 161
-}
-
-fn invitation_id_from_outgoing_payload(payload: &[u8]) -> Option<[u8; 32]> {
-    if !invitation_payload_has_known_shape(payload) {
-        return None;
-    }
-    let mut invitation_id = [0u8; 32];
-    invitation_id.copy_from_slice(&payload[..32]);
-    Some(invitation_id)
 }
 
 fn invitation_payload_sender_root(payload: &[u8]) -> Option<PubKey> {
@@ -65,6 +49,65 @@ fn invitation_payload_sender_transport(payload: &[u8]) -> Option<PubKey> {
     let mut transport = [0u8; 32];
     transport.copy_from_slice(&payload[129..161]);
     Some(PubKey::from(transport))
+}
+
+fn invitation_payload_starter_id(payload: &[u8]) -> Option<StarterId> {
+    if !invitation_payload_has_known_shape(payload) {
+        return None;
+    }
+    let mut starter_id = [0u8; 32];
+    starter_id.copy_from_slice(&payload[32..64]);
+    Some(StarterId::from(starter_id))
+}
+
+fn invitation_sender_anchor(payload: &[u8], signer: PubKey) -> PubKey {
+    invitation_payload_sender_root(payload).unwrap_or(signer)
+}
+
+fn incoming_invitation_reuses_empty_slot_rejected_sender_starter(
+    invitation_id: &[u8; 32],
+    starter_id: StarterId,
+    sender_anchor: PubKey,
+) -> bool {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return false;
+    };
+
+    let mut empty_slot_rejections: Vec<[u8; 32]> = Vec::new();
+    for event in capsule.ledger.events() {
+        if event.kind() != EventKind::InvitationRejected {
+            continue;
+        }
+        let Ok(payload) = InvitationRejectedPayload::from_bytes(event.payload()) else {
+            continue;
+        };
+        if payload.reason == RejectReason::EmptySlot && payload.invitation_id != *invitation_id {
+            empty_slot_rejections.push(payload.invitation_id);
+        }
+    }
+
+    if empty_slot_rejections.is_empty() {
+        return false;
+    }
+
+    capsule.ledger.events().iter().any(|event| {
+        if event.kind() != EventKind::InvitationReceived {
+            return false;
+        }
+        let payload = event.payload();
+        if !invitation_payload_has_known_shape(payload) {
+            return false;
+        }
+        if !empty_slot_rejections
+            .iter()
+            .any(|rejected_id| payload[..32] == rejected_id[..])
+        {
+            return false;
+        }
+        invitation_payload_starter_id(payload) == Some(starter_id)
+            && invitation_sender_anchor(payload, *event.signer()) == sender_anchor
+    })
 }
 
 fn find_starter_kind_by_id_in_ledger(
@@ -133,10 +176,23 @@ pub(crate) fn invitation_is_resolved_in_runtime(invitation_id: &[u8; 32]) -> boo
     })
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 struct RelationshipKey {
     peer_pubkey: PubKey,
     own_starter_id: StarterId,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct PendingOutgoingRelationshipBreakDelivery {
+    pub(crate) to_pubkey: [u8; 32],
+    pub(crate) peer_starter_id: StarterId,
+    pub(crate) local_root_pubkey: PubKey,
+    pub(crate) timestamp: u64,
+}
+
+#[derive(Clone, Copy)]
+struct RelationshipBreakRetryAnchor {
+    peer_starter_id: StarterId,
 }
 
 fn relationship_key_from_established_payload(payload: &[u8]) -> Option<RelationshipKey> {
@@ -241,53 +297,87 @@ pub(crate) fn invitation_id_from_terminal_payload(
     }
 }
 
-pub(crate) fn pending_outgoing_invitation_deliveries_in_runtime(
-    local_pubkey: PubKey,
-) -> Vec<PendingOutgoingInvitationDelivery> {
+pub(crate) fn pending_outgoing_relationship_break_deliveries_in_runtime(
+    local_transport_pubkey: PubKey,
+) -> Vec<PendingOutgoingRelationshipBreakDelivery> {
     let runtime = RUNTIME.lock().unwrap();
     let Some(capsule) = runtime.capsule.as_ref() else {
         return Vec::new();
     };
 
-    let mut resolved_ids: HashSet<[u8; 32]> = HashSet::new();
+    let local_root_pubkey = capsule.pubkey;
+    let mut latest_established: HashMap<RelationshipKey, RelationshipBreakRetryAnchor> =
+        HashMap::new();
+    let mut pending: HashMap<RelationshipKey, PendingOutgoingRelationshipBreakDelivery> =
+        HashMap::new();
+
     for event in capsule.ledger.events() {
-        if let Some(invitation_id) =
-            invitation_id_from_terminal_payload(event.kind(), event.payload())
-        {
-            resolved_ids.insert(invitation_id);
+        match event.kind() {
+            EventKind::RelationshipEstablished => {
+                let Ok(payload) = RelationshipEstablishedPayload::from_bytes(event.payload())
+                else {
+                    continue;
+                };
+                let key = RelationshipKey {
+                    peer_pubkey: payload.peer_pubkey,
+                    own_starter_id: payload.own_starter_id,
+                };
+                latest_established.insert(
+                    key,
+                    RelationshipBreakRetryAnchor {
+                        peer_starter_id: payload.peer_starter_id,
+                    },
+                );
+                // A later re-establish supersedes an older unconfirmed break for
+                // the same relationship key.
+                pending.remove(&key);
+            }
+            EventKind::RelationshipBroken => {
+                let Ok(payload) = RelationshipBrokenPayload::from_bytes(event.payload()) else {
+                    continue;
+                };
+                let key = RelationshipKey {
+                    peer_pubkey: payload.peer_pubkey,
+                    own_starter_id: payload.own_starter_id,
+                };
+                if event.signer() == &local_root_pubkey {
+                    let Some(anchor) = latest_established.get(&key).copied() else {
+                        continue;
+                    };
+                    pending.insert(
+                        key,
+                        PendingOutgoingRelationshipBreakDelivery {
+                            to_pubkey: *payload.peer_pubkey.as_bytes(),
+                            peer_starter_id: anchor.peer_starter_id,
+                            local_root_pubkey,
+                            timestamp: event.timestamp().as_u64(),
+                        },
+                    );
+                } else {
+                    // Remote acknowledgement converged the pair; no more retry
+                    // is needed for the local break episode.
+                    pending.remove(&key);
+                }
+            }
+            _ => {}
         }
     }
 
-    let local_bytes = local_pubkey.as_bytes();
-    let mut yielded_ids: HashSet<[u8; 32]> = HashSet::new();
-    let mut pending = Vec::new();
-    for event in capsule.ledger.events() {
-        if event.kind() != EventKind::InvitationSent {
-            continue;
-        }
-        let payload = event.payload();
-        let Some(invitation_id) = invitation_id_from_outgoing_payload(payload) else {
-            continue;
-        };
-        if resolved_ids.contains(&invitation_id) || !yielded_ids.insert(invitation_id) {
-            continue;
-        }
-
-        let mut to_pubkey = [0u8; 32];
-        to_pubkey.copy_from_slice(&payload[64..96]);
-        if to_pubkey == *local_bytes {
-            continue;
-        }
-
-        pending.push(PendingOutgoingInvitationDelivery {
-            invitation_id,
-            to_pubkey,
-            payload: payload.to_vec(),
-            timestamp: event.timestamp().as_u64(),
-        });
-    }
-
-    pending
+    let local_transport = *local_transport_pubkey.as_bytes();
+    let mut deliveries: Vec<PendingOutgoingRelationshipBreakDelivery> =
+        pending.into_values().collect();
+    deliveries.retain(|delivery| delivery.to_pubkey != local_transport);
+    deliveries.sort_by(|a, b| {
+        a.timestamp
+            .cmp(&b.timestamp)
+            .then_with(|| a.to_pubkey.cmp(&b.to_pubkey))
+            .then_with(|| {
+                a.peer_starter_id
+                    .as_bytes()
+                    .cmp(b.peer_starter_id.as_bytes())
+            })
+    });
+    deliveries
 }
 
 #[cfg(test)]
@@ -377,6 +467,16 @@ pub(crate) fn should_skip_incoming_delivery_append_with_timestamp(
         }
         if invitation_offer_exists_in_runtime(local_kind, &invitation_id, signer) {
             return true;
+        }
+        if let Some(starter_id) = invitation_payload_starter_id(payload) {
+            let sender_anchor = invitation_sender_anchor(payload, signer);
+            if incoming_invitation_reuses_empty_slot_rejected_sender_starter(
+                &invitation_id,
+                starter_id,
+                sender_anchor,
+            ) {
+                return true;
+            }
         }
     }
 
@@ -717,6 +817,13 @@ pub(crate) fn resolve_local_acceptance_plan(
     let sender_pubkey = record.peer_pubkey;
     let sender_root_pubkey = record.sender_root_pubkey;
     let inviter_anchor = sender_root_pubkey.unwrap_or(sender_pubkey);
+    if incoming_invitation_reuses_empty_slot_rejected_sender_starter(
+        &invitation_id,
+        peer_starter_id,
+        inviter_anchor,
+    ) {
+        return Err("incoming invitation reuses burned sender starter");
+    }
 
     let runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_ref().ok_or("no capsule")?;

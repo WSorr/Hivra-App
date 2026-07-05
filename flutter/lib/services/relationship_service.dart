@@ -6,6 +6,8 @@ import '../models/relationship.dart';
 import '../models/relationship_peer_group.dart';
 import '../utils/hivra_id_format.dart';
 import 'capsule_address_service.dart';
+import 'delivery_outbox_store.dart';
+import 'delivery_transport_contract.dart';
 
 typedef RelationshipGroupsLoader = List<RelationshipPeerGroup> Function();
 typedef RelationshipBreaker = bool Function(
@@ -20,16 +22,22 @@ class RelationshipService {
   final RelationshipBreaker _breakRelationship;
   final LedgerSnapshotPersister _persistLedgerSnapshot;
   final CapsuleAddressService _addressService;
+  final DeliveryOutboxStore _outboxStore;
+  final String? _activeCapsuleHex;
 
   RelationshipService({
     required RelationshipGroupsLoader loadRelationshipGroups,
     required RelationshipBreaker breakRelationship,
     required LedgerSnapshotPersister persistLedgerSnapshot,
     CapsuleAddressService? addressService,
+    DeliveryOutboxStore outboxStore = const DeliveryOutboxStore(),
+    String? activeCapsuleHex,
   })  : _loadRelationshipGroups = loadRelationshipGroups,
         _breakRelationship = breakRelationship,
         _persistLedgerSnapshot = persistLedgerSnapshot,
-        _addressService = addressService ?? const CapsuleAddressService();
+        _addressService = addressService ?? const CapsuleAddressService(),
+        _outboxStore = outboxStore,
+        _activeCapsuleHex = activeCapsuleHex;
 
   List<RelationshipPeerGroup> loadRelationshipGroups() {
     return _loadRelationshipGroups();
@@ -180,6 +188,16 @@ class RelationshipService {
     final ok = _breakRelationship(peer, own, peerStarter);
     if (!ok) return false;
     await _persistLedgerSnapshot();
+    final capsuleHex = _activeCapsuleHex?.trim().toLowerCase();
+    if (capsuleHex != null && capsuleHex.isNotEmpty) {
+      await _outboxStore.enqueue(
+        capsuleHex: capsuleHex,
+        transport: DeliveryTransportId.nostr,
+        kind: DeliveryOutboxKind.relationshipBroken,
+        reason: DeliveryOutboxReason.localRelationshipBreak,
+        now: DateTime.now().toUtc(),
+      );
+    }
     return true;
   }
 

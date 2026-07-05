@@ -383,7 +383,32 @@ Each transport provides:
 
 Transport adapters are host-level system adapters, not WASM drones. A drone can request delivery through the host boundary, but it MUST NOT receive direct network, keychain, relay, or transport-session access. This keeps effectful delivery below the application boundary while preserving deterministic plugin execution.
 
-### 5.2.1 WASM Plugin Host Contract
+### 5.2.1 Durable Delivery Outbox
+
+Transport delivery MAY use a capsule-scoped durable outbox file to retry
+effectful sends across screen switches, restarts, relay timeouts, and transient
+network failures.
+
+Mandatory constraints:
+
+1. The outbox is not ledger truth.
+2. The outbox MUST live under the capsule storage boundary and be deleted with
+   that capsule.
+3. The outbox MAY track retry intent, attempt counters, backoff, and last
+   transport error.
+4. The outbox MUST NOT create invitation, relationship, consensus, or drone
+   state by itself.
+5. UI projections MUST still be rebuilt from ledger events.
+6. Delivered/terminal domain state MUST be derived from ledger append and
+   replay policy, not from an outbox item status.
+
+Transport adapters MAY return adapter-level delivery receipts. A receipt means
+only that the adapter accepted or published a signed envelope (for example, a
+relay accepted a Nostr event). It MUST NOT be interpreted as proof that the peer
+capsule received, validated, or appended the domain event. Peer state is
+confirmed only by ledger events and deterministic replay/projection policy.
+
+### 5.2.2 WASM Plugin Host Contract
 
 WASM plugin execution is allowed only through a host boundary with explicit capabilities.
 
@@ -396,7 +421,7 @@ Mandatory constraints:
 5. Pair-scoped plugin execution MUST be blocked when consensus guard is not signable.
 6. Plugin host inputs/outputs MUST be deterministic for identical inputs.
 
-### 5.2.2 Identity Separation Rule
+### 5.2.3 Identity Separation Rule
 
 Transport adapters operate on transport-specific keys only.
 

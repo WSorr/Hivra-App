@@ -42,6 +42,7 @@ Map<String, Object?> sendInvitationInWorker(Map<String, Object?> args) {
     'result': result,
     'ledgerJson': hivra.exportLedger(),
     'lastError': lastError,
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
   };
 }
 
@@ -56,6 +57,7 @@ Map<String, Object?> receiveInvitationsInWorker(Map<String, Object?> args) {
     'result': result,
     'ledgerJson': hivra.exportLedger(),
     'lastError': lastError,
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
   };
 }
 
@@ -71,6 +73,7 @@ Map<String, Object?> receiveInvitationsQuickInWorker(
     'result': result,
     'ledgerJson': hivra.exportLedger(),
     'lastError': lastError,
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
   };
 }
 
@@ -90,6 +93,7 @@ Map<String, Object?> acceptInvitationInWorker(Map<String, Object?> args) {
     'result': result,
     'ledgerJson': hivra.exportLedger(),
     'lastError': lastError,
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
   };
 }
 
@@ -107,6 +111,7 @@ Map<String, Object?> rejectInvitationInWorker(Map<String, Object?> args) {
     'result': ok ? 0 : -1,
     'ledgerJson': ok ? hivra.exportLedger() : null,
     'lastError': lastError,
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
   };
 }
 

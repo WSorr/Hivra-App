@@ -452,7 +452,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           }
           await _uiLog.log(
             'chat.send.success',
-            'peer=${peerHex.substring(0, 8)}.. deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} hash=${shortHash.isEmpty ? "none" : shortHash} source=${_executionSourceInfo(response)}',
+            'peer=${peerHex.substring(0, 8)}.. deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} receipts=${sendResult.deliveryReceiptCount} hash=${shortHash.isEmpty ? "none" : shortHash} source=${_executionSourceInfo(response)}',
           );
           setState(() {
             _chatWorkspaceNotice = 'Message sent · $shortHash';

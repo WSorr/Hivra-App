@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'capsule_address_service.dart';
+import 'delivery_transport_contract.dart';
 import '../utils/hivra_id_format.dart';
 
 class InvitationRecipientResolution {
@@ -57,7 +58,7 @@ class InvitationDeliveryService {
 
     final recipient = await _contactCards.resolveTransportEndpoint(
       value,
-      transport: 'nostr',
+      transport: DeliveryTransportId.nostr,
     );
     if (recipient != null) {
       if (selfNostrKey != null &&

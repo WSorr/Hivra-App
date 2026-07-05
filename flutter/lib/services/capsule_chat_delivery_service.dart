@@ -100,6 +100,7 @@ class CapsuleChatDeliverySendResult {
   final int code;
   final String? errorMessage;
   final String? deliveryPeerHex;
+  final String? deliveryReceiptsJson;
 
   const CapsuleChatDeliverySendResult({
     required this.isSuccess,
@@ -107,7 +108,21 @@ class CapsuleChatDeliverySendResult {
     required this.code,
     required this.errorMessage,
     required this.deliveryPeerHex,
+    this.deliveryReceiptsJson,
   });
+
+  int get deliveryReceiptCount {
+    final raw = deliveryReceiptsJson;
+    if (raw == null || raw.isEmpty) return 0;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return 0;
+      final receipts = decoded['receipts'];
+      return receipts is List ? receipts.length : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
 }
 
 class CapsuleChatInboxMessage {
@@ -387,17 +402,21 @@ class CapsuleChatDeliveryService {
     var workerResult = await runWorker();
     var code = (workerResult['result'] as int?) ?? -1003;
     var lastError = workerResult['lastError'] as String?;
+    var deliveryReceiptsJson = workerResult['deliveryReceiptsJson'] as String?;
     if (code != 0 && chatSendShouldRetry(code: code, errorMessage: lastError)) {
       await Future<void>.delayed(_chatSendRetryDelay);
       final retry = await runWorker();
       final retryCode = (retry['result'] as int?) ?? -1003;
       final retryError = retry['lastError'] as String?;
+      final retryReceiptsJson = retry['deliveryReceiptsJson'] as String?;
       if (retryCode == 0) {
         code = 0;
         lastError = null;
+        deliveryReceiptsJson = retryReceiptsJson;
       } else {
         code = retryCode;
         lastError = retryError ?? lastError;
+        deliveryReceiptsJson = retryReceiptsJson ?? deliveryReceiptsJson;
       }
     }
     if (code != 0) {
@@ -407,6 +426,7 @@ class CapsuleChatDeliveryService {
         code: code,
         errorMessage: lastError ?? 'Chat delivery failed',
         deliveryPeerHex: deliveryPeerHex,
+        deliveryReceiptsJson: deliveryReceiptsJson,
       );
     }
 
@@ -416,6 +436,7 @@ class CapsuleChatDeliveryService {
       code: 0,
       errorMessage: null,
       deliveryPeerHex: deliveryPeerHex,
+      deliveryReceiptsJson: deliveryReceiptsJson,
     );
   }
 

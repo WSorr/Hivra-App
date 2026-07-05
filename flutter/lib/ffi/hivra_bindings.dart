@@ -50,6 +50,8 @@ typedef HivraFreeStringDart = void Function(Pointer<Int8> ptr);
 
 typedef HivraLastErrorMessageC = Pointer<Int8> Function();
 typedef HivraLastErrorMessageDart = Pointer<Int8> Function();
+typedef HivraLastDeliveryReceiptsJsonC = Pointer<Int8> Function();
+typedef HivraLastDeliveryReceiptsJsonDart = Pointer<Int8> Function();
 
 typedef HivraSeedExistsC = Int8 Function();
 typedef HivraSeedExistsDart = int Function();
@@ -251,6 +253,7 @@ class HivraBindings {
   late final HivraSeedNostrPublicKeyDart _seedNostrPublicKey;
   late final HivraFreeStringDart _freeString;
   late final HivraLastErrorMessageDart _lastErrorMessage;
+  HivraLastDeliveryReceiptsJsonDart? _lastDeliveryReceiptsJson;
   late final HivraSeedExistsDart _seedExists;
   late final HivraSeedSaveDart _seedSave;
   late final HivraSeedLoadDart _seedLoad;
@@ -310,6 +313,15 @@ class HivraBindings {
         .lookup<NativeFunction<HivraLastErrorMessageC>>(
             'hivra_last_error_message')
         .asFunction();
+
+    try {
+      _lastDeliveryReceiptsJson = _lib
+          .lookup<NativeFunction<HivraLastDeliveryReceiptsJsonC>>(
+              'hivra_last_delivery_receipts_json')
+          .asFunction();
+    } catch (_) {
+      _lastDeliveryReceiptsJson = null;
+    }
 
     _seedExists = _lib
         .lookup<NativeFunction<HivraSeedExistsC>>('hivra_seed_exists')
@@ -481,6 +493,18 @@ class HivraBindings {
 
   String? lastErrorMessage() {
     final ptr = _lastErrorMessage();
+    if (ptr == nullptr) return null;
+    try {
+      return ptr.cast<Utf8>().toDartString();
+    } finally {
+      _freeString(ptr);
+    }
+  }
+
+  String? lastDeliveryReceiptsJson() {
+    final readReceipts = _lastDeliveryReceiptsJson;
+    if (readReceipts == null) return null;
+    final ptr = readReceipts();
     if (ptr == nullptr) return null;
     try {
       return ptr.cast<Utf8>().toDartString();

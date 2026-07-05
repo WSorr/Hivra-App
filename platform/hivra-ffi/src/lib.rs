@@ -24,7 +24,7 @@ use hivra_keystore::{
     mnemonic_to_seed, seed_exists, seed_to_mnemonic, store_seed, Seed,
 };
 use hivra_transport::nostr::{NostrConfig, NostrTransport};
-use hivra_transport::{DomainEventProof, Message, Transport, TransportError};
+use hivra_transport::{DeliveryReceipt, DomainEventProof, Message, Transport, TransportError};
 use nostr_sdk::prelude::{Keys, SecretKey};
 use once_cell::sync::Lazy;
 use rand::RngCore;
@@ -44,6 +44,7 @@ pub(crate) fn clear_last_error() {
 
 mod capsule_api;
 mod chat_api;
+mod delivery_receipts_api;
 mod ffi_support;
 mod invitation_api;
 mod invitation_support;
@@ -55,6 +56,7 @@ mod seed_api;
 mod selfcheck_api;
 mod transport_cache;
 
+pub(crate) use delivery_receipts_api::{clear_delivery_receipts, record_delivery_receipt};
 pub use ffi_support::FfiBytes;
 #[cfg(test)]
 pub(crate) use invitation_support::invitation_offer_exists_in_runtime;

@@ -211,11 +211,14 @@ class AppRuntimeService {
   String _hex(Uint8List bytes) =>
       bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
-  RelationshipService buildRelationshipService() {
+  RelationshipService buildRelationshipService({
+    String? activeCapsuleHex,
+  }) {
     return RelationshipService(
       loadRelationshipGroups: _ledgerView.loadRelationshipGroups,
       breakRelationship: _runtime.breakRelationship,
       persistLedgerSnapshot: _runtime.persistLedgerSnapshot,
+      activeCapsuleHex: activeCapsuleHex,
     );
   }
 

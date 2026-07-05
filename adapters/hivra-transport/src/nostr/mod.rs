@@ -1,6 +1,6 @@
 //! Nostr transport adapter
 
-use crate::{Message, Transport, TransportError};
+use crate::{DeliveryReceipt, Message, Transport, TransportError};
 use futures::stream::{FuturesUnordered, StreamExt};
 use nostr_sdk::nips::nip04;
 use nostr_sdk::prelude::*;
@@ -305,6 +305,10 @@ impl NostrTransport {
     }
 
     pub fn send_event(&self, event: Event) -> Result<(), TransportError> {
+        self.publish_event(event).map(|_| ())
+    }
+
+    fn publish_event(&self, event: Event) -> Result<(String, String, u32), TransportError> {
         let connect_timeout_secs = self.timeout_secs.min(SEND_CONNECT_TIMEOUT_SECS).max(2);
         if !self.ensure_connected_relays_with_timeout(connect_timeout_secs) {
             // Mobile networks may need longer TLS/relay handshake than the fast
@@ -380,13 +384,14 @@ impl NostrTransport {
 
         if let Ok((relay_url, event_id, failure_details)) = publish_result {
             eprintln!("[Nostr] Relay {} accepted event: {}", relay_url, event_id);
+            let failed_before_accept = failure_details.len() as u32;
             if !failure_details.is_empty() {
                 eprintln!(
                     "[Nostr] Message published with {} relay(s) failing before first success",
                     failure_details.len()
                 );
             }
-            return Ok(());
+            return Ok((relay_url, event_id, failed_before_accept));
         }
 
         let failure_details = publish_result.err().unwrap_or_default();
@@ -430,9 +435,23 @@ impl NostrTransport {
 
 impl Transport for NostrTransport {
     fn send(&self, message: Message) -> Result<(), TransportError> {
+        self.send_with_receipt(message).map(|_| ())
+    }
+
+    fn send_with_receipt(&self, message: Message) -> Result<DeliveryReceipt, TransportError> {
         eprintln!("[Nostr] Sending message...");
+        let message_kind = message.kind;
+        let recipient = message.to.to_vec();
         let event = self.encode_message(message)?;
-        self.send_event(event)
+        let (accepted_by, envelope_id, failed_before_accept) = self.publish_event(event)?;
+        Ok(DeliveryReceipt {
+            transport: self.name().to_string(),
+            accepted_by,
+            envelope_id,
+            message_kind,
+            recipient,
+            failed_before_accept,
+        })
     }
 
     fn receive(&self) -> Result<Vec<Message>, TransportError> {

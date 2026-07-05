@@ -356,6 +356,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     }
     await _loadRelationships(forceFresh: true);
     await widget.onLedgerChanged?.call();
+    unawaited(_syncTransportAndReload(silent: true));
     if (!mounted) return;
     UiFeedbackService.showSnackBar(
       context,
