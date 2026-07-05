@@ -323,6 +323,13 @@ Diagnostics:
   plugin registry, transport outbox, contact cards, or capsule credentials.
 - Scoped AI chat MUST NOT receive repository access in this phase. Repository
   inspection belongs to a later explicit developer-mode boundary.
+- Plugin Auditor MAY inspect installed plugin package metadata, declared
+  capabilities, ABI, entry export, package kind, package size, and package
+  digest.
+- Plugin Auditor MUST be read-only: it MUST NOT mutate plugin registry,
+  catalogs, package files, ledger, transport outbox, or credentials.
+- Plugin Auditor MUST NOT grant capabilities. Unsupported or missing
+  capabilities are findings, not authorization inputs.
 
 ---
 

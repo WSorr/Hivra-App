@@ -10,6 +10,7 @@ import 'bingx_futures_order_tracking_store.dart';
 import 'ai_capsule_inspection_service.dart';
 import 'ai_doctor_chat_service.dart';
 import 'ai_doctor_credential_store.dart';
+import 'ai_plugin_audit_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_diagnostics_service.dart';
 import 'capsule_state_manager.dart';
@@ -114,6 +115,10 @@ class AppRuntimeService {
     return AiDoctorChatService(
       credentialStore: AiDoctorCredentialStore(),
     );
+  }
+
+  AiPluginAuditService buildAiPluginAuditService() {
+    return const AiPluginAuditService();
   }
 
   CapsuleChatDeliveryService buildCapsuleChatDeliveryService() {

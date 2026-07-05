@@ -1276,3 +1276,26 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `tools/review/review_all.sh`
     - `flutter build macos --release`
   - Status: completed (2026-07-05).
+
+- `11.17 Plugin Auditor Diagnostics`
+  - Goal:
+    - add a read-only plugin audit mode before developer repository access.
+    - make installed plugin package trust evidence visible from Capsule Doctor
+      without granting new capabilities or mutating plugin state.
+  - Scope:
+    - added deterministic `AiPluginAuditService` over installed plugin registry
+      records and stored package bytes.
+    - audit report includes package digest, package kind, size, declared
+      capabilities, plugin id/version, ABI/entry compatibility, and findings.
+    - Capsule Doctor now surfaces Plugin Auditor as a separate read-only card.
+  - Constraints:
+    - no plugin registry/catalog/package mutation.
+    - no capability escalation; unsupported capabilities are findings only.
+    - no source-code or repository access in this phase.
+    - no dependencies from core/engine/platform into plugin audit UI code.
+  - Verification:
+    - `flutter test test/ai_plugin_audit_service_test.dart`
+    - `flutter analyze`
+    - `tools/review/review_all.sh`
+    - `flutter build macos --release`
+  - Status: completed (2026-07-05).

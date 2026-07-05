@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../services/ai_capsule_inspection_service.dart';
 import '../services/ai_doctor_chat_service.dart';
 import '../services/ai_doctor_prompt_service.dart';
+import '../services/ai_plugin_audit_service.dart';
 import '../services/app_runtime_service.dart';
 
 class CapsuleDoctorScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class CapsuleDoctorScreen extends StatefulWidget {
 class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
   late final AiCapsuleInspectionService _service;
   late final AiDoctorChatService _chatService;
+  late final AiPluginAuditService _pluginAuditService;
   Future<AiCapsuleInspectionReport>? _reportFuture;
 
   @override
@@ -28,6 +30,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
     super.initState();
     _service = widget.runtime.buildAiCapsuleInspectionService();
     _chatService = widget.runtime.buildAiDoctorChatService();
+    _pluginAuditService = widget.runtime.buildAiPluginAuditService();
     _reportFuture = _service.inspect();
   }
 
@@ -82,6 +85,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
           return _ReportView(
             report: report,
             chatService: _chatService,
+            pluginAuditService: _pluginAuditService,
             onCopySnapshot: () => _copySnapshot(report),
           );
         },
@@ -93,11 +97,13 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
 class _ReportView extends StatelessWidget {
   final AiCapsuleInspectionReport report;
   final AiDoctorChatService chatService;
+  final AiPluginAuditService pluginAuditService;
   final VoidCallback onCopySnapshot;
 
   const _ReportView({
     required this.report,
     required this.chatService,
+    required this.pluginAuditService,
     required this.onCopySnapshot,
   });
 
@@ -154,6 +160,8 @@ class _ReportView extends StatelessWidget {
           snapshot: report.snapshot,
           chatService: chatService,
         ),
+        const SizedBox(height: 12),
+        _PluginAuditCard(service: pluginAuditService),
         const SizedBox(height: 12),
         _SectionCard(
           title: 'Ledger',
@@ -547,6 +555,166 @@ class _PreviewPanel extends StatelessWidget {
           Text('Secrets redacted: ${preview.secretsRedacted}'),
         ],
       ),
+    );
+  }
+}
+
+class _PluginAuditCard extends StatefulWidget {
+  final AiPluginAuditService service;
+
+  const _PluginAuditCard({required this.service});
+
+  @override
+  State<_PluginAuditCard> createState() => _PluginAuditCardState();
+}
+
+class _PluginAuditCardState extends State<_PluginAuditCard> {
+  Future<AiPluginAuditReport>? _reportFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _reportFuture = widget.service.auditInstalledPlugins();
+  }
+
+  void _refresh() {
+    setState(() {
+      _reportFuture = widget.service.auditInstalledPlugins();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FutureBuilder<AiPluginAuditReport>(
+          future: _reportFuture,
+          builder: (context, snapshot) {
+            final report = snapshot.data;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.extension,
+                      color: report == null
+                          ? null
+                          : _pluginAuditStatusColor(report.statusLabel),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Plugin Auditor',
+                        style: theme.textTheme.titleLarge,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _refresh,
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Refresh plugin audit',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Read-only audit of installed plugin packages, ABI, entry export, declared capabilities, and package digest.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                if (snapshot.connectionState != ConnectionState.done)
+                  const LinearProgressIndicator()
+                else if (snapshot.hasError)
+                  Text(
+                    snapshot.error.toString(),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.redAccent,
+                    ),
+                  )
+                else if (report == null)
+                  const Text('No plugin audit report')
+                else ...[
+                  SelectableText('Audit ${report.reportHashHex}'),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${report.entries.length} plugin(s) · ${report.statusLabel}',
+                  ),
+                  const SizedBox(height: 8),
+                  if (report.entries.isEmpty)
+                    const Text('No installed plugins.')
+                  else
+                    ...report.entries.map(_PluginAuditEntryTile.new),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Color _pluginAuditStatusColor(String status) {
+    return switch (status) {
+      'Critical' => Colors.red,
+      'Needs attention' => Colors.orange,
+      _ => Colors.green,
+    };
+  }
+}
+
+class _PluginAuditEntryTile extends StatelessWidget {
+  final AiPluginAuditEntry entry;
+
+  const _PluginAuditEntryTile(this.entry);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ExpansionTile(
+      title: Text(entry.pluginLabel),
+      subtitle: Text(
+        '${entry.pluginVersion ?? 'no version'} · ${entry.packageKind} · '
+        '${entry.findings.length} finding(s)',
+      ),
+      children: [
+        ListTile(
+          dense: true,
+          title: const Text('Package digest'),
+          subtitle: SelectableText(entry.packageDigestHex),
+        ),
+        ListTile(
+          dense: true,
+          title: const Text('Capabilities'),
+          subtitle: Text(
+            entry.capabilities.isEmpty ? 'none' : entry.capabilities.join(', '),
+          ),
+        ),
+        if (entry.findings.isEmpty)
+          const ListTile(
+            dense: true,
+            title: Text('No findings'),
+          )
+        else
+          ...entry.findings.map(
+            (finding) => ListTile(
+              dense: true,
+              leading: Icon(
+                finding.severity == 'critical'
+                    ? Icons.error_outline
+                    : Icons.warning_amber,
+                color:
+                    finding.severity == 'critical' ? Colors.red : Colors.orange,
+              ),
+              title: Text(finding.title),
+              subtitle: Text(
+                '${finding.detail}\nAction: ${finding.recommendedAction}',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
