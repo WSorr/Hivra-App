@@ -71,5 +71,72 @@ void main() {
       expect(repo.scannedFileCount, 0);
       expect(repo.findings.single.title, 'Symlink skipped');
     });
+
+    test('builds selected file context from previewed files only', () async {
+      await Directory('${tempDir.path}/docs').create();
+      await File('${tempDir.path}/docs/a.md').writeAsString('alpha');
+      await File('${tempDir.path}/docs/b.md').writeAsString('beta');
+      const service = AiDeveloperWorkspaceService();
+      final report =
+          await service.scanLocalRepositories(<String>[tempDir.path]);
+
+      final context = await service.buildSelectedFileContext(
+        report: report,
+        selectedRelativePaths: <String>['docs/b.md', 'docs/a.md'],
+      );
+      final second = await service.buildSelectedFileContext(
+        report: report,
+        selectedRelativePaths: <String>['docs/a.md', 'docs/b.md'],
+      );
+
+      expect(context.contextHashHex, second.contextHashHex);
+      expect(context.snippets.map((snippet) => snippet.relativePath),
+          <String>['docs/a.md', 'docs/b.md']);
+      expect(context.toPrettyJson(), contains('alpha'));
+      expect(context.findings.single.title,
+          'Selected source is untrusted prompt input');
+    });
+
+    test('blocks selected file when it changed after preview', () async {
+      await Directory('${tempDir.path}/docs').create();
+      final file = File('${tempDir.path}/docs/a.md');
+      await file.writeAsString('alpha');
+      const service = AiDeveloperWorkspaceService();
+      final report =
+          await service.scanLocalRepositories(<String>[tempDir.path]);
+      await file.writeAsString('changed');
+
+      final context = await service.buildSelectedFileContext(
+        report: report,
+        selectedRelativePaths: <String>['docs/a.md'],
+      );
+
+      expect(context.snippets, isEmpty);
+      expect(
+          context.findings.single.title, 'Selected file changed after preview');
+    });
+
+    test('rejects too many selected files', () async {
+      await Directory('${tempDir.path}/docs').create();
+      const service = AiDeveloperWorkspaceService();
+      final selections = <String>[];
+      for (var i = 0;
+          i < AiDeveloperWorkspaceService.maxSelectedFiles + 1;
+          i++) {
+        final path = 'docs/$i.md';
+        await File('${tempDir.path}/$path').writeAsString('$i');
+        selections.add(path);
+      }
+      final report =
+          await service.scanLocalRepositories(<String>[tempDir.path]);
+
+      await expectLater(
+        service.buildSelectedFileContext(
+          report: report,
+          selectedRelativePaths: selections,
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
   });
 }

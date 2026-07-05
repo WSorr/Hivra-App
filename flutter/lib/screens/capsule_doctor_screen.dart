@@ -742,13 +742,17 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   final TextEditingController _pathsController = TextEditingController(
     text: '/Volumes/Dev/projects/hivra\n/Volumes/Dev/projects/hivra-plugins',
   );
+  final TextEditingController _selectedFilesController =
+      TextEditingController();
   AiDeveloperWorkspaceReport? _report;
+  AiDeveloperWorkspaceSelectedContext? _selectedContext;
   String? _error;
   bool _busy = false;
 
   @override
   void dispose() {
     _pathsController.dispose();
+    _selectedFilesController.dispose();
     super.dispose();
   }
 
@@ -767,6 +771,41 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
       if (!mounted) return;
       setState(() {
         _report = report;
+        _selectedContext = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _buildSelectedContext() async {
+    final report = _report;
+    if (report == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final selections = _selectedFilesController.text
+          .split(RegExp(r'[\n,]+'))
+          .map((path) => path.trim())
+          .where((path) => path.isNotEmpty);
+      final context = await widget.service.buildSelectedFileContext(
+        report: report,
+        selectedRelativePaths: selections,
+      );
+      if (!mounted) return;
+      setState(() {
+        _selectedContext = context;
       });
     } catch (error) {
       if (!mounted) return;
@@ -845,9 +884,74 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
               SelectableText('Workspace ${_report!.reportHashHex}'),
               const SizedBox(height: 8),
               ..._report!.repositories.map(_DeveloperWorkspaceRepoTile.new),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _selectedFilesController,
+                minLines: 2,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Selected relative files for developer context',
+                  helperText:
+                      'Manual selection only. Example: docs/specification.md',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _buildSelectedContext,
+                icon: const Icon(Icons.fact_check),
+                label: const Text('Build selected context preview'),
+              ),
+            ],
+            if (_selectedContext != null) ...[
+              const SizedBox(height: 12),
+              _DeveloperSelectedContextPanel(contextData: _selectedContext!),
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _DeveloperSelectedContextPanel extends StatelessWidget {
+  final AiDeveloperWorkspaceSelectedContext contextData;
+
+  const _DeveloperSelectedContextPanel({required this.contextData});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Selected developer context', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 6),
+          SelectableText('Context ${contextData.contextHashHex}'),
+          Text('${contextData.snippets.length} snippet(s)'),
+          Text('${contextData.payloadBytes} bytes'),
+          if (contextData.findings.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            ...contextData.findings.map(
+              (finding) => Text('${finding.severity}: ${finding.title}'),
+            ),
+          ],
+          const SizedBox(height: 8),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('Preview JSON'),
+            children: [
+              SelectableText(contextData.toPrettyJson()),
+            ],
+          ),
+        ],
       ),
     );
   }

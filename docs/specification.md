@@ -339,6 +339,12 @@ Diagnostics:
   directories, symlinks, binaries, oversized files, and unknown top-level paths.
 - Developer Workspace Preview MUST NOT upload source contents, clone remote
   repositories, execute scripts/hooks, or mutate repositories.
+- Developer Workspace selected context MAY include contents of explicit
+  user-selected allowlisted files after a fresh preview hash check.
+- Developer Workspace selected context MUST reject files changed after preview
+  and MUST label source/log/manifest contents as untrusted prompt input.
+- Developer Workspace selected context MUST remain a local preview until a
+  separate explicit provider submission step is implemented.
 
 ---
 

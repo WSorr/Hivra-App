@@ -1325,3 +1325,26 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `tools/review/review_all.sh`
     - `flutter build macos --release`
   - Status: completed (2026-07-05).
+
+- `11.19 Developer Selected Context Preview`
+  - Goal:
+    - allow developer-mode context to advance from repository map to explicit
+      selected snippets without broad repository upload.
+  - Scope:
+    - added selected-file context builder on top of workspace preview.
+    - selected files are read only when they were present in the preview and
+      their SHA-256 still matches.
+    - selected context includes snippet text, file hashes, findings, payload
+      size, and deterministic context hash.
+    - Capsule Doctor shows a local selected-context JSON preview.
+  - Constraints:
+    - no provider submission in this step.
+    - no automatic patching, committing, pushing, cloning, or script execution.
+    - selected source/log/manifest content is explicitly marked as untrusted
+      prompt input.
+  - Verification:
+    - `flutter test test/ai_developer_workspace_service_test.dart`
+    - `flutter analyze`
+    - `tools/review/review_all.sh`
+    - `flutter build macos --release`
+  - Status: completed (2026-07-05).
