@@ -1299,3 +1299,29 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `tools/review/review_all.sh`
     - `flutter build macos --release`
   - Status: completed (2026-07-05).
+
+- `11.18 Developer Workspace Preview`
+  - Goal:
+    - start Developer Mode without giving any AI/provider broad repository
+      access.
+    - provide a deterministic local allowlist scan that can later feed explicit
+      developer snippets.
+  - Scope:
+    - added `AiDeveloperWorkspaceService` for read-only local repository
+      previews.
+    - scan output includes allowed file paths, sizes, SHA-256 hashes, skip
+      counts, denylist findings, and a deterministic report hash.
+    - Capsule Doctor now includes a manual Developer Workspace Preview card for
+      explicit local paths.
+  - Constraints:
+    - no source contents are uploaded or sent to AI.
+    - no remote clone/cache yet.
+    - no script/hook execution.
+    - denylisted secrets, build/cache directories, symlinks, binaries,
+      oversized files, and unknown top-level paths are skipped.
+  - Verification:
+    - `flutter test test/ai_developer_workspace_service_test.dart`
+    - `flutter analyze`
+    - `tools/review/review_all.sh`
+    - `flutter build macos --release`
+  - Status: completed (2026-07-05).

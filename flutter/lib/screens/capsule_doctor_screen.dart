@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/ai_capsule_inspection_service.dart';
+import '../services/ai_developer_workspace_service.dart';
 import '../services/ai_doctor_chat_service.dart';
 import '../services/ai_doctor_prompt_service.dart';
 import '../services/ai_plugin_audit_service.dart';
@@ -23,6 +24,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
   late final AiCapsuleInspectionService _service;
   late final AiDoctorChatService _chatService;
   late final AiPluginAuditService _pluginAuditService;
+  late final AiDeveloperWorkspaceService _developerWorkspaceService;
   Future<AiCapsuleInspectionReport>? _reportFuture;
 
   @override
@@ -31,6 +33,8 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
     _service = widget.runtime.buildAiCapsuleInspectionService();
     _chatService = widget.runtime.buildAiDoctorChatService();
     _pluginAuditService = widget.runtime.buildAiPluginAuditService();
+    _developerWorkspaceService =
+        widget.runtime.buildAiDeveloperWorkspaceService();
     _reportFuture = _service.inspect();
   }
 
@@ -86,6 +90,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
             report: report,
             chatService: _chatService,
             pluginAuditService: _pluginAuditService,
+            developerWorkspaceService: _developerWorkspaceService,
             onCopySnapshot: () => _copySnapshot(report),
           );
         },
@@ -98,12 +103,14 @@ class _ReportView extends StatelessWidget {
   final AiCapsuleInspectionReport report;
   final AiDoctorChatService chatService;
   final AiPluginAuditService pluginAuditService;
+  final AiDeveloperWorkspaceService developerWorkspaceService;
   final VoidCallback onCopySnapshot;
 
   const _ReportView({
     required this.report,
     required this.chatService,
     required this.pluginAuditService,
+    required this.developerWorkspaceService,
     required this.onCopySnapshot,
   });
 
@@ -162,6 +169,8 @@ class _ReportView extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _PluginAuditCard(service: pluginAuditService),
+        const SizedBox(height: 12),
+        _DeveloperWorkspaceCard(service: developerWorkspaceService),
         const SizedBox(height: 12),
         _SectionCard(
           title: 'Ledger',
@@ -713,6 +722,182 @@ class _PluginAuditEntryTile extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
             ),
+          ),
+      ],
+    );
+  }
+}
+
+class _DeveloperWorkspaceCard extends StatefulWidget {
+  final AiDeveloperWorkspaceService service;
+
+  const _DeveloperWorkspaceCard({required this.service});
+
+  @override
+  State<_DeveloperWorkspaceCard> createState() =>
+      _DeveloperWorkspaceCardState();
+}
+
+class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
+  final TextEditingController _pathsController = TextEditingController(
+    text: '/Volumes/Dev/projects/hivra\n/Volumes/Dev/projects/hivra-plugins',
+  );
+  AiDeveloperWorkspaceReport? _report;
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _pathsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _scan() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final paths = _pathsController.text
+          .split(RegExp(r'[\n,]+'))
+          .map((path) => path.trim())
+          .where((path) => path.isNotEmpty);
+      final report = await widget.service.scanLocalRepositories(paths);
+      if (!mounted) return;
+      setState(() {
+        _report = report;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.folder_open),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Developer Workspace Preview',
+                    style: theme.textTheme.titleLarge,
+                  ),
+                ),
+                if (_busy)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Explicit local repository allowlist. Read-only scan returns file paths, sizes, hashes, and denylist findings; no source contents are uploaded or sent to AI.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _pathsController,
+              minLines: 2,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                labelText: 'Allowed repository paths',
+                helperText: 'One local path per line. Scan is manual.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _busy ? null : _scan,
+              icon: const Icon(Icons.manage_search),
+              label: const Text('Scan workspace preview'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.redAccent,
+                ),
+              ),
+            ],
+            if (_report != null) ...[
+              const SizedBox(height: 12),
+              SelectableText('Workspace ${_report!.reportHashHex}'),
+              const SizedBox(height: 8),
+              ..._report!.repositories.map(_DeveloperWorkspaceRepoTile.new),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeveloperWorkspaceRepoTile extends StatelessWidget {
+  final AiDeveloperWorkspaceRepoSummary repo;
+
+  const _DeveloperWorkspaceRepoTile(this.repo);
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      title: Text(repo.rootPath),
+      subtitle: Text(
+        '${repo.scannedFileCount} files · '
+        '${repo.skippedFileCount} skipped files · '
+        '${repo.findings.length} finding(s)',
+      ),
+      children: [
+        if (repo.findings.isNotEmpty)
+          ...repo.findings.map(
+            (finding) => ListTile(
+              dense: true,
+              leading: Icon(
+                finding.severity == 'critical'
+                    ? Icons.error_outline
+                    : Icons.info_outline,
+                color:
+                    finding.severity == 'critical' ? Colors.red : Colors.orange,
+              ),
+              title: Text(finding.title),
+              subtitle: Text(
+                '${finding.detail}\nAction: ${finding.recommendedAction}',
+              ),
+            ),
+          ),
+        ...repo.files.take(12).map(
+              (file) => ListTile(
+                dense: true,
+                title: Text(file.relativePath),
+                subtitle: SelectableText(
+                  '${file.sizeBytes} bytes · ${file.sha256Hex}',
+                ),
+              ),
+            ),
+        if (repo.files.length > 12)
+          ListTile(
+            dense: true,
+            title: Text('+${repo.files.length - 12} more file(s)'),
           ),
       ],
     );

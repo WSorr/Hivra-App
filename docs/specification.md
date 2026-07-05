@@ -330,6 +330,15 @@ Diagnostics:
   catalogs, package files, ledger, transport outbox, or credentials.
 - Plugin Auditor MUST NOT grant capabilities. Unsupported or missing
   capabilities are findings, not authorization inputs.
+- Developer Workspace Preview MAY scan explicit local repository paths supplied
+  by the developer.
+- Developer Workspace Preview MUST be read-only and MUST expose only
+  allowlisted file paths, file sizes, hashes, skip counts, and denylist
+  findings.
+- Developer Workspace Preview MUST skip secret-like files, build/cache
+  directories, symlinks, binaries, oversized files, and unknown top-level paths.
+- Developer Workspace Preview MUST NOT upload source contents, clone remote
+  repositories, execute scripts/hooks, or mutate repositories.
 
 ---
 
