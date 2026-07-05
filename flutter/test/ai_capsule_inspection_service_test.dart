@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/ai_capsule_inspection_service.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
+import 'package:hivra_app/services/capsule_diagnostics_service.dart';
+import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/delivery_outbox_store.dart';
 import 'package:hivra_app/services/ledger_view_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
@@ -51,6 +53,7 @@ void main() {
           readLocalTransportKey: () => null,
           readLocalRootKey: () => Uint8List.fromList(owner),
         ),
+        diagnostics: _fakeDiagnosticsService(),
         outbox: _FakeOutboxStore(),
         plugins: const _FakePluginRegistryService(),
         readActiveCapsuleHex: () => 'aa' * 32,
@@ -91,6 +94,7 @@ void main() {
           readLocalTransportKey: () => null,
           readLocalRootKey: () => Uint8List.fromList(owner),
         ),
+        diagnostics: _fakeDiagnosticsService(),
         outbox: _FakeOutboxStore(items: const <DeliveryOutboxItem>[]),
         plugins:
             const _FakePluginRegistryService(records: <WasmPluginRecord>[]),
@@ -105,6 +109,48 @@ void main() {
       expect(report.statusLabel, equals('Needs attention'));
     });
   });
+}
+
+CapsuleDiagnosticsService _fakeDiagnosticsService() {
+  return CapsuleDiagnosticsService(
+    diagnoseBootstrap: () async => CapsuleBootstrapReport(
+      activePubKeyHex: 'aa' * 32,
+      runtimePubKeyHex: 'aa' * 32,
+      rootPubKeyHex: 'aa' * 32,
+      nostrPubKeyHex: 'bb' * 32,
+      identityMode: 'root_owner',
+      bootstrapSource: 'ledger',
+      seedAvailable: true,
+      seedMatchesActiveCapsule: true,
+      rootMatchesActiveCapsule: true,
+      nostrMatchesActiveCapsule: false,
+      runtimeMatchesRoot: true,
+      runtimeMatchesNostr: false,
+      stateFileExists: true,
+      ledgerFileExists: true,
+      backupFileExists: true,
+      workerBootstrapAvailable: true,
+      ledgerImportable: true,
+      issue: null,
+    ),
+    diagnoseTrace: () async => CapsuleTraceReport(
+      activePubKeyHex: 'aa' * 32,
+      runtimePubKeyHex: 'aa' * 32,
+      runtimeSeedExists: true,
+      indexHasEntry: true,
+      secureSeedExists: true,
+      fallbackSeedExists: false,
+      capsuleDirPath: '/tmp/capsule',
+      capsuleDirExists: true,
+      ledgerFileExists: true,
+      stateFileExists: true,
+      backupFileExists: true,
+      legacyDocsPath: '/tmp/docs',
+      legacyLedgerExists: false,
+      legacyStateExists: false,
+      legacyBackupExists: false,
+    ),
+  );
 }
 
 class _FakeOutboxStore extends DeliveryOutboxStore {

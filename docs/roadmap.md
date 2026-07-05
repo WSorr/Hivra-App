@@ -1231,13 +1231,19 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - prevent diagnostics from spreading back into Settings, UI screens, or
       persistence orchestration.
   - Scope:
-    - move `diagnoseBootstrapReport` and `diagnoseCapsuleTraces` behind one
-      cohesive capsule diagnostics service/boundary.
-    - keep lower-level bootstrap and persistence code as data providers only.
-    - keep the diagnostic snapshot deterministic and local-only.
+    - moved `diagnoseBootstrapReport` and `diagnoseCapsuleTraces` behind one
+      cohesive `CapsuleDiagnosticsService` boundary.
+    - kept lower-level bootstrap and persistence code as data providers only.
+    - kept the diagnostic snapshot deterministic and local-only.
+    - removed diagnostics from `SettingsService`; Settings no longer acts as a
+      diagnostics transport surface.
   - Constraints:
     - no new upward dependencies from core/engine/platform into Flutter UI.
     - no provider/AI upload path for seed, ledger, transport secrets, or
       credentials.
     - Capsule Doctor remains projection-only and does not mutate capsule state.
-  - Status: pending.
+  - Verification:
+    - `flutter test test/ai_capsule_inspection_service_test.dart test/capsule_diagnostics_service_test.dart test/settings_service_test.dart`
+    - `flutter analyze`
+    - `tools/review/review_all.sh`
+  - Status: completed (2026-07-05).

@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../models/invitation.dart';
 import 'consensus_runtime_service.dart';
+import 'capsule_diagnostics_service.dart';
 import 'capsule_persistence_models.dart';
 import 'delivery_outbox_store.dart';
 import 'ledger_view_service.dart';
@@ -103,26 +104,23 @@ class AiCapsuleInspectionReport {
 class AiCapsuleInspectionService {
   final LedgerViewService _ledgerView;
   final ConsensusRuntimeService _consensus;
+  final CapsuleDiagnosticsService? _diagnostics;
   final DeliveryOutboxStore _outbox;
   final WasmPluginRegistryService _plugins;
-  final Future<CapsuleBootstrapReport> Function()? _diagnoseBootstrap;
-  final Future<CapsuleTraceReport> Function()? _diagnoseTrace;
   final String? Function() _readActiveCapsuleHex;
 
   const AiCapsuleInspectionService({
     required LedgerViewService ledgerView,
     required ConsensusRuntimeService consensus,
+    CapsuleDiagnosticsService? diagnostics,
     DeliveryOutboxStore outbox = const DeliveryOutboxStore(),
     WasmPluginRegistryService plugins = const WasmPluginRegistryService(),
-    Future<CapsuleBootstrapReport> Function()? diagnoseBootstrap,
-    Future<CapsuleTraceReport> Function()? diagnoseTrace,
     required String? Function() readActiveCapsuleHex,
   })  : _ledgerView = ledgerView,
         _consensus = consensus,
+        _diagnostics = diagnostics,
         _outbox = outbox,
         _plugins = plugins,
-        _diagnoseBootstrap = diagnoseBootstrap,
-        _diagnoseTrace = diagnoseTrace,
         _readActiveCapsuleHex = readActiveCapsuleHex;
 
   Future<AiCapsuleInspectionReport> inspect() async {
@@ -131,8 +129,9 @@ class AiCapsuleInspectionService {
     final invitations = _ledgerView.loadInvitations();
     final relationshipGroups = _ledgerView.loadRelationshipGroups();
     final consensusChecks = _consensus.checks();
-    final bootstrapReport = await _tryBootstrapReport();
-    final traceReport = await _tryTraceReport();
+    final diagnosticsReport = await _tryDiagnosticsReport();
+    final bootstrapReport = diagnosticsReport.bootstrap;
+    final traceReport = diagnosticsReport.trace;
     final outboxItems = capsuleHex == null || capsuleHex.isEmpty
         ? const <DeliveryOutboxItem>[]
         : await _outbox.load(capsuleHex);
@@ -242,59 +241,65 @@ class AiCapsuleInspectionService {
     );
   }
 
-  Future<CapsuleBootstrapReport?> _tryBootstrapReport() async {
-    final diagnose = _diagnoseBootstrap;
-    if (diagnose == null) return null;
+  Future<CapsuleDiagnosticsReport> _tryDiagnosticsReport() async {
+    final diagnostics = _diagnostics;
+    if (diagnostics == null) {
+      return CapsuleDiagnosticsReport(
+        bootstrap: _fallbackBootstrapReport('diagnostics unavailable'),
+        trace: _fallbackTraceReport(),
+      );
+    }
     try {
-      return await diagnose();
+      return await diagnostics.inspect();
     } catch (error) {
-      return CapsuleBootstrapReport(
-        activePubKeyHex: null,
-        runtimePubKeyHex: null,
-        rootPubKeyHex: null,
-        nostrPubKeyHex: null,
-        identityMode: 'unknown',
-        bootstrapSource: 'error',
-        seedAvailable: false,
-        seedMatchesActiveCapsule: false,
-        rootMatchesActiveCapsule: false,
-        nostrMatchesActiveCapsule: false,
-        runtimeMatchesRoot: false,
-        runtimeMatchesNostr: false,
-        stateFileExists: false,
-        ledgerFileExists: false,
-        backupFileExists: false,
-        workerBootstrapAvailable: false,
-        ledgerImportable: false,
-        issue: 'diagnostic_error: $error',
+      return CapsuleDiagnosticsReport(
+        bootstrap: _fallbackBootstrapReport('diagnostic_error: $error'),
+        trace: _fallbackTraceReport(),
       );
     }
   }
 
-  Future<CapsuleTraceReport?> _tryTraceReport() async {
-    final diagnose = _diagnoseTrace;
-    if (diagnose == null) return null;
-    try {
-      return await diagnose();
-    } catch (error) {
-      return CapsuleTraceReport(
-        activePubKeyHex: null,
-        runtimePubKeyHex: null,
-        runtimeSeedExists: false,
-        indexHasEntry: false,
-        secureSeedExists: false,
-        fallbackSeedExists: false,
-        capsuleDirPath: '',
-        capsuleDirExists: false,
-        ledgerFileExists: false,
-        stateFileExists: false,
-        backupFileExists: false,
-        legacyDocsPath: '',
-        legacyLedgerExists: false,
-        legacyStateExists: false,
-        legacyBackupExists: false,
-      );
-    }
+  CapsuleBootstrapReport _fallbackBootstrapReport(String issue) {
+    return CapsuleBootstrapReport(
+      activePubKeyHex: null,
+      runtimePubKeyHex: null,
+      rootPubKeyHex: null,
+      nostrPubKeyHex: null,
+      identityMode: 'unknown',
+      bootstrapSource: 'error',
+      seedAvailable: false,
+      seedMatchesActiveCapsule: false,
+      rootMatchesActiveCapsule: false,
+      nostrMatchesActiveCapsule: false,
+      runtimeMatchesRoot: false,
+      runtimeMatchesNostr: false,
+      stateFileExists: false,
+      ledgerFileExists: false,
+      backupFileExists: false,
+      workerBootstrapAvailable: false,
+      ledgerImportable: false,
+      issue: issue,
+    );
+  }
+
+  CapsuleTraceReport _fallbackTraceReport() {
+    return CapsuleTraceReport(
+      activePubKeyHex: null,
+      runtimePubKeyHex: null,
+      runtimeSeedExists: false,
+      indexHasEntry: false,
+      secureSeedExists: false,
+      fallbackSeedExists: false,
+      capsuleDirPath: '',
+      capsuleDirExists: false,
+      ledgerFileExists: false,
+      stateFileExists: false,
+      backupFileExists: false,
+      legacyDocsPath: '',
+      legacyLedgerExists: false,
+      legacyStateExists: false,
+      legacyBackupExists: false,
+    );
   }
 
   Map<String, dynamic> _invitationSummary(List<Invitation> invitations) {
