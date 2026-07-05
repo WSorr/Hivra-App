@@ -1367,3 +1367,96 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `tools/review/review_all.sh`
     - `flutter build macos --release`
   - Status: completed (2026-07-06).
+
+- `11.21 Hivra Engineer Advisory Ask`
+  - Goal:
+    - allow Developer Mode to ask an AI engineer about explicit selected
+      evidence without granting repository write access.
+  - Planned scope:
+    - combine local Capsule Doctor snapshot, selected developer context, and a
+      user question into one outbound preview.
+    - provider response is advisory only: likely files, hypotheses, suggested
+      tests, and patch plan.
+    - no file writes, no patch application, no git operations, no release
+      operations.
+  - Acceptance:
+    - empty selected context is rejected.
+    - changed selected files are rejected before provider submission.
+    - provider failures leave capsule state and repository state unchanged.
+  - Status: planned.
+
+- `11.22 Developer Provider Boundary Tests`
+  - Goal:
+    - make the Hivra Engineer provider path fail closed before adding more
+      repository capabilities.
+  - Planned scope:
+    - tests for invalid/empty provider key, timeout/rate limit, malformed
+      response, oversized context, prompt-injection warning presence, and
+      no-mutation guarantees.
+    - explicit fixtures proving denylisted paths are never included in
+      provider payloads.
+  - Status: planned.
+
+- `11.23 Remote Repository Allowlist Cache`
+  - Goal:
+    - support developer-provided public repository links without giving AI or
+      plugins uncontrolled network/repository access.
+  - Planned scope:
+    - read-only clone/cache under Hivra-controlled developer cache.
+    - pin commit/tag where possible; mutable/unpinned context is marked
+      dangerous.
+    - no hooks, no scripts, no submodules unless explicitly allowlisted.
+    - cache clear action.
+  - Status: planned.
+
+- `11.24 Plugin Auditor v2`
+  - Goal:
+    - extend plugin audit from installed package metadata to selected plugin
+      source evidence in Developer Mode.
+  - Planned scope:
+    - audit installed package, catalog signature/digest evidence, manifest,
+      capabilities, runtime invocation evidence, and selected source snippets.
+    - auditor remains read-only and cannot grant capabilities.
+  - Status: planned.
+
+- `11.25 Plugin Scaffolder Draft Mode`
+  - Goal:
+    - create draft-only WASM plugin skeletons without crossing the app/plugin
+      repository boundary.
+  - Planned scope:
+    - developer supplies plugin id, purpose, capabilities, and host API
+      version.
+    - generated draft includes manifest, source skeleton, tests, README, and at
+      least one golden vector.
+    - no build, install, catalog update, signing, commit, push, tag, or release
+      is automatic.
+  - Status: planned.
+
+- `11.26 Patch Proposal Mode`
+  - Goal:
+    - let AI propose patches without applying them.
+  - Planned scope:
+    - AI returns patch text/diff preview only.
+    - user reviews; applying remains a separate human-confirmed action.
+    - no commits, pushes, tags, or releases from AI output.
+  - Status: planned.
+
+- `11.27 Review Gate Integration`
+  - Goal:
+    - ensure AI suggestions stay subordinate to Hivra gates.
+  - Planned scope:
+    - advisory reports list required tests/gates.
+    - UI marks output as unverified until user runs checks.
+    - AI output never overrides review gates, release gates, or manual smoke.
+  - Status: planned.
+
+- `11.28 AI Engineer Release Readiness`
+  - Goal:
+    - prepare the AI Capsule Engineer feature set for a release-quality manual
+      smoke pass.
+  - Planned scope:
+    - manual macOS release smoke for Capsule Doctor, scoped AI chat, Plugin
+      Auditor, Developer Mode boundary, Workspace Preview, Selected Context,
+      and Hivra Engineer Advisory Ask.
+    - Android smoke remains a separate release pass after macOS is stable.
+  - Status: planned.
