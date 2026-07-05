@@ -279,7 +279,10 @@ Users can have multiple independent capsules.
 
 Storage:
 
-- Each capsule has its own seed in Keychain.
+- Each capsule has its own seed in platform secure storage.
+- On macOS, per-capsule seeds are stored in Keychain. Runtime activation uses a
+  process-local active seed cache; selecting or bootstrapping a capsule MUST NOT
+  rewrite a global active-seed Keychain pointer.
 - Recovery seeds MUST NOT be persisted in plaintext files. If platform secure
   storage is unavailable, seed persistence fails closed.
 - Legacy plaintext seed files MAY be consumed only for one-time migration:
@@ -297,6 +300,19 @@ Switching:
 
 - Selecting a capsule loads its seed and ledger.
 - Previous capsule is unloaded from memory.
+- Capsule selection MUST preserve the storage/runtime boundary:
+  persistent per-capsule seed storage is a secure-storage concern, while active
+  runtime seed selection is process-local and non-authoritative.
+
+Diagnostics:
+
+- Capsule Doctor is the canonical user-facing local diagnostic surface.
+- Capsule Doctor MAY summarize bootstrap state, filesystem traces, ledger
+  projection, invitations, relationships, outbox, consensus, and plugin state.
+- Capsule Doctor MUST be deterministic for the same local files and runtime
+  inputs.
+- Capsule Doctor MUST NOT upload recovery seed, ledger contents, transport
+  secrets, or plugin credentials to any AI/provider service.
 
 ---
 

@@ -56,48 +56,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _notifyLedgerChanged();
   }
 
-  Future<void> _showLocalTraceReport() async {
-    final report = await widget.service.diagnoseCapsuleTraces();
-    if (!mounted) return;
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Local capsule trace'),
-        content: SingleChildScrollView(
-          child: SelectableText(report.toMultilineString()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showBootstrapDiagnostics() async {
-    final report = await widget.service.diagnoseBootstrapReport();
-    if (!mounted) return;
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Bootstrap diagnostics'),
-        content: SingleChildScrollView(
-          child: SelectableText(report.toMultilineString()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _copyContactCard() async {
     final card = await widget.service.buildOwnCard();
     if (card == null) {
@@ -324,18 +282,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.bug_report),
-                title: const Text('Local capsule trace'),
+                leading: const Icon(Icons.medical_services_outlined),
+                title: const Text('Capsule Doctor'),
                 subtitle: const Text(
-                    'Inspect local files, seeds, runtime and legacy traces'),
-                onTap: _showLocalTraceReport,
-              ),
-              ListTile(
-                leading: const Icon(Icons.health_and_safety),
-                title: const Text('Bootstrap diagnostics'),
-                subtitle: const Text(
-                    'Inspect startup bootstrap source, seed match and import readiness'),
-                onTap: _showBootstrapDiagnostics,
+                  'Bootstrap, files, ledger, consensus and transport checks',
+                ),
+                onTap: () async {
+                  await Navigator.pushNamed(context, '/capsule_doctor');
+                  await _notifyLedgerChanged();
+                },
               ),
             ],
           ),

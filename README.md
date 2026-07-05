@@ -81,7 +81,10 @@ Users can own multiple independent capsules.
 
 ### Capsule Storage
 
-- Each capsule has its own seed stored in Keychain.
+- Each capsule has its own seed stored in platform secure storage.
+- On macOS, per-capsule seeds are persisted in Keychain, while the currently
+  active runtime seed is process-local memory state. Capsule switching MUST NOT
+  rewrite a global "active seed" Keychain entry.
 - Capsule metadata is stored under a separate key: `capsule_metadata`.
 
 ### Capsule Selection Screen
@@ -97,6 +100,8 @@ Shown on app launch when at least one capsule exists.
 
 - On selection, the app loads the selected capsule seed and ledger.
 - The previously active capsule is unloaded from memory.
+- Runtime diagnostics are available through Capsule Doctor in Settings. Capsule
+  Doctor is local-only and must not upload seed, ledger, or transport material.
 
 ## Building
 

@@ -13,7 +13,10 @@ class CapsuleSeedStore {
 
   final FlutterSecureStorage _secureStorage;
   final UserVisibleDataDirectoryService _dirs;
-  final Map<String, Uint8List> _memoryCache = <String, Uint8List>{};
+  static final Map<String, Uint8List> _processSeedCache = <String, Uint8List>{};
+  static final Map<String, Future<void>> _legacyMigrations =
+      <String, Future<void>>{};
+  static final Set<String> _legacyMigrationChecked = <String>{};
 
   CapsuleSeedStore({
     FlutterSecureStorage? secureStorage,
@@ -37,7 +40,7 @@ class CapsuleSeedStore {
     } catch (error) {
       throw StateError('Secure seed storage is unavailable: $error');
     }
-    _memoryCache[pubKeyHex] = Uint8List.fromList(seed);
+    _processSeedCache[await _cacheKey(pubKeyHex)] = Uint8List.fromList(seed);
     await deleteFallback(pubKeyHex);
   }
 
@@ -51,26 +54,28 @@ class CapsuleSeedStore {
   }
 
   Future<Uint8List?> loadSeed(String pubKeyHex) async {
-    final cached = _memoryCache[pubKeyHex];
+    final cacheKey = await _cacheKey(pubKeyHex);
+    final cached = _processSeedCache[cacheKey];
     if (cached != null) return Uint8List.fromList(cached);
 
     await _migrateLegacyFallbackFile();
     final secureSeed = _decodeSeedString(await readSecureEncoded(pubKeyHex));
     if (secureSeed != null) {
-      _memoryCache[pubKeyHex] = Uint8List.fromList(secureSeed);
+      _processSeedCache[cacheKey] = Uint8List.fromList(secureSeed);
       return secureSeed;
     }
     return null;
   }
 
   Future<bool> hasStoredSeed(String pubKeyHex) async {
-    if (_memoryCache.containsKey(pubKeyHex)) return true;
+    final cacheKey = await _cacheKey(pubKeyHex);
+    if (_processSeedCache.containsKey(cacheKey)) return true;
 
     await _migrateLegacyFallbackFile();
     var encoded = await readSecureEncoded(pubKeyHex);
     final seed = _decodeSeedString(encoded);
     if (seed == null) return false;
-    _memoryCache[pubKeyHex] = Uint8List.fromList(seed);
+    _processSeedCache[cacheKey] = Uint8List.fromList(seed);
     return true;
   }
 
@@ -79,7 +84,7 @@ class CapsuleSeedStore {
   }
 
   Future<void> deleteSeed(String pubKeyHex) async {
-    _memoryCache.remove(pubKeyHex);
+    _processSeedCache.remove(await _cacheKey(pubKeyHex));
     try {
       await _secureStorage.delete(key: '$_seedKeyPrefix$pubKeyHex');
     } catch (_) {
@@ -110,6 +115,25 @@ class CapsuleSeedStore {
 
   Future<void> _migrateLegacyFallbackFile() async {
     final file = await _seedFallbackFile();
+    final path = file.path;
+    if (_legacyMigrationChecked.contains(path)) return;
+    final inFlight = _legacyMigrations[path];
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+
+    final migration = _runLegacyFallbackMigration(file);
+    _legacyMigrations[path] = migration;
+    try {
+      await migration;
+      _legacyMigrationChecked.add(path);
+    } finally {
+      _legacyMigrations.remove(path);
+    }
+  }
+
+  Future<void> _runLegacyFallbackMigration(File file) async {
     if (!await file.exists()) return;
 
     final raw = await file.readAsString();
@@ -150,17 +174,18 @@ class CapsuleSeedStore {
     required Future<bool> Function(Uint8List seed) isValidSeed,
     required Future<void> Function(Uint8List seed) persistValidatedSeed,
   }) async {
-    final cached = _memoryCache[pubKeyHex];
+    final cacheKey = await _cacheKey(pubKeyHex);
+    final cached = _processSeedCache[cacheKey];
     if (cached != null) {
       final copy = Uint8List.fromList(cached);
       if (await isValidSeed(copy)) return copy;
-      _memoryCache.remove(pubKeyHex);
+      _processSeedCache.remove(cacheKey);
     }
 
     await _migrateLegacyFallbackFile();
     final secureSeed = _decodeSeedString(await readSecureEncoded(pubKeyHex));
     if (secureSeed != null && await isValidSeed(secureSeed)) {
-      _memoryCache[pubKeyHex] = Uint8List.fromList(secureSeed);
+      _processSeedCache[cacheKey] = Uint8List.fromList(secureSeed);
       await deleteFallback(pubKeyHex);
       return secureSeed;
     }
@@ -171,6 +196,11 @@ class CapsuleSeedStore {
   Future<File> _seedFallbackFile() async {
     final capsulesRoot = await _dirs.capsulesDirectory(create: true);
     return File('${capsulesRoot.path}/$_seedFallbackFileName');
+  }
+
+  Future<String> _cacheKey(String pubKeyHex) async {
+    final file = await _seedFallbackFile();
+    return '${file.path}|${pubKeyHex.toLowerCase()}';
   }
 
   Future<String?> _readSeedFallback(String pubKeyHex) async {

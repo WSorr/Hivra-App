@@ -534,7 +534,8 @@ class CapsulePersistenceService {
 
   Future<CapsuleBootstrapReport> diagnoseBootstrapReport(
       CapsulePersistenceBindings hivra) async {
-    final activeHex = await resolveActiveCapsuleHex(hivra);
+    final index = await _readIndex();
+    final activeHex = _activeCapsuleHexFromIndexOrRuntime(index, hivra);
     final runtimePubKey = hivra.capsuleRuntimeOwnerPublicKey();
     final runtimeHex = runtimePubKey != null && runtimePubKey.length == 32
         ? _bytesToHex(runtimePubKey)
@@ -608,12 +609,15 @@ class CapsulePersistenceService {
         ? _bytesToHex(seedNostrPubKey)
         : null;
 
-    final bootstrap = await loadRuntimeBootstrap(
-      activeHex,
-      hivra: hivra,
+    final issue = _bootstrapIssue(
+      activeHex: activeHex,
+      seedAvailable: seedAvailable,
+      seedMatches: seedMatches,
+      ledgerFileExists: ledgerFileExists,
+      backupFileExists: backupFileExists,
+      runtimeHex: runtimeHex,
+      rootHex: rootHex,
     );
-    final workerBootstrap = await loadWorkerBootstrapArgs(hivra);
-    final issue = await diagnoseActiveCapsuleBootstrap(hivra);
 
     return CapsuleBootstrapReport(
       activePubKeyHex: activeHex,
@@ -632,10 +636,49 @@ class CapsulePersistenceService {
       stateFileExists: stateFileExists,
       ledgerFileExists: ledgerFileExists,
       backupFileExists: backupFileExists,
-      workerBootstrapAvailable: workerBootstrap != null,
-      ledgerImportable: bootstrap?.ledgerImportCandidates.isNotEmpty == true,
+      workerBootstrapAvailable: seedAvailable,
+      ledgerImportable: ledgerFileExists || backupFileExists,
       issue: issue,
     );
+  }
+
+  String? _activeCapsuleHexFromIndexOrRuntime(
+    CapsulesIndex index,
+    CapsulePersistenceBindings hivra,
+  ) {
+    final activeHex = index.activePubKeyHex?.trim().toLowerCase();
+    if (activeHex != null && activeHex.isNotEmpty) return activeHex;
+    final runtimePubKey = hivra.capsuleRuntimeOwnerPublicKey();
+    if (runtimePubKey != null && runtimePubKey.length == 32) {
+      return _bytesToHex(runtimePubKey);
+    }
+    return null;
+  }
+
+  String? _bootstrapIssue({
+    required String activeHex,
+    required bool seedAvailable,
+    required bool seedMatches,
+    required bool ledgerFileExists,
+    required bool backupFileExists,
+    required String? runtimeHex,
+    required String? rootHex,
+  }) {
+    if (activeHex.isEmpty) return 'No active capsule selected';
+    if (!seedAvailable) return 'No secure seed for active capsule';
+    if (!seedMatches) return 'Secure seed does not match active capsule';
+    if (!ledgerFileExists && !backupFileExists) {
+      return 'No local ledger or backup for active capsule';
+    }
+    if (runtimeHex != null &&
+        runtimeHex.isNotEmpty &&
+        rootHex != null &&
+        rootHex.isNotEmpty &&
+        runtimeHex != activeHex &&
+        rootHex != activeHex) {
+      return 'Runtime capsule differs from active capsule';
+    }
+    return null;
   }
 
   bool _importBootstrapLedgerCandidates(
@@ -659,14 +702,12 @@ class CapsulePersistenceService {
 
   Future<CapsuleTraceReport> diagnoseCapsuleTraces(
       CapsulePersistenceBindings hivra) async {
-    final activeHex = await resolveActiveCapsuleHex(hivra);
+    final index = await _readIndex();
+    final activeHex = _activeCapsuleHexFromIndexOrRuntime(index, hivra);
     final runtimePubKey = hivra.capsuleRuntimeOwnerPublicKey();
     final runtimeHex = runtimePubKey != null && runtimePubKey.length == 32
         ? _bytesToHex(runtimePubKey)
         : null;
-    final runtimeSeedExists = hivra.seedExists();
-
-    final index = await _readIndex();
     final docs = await _fileStore.docsDirectory();
 
     var capsuleDirPath = docs.path;
@@ -690,6 +731,7 @@ class CapsulePersistenceService {
       stateFileExists = await _fileStore.stateFile(capsuleDir).exists();
       backupFileExists = await _fileStore.backupFile(capsuleDir).exists();
     }
+    final runtimeSeedExists = secureSeedExists;
 
     return CapsuleTraceReport(
       activePubKeyHex: activeHex,

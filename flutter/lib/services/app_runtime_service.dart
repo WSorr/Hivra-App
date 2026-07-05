@@ -7,6 +7,7 @@ import '../ffi/app_runtime_runtime.dart';
 import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
+import 'ai_capsule_inspection_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_state_manager.dart';
 import 'capsule_chat_delivery_service.dart';
@@ -91,6 +92,16 @@ class AppRuntimeService {
   ManualConsensusCheckService buildManualConsensusCheckService() {
     return ManualConsensusCheckService(
       consensus: buildConsensusRuntimeService(),
+    );
+  }
+
+  AiCapsuleInspectionService buildAiCapsuleInspectionService() {
+    return AiCapsuleInspectionService(
+      ledgerView: _ledgerView,
+      consensus: buildConsensusRuntimeService(),
+      diagnoseBootstrap: _runtime.diagnoseBootstrapReport,
+      diagnoseTrace: _runtime.diagnoseCapsuleTraces,
+      readActiveCapsuleHex: activeCapsuleRootHex,
     );
   }
 

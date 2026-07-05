@@ -1195,3 +1195,49 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       `capsule-backup.v1.json` envelope from the same ledger and capsule state.
     - worker-provided capsule ledger snapshots follow the same rule.
   - Status: completed (2026-06-29).
+
+- `11.14 Capsule Doctor and macOS Runtime Seed Boundary`
+  - Goal:
+    - replace scattered bootstrap/trace diagnostics with one deterministic
+      local diagnostic surface.
+    - prevent macOS capsule switching from rewriting Keychain active-seed
+      state and repeatedly prompting for passwords.
+  - Implemented:
+    - added Capsule Doctor as the local user-facing diagnostic screen for
+      bootstrap summary, filesystem trace, ledger projection, invitations,
+      relationships, outbox, consensus, and plugin state.
+    - removed separate Settings entries for bootstrap diagnostics and local
+      capsule trace; those summaries now live under Capsule Doctor.
+    - capsule recovery seed fallback migration now deduplicates secure-storage
+      reads/writes in-process and remains fail-closed for plaintext fallback.
+    - macOS keystore now keeps the active runtime seed in process-local memory
+      and caches already verified per-seed Keychain accounts, so switching
+      capsules does not rewrite a global active-seed pointer.
+  - Verification:
+    - `cargo test -p hivra-keystore`
+    - `flutter test test/ai_capsule_inspection_service_test.dart test/capsule_seed_store_test.dart`
+    - `flutter analyze`
+    - `tools/review/review_all.sh`
+    - `flutter build macos --release`
+    - manual release run showed capsule bootstrap around `23 ms` and no
+      repeated `SecKeychainItemModifyAttributesAndData` during capsule switches.
+  - Status: completed (2026-07-05).
+
+- `11.15 Unified Capsule Diagnostics Module`
+  - Goal:
+    - keep Capsule Doctor as the single user-facing diagnostic surface while
+      also consolidating bootstrap and filesystem trace diagnostics behind one
+      internal diagnostic module.
+    - prevent diagnostics from spreading back into Settings, UI screens, or
+      persistence orchestration.
+  - Scope:
+    - move `diagnoseBootstrapReport` and `diagnoseCapsuleTraces` behind one
+      cohesive capsule diagnostics service/boundary.
+    - keep lower-level bootstrap and persistence code as data providers only.
+    - keep the diagnostic snapshot deterministic and local-only.
+  - Constraints:
+    - no new upward dependencies from core/engine/platform into Flutter UI.
+    - no provider/AI upload path for seed, ledger, transport secrets, or
+      credentials.
+    - Capsule Doctor remains projection-only and does not mutate capsule state.
+  - Status: pending.

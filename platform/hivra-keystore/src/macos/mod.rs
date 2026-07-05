@@ -2,10 +2,23 @@
 
 use crate::{Error, Result, Seed};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
 
 const KEYCHAIN_SERVICE: &str = "com.hivra.keystore";
 const LEGACY_KEYCHAIN_ACCOUNT: &str = "capsule_seed";
 const ACTIVE_SEED_ACCOUNT: &str = "active_capsule_seed_account";
+
+static ACTIVE_SEED_CACHE: OnceLock<Mutex<Option<Seed>>> = OnceLock::new();
+static PERSISTED_SEED_ACCOUNT_CACHE: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn active_seed_cache() -> &'static Mutex<Option<Seed>> {
+    ACTIVE_SEED_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn persisted_seed_account_cache() -> &'static Mutex<HashSet<String>> {
+    PERSISTED_SEED_ACCOUNT_CACHE.get_or_init(|| Mutex::new(HashSet::new()))
+}
 
 fn entry_for_account(account: &str) -> Result<keyring::Entry> {
     keyring::Entry::new(KEYCHAIN_SERVICE, account).map_err(|e| Error::PlatformError(e.to_string()))
@@ -15,19 +28,44 @@ fn entry_for_account(account: &str) -> Result<keyring::Entry> {
 pub fn store_seed(seed: &Seed) -> Result<()> {
     let encoded = encode_hex(seed.as_bytes());
     let seed_account = seed_account(seed);
-    entry_for_account(&seed_account)?
-        .set_password(&encoded)
-        .map_err(|e| Error::PlatformError(e.to_string()))?;
-    entry_for_account(ACTIVE_SEED_ACCOUNT)?
-        .set_password(&seed_account)
-        .map_err(|e| Error::PlatformError(e.to_string()))
+    cache_active_seed(seed)?;
+
+    if is_persisted_seed_account_cached(&seed_account)? {
+        return Ok(());
+    }
+
+    match entry_for_account(&seed_account)?.get_password() {
+        Ok(existing) if existing == encoded => {
+            cache_persisted_seed_account(seed_account)?;
+            Ok(())
+        }
+        Ok(_) | Err(keyring::Error::NoEntry) => {
+            entry_for_account(&seed_account)?
+                .set_password(&encoded)
+                .map_err(|e| Error::PlatformError(e.to_string()))?;
+            cache_persisted_seed_account(seed_account)
+        }
+        Err(err) => Err(Error::PlatformError(err.to_string())),
+    }
 }
 
 /// Loads the capsule seed from the macOS Keychain.
 pub fn load_seed() -> Result<Seed> {
+    if let Some(seed) = active_seed_cache()
+        .lock()
+        .map_err(|_| Error::PlatformError("active seed cache poisoned".to_string()))?
+        .clone()
+    {
+        return Ok(seed);
+    }
+
     if let Ok(account) = active_seed_account() {
         match load_seed_from_account(&account) {
-            Ok(seed) => return Ok(seed),
+            Ok(seed) => {
+                cache_active_seed(&seed)?;
+                cache_persisted_seed_account(account)?;
+                return Ok(seed);
+            }
             Err(Error::KeyNotFound) => {}
             Err(other) => return Err(other),
         }
@@ -39,6 +77,7 @@ pub fn load_seed() -> Result<Seed> {
         .map_err(map_get_error)?;
     let bytes = decode_hex_32(&encoded)?;
     let seed = Seed::new(bytes);
+    cache_active_seed(&seed)?;
     // Best-effort migration to namespaced account model.
     let _ = store_seed(&seed);
     Ok(seed)
@@ -46,6 +85,12 @@ pub fn load_seed() -> Result<Seed> {
 
 /// Deletes the capsule seed from the macOS Keychain.
 pub fn delete_seed() -> Result<()> {
+    if let Ok(mut cached) = active_seed_cache().lock() {
+        *cached = None;
+    }
+    if let Ok(mut cached) = persisted_seed_account_cache().lock() {
+        cached.clear();
+    }
     if let Ok(account) = active_seed_account() {
         delete_account_credential(&account)?;
     }
@@ -54,8 +99,40 @@ pub fn delete_seed() -> Result<()> {
     Ok(())
 }
 
+fn cache_active_seed(seed: &Seed) -> Result<()> {
+    let mut cached = active_seed_cache()
+        .lock()
+        .map_err(|_| Error::PlatformError("active seed cache poisoned".to_string()))?;
+    *cached = Some(seed.clone());
+    Ok(())
+}
+
+fn is_persisted_seed_account_cached(account: &str) -> Result<bool> {
+    let cached = persisted_seed_account_cache()
+        .lock()
+        .map_err(|_| Error::PlatformError("persisted seed account cache poisoned".to_string()))?;
+    Ok(cached.contains(account))
+}
+
+fn cache_persisted_seed_account(account: String) -> Result<()> {
+    let mut cached = persisted_seed_account_cache()
+        .lock()
+        .map_err(|_| Error::PlatformError("persisted seed account cache poisoned".to_string()))?;
+    cached.insert(account);
+    Ok(())
+}
+
 /// Returns `true` if a seed entry exists in the macOS Keychain.
 pub fn seed_exists() -> bool {
+    if active_seed_cache()
+        .lock()
+        .ok()
+        .and_then(|cached| cached.clone())
+        .is_some()
+    {
+        return true;
+    }
+
     if let Ok(account) = active_seed_account() {
         if load_seed_from_account(&account).is_ok() {
             return true;

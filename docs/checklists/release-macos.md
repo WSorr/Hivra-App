@@ -40,6 +40,9 @@ Use this checklist before publishing any macOS build to testers or end users.
 - [ ] macOS signing capability scope is intentional:
   - `test` ad-hoc builds do not add certificate-only entitlements.
   - `public` signed builds validate Keychain-related capabilities with the signing identity.
+- [ ] Capsule switching does not trigger a Keychain prompt storm:
+  - two or more capsule switches complete without repeated password prompts.
+  - system logs show no repeated `SecKeychainItemModifyAttributesAndData` for active-seed switching.
 - [ ] Release asset name clearly indicates version and target.
 - [ ] ZIP or DMG was rebuilt from the latest `.app`.
 - [ ] `SHA256SUMS.txt` was regenerated.
