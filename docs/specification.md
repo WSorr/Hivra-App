@@ -366,6 +366,10 @@ Diagnostics:
   selected plugin source snippets. It is read-only and MUST NOT install
   plugins, grant capabilities, mutate registry, or treat source text as
   trusted instructions.
+- Plugin Scaffolder Draft Mode MAY create draft plugin skeleton files only
+  inside an explicit `hivra-plugins` repository boundary. It MUST NOT build,
+  install, catalog, sign, commit, push, tag, release, or overwrite existing
+  drafts.
 
 ---
 

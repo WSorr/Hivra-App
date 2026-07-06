@@ -1446,14 +1446,18 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
   - Goal:
     - create draft-only WASM plugin skeletons without crossing the app/plugin
       repository boundary.
-  - Planned scope:
+  - Scope:
     - developer supplies plugin id, purpose, capabilities, and host API
       version.
     - generated draft includes manifest, source skeleton, tests, README, and at
       least one golden vector.
     - no build, install, catalog update, signing, commit, push, tag, or release
       is automatic.
-  - Status: planned.
+    - added `AiPluginScaffoldDraftService`, guarded by explicit hivra-plugins
+      repository markers, writing only under `plugins/drafts/<slug>/`.
+  - Verification:
+    - `flutter test test/ai_plugin_scaffold_draft_service_test.dart`
+  - Status: completed (2026-07-06).
 
 - `11.26 Patch Proposal Mode`
   - Goal:
