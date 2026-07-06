@@ -16,6 +16,7 @@ import 'ai_doctor_credential_store.dart';
 import 'ai_patch_proposal_service.dart';
 import 'ai_plugin_audit_service.dart';
 import 'ai_plugin_scaffold_draft_service.dart';
+import 'ai_review_gate_integration_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_diagnostics_service.dart';
 import 'capsule_state_manager.dart';
@@ -147,6 +148,10 @@ class AppRuntimeService {
 
   AiPatchProposalService buildAiPatchProposalService() {
     return const AiPatchProposalService();
+  }
+
+  AiReviewGateIntegrationService buildAiReviewGateIntegrationService() {
+    return const AiReviewGateIntegrationService();
   }
 
   CapsuleChatDeliveryService buildCapsuleChatDeliveryService() {

@@ -1475,11 +1475,16 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
 - `11.27 Review Gate Integration`
   - Goal:
     - ensure AI suggestions stay subordinate to Hivra gates.
-  - Planned scope:
+  - Scope:
     - advisory reports list required tests/gates.
     - UI marks output as unverified until user runs checks.
     - AI output never overrides review gates, release gates, or manual smoke.
-  - Status: planned.
+    - added `AiReviewGateIntegrationService` for deterministic unverified
+      reports across developer advisory, patch proposal, plugin source audit,
+      and release-readiness scopes.
+  - Verification:
+    - `flutter test test/ai_review_gate_integration_service_test.dart`
+  - Status: completed (2026-07-06).
 
 - `11.28 AI Engineer Release Readiness`
   - Goal:

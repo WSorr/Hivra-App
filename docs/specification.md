@@ -372,6 +372,10 @@ Diagnostics:
   drafts.
 - Patch Proposal Mode MAY parse and preview AI-proposed unified diffs. It MUST
   NOT apply patches, write files, run scripts, commit, push, tag, or release.
+- AI Review Gate Integration MUST mark advisory, patch, plugin audit, and
+  release-readiness outputs as unverified until the user runs the required
+  Hivra gates. AI output MUST NOT override review gates, release gates, or
+  manual smoke.
 
 ---
 
