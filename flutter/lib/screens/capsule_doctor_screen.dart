@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/ai_capsule_inspection_service.dart';
+import '../services/ai_developer_engineer_service.dart';
 import '../services/ai_developer_workspace_service.dart';
 import '../services/ai_doctor_chat_service.dart';
 import '../services/ai_doctor_prompt_service.dart';
@@ -25,6 +26,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
   late final AiDoctorChatService _chatService;
   late final AiPluginAuditService _pluginAuditService;
   late final AiDeveloperWorkspaceService _developerWorkspaceService;
+  late final AiDeveloperEngineerService _developerEngineerService;
   Future<AiCapsuleInspectionReport>? _reportFuture;
 
   @override
@@ -35,6 +37,8 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
     _pluginAuditService = widget.runtime.buildAiPluginAuditService();
     _developerWorkspaceService =
         widget.runtime.buildAiDeveloperWorkspaceService();
+    _developerEngineerService =
+        widget.runtime.buildAiDeveloperEngineerService();
     _reportFuture = _service.inspect();
   }
 
@@ -91,6 +95,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
             chatService: _chatService,
             pluginAuditService: _pluginAuditService,
             developerWorkspaceService: _developerWorkspaceService,
+            developerEngineerService: _developerEngineerService,
             onCopySnapshot: () => _copySnapshot(report),
           );
         },
@@ -104,6 +109,7 @@ class _ReportView extends StatelessWidget {
   final AiDoctorChatService chatService;
   final AiPluginAuditService pluginAuditService;
   final AiDeveloperWorkspaceService developerWorkspaceService;
+  final AiDeveloperEngineerService developerEngineerService;
   final VoidCallback onCopySnapshot;
 
   const _ReportView({
@@ -111,6 +117,7 @@ class _ReportView extends StatelessWidget {
     required this.chatService,
     required this.pluginAuditService,
     required this.developerWorkspaceService,
+    required this.developerEngineerService,
     required this.onCopySnapshot,
   });
 
@@ -170,7 +177,11 @@ class _ReportView extends StatelessWidget {
         const SizedBox(height: 12),
         _PluginAuditCard(service: pluginAuditService),
         const SizedBox(height: 12),
-        _DeveloperModeBoundary(service: developerWorkspaceService),
+        _DeveloperModeBoundary(
+          snapshot: report.snapshot,
+          workspaceService: developerWorkspaceService,
+          engineerService: developerEngineerService,
+        ),
         const SizedBox(height: 12),
         _SectionCard(
           title: 'Ledger',
@@ -729,9 +740,15 @@ class _PluginAuditEntryTile extends StatelessWidget {
 }
 
 class _DeveloperModeBoundary extends StatefulWidget {
-  final AiDeveloperWorkspaceService service;
+  final AiCapsuleInspectionSnapshot snapshot;
+  final AiDeveloperWorkspaceService workspaceService;
+  final AiDeveloperEngineerService engineerService;
 
-  const _DeveloperModeBoundary({required this.service});
+  const _DeveloperModeBoundary({
+    required this.snapshot,
+    required this.workspaceService,
+    required this.engineerService,
+  });
 
   @override
   State<_DeveloperModeBoundary> createState() => _DeveloperModeBoundaryState();
@@ -810,7 +827,11 @@ class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
                 ),
               ),
               const SizedBox(height: 12),
-              _DeveloperWorkspaceCard(service: widget.service),
+              _DeveloperWorkspaceCard(
+                snapshot: widget.snapshot,
+                workspaceService: widget.workspaceService,
+                engineerService: widget.engineerService,
+              ),
             ],
           ],
         ),
@@ -820,9 +841,15 @@ class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
 }
 
 class _DeveloperWorkspaceCard extends StatefulWidget {
-  final AiDeveloperWorkspaceService service;
+  final AiCapsuleInspectionSnapshot snapshot;
+  final AiDeveloperWorkspaceService workspaceService;
+  final AiDeveloperEngineerService engineerService;
 
-  const _DeveloperWorkspaceCard({required this.service});
+  const _DeveloperWorkspaceCard({
+    required this.snapshot,
+    required this.workspaceService,
+    required this.engineerService,
+  });
 
   @override
   State<_DeveloperWorkspaceCard> createState() =>
@@ -835,8 +862,16 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   );
   final TextEditingController _selectedFilesController =
       TextEditingController();
+  final TextEditingController _engineerModelController =
+      TextEditingController(text: AiDeveloperEngineerService.defaultModel);
+  final TextEditingController _engineerQuestionController =
+      TextEditingController(
+    text: 'What is the safest next code path to inspect?',
+  );
   AiDeveloperWorkspaceReport? _report;
   AiDeveloperWorkspaceSelectedContext? _selectedContext;
+  AiDeveloperEngineerPreview? _engineerPreview;
+  String? _engineerAnswer;
   String? _error;
   bool _busy = false;
 
@@ -844,6 +879,8 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   void dispose() {
     _pathsController.dispose();
     _selectedFilesController.dispose();
+    _engineerModelController.dispose();
+    _engineerQuestionController.dispose();
     super.dispose();
   }
 
@@ -858,11 +895,13 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
           .split(RegExp(r'[\n,]+'))
           .map((path) => path.trim())
           .where((path) => path.isNotEmpty);
-      final report = await widget.service.scanLocalRepositories(paths);
+      final report = await widget.workspaceService.scanLocalRepositories(paths);
       if (!mounted) return;
       setState(() {
         _report = report;
         _selectedContext = null;
+        _engineerPreview = null;
+        _engineerAnswer = null;
       });
     } catch (error) {
       if (!mounted) return;
@@ -890,13 +929,78 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
           .split(RegExp(r'[\n,]+'))
           .map((path) => path.trim())
           .where((path) => path.isNotEmpty);
-      final context = await widget.service.buildSelectedFileContext(
+      final context = await widget.workspaceService.buildSelectedFileContext(
         report: report,
         selectedRelativePaths: selections,
       );
       if (!mounted) return;
       setState(() {
         _selectedContext = context;
+        _engineerPreview = null;
+        _engineerAnswer = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  void _previewEngineerAsk() {
+    final selectedContext = _selectedContext;
+    if (selectedContext == null) {
+      setState(() {
+        _error = 'Build selected developer context first';
+      });
+      return;
+    }
+    try {
+      final preview = widget.engineerService.preview(
+        snapshot: widget.snapshot,
+        selectedContext: selectedContext,
+        question: _engineerQuestionController.text,
+      );
+      setState(() {
+        _engineerPreview = preview;
+        _error = null;
+      });
+    } catch (error) {
+      setState(() {
+        _error = error.toString();
+      });
+    }
+  }
+
+  Future<void> _askEngineer() async {
+    final selectedContext = _selectedContext;
+    if (selectedContext == null || _busy) {
+      setState(() {
+        _error = 'Build selected developer context first';
+      });
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.engineerService.ask(
+        snapshot: widget.snapshot,
+        selectedContext: selectedContext,
+        question: _engineerQuestionController.text,
+        model: _engineerModelController.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _engineerPreview = result.preview;
+        _engineerAnswer = result.providerResponse.text;
       });
     } catch (error) {
       if (!mounted) return;
@@ -997,9 +1101,90 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
             if (_selectedContext != null) ...[
               const SizedBox(height: 12),
               _DeveloperSelectedContextPanel(contextData: _selectedContext!),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _engineerModelController,
+                decoration: const InputDecoration(
+                  labelText: 'Hivra Engineer model',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _engineerQuestionController,
+                minLines: 2,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  labelText: 'Ask Hivra Engineer',
+                  helperText:
+                      'Advisory only. No file writes, git operations, or ledger/plugin mutations.',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _previewEngineerAsk,
+                    icon: const Icon(Icons.visibility),
+                    label: const Text('Preview engineer ask'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _askEngineer,
+                    icon: const Icon(Icons.engineering),
+                    label: const Text('Ask Hivra Engineer'),
+                  ),
+                ],
+              ),
+            ],
+            if (_engineerPreview != null) ...[
+              const SizedBox(height: 12),
+              _DeveloperEngineerPreviewPanel(preview: _engineerPreview!),
+            ],
+            if (_engineerAnswer != null) ...[
+              const SizedBox(height: 12),
+              SelectableText(_engineerAnswer!),
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _DeveloperEngineerPreviewPanel extends StatelessWidget {
+  final AiDeveloperEngineerPreview preview;
+
+  const _DeveloperEngineerPreviewPanel({required this.preview});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Hivra Engineer outbound preview',
+              style: theme.textTheme.titleSmall),
+          const SizedBox(height: 6),
+          SelectableText('Capsule ${preview.capsuleSnapshotHashHex}'),
+          SelectableText(
+              'Developer context ${preview.developerContextHashHex}'),
+          Text('${preview.snippetCount} snippet(s)'),
+          Text('${preview.payloadBytes} bytes'),
+          const SizedBox(height: 6),
+          const Text(
+            'Advisory only: no file writes, patch application, git operations, release actions, ledger mutation, or plugin registry mutation.',
+          ),
+        ],
       ),
     );
   }

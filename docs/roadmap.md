@@ -1372,18 +1372,25 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
   - Goal:
     - allow Developer Mode to ask an AI engineer about explicit selected
       evidence without granting repository write access.
-  - Planned scope:
+  - Scope:
     - combine local Capsule Doctor snapshot, selected developer context, and a
       user question into one outbound preview.
     - provider response is advisory only: likely files, hypotheses, suggested
       tests, and patch plan.
     - no file writes, no patch application, no git operations, no release
       operations.
+    - Capsule Doctor Developer Mode now exposes Preview/Ask Hivra Engineer
+      controls after selected context is built.
   - Acceptance:
     - empty selected context is rejected.
     - changed selected files are rejected before provider submission.
     - provider failures leave capsule state and repository state unchanged.
-  - Status: planned.
+  - Verification:
+    - `flutter test test/ai_developer_engineer_service_test.dart`
+    - `flutter analyze`
+    - `tools/review/review_all.sh`
+    - `flutter build macos --release`
+  - Status: completed (2026-07-06).
 
 - `11.22 Developer Provider Boundary Tests`
   - Goal:

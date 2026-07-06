@@ -348,6 +348,13 @@ Diagnostics:
   and MUST label source/log/manifest contents as untrusted prompt input.
 - Developer Workspace selected context MUST remain a local preview until a
   separate explicit provider submission step is implemented.
+- Hivra Engineer Advisory Ask MAY send a selected developer context, redacted
+  capsule summary, and user question to an AI provider after outbound preview.
+- Hivra Engineer output is advisory only. It MUST NOT write files, apply
+  patches, run scripts, commit, push, tag, release, mutate ledger, or mutate
+  plugin registry.
+- Hivra Engineer payload MUST include no-mutation constraints and MUST treat
+  selected source/log/manifest text as untrusted data.
 
 ---
 
