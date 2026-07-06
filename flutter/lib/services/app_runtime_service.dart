@@ -13,6 +13,7 @@ import 'ai_developer_remote_repository_cache_service.dart';
 import 'ai_developer_workspace_service.dart';
 import 'ai_doctor_chat_service.dart';
 import 'ai_doctor_credential_store.dart';
+import 'ai_patch_proposal_service.dart';
 import 'ai_plugin_audit_service.dart';
 import 'ai_plugin_scaffold_draft_service.dart';
 import 'capsule_address_service.dart';
@@ -142,6 +143,10 @@ class AppRuntimeService {
 
   AiPluginScaffoldDraftService buildAiPluginScaffoldDraftService() {
     return const AiPluginScaffoldDraftService();
+  }
+
+  AiPatchProposalService buildAiPatchProposalService() {
+    return const AiPatchProposalService();
   }
 
   CapsuleChatDeliveryService buildCapsuleChatDeliveryService() {

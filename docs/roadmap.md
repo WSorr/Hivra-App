@@ -1462,11 +1462,15 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
 - `11.26 Patch Proposal Mode`
   - Goal:
     - let AI propose patches without applying them.
-  - Planned scope:
+  - Scope:
     - AI returns patch text/diff preview only.
     - user reviews; applying remains a separate human-confirmed action.
     - no commits, pushes, tags, or releases from AI output.
-  - Status: planned.
+    - added `AiPatchProposalService` to parse unified diff proposals into a
+      deterministic preview report with no apply/git/release side effects.
+  - Verification:
+    - `flutter test test/ai_patch_proposal_service_test.dart`
+  - Status: completed (2026-07-06).
 
 - `11.27 Review Gate Integration`
   - Goal:

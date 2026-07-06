@@ -370,6 +370,8 @@ Diagnostics:
   inside an explicit `hivra-plugins` repository boundary. It MUST NOT build,
   install, catalog, sign, commit, push, tag, release, or overwrite existing
   drafts.
+- Patch Proposal Mode MAY parse and preview AI-proposed unified diffs. It MUST
+  NOT apply patches, write files, run scripts, commit, push, tag, or release.
 
 ---
 
