@@ -1414,13 +1414,18 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
   - Goal:
     - support developer-provided public repository links without giving AI or
       plugins uncontrolled network/repository access.
-  - Planned scope:
+  - Scope:
     - read-only clone/cache under Hivra-controlled developer cache.
     - pin commit/tag where possible; mutable/unpinned context is marked
       dangerous.
     - no hooks, no scripts, no submodules unless explicitly allowlisted.
     - cache clear action.
-  - Status: planned.
+    - added `AiDeveloperRemoteRepositoryCacheService` with GitHub HTTPS URL
+      allowlist, controlled cache path, prompt-free git calls, hook disabling,
+      submodule recursion disabling, resolved commit reporting, and cache clear.
+  - Verification:
+    - `flutter test test/ai_developer_remote_repository_cache_service_test.dart`
+  - Status: completed (2026-07-06).
 
 - `11.24 Plugin Auditor v2`
   - Goal:

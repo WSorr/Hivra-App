@@ -9,6 +9,7 @@ import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
 import 'ai_capsule_inspection_service.dart';
 import 'ai_developer_engineer_service.dart';
+import 'ai_developer_remote_repository_cache_service.dart';
 import 'ai_developer_workspace_service.dart';
 import 'ai_doctor_chat_service.dart';
 import 'ai_doctor_credential_store.dart';
@@ -131,6 +132,11 @@ class AppRuntimeService {
     return AiDeveloperEngineerService(
       credentialStore: AiDoctorCredentialStore(),
     );
+  }
+
+  AiDeveloperRemoteRepositoryCacheService
+      buildAiDeveloperRemoteRepositoryCacheService() {
+    return const AiDeveloperRemoteRepositoryCacheService();
   }
 
   CapsuleChatDeliveryService buildCapsuleChatDeliveryService() {

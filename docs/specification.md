@@ -355,6 +355,13 @@ Diagnostics:
   plugin registry.
 - Hivra Engineer payload MUST include no-mutation constraints and MUST treat
   selected source/log/manifest text as untrusted data.
+- Developer Remote Repository Cache MAY clone explicit public repository URLs
+  only into a Hivra-controlled developer cache. It MUST reject SSH/local/file
+  URLs, disable git prompts/hooks/submodule recursion, record the resolved
+  commit, and mark unpinned or mutable refs as dangerous.
+- Remote repository cache contents MUST remain developer-selected evidence.
+  AI providers and plugins MUST NOT receive broad repository/network access
+  through this cache.
 
 ---
 
