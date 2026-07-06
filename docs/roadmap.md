@@ -1490,9 +1490,16 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
   - Goal:
     - prepare the AI Capsule Engineer feature set for a release-quality manual
       smoke pass.
-  - Planned scope:
+  - Scope:
     - manual macOS release smoke for Capsule Doctor, scoped AI chat, Plugin
       Auditor, Developer Mode boundary, Workspace Preview, Selected Context,
       and Hivra Engineer Advisory Ask.
     - Android smoke remains a separate release pass after macOS is stable.
-  - Status: planned.
+    - added `docs/checklists/ai-engineer-release-smoke.md`.
+    - macOS release checklist now requires AI Engineer smoke completion.
+    - release discipline gate now enforces the AI Engineer smoke checklist
+      exists and covers the required surfaces.
+  - Verification:
+    - `tools/review/release_discipline_gate.sh`
+    - `tools/review/review_all.sh`
+  - Status: completed (2026-07-06).

@@ -45,6 +45,7 @@ CHECKLIST_ANDROID="$ROOT/docs/checklists/release-android.md"
 CHECKLIST_ANDROID_RUNTIME="$ROOT/docs/checklists/android-runtime-hardening.md"
 CHECKLIST_SMOKE="$ROOT/docs/checklists/manual-smoke.md"
 CHECKLIST_USER_LIFETIME="$ROOT/docs/checklists/user-lifetime-safety-pack.md"
+CHECKLIST_AI_ENGINEER_SMOKE="$ROOT/docs/checklists/ai-engineer-release-smoke.md"
 CHECKLIST_DRONE_PARITY="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
 CHECKLIST_DRONE_EVIDENCE="$ROOT/docs/checklists/trading-drone-evidence-log.md"
 DRONE_GOAL_CONTRACT="$ROOT/docs/plugins/bingx_futures_trading_drone_goal_contract_v1.md"
@@ -61,6 +62,7 @@ require_file "$CHECKLIST_ANDROID" "Android release checklist exists"
 require_file "$CHECKLIST_ANDROID_RUNTIME" "Android runtime hardening checklist exists"
 require_file "$CHECKLIST_SMOKE" "manual smoke checklist exists"
 require_file "$CHECKLIST_USER_LIFETIME" "user lifetime safety checklist exists"
+require_file "$CHECKLIST_AI_ENGINEER_SMOKE" "AI Engineer release smoke checklist exists"
 require_file "$CHECKLIST_DRONE_PARITY" "trading drone spec/runtime parity checklist exists"
 require_file "$CHECKLIST_DRONE_EVIDENCE" "trading drone evidence log exists"
 require_file "$DRONE_GOAL_CONTRACT" "trading drone goal contract exists"
@@ -111,6 +113,8 @@ require_present "$CHECKLIST_MAC" 'Trading Drone smoke gate completed' \
   "macOS checklist requires trading drone smoke gate"
 require_present "$CHECKLIST_MAC" 'Trading drone spec/runtime parity checklist was completed' \
   "macOS checklist requires drone spec/runtime parity completion"
+require_present "$CHECKLIST_MAC" 'AI Engineer release smoke checklist was completed' \
+  "macOS checklist requires AI Engineer smoke completion"
 require_present "$CHECKLIST_MAC" 'Trading Drone evidence row recorded in `docs/checklists/trading-drone-evidence-log\.md`' \
   "macOS checklist requires trading drone evidence log row"
 require_present "$CHECKLIST_MAC" 'tools/release/record_trading_drone_evidence\.sh' \
@@ -267,6 +271,22 @@ require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 4: Update Truth Preservatio
   "user lifetime checklist covers update safety"
 require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 5: Long-Pending Invitation Stability' \
   "user lifetime checklist covers pending stability"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Capsule Doctor opens from Settings' \
+  "AI Engineer smoke covers Capsule Doctor entry"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Outbound preview is shown before provider submission' \
+  "AI Engineer smoke covers scoped AI preview"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Installed plugin package audit renders package digest' \
+  "AI Engineer smoke covers Plugin Auditor evidence"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Developer Mode is disabled by default' \
+  "AI Engineer smoke covers Developer Mode boundary"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Workspace preview scans only explicit local repository paths' \
+  "AI Engineer smoke covers Workspace Preview"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Selected Context includes only user-selected allowlisted files' \
+  "AI Engineer smoke covers Selected Context"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Hivra Engineer outbound preview shows capsule snapshot hash' \
+  "AI Engineer smoke covers Hivra Engineer outbound preview"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'AI advisory output is marked unverified until required gates are run' \
+  "AI Engineer smoke covers Review Gate integration"
 
 require_present "$PRECHECK" 'tools/review/review_all\.sh' \
   "preflight executes review_all"
