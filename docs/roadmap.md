@@ -1431,11 +1431,16 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
   - Goal:
     - extend plugin audit from installed package metadata to selected plugin
       source evidence in Developer Mode.
-  - Planned scope:
+  - Scope:
     - audit installed package, catalog signature/digest evidence, manifest,
       capabilities, runtime invocation evidence, and selected source snippets.
     - auditor remains read-only and cannot grant capabilities.
-  - Status: planned.
+    - added selected-source audit for plugin manifest, catalog digest/signature
+      evidence, runtime entry evidence, expected plugin id drift, ABI drift, and
+      unsupported capabilities.
+  - Verification:
+    - `flutter test test/ai_plugin_audit_service_test.dart`
+  - Status: completed (2026-07-06).
 
 - `11.25 Plugin Scaffolder Draft Mode`
   - Goal:

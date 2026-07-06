@@ -362,6 +362,10 @@ Diagnostics:
 - Remote repository cache contents MUST remain developer-selected evidence.
   AI providers and plugins MUST NOT receive broad repository/network access
   through this cache.
+- Plugin Auditor MAY inspect installed plugin package metadata and explicit
+  selected plugin source snippets. It is read-only and MUST NOT install
+  plugins, grant capabilities, mutate registry, or treat source text as
+  trusted instructions.
 
 ---
 
