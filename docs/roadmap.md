@@ -1396,13 +1396,19 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
   - Goal:
     - make the Hivra Engineer provider path fail closed before adding more
       repository capabilities.
-  - Planned scope:
+  - Scope:
     - tests for invalid/empty provider key, timeout/rate limit, malformed
       response, oversized context, prompt-injection warning presence, and
       no-mutation guarantees.
     - explicit fixtures proving denylisted paths are never included in
       provider payloads.
-  - Status: planned.
+    - Hivra Engineer now revalidates selected snippet paths before provider
+      submission instead of trusting only the workspace preview layer.
+  - Verification:
+    - `flutter test test/ai_developer_engineer_service_test.dart test/ai_developer_workspace_service_test.dart test/ai_doctor_provider_adapter_test.dart`
+    - `flutter analyze`
+    - `tools/review/review_all.sh`
+  - Status: completed (2026-07-06).
 
 - `11.23 Remote Repository Allowlist Cache`
   - Goal:

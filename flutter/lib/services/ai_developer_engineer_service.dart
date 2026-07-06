@@ -33,6 +33,10 @@ class AiDeveloperEngineerResult {
 class AiDeveloperEngineerService {
   static const String defaultModel = 'gpt-5.5';
   static const int maxPayloadBytes = 96000;
+  static final RegExp _denylistedPathPattern = RegExp(
+    r'(^|/)(\.env[^/]*|.*\.pem|.*\.key|capsule_seeds\.json|bingx_futures_credentials\.json|.*credential.*\.json)$',
+    caseSensitive: false,
+  );
 
   final AiDoctorCredentialStore _credentialStore;
   final AiDoctorProviderAdapter _providerAdapter;
@@ -104,6 +108,14 @@ class AiDeveloperEngineerService {
     }
     if (selectedContext.snippets.isEmpty) {
       throw StateError('Selected developer context has no snippets');
+    }
+    for (final snippet in selectedContext.snippets) {
+      final relativePath = snippet.relativePath.replaceAll('\\', '/');
+      if (_denylistedPathPattern.hasMatch(relativePath)) {
+        throw StateError(
+          'Selected developer context contains denylisted path: $relativePath',
+        );
+      }
     }
     final payload = <String, dynamic>{
       'schema_version': 1,
