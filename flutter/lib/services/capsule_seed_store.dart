@@ -32,6 +32,13 @@ class CapsuleSeedStore {
     final encoded = base64.encode(seed);
     final key = '$_seedKeyPrefix$pubKeyHex';
     try {
+      final existing = await _secureStorage.read(key: key);
+      if (existing == encoded) {
+        _processSeedCache[await _cacheKey(pubKeyHex)] =
+            Uint8List.fromList(seed);
+        await deleteFallback(pubKeyHex);
+        return;
+      }
       await _secureStorage.write(key: key, value: encoded);
       final persisted = await _secureStorage.read(key: key);
       if (persisted != encoded) {

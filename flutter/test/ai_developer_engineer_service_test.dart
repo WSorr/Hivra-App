@@ -47,6 +47,9 @@ class _FakeProvider implements AiDoctorProviderAdapter {
   int callCount = 0;
 
   @override
+  InferenceProviderKind get provider => InferenceProviderKind.openAi;
+
+  @override
   Future<AiDoctorProviderResponse> ask({
     required String apiKey,
     required String model,
@@ -66,6 +69,9 @@ class _ThrowingProvider implements AiDoctorProviderAdapter {
 
   _ThrowingProvider([Object? error])
       : error = error ?? StateError('provider failed');
+
+  @override
+  InferenceProviderKind get provider => InferenceProviderKind.openAi;
 
   @override
   Future<AiDoctorProviderResponse> ask({

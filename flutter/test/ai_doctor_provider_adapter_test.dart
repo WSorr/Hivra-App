@@ -45,5 +45,43 @@ void main() {
 
       expect(text, isNull);
     });
+
+    test('formats quota errors for users', () {
+      final message =
+          OpenAiResponsesDoctorProviderAdapter.friendlyErrorMessageForTest(
+        <String, dynamic>{
+          'error': <String, dynamic>{
+            'message':
+                'You exceeded your current quota, please check your plan and billing details.',
+            'code': 'insufficient_quota',
+          },
+        },
+        statusCode: 429,
+      );
+
+      expect(
+        message,
+        'OpenAI API quota is exhausted for this key. Check billing, limits, or use another restricted key.',
+      );
+    });
+
+    test('extracts Gemini candidate text', () {
+      final text =
+          GeminiGenerateContentInferenceProviderAdapter.extractOutputText(
+        <String, dynamic>{
+          'candidates': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'content': <String, dynamic>{
+                'parts': <Map<String, dynamic>>[
+                  <String, dynamic>{'text': 'Gemini finding.'},
+                ],
+              },
+            },
+          ],
+        },
+      );
+
+      expect(text, 'Gemini finding.');
+    });
   });
 }

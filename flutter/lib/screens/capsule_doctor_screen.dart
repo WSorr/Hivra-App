@@ -7,7 +7,28 @@ import '../services/ai_developer_workspace_service.dart';
 import '../services/ai_doctor_chat_service.dart';
 import '../services/ai_doctor_prompt_service.dart';
 import '../services/ai_plugin_audit_service.dart';
+import '../services/ai_tooling_module_service.dart';
 import '../services/app_runtime_service.dart';
+import '../services/inference_provider_adapter.dart';
+import '../services/ui_event_log_service.dart';
+
+String _doctorErrorMessage(Object error) {
+  return error
+      .toString()
+      .replaceFirst(RegExp(r'^(Bad state|Exception):\s*'), '')
+      .trim();
+}
+
+bool _isProviderWarning(String message) {
+  final normalized = message.toLowerCase();
+  return normalized.contains('quota') ||
+      normalized.contains('rate limit') ||
+      normalized.contains('api key was rejected') ||
+      normalized.contains('openai api') ||
+      normalized.contains('ai provider') ||
+      normalized.contains('billing') ||
+      normalized.contains('provider request failed');
+}
 
 class CapsuleDoctorScreen extends StatefulWidget {
   final AppRuntimeService runtime;
@@ -32,13 +53,12 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
   @override
   void initState() {
     super.initState();
-    _service = widget.runtime.buildAiCapsuleInspectionService();
-    _chatService = widget.runtime.buildAiDoctorChatService();
-    _pluginAuditService = widget.runtime.buildAiPluginAuditService();
-    _developerWorkspaceService =
-        widget.runtime.buildAiDeveloperWorkspaceService();
-    _developerEngineerService =
-        widget.runtime.buildAiDeveloperEngineerService();
+    final aiTooling = AiToolingModuleService(runtime: widget.runtime);
+    _service = aiTooling.buildCapsuleInspectionService();
+    _chatService = aiTooling.buildDoctorChatService();
+    _pluginAuditService = aiTooling.buildPluginAuditService();
+    _developerWorkspaceService = aiTooling.buildDeveloperWorkspaceService();
+    _developerEngineerService = aiTooling.buildDeveloperEngineerService();
     _reportFuture = _service.inspect();
   }
 
@@ -300,6 +320,8 @@ class _AiDoctorChatCard extends StatefulWidget {
 }
 
 class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
+  static const UiEventLogService _uiLog = UiEventLogService();
+
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _modelController =
       TextEditingController(text: AiDoctorChatService.defaultModel);
@@ -308,6 +330,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
   );
   final Set<AiDoctorContextSection> _sections =
       AiDoctorContextSection.values.toSet();
+  InferenceProviderKind _provider = InferenceProviderKind.openAi;
 
   AiDoctorOutboundPreview? _preview;
   String? _answer;
@@ -324,17 +347,25 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
 
   Future<void> _saveKey() async {
     await _run(() async {
-      await widget.chatService.saveOpenAiApiKey(_apiKeyController.text);
+      await widget.chatService.saveApiKey(_provider, _apiKeyController.text);
+      await _uiLog.log(
+        'ai_doctor',
+        'key_saved provider=${_provider.id}',
+      );
       _apiKeyController.clear();
-      _showSnack('AI Doctor key saved in secure storage');
+      _showSnack('${_provider.label} key saved in secure storage');
     });
   }
 
   Future<void> _clearKey() async {
     await _run(() async {
-      await widget.chatService.clearOpenAiApiKey();
+      await widget.chatService.clearApiKey(_provider);
+      await _uiLog.log(
+        'ai_doctor',
+        'key_cleared provider=${_provider.id}',
+      );
       _apiKeyController.clear();
-      _showSnack('AI Doctor key cleared');
+      _showSnack('${_provider.label} key cleared');
     });
   }
 
@@ -351,18 +382,34 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
       });
     } catch (error) {
       setState(() {
-        _error = error.toString();
+        _error = _doctorErrorMessage(error);
       });
     }
   }
 
   Future<void> _askDoctor() async {
     await _run(() async {
+      final model = _modelController.text.trim().isEmpty
+          ? _provider.defaultModel
+          : _modelController.text.trim();
+      await _uiLog.log(
+        'ai_doctor',
+        'ask_start provider=${_provider.id} model=$model '
+            'sections=${_sections.length}',
+      );
       final result = await widget.chatService.ask(
         snapshot: widget.snapshot,
         userQuery: _queryController.text,
         sections: _sections,
-        model: _modelController.text,
+        model: model,
+        provider: _provider,
+      );
+      await _uiLog.log(
+        'ai_doctor',
+        'ask_ok provider=${result.providerResponse.provider.id} '
+            'model=${result.providerResponse.model} '
+            'payloadBytes=${result.preview.payloadBytes} '
+            'answerChars=${result.providerResponse.text.length}',
       );
       setState(() {
         _preview = result.preview;
@@ -381,8 +428,12 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
       await action();
     } catch (error) {
       if (!mounted) return;
+      await _uiLog.log(
+        'ai_doctor',
+        'action_error ${_doctorErrorMessage(error)}',
+      );
       setState(() {
-        _error = error.toString();
+        _error = _doctorErrorMessage(error);
       });
     } finally {
       if (mounted) {
@@ -433,13 +484,39 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),
+            DropdownButtonFormField<InferenceProviderKind>(
+              initialValue: _provider,
+              decoration: const InputDecoration(
+                labelText: 'Inference provider',
+                border: OutlineInputBorder(),
+              ),
+              items: InferenceProviderKind.values
+                  .map(
+                    (provider) => DropdownMenuItem<InferenceProviderKind>(
+                      value: provider,
+                      child: Text(provider.label),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: _busy
+                  ? null
+                  : (provider) {
+                      if (provider == null) return;
+                      setState(() {
+                        _provider = provider;
+                        _modelController.text = provider.defaultModel;
+                        _error = null;
+                      });
+                    },
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: _apiKeyController,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'OpenAI API key',
-                helperText:
-                    'Stored only in secure storage. No plaintext fallback.',
+              decoration: InputDecoration(
+                labelText: '${_provider.label} API key',
+                helperText: 'Stored only in secure storage. '
+                    'Provider keys are isolated.',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -527,12 +604,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
             ],
             if (_error != null) ...[
               const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: Colors.redAccent,
-                ),
-              ),
+              _DoctorStatusMessage(message: _error!),
             ],
             if (_answer != null) ...[
               const SizedBox(height: 12),
@@ -573,6 +645,42 @@ class _PreviewPanel extends StatelessWidget {
           Text('Payload: ${preview.payloadBytes} bytes'),
           Text('Query: ${preview.userQueryBytes} bytes'),
           Text('Secrets redacted: ${preview.secretsRedacted}'),
+        ],
+      ),
+    );
+  }
+}
+
+class _DoctorStatusMessage extends StatelessWidget {
+  final String message;
+
+  const _DoctorStatusMessage({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isWarning = _isProviderWarning(message);
+    final color = isWarning ? Colors.amberAccent : Colors.redAccent;
+    final icon = isWarning ? Icons.info_outline : Icons.error_outline;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: SelectableText(
+              message,
+              style: theme.textTheme.bodyMedium?.copyWith(color: color),
+            ),
+          ),
         ],
       ),
     );
@@ -857,6 +965,8 @@ class _DeveloperWorkspaceCard extends StatefulWidget {
 }
 
 class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
+  static const UiEventLogService _uiLog = UiEventLogService();
+
   final TextEditingController _pathsController = TextEditingController(
     text: '/Volumes/Dev/projects/hivra\n/Volumes/Dev/projects/hivra-plugins',
   );
@@ -871,6 +981,8 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   AiDeveloperWorkspaceReport? _report;
   AiDeveloperWorkspaceSelectedContext? _selectedContext;
   AiDeveloperEngineerPreview? _engineerPreview;
+  int? _selectedFileRequestCount;
+  InferenceProviderKind _engineerProvider = InferenceProviderKind.openAi;
   String? _engineerAnswer;
   String? _error;
   bool _busy = false;
@@ -895,18 +1007,33 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
           .split(RegExp(r'[\n,]+'))
           .map((path) => path.trim())
           .where((path) => path.isNotEmpty);
+      final pathCount = paths.length;
+      await _uiLog.log(
+        'hivra_engineer',
+        'workspace_scan_start paths=$pathCount',
+      );
       final report = await widget.workspaceService.scanLocalRepositories(paths);
+      await _uiLog.log(
+        'hivra_engineer',
+        'workspace_scan_ok repos=${report.repositories.length} '
+            'hash=${report.reportHashHex}',
+      );
       if (!mounted) return;
       setState(() {
         _report = report;
         _selectedContext = null;
         _engineerPreview = null;
+        _selectedFileRequestCount = null;
         _engineerAnswer = null;
       });
     } catch (error) {
       if (!mounted) return;
+      await _uiLog.log(
+        'hivra_engineer',
+        'workspace_scan_error ${_doctorErrorMessage(error)}',
+      );
       setState(() {
-        _error = error.toString();
+        _error = _doctorErrorMessage(error);
       });
     } finally {
       if (mounted) {
@@ -920,29 +1047,58 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   Future<void> _buildSelectedContext() async {
     final report = _report;
     if (report == null || _busy) return;
+    final selections = _selectedFilesController.text
+        .split(RegExp(r'[\n,]+'))
+        .map((path) => path.trim())
+        .where((path) => path.isNotEmpty)
+        .toList(growable: false);
+    if (selections.isEmpty) {
+      const message = 'Select at least one file from scanned repositories';
+      await _uiLog.log(
+        'hivra_engineer',
+        'selected_context_error empty_selection',
+      );
+      setState(() {
+        _error = message;
+      });
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final selections = _selectedFilesController.text
-          .split(RegExp(r'[\n,]+'))
-          .map((path) => path.trim())
-          .where((path) => path.isNotEmpty);
+      final selectionCount = selections.length;
+      await _uiLog.log(
+        'hivra_engineer',
+        'selected_context_start files=$selectionCount',
+      );
       final context = await widget.workspaceService.buildSelectedFileContext(
         report: report,
         selectedRelativePaths: selections,
+      );
+      await _uiLog.log(
+        'hivra_engineer',
+        'selected_context_ok requested=$selectionCount '
+            'included=${context.snippets.length} '
+            'payloadBytes=${context.payloadBytes} '
+            'hash=${context.contextHashHex}',
       );
       if (!mounted) return;
       setState(() {
         _selectedContext = context;
         _engineerPreview = null;
+        _selectedFileRequestCount = selectionCount;
         _engineerAnswer = null;
       });
     } catch (error) {
       if (!mounted) return;
+      await _uiLog.log(
+        'hivra_engineer',
+        'selected_context_error ${_doctorErrorMessage(error)}',
+      );
       setState(() {
-        _error = error.toString();
+        _error = _doctorErrorMessage(error);
       });
     } finally {
       if (mounted) {
@@ -953,7 +1109,54 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
     }
   }
 
-  void _previewEngineerAsk() {
+  void _addSelectedFile(String relativePath) {
+    _addSuggestedFiles(<String>[relativePath]);
+  }
+
+  void _addSuggestedFiles(Iterable<String> relativePaths) {
+    final selected = _selectedFilesController.text
+        .split(RegExp(r'[\n,]+'))
+        .map((path) => path.trim())
+        .where((path) => path.isNotEmpty)
+        .toSet();
+    selected.addAll(
+      relativePaths.map((path) => path.trim()).where((path) => path.isNotEmpty),
+    );
+    final sorted = selected.toList()..sort();
+    _selectedFilesController.text = sorted.join('\n');
+    _selectedFilesController.selection = TextSelection.collapsed(
+      offset: _selectedFilesController.text.length,
+    );
+    setState(() {
+      _error = null;
+    });
+  }
+
+  List<String> _availableRelativePaths() {
+    final report = _report;
+    if (report == null) return const <String>[];
+    final paths = report.repositories
+        .expand((repo) => repo.files)
+        .map((file) => file.relativePath)
+        .toSet()
+        .toList()
+      ..sort();
+    return paths;
+  }
+
+  List<String> _matchingAvailableFiles(Iterable<String> preferredPaths) {
+    final available = _availableRelativePaths().toSet();
+    return preferredPaths
+        .where(available.contains)
+        .take(AiDeveloperWorkspaceService.maxSelectedFiles)
+        .toList(growable: false);
+  }
+
+  List<String> _firstAvailableFiles([int count = 3]) {
+    return _availableRelativePaths().take(count).toList(growable: false);
+  }
+
+  Future<void> _previewEngineerAsk() async {
     final selectedContext = _selectedContext;
     if (selectedContext == null) {
       setState(() {
@@ -967,13 +1170,23 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
         selectedContext: selectedContext,
         question: _engineerQuestionController.text,
       );
+      await _uiLog.log(
+        'hivra_engineer',
+        'preview_ok snippets=${preview.snippetCount} '
+            'payloadBytes=${preview.payloadBytes} '
+            'contextHash=${preview.developerContextHashHex}',
+      );
       setState(() {
         _engineerPreview = preview;
         _error = null;
       });
     } catch (error) {
+      await _uiLog.log(
+        'hivra_engineer',
+        'preview_error ${_doctorErrorMessage(error)}',
+      );
       setState(() {
-        _error = error.toString();
+        _error = _doctorErrorMessage(error);
       });
     }
   }
@@ -991,11 +1204,27 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
       _error = null;
     });
     try {
+      final model = _engineerModelController.text.trim().isEmpty
+          ? _engineerProvider.defaultModel
+          : _engineerModelController.text.trim();
+      await _uiLog.log(
+        'hivra_engineer',
+        'ask_start provider=${_engineerProvider.id} model=$model '
+            'snippets=${selectedContext.snippets.length}',
+      );
       final result = await widget.engineerService.ask(
         snapshot: widget.snapshot,
         selectedContext: selectedContext,
         question: _engineerQuestionController.text,
-        model: _engineerModelController.text,
+        model: model,
+        provider: _engineerProvider,
+      );
+      await _uiLog.log(
+        'hivra_engineer',
+        'ask_ok provider=${result.providerResponse.provider.id} '
+            'model=${result.providerResponse.model} '
+            'payloadBytes=${result.preview.payloadBytes} '
+            'answerChars=${result.providerResponse.text.length}',
       );
       if (!mounted) return;
       setState(() {
@@ -1004,8 +1233,12 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
       });
     } catch (error) {
       if (!mounted) return;
+      await _uiLog.log(
+        'hivra_engineer',
+        'ask_error ${_doctorErrorMessage(error)}',
+      );
       setState(() {
-        _error = error.toString();
+        _error = _doctorErrorMessage(error);
       });
     } finally {
       if (mounted) {
@@ -1067,18 +1300,36 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: Colors.redAccent,
-                ),
-              ),
+              _DoctorStatusMessage(message: _error!),
             ],
             if (_report != null) ...[
               const SizedBox(height: 12),
               SelectableText('Workspace ${_report!.reportHashHex}'),
               const SizedBox(height: 8),
-              ..._report!.repositories.map(_DeveloperWorkspaceRepoTile.new),
+              _DeveloperWorkspaceQuickAddPanel(
+                availableFiles: _availableRelativePaths(),
+                onAddFiles: _addSuggestedFiles,
+                firstFiles: _firstAvailableFiles(),
+                coreFiles: _matchingAvailableFiles(const <String>[
+                  'README.md',
+                  'docs/roadmap.md',
+                  'docs/specification.md',
+                  'docs/hivra-conceptual-model.md',
+                ]),
+                doctorFiles: _matchingAvailableFiles(const <String>[
+                  'flutter/lib/screens/capsule_doctor_screen.dart',
+                  'flutter/lib/services/inference_provider_adapter.dart',
+                  'flutter/lib/services/ai_doctor_chat_service.dart',
+                  'flutter/lib/services/ai_developer_engineer_service.dart',
+                ]),
+              ),
+              const SizedBox(height: 8),
+              ..._report!.repositories.map(
+                (repo) => _DeveloperWorkspaceRepoTile(
+                  repo: repo,
+                  onAddFile: _addSelectedFile,
+                ),
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _selectedFilesController,
@@ -1100,7 +1351,36 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
             ],
             if (_selectedContext != null) ...[
               const SizedBox(height: 12),
-              _DeveloperSelectedContextPanel(contextData: _selectedContext!),
+              _DeveloperSelectedContextPanel(
+                contextData: _selectedContext!,
+                requestedFileCount: _selectedFileRequestCount,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<InferenceProviderKind>(
+                initialValue: _engineerProvider,
+                decoration: const InputDecoration(
+                  labelText: 'Hivra Engineer provider',
+                  border: OutlineInputBorder(),
+                ),
+                items: InferenceProviderKind.values
+                    .map(
+                      (provider) => DropdownMenuItem<InferenceProviderKind>(
+                        value: provider,
+                        child: Text(provider.label),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: _busy
+                    ? null
+                    : (provider) {
+                        if (provider == null) return;
+                        setState(() {
+                          _engineerProvider = provider;
+                          _engineerModelController.text = provider.defaultModel;
+                          _error = null;
+                        });
+                      },
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _engineerModelController,
@@ -1192,8 +1472,12 @@ class _DeveloperEngineerPreviewPanel extends StatelessWidget {
 
 class _DeveloperSelectedContextPanel extends StatelessWidget {
   final AiDeveloperWorkspaceSelectedContext contextData;
+  final int? requestedFileCount;
 
-  const _DeveloperSelectedContextPanel({required this.contextData});
+  const _DeveloperSelectedContextPanel({
+    required this.contextData,
+    required this.requestedFileCount,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1213,6 +1497,29 @@ class _DeveloperSelectedContextPanel extends StatelessWidget {
           SelectableText('Context ${contextData.contextHashHex}'),
           Text('${contextData.snippets.length} snippet(s)'),
           Text('${contextData.payloadBytes} bytes'),
+          if (requestedFileCount != null &&
+              requestedFileCount != contextData.snippets.length) ...[
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.amberAccent.withValues(alpha: 0.10),
+                border: Border.all(
+                  color: Colors.amberAccent.withValues(alpha: 0.35),
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                'Selected $requestedFileCount file(s), included '
+                '${contextData.snippets.length}. Missing files were skipped by '
+                'workspace guards or were not present in the scan result.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.amberAccent,
+                ),
+              ),
+            ),
+          ],
           if (contextData.findings.isNotEmpty) ...[
             const SizedBox(height: 6),
             ...contextData.findings.map(
@@ -1235,8 +1542,12 @@ class _DeveloperSelectedContextPanel extends StatelessWidget {
 
 class _DeveloperWorkspaceRepoTile extends StatelessWidget {
   final AiDeveloperWorkspaceRepoSummary repo;
+  final ValueChanged<String> onAddFile;
 
-  const _DeveloperWorkspaceRepoTile(this.repo);
+  const _DeveloperWorkspaceRepoTile({
+    required this.repo,
+    required this.onAddFile,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1248,6 +1559,26 @@ class _DeveloperWorkspaceRepoTile extends StatelessWidget {
         '${repo.findings.length} finding(s)',
       ),
       children: [
+        ...repo.files.take(12).map(
+              (file) => ListTile(
+                dense: true,
+                leading: const Icon(Icons.description_outlined),
+                title: Text(file.relativePath),
+                subtitle: SelectableText(
+                  '${file.sizeBytes} bytes · ${file.sha256Hex}',
+                ),
+                trailing: TextButton.icon(
+                  onPressed: () => onAddFile(file.relativePath),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add'),
+                ),
+              ),
+            ),
+        if (repo.files.length > 12)
+          ListTile(
+            dense: true,
+            title: Text('+${repo.files.length - 12} more file(s)'),
+          ),
         if (repo.findings.isNotEmpty)
           ...repo.findings.map(
             (finding) => ListTile(
@@ -1265,21 +1596,78 @@ class _DeveloperWorkspaceRepoTile extends StatelessWidget {
               ),
             ),
           ),
-        ...repo.files.take(12).map(
-              (file) => ListTile(
-                dense: true,
-                title: Text(file.relativePath),
-                subtitle: SelectableText(
-                  '${file.sizeBytes} bytes · ${file.sha256Hex}',
-                ),
-              ),
-            ),
-        if (repo.files.length > 12)
-          ListTile(
-            dense: true,
-            title: Text('+${repo.files.length - 12} more file(s)'),
-          ),
       ],
+    );
+  }
+}
+
+class _DeveloperWorkspaceQuickAddPanel extends StatelessWidget {
+  final List<String> availableFiles;
+  final List<String> firstFiles;
+  final List<String> coreFiles;
+  final List<String> doctorFiles;
+  final ValueChanged<Iterable<String>> onAddFiles;
+
+  const _DeveloperWorkspaceQuickAddPanel({
+    required this.availableFiles,
+    required this.firstFiles,
+    required this.coreFiles,
+    required this.doctorFiles,
+    required this.onAddFiles,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (availableFiles.isEmpty) {
+      return Text(
+        'No selectable files found in the scanned repositories.',
+        style: theme.textTheme.bodySmall,
+      );
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Quick add context files', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 6),
+          Text(
+            'Pick files before building selected context. Nothing is sent to AI until you press Ask Hivra Engineer.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (firstFiles.isNotEmpty)
+                ActionChip(
+                  avatar: const Icon(Icons.add),
+                  label: Text('Add first ${firstFiles.length}'),
+                  onPressed: () => onAddFiles(firstFiles),
+                ),
+              if (coreFiles.isNotEmpty)
+                ActionChip(
+                  avatar: const Icon(Icons.menu_book_outlined),
+                  label: Text('Add core docs (${coreFiles.length})'),
+                  onPressed: () => onAddFiles(coreFiles),
+                ),
+              if (doctorFiles.isNotEmpty)
+                ActionChip(
+                  avatar: const Icon(Icons.health_and_safety_outlined),
+                  label: Text('Add doctor files (${doctorFiles.length})'),
+                  onPressed: () => onAddFiles(doctorFiles),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

@@ -7,16 +7,6 @@ import '../ffi/app_runtime_runtime.dart';
 import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
-import 'ai_capsule_inspection_service.dart';
-import 'ai_developer_engineer_service.dart';
-import 'ai_developer_remote_repository_cache_service.dart';
-import 'ai_developer_workspace_service.dart';
-import 'ai_doctor_chat_service.dart';
-import 'ai_doctor_credential_store.dart';
-import 'ai_patch_proposal_service.dart';
-import 'ai_plugin_audit_service.dart';
-import 'ai_plugin_scaffold_draft_service.dart';
-import 'ai_review_gate_integration_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_diagnostics_service.dart';
 import 'capsule_state_manager.dart';
@@ -105,53 +95,11 @@ class AppRuntimeService {
     );
   }
 
-  AiCapsuleInspectionService buildAiCapsuleInspectionService() {
-    return AiCapsuleInspectionService(
-      ledgerView: _ledgerView,
-      consensus: buildConsensusRuntimeService(),
-      diagnostics: CapsuleDiagnosticsService(
-        diagnoseBootstrap: _runtime.diagnoseBootstrapReport,
-        diagnoseTrace: _runtime.diagnoseCapsuleTraces,
-      ),
-      readActiveCapsuleHex: activeCapsuleRootHex,
+  CapsuleDiagnosticsService buildCapsuleDiagnosticsService() {
+    return CapsuleDiagnosticsService(
+      diagnoseBootstrap: _runtime.diagnoseBootstrapReport,
+      diagnoseTrace: _runtime.diagnoseCapsuleTraces,
     );
-  }
-
-  AiDoctorChatService buildAiDoctorChatService() {
-    return AiDoctorChatService(
-      credentialStore: AiDoctorCredentialStore(),
-    );
-  }
-
-  AiPluginAuditService buildAiPluginAuditService() {
-    return const AiPluginAuditService();
-  }
-
-  AiDeveloperWorkspaceService buildAiDeveloperWorkspaceService() {
-    return const AiDeveloperWorkspaceService();
-  }
-
-  AiDeveloperEngineerService buildAiDeveloperEngineerService() {
-    return AiDeveloperEngineerService(
-      credentialStore: AiDoctorCredentialStore(),
-    );
-  }
-
-  AiDeveloperRemoteRepositoryCacheService
-      buildAiDeveloperRemoteRepositoryCacheService() {
-    return const AiDeveloperRemoteRepositoryCacheService();
-  }
-
-  AiPluginScaffoldDraftService buildAiPluginScaffoldDraftService() {
-    return const AiPluginScaffoldDraftService();
-  }
-
-  AiPatchProposalService buildAiPatchProposalService() {
-    return const AiPatchProposalService();
-  }
-
-  AiReviewGateIntegrationService buildAiReviewGateIntegrationService() {
-    return const AiReviewGateIntegrationService();
   }
 
   CapsuleChatDeliveryService buildCapsuleChatDeliveryService() {

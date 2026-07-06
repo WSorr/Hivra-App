@@ -12,6 +12,10 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Flutter dependencies flow `Screens/Widgets -> Application Use Cases -> FFI Boundary Services -> Rust`.
 - [ ] Widgets do not call raw FFI directly.
 - [ ] No cross-screen orchestration coupling was introduced.
+- [ ] `AppRuntimeService` exposes neutral capsule/runtime primitives only; it
+      does not construct AI, trading, plugin, or other feature-specific graphs.
+- [ ] Feature modules assemble feature services behind explicit module/facade
+      boundaries before screens consume them.
 
 ## Engine Integrity
 
@@ -26,9 +30,13 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Transport concerns are isolated to adapter and boundary code.
 - [ ] Crypto concerns are isolated to adapter/platform code.
 - [ ] UI reads projections instead of inventing parallel truth.
+- [ ] Screens remain projection/action surfaces and do not become service
+      locators for broad feature graphs.
 - [ ] No new cross-cutting timer, watcher, or hidden background pipeline was introduced.
 - [ ] Any new module has explicit non-overlapping ownership.
 - [ ] New modules map to one skeleton layer only (`UI Projection` | `Application Use Cases` | `Domain Core` | `Ledger` | `Transport` | `WASM Plugin Host`).
+- [ ] AI/provider tooling remains outside Core and outside generic runtime
+      services; it is composed through an application-level AI tooling module.
 
 ## Determinism
 

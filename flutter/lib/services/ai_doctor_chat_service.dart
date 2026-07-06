@@ -1,11 +1,11 @@
 import 'ai_capsule_inspection_service.dart';
 import 'ai_doctor_credential_store.dart';
 import 'ai_doctor_prompt_service.dart';
-import 'ai_doctor_provider_adapter.dart';
+import 'inference_provider_adapter.dart';
 
 class AiDoctorChatResult {
   final AiDoctorOutboundPreview preview;
-  final AiDoctorProviderResponse providerResponse;
+  final InferenceProviderResponse providerResponse;
 
   const AiDoctorChatResult({
     required this.preview,
@@ -18,23 +18,38 @@ class AiDoctorChatService {
 
   final AiDoctorCredentialStore _credentialStore;
   final AiDoctorPromptService _promptService;
-  final AiDoctorProviderAdapter _providerAdapter;
+  final InferenceProviderAdapter Function(InferenceProviderKind provider)
+      _providerAdapterFactory;
 
-  const AiDoctorChatService({
+  AiDoctorChatService({
     required AiDoctorCredentialStore credentialStore,
     AiDoctorPromptService promptService = const AiDoctorPromptService(),
-    AiDoctorProviderAdapter? providerAdapter,
+    InferenceProviderAdapter? providerAdapter,
+    InferenceProviderAdapter Function(InferenceProviderKind provider)?
+        providerAdapterFactory,
   })  : _credentialStore = credentialStore,
         _promptService = promptService,
-        _providerAdapter =
-            providerAdapter ?? const _DefaultAiDoctorProviderAdapter();
+        _providerAdapterFactory = providerAdapterFactory ??
+            ((provider) =>
+                providerAdapter ?? inferenceProviderAdapterFor(provider));
+
+  Future<void> saveApiKey(
+    InferenceProviderKind provider,
+    String apiKey,
+  ) {
+    return _credentialStore.saveApiKey(provider, apiKey);
+  }
+
+  Future<void> clearApiKey(InferenceProviderKind provider) {
+    return _credentialStore.clearApiKey(provider);
+  }
 
   Future<void> saveOpenAiApiKey(String apiKey) {
-    return _credentialStore.saveOpenAiApiKey(apiKey);
+    return saveApiKey(InferenceProviderKind.openAi, apiKey);
   }
 
   Future<void> clearOpenAiApiKey() {
-    return _credentialStore.clearOpenAiApiKey();
+    return clearApiKey(InferenceProviderKind.openAi);
   }
 
   AiDoctorOutboundPreview preview({
@@ -56,41 +71,25 @@ class AiDoctorChatService {
     required String userQuery,
     required Iterable<AiDoctorContextSection> sections,
     String model = defaultModel,
+    InferenceProviderKind provider = InferenceProviderKind.openAi,
   }) async {
-    final apiKey = await _credentialStore.loadOpenAiApiKey();
+    final apiKey = await _credentialStore.loadApiKey(provider);
     if (apiKey == null || apiKey.trim().isEmpty) {
-      throw StateError('OpenAI API key is not saved');
+      throw StateError('${provider.label} API key is not saved');
     }
     final prompt = _promptService.buildPrompt(
       snapshot: snapshot,
       userQuery: userQuery,
       sections: sections,
     );
-    final response = await _providerAdapter.ask(
+    final response = await _providerAdapterFactory(provider).ask(
       apiKey: apiKey,
-      model: model,
+      model: model.trim().isEmpty ? provider.defaultModel : model,
       prompt: prompt,
     );
     return AiDoctorChatResult(
       preview: prompt.preview,
       providerResponse: response,
-    );
-  }
-}
-
-class _DefaultAiDoctorProviderAdapter implements AiDoctorProviderAdapter {
-  const _DefaultAiDoctorProviderAdapter();
-
-  @override
-  Future<AiDoctorProviderResponse> ask({
-    required String apiKey,
-    required String model,
-    required AiDoctorPrompt prompt,
-  }) {
-    return OpenAiResponsesDoctorProviderAdapter().ask(
-      apiKey: apiKey,
-      model: model,
-      prompt: prompt,
     );
   }
 }

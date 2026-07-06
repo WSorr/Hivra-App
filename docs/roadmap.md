@@ -1258,13 +1258,15 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - added secure-storage-only provider credential storage.
     - added deterministic outbound prompt/preview construction with bounded
       payload size and explicit selected sections.
-    - added OpenAI Responses API adapter with `store: false` request payloads
-      and strict empty/malformed response rejection.
+    - added an `InferenceProvider` boundary with provider-isolated keys,
+      OpenAI Responses API support, Gemini GenerateContent support, and strict
+      empty/malformed response rejection.
     - added Capsule Doctor UI controls for provider key save/clear, model,
       question, selected context sections, outbound preview, and advisory
       response rendering.
   - Constraints:
     - no plaintext provider-key fallback.
+    - provider adapters receive only already-redacted prompt payloads.
     - no ledger/runtime/plugin/contact/outbox mutation from provider response.
     - no repository access in this phase.
     - no dependencies from core/engine/platform back into Flutter provider
@@ -1503,3 +1505,37 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `tools/review/release_discipline_gate.sh`
     - `tools/review/review_all.sh`
   - Status: completed (2026-07-06).
+
+- `11.29 Application Module Boundary Cleanup`
+  - Goal:
+    - keep AI tooling, plugin runtime, and trading-drone orchestration modular
+      without widening `AppRuntimeService` or screen-level service graphs.
+  - Scope:
+    - introduce a `TradingDroneModuleService` or controller boundary so
+      `TradingDroneScreen` does not assemble BingX, order tracking, signal,
+      credential, and plugin-host services directly.
+    - introduce a `PluginRuntimeModuleService` boundary for plugin host,
+      installed-plugin projection, chat/manual-consensus support, and runtime
+      invocation helpers.
+    - keep AI Doctor/Hivra Engineer construction behind
+      `AiToolingModuleService`; `AppRuntimeService` must expose only neutral
+      capsule/runtime primitives.
+    - split `CapsuleDoctorScreen` into presentation cards/widgets after
+      service boundaries stabilize; widgets must not construct feature service
+      graphs.
+    - add a future `localOpenAiCompatible` inference provider option with
+      explicit `baseUrl`, model, timeout, and no secrets in logs.
+    - defer physical `flutter/lib/services` directory moves until module
+      facades are stable, to avoid churn without stronger boundaries.
+  - Constraints:
+    - no dependency from core/engine/platform back into Flutter feature modules.
+    - no AI/provider/trading/plugin-specific policy inside Core.
+    - screens remain UI projection/action surfaces, not orchestration owners.
+    - ledger remains the source of truth for confirmed capsule state.
+  - Verification:
+    - `tools/review/review_all.sh`
+    - `flutter analyze`
+    - `flutter test`
+    - `cargo test --workspace`
+    - macOS release smoke for Doctor, plugins, chat, and trading drone.
+  - Status: planned.

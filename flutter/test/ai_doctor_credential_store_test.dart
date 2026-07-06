@@ -1,6 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/ai_doctor_credential_store.dart';
+import 'package:hivra_app/services/inference_provider_adapter.dart';
 
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
@@ -88,6 +89,24 @@ void main() {
 
       expect(await store.loadOpenAiApiKey(), isNull);
       expect(secureStorage.values, isEmpty);
+    });
+
+    test('stores provider keys independently', () async {
+      final secureStorage = _FakeSecureStorage();
+      final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+
+      await store.saveApiKey(InferenceProviderKind.openAi, 'sk-openai');
+      await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+
+      expect(
+        await store.loadApiKey(InferenceProviderKind.openAi),
+        'sk-openai',
+      );
+      expect(
+        await store.loadApiKey(InferenceProviderKind.gemini),
+        'gemini-key',
+      );
+      expect(secureStorage.values.length, 2);
     });
 
     test('fails closed when secure storage is unavailable', () async {

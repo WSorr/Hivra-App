@@ -18,7 +18,8 @@ that include Capsule Doctor developer/AI tooling.
 
 ## Scoped AI Doctor Chat
 
-- [ ] OpenAI API key save/clear uses secure storage.
+- [ ] Inference provider can be selected explicitly before submission.
+- [ ] OpenAI/Gemini API key save/clear uses provider-isolated secure storage.
 - [ ] Outbound preview is shown before provider submission.
 - [ ] Provider failure leaves capsule ledger, plugin registry, and files unchanged.
 

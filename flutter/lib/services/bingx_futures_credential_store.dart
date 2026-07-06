@@ -129,6 +129,16 @@ class BingxFuturesCredentialStore {
     BingxFuturesApiCredentials credentials,
   ) async {
     try {
+      final existingKey = await _secureStorage.read(
+        key: _apiKeyForScope(scope),
+      );
+      final existingSecret = await _secureStorage.read(
+        key: _apiSecretForScope(scope),
+      );
+      if (existingKey == credentials.apiKey &&
+          existingSecret == credentials.apiSecret) {
+        return;
+      }
       await _secureStorage.write(
         key: _apiKeyForScope(scope),
         value: credentials.apiKey,

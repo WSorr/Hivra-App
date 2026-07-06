@@ -4,7 +4,7 @@ import 'ai_capsule_inspection_service.dart';
 import 'ai_developer_workspace_service.dart';
 import 'ai_doctor_credential_store.dart';
 import 'ai_doctor_prompt_service.dart';
-import 'ai_doctor_provider_adapter.dart';
+import 'inference_provider_adapter.dart';
 
 class AiDeveloperEngineerPreview {
   final String capsuleSnapshotHashHex;
@@ -22,7 +22,7 @@ class AiDeveloperEngineerPreview {
 
 class AiDeveloperEngineerResult {
   final AiDeveloperEngineerPreview preview;
-  final AiDoctorProviderResponse providerResponse;
+  final InferenceProviderResponse providerResponse;
 
   const AiDeveloperEngineerResult({
     required this.preview,
@@ -39,14 +39,18 @@ class AiDeveloperEngineerService {
   );
 
   final AiDoctorCredentialStore _credentialStore;
-  final AiDoctorProviderAdapter _providerAdapter;
+  final InferenceProviderAdapter Function(InferenceProviderKind provider)
+      _providerAdapterFactory;
 
-  const AiDeveloperEngineerService({
+  AiDeveloperEngineerService({
     required AiDoctorCredentialStore credentialStore,
-    AiDoctorProviderAdapter? providerAdapter,
+    InferenceProviderAdapter? providerAdapter,
+    InferenceProviderAdapter Function(InferenceProviderKind provider)?
+        providerAdapterFactory,
   })  : _credentialStore = credentialStore,
-        _providerAdapter =
-            providerAdapter ?? const _DefaultDeveloperProviderAdapter();
+        _providerAdapterFactory = providerAdapterFactory ??
+            ((provider) =>
+                providerAdapter ?? inferenceProviderAdapterFor(provider));
 
   AiDeveloperEngineerPreview preview({
     required AiCapsuleInspectionSnapshot snapshot,
@@ -65,10 +69,11 @@ class AiDeveloperEngineerService {
     required AiDeveloperWorkspaceSelectedContext selectedContext,
     required String question,
     String model = defaultModel,
+    InferenceProviderKind provider = InferenceProviderKind.openAi,
   }) async {
-    final apiKey = await _credentialStore.loadOpenAiApiKey();
+    final apiKey = await _credentialStore.loadApiKey(provider);
     if (apiKey == null || apiKey.trim().isEmpty) {
-      throw StateError('OpenAI API key is not saved');
+      throw StateError('${provider.label} API key is not saved');
     }
     final prompt = _buildPrompt(
       snapshot: snapshot,
@@ -86,9 +91,9 @@ class AiDeveloperEngineerService {
         secretsRedacted: true,
       ),
     );
-    final response = await _providerAdapter.ask(
+    final response = await _providerAdapterFactory(provider).ask(
       apiKey: apiKey,
-      model: model,
+      model: model.trim().isEmpty ? provider.defaultModel : model,
       prompt: wrapped,
     );
     return AiDeveloperEngineerResult(
@@ -183,21 +188,4 @@ class _DeveloperEngineerPrompt {
     required this.inputJson,
     required this.preview,
   });
-}
-
-class _DefaultDeveloperProviderAdapter implements AiDoctorProviderAdapter {
-  const _DefaultDeveloperProviderAdapter();
-
-  @override
-  Future<AiDoctorProviderResponse> ask({
-    required String apiKey,
-    required String model,
-    required AiDoctorPrompt prompt,
-  }) {
-    return OpenAiResponsesDoctorProviderAdapter().ask(
-      apiKey: apiKey,
-      model: model,
-      prompt: prompt,
-    );
-  }
 }
