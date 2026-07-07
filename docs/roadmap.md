@@ -914,10 +914,14 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `models/bingx_futures_order_sizing_models.dart`; `TradingDroneScreen`
       imports sizing status/result types from the model boundary while
       `BingxFuturesOrderSizingService` remains behavior-only.
+    - BingX futures signal-rank DTOs now live in
+      `models/bingx_futures_signal_rank_models.dart`; `TradingDroneScreen`
+      imports scan candidate/result/entry types from the model boundary while
+      `BingxFuturesSignalRankUseCaseService` remains behavior-only.
   - Remaining follow-up:
     - `TradingDroneScreen` still imports trading service files for live
-      strategy, replacement, and signal-rank DTO/result types. Do not bulk-move
-      these into a god model; split them by stable
+      strategy and replacement DTO/result types. Do not bulk-move these into a
+      god model; split them by stable
       domain boundary only when each group has a clear owner and regression
       coverage.
     - Plugin-host and consensus DTO extraction is complete in `12.2`; keep
