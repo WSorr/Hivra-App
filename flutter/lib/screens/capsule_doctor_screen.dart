@@ -55,7 +55,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
     super.initState();
     final aiTooling = AiToolingModuleService(runtime: widget.runtime);
     _service = aiTooling.buildCapsuleInspectionService();
-    _chatService = aiTooling.buildDoctorChatService();
+    _chatService = aiTooling.buildCapsuleAnalystChatService();
     _pluginAuditService = aiTooling.buildPluginAuditService();
     _developerWorkspaceService = aiTooling.buildDeveloperWorkspaceService();
     _developerEngineerService = aiTooling.buildDeveloperEngineerService();
@@ -387,7 +387,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
     }
   }
 
-  Future<void> _askDoctor() async {
+  Future<void> _askAnalyst() async {
     await _run(() async {
       final model = _modelController.text.trim().isEmpty
           ? _provider.defaultModel
@@ -592,7 +592,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                   label: const Text('Preview outbound context'),
                 ),
                 FilledButton.icon(
-                  onPressed: _busy ? null : _askDoctor,
+                  onPressed: _busy ? null : _askAnalyst,
                   icon: const Icon(Icons.send),
                   label: const Text('Ask AI Analyst'),
                 ),

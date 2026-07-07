@@ -77,7 +77,7 @@ void main() {
 AiCapsuleInspectionSnapshot _snapshot() {
   return const AiCapsuleInspectionSnapshot(
     schemaVersion: 1,
-    mode: 'capsule_doctor_local',
+    mode: 'capsule_diagnostics_local',
     capsule: <String, dynamic>{
       'root_preview': 'h1abc...xyz',
       'has_runtime_key': true,

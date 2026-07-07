@@ -26,7 +26,7 @@ class AiToolingModuleService {
     );
   }
 
-  AiDoctorChatService buildDoctorChatService() {
+  AiDoctorChatService buildCapsuleAnalystChatService() {
     return AiDoctorChatService(
       credentialStore: AiDoctorCredentialStore(),
     );

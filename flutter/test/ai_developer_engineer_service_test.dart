@@ -291,7 +291,7 @@ AiDeveloperWorkspaceSelectedContext _selectedContext({
 AiCapsuleInspectionSnapshot _snapshot() {
   return const AiCapsuleInspectionSnapshot(
     schemaVersion: 1,
-    mode: 'capsule_doctor_local',
+    mode: 'capsule_diagnostics_local',
     capsule: <String, dynamic>{'root_preview': 'h1abc...xyz'},
     ledgerSummary: <String, dynamic>{'version': 3},
     invitationSummary: <String, dynamic>{},

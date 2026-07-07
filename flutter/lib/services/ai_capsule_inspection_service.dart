@@ -198,7 +198,7 @@ class AiCapsuleInspectionService {
 
     final snapshotWithoutHash = <String, dynamic>{
       'schema_version': 1,
-      'mode': 'capsule_doctor_local',
+      'mode': 'capsule_diagnostics_local',
       'capsule': capsule,
       'ledger_summary': ledgerSummary,
       'invitation_summary': invitationSummary,
@@ -213,7 +213,7 @@ class AiCapsuleInspectionService {
     final snapshotHashHex = _hashCanonical(snapshotWithoutHash);
     final snapshot = AiCapsuleInspectionSnapshot(
       schemaVersion: 1,
-      mode: 'capsule_doctor_local',
+      mode: 'capsule_diagnostics_local',
       capsule: capsule,
       ledgerSummary: ledgerSummary,
       invitationSummary: invitationSummary,
