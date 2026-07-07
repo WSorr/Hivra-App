@@ -3,47 +3,12 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../models/bingx_futures_live_decision_models.dart';
+import '../models/bingx_futures_order_replacement_models.dart';
 import '../models/bingx_futures_order_tracking_models.dart';
 import '../models/bingx_futures_risk_models.dart';
-import '../models/plugin_host_api_models.dart';
 import '../models/bingx_futures_exchange_models.dart';
-import '../models/bingx_futures_execution_queue_models.dart';
+import '../models/plugin_host_api_models.dart';
 import 'bingx_futures_strategy_naming_service.dart';
-
-typedef BingxReplacementIntentPreparer = Future<PluginHostApiResponse> Function(
-  Map<String, dynamic> hostArgs,
-);
-typedef BingxReplacementRiskEvaluator = Future<BingxFuturesRiskDecision?>
-    Function(
-  BingxFuturesIntentPayload payload,
-  Map<String, dynamic> rawIntentResult,
-);
-typedef BingxReplacementExecutor = Future<BingxQueuedExecutionResult> Function(
-  BingxFuturesIntentPayload payload,
-  bool testOrder,
-);
-
-enum BingxFuturesReplacementPlanStatus {
-  ready,
-  skipped,
-}
-
-class BingxFuturesReplacementPlan {
-  final BingxFuturesReplacementPlanStatus status;
-  final String reasonCode;
-  final String reasonMessage;
-  final Map<String, dynamic>? hostArgs;
-
-  const BingxFuturesReplacementPlan({
-    required this.status,
-    required this.reasonCode,
-    required this.reasonMessage,
-    required this.hostArgs,
-  });
-
-  bool get isReady =>
-      status == BingxFuturesReplacementPlanStatus.ready && hostArgs != null;
-}
 
 class BingxFuturesOrderReplacementService {
   final BingxFuturesStrategyNamingService _strategyNaming;
@@ -309,35 +274,4 @@ class BingxFuturesOrderReplacementService {
       hostArgs: null,
     );
   }
-}
-
-enum BingxFuturesReplacementRuntimeStatus {
-  skipped,
-  hostBlocked,
-  riskUnavailable,
-  riskBlocked,
-  executionFailed,
-  executed,
-}
-
-class BingxFuturesReplacementRuntimeResult {
-  final BingxFuturesReplacementRuntimeStatus status;
-  final BingxFuturesReplacementPlan plan;
-  final PluginHostApiResponse? hostResponse;
-  final BingxFuturesIntentPayload? payload;
-  final BingxFuturesRiskDecision? riskDecision;
-  final BingxQueuedExecutionResult? queuedExecution;
-
-  const BingxFuturesReplacementRuntimeResult({
-    required this.status,
-    required this.plan,
-    required this.hostResponse,
-    required this.payload,
-    required this.riskDecision,
-    required this.queuedExecution,
-  });
-
-  bool get isExecuted =>
-      status == BingxFuturesReplacementRuntimeStatus.executed &&
-      queuedExecution?.execution.isSuccess == true;
 }

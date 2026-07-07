@@ -10,12 +10,12 @@ import '../models/bingx_futures_live_decision_models.dart';
 import '../models/bingx_futures_live_strategy_models.dart';
 import '../models/bingx_futures_order_sizing_models.dart';
 import '../models/bingx_futures_order_tracking_models.dart';
+import '../models/bingx_futures_order_replacement_models.dart';
 import '../models/bingx_futures_risk_models.dart';
 import '../models/bingx_futures_signal_rank_models.dart';
 import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
-import '../services/bingx_futures_order_replacement_service.dart';
 import '../services/app_runtime_service.dart';
 import '../services/trading_drone_module_service.dart';
 
