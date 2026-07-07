@@ -1559,6 +1559,9 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       widgets (engineer preview, selected context, repo tile, quick-add panel)
       into `widgets/ai_developer_workspace_widgets.dart`; widgets remain
       projection-only and accept data/callbacks only.
+    - Moved Plugin Auditor presentation helpers (status color and audit entry
+      tile) into `widgets/ai_plugin_audit_widgets.dart`; audit service ownership
+      stays in the screen/card state and widgets remain read-only.
   - Verification:
     - `tools/review/review_all.sh`
     - `flutter analyze`
