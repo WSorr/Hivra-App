@@ -894,6 +894,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       for state refresh, ledger export, root-key lookup, and manual consensus
       checks instead of constructing service dependencies directly in the
       inspector UI.
+    - `MainScreen` now keeps one `MainScreenModule` reference for child screen
+      service factories, so the navigation shell no longer assembles
+      relationship/settings service dependencies directly.
   - Remaining follow-up:
     - `TradingDroneScreen` still imports trading service files for live
       decision, exchange, sizing, risk, replacement, and signal-rank DTO/result

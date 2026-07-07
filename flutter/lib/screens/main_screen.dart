@@ -6,6 +6,7 @@ import 'dart:async';
 import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/invitation_intent_handler.dart';
+import '../services/main_screen_module_service.dart';
 import '../services/ui_event_log_service.dart';
 import '../models/invitation.dart';
 import 'starters_screen.dart';
@@ -25,6 +26,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   final AppRuntimeService _runtime = AppRuntimeService();
   final UiEventLogService _uiLog = const UiEventLogService();
+  late final MainScreenModule _module;
   late final CapsuleStateManager _stateManager;
   late final InvitationIntentHandler _invitationIntents;
 
@@ -69,6 +71,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _module = MainScreenModuleService(runtime: _runtime).build();
     _stateManager = _runtime.stateManager;
     _invitationIntents = _runtime.invitationIntents;
     _listenConnectivityChanges();
@@ -528,7 +531,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       case 2:
         return RelationshipsScreen(
           key: ValueKey('relationships-$_activeCapsuleHex'),
-          service: _runtime.buildRelationshipService(
+          service: _module.relationshipService(
             activeCapsuleHex: _activeCapsuleHex,
           ),
           onLedgerChanged: _handleLedgerChanged,
@@ -541,7 +544,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         );
       case 4:
         return SettingsScreen(
-          service: _runtime.buildSettingsService(),
+          service: _module.settingsService(),
           onLedgerChanged: _handleLedgerChanged,
         );
       default:
