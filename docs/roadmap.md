@@ -1562,6 +1562,9 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - Moved Plugin Auditor presentation helpers (status color and audit entry
       tile) into `widgets/ai_plugin_audit_widgets.dart`; audit service ownership
       stays in the screen/card state and widgets remain read-only.
+    - Moved shared diagnostics report presentation (header, findings, key/value
+      sections, retry error state) into `widgets/ai_capsule_report_widgets.dart`;
+      deterministic key sorting stays in the presentation boundary.
   - Verification:
     - `tools/review/review_all.sh`
     - `flutter analyze`
