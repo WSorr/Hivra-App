@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hivra_app/models/consensus_models.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
-import 'package:hivra_app/services/consensus_processor.dart';
 import 'package:hivra_app/services/plugin_contract_handlers.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/services/plugin_host_contract_handler.dart';
@@ -43,6 +43,37 @@ void main() {
         response.result?['market_snapshot_hash_hex'],
         _hex('1'),
       );
+    });
+
+    test('executes solo futures intent without consensus peer preflight',
+        () async {
+      var runtimeInvokeCount = 0;
+      var consensusReadCount = 0;
+      final response = await _service(
+        readSignable: (_) {
+          consensusReadCount += 1;
+          return const ConsensusSignableResult(
+            preview: null,
+            blockingFacts: <ConsensusBlockingFact>[
+              ConsensusBlockingFact(code: 'must_not_be_checked_for_solo'),
+            ],
+          );
+        },
+        runtimeInvoke: _soloRuntimeEvidence(),
+        onRuntimeInvoke: () => runtimeInvokeCount += 1,
+      ).executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: bingxFuturesTradingPluginId,
+          method: placeBingxFuturesOrderIntentMethod,
+          args: _validSoloBingxArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.executed);
+      expect(response.result?['intent_hash_hex'], _soloIntentHash);
+      expect(runtimeInvokeCount, 1);
+      expect(consensusReadCount, 0);
     });
 
     test('returns plugin semantic rejection unchanged', () async {
@@ -301,6 +332,23 @@ PluginRuntimeInvokeEvidence _runtimeEvidence({
   );
 }
 
+PluginRuntimeInvokeEvidence _soloRuntimeEvidence() {
+  return PluginRuntimeInvokeEvidence(
+    mode: 'wasmi_v1',
+    modulePath: 'plugin/module.wasm',
+    moduleSelection: 'manifest_module_path',
+    moduleDigestHex: _hex('b'),
+    invokeDigestHex: _hex('c'),
+    semanticStatus: PluginHostApiStatus.executed,
+    semanticResult: <String, dynamic>{
+      'canonical_json': _canonicalSoloIntent,
+      'intent_hash_hex': _soloIntentHash,
+    },
+    semanticErrorCode: null,
+    semanticErrorMessage: null,
+  );
+}
+
 ConsensusSignableResult _signable(String _) => const ConsensusSignableResult(
       preview: ConsensusPreview(
         peerHex: _peerHex,
@@ -331,6 +379,11 @@ Map<String, dynamic> _validBingxArgs() => <String, dynamic>{
       'live_decision_hash_hex': _hex('4'),
     };
 
+Map<String, dynamic> _validSoloBingxArgs() => <String, dynamic>{
+      ..._validBingxArgs(),
+      'peer_hex': '',
+    };
+
 Map<String, dynamic> _validChatArgs() => <String, dynamic>{
       'peer_hex': _peerHex,
       'client_message_id': 'msg-1',
@@ -352,6 +405,18 @@ const String _canonicalIntent =
     '"trigger_price_decimal":null,"stop_loss_decimal":null,'
     '"take_profit_decimal":null,"created_at_utc":"2026-01-01T00:00:00Z",'
     '"strategy_tag":null}';
+const String _canonicalSoloIntent =
+    '{"schema_version":1,"plugin_id":"hivra.contract.bingx-futures-trading.v1",'
+    '"contract_kind":"bingx_futures_order_intent",'
+    '"peer_hex":"",'
+    '"client_order_id":"ord-1","symbol":"BTC-USDT","side":"buy",'
+    '"order_type":"limit","quantity_decimal":"0.01",'
+    '"limit_price_decimal":"60000","time_in_force":"GTC",'
+    '"entry_mode":"direct","zone_side":null,"zone_low_decimal":null,'
+    '"zone_high_decimal":null,"zone_price_rule":null,'
+    '"trigger_price_decimal":null,"stop_loss_decimal":null,'
+    '"take_profit_decimal":null,"created_at_utc":"2026-01-01T00:00:00Z",'
+    '"strategy_tag":null}';
 const String _canonicalChat =
     '{"schema_version":1,"plugin_id":"hivra.contract.capsule-chat.v1",'
     '"contract_kind":"capsule_chat_direct",'
@@ -360,6 +425,8 @@ const String _canonicalChat =
     '"created_at_utc":"2026-01-01T00:00:00Z"}';
 final String _intentHash =
     sha256.convert(utf8.encode(_canonicalIntent)).toString();
+final String _soloIntentHash =
+    sha256.convert(utf8.encode(_canonicalSoloIntent)).toString();
 const String _canonicalScan =
     '{"schema_version":1,"plugin_id":"hivra.contract.bingx-futures-trading.v1",'
     '"contract_kind":"bingx_futures_signal_scan_rank",'

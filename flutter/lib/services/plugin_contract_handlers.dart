@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../models/consensus_models.dart';
 import '../models/plugin_contract_ids.dart';
-import 'consensus_processor.dart';
 import 'plugin_host_api_service.dart';
 import 'plugin_host_contract_handler.dart';
 
@@ -133,6 +133,7 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
     return _consensusPreflight(
       request: request,
       readSignable: _readSignable,
+      allowSoloWhenPeerMissing: true,
     );
   }
 
@@ -145,11 +146,13 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
       return _executeSignalRank(request, runtimeInvoke: runtimeInvoke);
     }
     final args = request.args;
-    final peerHex = args['peer_hex']?.toString().trim().toLowerCase();
-    if (peerHex == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex)) {
+    final rawPeerHex = args['peer_hex']?.toString().trim().toLowerCase() ?? '';
+    final peerHex = rawPeerHex.isEmpty ? null : rawPeerHex;
+    if (peerHex != null && !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex)) {
       return const PluginHostContractResult.rejected(
         code: 'invalid_args',
-        message: 'peer_hex must be a 64-char lowercase hex',
+        message:
+            'peer_hex must be empty for solo mode or a 64-char lowercase hex',
       );
     }
     if (runtimeInvoke == null) {
@@ -240,9 +243,14 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
 PluginHostContractResult? _consensusPreflight({
   required PluginHostApiRequest request,
   required PluginConsensusSignableReader readSignable,
+  bool allowSoloWhenPeerMissing = false,
 }) {
-  final peerHex = request.args['peer_hex']?.toString().trim().toLowerCase();
-  if (peerHex == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex)) {
+  final peerHex =
+      request.args['peer_hex']?.toString().trim().toLowerCase() ?? '';
+  if (peerHex.isEmpty && allowSoloWhenPeerMissing) {
+    return null;
+  }
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex)) {
     return const PluginHostContractResult.rejected(
       code: 'invalid_args',
       message: 'peer_hex must be a 64-char lowercase hex',

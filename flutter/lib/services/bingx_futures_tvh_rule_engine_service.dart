@@ -35,7 +35,7 @@ class BingxTvhPolicy {
     this.minAbsSessionNetDelta = 0.01,
     this.maxAbsFundingRate = 0.01,
     this.requireWhaleActivation = true,
-    this.requireConsensusSignable = true,
+    this.requireConsensusSignable = false,
   });
 }
 

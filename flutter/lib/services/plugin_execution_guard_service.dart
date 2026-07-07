@@ -1,4 +1,4 @@
-import 'consensus_processor.dart';
+import '../models/consensus_models.dart';
 import 'consensus_runtime_service.dart';
 
 enum ConsensusGuardState {

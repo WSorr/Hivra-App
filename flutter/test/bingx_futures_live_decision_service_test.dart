@@ -54,6 +54,9 @@ void main() {
           snapshotInput: _buildInput(permuted: false),
           isConsensusSignable: false,
           blockingFactCodes: const <String>['pending_remote_break'],
+          policy: const BingxTvhPolicy(
+            requireConsensusSignable: true,
+          ),
         ),
       );
 

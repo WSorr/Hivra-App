@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hivra_app/services/consensus_processor.dart';
+import 'package:hivra_app/models/consensus_models.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
 
 void main() {

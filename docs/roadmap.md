@@ -927,7 +927,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - no plugin execution semantics change.
     - no screen-local consensus or plugin-host logic.
     - no god model: split only into consensus models and plugin-host models.
-  - Status: pending.
+  - Progress:
+    - Stable consensus DTOs now live in
+      `flutter/lib/models/consensus_models.dart`; `ConsensusProcessor` remains
+      behavior only.
+  - Status: in progress; plugin-host API/runtime envelope DTO extraction still
+    remains.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:
@@ -1261,12 +1266,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
 
 - `11.12 Pair-Scoped Trading Consensus Guard`
   - Goal:
-    - keep Trading Drone execution diagnostics pair-scoped instead of treating
-      any signable peer as permission for an unspecified peer.
+    - keep Trading Drone peer execution diagnostics pair-scoped instead of
+      treating any signable peer as permission for an unspecified peer.
   - Implemented:
-    - `TradingDroneScreen` now reports `consensus_peer_not_selected` when a
-      live intent path has no explicit peer, and `consensus_peer_not_found`
-      when the selected peer is absent from the current consensus projection.
+    - Pair-scoped Trading Drone paths report `consensus_peer_not_selected` when
+      no explicit peer is selected, and `consensus_peer_not_found` when the
+      selected peer is absent from the current consensus projection.
+    - Solo futures intent execution is not pair-scoped and must not require
+      consensus; the consensus guard remains mandatory for peer/broadcast/copy
+      execution.
     - market scan and managed-order structural revalidation keep their explicit
       diagnostic bypass path (`forceConsensusSignable`) because they do not
       mutate a pair-scoped contract by themselves.

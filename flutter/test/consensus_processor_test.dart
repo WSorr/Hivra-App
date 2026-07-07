@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hivra_app/models/consensus_models.dart';
 import 'package:hivra_app/services/consensus_processor.dart';
 
 void main() {
@@ -1012,7 +1013,8 @@ void main() {
       expect(previews, isEmpty);
     });
 
-    test('preview ignores foreign InvitationSent not addressed to local identity',
+    test(
+        'preview ignores foreign InvitationSent not addressed to local identity',
         () {
       final invitationId = Uint8List.fromList(bytes32(111));
       final ownStarter = Uint8List.fromList(bytes32(112));
@@ -1792,9 +1794,7 @@ void main() {
       );
     });
 
-    test(
-        'unsigned break is ignored when local root identity is available',
-        () {
+    test('unsigned break is ignored when local root identity is available', () {
       final localTransport = Uint8List.fromList(bytes32(260));
       final localRoot = Uint8List.fromList(bytes32(261));
       final invitationId = Uint8List.fromList(bytes32(262));

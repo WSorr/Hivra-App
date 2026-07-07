@@ -89,6 +89,27 @@ void main() {
       expect(result.reasons.first.passed, isFalse);
     });
 
+    test('default policy allows solo trading without consensus', () {
+      final result = service.evaluate(
+        features: _feature(
+          trend: BingxTrendDirection.bullish,
+          tradeDeltaDecimal: '1.50',
+          sessionNetDeltaDecimal: '3.20',
+          hasBuyWhaleActivation: true,
+          hasSellWhaleActivation: false,
+        ),
+        fundingRateDecimal: '0.0008',
+        isConsensusSignable: false,
+        blockingFactCodes: const <String>['consensus_peer_not_selected'],
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.long);
+      expect(
+        result.reasons.map((reason) => reason.code),
+        isNot(contains('consensus_guard')),
+      );
+    });
+
     test('is hash-stable for identical inputs', () {
       final features = _feature(
         trend: BingxTrendDirection.bullish,

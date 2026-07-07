@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
-import 'consensus_processor.dart';
+import '../models/consensus_models.dart';
 import 'plugin_host_contract_handler.dart';
 import 'wasm_plugin_capability_policy_service.dart';
 

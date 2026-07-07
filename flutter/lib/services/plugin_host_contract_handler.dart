@@ -1,4 +1,4 @@
-import 'consensus_processor.dart';
+import '../models/consensus_models.dart';
 import 'plugin_host_api_service.dart';
 
 class PluginHostContractResult {

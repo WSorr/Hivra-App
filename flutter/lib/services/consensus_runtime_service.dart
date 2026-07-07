@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../models/consensus_models.dart';
 import 'consensus_processor.dart';
 import 'ledger_view_support.dart';
 
