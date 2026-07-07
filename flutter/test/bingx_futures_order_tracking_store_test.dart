@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/services/bingx_futures_order_tracking_store.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';

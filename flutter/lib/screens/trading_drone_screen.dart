@@ -3,13 +3,13 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../models/bingx_futures_order_tracking_models.dart';
 import '../services/bingx_futures_live_decision_service.dart';
 import '../services/bingx_futures_intent_use_case_service.dart';
 import '../services/bingx_futures_live_strategy_use_case_service.dart';
 import '../services/bingx_futures_exchange_service.dart';
 import '../services/bingx_futures_exchange_execution_use_case_service.dart';
 import '../services/bingx_futures_order_sizing_service.dart';
-import '../services/bingx_futures_order_tracking_store.dart';
 import '../services/bingx_futures_order_replacement_service.dart';
 import '../services/bingx_futures_risk_governor_service.dart';
 import '../services/bingx_futures_signal_rank_use_case_service.dart';
@@ -55,7 +55,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   ];
 
   late final TradingDroneModule _module;
-  late final BingxFuturesOrderTrackingStore _orderTrackingStore;
 
   final TextEditingController _peerController = TextEditingController();
   final TextEditingController _symbolController =
@@ -138,7 +137,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _module = TradingDroneModuleService(
       runtime: AppRuntimeService(),
     ).build();
-    _orderTrackingStore = _module.orderTrackingStore;
     _loadCredentials();
     unawaited(_restoreOpenOrdersTrackingState());
     _loadPerpetualSymbols(silent: true);
@@ -341,7 +339,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         stopLossPercent: _stopLossPercent,
         takeProfitRiskReward: _takeProfitRiskReward,
       );
-      await _orderTrackingStore.save(state);
+      await _module.orderTrackingStore.save(state);
       await _module.uiLog.log(
         'bingx.exchange.tracking.persist',
         'source=$source trackedSymbol=${state.trackedSymbol ?? "-"} '
@@ -360,7 +358,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   Future<void> _restoreOpenOrdersTrackingState() async {
     try {
-      final state = await _orderTrackingStore.load();
+      final state = await _module.orderTrackingStore.load();
       if (state == null) return;
       _managedOrderIds
         ..clear()

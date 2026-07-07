@@ -876,6 +876,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `models/wasm_plugin_models.dart`, so `WasmPluginsScreen` no longer imports
       registry/source-catalog service implementations just to render plugin
       projections.
+    - BingX futures order-tracking DTOs now live in
+      `models/bingx_futures_order_tracking_models.dart`; `TradingDroneScreen`
+      uses the module-owned order tracking store instead of keeping its own
+      concrete store field.
   - Status: pending.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
