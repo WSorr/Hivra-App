@@ -880,6 +880,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `models/bingx_futures_order_tracking_models.dart`; `TradingDroneScreen`
       uses the module-owned order tracking store instead of keeping its own
       concrete store field.
+    - Capsule chat/trade-signal inbox DTOs now live in
+      `models/capsule_chat_models.dart`, so trading/plugin screens no longer
+      import `CapsuleChatDeliveryService` just to render received messages.
   - Status: pending.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
