@@ -844,6 +844,30 @@ No active `9.x` architecture debt remains in v1 scope before trading-agent build
 No active `10.x` plugin-host debt remains in v1 scope before trading-agent build.
 No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 scope before release smoke.
 
+- `12.1 Trading Drone UI Type Boundary Audit`
+  - Goal:
+    - reduce UI coupling to concrete trading/plugin service implementation files
+      without changing runtime behavior or weakening the module boundaries.
+  - Current problem:
+    - `TradingDroneScreen` and `WasmPluginsScreen` now use module services for
+      service-graph construction, but still import many concrete service files
+      because UI-facing DTO/result types live beside service implementations.
+    - this is not a current runtime bug, but it keeps the screens wider than a
+      clean projection/action surface and makes future service refactors riskier.
+  - Scope:
+    - audit imports used only for DTO/result/projection types.
+    - move stable UI-facing types into neutral model/projection files where it
+      reduces coupling without creating microfile sprawl.
+    - keep service construction behind `TradingDroneModuleService` and
+      `PluginRuntimeModuleService`.
+    - extend architecture gates only after the model boundary is real enough to
+      enforce without false positives.
+  - Constraints:
+    - no trading decision logic moves into widgets or screens.
+    - no plugin-source code moves into Hivra-App.
+    - no Core/engine/platform dependency changes.
+  - Status: pending.
+
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:
     - eliminate the remaining gap between documented TVH criteria and live entry behavior in execution surfaces.
