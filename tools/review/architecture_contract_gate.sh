@@ -224,6 +224,8 @@ require_absent "$TRADING_SCREEN" "services/bingx_futures_order_tracking_store\\.
   "trading drone screen imports order-tracking DTOs from model boundary"
 require_absent "$TRADING_SCREEN" "services/bingx_futures_risk_governor_service\\.dart" \
   "trading drone screen imports risk DTOs from model boundary"
+require_absent "$TRADING_SCREEN" "services/bingx_futures_live_decision_service\\.dart" \
+  "trading drone screen imports live-decision DTOs from model boundary"
 require_absent "$SCREENS" "services/capsule_chat_delivery_service\\.dart" \
   "screens import capsule chat DTOs from model boundary"
 require_absent "$SCREENS" "services/plugin_contract_handlers\\.dart" \

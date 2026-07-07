@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
-import 'bingx_futures_market_snapshot_service.dart';
+import '../models/bingx_futures_market_snapshot_models.dart';
 
 enum BingxTrendDirection {
   bullish,

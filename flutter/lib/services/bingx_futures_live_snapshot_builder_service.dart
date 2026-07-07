@@ -1,5 +1,5 @@
+import '../models/bingx_futures_market_snapshot_models.dart';
 import 'bingx_futures_exchange_service.dart';
-import 'bingx_futures_market_snapshot_service.dart';
 
 class BingxFuturesLiveSnapshotBuildResult {
   final bool isSuccess;

@@ -901,6 +901,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `models/bingx_futures_risk_models.dart`; `TradingDroneScreen` imports
       risk policy/decision types from the model boundary while
       `BingxFuturesRiskGovernorService` remains behavior-only.
+    - BingX futures live-decision DTOs now live in
+      `models/bingx_futures_live_decision_models.dart`; `TradingDroneScreen`
+      imports decision input/result types from the model boundary while
+      `BingxFuturesLiveDecisionService` remains behavior-only.
   - Remaining follow-up:
     - `TradingDroneScreen` still imports trading service files for live
       decision, exchange, sizing, risk, replacement, and signal-rank DTO/result
@@ -917,7 +921,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - separate stable consensus/plugin-host DTOs from their service
       implementations without weakening pair-scoped consensus or semantic WASM
       execution rules.
-  - Current problem:
+  - Original problem:
     - `PluginHostApiRequest`, `PluginHostApiResponse`,
       `PluginRuntimeBinding`, and `PluginRuntimeInvokeEvidence` live beside
       `PluginHostApiService`, so UI and service clients import the concrete host
@@ -955,7 +959,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:
     - eliminate the remaining gap between documented TVH criteria and live entry behavior in execution surfaces.
-  - Current problem:
+  - Original problem:
     - deterministic TVH pipeline exists (`snapshot -> feature -> rule -> replay`) but live entry in `TradingDroneScreen` still uses zone-heuristic decision path and does not consume full TVH feature/rule outcome for signal gating.
     - risk input still relies on local proxy values for equity/pnl/positions in UI path instead of exchange-backed runtime state.
   - Scope:
@@ -1005,7 +1009,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
 - `11.7 Trading Drone Decision Pipeline Unification (remove screen-local heuristic split)`
   - Goal:
     - remove decision split-brain between screen-local heuristic zone logic and service-level deterministic TVH pipeline.
-  - Current problem:
+  - Original problem:
     - futures decision services exist (`snapshot -> feature -> rule -> replay`) but `TradingDroneScreen` still owns side/zone computation heuristics directly.
     - this creates spec/runtime ambiguity and weakens deterministic auditability of decision provenance.
   - Scope:

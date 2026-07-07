@@ -1,4 +1,4 @@
-import 'bingx_futures_tvh_rule_engine_service.dart';
+import '../models/bingx_futures_tvh_rule_models.dart';
 
 class BingxFuturesStrategyNamingService {
   const BingxFuturesStrategyNamingService();

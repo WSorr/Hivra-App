@@ -1,6 +1,6 @@
+import '../models/bingx_futures_live_decision_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
-import 'bingx_futures_live_decision_service.dart';
 import 'bingx_futures_observability_envelope_service.dart';
 import 'plugin_host_api_service.dart';
 

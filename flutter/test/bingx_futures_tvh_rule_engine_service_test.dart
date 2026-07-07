@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_feature_extractor_service.dart';
 import 'package:hivra_app/services/bingx_futures_tvh_rule_engine_service.dart';
 
