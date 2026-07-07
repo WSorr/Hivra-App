@@ -1,33 +1,8 @@
 import 'dart:math' as math;
 
 import '../models/bingx_futures_exchange_models.dart';
+import '../models/bingx_futures_order_sizing_models.dart';
 import 'bingx_futures_exchange_service.dart';
-
-enum BingxFuturesOrderSizingStatus {
-  sized,
-  blocked,
-  unavailable,
-}
-
-class BingxFuturesOrderSizingResult {
-  final BingxFuturesOrderSizingStatus status;
-  final String reasonCode;
-  final String reasonMessage;
-  final String? quantityDecimal;
-  final String? orderNotionalQuoteDecimal;
-  final String? minimumQuantityDecimal;
-  final String? minimumNotionalQuoteDecimal;
-
-  const BingxFuturesOrderSizingResult({
-    required this.status,
-    required this.reasonCode,
-    required this.reasonMessage,
-    required this.quantityDecimal,
-    required this.orderNotionalQuoteDecimal,
-    required this.minimumQuantityDecimal,
-    required this.minimumNotionalQuoteDecimal,
-  });
-}
 
 class BingxFuturesOrderSizingService {
   final BingxFuturesExchangeService _exchange;

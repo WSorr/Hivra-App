@@ -228,6 +228,8 @@ require_absent "$TRADING_SCREEN" "services/bingx_futures_live_decision_service\\
   "trading drone screen imports live-decision DTOs from model boundary"
 require_absent "$TRADING_SCREEN" "services/bingx_futures_exchange_service\\.dart" \
   "trading drone screen imports exchange DTOs from model boundary"
+require_absent "$TRADING_SCREEN" "services/bingx_futures_order_sizing_service\\.dart" \
+  "trading drone screen imports order-sizing DTOs from model boundary"
 require_absent "$SCREENS" "services/capsule_chat_delivery_service\\.dart" \
   "screens import capsule chat DTOs from model boundary"
 require_absent "$SCREENS" "services/plugin_contract_handlers\\.dart" \
