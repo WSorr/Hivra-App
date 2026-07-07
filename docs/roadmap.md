@@ -886,7 +886,18 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Plugin contract IDs/method names now live in `models/plugin_contract_ids.dart`,
       so screens do not import plugin contract handler implementations just to
       address plugin host requests.
-  - Status: pending.
+  - Remaining follow-up:
+    - `TradingDroneScreen` still imports trading service files for live
+      decision, exchange, sizing, risk, replacement, and signal-rank DTO/result
+      types. Do not bulk-move these into a god model; split them by stable
+      domain boundary only when each group has a clear owner and regression
+      coverage.
+    - Plugin host API DTOs still live beside `PluginHostApiService` because
+      they depend on consensus DTOs that currently live beside
+      `ConsensusProcessor`; extract that as a separate consensus/plugin-host
+      model-boundary pass, not as part of this screen cleanup.
+  - Status: completed for screen-owned service-field cleanup and low-risk DTO
+    boundary extraction (2026-07-07).
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:
