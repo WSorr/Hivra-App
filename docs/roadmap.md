@@ -1664,6 +1664,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Moved shared diagnostics report presentation (header, findings, key/value
       sections, retry error state) into `widgets/ai_diagnostics/report_widgets.dart`;
       deterministic key sorting stays in the presentation boundary.
+    - Added an `AiToolingModule` aggregate so `CapsuleDoctorScreen` keeps one
+      AI tooling boundary instead of individual service fields for inspection,
+      chat, plugin audit, developer workspace, and engineer advisory paths.
     - Extended architecture contract gate so Capsule Diagnostics must keep using
       `AiToolingModuleService`, while `widgets/` cannot construct runtime/module
       service graphs.

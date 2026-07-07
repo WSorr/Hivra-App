@@ -36,28 +36,19 @@ class CapsuleDoctorScreen extends StatefulWidget {
 }
 
 class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
-  late final AiCapsuleInspectionService _service;
-  late final AiDoctorChatService _chatService;
-  late final AiPluginAuditService _pluginAuditService;
-  late final AiDeveloperWorkspaceService _developerWorkspaceService;
-  late final AiDeveloperEngineerService _developerEngineerService;
+  late final AiToolingModule _aiTooling;
   Future<AiCapsuleInspectionReport>? _reportFuture;
 
   @override
   void initState() {
     super.initState();
-    final aiTooling = AiToolingModuleService(runtime: widget.runtime);
-    _service = aiTooling.buildCapsuleInspectionService();
-    _chatService = aiTooling.buildCapsuleAnalystChatService();
-    _pluginAuditService = aiTooling.buildPluginAuditService();
-    _developerWorkspaceService = aiTooling.buildDeveloperWorkspaceService();
-    _developerEngineerService = aiTooling.buildDeveloperEngineerService();
-    _reportFuture = _service.inspect();
+    _aiTooling = AiToolingModuleService(runtime: widget.runtime).buildModule();
+    _reportFuture = _aiTooling.capsuleInspection.inspect();
   }
 
   void _refresh() {
     setState(() {
-      _reportFuture = _service.inspect();
+      _reportFuture = _aiTooling.capsuleInspection.inspect();
     });
   }
 
@@ -105,10 +96,10 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
           }
           return _ReportView(
             report: report,
-            chatService: _chatService,
-            pluginAuditService: _pluginAuditService,
-            developerWorkspaceService: _developerWorkspaceService,
-            developerEngineerService: _developerEngineerService,
+            chatService: _aiTooling.capsuleAnalystChat,
+            pluginAuditService: _aiTooling.pluginAudit,
+            developerWorkspaceService: _aiTooling.developerWorkspace,
+            developerEngineerService: _aiTooling.developerEngineer,
             onCopySnapshot: () => _copySnapshot(report),
           );
         },
@@ -244,11 +235,13 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
 
   Future<void> _saveProviderSettings() async {
     await _run(() async {
-      if (_provider.requiresApiKey || _apiKeyController.text.trim().isNotEmpty) {
+      if (_provider.requiresApiKey ||
+          _apiKeyController.text.trim().isNotEmpty) {
         await widget.chatService.saveApiKey(_provider, _apiKeyController.text);
       }
       if (_provider == InferenceProviderKind.localOpenAiCompatible) {
-        await widget.chatService.saveBaseUrl(_provider, _baseUrlController.text);
+        await widget.chatService
+            .saveBaseUrl(_provider, _baseUrlController.text);
       }
       await _uiLog.log(
         'ai_capsule_analyst',
@@ -410,8 +403,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                         _modelController.text = provider.defaultModel;
                         if (provider ==
                             InferenceProviderKind.localOpenAiCompatible) {
-                          _baseUrlController.text =
-                              'http://127.0.0.1:11434';
+                          _baseUrlController.text = 'http://127.0.0.1:11434';
                         }
                         _error = null;
                       });

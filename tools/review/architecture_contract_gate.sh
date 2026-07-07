@@ -229,6 +229,8 @@ require_absent "$WASM_RUNTIME_SERVICE" "plugin_host_api_service\\.dart" \
   "wasm runtime service imports plugin host API DTOs from model boundary"
 require_present "$CAPSULE_DOCTOR_SCREEN" 'AiToolingModuleService\(runtime: widget\.runtime\)' \
   "capsule diagnostics screen uses AI tooling module boundary"
+require_absent "$CAPSULE_DOCTOR_SCREEN" 'late final [A-Za-z0-9_]+Service |build[A-Za-z0-9_]*Service\(' \
+  "capsule diagnostics screen does not keep individual service fields"
 require_absent "$WIDGETS" 'AiToolingModuleService|AppRuntimeService|build[A-Za-z0-9_]*Service\(' \
   "widgets do not construct runtime/module service graphs"
 

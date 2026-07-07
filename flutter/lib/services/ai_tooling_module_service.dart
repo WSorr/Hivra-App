@@ -17,6 +17,20 @@ class AiToolingModuleService {
     required AppRuntimeService runtime,
   }) : _runtime = runtime;
 
+  AiToolingModule buildModule() {
+    return AiToolingModule(
+      capsuleInspection: buildCapsuleInspectionService(),
+      capsuleAnalystChat: buildCapsuleAnalystChatService(),
+      pluginAudit: buildPluginAuditService(),
+      developerWorkspace: buildDeveloperWorkspaceService(),
+      developerEngineer: buildDeveloperEngineerService(),
+      remoteRepositoryCache: buildDeveloperRemoteRepositoryCacheService(),
+      pluginScaffoldDraft: buildPluginScaffoldDraftService(),
+      patchProposal: buildPatchProposalService(),
+      reviewGateIntegration: buildReviewGateIntegrationService(),
+    );
+  }
+
   AiCapsuleInspectionService buildCapsuleInspectionService() {
     return AiCapsuleInspectionService(
       ledgerView: _runtime.ledgerView,
@@ -62,4 +76,28 @@ class AiToolingModuleService {
   AiReviewGateIntegrationService buildReviewGateIntegrationService() {
     return const AiReviewGateIntegrationService();
   }
+}
+
+class AiToolingModule {
+  final AiCapsuleInspectionService capsuleInspection;
+  final AiDoctorChatService capsuleAnalystChat;
+  final AiPluginAuditService pluginAudit;
+  final AiDeveloperWorkspaceService developerWorkspace;
+  final AiDeveloperEngineerService developerEngineer;
+  final AiDeveloperRemoteRepositoryCacheService remoteRepositoryCache;
+  final AiPluginScaffoldDraftService pluginScaffoldDraft;
+  final AiPatchProposalService patchProposal;
+  final AiReviewGateIntegrationService reviewGateIntegration;
+
+  const AiToolingModule({
+    required this.capsuleInspection,
+    required this.capsuleAnalystChat,
+    required this.pluginAudit,
+    required this.developerWorkspace,
+    required this.developerEngineer,
+    required this.remoteRepositoryCache,
+    required this.pluginScaffoldDraft,
+    required this.patchProposal,
+    required this.reviewGateIntegration,
+  });
 }
