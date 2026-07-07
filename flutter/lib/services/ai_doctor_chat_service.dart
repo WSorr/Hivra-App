@@ -44,6 +44,17 @@ class AiDoctorChatService {
     return _credentialStore.clearApiKey(provider);
   }
 
+  Future<void> saveBaseUrl(
+    InferenceProviderKind provider,
+    String baseUrl,
+  ) {
+    return _credentialStore.saveBaseUrl(provider, baseUrl);
+  }
+
+  Future<void> clearBaseUrl(InferenceProviderKind provider) {
+    return _credentialStore.clearBaseUrl(provider);
+  }
+
   Future<void> saveOpenAiApiKey(String apiKey) {
     return saveApiKey(InferenceProviderKind.openAi, apiKey);
   }
@@ -74,8 +85,13 @@ class AiDoctorChatService {
     InferenceProviderKind provider = InferenceProviderKind.openAi,
   }) async {
     final apiKey = await _credentialStore.loadApiKey(provider);
-    if (apiKey == null || apiKey.trim().isEmpty) {
+    if (provider.requiresApiKey && (apiKey == null || apiKey.trim().isEmpty)) {
       throw StateError('${provider.label} API key is not saved');
+    }
+    final baseUrl = await _credentialStore.loadBaseUrl(provider);
+    if (provider == InferenceProviderKind.localOpenAiCompatible &&
+        (baseUrl == null || baseUrl.trim().isEmpty)) {
+      throw StateError('${provider.label} base URL is not saved');
     }
     final prompt = _promptService.buildPrompt(
       snapshot: snapshot,
@@ -83,9 +99,10 @@ class AiDoctorChatService {
       sections: sections,
     );
     final response = await _providerAdapterFactory(provider).ask(
-      apiKey: apiKey,
+      apiKey: apiKey ?? '',
       model: model.trim().isEmpty ? provider.defaultModel : model,
       prompt: prompt,
+      baseUrl: baseUrl,
     );
     return AiDoctorChatResult(
       preview: prompt.preview,

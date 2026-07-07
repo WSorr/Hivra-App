@@ -1526,8 +1526,8 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - split `CapsuleDoctorScreen` into presentation cards/widgets after
       service boundaries stabilize; widgets must not construct feature service
       graphs.
-    - add a future `localOpenAiCompatible` inference provider option with
-      explicit `baseUrl`, model, timeout, and no secrets in logs.
+    - add a `localOpenAiCompatible` inference provider option with explicit
+      `baseUrl`, model, timeout, and no secrets in logs.
     - defer physical `flutter/lib/services` directory moves until module
       facades are stable, to avoid churn without stronger boundaries.
   - Constraints:
@@ -1545,6 +1545,12 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `AiToolingModuleService` remains the AI Capsule Analyst/Hivra Engineer
       construction boundary; no AI/provider/trading policy was moved into
       Core.
+    - Added `localOpenAiCompatible` inference provider support:
+      - local provider uses explicit secure-stored `baseUrl`,
+      - API key is optional for local runtimes,
+      - provider calls target OpenAI-compatible `/v1/chat/completions`,
+      - UI/log output records provider id/model only, not endpoint secrets or
+        key material.
   - Verification:
     - `tools/review/review_all.sh`
     - `flutter analyze`

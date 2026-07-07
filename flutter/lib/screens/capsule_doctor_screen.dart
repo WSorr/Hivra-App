@@ -323,6 +323,9 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
   static const UiEventLogService _uiLog = UiEventLogService();
 
   final TextEditingController _apiKeyController = TextEditingController();
+  final TextEditingController _baseUrlController = TextEditingController(
+    text: 'http://127.0.0.1:11434',
+  );
   final TextEditingController _modelController =
       TextEditingController(text: AiDoctorChatService.defaultModel);
   final TextEditingController _queryController = TextEditingController(
@@ -340,32 +343,39 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
   @override
   void dispose() {
     _apiKeyController.dispose();
+    _baseUrlController.dispose();
     _modelController.dispose();
     _queryController.dispose();
     super.dispose();
   }
 
-  Future<void> _saveKey() async {
+  Future<void> _saveProviderSettings() async {
     await _run(() async {
-      await widget.chatService.saveApiKey(_provider, _apiKeyController.text);
+      if (_provider.requiresApiKey || _apiKeyController.text.trim().isNotEmpty) {
+        await widget.chatService.saveApiKey(_provider, _apiKeyController.text);
+      }
+      if (_provider == InferenceProviderKind.localOpenAiCompatible) {
+        await widget.chatService.saveBaseUrl(_provider, _baseUrlController.text);
+      }
       await _uiLog.log(
         'ai_capsule_analyst',
-        'key_saved provider=${_provider.id}',
+        'provider_settings_saved provider=${_provider.id}',
       );
       _apiKeyController.clear();
-      _showSnack('${_provider.label} key saved in secure storage');
+      _showSnack('${_provider.label} settings saved in secure storage');
     });
   }
 
-  Future<void> _clearKey() async {
+  Future<void> _clearProviderSettings() async {
     await _run(() async {
       await widget.chatService.clearApiKey(_provider);
+      await widget.chatService.clearBaseUrl(_provider);
       await _uiLog.log(
         'ai_capsule_analyst',
-        'key_cleared provider=${_provider.id}',
+        'provider_settings_cleared provider=${_provider.id}',
       );
       _apiKeyController.clear();
-      _showSnack('${_provider.label} key cleared');
+      _showSnack('${_provider.label} settings cleared');
     });
   }
 
@@ -505,16 +515,35 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                       setState(() {
                         _provider = provider;
                         _modelController.text = provider.defaultModel;
+                        if (provider ==
+                            InferenceProviderKind.localOpenAiCompatible) {
+                          _baseUrlController.text =
+                              'http://127.0.0.1:11434';
+                        }
                         _error = null;
                       });
                     },
             ),
             const SizedBox(height: 12),
+            if (_provider == InferenceProviderKind.localOpenAiCompatible) ...[
+              TextField(
+                controller: _baseUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'Local OpenAI-compatible base URL',
+                  helperText:
+                      'Example: http://127.0.0.1:11434. The app calls /v1/chat/completions.',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             TextField(
               controller: _apiKeyController,
-              obscureText: true,
+              obscureText: _provider.requiresApiKey,
               decoration: InputDecoration(
-                labelText: '${_provider.label} API key',
+                labelText: _provider.requiresApiKey
+                    ? '${_provider.label} API key'
+                    : '${_provider.label} optional API key',
                 helperText: 'Stored only in secure storage. '
                     'Provider keys are isolated.',
                 border: OutlineInputBorder(),
@@ -526,14 +555,14 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
               runSpacing: 8,
               children: [
                 FilledButton.icon(
-                  onPressed: _busy ? null : _saveKey,
+                  onPressed: _busy ? null : _saveProviderSettings,
                   icon: const Icon(Icons.key),
-                  label: const Text('Save key'),
+                  label: const Text('Save provider settings'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: _busy ? null : _clearKey,
+                  onPressed: _busy ? null : _clearProviderSettings,
                   icon: const Icon(Icons.delete_outline),
-                  label: const Text('Clear key'),
+                  label: const Text('Clear provider settings'),
                 ),
               ],
             ),

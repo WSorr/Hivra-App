@@ -72,8 +72,13 @@ class AiDeveloperEngineerService {
     InferenceProviderKind provider = InferenceProviderKind.openAi,
   }) async {
     final apiKey = await _credentialStore.loadApiKey(provider);
-    if (apiKey == null || apiKey.trim().isEmpty) {
+    if (provider.requiresApiKey && (apiKey == null || apiKey.trim().isEmpty)) {
       throw StateError('${provider.label} API key is not saved');
+    }
+    final baseUrl = await _credentialStore.loadBaseUrl(provider);
+    if (provider == InferenceProviderKind.localOpenAiCompatible &&
+        (baseUrl == null || baseUrl.trim().isEmpty)) {
+      throw StateError('${provider.label} base URL is not saved');
     }
     final prompt = _buildPrompt(
       snapshot: snapshot,
@@ -92,9 +97,10 @@ class AiDeveloperEngineerService {
       ),
     );
     final response = await _providerAdapterFactory(provider).ask(
-      apiKey: apiKey,
+      apiKey: apiKey ?? '',
       model: model.trim().isEmpty ? provider.defaultModel : model,
       prompt: wrapped,
+      baseUrl: baseUrl,
     );
     return AiDeveloperEngineerResult(
       preview: prompt.preview,

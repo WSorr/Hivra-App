@@ -97,6 +97,10 @@ void main() {
 
       await store.saveApiKey(InferenceProviderKind.openAi, 'sk-openai');
       await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+      await store.saveBaseUrl(
+        InferenceProviderKind.localOpenAiCompatible,
+        ' http://127.0.0.1:11434 ',
+      );
 
       expect(
         await store.loadApiKey(InferenceProviderKind.openAi),
@@ -106,7 +110,11 @@ void main() {
         await store.loadApiKey(InferenceProviderKind.gemini),
         'gemini-key',
       );
-      expect(secureStorage.values.length, 2);
+      expect(
+        await store.loadBaseUrl(InferenceProviderKind.localOpenAiCompatible),
+        'http://127.0.0.1:11434',
+      );
+      expect(secureStorage.values.length, 3);
     });
 
     test('fails closed when secure storage is unavailable', () async {

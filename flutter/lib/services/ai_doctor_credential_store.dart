@@ -6,6 +6,10 @@ import 'inference_provider_adapter.dart';
 class AiDoctorCredentialStore {
   static const String _openAiApiKeyKey = 'hivra.ai_doctor.openai.api_key.v1';
   static const String _geminiApiKeyKey = 'hivra.ai_doctor.gemini.api_key.v1';
+  static const String _localOpenAiApiKeyKey =
+      'hivra.ai_doctor.local_openai.api_key.v1';
+  static const String _localOpenAiBaseUrlKey =
+      'hivra.ai_doctor.local_openai.base_url.v1';
 
   final FlutterSecureStorage _secureStorage;
   final Map<InferenceProviderKind, String> _sessionApiKeys =
@@ -76,6 +80,57 @@ class AiDoctorCredentialStore {
     }
   }
 
+  Future<void> saveBaseUrl(
+    InferenceProviderKind provider,
+    String baseUrl,
+  ) async {
+    final normalized = baseUrl.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError('${provider.label} base URL is empty');
+    }
+    final key = _baseUrlKeyForProvider(provider);
+    if (key == null) {
+      throw ArgumentError('${provider.label} does not support base URL');
+    }
+    try {
+      await _secureStorage.write(
+        key: key,
+        value: normalized,
+      );
+      final stored = await _secureStorage.read(key: key);
+      if (stored != normalized) {
+        throw StateError('${provider.label} base URL read-back mismatch');
+      }
+    } catch (error) {
+      throw StateError('Secure AI endpoint storage is unavailable: $error');
+    }
+  }
+
+  Future<String?> loadBaseUrl(InferenceProviderKind provider) async {
+    final key = _baseUrlKeyForProvider(provider);
+    if (key == null) return null;
+    try {
+      final stored = await _secureStorage.read(key: key);
+      final normalized = stored?.trim();
+      if (normalized == null || normalized.isEmpty) {
+        return null;
+      }
+      return normalized;
+    } catch (error) {
+      throw StateError('Secure AI endpoint storage is unavailable: $error');
+    }
+  }
+
+  Future<void> clearBaseUrl(InferenceProviderKind provider) async {
+    final key = _baseUrlKeyForProvider(provider);
+    if (key == null) return;
+    try {
+      await _secureStorage.delete(key: key);
+    } catch (error) {
+      throw StateError('Secure AI endpoint cleanup failed: $error');
+    }
+  }
+
   Future<void> saveOpenAiApiKey(String apiKey) {
     return saveApiKey(InferenceProviderKind.openAi, apiKey);
   }
@@ -92,6 +147,15 @@ class AiDoctorCredentialStore {
     return switch (provider) {
       InferenceProviderKind.openAi => _openAiApiKeyKey,
       InferenceProviderKind.gemini => _geminiApiKeyKey,
+      InferenceProviderKind.localOpenAiCompatible => _localOpenAiApiKeyKey,
+    };
+  }
+
+  static String? _baseUrlKeyForProvider(InferenceProviderKind provider) {
+    return switch (provider) {
+      InferenceProviderKind.openAi => null,
+      InferenceProviderKind.gemini => null,
+      InferenceProviderKind.localOpenAiCompatible => _localOpenAiBaseUrlKey,
     };
   }
 }

@@ -83,5 +83,22 @@ void main() {
 
       expect(text, 'Gemini finding.');
     });
+
+    test('extracts local OpenAI-compatible chat text', () {
+      final text =
+          LocalOpenAiCompatibleInferenceProviderAdapter.extractOutputText(
+        <String, dynamic>{
+          'choices': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'message': <String, dynamic>{
+                'content': 'Local model finding.',
+              },
+            },
+          ],
+        },
+      );
+
+      expect(text, 'Local model finding.');
+    });
   });
 }

@@ -44,6 +44,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
 
 class _FakeProvider implements AiDoctorProviderAdapter {
   AiDoctorPrompt? lastPrompt;
+  String? lastBaseUrl;
   int callCount = 0;
 
   @override
@@ -54,9 +55,11 @@ class _FakeProvider implements AiDoctorProviderAdapter {
     required String apiKey,
     required String model,
     required AiDoctorPrompt prompt,
+    String? baseUrl,
   }) async {
     callCount++;
     lastPrompt = prompt;
+    lastBaseUrl = baseUrl;
     return AiDoctorProviderResponse(
       text: 'Finding: inspect invitation projection tests.',
       model: model,
@@ -78,6 +81,7 @@ class _ThrowingProvider implements AiDoctorProviderAdapter {
     required String apiKey,
     required String model,
     required AiDoctorPrompt prompt,
+    String? baseUrl,
   }) async {
     throw error;
   }
@@ -139,6 +143,44 @@ void main() {
         throwsA(isA<StateError>()),
       );
       expect(provider.callCount, 0);
+    });
+
+    test('local OpenAI-compatible provider requires base URL, not API key',
+        () async {
+      final secureStorage = _FakeSecureStorage();
+      final credentialStore =
+          AiDoctorCredentialStore(secureStorage: secureStorage);
+      final provider = _FakeProvider();
+      final service = AiDeveloperEngineerService(
+        credentialStore: credentialStore,
+        providerAdapter: provider,
+      );
+
+      await expectLater(
+        service.ask(
+          snapshot: _snapshot(),
+          selectedContext: _selectedContext(),
+          question: 'check',
+          provider: InferenceProviderKind.localOpenAiCompatible,
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(provider.callCount, 0);
+
+      await credentialStore.saveBaseUrl(
+        InferenceProviderKind.localOpenAiCompatible,
+        'http://127.0.0.1:11434',
+      );
+      final result = await service.ask(
+        snapshot: _snapshot(),
+        selectedContext: _selectedContext(),
+        question: 'check',
+        provider: InferenceProviderKind.localOpenAiCompatible,
+      );
+
+      expect(result.providerResponse.text, contains('Finding'));
+      expect(provider.callCount, 1);
+      expect(provider.lastBaseUrl, 'http://127.0.0.1:11434');
     });
 
     test('rejects empty selected context', () {

@@ -16,16 +16,25 @@ enum InferenceProviderKind {
     id: 'gemini',
     label: 'Gemini',
     defaultModel: 'gemini-2.5-flash',
+    requiresApiKey: true,
+  ),
+  localOpenAiCompatible(
+    id: 'local_openai_compatible',
+    label: 'Local OpenAI-compatible',
+    defaultModel: 'llama3.1:8b',
+    requiresApiKey: false,
   );
 
   final String id;
   final String label;
   final String defaultModel;
+  final bool requiresApiKey;
 
   const InferenceProviderKind({
     required this.id,
     required this.label,
     required this.defaultModel,
+    this.requiresApiKey = true,
   });
 }
 
@@ -48,6 +57,7 @@ abstract class InferenceProviderAdapter {
     required String apiKey,
     required String model,
     required AiDoctorPrompt prompt,
+    String? baseUrl,
   });
 }
 
@@ -72,6 +82,7 @@ class OpenAiResponsesInferenceProviderAdapter
     required String apiKey,
     required String model,
     required AiDoctorPrompt prompt,
+    String? baseUrl,
   }) async {
     final normalizedKey = apiKey.trim();
     final normalizedModel = model.trim();
@@ -178,6 +189,7 @@ class GeminiGenerateContentInferenceProviderAdapter
     required String apiKey,
     required String model,
     required AiDoctorPrompt prompt,
+    String? baseUrl,
   }) async {
     final normalizedKey = apiKey.trim();
     final normalizedModel = model.trim();
@@ -264,6 +276,121 @@ class GeminiGenerateContentInferenceProviderAdapter
   }
 }
 
+class LocalOpenAiCompatibleInferenceProviderAdapter
+    implements InferenceProviderAdapter {
+  final Duration timeout;
+  final InferenceHttpClientFactory _clientFactory;
+
+  LocalOpenAiCompatibleInferenceProviderAdapter({
+    this.timeout = const Duration(seconds: 60),
+    InferenceHttpClientFactory? clientFactory,
+  }) : _clientFactory = clientFactory ?? HttpClient.new;
+
+  @override
+  InferenceProviderKind get provider =>
+      InferenceProviderKind.localOpenAiCompatible;
+
+  @override
+  Future<InferenceProviderResponse> ask({
+    required String apiKey,
+    required String model,
+    required AiDoctorPrompt prompt,
+    String? baseUrl,
+  }) async {
+    final normalizedModel = model.trim();
+    if (normalizedModel.isEmpty) {
+      throw ArgumentError('Local OpenAI-compatible model is empty');
+    }
+    final endpoint = _chatCompletionsEndpoint(baseUrl);
+    final client = _clientFactory();
+    try {
+      final request = await client.postUrl(endpoint).timeout(timeout);
+      request.headers.contentType = ContentType.json;
+      final normalizedKey = apiKey.trim();
+      if (normalizedKey.isNotEmpty) {
+        request.headers
+            .set(HttpHeaders.authorizationHeader, 'Bearer $normalizedKey');
+      }
+      request.write(jsonEncode(<String, dynamic>{
+        'model': normalizedModel,
+        'messages': <Map<String, String>>[
+          <String, String>{
+            'role': 'system',
+            'content': prompt.instructions,
+          },
+          <String, String>{
+            'role': 'user',
+            'content': prompt.inputJson,
+          },
+        ],
+        'stream': false,
+      }));
+      final response = await request.close().timeout(timeout);
+      final body = await utf8.decodeStream(response).timeout(timeout);
+      final decoded = jsonDecode(body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final message = _providerErrorMessage(decoded) ??
+            'HTTP ${response.statusCode}';
+        throw StateError('AI provider request failed: $message');
+      }
+      final text = extractOutputText(decoded);
+      if (text == null || text.trim().isEmpty) {
+        throw StateError('AI provider returned no text output');
+      }
+      return InferenceProviderResponse(
+        text: text.trim(),
+        model: normalizedModel,
+        provider: provider,
+      );
+    } on TimeoutException {
+      throw StateError('AI provider request timed out');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static Uri _chatCompletionsEndpoint(String? baseUrl) {
+    final normalized = baseUrl?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      throw ArgumentError('Local OpenAI-compatible base URL is empty');
+    }
+    final base = Uri.tryParse(normalized);
+    if (base == null || !base.hasScheme || base.host.isEmpty) {
+      throw ArgumentError('Local OpenAI-compatible base URL is invalid');
+    }
+    if (base.scheme != 'http' && base.scheme != 'https') {
+      throw ArgumentError('Local OpenAI-compatible base URL must use HTTP(S)');
+    }
+    final cleanPath = base.path.endsWith('/')
+        ? base.path.substring(0, base.path.length - 1)
+        : base.path;
+    return base.replace(path: '$cleanPath/v1/chat/completions');
+  }
+
+  static String? extractOutputText(Object? decoded) {
+    if (decoded is! Map<String, dynamic>) return null;
+    final choices = decoded['choices'];
+    if (choices is! List || choices.isEmpty) return null;
+    final fragments = <String>[];
+    for (final choice in choices) {
+      if (choice is! Map<String, dynamic>) continue;
+      final message = choice['message'];
+      if (message is Map<String, dynamic>) {
+        final content = message['content'];
+        if (content is String && content.trim().isNotEmpty) {
+          fragments.add(content);
+        }
+      }
+      final text = choice['text'];
+      if (text is String && text.trim().isNotEmpty) {
+        fragments.add(text);
+      }
+    }
+    if (fragments.isEmpty) return null;
+    return fragments.join('\n').trim();
+  }
+}
+
 InferenceProviderAdapter inferenceProviderAdapterFor(
   InferenceProviderKind provider,
 ) {
@@ -271,6 +398,8 @@ InferenceProviderAdapter inferenceProviderAdapterFor(
     InferenceProviderKind.openAi => OpenAiResponsesInferenceProviderAdapter(),
     InferenceProviderKind.gemini =>
       GeminiGenerateContentInferenceProviderAdapter(),
+    InferenceProviderKind.localOpenAiCompatible =>
+      LocalOpenAiCompatibleInferenceProviderAdapter(),
   };
 }
 
