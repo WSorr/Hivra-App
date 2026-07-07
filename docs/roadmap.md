@@ -886,6 +886,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Plugin contract IDs/method names now live in `models/plugin_contract_ids.dart`,
       so screens do not import plugin contract handler implementations just to
       address plugin host requests.
+    - `InvitationsScreen` now keeps one `InvitationModule` reference for
+      invitation intents, relationship projection helpers, contact-card writes,
+      delivery formatting, and UI diagnostics instead of assembling those
+      service dependencies directly in the screen.
   - Remaining follow-up:
     - `TradingDroneScreen` still imports trading service files for live
       decision, exchange, sizing, risk, replacement, and signal-rank DTO/result

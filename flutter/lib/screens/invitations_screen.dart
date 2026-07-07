@@ -6,10 +6,8 @@ import 'dart:convert';
 import '../models/invitation.dart';
 import '../widgets/invitation_card.dart';
 import '../services/app_runtime_service.dart';
-import '../services/invitation_delivery_service.dart';
 import '../services/invitation_intent_handler.dart';
-import '../services/relationship_service.dart';
-import '../services/ui_event_log_service.dart';
+import '../services/invitation_module_service.dart';
 import '../services/ui_feedback_service.dart';
 import '../utils/hivra_id_format.dart';
 import '../utils/peer_identity_format.dart';
@@ -119,10 +117,7 @@ class InvitationsScreen extends StatefulWidget {
 }
 
 class _InvitationsScreenState extends State<InvitationsScreen> {
-  final InvitationDeliveryService _delivery = const InvitationDeliveryService();
-  final UiEventLogService _uiLog = const UiEventLogService();
-  late final InvitationIntentHandler _intents;
-  late final RelationshipService _relationships;
+  late final InvitationModule _module;
   List<Invitation> _invitations = [];
   bool _isFetchingDeliveries = false;
   String? _processingId;
@@ -140,8 +135,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   @override
   void initState() {
     super.initState();
-    _intents = widget.runtime.invitationIntents;
-    _relationships = widget.runtime.buildRelationshipService();
+    _module = InvitationModuleService(runtime: widget.runtime).build();
     _loadInvitations();
     unawaited(_fetchInvitationDeliveries(silent: true, quick: true));
   }
@@ -166,7 +160,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   Future<void> _loadInvitations() async {
     final capturedCapsuleHex = widget.activeCapsuleHex;
     final loadGeneration = ++_invitationLoadGeneration;
-    final invitations = _intents.loadInvitations(
+    final invitations = _module.intents.loadInvitations(
       capsuleHex: capturedCapsuleHex,
     );
     final peerRoots = await _loadPeerRootKeys(invitations);
@@ -207,7 +201,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   Future<Map<String, String>> _loadPeerRootKeys(
     List<Invitation> invitations,
   ) async {
-    return _relationships.loadPeerRootKeysForInvitations(invitations);
+    return _module.relationships.loadPeerRootKeysForInvitations(invitations);
   }
 
   String _peerTransportB64(Invitation invitation) => invitation.isIncoming
@@ -250,14 +244,14 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     final startedAt = DateTime.now();
     InvitationIntentResult? sendResult;
     try {
-      unawaited(_uiLog.log(
+      unawaited(_module.uiLog.log(
         'invitations.send.request',
         'slot=$slot peer=${HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(pubkey))}',
       ));
-      final preflight = await _intents.preflightSend(
+      final preflight = await _module.intents.preflightSend(
         capsuleHex: operationCapsuleHex,
       );
-      unawaited(_uiLog.log(
+      unawaited(_module.uiLog.log(
         'invitations.send.preflight',
         'slot=$slot relayHealthy=${preflight.relayHealthy} code=${preflight.code} message=${preflight.message}',
       ));
@@ -267,25 +261,25 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           source: 'invitations.send.preflight',
         );
       }
-      final result = await _intents.sendInvitation(
+      final result = await _module.intents.sendInvitation(
         pubkey,
         slot,
         capsuleHex: operationCapsuleHex,
       );
       sendResult = result;
-      unawaited(_uiLog.log(
+      unawaited(_module.uiLog.log(
         'invitations.send.result',
         'slot=$slot code=${result.code} message=${result.message}',
       ));
       if (!_isOperationForActiveCapsule(operationCapsuleHex)) {
-        unawaited(_uiLog.log(
+        unawaited(_module.uiLog.log(
           'invitations.send.stale_drop',
           'slot=$slot opCapsule=$operationCapsuleHex activeCapsule=${widget.activeCapsuleHex}',
         ));
         return result;
       }
       if (result.isSuccess) {
-        var projectedPending = _intents
+        var projectedPending = _module.intents
             .loadInvitations(capsuleHex: operationCapsuleHex)
             .where((invitation) =>
                 invitation.isOutgoing &&
@@ -293,15 +287,15 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                 invitation.starterSlot == slot &&
                 invitation.toPubkey == recipientTransportB64)
             .toList(growable: false);
-        unawaited(_uiLog.log(
+        unawaited(_module.uiLog.log(
           'invitations.send.ledger_projection',
           'slot=$slot pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
         ));
         if (projectedPending.isEmpty) {
-          final quickResult = await _intents.fetchInvitationsQuick(
+          final quickResult = await _module.intents.fetchInvitationsQuick(
             capsuleHex: operationCapsuleHex,
           );
-          projectedPending = _intents
+          projectedPending = _module.intents
               .loadInvitations(capsuleHex: operationCapsuleHex)
               .where((invitation) =>
                   invitation.isOutgoing &&
@@ -309,7 +303,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                   invitation.starterSlot == slot &&
                   invitation.toPubkey == recipientTransportB64)
               .toList(growable: false);
-          unawaited(_uiLog.log(
+          unawaited(_module.uiLog.log(
             'invitations.send.ledger_projection.retry',
             'slot=$slot quickFetchCode=${quickResult.code} pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
           ));
@@ -340,14 +334,15 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       return result;
     } catch (error, stackTrace) {
       final message = 'Failed to send invitation: $error';
-      unawaited(_uiLog.log('invitations.send.error', '$message\n$stackTrace'));
+      unawaited(
+          _module.uiLog.log('invitations.send.error', '$message\n$stackTrace'));
       if (mounted) {
         await _showUserMessage(message, source: 'invitations.send');
       }
       return InvitationIntentResult(code: -1, message: message);
     } finally {
       final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
-      unawaited(_uiLog.log(
+      unawaited(_module.uiLog.log(
         'invitations.send.finally',
         'slot=$slot elapsedMs=$elapsedMs resultCode=${sendResult?.code ?? 'none'} widgetMounted=$mounted',
       ));
@@ -372,10 +367,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     try {
       result = quick
-          ? await _intents.fetchInvitationsQuick(
+          ? await _module.intents.fetchInvitationsQuick(
               capsuleHex: operationCapsuleHex,
             )
-          : await _intents.fetchInvitations(
+          : await _module.intents.fetchInvitations(
               capsuleHex: operationCapsuleHex,
             );
     } finally {
@@ -386,7 +381,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     if (!mounted) return;
     if (!_isOperationForActiveCapsule(operationCapsuleHex)) {
-      unawaited(_uiLog.log(
+      unawaited(_module.uiLog.log(
         'invitations.fetch.stale_drop',
         'silent=$silent quick=$quick opCapsule=$operationCapsuleHex activeCapsule=${widget.activeCapsuleHex}',
       ));
@@ -399,7 +394,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       if (!silent || result.code > 0) {
         await _showUserMessage(result.message, source: 'invitations.fetch');
       } else {
-        unawaited(_uiLog.log('invitations.fetch.silent', result.message));
+        unawaited(
+            _module.uiLog.log('invitations.fetch.silent', result.message));
       }
       await _drainQueuedFetchRequestIfNeeded();
       return;
@@ -410,7 +406,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       await _drainQueuedFetchRequestIfNeeded();
       return;
     }
-    unawaited(_uiLog.log('invitations.fetch.silent.error', result.message));
+    unawaited(
+        _module.uiLog.log('invitations.fetch.silent.error', result.message));
     await _drainQueuedFetchRequestIfNeeded();
   }
 
@@ -437,13 +434,13 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         );
         processingReleased = true;
         await _showUserMessage(
-          _delivery.acceptFailureMessage(-1),
+          _module.delivery.acceptFailureMessage(-1),
           source: 'invitations.accept',
         );
         return;
       }
 
-      final result = await _intents.acceptInvitation(
+      final result = await _module.intents.acceptInvitation(
         invitationId,
         fromPubkey,
         capsuleHex: operationCapsuleHex,
@@ -481,20 +478,18 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       return;
     }
     try {
-      final saved = await widget.runtime
-          .buildCapsuleAddressService()
-          .upsertTrustedCardFromKeys(
-            rootPubkey: rootPubkey,
-            nostrPubkey: nostrPubkey,
-          );
+      final saved = await _module.addressBook.upsertTrustedCardFromKeys(
+        rootPubkey: rootPubkey,
+        nostrPubkey: nostrPubkey,
+      );
       if (saved) {
-        unawaited(_uiLog.log(
+        unawaited(_module.uiLog.log(
           'invitations.accept.contact_card_saved',
           'peerRoot=${HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(rootPubkey))}',
         ));
       }
     } catch (error) {
-      unawaited(_uiLog.log(
+      unawaited(_module.uiLog.log(
         'invitations.accept.contact_card_save_failed',
         '$error',
       ));
@@ -563,7 +558,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     if (!mounted) return;
 
     final rejectDiagnostics = _buildRejectDiagnostics(invitation);
-    unawaited(_uiLog.log('invitations.reject.plan', rejectDiagnostics));
+    unawaited(_module.uiLog.log('invitations.reject.plan', rejectDiagnostics));
 
     setState(() {
       _processingId = invitation.id;
@@ -576,17 +571,17 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     var processingReleased = false;
     try {
       unawaited(
-        _uiLog.log(
+        _module.uiLog.log(
           'invitations.reject.request',
           'invitationId=${invitation.id} from=${invitation.fromPubkey}',
         ),
       );
-      final result = await _intents.rejectInvitation(
+      final result = await _module.intents.rejectInvitation(
         invitation,
         capsuleHex: operationCapsuleHex,
       );
       unawaited(
-        _uiLog.log(
+        _module.uiLog.log(
           'invitations.reject.result',
           'code=${result.code} message=${result.message}',
         ),
@@ -606,7 +601,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       }
     } catch (error, stackTrace) {
       unawaited(
-        _uiLog.log(
+        _module.uiLog.log(
           'invitations.reject.error',
           '$error\n$stackTrace',
         ),
@@ -614,7 +609,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       rethrow;
     } finally {
       unawaited(
-        _uiLog.log(
+        _module.uiLog.log(
           'invitations.reject.finally',
           'processingReleased=$processingReleased retainLocallyResolved=$retainLocallyResolved',
         ),
@@ -708,7 +703,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     var processingReleased = false;
     try {
-      final result = await _intents.cancelInvitation(
+      final result = await _module.intents.cancelInvitation(
         invitation.id,
         capsuleHex: operationCapsuleHex,
       );
@@ -932,7 +927,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                             final selfNostrKey =
                                 widget.runtime.capsuleNostrPublicKey();
                             final resolution =
-                                await _delivery.resolveRecipientAddress(
+                                await _module.delivery.resolveRecipientAddress(
                               input,
                               selfRootKey: selfRootKey,
                               selfNostrKey: selfNostrKey,

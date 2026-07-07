@@ -57,6 +57,7 @@ SCREENS="$ROOT/flutter/lib/screens"
 TRADING_SCREEN="$SCREENS/trading_drone_screen.dart"
 WASM_PLUGINS_SCREEN="$SCREENS/wasm_plugins_screen.dart"
 CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
+INVITATIONS_SCREEN="$SCREENS/invitations_screen.dart"
 WIDGETS="$ROOT/flutter/lib/widgets"
 SERVICES="$ROOT/flutter/lib/services"
 INSPECTOR="$ROOT/flutter/lib/screens/ledger_inspector_screen.dart"
@@ -207,6 +208,8 @@ require_absent "$TRADING_SCREEN" 'buildBingx|buildPluginHostApiService|buildManu
   "trading drone screen uses module boundary instead of assembling service graph"
 require_absent "$WASM_PLUGINS_SCREEN" 'buildPluginHostApiService|buildManualConsensusCheckService|buildCapsuleChatDeliveryService|WasmPluginRegistryService\(|WasmPluginSourceCatalogService\(' \
   "wasm plugins screen uses module boundary instead of assembling service graph"
+require_absent "$INVITATIONS_SCREEN" 'buildRelationshipService|buildCapsuleAddressService|late final [A-Za-z0-9_]+Service ' \
+  "invitations screen uses module boundary instead of assembling service graph"
 require_absent "$TRADING_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
   "trading drone screen does not keep individual service fields"
 require_absent "$WASM_PLUGINS_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
