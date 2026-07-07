@@ -1574,4 +1574,4 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `flutter test`
     - `cargo test --workspace`
     - macOS release smoke for Capsule Diagnostics, plugins, chat, and trading drone.
-  - Status: in progress.
+  - Status: completed (2026-07-07).
