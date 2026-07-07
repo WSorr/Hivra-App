@@ -1551,6 +1551,10 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       - provider calls target OpenAI-compatible `/v1/chat/completions`,
       - UI/log output records provider id/model only, not endpoint secrets or
         key material.
+    - Started `CapsuleDoctorScreen` presentation split by moving reusable AI
+      outbound preview and status-message panels into
+      `widgets/ai_diagnostics_widgets.dart`; no service wiring or runtime
+      behavior moved into widgets.
   - Verification:
     - `tools/review/review_all.sh`
     - `flutter analyze`
