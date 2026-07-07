@@ -54,6 +54,8 @@ PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
 PLUGIN_CONTRACT_HANDLERS="$ROOT/flutter/lib/services/plugin_contract_handlers.dart"
 WASM_REGISTRY="$ROOT/flutter/lib/services/wasm_plugin_registry_service.dart"
 SCREENS="$ROOT/flutter/lib/screens"
+TRADING_SCREEN="$SCREENS/trading_drone_screen.dart"
+WASM_PLUGINS_SCREEN="$SCREENS/wasm_plugins_screen.dart"
 SERVICES="$ROOT/flutter/lib/services"
 INSPECTOR="$ROOT/flutter/lib/screens/ledger_inspector_screen.dart"
 PAIRWISE="$ROOT/flutter/lib/services/pairwise_snapshot_service.dart"
@@ -199,6 +201,10 @@ require_absent "$SCREENS" 'BingxFuturesLiveSnapshotBuilderService|BingxFuturesLi
   "screens do not orchestrate BingX snapshot and live decision pipeline"
 require_absent "$SCREENS" 'BingxFuturesRiskGovernorInput|_riskGovernor\.evaluate' \
   "screens do not construct or evaluate BingX risk governor inputs"
+require_absent "$TRADING_SCREEN" 'buildBingx|buildPluginHostApiService|buildManualConsensusCheckService|buildCapsuleChatDeliveryService' \
+  "trading drone screen uses module boundary instead of assembling service graph"
+require_absent "$WASM_PLUGINS_SCREEN" 'buildPluginHostApiService|buildManualConsensusCheckService|buildCapsuleChatDeliveryService|WasmPluginRegistryService\(|WasmPluginSourceCatalogService\(' \
+  "wasm plugins screen uses module boundary instead of assembling service graph"
 
 # 6) Projection discipline: shared kind mapping only.
 require_present "$SUPPORT" 'String kindLabel\(dynamic kind\)' \
