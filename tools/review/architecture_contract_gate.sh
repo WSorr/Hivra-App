@@ -58,6 +58,7 @@ TRADING_SCREEN="$SCREENS/trading_drone_screen.dart"
 WASM_PLUGINS_SCREEN="$SCREENS/wasm_plugins_screen.dart"
 CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
 INVITATIONS_SCREEN="$SCREENS/invitations_screen.dart"
+LEDGER_INSPECTOR_SCREEN="$SCREENS/ledger_inspector_screen.dart"
 WIDGETS="$ROOT/flutter/lib/widgets"
 SERVICES="$ROOT/flutter/lib/services"
 INSPECTOR="$ROOT/flutter/lib/screens/ledger_inspector_screen.dart"
@@ -234,6 +235,8 @@ require_present "$CAPSULE_DOCTOR_SCREEN" 'AiToolingModuleService\(runtime: widge
   "capsule diagnostics screen uses AI tooling module boundary"
 require_absent "$CAPSULE_DOCTOR_SCREEN" 'late final [A-Za-z0-9_]+Service |build[A-Za-z0-9_]*Service\(' \
   "capsule diagnostics screen does not keep individual service fields"
+require_absent "$LEDGER_INSPECTOR_SCREEN" 'build[A-Za-z0-9_]*Service\(' \
+  "ledger inspector screen uses module boundary instead of assembling service graph"
 require_absent "$WIDGETS" 'AiToolingModuleService|AppRuntimeService|build[A-Za-z0-9_]*Service\(' \
   "widgets do not construct runtime/module service graphs"
 

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../services/app_runtime_service.dart';
 import '../services/capsule_state_manager.dart';
+import '../services/ledger_inspector_module_service.dart';
 import '../services/ledger_view_support.dart';
 import '../services/manual_consensus_check_service.dart';
 import '../utils/hivra_id_format.dart';
@@ -22,7 +23,7 @@ class LedgerInspectorScreen extends StatefulWidget {
 }
 
 class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
-  late final CapsuleStateManager _stateManager;
+  late final LedgerInspectorModule _module;
 
   bool _isLoading = true;
   String? _error;
@@ -42,7 +43,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
   @override
   void initState() {
     super.initState();
-    _stateManager = widget.runtime.stateManager;
+    _module = LedgerInspectorModuleService(runtime: widget.runtime).build();
     _reload();
   }
 
@@ -53,17 +54,17 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
     });
 
     try {
-      _stateManager.refreshWithFullState();
-      final state = _stateManager.state;
+      _module.stateManager.refreshWithFullState();
+      final state = _module.stateManager.state;
       final ownerKey = state.publicKey.length == 32
           ? HivraIdFormat.formatCapsuleKeyBytes(state.publicKey)
           : 'No key';
-      final rootPubKey = widget.runtime.capsuleRootPublicKey();
+      final rootPubKey = _module.capsuleRootPublicKey();
       final rootDisplayKey = rootPubKey == null || rootPubKey.isEmpty
           ? ownerKey
           : HivraIdFormat.formatCapsuleKeyBytes(rootPubKey);
 
-      final raw = widget.runtime.exportLedger();
+      final raw = _module.exportLedger();
       if (raw == null || raw.trim().isEmpty) {
         setState(() {
           _capsuleState = state;
@@ -450,8 +451,7 @@ class _LedgerInspectorScreenState extends State<LedgerInspectorScreen> {
     });
 
     try {
-      final checks =
-          widget.runtime.buildManualConsensusCheckService().loadChecks();
+      final checks = _module.manualConsensusChecks.loadChecks();
       if (!mounted) return;
       setState(() {
         _consensusChecks = checks;

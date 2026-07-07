@@ -890,6 +890,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       invitation intents, relationship projection helpers, contact-card writes,
       delivery formatting, and UI diagnostics instead of assembling those
       service dependencies directly in the screen.
+    - `LedgerInspectorScreen` now keeps one `LedgerInspectorModule` reference
+      for state refresh, ledger export, root-key lookup, and manual consensus
+      checks instead of constructing service dependencies directly in the
+      inspector UI.
   - Remaining follow-up:
     - `TradingDroneScreen` still imports trading service files for live
       decision, exchange, sizing, risk, replacement, and signal-rank DTO/result
