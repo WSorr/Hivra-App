@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/services/consensus_processor.dart';
 import 'package:hivra_app/services/plugin_contract_handlers.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';

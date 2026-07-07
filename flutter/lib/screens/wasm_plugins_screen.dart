@@ -4,10 +4,10 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../models/capsule_chat_models.dart';
+import '../models/plugin_contract_ids.dart';
 import '../models/wasm_plugin_models.dart';
 import '../services/app_runtime_service.dart';
 import '../services/plugin_host_api_service.dart';
-import '../services/plugin_contract_handlers.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../utils/runtime_capability_display.dart';
 

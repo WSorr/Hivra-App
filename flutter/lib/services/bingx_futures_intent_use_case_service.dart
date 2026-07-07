@@ -1,6 +1,6 @@
+import '../models/plugin_contract_ids.dart';
 import 'bingx_futures_live_decision_service.dart';
 import 'bingx_futures_observability_envelope_service.dart';
-import 'plugin_contract_handlers.dart';
 import 'plugin_host_api_service.dart';
 
 class BingxFuturesIntentCommand {

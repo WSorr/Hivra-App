@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models/bingx_futures_order_tracking_models.dart';
 import '../models/capsule_chat_models.dart';
+import '../models/plugin_contract_ids.dart';
 import '../services/bingx_futures_live_decision_service.dart';
 import '../services/bingx_futures_intent_use_case_service.dart';
 import '../services/bingx_futures_live_strategy_use_case_service.dart';
@@ -15,7 +16,6 @@ import '../services/bingx_futures_order_replacement_service.dart';
 import '../services/bingx_futures_risk_governor_service.dart';
 import '../services/bingx_futures_signal_rank_use_case_service.dart';
 import '../services/plugin_host_api_service.dart';
-import '../services/plugin_contract_handlers.dart';
 import '../services/app_runtime_service.dart';
 import '../services/trading_drone_module_service.dart';
 

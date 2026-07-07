@@ -217,6 +217,8 @@ require_absent "$TRADING_SCREEN" "services/bingx_futures_order_tracking_store\\.
   "trading drone screen imports order-tracking DTOs from model boundary"
 require_absent "$SCREENS" "services/capsule_chat_delivery_service\\.dart" \
   "screens import capsule chat DTOs from model boundary"
+require_absent "$SCREENS" "services/plugin_contract_handlers\\.dart" \
+  "screens import plugin contract ids from model boundary"
 require_present "$CAPSULE_DOCTOR_SCREEN" 'AiToolingModuleService\(runtime: widget\.runtime\)' \
   "capsule diagnostics screen uses AI tooling module boundary"
 require_absent "$WIDGETS" 'AiToolingModuleService|AppRuntimeService|build[A-Za-z0-9_]*Service\(' \

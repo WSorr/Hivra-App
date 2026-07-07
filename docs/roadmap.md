@@ -883,6 +883,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Capsule chat/trade-signal inbox DTOs now live in
       `models/capsule_chat_models.dart`, so trading/plugin screens no longer
       import `CapsuleChatDeliveryService` just to render received messages.
+    - Plugin contract IDs/method names now live in `models/plugin_contract_ids.dart`,
+      so screens do not import plugin contract handler implementations just to
+      address plugin host requests.
   - Status: pending.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`

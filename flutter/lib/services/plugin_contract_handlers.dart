@@ -2,20 +2,10 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../models/plugin_contract_ids.dart';
 import 'consensus_processor.dart';
 import 'plugin_host_api_service.dart';
 import 'plugin_host_contract_handler.dart';
-
-const String bingxFuturesTradingPluginId =
-    'hivra.contract.bingx-futures-trading.v1';
-const String bingxFuturesContractKind = 'bingx_futures_order_intent';
-const String bingxFuturesSignalScanContractKind =
-    'bingx_futures_signal_scan_rank';
-const String placeBingxFuturesOrderIntentMethod =
-    'place_bingx_futures_order_intent';
-const String rankBingxFuturesSignalsMethod = 'rank_bingx_futures_signals';
-const String capsuleChatPluginId = 'hivra.contract.capsule-chat.v1';
-const String postCapsuleChatMethod = 'post_capsule_chat_message';
 
 typedef PluginConsensusSignableReader = ConsensusSignableResult Function(
   String peerHex,
