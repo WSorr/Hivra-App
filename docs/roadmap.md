@@ -1555,6 +1555,10 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       outbound preview and status-message panels into
       `widgets/ai_diagnostics_widgets.dart`; no service wiring or runtime
       behavior moved into widgets.
+    - Continued the screen split by moving Developer Workspace presentation
+      widgets (engineer preview, selected context, repo tile, quick-add panel)
+      into `widgets/ai_developer_workspace_widgets.dart`; widgets remain
+      projection-only and accept data/callbacks only.
   - Verification:
     - `tools/review/review_all.sh`
     - `flutter analyze`
