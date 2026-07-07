@@ -3,13 +3,12 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../models/wasm_plugin_models.dart';
 import '../services/app_runtime_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
 import '../services/plugin_host_api_service.dart';
 import '../services/plugin_contract_handlers.dart';
 import '../services/plugin_runtime_module_service.dart';
-import '../services/wasm_plugin_registry_service.dart';
-import '../services/wasm_plugin_source_catalog_service.dart';
 import '../utils/runtime_capability_display.dart';
 
 class WasmPluginsScreen extends StatefulWidget {

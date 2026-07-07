@@ -211,6 +211,8 @@ require_absent "$TRADING_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
   "trading drone screen does not keep individual service fields"
 require_absent "$WASM_PLUGINS_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
   "wasm plugins screen does not keep individual service fields"
+require_absent "$WASM_PLUGINS_SCREEN" "services/wasm_plugin_(registry|source_catalog)_service\\.dart" \
+  "wasm plugins screen imports plugin DTOs from model boundary"
 require_present "$CAPSULE_DOCTOR_SCREEN" 'AiToolingModuleService\(runtime: widget\.runtime\)' \
   "capsule diagnostics screen uses AI tooling module boundary"
 require_absent "$WIDGETS" 'AiToolingModuleService|AppRuntimeService|build[A-Za-z0-9_]*Service\(' \

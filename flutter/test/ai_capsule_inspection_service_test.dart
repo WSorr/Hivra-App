@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/services/ai_capsule_inspection_service.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
 import 'package:hivra_app/services/capsule_diagnostics_service.dart';

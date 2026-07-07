@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/services/ai_developer_workspace_service.dart';
 import 'package:hivra_app/services/ai_plugin_audit_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';

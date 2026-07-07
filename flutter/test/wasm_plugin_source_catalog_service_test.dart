@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hivra_app/models/wasm_plugin_models.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 import 'package:hivra_app/services/wasm_plugin_source_catalog_service.dart';

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import '../models/wasm_plugin_models.dart';
 import 'ai_developer_workspace_service.dart';
 import 'wasm_plugin_capability_policy_service.dart';
 import 'wasm_plugin_registry_service.dart';

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import '../ffi/app_runtime_runtime.dart';
+import '../models/wasm_plugin_models.dart';
 import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_order_tracking_store.dart';

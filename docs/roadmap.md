@@ -872,6 +872,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       screen-owned service surface while preserving runtime behavior.
     - `WasmPluginsScreen` now keeps one `PluginRuntimeModule` reference instead
       of separate registry/source-catalog/host/chat/log service fields.
+    - WASM plugin registry/source-catalog DTOs now live in
+      `models/wasm_plugin_models.dart`, so `WasmPluginsScreen` no longer imports
+      registry/source-catalog service implementations just to render plugin
+      projections.
   - Status: pending.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`

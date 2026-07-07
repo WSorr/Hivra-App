@@ -5,42 +5,9 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 
+import '../models/wasm_plugin_models.dart';
 import 'user_visible_data_directory_service.dart';
 import 'wasm_plugin_registry_service.dart';
-
-class WasmPluginSourceCatalogEntry {
-  final String id;
-  final String pluginId;
-  final String displayName;
-  final String version;
-  final String downloadUrl;
-  final String packageKind;
-  final String? sha256Hex;
-
-  const WasmPluginSourceCatalogEntry({
-    required this.id,
-    required this.pluginId,
-    required this.displayName,
-    required this.version,
-    required this.downloadUrl,
-    required this.packageKind,
-    required this.sha256Hex,
-  });
-}
-
-class WasmPluginSourceCatalog {
-  final String sourceId;
-  final String sourceName;
-  final String fetchedAtIso;
-  final List<WasmPluginSourceCatalogEntry> entries;
-
-  const WasmPluginSourceCatalog({
-    required this.sourceId,
-    required this.sourceName,
-    required this.fetchedAtIso,
-    required this.entries,
-  });
-}
 
 class WasmPluginSourceCatalogService {
   static const String defaultCatalogUrl =
