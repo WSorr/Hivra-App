@@ -866,6 +866,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - no trading decision logic moves into widgets or screens.
     - no plugin-source code moves into Hivra-App.
     - no Core/engine/platform dependency changes.
+  - Current progress:
+    - `TradingDroneScreen` now keeps one `TradingDroneModule` reference instead
+      of separate fields for every trading/plugin/chat/log service, reducing
+      screen-owned service surface while preserving runtime behavior.
+    - `WasmPluginsScreen` now keeps one `PluginRuntimeModule` reference instead
+      of separate registry/source-catalog/host/chat/log service fields.
   - Status: pending.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`

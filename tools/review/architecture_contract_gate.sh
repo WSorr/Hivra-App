@@ -207,6 +207,10 @@ require_absent "$TRADING_SCREEN" 'buildBingx|buildPluginHostApiService|buildManu
   "trading drone screen uses module boundary instead of assembling service graph"
 require_absent "$WASM_PLUGINS_SCREEN" 'buildPluginHostApiService|buildManualConsensusCheckService|buildCapsuleChatDeliveryService|WasmPluginRegistryService\(|WasmPluginSourceCatalogService\(' \
   "wasm plugins screen uses module boundary instead of assembling service graph"
+require_absent "$TRADING_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
+  "trading drone screen does not keep individual service fields"
+require_absent "$WASM_PLUGINS_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
+  "wasm plugins screen does not keep individual service fields"
 require_present "$CAPSULE_DOCTOR_SCREEN" 'AiToolingModuleService\(runtime: widget\.runtime\)' \
   "capsule diagnostics screen uses AI tooling module boundary"
 require_absent "$WIDGETS" 'AiToolingModuleService|AppRuntimeService|build[A-Za-z0-9_]*Service\(' \

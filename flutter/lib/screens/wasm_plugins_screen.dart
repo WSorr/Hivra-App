@@ -5,11 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../services/app_runtime_service.dart';
 import '../services/capsule_chat_delivery_service.dart';
-import '../services/manual_consensus_check_service.dart';
 import '../services/plugin_host_api_service.dart';
 import '../services/plugin_contract_handlers.dart';
 import '../services/plugin_runtime_module_service.dart';
-import '../services/ui_event_log_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
 import '../services/wasm_plugin_source_catalog_service.dart';
 import '../utils/runtime_capability_display.dart';
@@ -27,12 +25,7 @@ class WasmPluginsScreen extends StatefulWidget {
 }
 
 class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
-  late final WasmPluginRegistryService _registry;
-  late final WasmPluginSourceCatalogService _sourceCatalog;
-  late final ManualConsensusCheckService _manualChecks;
-  late final PluginHostApiService _pluginHostApi;
-  late final CapsuleChatDeliveryService _chatDelivery;
-  late final UiEventLogService _uiLog;
+  late final PluginRuntimeModule _module;
   final TextEditingController _chatPeerController = TextEditingController();
   final TextEditingController _chatMessageController =
       TextEditingController(text: 'hello from capsule chat');
@@ -79,15 +72,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   @override
   void initState() {
     super.initState();
-    final module = PluginRuntimeModuleService(
+    _module = PluginRuntimeModuleService(
       runtime: AppRuntimeService(),
     ).build();
-    _registry = module.registry;
-    _sourceCatalog = module.sourceCatalog;
-    _manualChecks = module.manualChecks;
-    _pluginHostApi = module.pluginHostApi;
-    _chatDelivery = module.chatDelivery;
-    _uiLog = module.uiLog;
     _reload();
     _reloadSourceCatalog();
   }
@@ -100,7 +87,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   }
 
   Future<void> _reload() async {
-    final installed = await _registry.loadPlugins();
+    final installed = await _module.registry.loadPlugins();
     if (!mounted) return;
     setState(() {
       _installed = installed;
@@ -113,10 +100,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       _loadingSourceCatalog = true;
       _sourceCatalogError = null;
     });
-    await _uiLog.log('plugin.source.catalog.refresh', 'start');
+    await _module.uiLog.log('plugin.source.catalog.refresh', 'start');
     try {
-      final catalog = await _sourceCatalog.fetchCatalogWithFallback();
-      await _uiLog.log(
+      final catalog = await _module.sourceCatalog.fetchCatalogWithFallback();
+      await _module.uiLog.log(
         'plugin.source.catalog.refresh',
         'success source=${catalog.sourceId} count=${catalog.entries.length}',
       );
@@ -125,7 +112,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         _sourceCatalogSnapshot = catalog;
       });
     } catch (error) {
-      await _uiLog.log('plugin.source.catalog.refresh', 'error=$error');
+      await _module.uiLog.log('plugin.source.catalog.refresh', 'error=$error');
       if (!mounted) return;
       setState(() {
         _sourceCatalogError = error.toString();
@@ -149,7 +136,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       ],
     );
     if (file == null) return;
-    await _uiLog.log(
+    await _module.uiLog.log(
       'plugin.install.pick',
       'path=${file.path} name=${file.name} mime=${file.mimeType ?? "-"}',
     );
@@ -164,8 +151,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       final safeName = _safePluginImportFileName(file.name, file.path);
       final source = File('${tempDir.path}/$safeName');
       await source.writeAsBytes(await file.readAsBytes(), flush: true);
-      final record = await _registry.installPluginFromFile(source);
-      await _uiLog.log(
+      final record = await _module.registry.installPluginFromFile(source);
+      await _module.uiLog.log(
         'plugin.install.success',
         'id=${record.id} plugin=${record.pluginId ?? "-"} '
             'version=${record.pluginVersion ?? "-"} kind=${record.packageKind} '
@@ -177,13 +164,14 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         SnackBar(content: Text('Installed ${record.displayName}')),
       );
     } on FormatException catch (error) {
-      await _uiLog.log('plugin.install.error', 'format=${error.message}');
+      await _module.uiLog
+          .log('plugin.install.error', 'format=${error.message}');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error.message)),
       );
     } catch (error) {
-      await _uiLog.log('plugin.install.error', 'exception=$error');
+      await _module.uiLog.log('plugin.install.error', 'exception=$error');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to install plugin package: $error')),
@@ -232,7 +220,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         false;
     if (!confirmed) return;
 
-    await _registry.removePlugin(record.id);
+    await _module.registry.removePlugin(record.id);
     await _reload();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -242,7 +230,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
   Future<void> _installFromSource(WasmPluginSourceCatalogEntry entry) async {
     if (_installingSourceEntryIds.contains(entry.id)) return;
-    await _uiLog.log(
+    await _module.uiLog.log(
       'plugin.source.install.start',
       'id=${entry.id} plugin=${entry.pluginId} version=${entry.version}',
     );
@@ -254,8 +242,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     });
 
     try {
-      final record = await _sourceCatalog.installFromSourceEntry(entry);
-      await _uiLog.log(
+      final record = await _module.sourceCatalog.installFromSourceEntry(entry);
+      await _module.uiLog.log(
         'plugin.source.install.success',
         'id=${entry.id} plugin=${record.pluginId ?? "-"} '
             'version=${record.pluginVersion ?? "-"} kind=${record.packageKind}',
@@ -271,7 +259,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         ),
       );
     } on FormatException catch (error) {
-      await _uiLog.log(
+      await _module.uiLog.log(
         'plugin.source.install.error',
         'id=${entry.id} format=${error.message}',
       );
@@ -285,7 +273,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         ),
       );
     } catch (error) {
-      await _uiLog.log(
+      await _module.uiLog.log(
         'plugin.source.install.error',
         'id=${entry.id} exception=$error',
       );
@@ -314,7 +302,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   Future<String?> _selectConsensusPeer({
     required String hint,
   }) async {
-    final checks = _manualChecks.loadChecks();
+    final checks = _module.manualChecks.loadChecks();
     if (checks.isEmpty) {
       if (!mounted) return null;
       final messenger = ScaffoldMessenger.of(context);
@@ -408,11 +396,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     });
 
     try {
-      await _uiLog.log(
+      await _module.uiLog.log(
         'chat.send.request',
         'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} fullPeer=$peerHex textBytes=${messageText.length}',
       );
-      final response = await _pluginHostApi.executeWithRuntimeHook(
+      final response = await _module.pluginHostApi.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: PluginHostApiService.schemaVersion,
           pluginId: capsuleChatPluginId,
@@ -440,12 +428,12 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               : envelopeHash;
           final canonicalEnvelopeJson =
               response.result?['canonical_envelope_json']?.toString() ?? '';
-          final sendResult = await _chatDelivery.sendCanonicalEnvelope(
+          final sendResult = await _module.chatDelivery.sendCanonicalEnvelope(
             peerHex: peerHex,
             canonicalEnvelopeJson: canonicalEnvelopeJson,
           );
           if (!sendResult.isSuccess) {
-            await _uiLog.log(
+            await _module.uiLog.log(
               'chat.send.transport.error',
               'code=${sendResult.code} blocked=${sendResult.blockedByConsensus} deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} message=${sendResult.errorMessage ?? "unknown"}',
             );
@@ -456,7 +444,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
             });
             break;
           }
-          await _uiLog.log(
+          await _module.uiLog.log(
             'chat.send.success',
             'peer=${peerHex.substring(0, 8)}.. deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} receipts=${sendResult.deliveryReceiptCount} hash=${shortHash.isEmpty ? "none" : shortHash} source=${_executionSourceInfo(response)}',
           );
@@ -470,7 +458,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           final reason = response.blockingFacts.isEmpty
               ? 'Consensus guard blocked execution.'
               : response.blockingFacts.first.label;
-          await _uiLog.log(
+          await _module.uiLog.log(
             'chat.send.blocked',
             '$reason source=${_executionSourceInfo(response)}',
           );
@@ -484,7 +472,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
             response,
             fallback: 'Chat request rejected',
           );
-          await _uiLog.log(
+          await _module.uiLog.log(
             'chat.send.rejected',
             '$rejectedMessage code=${response.errorCode ?? "none"} source=${_executionSourceInfo(response)}',
           );
@@ -632,9 +620,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     try {
       if (!mounted) return;
       final stopwatch = Stopwatch()..start();
-      final result = await _chatDelivery.receiveAndFilter();
+      final result = await _module.chatDelivery.receiveAndFilter();
       stopwatch.stop();
-      await _uiLog.log(
+      await _module.uiLog.log(
         'chat.fetch.result',
         'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus}'
             '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
