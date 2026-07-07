@@ -842,6 +842,7 @@ When tradeoffs are unclear, prefer:
 
 No active `9.x` architecture debt remains in v1 scope before trading-agent build.
 No active `10.x` plugin-host debt remains in v1 scope before trading-agent build.
+No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 scope before release smoke.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:
