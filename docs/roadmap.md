@@ -899,6 +899,36 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: completed for screen-owned service-field cleanup and low-risk DTO
     boundary extraction (2026-07-07).
 
+- `12.2 Consensus and Plugin Host Model Boundary`
+  - Goal:
+    - separate stable consensus/plugin-host DTOs from their service
+      implementations without weakening pair-scoped consensus or semantic WASM
+      execution rules.
+  - Current problem:
+    - `PluginHostApiRequest`, `PluginHostApiResponse`,
+      `PluginRuntimeBinding`, and `PluginRuntimeInvokeEvidence` live beside
+      `PluginHostApiService`, so UI and service clients import the concrete host
+      service file for API envelopes.
+    - these plugin-host DTOs depend on `ConsensusBlockingFact`, which currently
+      lives beside `ConsensusProcessor`; moving plugin-host DTOs first would
+      create a model -> service dependency and violate downward discipline.
+  - Scope:
+    - first move stable consensus DTOs (`ConsensusBlockingFact`,
+      `ConsensusPreview`, `ConsensusSignableResult`, verify result/participant
+      types) into one neutral consensus model boundary.
+    - then move plugin-host API/runtime envelope DTOs into one neutral plugin
+      host model boundary.
+    - keep `ConsensusProcessor`, `ConsensusRuntimeService`,
+      `PluginHostApiService`, and plugin contract handlers as behavior/services.
+    - add architecture gates only after the model boundary is real and does not
+      false-positive on service implementations.
+  - Constraints:
+    - no consensus semantics change.
+    - no plugin execution semantics change.
+    - no screen-local consensus or plugin-host logic.
+    - no god model: split only into consensus models and plugin-host models.
+  - Status: pending.
+
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:
     - eliminate the remaining gap between documented TVH criteria and live entry behavior in execution surfaces.
