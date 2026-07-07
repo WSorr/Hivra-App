@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/models/plugin_contract_ids.dart';
+import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/services/bingx_futures_live_decision_service.dart';
 import 'package:hivra_app/services/bingx_futures_signal_rank_use_case_service.dart';
 import 'package:hivra_app/services/bingx_futures_tvh_rule_engine_service.dart';

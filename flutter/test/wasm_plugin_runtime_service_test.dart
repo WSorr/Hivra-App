@@ -6,7 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:hivra_app/services/plugin_host_api_service.dart';
+import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/services/wasm_plugin_runtime_service.dart';
 
 void main() {

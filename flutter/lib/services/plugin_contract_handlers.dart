@@ -4,7 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../models/consensus_models.dart';
 import '../models/plugin_contract_ids.dart';
-import 'plugin_host_api_service.dart';
+import '../models/plugin_host_api_models.dart';
 import 'plugin_host_contract_handler.dart';
 
 typedef PluginConsensusSignableReader = ConsensusSignableResult Function(

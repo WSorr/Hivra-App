@@ -219,6 +219,14 @@ require_absent "$SCREENS" "services/capsule_chat_delivery_service\\.dart" \
   "screens import capsule chat DTOs from model boundary"
 require_absent "$SCREENS" "services/plugin_contract_handlers\\.dart" \
   "screens import plugin contract ids from model boundary"
+require_absent "$SCREENS" "services/plugin_host_api_service\\.dart" \
+  "screens import plugin host API DTOs from model boundary"
+require_absent "$PLUGIN_CONTRACT_HANDLERS" "plugin_host_api_service\\.dart" \
+  "plugin contract handlers import plugin host API DTOs from model boundary"
+require_absent "$ROOT/flutter/lib/services/plugin_host_contract_handler.dart" "plugin_host_api_service\\.dart" \
+  "plugin host contract handler imports plugin host API DTOs from model boundary"
+require_absent "$WASM_RUNTIME_SERVICE" "plugin_host_api_service\\.dart" \
+  "wasm runtime service imports plugin host API DTOs from model boundary"
 require_present "$CAPSULE_DOCTOR_SCREEN" 'AiToolingModuleService\(runtime: widget\.runtime\)' \
   "capsule diagnostics screen uses AI tooling module boundary"
 require_absent "$WIDGETS" 'AiToolingModuleService|AppRuntimeService|build[A-Za-z0-9_]*Service\(' \

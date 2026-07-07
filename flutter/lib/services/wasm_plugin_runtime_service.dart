@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 
-import 'plugin_host_api_service.dart';
+import '../models/plugin_host_api_models.dart';
 
 typedef WasmJsonInvoker = String? Function({
   required Uint8List moduleBytes,

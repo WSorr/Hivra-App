@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
+import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import '../services/app_runtime_service.dart';
-import '../services/plugin_host_api_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../utils/runtime_capability_display.dart';
 
@@ -401,7 +401,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       );
       final response = await _module.pluginHostApi.executeWithRuntimeHook(
         PluginHostApiRequest(
-          schemaVersion: PluginHostApiService.schemaVersion,
+          schemaVersion: pluginHostApiSchemaVersion,
           pluginId: capsuleChatPluginId,
           method: postCapsuleChatMethod,
           args: <String, dynamic>{

@@ -931,8 +931,13 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Stable consensus DTOs now live in
       `flutter/lib/models/consensus_models.dart`; `ConsensusProcessor` remains
       behavior only.
-  - Status: in progress; plugin-host API/runtime envelope DTO extraction still
-    remains.
+    - Stable plugin-host API/runtime DTOs now live in
+      `flutter/lib/models/plugin_host_api_models.dart`; `PluginHostApiService`
+      remains behavior only.
+    - Architecture gates now prevent screens, contract handlers, and WASM
+      runtime service from importing plugin-host DTOs through the concrete host
+      service.
+  - Status: completed (2026-07-07).
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:

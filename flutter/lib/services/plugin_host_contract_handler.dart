@@ -1,5 +1,5 @@
 import '../models/consensus_models.dart';
-import 'plugin_host_api_service.dart';
+import '../models/plugin_host_api_models.dart';
 
 class PluginHostContractResult {
   final PluginHostApiStatus status;
