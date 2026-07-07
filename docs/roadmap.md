@@ -1565,6 +1565,9 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - Moved shared diagnostics report presentation (header, findings, key/value
       sections, retry error state) into `widgets/ai_capsule_report_widgets.dart`;
       deterministic key sorting stays in the presentation boundary.
+    - Extended architecture contract gate so Capsule Diagnostics must keep using
+      `AiToolingModuleService`, while `widgets/` cannot construct runtime/module
+      service graphs.
   - Verification:
     - `tools/review/review_all.sh`
     - `flutter analyze`

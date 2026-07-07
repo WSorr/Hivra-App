@@ -56,6 +56,8 @@ WASM_REGISTRY="$ROOT/flutter/lib/services/wasm_plugin_registry_service.dart"
 SCREENS="$ROOT/flutter/lib/screens"
 TRADING_SCREEN="$SCREENS/trading_drone_screen.dart"
 WASM_PLUGINS_SCREEN="$SCREENS/wasm_plugins_screen.dart"
+CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
+WIDGETS="$ROOT/flutter/lib/widgets"
 SERVICES="$ROOT/flutter/lib/services"
 INSPECTOR="$ROOT/flutter/lib/screens/ledger_inspector_screen.dart"
 PAIRWISE="$ROOT/flutter/lib/services/pairwise_snapshot_service.dart"
@@ -205,6 +207,10 @@ require_absent "$TRADING_SCREEN" 'buildBingx|buildPluginHostApiService|buildManu
   "trading drone screen uses module boundary instead of assembling service graph"
 require_absent "$WASM_PLUGINS_SCREEN" 'buildPluginHostApiService|buildManualConsensusCheckService|buildCapsuleChatDeliveryService|WasmPluginRegistryService\(|WasmPluginSourceCatalogService\(' \
   "wasm plugins screen uses module boundary instead of assembling service graph"
+require_present "$CAPSULE_DOCTOR_SCREEN" 'AiToolingModuleService\(runtime: widget\.runtime\)' \
+  "capsule diagnostics screen uses AI tooling module boundary"
+require_absent "$WIDGETS" 'AiToolingModuleService|AppRuntimeService|build[A-Za-z0-9_]*Service\(' \
+  "widgets do not construct runtime/module service graphs"
 
 # 6) Projection discipline: shared kind mapping only.
 require_present "$SUPPORT" 'String kindLabel\(dynamic kind\)' \
