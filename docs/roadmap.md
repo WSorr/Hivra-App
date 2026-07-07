@@ -897,16 +897,18 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - `MainScreen` now keeps one `MainScreenModule` reference for child screen
       service factories, so the navigation shell no longer assembles
       relationship/settings service dependencies directly.
+    - BingX futures risk DTOs now live in
+      `models/bingx_futures_risk_models.dart`; `TradingDroneScreen` imports
+      risk policy/decision types from the model boundary while
+      `BingxFuturesRiskGovernorService` remains behavior-only.
   - Remaining follow-up:
     - `TradingDroneScreen` still imports trading service files for live
       decision, exchange, sizing, risk, replacement, and signal-rank DTO/result
       types. Do not bulk-move these into a god model; split them by stable
       domain boundary only when each group has a clear owner and regression
       coverage.
-    - Plugin host API DTOs still live beside `PluginHostApiService` because
-      they depend on consensus DTOs that currently live beside
-      `ConsensusProcessor`; extract that as a separate consensus/plugin-host
-      model-boundary pass, not as part of this screen cleanup.
+    - Plugin-host and consensus DTO extraction is complete in `12.2`; keep
+      future cleanup focused on trading-domain DTO/result boundaries only.
   - Status: completed for screen-owned service-field cleanup and low-risk DTO
     boundary extraction (2026-07-07).
 
