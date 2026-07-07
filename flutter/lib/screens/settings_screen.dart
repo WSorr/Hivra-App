@@ -282,8 +282,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.medical_services_outlined),
-                title: const Text('Capsule Doctor'),
+                leading: const Icon(Icons.troubleshoot_outlined),
+                title: const Text('Capsule Diagnostics'),
                 subtitle: const Text(
                   'Bootstrap, files, ledger, consensus and transport checks',
                 ),

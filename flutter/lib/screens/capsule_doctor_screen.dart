@@ -74,7 +74,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Capsule Doctor snapshot copied')),
+      const SnackBar(content: Text('Capsule diagnostics snapshot copied')),
     );
   }
 
@@ -82,12 +82,12 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Capsule Doctor'),
+        title: const Text('Capsule Diagnostics'),
         actions: [
           IconButton(
             onPressed: _refresh,
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh local diagnosis',
+            tooltip: 'Refresh local diagnostics',
           ),
         ],
       ),
@@ -349,7 +349,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
     await _run(() async {
       await widget.chatService.saveApiKey(_provider, _apiKeyController.text);
       await _uiLog.log(
-        'ai_doctor',
+        'ai_capsule_analyst',
         'key_saved provider=${_provider.id}',
       );
       _apiKeyController.clear();
@@ -361,7 +361,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
     await _run(() async {
       await widget.chatService.clearApiKey(_provider);
       await _uiLog.log(
-        'ai_doctor',
+        'ai_capsule_analyst',
         'key_cleared provider=${_provider.id}',
       );
       _apiKeyController.clear();
@@ -393,7 +393,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
           ? _provider.defaultModel
           : _modelController.text.trim();
       await _uiLog.log(
-        'ai_doctor',
+        'ai_capsule_analyst',
         'ask_start provider=${_provider.id} model=$model '
             'sections=${_sections.length}',
       );
@@ -405,7 +405,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
         provider: _provider,
       );
       await _uiLog.log(
-        'ai_doctor',
+        'ai_capsule_analyst',
         'ask_ok provider=${result.providerResponse.provider.id} '
             'model=${result.providerResponse.model} '
             'payloadBytes=${result.preview.payloadBytes} '
@@ -429,7 +429,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
     } catch (error) {
       if (!mounted) return;
       await _uiLog.log(
-        'ai_doctor',
+        'ai_capsule_analyst',
         'action_error ${_doctorErrorMessage(error)}',
       );
       setState(() {
@@ -466,7 +466,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'AI Doctor Chat',
+                    'AI Capsule Analyst',
                     style: theme.textTheme.titleLarge,
                   ),
                 ),
@@ -594,7 +594,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                 FilledButton.icon(
                   onPressed: _busy ? null : _askDoctor,
                   icon: const Icon(Icons.send),
-                  label: const Text('Ask AI Doctor'),
+                  label: const Text('Ask AI Analyst'),
                 ),
               ],
             ),
@@ -917,7 +917,7 @@ class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
                 leading: Icon(Icons.lock_outline),
                 title: Text('Workspace tools are locked'),
                 subtitle: Text(
-                  'Capsule Doctor remains user-facing until Developer Mode is explicitly enabled.',
+                  'Capsule Diagnostics remains user-facing until Developer Mode is explicitly enabled.',
                 ),
               ),
             ],
@@ -1660,8 +1660,8 @@ class _DeveloperWorkspaceQuickAddPanel extends StatelessWidget {
                 ),
               if (doctorFiles.isNotEmpty)
                 ActionChip(
-                  avatar: const Icon(Icons.health_and_safety_outlined),
-                  label: Text('Add doctor files (${doctorFiles.length})'),
+                  avatar: const Icon(Icons.psychology_alt_outlined),
+                  label: Text('Add AI tooling files (${doctorFiles.length})'),
                   onPressed: () => onAddFiles(doctorFiles),
                 ),
             ],

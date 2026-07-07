@@ -306,14 +306,14 @@ Switching:
 
 Diagnostics:
 
-- Capsule Doctor is the canonical user-facing local diagnostic surface.
-- Capsule Doctor MAY summarize bootstrap state, filesystem traces, ledger
+- Capsule Diagnostics is the canonical user-facing local diagnostic surface.
+- Capsule Diagnostics MAY summarize bootstrap state, filesystem traces, ledger
   projection, invitations, relationships, outbox, consensus, and plugin state.
-- Capsule Doctor MUST be deterministic for the same local files and runtime
+- Capsule Diagnostics MUST be deterministic for the same local files and runtime
   inputs.
-- Capsule Doctor MUST NOT upload recovery seed, ledger contents, transport
+- Capsule Diagnostics MUST NOT upload recovery seed, ledger contents, transport
   secrets, or plugin credentials to any AI/provider service.
-- Capsule Doctor MAY provide an optional scoped AI chat over a user-selected,
+- Capsule Diagnostics MAY provide an optional scoped AI analysis over a user-selected,
   redacted diagnostic snapshot.
 - Scoped AI chat MUST show an outbound preview before provider submission,
   including selected sections, payload size, and snapshot hash.
@@ -334,7 +334,7 @@ Diagnostics:
   by the developer.
 - Developer Workspace UI MUST be behind an explicit Developer Mode boundary
   that is disabled by default and visually distinct from user-facing Capsule
-  Doctor diagnostics.
+  Diagnostics.
 - Developer Workspace Preview MUST be read-only and MUST expose only
   allowlisted file paths, file sizes, hashes, skip counts, and denylist
   findings.

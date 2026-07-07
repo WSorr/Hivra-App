@@ -23,7 +23,7 @@ Legend:
 | HTF liquidity lifecycle gate | DONE | `BingxFuturesZoneDecisionService` accepts only untouched confirmed swing pivots or a current confirmed micro sweep/reclaim; internal fallback levels are diagnostic-only | Keep fresh/sweep-origin/consumed/non-executable-fallback regressions green |
 | Risk governor before execution | DONE | `TradingDroneScreen` delegates execution risk to `BingxFuturesExchangeExecutionUseCaseService` | Keep policy regression and envelope checks green |
 | Exchange contract minimums before execution | DONE | Public contract rules feed minimum quantity/notional into `BingxFuturesRiskGovernorService` | Keep ETH-style minimum-size regression green |
-| Exchange-backed risk inputs (equity/pnl/positions) | DONE | `BingxFuturesExchangeRiskInputService` is consumed by the trading-drone execution use case using `getUserBalance/getUserPositions` | Keep exchange payload variant tests green |
+| Exchange-backed risk inputs (equity/pnl/positions) | DONE | `BingxFuturesExchangeRiskInputService` is consumed by the trading-drone execution use case using `getUserBalance/getUserPositions`; live execution fails closed when those inputs fall back | Keep exchange payload variant and live-fallback-block tests green |
 | External package binding and invoke evidence | DONE | `place_bingx_futures_order_intent` requires an installed package, strict contract/capabilities, package digest and runtime invoke evidence | Keep fail-closed security tests green |
 | Plugin-owned semantic contract execution | DONE | `hivra-plugins` owns BingX/chat evaluators; `hivra-wasm-runtime` executes ABI v2 JSON-in/JSON-out through bounded `wasmi`; Flutter validates canonical output and no longer contains mirrored contract evaluators | Keep ABI, runtime, integrity and cross-platform regressions green |
 | Plugin-owned signal ranking | DONE | `rank_bingx_futures_signals` is implemented in the external BingX futures plugin; Flutter sends deterministic live-decision summaries and renders the returned `entries`/`scan_hash_hex` without mirroring score logic | Keep plugin ABI tests and host boundary tests green |
@@ -58,6 +58,8 @@ Legend:
 - [ ] Rule engine decision path is explicit and hashable: `LONG | SHORT | NO_SIGNAL | BLOCKED`.
 - [ ] Funding guard is applied before execution intent.
 - [ ] Risk governor is applied before exchange execution.
+- [ ] Live exchange execution is blocked if balance, pnl, or position inputs
+      fall back; fallback risk inputs are diagnostic/test-only.
 - [ ] BingX contract minimum quantity/notional gates run before order submission.
 - [ ] Execution queue enforces idempotency + TTL + deterministic retry classification.
 - [ ] Managed open orders are revalidated against fresh live TVH snapshots before being left active.

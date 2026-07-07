@@ -80,6 +80,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
       credentials: credentials,
       riskPolicy: riskPolicy,
       fallbackEquityQuote: fallbackEquityQuote,
+      allowExchangeRiskInputFallbacks: testOrder,
     );
     if (risk.decision == null) {
       return _result(
@@ -170,6 +171,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
     required BingxFuturesApiCredentials credentials,
     required BingxFuturesRiskPolicy riskPolicy,
     required double fallbackEquityQuote,
+    bool allowExchangeRiskInputFallbacks = false,
   }) async {
     final diagnostics = <String>[];
     var entryPriceDecimal = _nonEmpty(payload.limitPriceDecimal) ??
@@ -229,6 +231,18 @@ class BingxFuturesExchangeExecutionUseCaseService {
       '${exchangeRiskInput.usedPnlFallback ? "pnl" : "-"},'
       '${exchangeRiskInput.usedPositionsFallback ? "positions" : "-"}',
     );
+    if (!allowExchangeRiskInputFallbacks &&
+        (exchangeRiskInput.usedBalanceFallback ||
+            exchangeRiskInput.usedPnlFallback ||
+            exchangeRiskInput.usedPositionsFallback)) {
+      return BingxFuturesRiskEvaluationResult(
+        decision: null,
+        errorCode: 'exchange_risk_inputs_unavailable',
+        errorMessage:
+            'Risk check failed: exchange balance, pnl, or positions unavailable',
+        diagnostics: diagnostics,
+      );
+    }
     final decision = _riskGovernor.evaluate(
       input: BingxFuturesRiskGovernorInput(
         symbol: payload.symbol,

@@ -883,7 +883,10 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       - `TradingDroneScreen._runIntent`
       - `WasmPluginsScreen._runBingxIntent`
       removing screen-local side/zone branching from live signal gating.
-    - Live execution risk inputs now use exchange-backed runtime values via `BingxFuturesExchangeRiskInputService` (`equity`, `daily pnl`, `concurrent positions`) with deterministic fallbacks, and both execution surfaces run the same risk-governor boundary before exchange submit.
+    - Live execution risk inputs now use exchange-backed runtime values via `BingxFuturesExchangeRiskInputService` (`equity`, `daily pnl`, `concurrent positions`) and both execution surfaces run the same risk-governor boundary before exchange submit.
+    - Live exchange execution now fails closed when balance, pnl, or position
+      inputs use fallback values; fallback risk inputs remain diagnostic/test
+      only.
   - Definition of done:
     - no execution surface can place intent from a decision path outside the shared TVH contract.
     - identical normalized input produces identical decision payload/hash in replay and live path.
@@ -1196,18 +1199,18 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - worker-provided capsule ledger snapshots follow the same rule.
   - Status: completed (2026-06-29).
 
-- `11.14 Capsule Doctor and macOS Runtime Seed Boundary`
+- `11.14 Capsule Diagnostics and macOS Runtime Seed Boundary`
   - Goal:
     - replace scattered bootstrap/trace diagnostics with one deterministic
       local diagnostic surface.
     - prevent macOS capsule switching from rewriting Keychain active-seed
       state and repeatedly prompting for passwords.
   - Implemented:
-    - added Capsule Doctor as the local user-facing diagnostic screen for
+    - added Capsule Diagnostics as the local user-facing diagnostic screen for
       bootstrap summary, filesystem trace, ledger projection, invitations,
       relationships, outbox, consensus, and plugin state.
     - removed separate Settings entries for bootstrap diagnostics and local
-      capsule trace; those summaries now live under Capsule Doctor.
+      capsule trace; those summaries now live under Capsule Diagnostics.
     - capsule recovery seed fallback migration now deduplicates secure-storage
       reads/writes in-process and remains fail-closed for plaintext fallback.
     - macOS keystore now keeps the active runtime seed in process-local memory
@@ -1225,7 +1228,7 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
 
 - `11.15 Unified Capsule Diagnostics Module`
   - Goal:
-    - keep Capsule Doctor as the single user-facing diagnostic surface while
+    - keep Capsule Diagnostics as the single user-facing diagnostic surface while
       also consolidating bootstrap and filesystem trace diagnostics behind one
       internal diagnostic module.
     - prevent diagnostics from spreading back into Settings, UI screens, or
@@ -1241,16 +1244,16 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - no new upward dependencies from core/engine/platform into Flutter UI.
     - no provider/AI upload path for seed, ledger, transport secrets, or
       credentials.
-    - Capsule Doctor remains projection-only and does not mutate capsule state.
+    - Capsule Diagnostics remains projection-only and does not mutate capsule state.
   - Verification:
     - `flutter test test/ai_capsule_inspection_service_test.dart test/capsule_diagnostics_service_test.dart test/settings_service_test.dart`
     - `flutter analyze`
     - `tools/review/review_all.sh`
   - Status: completed (2026-07-05).
 
-- `11.16 Scoped AI Doctor Chat`
+- `11.16 Scoped AI Capsule Analyst`
   - Goal:
-    - add an optional AI-provider advisory path to Capsule Doctor without
+    - add an optional AI-provider advisory path to Capsule Diagnostics without
       turning any external model into ledger truth or a runtime actor.
     - keep the first AI integration scoped to redacted, user-selected
       diagnostic summaries instead of repository access or raw capsule data.
@@ -1261,7 +1264,7 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - added an `InferenceProvider` boundary with provider-isolated keys,
       OpenAI Responses API support, Gemini GenerateContent support, and strict
       empty/malformed response rejection.
-    - added Capsule Doctor UI controls for provider key save/clear, model,
+    - added Capsule Diagnostics UI controls for provider key save/clear, model,
       question, selected context sections, outbound preview, and advisory
       response rendering.
   - Constraints:
@@ -1282,14 +1285,14 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
 - `11.17 Plugin Auditor Diagnostics`
   - Goal:
     - add a read-only plugin audit mode before developer repository access.
-    - make installed plugin package trust evidence visible from Capsule Doctor
+    - make installed plugin package trust evidence visible from Capsule Diagnostics
       without granting new capabilities or mutating plugin state.
   - Scope:
     - added deterministic `AiPluginAuditService` over installed plugin registry
       records and stored package bytes.
     - audit report includes package digest, package kind, size, declared
       capabilities, plugin id/version, ABI/entry compatibility, and findings.
-    - Capsule Doctor now surfaces Plugin Auditor as a separate read-only card.
+    - Capsule Diagnostics now surfaces Plugin Auditor as a separate read-only card.
   - Constraints:
     - no plugin registry/catalog/package mutation.
     - no capability escalation; unsupported capabilities are findings only.
@@ -1313,7 +1316,7 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       previews.
     - scan output includes allowed file paths, sizes, SHA-256 hashes, skip
       counts, denylist findings, and a deterministic report hash.
-    - Capsule Doctor now includes a manual Developer Workspace Preview card for
+    - Capsule Diagnostics now includes a manual Developer Workspace Preview card for
       explicit local paths.
   - Constraints:
     - no source contents are uploaded or sent to AI.
@@ -1338,7 +1341,7 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
       their SHA-256 still matches.
     - selected context includes snippet text, file hashes, findings, payload
       size, and deterministic context hash.
-    - Capsule Doctor shows a local selected-context JSON preview.
+    - Capsule Diagnostics shows a local selected-context JSON preview.
   - Constraints:
     - no provider submission in this step.
     - no automatic patching, committing, pushing, cloning, or script execution.
@@ -1354,7 +1357,7 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
 - `11.20 Explicit Developer Mode Boundary`
   - Goal:
     - prevent developer repository tooling from appearing as ordinary
-      user-facing Capsule Doctor diagnostics.
+      user-facing Capsule Diagnostics.
   - Scope:
     - added a Developer Mode card that is disabled by default.
     - workspace scan/selected-context tools are rendered only after explicit
@@ -1375,13 +1378,13 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - allow Developer Mode to ask an AI engineer about explicit selected
       evidence without granting repository write access.
   - Scope:
-    - combine local Capsule Doctor snapshot, selected developer context, and a
+    - combine local Capsule Diagnostics snapshot, selected developer context, and a
       user question into one outbound preview.
     - provider response is advisory only: likely files, hypotheses, suggested
       tests, and patch plan.
     - no file writes, no patch application, no git operations, no release
       operations.
-    - Capsule Doctor Developer Mode now exposes Preview/Ask Hivra Engineer
+    - Capsule Diagnostics Developer Mode now exposes Preview/Ask Hivra Engineer
       controls after selected context is built.
   - Acceptance:
     - empty selected context is rejected.
@@ -1493,7 +1496,7 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - prepare the AI Capsule Engineer feature set for a release-quality manual
       smoke pass.
   - Scope:
-    - manual macOS release smoke for Capsule Doctor, scoped AI chat, Plugin
+    - manual macOS release smoke for Capsule Diagnostics, scoped AI analysis, Plugin
       Auditor, Developer Mode boundary, Workspace Preview, Selected Context,
       and Hivra Engineer Advisory Ask.
     - Android smoke remains a separate release pass after macOS is stable.
@@ -1517,7 +1520,7 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - introduce a `PluginRuntimeModuleService` boundary for plugin host,
       installed-plugin projection, chat/manual-consensus support, and runtime
       invocation helpers.
-    - keep AI Doctor/Hivra Engineer construction behind
+    - keep AI Capsule Analyst/Hivra Engineer construction behind
       `AiToolingModuleService`; `AppRuntimeService` must expose only neutral
       capsule/runtime primitives.
     - split `CapsuleDoctorScreen` into presentation cards/widgets after
@@ -1537,5 +1540,5 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - `flutter analyze`
     - `flutter test`
     - `cargo test --workspace`
-    - macOS release smoke for Doctor, plugins, chat, and trading drone.
+    - macOS release smoke for Capsule Diagnostics, plugins, chat, and trading drone.
   - Status: planned.

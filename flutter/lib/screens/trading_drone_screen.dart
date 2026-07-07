@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-import '../services/app_runtime_service.dart';
 import '../services/bingx_futures_credential_store.dart';
 import '../services/bingx_futures_live_decision_service.dart';
 import '../services/bingx_futures_intent_use_case_service.dart';
@@ -24,6 +23,8 @@ import '../services/capsule_chat_delivery_service.dart';
 import '../services/manual_consensus_check_service.dart';
 import '../services/plugin_host_api_service.dart';
 import '../services/plugin_contract_handlers.dart';
+import '../services/app_runtime_service.dart';
+import '../services/trading_drone_module_service.dart';
 import '../services/ui_event_log_service.dart';
 
 class TradingDroneScreen extends StatefulWidget {
@@ -61,36 +62,23 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     'DOGE-USDT',
   ];
 
-  final PluginHostApiService _pluginHostApi =
-      AppRuntimeService().buildPluginHostApiService();
-  final ManualConsensusCheckService _manualChecks =
-      AppRuntimeService().buildManualConsensusCheckService();
-  final BingxFuturesCredentialStore _bingxCredentialStore =
-      AppRuntimeService().buildBingxFuturesCredentialStore();
-  final BingxFuturesExchangeService _bingxExchangeService =
-      AppRuntimeService().buildBingxFuturesExchangeService();
-  final BingxFuturesOrderTrackingStore _orderTrackingStore =
-      AppRuntimeService().buildBingxFuturesOrderTrackingStore();
-  final BingxFuturesExchangeRiskInputService _exchangeRiskInput =
-      const BingxFuturesExchangeRiskInputService();
+  late final PluginHostApiService _pluginHostApi;
+  late final ManualConsensusCheckService _manualChecks;
+  late final BingxFuturesCredentialStore _bingxCredentialStore;
+  late final BingxFuturesExchangeService _bingxExchangeService;
+  late final BingxFuturesOrderTrackingStore _orderTrackingStore;
+  late final BingxFuturesExchangeRiskInputService _exchangeRiskInput;
   late final BingxFuturesOrderSizingService _orderSizing;
-  final BingxFuturesRiskGovernorService _riskGovernor =
-      const BingxFuturesRiskGovernorService();
-  final BingxFuturesObservabilityEnvelopeService _observability =
-      const BingxFuturesObservabilityEnvelopeService();
+  late final BingxFuturesObservabilityEnvelopeService _observability;
   late final BingxFuturesIntentUseCaseService _intentUseCase;
   late final BingxFuturesExchangeExecutionUseCaseService _executionUseCase;
   late final BingxFuturesSignalRankUseCaseService _signalRankUseCase;
-  final BingxFuturesOrderRevalidationService _orderRevalidation =
-      const BingxFuturesOrderRevalidationService();
-  final BingxFuturesOrderReplacementService _orderReplacement =
-      const BingxFuturesOrderReplacementService();
+  late final BingxFuturesOrderRevalidationService _orderRevalidation;
+  late final BingxFuturesOrderReplacementService _orderReplacement;
   late final BingxFuturesLiveStrategyUseCaseService _liveStrategyUseCase;
-  final BingxFuturesStrategyNamingService _strategyNaming =
-      const BingxFuturesStrategyNamingService();
-  final CapsuleChatDeliveryService _chatDelivery =
-      AppRuntimeService().buildCapsuleChatDeliveryService();
-  final UiEventLogService _uiLog = const UiEventLogService();
+  late final BingxFuturesStrategyNamingService _strategyNaming;
+  late final CapsuleChatDeliveryService _chatDelivery;
+  late final UiEventLogService _uiLog;
   late final BingxFuturesExecutionQueueService _bingxExecutionQueue;
 
   final TextEditingController _peerController = TextEditingController();
@@ -171,29 +159,27 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   @override
   void initState() {
     super.initState();
-    _orderSizing = BingxFuturesOrderSizingService(
-      exchange: _bingxExchangeService,
-    );
-    _bingxExecutionQueue = BingxFuturesExecutionQueueService(
-      exchangeService: _bingxExchangeService,
-    );
-    _intentUseCase = BingxFuturesIntentUseCaseService(
-      hostApi: _pluginHostApi,
-      observability: _observability,
-    );
-    _signalRankUseCase = BingxFuturesSignalRankUseCaseService(
-      hostApi: _pluginHostApi,
-    );
-    _liveStrategyUseCase = BingxFuturesLiveStrategyUseCaseService(
-      exchange: _bingxExchangeService,
-    );
-    _executionUseCase = BingxFuturesExchangeExecutionUseCaseService(
-      exchange: _bingxExchangeService,
-      queue: _bingxExecutionQueue,
-      riskInput: _exchangeRiskInput,
-      riskGovernor: _riskGovernor,
-      observability: _observability,
-    );
+    final module = TradingDroneModuleService(
+      runtime: AppRuntimeService(),
+    ).build();
+    _pluginHostApi = module.pluginHostApi;
+    _manualChecks = module.manualChecks;
+    _bingxCredentialStore = module.credentialStore;
+    _bingxExchangeService = module.exchangeService;
+    _orderTrackingStore = module.orderTrackingStore;
+    _exchangeRiskInput = module.exchangeRiskInput;
+    _orderSizing = module.orderSizing;
+    _observability = module.observability;
+    _intentUseCase = module.intentUseCase;
+    _executionUseCase = module.executionUseCase;
+    _signalRankUseCase = module.signalRankUseCase;
+    _orderRevalidation = module.orderRevalidation;
+    _orderReplacement = module.orderReplacement;
+    _liveStrategyUseCase = module.liveStrategyUseCase;
+    _strategyNaming = module.strategyNaming;
+    _chatDelivery = module.chatDelivery;
+    _uiLog = module.uiLog;
+    _bingxExecutionQueue = module.executionQueue;
     _loadCredentials();
     unawaited(_restoreOpenOrdersTrackingState());
     _loadPerpetualSymbols(silent: true);

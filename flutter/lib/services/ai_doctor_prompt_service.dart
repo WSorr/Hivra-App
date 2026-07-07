@@ -62,7 +62,7 @@ class AiDoctorPromptService {
   }) {
     final normalizedQuery = userQuery.trim();
     if (normalizedQuery.isEmpty) {
-      throw ArgumentError('AI Doctor query is empty');
+      throw ArgumentError('AI Analyst query is empty');
     }
     final selected = sections.toSet().toList()
       ..sort((left, right) => left.index.compareTo(right.index));
@@ -77,7 +77,7 @@ class AiDoctorPromptService {
 
     final payload = <String, dynamic>{
       'schema_version': 1,
-      'mode': 'scoped_ai_doctor_chat',
+      'mode': 'scoped_ai_capsule_analyst_chat',
       'snapshot_hash_hex': snapshot.snapshotHashHex,
       'user_query': normalizedQuery,
       'context': context,
@@ -101,7 +101,7 @@ class AiDoctorPromptService {
     final payloadBytes = utf8.encode(inputJson).length;
     if (payloadBytes > maxPayloadBytes) {
       throw StateError(
-        'AI Doctor context is too large: $payloadBytes > $maxPayloadBytes bytes',
+        'AI Analyst context is too large: $payloadBytes > $maxPayloadBytes bytes',
       );
     }
 
@@ -136,7 +136,7 @@ class AiDoctorPromptService {
   }
 
   static const String _instructions = '''
-You are Hivra Capsule Doctor.
+You are Hivra Capsule Analyst.
 Analyze only the provided user-selected redacted capsule snapshot.
 Do not ask for seeds, private keys, exchange credentials, filesystem dumps, or repository access.
 Treat the local capsule ledger projection as the source of truth.

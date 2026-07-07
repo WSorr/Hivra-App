@@ -1,7 +1,7 @@
 # AI Engineer Release Smoke Checklist
 
 Use this checklist for macOS release-candidate smoke before publishing builds
-that include Capsule Doctor developer/AI tooling.
+that include Capsule Diagnostics developer/AI tooling.
 
 ## Scope
 
@@ -10,13 +10,13 @@ that include Capsule Doctor developer/AI tooling.
       an Android release candidate.
 - [ ] AI output is treated as advisory and unverified until gates are run.
 
-## Capsule Doctor
+## Capsule Diagnostics
 
-- [ ] Capsule Doctor opens from Settings.
+- [ ] Capsule Diagnostics opens from Settings.
 - [ ] Capsule snapshot renders without mutating capsule state.
 - [ ] Copy snapshot produces a redacted payload only.
 
-## Scoped AI Doctor Chat
+## Scoped AI Analyst
 
 - [ ] Inference provider can be selected explicitly before submission.
 - [ ] OpenAI/Gemini API key save/clear uses provider-isolated secure storage.
@@ -35,8 +35,8 @@ that include Capsule Doctor developer/AI tooling.
 
 - [ ] Developer Mode is disabled by default.
 - [ ] Enabling Developer Mode is explicit for the current screen session.
-- [ ] Developer Mode remains separate from normal user-facing Capsule Doctor
-      diagnostics.
+- [ ] Developer Mode remains separate from normal user-facing Capsule
+      Diagnostics.
 
 ## Workspace Preview
 

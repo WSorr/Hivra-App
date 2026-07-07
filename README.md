@@ -100,8 +100,9 @@ Shown on app launch when at least one capsule exists.
 
 - On selection, the app loads the selected capsule seed and ledger.
 - The previously active capsule is unloaded from memory.
-- Runtime diagnostics are available through Capsule Doctor in Settings. Capsule
-  Doctor is local-only and must not upload seed, ledger, or transport material.
+- Runtime diagnostics are available through Capsule Diagnostics in Settings.
+  Capsule Diagnostics is local-only and must not upload seed, ledger, or
+  transport material.
 
 ## Building
 
