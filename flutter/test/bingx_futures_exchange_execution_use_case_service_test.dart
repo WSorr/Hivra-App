@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/models/bingx_futures_risk_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_execution_use_case_service.dart';
+import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_execution_queue_service.dart';
 

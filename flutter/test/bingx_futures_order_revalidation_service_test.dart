@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_live_decision_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
-import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
+import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/bingx_futures_order_revalidation_service.dart';
 
 void main() {

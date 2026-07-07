@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 
 void main() {

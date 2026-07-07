@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/bingx_futures_credential_store.dart';
-import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
+import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _FakeSecureStorage extends FlutterSecureStorage {
@@ -164,8 +164,7 @@ void main() {
       );
     });
 
-    test('fails closed when secure storage is unavailable',
-        () async {
+    test('fails closed when secure storage is unavailable', () async {
       final tempHome =
           await Directory.systemTemp.createTemp('hivra-cred-store-test-');
       addTearDown(() async {

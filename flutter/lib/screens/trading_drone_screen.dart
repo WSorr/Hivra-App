@@ -11,7 +11,7 @@ import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../services/bingx_futures_intent_use_case_service.dart';
 import '../services/bingx_futures_live_strategy_use_case_service.dart';
-import '../services/bingx_futures_exchange_service.dart';
+import '../models/bingx_futures_exchange_models.dart';
 import '../services/bingx_futures_exchange_execution_use_case_service.dart';
 import '../services/bingx_futures_order_sizing_service.dart';
 import '../services/bingx_futures_order_replacement_service.dart';

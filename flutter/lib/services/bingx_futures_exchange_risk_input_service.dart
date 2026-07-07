@@ -1,3 +1,4 @@
+import '../models/bingx_futures_exchange_models.dart';
 import 'bingx_futures_exchange_service.dart';
 
 class BingxFuturesExchangeRiskInput {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import '../models/bingx_futures_exchange_models.dart';
 import 'bingx_futures_exchange_service.dart';
 
 const List<Duration> _defaultBingxExecutionRetryDelays = <Duration>[

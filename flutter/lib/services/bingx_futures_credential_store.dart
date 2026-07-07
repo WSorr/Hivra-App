@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import 'bingx_futures_exchange_service.dart';
+import '../models/bingx_futures_exchange_models.dart';
 import 'hivra_secure_storage_options.dart';
 import 'user_visible_data_directory_service.dart';
 

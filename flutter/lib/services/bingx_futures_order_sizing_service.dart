@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../models/bingx_futures_exchange_models.dart';
 import 'bingx_futures_exchange_service.dart';
 
 enum BingxFuturesOrderSizingStatus {

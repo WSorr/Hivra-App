@@ -1,5 +1,5 @@
 import '../models/bingx_futures_live_decision_models.dart';
-import 'bingx_futures_exchange_service.dart';
+import '../models/bingx_futures_exchange_models.dart';
 
 enum BingxFuturesOrderRevalidationAction {
   keep,
