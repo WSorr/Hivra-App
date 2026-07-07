@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/ai_doctor_prompt_service.dart';
+import '../../services/ai_doctor_prompt_service.dart';
 
 class AiOutboundPreviewPanel extends StatelessWidget {
   final AiDoctorOutboundPreview preview;

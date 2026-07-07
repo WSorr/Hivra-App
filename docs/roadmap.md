@@ -1554,17 +1554,17 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         key material.
     - Started `CapsuleDoctorScreen` presentation split by moving reusable AI
       outbound preview and status-message panels into
-      `widgets/ai_diagnostics_widgets.dart`; no service wiring or runtime
+      `widgets/ai_diagnostics/provider_widgets.dart`; no service wiring or runtime
       behavior moved into widgets.
     - Continued the screen split by moving Developer Workspace presentation
       widgets (engineer preview, selected context, repo tile, quick-add panel)
-      into `widgets/ai_developer_workspace_widgets.dart`; widgets remain
+      into `widgets/ai_diagnostics/developer_workspace_widgets.dart`; widgets remain
       projection-only and accept data/callbacks only.
     - Moved Plugin Auditor presentation helpers (status color and audit entry
-      tile) into `widgets/ai_plugin_audit_widgets.dart`; audit service ownership
-      stays in the screen/card state and widgets remain read-only.
+      tile) into `widgets/ai_diagnostics/plugin_audit_widgets.dart`; audit
+      service ownership stays in the screen/card state and widgets remain read-only.
     - Moved shared diagnostics report presentation (header, findings, key/value
-      sections, retry error state) into `widgets/ai_capsule_report_widgets.dart`;
+      sections, retry error state) into `widgets/ai_diagnostics/report_widgets.dart`;
       deterministic key sorting stays in the presentation boundary.
     - Extended architecture contract gate so Capsule Diagnostics must keep using
       `AiToolingModuleService`, while `widgets/` cannot construct runtime/module

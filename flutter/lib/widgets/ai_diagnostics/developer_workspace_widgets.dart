@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../services/ai_developer_engineer_service.dart';
-import '../services/ai_developer_workspace_service.dart';
+import '../../services/ai_developer_engineer_service.dart';
+import '../../services/ai_developer_workspace_service.dart';
 
 class AiDeveloperEngineerPreviewPanel extends StatelessWidget {
   final AiDeveloperEngineerPreview preview;

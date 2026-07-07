@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/ai_capsule_inspection_service.dart';
+import '../../services/ai_capsule_inspection_service.dart';
 
 class AiCapsuleReportHeaderCard extends StatelessWidget {
   final String statusLabel;

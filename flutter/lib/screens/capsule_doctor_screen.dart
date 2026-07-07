@@ -11,10 +11,10 @@ import '../services/ai_tooling_module_service.dart';
 import '../services/app_runtime_service.dart';
 import '../services/inference_provider_adapter.dart';
 import '../services/ui_event_log_service.dart';
-import '../widgets/ai_capsule_report_widgets.dart';
-import '../widgets/ai_developer_workspace_widgets.dart';
-import '../widgets/ai_diagnostics_widgets.dart';
-import '../widgets/ai_plugin_audit_widgets.dart';
+import '../widgets/ai_diagnostics/developer_workspace_widgets.dart';
+import '../widgets/ai_diagnostics/plugin_audit_widgets.dart';
+import '../widgets/ai_diagnostics/provider_widgets.dart';
+import '../widgets/ai_diagnostics/report_widgets.dart';
 
 String _doctorErrorMessage(Object error) {
   return error

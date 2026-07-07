@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/ai_plugin_audit_service.dart';
+import '../../services/ai_plugin_audit_service.dart';
 
 Color aiPluginAuditStatusColor(String status) {
   return switch (status) {
