@@ -1535,10 +1535,20 @@ No active `10.x` plugin-host debt remains in v1 scope before trading-agent build
     - no AI/provider/trading/plugin-specific policy inside Core.
     - screens remain UI projection/action surfaces, not orchestration owners.
     - ledger remains the source of truth for confirmed capsule state.
+  - Current progress:
+    - Added `TradingDroneModuleService` so `TradingDroneScreen` no longer
+      assembles BingX exchange, order tracking, signal, credential,
+      execution, chat, and plugin-host service graphs directly.
+    - Added `PluginRuntimeModuleService` so `WasmPluginsScreen` no longer
+      assembles plugin registry/catalog, plugin host, manual-consensus, chat,
+      and UI-log dependencies directly.
+    - `AiToolingModuleService` remains the AI Capsule Analyst/Hivra Engineer
+      construction boundary; no AI/provider/trading policy was moved into
+      Core.
   - Verification:
     - `tools/review/review_all.sh`
     - `flutter analyze`
     - `flutter test`
     - `cargo test --workspace`
     - macOS release smoke for Capsule Diagnostics, plugins, chat, and trading drone.
-  - Status: planned.
+  - Status: in progress.

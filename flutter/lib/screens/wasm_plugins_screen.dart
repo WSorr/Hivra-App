@@ -8,6 +8,7 @@ import '../services/capsule_chat_delivery_service.dart';
 import '../services/manual_consensus_check_service.dart';
 import '../services/plugin_host_api_service.dart';
 import '../services/plugin_contract_handlers.dart';
+import '../services/plugin_runtime_module_service.dart';
 import '../services/ui_event_log_service.dart';
 import '../services/wasm_plugin_registry_service.dart';
 import '../services/wasm_plugin_source_catalog_service.dart';
@@ -26,16 +27,12 @@ class WasmPluginsScreen extends StatefulWidget {
 }
 
 class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
-  final WasmPluginRegistryService _registry = const WasmPluginRegistryService();
-  final WasmPluginSourceCatalogService _sourceCatalog =
-      const WasmPluginSourceCatalogService();
-  final ManualConsensusCheckService _manualChecks =
-      AppRuntimeService().buildManualConsensusCheckService();
-  final PluginHostApiService _pluginHostApi =
-      AppRuntimeService().buildPluginHostApiService();
-  final CapsuleChatDeliveryService _chatDelivery =
-      AppRuntimeService().buildCapsuleChatDeliveryService();
-  final UiEventLogService _uiLog = const UiEventLogService();
+  late final WasmPluginRegistryService _registry;
+  late final WasmPluginSourceCatalogService _sourceCatalog;
+  late final ManualConsensusCheckService _manualChecks;
+  late final PluginHostApiService _pluginHostApi;
+  late final CapsuleChatDeliveryService _chatDelivery;
+  late final UiEventLogService _uiLog;
   final TextEditingController _chatPeerController = TextEditingController();
   final TextEditingController _chatMessageController =
       TextEditingController(text: 'hello from capsule chat');
@@ -82,6 +79,15 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   @override
   void initState() {
     super.initState();
+    final module = PluginRuntimeModuleService(
+      runtime: AppRuntimeService(),
+    ).build();
+    _registry = module.registry;
+    _sourceCatalog = module.sourceCatalog;
+    _manualChecks = module.manualChecks;
+    _pluginHostApi = module.pluginHostApi;
+    _chatDelivery = module.chatDelivery;
+    _uiLog = module.uiLog;
     _reload();
     _reloadSourceCatalog();
   }
