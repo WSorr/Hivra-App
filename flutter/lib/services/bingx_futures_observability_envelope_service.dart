@@ -2,15 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
-class BingxFuturesLogEnvelope {
-  final String canonicalJson;
-  final String envelopeHashHex;
-
-  const BingxFuturesLogEnvelope({
-    required this.canonicalJson,
-    required this.envelopeHashHex,
-  });
-}
+import '../models/bingx_futures_observability_models.dart';
 
 class BingxFuturesObservabilityEnvelopeService {
   const BingxFuturesObservabilityEnvelopeService();

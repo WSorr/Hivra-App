@@ -234,6 +234,10 @@ require_absent "$TRADING_SCREEN" "services/bingx_futures_signal_rank_use_case_se
   "trading drone screen imports signal-rank DTOs from model boundary"
 require_absent "$TRADING_SCREEN" "services/bingx_futures_live_strategy_use_case_service\\.dart" \
   "trading drone screen imports live-strategy DTOs from model boundary"
+require_absent "$TRADING_SCREEN" "services/bingx_futures_intent_use_case_service\\.dart" \
+  "trading drone screen imports intent DTOs from model boundary"
+require_absent "$TRADING_SCREEN" "services/bingx_futures_exchange_execution_use_case_service\\.dart" \
+  "trading drone screen imports exchange-execution DTOs from model boundary"
 require_absent "$SCREENS" "services/capsule_chat_delivery_service\\.dart" \
   "screens import capsule chat DTOs from model boundary"
 require_absent "$SCREENS" "services/plugin_contract_handlers\\.dart" \

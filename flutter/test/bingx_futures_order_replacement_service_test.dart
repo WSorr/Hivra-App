@@ -7,7 +7,7 @@ import 'package:hivra_app/models/bingx_futures_risk_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
-import 'package:hivra_app/services/bingx_futures_execution_queue_service.dart';
+import 'package:hivra_app/models/bingx_futures_execution_queue_models.dart';
 import 'package:hivra_app/services/bingx_futures_order_replacement_service.dart';
 
 void main() {

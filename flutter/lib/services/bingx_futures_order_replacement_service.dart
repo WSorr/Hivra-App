@@ -7,7 +7,7 @@ import '../models/bingx_futures_order_tracking_models.dart';
 import '../models/bingx_futures_risk_models.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/bingx_futures_exchange_models.dart';
-import 'bingx_futures_execution_queue_service.dart';
+import '../models/bingx_futures_execution_queue_models.dart';
 import 'bingx_futures_strategy_naming_service.dart';
 
 typedef BingxReplacementIntentPreparer = Future<PluginHostApiResponse> Function(
