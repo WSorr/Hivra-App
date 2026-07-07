@@ -67,6 +67,11 @@ void main() {
         isFalse,
       );
       expect(await Directory('${tempRepo.path}/dist').exists(), isFalse);
+
+      final libRs = await File('${report.draftRootPath}/src/lib.rs')
+          .readAsString();
+      expect(libRs, contains('Draft placeholder'));
+      expect(libRs, isNot(contains('TODO')));
     });
 
     test('rejects non-plugin repository boundary', () async {

@@ -244,7 +244,7 @@ crate-type = ["cdylib"]
 
 #[no_mangle]
 pub extern "C" fn hivra_evaluate_v1(_input_ptr: *const u8, _input_len: usize) -> i32 {
-    // TODO: implement deterministic $contractKind evaluation.
+    // Draft placeholder: replace with reviewed deterministic $contractKind evaluation in hivra-plugins.
     0
 }
 ''';
