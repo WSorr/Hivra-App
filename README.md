@@ -19,7 +19,7 @@ Applications normally own their own user relationships. Hivra moves trusted inte
 
 ## Architecture
 
-This repository implements Hivra v1.0.0 specification:
+This repository implements the current Hivra v1 specification:
 
 - **Core** — Pure domain logic (deterministic, no I/O, no crypto knowledge)
 - **Engine** — Orchestration layer (time, RNG, crypto provider)
@@ -100,8 +100,8 @@ Shown on app launch when at least one capsule exists.
 
 - On selection, the app loads the selected capsule seed and ledger.
 - The previously active capsule is unloaded from memory.
-- Runtime diagnostics are available through Capsule Diagnostics in Settings.
-  Capsule Diagnostics is local-only and must not upload seed, ledger, or
+- Runtime diagnostics are available through Capsule Analyst in Settings.
+  Capsule Analyst is local-only and must not upload seed, ledger, or
   transport material.
 
 ## Building

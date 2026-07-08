@@ -1,6 +1,6 @@
 # Hivra Docs Map
 
-This folder contains the canonical project documentation for Hivra v1.0.0.
+This folder contains the canonical project documentation for the current Hivra v1 line.
 
 ## Documents
 
@@ -41,7 +41,7 @@ Contains:
 Use this when working on Android seed-storage hardening.
 
 Contains:
-- current Android storage debt
+- historical and forward-looking Android secure-storage migration notes
 - target keystore-backed storage model
 - migration path for existing Android users
 - implementation constraints and rollout checkpoints

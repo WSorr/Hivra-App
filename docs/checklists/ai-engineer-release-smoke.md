@@ -1,7 +1,7 @@
 # AI Engineer Release Smoke Checklist
 
 Use this checklist for macOS release-candidate smoke before publishing builds
-that include Capsule Diagnostics developer/AI tooling.
+that include Capsule Analyst developer/AI tooling.
 
 ## Scope
 
@@ -10,9 +10,9 @@ that include Capsule Diagnostics developer/AI tooling.
       an Android release candidate.
 - [ ] AI output is treated as advisory and unverified until gates are run.
 
-## Capsule Diagnostics
+## Capsule Analyst
 
-- [ ] Capsule Diagnostics opens from Settings.
+- [ ] Capsule Analyst opens from Settings.
 - [ ] Capsule snapshot renders without mutating capsule state.
 - [ ] Copy snapshot produces a redacted payload only.
 
@@ -36,7 +36,7 @@ that include Capsule Diagnostics developer/AI tooling.
 - [ ] Developer Mode is disabled by default.
 - [ ] Enabling Developer Mode is explicit for the current screen session.
 - [ ] Developer Mode remains separate from normal user-facing Capsule
-      Diagnostics.
+      Analyst.
 
 ## Workspace Preview
 

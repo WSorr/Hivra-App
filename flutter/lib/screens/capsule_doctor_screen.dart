@@ -66,7 +66,7 @@ class _CapsuleDoctorScreenState extends State<CapsuleDoctorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Capsule Diagnostics'),
+        title: const Text('Capsule Analyst'),
         actions: [
           IconButton(
             onPressed: _refresh,
@@ -703,7 +703,7 @@ class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
                 leading: Icon(Icons.lock_outline),
                 title: Text('Workspace tools are locked'),
                 subtitle: Text(
-                  'Capsule Diagnostics remains user-facing until Developer Mode is explicitly enabled.',
+                  'Capsule Analyst remains user-facing until Developer Mode is explicitly enabled.',
                 ),
               ),
             ],
