@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -123,17 +124,12 @@ void main() {
       expect(loaded.apiSecret, 'global-secret');
       expect(
         secureStorage.values
-            .containsKey('hivra.bingx.futures.$activeScope.api_key'),
-        isTrue,
-      );
-      expect(
-        secureStorage.values
-            .containsKey('hivra.bingx.futures.$activeScope.api_secret'),
+            .containsKey('hivra.bingx.futures.$activeScope.credentials'),
         isTrue,
       );
     });
 
-    test('mirrors capsule save to global fallback scope', () async {
+    test('does not mirror capsule save to global fallback scope', () async {
       String? activeScope =
           'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
       final secureStorage = _FakeSecureStorage();
@@ -150,17 +146,11 @@ void main() {
 
       activeScope = null;
       final loaded = await store.load();
-      expect(loaded, isNotNull);
-      expect(loaded!.apiKey, 'capsule-key');
-      expect(loaded.apiSecret, 'capsule-secret');
-      expect(
-        secureStorage.values.containsKey('hivra.bingx.futures.global.api_key'),
-        isTrue,
-      );
+      expect(loaded, isNull);
       expect(
         secureStorage.values
-            .containsKey('hivra.bingx.futures.global.api_secret'),
-        isTrue,
+            .containsKey('hivra.bingx.futures.global.credentials'),
+        isFalse,
       );
     });
 
@@ -226,12 +216,15 @@ void main() {
       expect(loaded, isNotNull);
       expect(loaded!.apiKey, 'durable-key');
       expect(loaded.apiSecret, 'durable-secret');
+      final secureCredentials = jsonDecode(
+        secureStorage.values['hivra.bingx.futures.$scope.credentials']!,
+      ) as Map<String, dynamic>;
       expect(
-        secureStorage.values['hivra.bingx.futures.$scope.api_key'],
+        secureCredentials['api_key'],
         'durable-key',
       );
       expect(
-        secureStorage.values['hivra.bingx.futures.$scope.api_secret'],
+        secureCredentials['api_secret'],
         'durable-secret',
       );
       expect(await fallbackFile.exists(), isFalse);

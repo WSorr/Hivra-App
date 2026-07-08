@@ -11,6 +11,7 @@ class BingxFuturesCredentialStore {
   static const String _keyPrefix = 'hivra.bingx.futures.';
   static const String _apiKeySuffix = 'api_key';
   static const String _apiSecretSuffix = 'api_secret';
+  static const String _credentialsSuffix = 'credentials';
   static const String _globalScope = 'global';
   static const String _fallbackFileName = 'bingx_futures_credentials.json';
   final Map<String, BingxFuturesApiCredentials> _sessionCache =
@@ -37,13 +38,6 @@ class BingxFuturesCredentialStore {
     final primaryScope = _scopeKey();
     await _writeScope(primaryScope, normalized);
     _sessionCache[primaryScope] = normalized;
-
-    // Keep a global fallback so users do not need to re-enter credentials
-    // when scope is temporarily unavailable during bootstrap/switch.
-    if (primaryScope != _globalScope) {
-      await _writeScope(_globalScope, normalized);
-      _sessionCache[_globalScope] = normalized;
-    }
   }
 
   Future<BingxFuturesApiCredentials?> load() async {
@@ -88,6 +82,13 @@ class BingxFuturesCredentialStore {
       _sessionCache.remove(scope);
       try {
         await _secureStorage.delete(
+          key: _credentialsForScope(scope),
+        );
+      } catch (_) {
+        // Ignore secure storage cleanup errors.
+      }
+      try {
+        await _secureStorage.delete(
           key: _apiKeyForScope(scope),
         );
       } catch (_) {
@@ -115,6 +116,8 @@ class BingxFuturesCredentialStore {
   String _apiKeyForScope(String scope) => '$_keyPrefix$scope.$_apiKeySuffix';
   String _apiSecretForScope(String scope) =>
       '$_keyPrefix$scope.$_apiSecretSuffix';
+  String _credentialsForScope(String scope) =>
+      '$_keyPrefix$scope.$_credentialsSuffix';
 
   Future<void> _writeScope(
     String scope,
@@ -129,40 +132,41 @@ class BingxFuturesCredentialStore {
     BingxFuturesApiCredentials credentials,
   ) async {
     try {
-      final existingKey = await _secureStorage.read(
-        key: _apiKeyForScope(scope),
-      );
-      final existingSecret = await _secureStorage.read(
-        key: _apiSecretForScope(scope),
-      );
-      if (existingKey == credentials.apiKey &&
-          existingSecret == credentials.apiSecret) {
-        return;
-      }
       await _secureStorage.write(
-        key: _apiKeyForScope(scope),
-        value: credentials.apiKey,
+        key: _credentialsForScope(scope),
+        value: jsonEncode(<String, String>{
+          _apiKeySuffix: credentials.apiKey,
+          _apiSecretSuffix: credentials.apiSecret,
+        }),
       );
-      await _secureStorage.write(
-        key: _apiSecretForScope(scope),
-        value: credentials.apiSecret,
-      );
-      final storedKey = await _secureStorage.read(
-        key: _apiKeyForScope(scope),
-      );
-      final storedSecret = await _secureStorage.read(
-        key: _apiSecretForScope(scope),
-      );
-      if (storedKey != credentials.apiKey ||
-          storedSecret != credentials.apiSecret) {
-        throw StateError('Secure credential read-back mismatch');
-      }
     } catch (error) {
       throw StateError('Secure credential storage is unavailable: $error');
     }
   }
 
   Future<BingxFuturesApiCredentials?> _readScope(String scope) async {
+    try {
+      final raw = await _secureStorage.read(
+        key: _credentialsForScope(scope),
+      );
+      if (raw != null && raw.trim().isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final map = Map<String, dynamic>.from(decoded);
+          final apiKey = map[_apiKeySuffix]?.toString().trim() ?? '';
+          final apiSecret = map[_apiSecretSuffix]?.toString().trim() ?? '';
+          if (apiKey.isNotEmpty && apiSecret.isNotEmpty) {
+            return BingxFuturesApiCredentials(
+              apiKey: apiKey,
+              apiSecret: apiSecret,
+            );
+          }
+        }
+      }
+    } catch (_) {
+      // Continue into legacy secure storage/fallback migration.
+    }
+
     try {
       final apiKey = await _secureStorage.read(
         key: _apiKeyForScope(scope),

@@ -114,6 +114,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   Timer? _openOrdersPollTimer;
   String? _trackedOrdersSymbol;
   String? _trackedOrderId;
+  Future<BingxFuturesApiCredentials?>? _credentialsLoadFuture;
   int _lastExecutionAttempts = 0;
   bool _lastExecutionFromCache = false;
   List<CapsuleTradeSignalInboxMessage> _signalInbox =
@@ -137,7 +138,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _module = TradingDroneModuleService(
       runtime: AppRuntimeService(),
     ).build();
-    unawaited(_bootstrapTradingState());
+    unawaited(_restoreOpenOrdersTrackingState());
     _loadPerpetualSymbols(silent: true);
     _signalInbox = _module.chatDelivery.loadCachedTradeSignals();
     _refreshSignalInbox(silentWhenEmpty: true);
@@ -231,6 +232,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final normalizedSymbol = symbol.trim().toUpperCase();
     if (normalizedSymbol.isEmpty) return;
     final normalizedOrderId = orderId?.trim();
+    if ((normalizedOrderId == null || normalizedOrderId.isEmpty) &&
+        _managedOrderIds.isEmpty) {
+      unawaited(
+        _module.uiLog.log(
+          'bingx.exchange.tracking.skip',
+          'symbol=$normalizedSymbol reason=no_tracked_or_managed_orders',
+        ),
+      );
+      return;
+    }
     _openOrdersPollTimer?.cancel();
     _trackedOrdersSymbol = normalizedSymbol;
     if (normalizedOrderId != null && normalizedOrderId.isNotEmpty) {
@@ -395,6 +406,22 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         return;
       }
       _symbolController.text = trackedSymbol;
+      if (_resolveCredentials() == null) {
+        if (mounted) {
+          setState(() {});
+        }
+        await _module.uiLog.log(
+          'bingx.exchange.tracking.restore',
+          'tracked=deferred symbol=$trackedSymbol '
+              'orderId=${trackedOrderId ?? "-"} reason=credentials_not_loaded '
+              'managedCount=${_managedOrderIds.length} '
+              'symbolCount=${_managedOrderSymbols.length} '
+              'provenanceCount=${_managedOrderProvenance.length} '
+              'slPct=${_stopLossPercent.toStringAsFixed(2)} '
+              'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
+        );
+        return;
+      }
       _startOpenOrdersAutoTracking(
         symbol: trackedSymbol,
         orderId: trackedOrderId,
@@ -450,16 +477,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return 'BingX futures request rejected';
   }
 
-  Future<void> _bootstrapTradingState() async {
-    await _loadCredentials();
-    if (!mounted) return;
-    await _restoreOpenOrdersTrackingState();
-  }
-
-  Future<void> _loadCredentials() async {
+  Future<BingxFuturesApiCredentials?> _loadCredentials({
+    bool showError = true,
+  }) async {
     try {
       final credentials = await _module.credentialStore.load();
-      if (!mounted || credentials == null) return;
+      if (!mounted || credentials == null) return credentials;
       setState(() {
         _apiKeyController.text = credentials.apiKey;
         _apiSecretController.text = credentials.apiSecret;
@@ -468,12 +491,19 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.credentials.load',
         'ok keyLen=${credentials.apiKey.length} secretLen=${credentials.apiSecret.length}',
       );
+      return credentials;
     } catch (error) {
       await _module.uiLog.log(
         'bingx.credentials.load.error',
         '$error',
       );
-      await _showSnack('Failed to load BingX credentials: $error', seconds: 3);
+      if (showError) {
+        await _showSnack(
+          'Failed to load BingX credentials: $error',
+          seconds: 3,
+        );
+      }
+      return null;
     }
   }
 
@@ -918,6 +948,25 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     );
   }
 
+  Future<BingxFuturesApiCredentials?> _ensureCredentialsLoaded({
+    bool silent = false,
+  }) async {
+    final current = _resolveCredentials();
+    if (current != null) return current;
+    final pending = _credentialsLoadFuture;
+    if (pending != null) {
+      final loaded = await pending;
+      return loaded ?? _resolveCredentials();
+    }
+    final loadFuture = _loadCredentials(showError: !silent);
+    _credentialsLoadFuture = loadFuture;
+    final loaded = await loadFuture;
+    if (identical(_credentialsLoadFuture, loadFuture)) {
+      _credentialsLoadFuture = null;
+    }
+    return loaded ?? _resolveCredentials();
+  }
+
   String? _deriveDirectLimitFromZone() {
     final lowRaw = _zoneLowController.text.trim();
     final highRaw = _zoneHighController.text.trim();
@@ -1063,7 +1112,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   Future<void> _autoFitMaxNotionalToRisk() async {
     if (_fittingMaxNotional) return;
-    final credentials = _resolveCredentials();
+    final credentials = await _ensureCredentialsLoaded();
     if (credentials == null) {
       await _showSnack('Save BingX API credentials first');
       return;
@@ -1295,8 +1344,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     BingxFuturesLiveDecisionResult? liveDecision;
 
     if (_orderType == 'limit') {
-      liveDecision =
-          await _computeLiveDecision(symbol: symbol, peerHex: peerHex);
+      liveDecision = await _computeLiveDecision(
+        symbol: symbol,
+        peerHex: peerHex,
+        forceConsensusSignable: peerHex.isEmpty,
+      );
       if (liveDecision == null) return;
       final live = liveDecision;
       if (live.zoneLowDecimal != null && live.zoneHighDecimal != null) {
@@ -1735,7 +1787,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return;
     }
 
-    final credentials = _resolveCredentials();
+    final credentials = await _ensureCredentialsLoaded();
     if (credentials == null) {
       await _module.uiLog.log(
         'bingx.exchange.execute.guard',
@@ -1901,7 +1953,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     required BingxFuturesIntentPayload payload,
     required Map<String, dynamic> rawIntentResult,
   }) async {
-    final credentials = _resolveCredentials();
+    final credentials = await _ensureCredentialsLoaded();
     if (credentials == null) {
       await _showSnack('Save BingX API credentials first');
       return null;
@@ -1935,7 +1987,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     String? symbolOverride,
   }) async {
     if (_fetchingOpenOrders) return;
-    final credentials = _resolveCredentials();
+    final credentials = await _ensureCredentialsLoaded(silent: silent);
     if (credentials == null) {
       if (!silent) {
         await _showSnack('Save BingX API credentials first');
@@ -2379,7 +2431,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   Future<void> _cancelOrder() async {
     if (_cancelingOrder) return;
-    final credentials = _resolveCredentials();
+    final credentials = await _ensureCredentialsLoaded();
     if (credentials == null) {
       await _showSnack('Save BingX API credentials first');
       return;
