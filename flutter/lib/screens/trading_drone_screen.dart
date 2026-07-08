@@ -137,8 +137,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _module = TradingDroneModuleService(
       runtime: AppRuntimeService(),
     ).build();
-    _loadCredentials();
-    unawaited(_restoreOpenOrdersTrackingState());
+    unawaited(_bootstrapTradingState());
     _loadPerpetualSymbols(silent: true);
     _signalInbox = _module.chatDelivery.loadCachedTradeSignals();
     _refreshSignalInbox(silentWhenEmpty: true);
@@ -449,6 +448,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return message;
     }
     return 'BingX futures request rejected';
+  }
+
+  Future<void> _bootstrapTradingState() async {
+    await _loadCredentials();
+    if (!mounted) return;
+    await _restoreOpenOrdersTrackingState();
   }
 
   Future<void> _loadCredentials() async {

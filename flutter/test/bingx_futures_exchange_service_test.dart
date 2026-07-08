@@ -370,6 +370,35 @@ void main() {
       expect(result.orders.first.symbol, 'SOL-USDT');
     });
 
+    test('reads open orders with null optional fields', () async {
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (_) async {
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"orders":[{"orderId":"333","symbol":null,"side":null,"positionSide":null,"type":null,"status":null,"price":null,"avgPrice":"","stopPrice":null,"origQty":null,"quantity":"4.2","executedQty":null,"cumQuote":null,"time":null}]}}',
+          );
+        },
+      );
+
+      final result = await service.getOpenOrders(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+        symbol: 'apt-usdt',
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.orders, hasLength(1));
+      expect(result.orders.first.orderId, '333');
+      expect(result.orders.first.symbol, 'APT-USDT');
+      expect(result.orders.first.side, isEmpty);
+      expect(result.orders.first.priceDecimal, isNull);
+      expect(result.orders.first.quantityDecimal, '4.2');
+    });
+
     test('cancels order via signed DELETE endpoint', () async {
       late BingxHttpRequest capturedRequest;
       final service = BingxFuturesExchangeService(

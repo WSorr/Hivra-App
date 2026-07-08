@@ -1201,28 +1201,24 @@ class BingxFuturesExchangeService {
     for (final raw in rawList) {
       if (raw is! Map) continue;
       final map = Map<String, dynamic>.from(raw);
-      final orderId = map['orderId']?.toString().trim() ??
-          map['orderID']?.toString().trim() ??
-          map['id']?.toString().trim() ??
+      final orderId = _readTrimmedAny(
+            map,
+            const <String>['orderId', 'orderID', 'id'],
+          ) ??
           '';
       if (orderId.isEmpty) continue;
-      final symbol = map['symbol']?.toString().trim().toUpperCase();
-      final side = map['side']?.toString().trim().toUpperCase() ?? '';
+      final symbol = _readTrimmed(map, 'symbol')?.toUpperCase();
+      final side = _readTrimmed(map, 'side')?.toUpperCase() ?? '';
       final positionSide =
-          map['positionSide']?.toString().trim().toUpperCase() ?? '';
-      final orderType = map['type']?.toString().trim().toUpperCase() ?? '';
-      final status = map['status']?.toString().trim().toUpperCase() ?? '';
-      final price = map['price']?.toString().trim().isNotEmpty == true
-          ? map['price']?.toString().trim()
-          : map['avgPrice']?.toString().trim();
-      final stopPrice = map['stopPrice']?.toString().trim();
-      final quantity = map['origQty']?.toString().trim().isNotEmpty == true
-          ? map['origQty']?.toString().trim()
-          : map['quantity']?.toString().trim();
+          _readTrimmed(map, 'positionSide')?.toUpperCase() ?? '';
+      final orderType = _readTrimmed(map, 'type')?.toUpperCase() ?? '';
+      final status = _readTrimmed(map, 'status')?.toUpperCase() ?? '';
+      final price = _readTrimmed(map, 'price') ?? _readTrimmed(map, 'avgPrice');
+      final stopPrice = _readTrimmed(map, 'stopPrice');
+      final quantity =
+          _readTrimmed(map, 'origQty') ?? _readTrimmed(map, 'quantity');
       final executedQty =
-          map['executedQty']?.toString().trim().isNotEmpty == true
-              ? map['executedQty']?.toString().trim()
-              : map['cumQuote']?.toString().trim();
+          _readTrimmed(map, 'executedQty') ?? _readTrimmed(map, 'cumQuote');
       final createdAtMs = int.tryParse(
         map['time']?.toString() ??
             map['createTime']?.toString() ??
@@ -1254,6 +1250,23 @@ class BingxFuturesExchangeService {
       return tb.compareTo(ta);
     });
     return List<BingxFuturesOpenOrder>.unmodifiable(parsed);
+  }
+
+  static String? _readTrimmed(Map<String, dynamic> map, String key) {
+    final value = map[key]?.toString().trim();
+    if (value == null || value.isEmpty) return null;
+    return value;
+  }
+
+  static String? _readTrimmedAny(
+    Map<String, dynamic> map,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final value = _readTrimmed(map, key);
+      if (value != null) return value;
+    }
+    return null;
   }
 
   static BingxFuturesPublicKline? _extractPublicKline(dynamic raw) {
