@@ -21,6 +21,7 @@ dependencies:
   archive: ^3.6.1
   connectivity_plus: ^6.0.5
   cryptography: ^2.7.0
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:

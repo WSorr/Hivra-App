@@ -45,6 +45,19 @@ void main() {
     expect(service.loadSeed(), seed);
   });
 
+  test('reads app version label through injected boundary', () async {
+    final service = SettingsService(
+      loadIsNeste: () => true,
+      loadSeed: () => null,
+      buildOwnCard: () async => null,
+      exportOwnCardJson: () async => null,
+      loadAppVersionLabel: () async => 'Hivra v9.9.9 (999)',
+      contactCards: _FakeCapsuleAddressService(),
+    );
+
+    expect(await service.appVersionLabel(), 'Hivra v9.9.9 (999)');
+  });
+
   test(
       'delegates contact-card management to contact service and card boundaries',
       () async {

@@ -22,18 +22,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isNeste = true;
   bool _isRelay = false;
   int _contactCount = 0;
+  String _appVersionLabel = 'Loading version...';
 
   @override
   void initState() {
     super.initState();
     _isNeste = widget.service.loadIsNeste();
     _loadContactCount();
+    _loadAppVersionLabel();
   }
 
   Future<void> _loadContactCount() async {
     final count = await widget.service.contactCount();
     if (!mounted) return;
     setState(() => _contactCount = count);
+  }
+
+  Future<void> _loadAppVersionLabel() async {
+    final label = await widget.service.appVersionLabel();
+    if (!mounted) return;
+    setState(() => _appVersionLabel = label);
   }
 
   Future<void> _showSeedPhrase() async {
@@ -391,10 +399,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSection(
             title: 'About',
             children: [
-              const ListTile(
-                leading: Icon(Icons.info),
-                title: Text('Version'),
-                subtitle: Text('Hivra v1.0.0'),
+              ListTile(
+                leading: const Icon(Icons.info),
+                title: const Text('Version'),
+                subtitle: Text(_appVersionLabel),
               ),
             ],
           ),
