@@ -105,6 +105,8 @@ typedef HivraTransportReceiveC = Int32 Function();
 typedef HivraTransportReceiveDart = int Function();
 typedef HivraTransportReceiveQuickC = Int32 Function();
 typedef HivraTransportReceiveQuickDart = int Function();
+typedef HivraRetryPendingOutgoingInvitationsC = Int32 Function();
+typedef HivraRetryPendingOutgoingInvitationsDart = int Function();
 typedef HivraVerifyEd25519Signature32C = Int32 Function(
   Pointer<Uint8> message32,
   Pointer<Uint8> pubkey32,
@@ -267,6 +269,7 @@ class HivraBindings {
   HivraSendInvitationDart? _sendInvitation;
   HivraTransportReceiveDart? _transportReceive;
   HivraTransportReceiveQuickDart? _transportReceiveQuick;
+  HivraRetryPendingOutgoingInvitationsDart? _retryPendingOutgoingInvitations;
   HivraVerifyEd25519Signature32Dart? _verifyEd25519Signature32;
   HivraSendCapsuleChatDart? _sendCapsuleChat;
   HivraReceiveCapsuleChatJsonDart? _receiveCapsuleChatJson;
@@ -386,6 +389,15 @@ class HivraBindings {
           .asFunction();
     } catch (_) {
       _transportReceiveQuick = null;
+    }
+
+    try {
+      _retryPendingOutgoingInvitations = _lib
+          .lookup<NativeFunction<HivraRetryPendingOutgoingInvitationsC>>(
+              'hivra_retry_pending_outgoing_invitations')
+          .asFunction();
+    } catch (_) {
+      _retryPendingOutgoingInvitations = null;
     }
 
     try {
@@ -678,6 +690,9 @@ class HivraBindings {
   int fetchInvitationDeliveriesQuick() =>
       _transportReceiveQuick?.call() ?? -1002;
 
+  int retryPendingOutgoingInvitations() =>
+      _retryPendingOutgoingInvitations?.call() ?? -1002;
+
   int verifyEd25519Signature32Code(
     Uint8List message32,
     Uint8List pubkey32,
@@ -781,15 +796,19 @@ class HivraBindings {
   }
 
   bool rejectInvitation(Uint8List invitationId, int reason) {
-    if (invitationId.length != 32) return false;
+    return rejectInvitationCode(invitationId, reason) == 0;
+  }
+
+  int rejectInvitationCode(Uint8List invitationId, int reason) {
+    if (invitationId.length != 32) return -1;
     final invitationIdPtr = calloc<Uint8>(32);
     try {
       final rejectInvitationFn = _rejectInvitation;
       if (rejectInvitationFn == null) {
-        return false;
+        return -1;
       }
       invitationIdPtr.asTypedList(32).setAll(0, invitationId);
-      return rejectInvitationFn(invitationIdPtr, reason) == 0;
+      return rejectInvitationFn(invitationIdPtr, reason);
     } finally {
       calloc.free(invitationIdPtr);
     }

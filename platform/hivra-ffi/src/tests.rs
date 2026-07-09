@@ -216,6 +216,87 @@ fn pending_relationship_break_retry_candidates_clear_after_remote_confirmation()
 }
 
 #[test]
+fn pending_invitation_retry_candidates_clear_after_terminal_event() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(238);
+    let local_root = derived_pubkey(&local_seed);
+    let peer_transport = [239u8; 32];
+    let invitation_id = [240u8; 32];
+    let starter_id = [241u8; 32];
+
+    set_runtime_capsule(local_root, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, starter_id, peer_transport, Some(1), None);
+
+    let pending = crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].to_pubkey, peer_transport);
+    assert_eq!(pending[0].invitation_id, invitation_id);
+
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: PubKey::from(peer_transport),
+        created_starter_id: StarterId::from([242u8; 32]),
+        accepter_root_pubkey: None,
+    };
+    append_runtime_event_with_signer(
+        EventKind::InvitationAccepted,
+        &accepted.to_bytes(),
+        PubKey::from(peer_transport),
+    )
+    .unwrap();
+
+    let pending_after_terminal =
+        crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime();
+    assert!(pending_after_terminal.is_empty());
+}
+
+#[test]
+fn pending_invitation_terminal_retry_candidates_use_sender_transport() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(243);
+    let local_root = derived_pubkey(&local_seed);
+    let peer_transport = [244u8; 32];
+    let peer_root = [245u8; 32];
+    let invitation_id = [246u8; 32];
+    let peer_starter_id = [247u8; 32];
+    let local_starter_id = StarterId::from([248u8; 32]);
+
+    set_runtime_capsule(local_root, Network::Neste);
+    append_incoming_invitation_with_root_for_test(
+        invitation_id,
+        peer_starter_id,
+        local_root,
+        2,
+        peer_transport,
+        peer_root,
+    );
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: PubKey::from(peer_transport),
+        created_starter_id: local_starter_id,
+        accepter_root_pubkey: Some(local_root),
+    };
+    append_runtime_event_with_signer(
+        EventKind::InvitationAccepted,
+        &accepted.to_bytes(),
+        local_root,
+    )
+    .unwrap();
+
+    let pending =
+        crate::invitation_support::pending_outgoing_invitation_terminal_deliveries_in_runtime();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].to_pubkey, peer_transport);
+    assert_eq!(pending[0].kind, EventKind::InvitationAccepted);
+    assert_eq!(pending[0].invitation_id, invitation_id);
+    assert_eq!(pending[0].payload, accepted.to_bytes());
+}
+
+#[test]
 fn lookup_reads_sender_root_from_root_augmented_incoming_offer() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

@@ -221,6 +221,163 @@ fn retry_pending_outgoing_relationship_breaks_over_transport(
     Ok(0)
 }
 
+fn retry_pending_outgoing_invitations_over_transport(
+    transport: &NostrTransport,
+    engine: &FfiEngine,
+    sender_pubkey: [u8; 32],
+) -> Result<i32, i32> {
+    let pending = crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime();
+    let pending_terminals =
+        crate::invitation_support::pending_outgoing_invitation_terminal_deliveries_in_runtime();
+    if pending.is_empty() && pending_terminals.is_empty() {
+        return Ok(0);
+    }
+
+    let mut delivered_count: i32 = 0;
+    let mut first_delivery_error: Option<(i32, Option<String>)> = None;
+    for pending_delivery in pending {
+        let remote_prepared = match engine.prepare_domain_event(
+            EventKind::InvitationReceived,
+            pending_delivery.payload.clone(),
+            Some(PubKey::from(pending_delivery.to_pubkey)),
+        ) {
+            Ok(prepared) => prepared,
+            Err(_) => {
+                first_delivery_error.get_or_insert((-7, Some("event signing failed".to_string())));
+                continue;
+            }
+        };
+        let message = Message {
+            from: sender_pubkey,
+            to: pending_delivery.to_pubkey,
+            kind: EventKind::InvitationSent as u32,
+            payload: pending_delivery.payload,
+            timestamp: pending_delivery.timestamp,
+            invitation_id: Some(pending_delivery.invitation_id),
+            domain_event: Some(domain_event_proof(&remote_prepared.event)),
+        };
+
+        match send_delivery_message(transport, &message, -7, "InvitationSentRetry") {
+            Ok(_) => {
+                delivered_count += 1;
+            }
+            Err(delivery_error) => {
+                if first_delivery_error.is_none() {
+                    first_delivery_error = Some(delivery_error);
+                }
+            }
+        }
+    }
+    for pending_delivery in pending_terminals {
+        let remote_prepared = match engine.prepare_domain_event(
+            pending_delivery.kind,
+            pending_delivery.payload.clone(),
+            Some(PubKey::from(pending_delivery.to_pubkey)),
+        ) {
+            Ok(prepared) => prepared,
+            Err(_) => {
+                first_delivery_error.get_or_insert((-7, Some("event signing failed".to_string())));
+                continue;
+            }
+        };
+        let retry_label = match pending_delivery.kind {
+            EventKind::InvitationAccepted => "InvitationAcceptedRetry",
+            EventKind::InvitationRejected => "InvitationRejectedRetry",
+            _ => "InvitationTerminalRetry",
+        };
+        let message = Message {
+            from: sender_pubkey,
+            to: pending_delivery.to_pubkey,
+            kind: pending_delivery.kind as u32,
+            payload: pending_delivery.payload,
+            timestamp: pending_delivery.timestamp,
+            invitation_id: Some(pending_delivery.invitation_id),
+            domain_event: Some(domain_event_proof(&remote_prepared.event)),
+        };
+
+        match send_delivery_message(transport, &message, -7, retry_label) {
+            Ok(_) => {
+                delivered_count += 1;
+            }
+            Err(delivery_error) => {
+                if first_delivery_error.is_none() {
+                    first_delivery_error = Some(delivery_error);
+                }
+            }
+        }
+    }
+
+    if delivered_count > 0 {
+        eprintln!(
+            "[Delivery/Nostr] InvitationRetry delivered count={}",
+            delivered_count
+        );
+        return Ok(delivered_count);
+    }
+
+    if let Some((code, _reason)) = first_delivery_error {
+        return Err(code);
+    }
+
+    Ok(0)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn hivra_retry_pending_outgoing_invitations() -> i32 {
+    clear_last_error();
+    clear_delivery_receipts();
+
+    let seed = match load_seed() {
+        Ok(seed) => seed,
+        Err(_) => {
+            set_last_error("Retry pending invitations failed: seed not found");
+            return -2;
+        }
+    };
+
+    {
+        let runtime = RUNTIME.lock().unwrap();
+        if runtime.capsule.is_none() {
+            set_last_error("Retry pending invitations failed: capsule runtime is not initialized");
+            return -4;
+        }
+    }
+
+    let (sender_secret, sender_pubkey) = match load_invitation_delivery_context(&seed) {
+        Ok(context) => context,
+        Err(code) => {
+            set_last_error(format!(
+                "Retry pending invitations failed: delivery context initialization failed (code {code})"
+            ));
+            return code;
+        }
+    };
+    let engine = build_engine(&seed);
+
+    set_last_delivery_reason(None);
+    match with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
+        match retry_pending_outgoing_invitations_over_transport(transport, &engine, sender_pubkey) {
+            Ok(delivered) => Ok(delivered),
+            Err(code) => {
+                set_last_delivery_reason(Some(format!("delivery retry failed with code {code}")));
+                Err(code)
+            }
+        }
+    }) {
+        Ok(delivered) => delivered,
+        Err(code) => {
+            let reason_suffix = take_last_delivery_reason()
+                .as_deref()
+                .map(|value| format!("; reason: {value}"))
+                .unwrap_or_default();
+            set_last_error(format!(
+                "Retry pending invitations failed: delivery transport rejected message (code {code}{reason_suffix})"
+            ));
+            code
+        }
+    }
+}
+
 /// Deliver an invitation and append `InvitationSent` to the local ledger.
 ///
 /// Exported symbol remains stable for existing bindings.
@@ -859,6 +1016,7 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
                             code,
                             reason_suffix
                         );
+                        return code;
                     }
                 }
                 Err(code) => {
@@ -866,6 +1024,7 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
                         "[Delivery/Nostr] InvitationRejected local append ok; delivery context unavailable ({})",
                         code
                     );
+                    return code;
                 }
             }
             0

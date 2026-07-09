@@ -77,6 +77,22 @@ Map<String, Object?> receiveInvitationsQuickInWorker(
   };
 }
 
+Map<String, Object?> retryPendingOutgoingInvitationsInWorker(
+    Map<String, Object?> args) {
+  final hivra = HivraBindings();
+  if (!_bootstrapWorkerRuntime(hivra, args)) {
+    return <String, Object?>{'result': -1004};
+  }
+  final result = hivra.retryPendingOutgoingInvitations();
+  final lastError = hivra.lastErrorMessage();
+  return <String, Object?>{
+    'result': result,
+    'ledgerJson': hivra.exportLedger(),
+    'lastError': lastError,
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
+  };
+}
+
 Map<String, Object?> acceptInvitationInWorker(Map<String, Object?> args) {
   final hivra = HivraBindings();
   if (!_bootstrapWorkerRuntime(hivra, args)) {
@@ -105,11 +121,11 @@ Map<String, Object?> rejectInvitationInWorker(Map<String, Object?> args) {
 
   final invitationId = args['invitationId'] as Uint8List;
   final reason = args['reason'] as int;
-  final ok = hivra.rejectInvitation(invitationId, reason);
+  final result = hivra.rejectInvitationCode(invitationId, reason);
   final lastError = hivra.lastErrorMessage();
   return <String, Object?>{
-    'result': ok ? 0 : -1,
-    'ledgerJson': ok ? hivra.exportLedger() : null,
+    'result': result,
+    'ledgerJson': hivra.exportLedger(),
     'lastError': lastError,
     'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
   };

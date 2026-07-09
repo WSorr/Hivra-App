@@ -8,10 +8,12 @@ abstract final class DeliveryTransportId {
 
 abstract final class DeliveryOutboxKind {
   static const String invitationSent = 'InvitationSent';
+  static const String invitationTerminal = 'InvitationTerminal';
   static const String relationshipBroken = 'RelationshipBroken';
 }
 
 abstract final class DeliveryOutboxReason {
   static const String sendInvitationRetry = 'send_invitation_retry';
+  static const String invitationTerminalRetry = 'invitation_terminal_retry';
   static const String localRelationshipBreak = 'local_relationship_break';
 }

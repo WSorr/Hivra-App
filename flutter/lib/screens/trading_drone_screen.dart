@@ -1318,6 +1318,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack('Symbol is required');
       return;
     }
+    if (mounted) {
+      setState(() {
+        _lastIntentResponse = null;
+      });
+    } else {
+      _lastIntentResponse = null;
+    }
     final forceAutoZonePending = _orderType == 'limit';
     if (forceAutoZonePending &&
         (_entryMode != 'zone_pending' ||
@@ -1784,6 +1791,19 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'blocked=no_intent status=${response?.status.name ?? "none"}',
       );
       await _showSnack('Run a BingX intent first');
+      return;
+    }
+    final currentSymbol = _symbolController.text.trim().toUpperCase();
+    final intentSymbol = result['symbol']?.toString().trim().toUpperCase();
+    if (currentSymbol.isNotEmpty &&
+        intentSymbol != null &&
+        intentSymbol.isNotEmpty &&
+        currentSymbol != intentSymbol) {
+      await _module.uiLog.log(
+        'bingx.exchange.execute.guard',
+        'blocked=stale_intent current_symbol=$currentSymbol intent_symbol=$intentSymbol',
+      );
+      await _showSnack('Run a fresh intent for $currentSymbol first');
       return;
     }
 

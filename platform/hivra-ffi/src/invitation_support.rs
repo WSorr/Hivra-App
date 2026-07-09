@@ -190,6 +190,23 @@ pub(crate) struct PendingOutgoingRelationshipBreakDelivery {
     pub(crate) timestamp: u64,
 }
 
+#[derive(Clone)]
+pub(crate) struct PendingOutgoingInvitationDelivery {
+    pub(crate) to_pubkey: [u8; 32],
+    pub(crate) payload: Vec<u8>,
+    pub(crate) timestamp: u64,
+    pub(crate) invitation_id: [u8; 32],
+}
+
+#[derive(Clone)]
+pub(crate) struct PendingOutgoingInvitationTerminalDelivery {
+    pub(crate) to_pubkey: [u8; 32],
+    pub(crate) kind: EventKind,
+    pub(crate) payload: Vec<u8>,
+    pub(crate) timestamp: u64,
+    pub(crate) invitation_id: [u8; 32],
+}
+
 #[derive(Clone, Copy)]
 struct RelationshipBreakRetryAnchor {
     peer_starter_id: StarterId,
@@ -376,6 +393,118 @@ pub(crate) fn pending_outgoing_relationship_break_deliveries_in_runtime(
                     .as_bytes()
                     .cmp(b.peer_starter_id.as_bytes())
             })
+    });
+    deliveries
+}
+
+pub(crate) fn pending_outgoing_invitation_deliveries_in_runtime(
+) -> Vec<PendingOutgoingInvitationDelivery> {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return Vec::new();
+    };
+
+    let local_root_pubkey = capsule.pubkey;
+    let mut pending: HashMap<[u8; 32], PendingOutgoingInvitationDelivery> = HashMap::new();
+
+    for event in capsule.ledger.events() {
+        match event.kind() {
+            EventKind::InvitationSent if event.signer() == &local_root_pubkey => {
+                let Ok(payload) = InvitationSentPayload::from_bytes(event.payload()) else {
+                    continue;
+                };
+                pending.insert(
+                    payload.invitation_id,
+                    PendingOutgoingInvitationDelivery {
+                        to_pubkey: *payload.to_pubkey.as_bytes(),
+                        payload: event.payload().to_vec(),
+                        timestamp: event.timestamp().as_u64(),
+                        invitation_id: payload.invitation_id,
+                    },
+                );
+            }
+            EventKind::InvitationAccepted
+            | EventKind::InvitationRejected
+            | EventKind::InvitationExpired => {
+                if let Some(invitation_id) =
+                    invitation_id_from_terminal_payload(event.kind(), event.payload())
+                {
+                    pending.remove(&invitation_id);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut deliveries: Vec<PendingOutgoingInvitationDelivery> = pending.into_values().collect();
+    deliveries.sort_by(|a, b| {
+        a.timestamp
+            .cmp(&b.timestamp)
+            .then_with(|| a.to_pubkey.cmp(&b.to_pubkey))
+            .then_with(|| a.invitation_id.cmp(&b.invitation_id))
+    });
+    deliveries
+}
+
+pub(crate) fn pending_outgoing_invitation_terminal_deliveries_in_runtime(
+) -> Vec<PendingOutgoingInvitationTerminalDelivery> {
+    let runtime = RUNTIME.lock().unwrap();
+    let Some(capsule) = runtime.capsule.as_ref() else {
+        return Vec::new();
+    };
+
+    let local_root_pubkey = capsule.pubkey;
+    let mut incoming_offers: HashMap<[u8; 32], PubKey> = HashMap::new();
+    let mut pending: HashMap<([u8; 32], EventKind), PendingOutgoingInvitationTerminalDelivery> =
+        HashMap::new();
+
+    for event in capsule.ledger.events() {
+        match event.kind() {
+            EventKind::InvitationReceived => {
+                let payload = event.payload();
+                if !invitation_payload_has_known_shape(payload) {
+                    continue;
+                }
+                let mut invitation_id = [0u8; 32];
+                invitation_id.copy_from_slice(&payload[..32]);
+                let sender_transport =
+                    invitation_payload_sender_transport(payload).unwrap_or(*event.signer());
+                incoming_offers.insert(invitation_id, sender_transport);
+            }
+            EventKind::InvitationAccepted | EventKind::InvitationRejected
+                if event.signer() == &local_root_pubkey =>
+            {
+                let Some(invitation_id) =
+                    invitation_id_from_terminal_payload(event.kind(), event.payload())
+                else {
+                    continue;
+                };
+                let Some(to_pubkey) = incoming_offers.get(&invitation_id).copied() else {
+                    continue;
+                };
+                pending.insert(
+                    (invitation_id, event.kind()),
+                    PendingOutgoingInvitationTerminalDelivery {
+                        to_pubkey: *to_pubkey.as_bytes(),
+                        kind: event.kind(),
+                        payload: event.payload().to_vec(),
+                        timestamp: event.timestamp().as_u64(),
+                        invitation_id,
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+
+    let mut deliveries: Vec<PendingOutgoingInvitationTerminalDelivery> =
+        pending.into_values().collect();
+    deliveries.sort_by(|a, b| {
+        a.timestamp
+            .cmp(&b.timestamp)
+            .then_with(|| a.to_pubkey.cmp(&b.to_pubkey))
+            .then_with(|| (a.kind as u8).cmp(&(b.kind as u8)))
+            .then_with(|| a.invitation_id.cmp(&b.invitation_id))
     });
     deliveries
 }
