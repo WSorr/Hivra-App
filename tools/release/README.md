@@ -34,6 +34,17 @@ This directory contains deterministic release helpers for Hivra.
     - at least one `risk_blocked`
     - non-empty decision/execution hashes
 
+- `check_manual_release_signoff.sh`
+  - Verifies the canonical manual signoff log for one build tag.
+  - GitHub publication requires signed-off rows for both macOS and Android.
+    - `tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform all`
+
+- `publish_github_release.sh`
+  - The only approved GitHub Release publication path.
+  - Runs preflight, validates manual signoff, verifies artifacts, and creates the
+    GitHub Release.
+    - `tools/release/publish_github_release.sh --version <v> --channel <test|public>`
+
 ## Typical Flow
 
 1. Ask the repository guard for the next test tag:
@@ -42,7 +53,8 @@ This directory contains deterministic release helpers for Hivra.
      ignores legacy local tags.
    - Test releases are strictly sequential: if the guard suggests `test9`,
      packaging rejects `test10` or any other skipped number.
-2. Record rows during manual smoke:
+2. Record trading-drone parity evidence rows during smoke or deterministic
+   fixture verification:
    - `tools/release/record_trading_drone_evidence.sh ...`
 3. Validate coverage:
    - `tools/release/check_trading_drone_evidence.sh --build-tag <version-tag>`
@@ -51,10 +63,22 @@ This directory contains deterministic release helpers for Hivra.
 5. Build channel release:
    - `tools/release/macos_release.sh ...`
    - `tools/release/android_release.sh ...`
+6. Manually install/launch the packaged artifacts and complete platform
+   checklists:
+   - `docs/checklists/release-macos.md`
+   - `docs/checklists/release-android.md`
+7. Record manual signoff rows:
+   - `docs/checklists/release-manual-signoff-log.md`
+8. Publish through the guarded GitHub release script:
+   - `tools/release/publish_github_release.sh --version <v> --channel <test|public>`
 
 Both packaging scripts reject a version that belongs to another major release
 line, already exists on GitHub, conflicts with a remote tag, or does not match
 the selected channel. They do not expose preflight/build bypass flags.
+
+Packaging is not publication. Publishing to GitHub is blocked until the manual
+signoff checker passes for both macOS and Android. Deterministic fixture rows in
+`docs/checklists/trading-drone-evidence-log.md` are not a manual signoff.
 
 Release remains blocked while the trading-drone parity table contains any
 status other than `DONE`. Plugin-owned execution requires the bounded semantic

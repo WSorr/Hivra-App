@@ -6,6 +6,7 @@ VERSION=""
 CHANNEL=""
 SUGGEST=0
 SELF_TEST=0
+ALLOW_EXISTING_REMOTE_TAG=0
 
 usage() {
   cat <<'EOF'
@@ -13,6 +14,11 @@ Usage:
   tools/release/release_version_guard.sh --version <tag> --channel <test|public>
   tools/release/release_version_guard.sh --suggest
   tools/release/release_version_guard.sh --self-test
+
+Options:
+  --allow-existing-remote-tag
+      Publication-only mode. Allows an already-pushed tag while still rejecting
+      already-published GitHub releases and invalid version progression.
 
 The guard reads the published Hivra-App release line from GitHub. Local legacy
 tags are deliberately ignored.
@@ -128,6 +134,10 @@ while [ $# -gt 0 ]; do
       SELF_TEST=1
       shift
       ;;
+    --allow-existing-remote-tag)
+      ALLOW_EXISTING_REMOTE_TAG=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -196,7 +206,8 @@ if published_tags | rg -Fxq "$VERSION"; then
   die "GitHub Release already exists for $VERSION"
 fi
 
-if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+if [ "$ALLOW_EXISTING_REMOTE_TAG" -eq 0 ] &&
+   git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
   die "remote tag already exists: $VERSION"
 fi
 

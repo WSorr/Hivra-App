@@ -2,6 +2,13 @@
 
 Use this checklist before publishing Android builds to testers or end users.
 
+Publishing is blocked until this checklist is reflected in
+`docs/checklists/release-manual-signoff-log.md` and validated with:
+
+```bash
+tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform Android
+```
+
 ## Build
 
 - [ ] `tools/release/preflight.sh` passes before packaging.
@@ -36,6 +43,9 @@ Use this checklist before publishing Android builds to testers or end users.
 
 ## Publish
 
+- [ ] Manual Android signoff row was recorded in `docs/checklists/release-manual-signoff-log.md`.
+- [ ] Manual Android signoff was validated with `tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform Android`.
+- [ ] GitHub publication used `tools/release/publish_github_release.sh` after both macOS and Android signoff rows existed.
 - [ ] Release asset name clearly indicates version and target.
 - [ ] Checksums were generated for published APK assets.
 - [ ] `RELEASE-METADATA.txt` was generated and kept with release artifacts.

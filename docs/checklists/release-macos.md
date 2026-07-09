@@ -2,6 +2,13 @@
 
 Use this checklist before publishing any macOS build to testers or end users.
 
+Publishing is blocked until this checklist is reflected in
+`docs/checklists/release-manual-signoff-log.md` and validated with:
+
+```bash
+tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform macOS
+```
+
 ## Build
 
 - [ ] `main` contains the intended release commits.
@@ -52,7 +59,10 @@ Use this checklist before publishing any macOS build to testers or end users.
 
 ## Publish
 
+- [ ] Manual macOS signoff row was recorded in `docs/checklists/release-manual-signoff-log.md`.
+- [ ] Manual macOS signoff was validated with `tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platform macOS`.
 - [ ] Correct Git tag exists on the intended commit.
+- [ ] GitHub publication used `tools/release/publish_github_release.sh` after both macOS and Android signoff rows existed.
 - [ ] GitHub Release assets match the latest local artifacts.
 - [ ] `Pre-release` flag is correct (`test` => pre-release, `public` => stable release).
 - [ ] Tester instructions are included if the build is unsigned.

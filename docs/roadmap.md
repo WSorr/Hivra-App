@@ -1668,7 +1668,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - keep AI Capsule Analyst/Hivra Engineer construction behind
       `AiToolingModuleService`; `AppRuntimeService` must expose only neutral
       capsule/runtime primitives.
-    - split `CapsuleDoctorScreen` into presentation cards/widgets after
+    - split the Capsule Analyst screen (legacy internal class:
+      `CapsuleDoctorScreen`) into presentation cards/widgets after
       service boundaries stabilize; widgets must not construct feature service
       graphs.
     - add a `localOpenAiCompatible` inference provider option with explicit
@@ -1696,7 +1697,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - provider calls target OpenAI-compatible `/v1/chat/completions`,
       - UI/log output records provider id/model only, not endpoint secrets or
         key material.
-    - Started `CapsuleDoctorScreen` presentation split by moving reusable AI
+    - Started the Capsule Analyst presentation split by moving reusable AI
       outbound preview and status-message panels into
       `widgets/ai_diagnostics/provider_widgets.dart`; no service wiring or runtime
       behavior moved into widgets.
@@ -1710,7 +1711,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Moved shared diagnostics report presentation (header, findings, key/value
       sections, retry error state) into `widgets/ai_diagnostics/report_widgets.dart`;
       deterministic key sorting stays in the presentation boundary.
-    - Added an `AiToolingModule` aggregate so `CapsuleDoctorScreen` keeps one
+    - Added an `AiToolingModule` aggregate so the Capsule Analyst screen keeps one
       AI tooling boundary instead of individual service fields for inspection,
       chat, plugin audit, developer workspace, and engineer advisory paths.
     - Extended architecture contract gate so Capsule Analyst must keep using

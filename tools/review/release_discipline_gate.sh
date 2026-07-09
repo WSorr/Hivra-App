@@ -27,7 +27,7 @@ require_present() {
   local file="$1"
   local pattern="$2"
   local message="$3"
-  if rg -q "$pattern" "$file"; then
+  if rg -q -- "$pattern" "$file"; then
     pass "$message"
   else
     fail "$message"
@@ -46,11 +46,14 @@ CHECKLIST_ANDROID_RUNTIME="$ROOT/docs/checklists/android-runtime-hardening.md"
 CHECKLIST_SMOKE="$ROOT/docs/checklists/manual-smoke.md"
 CHECKLIST_USER_LIFETIME="$ROOT/docs/checklists/user-lifetime-safety-pack.md"
 CHECKLIST_AI_ENGINEER_SMOKE="$ROOT/docs/checklists/ai-engineer-release-smoke.md"
+CHECKLIST_MANUAL_SIGNOFF="$ROOT/docs/checklists/release-manual-signoff-log.md"
 CHECKLIST_DRONE_PARITY="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
 CHECKLIST_DRONE_EVIDENCE="$ROOT/docs/checklists/trading-drone-evidence-log.md"
 DRONE_GOAL_CONTRACT="$ROOT/docs/plugins/bingx_futures_trading_drone_goal_contract_v1.md"
 DRONE_EVIDENCE_RECORD="$ROOT/tools/release/record_trading_drone_evidence.sh"
 DRONE_EVIDENCE_CHECK="$ROOT/tools/release/check_trading_drone_evidence.sh"
+MANUAL_SIGNOFF_CHECK="$ROOT/tools/release/check_manual_release_signoff.sh"
+GITHUB_RELEASE_PUBLISH="$ROOT/tools/release/publish_github_release.sh"
 FLUTTER_VERSION_DERIVER="$ROOT/tools/release/derive_flutter_version.sh"
 
 require_file "$PRECHECK" "preflight script exists"
@@ -63,11 +66,14 @@ require_file "$CHECKLIST_ANDROID_RUNTIME" "Android runtime hardening checklist e
 require_file "$CHECKLIST_SMOKE" "manual smoke checklist exists"
 require_file "$CHECKLIST_USER_LIFETIME" "user lifetime safety checklist exists"
 require_file "$CHECKLIST_AI_ENGINEER_SMOKE" "AI Engineer release smoke checklist exists"
+require_file "$CHECKLIST_MANUAL_SIGNOFF" "manual release signoff log exists"
 require_file "$CHECKLIST_DRONE_PARITY" "trading drone spec/runtime parity checklist exists"
 require_file "$CHECKLIST_DRONE_EVIDENCE" "trading drone evidence log exists"
 require_file "$DRONE_GOAL_CONTRACT" "trading drone goal contract exists"
 require_file "$DRONE_EVIDENCE_RECORD" "trading drone evidence-record script exists"
 require_file "$DRONE_EVIDENCE_CHECK" "trading drone evidence-check script exists"
+require_file "$MANUAL_SIGNOFF_CHECK" "manual release signoff-check script exists"
+require_file "$GITHUB_RELEASE_PUBLISH" "guarded GitHub release publish script exists"
 require_file "$FLUTTER_VERSION_DERIVER" "Flutter artifact version derivation exists"
 
 require_present "$ROADMAP" '^### 6\. Release Preflight as a Gate' \
@@ -91,6 +97,8 @@ require_present "$RELEASE_VERSION_GUARD" 'next_patch_base\(\)' \
   "release version guard allows next patch test train"
 require_present "$RELEASE_VERSION_GUARD" 'is_allowed_next_test_version "\$latest" "\$VERSION"' \
   "release version guard rejects skipped test release numbers"
+require_present "$RELEASE_VERSION_GUARD" '--allow-existing-remote-tag' \
+  "release version guard supports publication-only existing tag mode"
 require_present "$RELEASE_VERSION_GUARD" 'self-test' \
   "release version guard has network-free self-test"
 require_present "$RELEASE_VERSION_GUARD" 'EXPECTED_REPOSITORY="WSorr/Hivra-App"' \
@@ -145,6 +153,12 @@ require_present "$CHECKLIST_MAC" 'User Lifetime Safety Pack' \
   "macOS checklist requires user lifetime safety pass"
 require_present "$CHECKLIST_MAC" 'Correct Git tag exists on the intended commit' \
   "macOS checklist requires publish tag verification"
+require_present "$CHECKLIST_MAC" 'release-manual-signoff-log\.md' \
+  "macOS checklist requires manual signoff log"
+require_present "$CHECKLIST_MAC" 'tools/release/check_manual_release_signoff\.sh --build-tag <version-tag> --platform macOS' \
+  "macOS checklist requires platform manual signoff check"
+require_present "$CHECKLIST_MAC" 'tools/release/publish_github_release\.sh' \
+  "macOS checklist requires guarded GitHub publication"
 require_present "$CHECKLIST_MAC" 'GitHub Release assets match the latest local artifacts' \
   "macOS checklist requires publish artifact parity check"
 require_present "$CHECKLIST_MAC" '`Pre-release` flag is correct' \
@@ -187,6 +201,12 @@ require_present "$CHECKLIST_ANDROID" 'Checksums were generated for published APK
   "Android checklist requires APK checksum verification"
 require_present "$CHECKLIST_ANDROID" 'Release asset name clearly indicates version and target' \
   "Android checklist requires publish asset naming check"
+require_present "$CHECKLIST_ANDROID" 'release-manual-signoff-log\.md' \
+  "Android checklist requires manual signoff log"
+require_present "$CHECKLIST_ANDROID" 'tools/release/check_manual_release_signoff\.sh --build-tag <version-tag> --platform Android' \
+  "Android checklist requires platform manual signoff check"
+require_present "$CHECKLIST_ANDROID" 'tools/release/publish_github_release\.sh' \
+  "Android checklist requires guarded GitHub publication"
 require_present "$CHECKLIST_ANDROID" 'RELEASE-METADATA\.txt' \
   "Android checklist requires release metadata traceability"
 require_present "$CHECKLIST_ANDROID" 'Release notes mention testing scope and known Android limitations' \
@@ -223,6 +243,10 @@ require_present "$CHECKLIST_SMOKE" 'Ledger Truth' \
   "manual smoke checklist covers ledger truth projection"
 require_present "$CHECKLIST_SMOKE" 'Trading Drone \(Observability Gate\)' \
   "manual smoke checklist covers trading drone observability gate"
+require_present "$CHECKLIST_SMOKE" 'before GitHub' \
+  "manual smoke checklist is explicitly before GitHub publication"
+require_present "$CHECKLIST_SMOKE" 'release-manual-signoff-log\.md' \
+  "manual smoke checklist writes canonical signoff log"
 require_present "$CHECKLIST_SMOKE" 'Trading drone parity checklist is completed' \
   "manual smoke checklist requires drone parity checklist completion"
 require_present "$CHECKLIST_SMOKE" 'drone\.decision\.envelope' \
@@ -251,8 +275,19 @@ require_present "$CHECKLIST_DRONE_EVIDENCE" 'Required Coverage Per Candidate' \
   "drone evidence log includes per-candidate coverage requirements"
 require_present "$CHECKLIST_DRONE_EVIDENCE" 'tools/release/check_trading_drone_evidence\.sh --build-tag <version-tag>' \
   "drone evidence log includes coverage verification command"
+require_present "$CHECKLIST_DRONE_EVIDENCE" 'release approval is recorded separately' \
+  "drone evidence log cannot replace manual release signoff"
+require_present "$CHECKLIST_MANUAL_SIGNOFF" '\| Build Tag \| Date \(UTC\) \| Platform \| Artifact \| Manual Smoke \| Trading Smoke \| User Lifetime \| AI Engineer \| Signer \| Notes \|' \
+  "manual signoff log includes required table columns"
 require_present "$DRONE_EVIDENCE_CHECK" '\^\[0-9a-fA-F\]\{64\}\$' \
   "drone evidence checker requires canonical 64-hex hashes"
+require_present "$MANUAL_SIGNOFF_CHECK" '--self-test' \
+  "manual signoff checker has network-free self-test"
+if "$MANUAL_SIGNOFF_CHECK" --self-test >/dev/null; then
+  pass "manual signoff checker self-test passes"
+else
+  fail "manual signoff checker self-test passes"
+fi
 require_present "$DRONE_GOAL_CONTRACT" '## 2\. Three Hivra Laws \(Mandatory\)' \
   "drone goal contract includes Hivra laws section"
 require_present "$DRONE_GOAL_CONTRACT" '## 3\. Source-of-Truth Stack \(Order of Authority\)' \
@@ -318,6 +353,14 @@ require_present "$PRECHECK" 'check_trading_drone_evidence_coverage' \
   "preflight wires trading drone evidence coverage"
 require_present "$PRECHECK" 'Missing required --trading-evidence-build-tag' \
   "preflight requires trading evidence build tag"
+require_present "$GITHUB_RELEASE_PUBLISH" 'check_manual_release_signoff\.sh' \
+  "GitHub publish script enforces manual signoff"
+require_present "$GITHUB_RELEASE_PUBLISH" 'preflight\.sh' \
+  "GitHub publish script enforces automated preflight"
+require_present "$GITHUB_RELEASE_PUBLISH" 'gh release create' \
+  "GitHub publish script owns release creation"
+require_present "$GITHUB_RELEASE_PUBLISH" '--allow-existing-remote-tag' \
+  "GitHub publish script allows already-pushed release tags only at publication"
 require_present "$MAC_RELEASE_SCRIPT" 'trading-evidence-build-tag "\$VERSION"' \
   "macOS release binds evidence coverage to release version"
 require_present "$ANDROID_RELEASE_SCRIPT" 'trading-evidence-build-tag "\$VERSION"' \

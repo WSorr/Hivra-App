@@ -1,6 +1,14 @@
 # Manual Smoke Checklist
 
-Use this checklist for interactive validation before or after a release build.
+Use this checklist for interactive validation after packaging and before GitHub
+release publication. Automated preflight and deterministic fixtures do not
+replace this manual smoke pass.
+
+After completing this checklist, record the result in:
+
+```bash
+docs/checklists/release-manual-signoff-log.md
+```
 
 ## Capsule Basics
 
