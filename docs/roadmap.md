@@ -1430,14 +1430,14 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
 - `11.17 Plugin Auditor Diagnostics`
   - Goal:
     - add a read-only plugin audit mode before developer repository access.
-    - make installed plugin package trust evidence visible from Capsule Diagnostics
+    - make installed plugin package trust evidence visible from Capsule Analyst
       without granting new capabilities or mutating plugin state.
   - Scope:
     - added deterministic `AiPluginAuditService` over installed plugin registry
       records and stored package bytes.
     - audit report includes package digest, package kind, size, declared
       capabilities, plugin id/version, ABI/entry compatibility, and findings.
-    - Capsule Diagnostics now surfaces Plugin Auditor as a separate read-only card.
+    - Capsule Analyst now surfaces Plugin Auditor as a separate read-only card.
   - Constraints:
     - no plugin registry/catalog/package mutation.
     - no capability escalation; unsupported capabilities are findings only.
@@ -1461,7 +1461,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       previews.
     - scan output includes allowed file paths, sizes, SHA-256 hashes, skip
       counts, denylist findings, and a deterministic report hash.
-    - Capsule Diagnostics now includes a manual Developer Workspace Preview card for
+    - Capsule Analyst now includes a manual Developer Workspace Preview card for
       explicit local paths.
   - Constraints:
     - no source contents are uploaded or sent to AI.
@@ -1486,7 +1486,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       their SHA-256 still matches.
     - selected context includes snippet text, file hashes, findings, payload
       size, and deterministic context hash.
-    - Capsule Diagnostics shows a local selected-context JSON preview.
+    - Capsule Analyst shows a local selected-context JSON preview.
   - Constraints:
     - no provider submission in this step.
     - no automatic patching, committing, pushing, cloning, or script execution.
@@ -1502,7 +1502,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
 - `11.20 Explicit Developer Mode Boundary`
   - Goal:
     - prevent developer repository tooling from appearing as ordinary
-      user-facing Capsule Diagnostics.
+      user-facing Capsule Analyst.
   - Scope:
     - added a Developer Mode card that is disabled by default.
     - workspace scan/selected-context tools are rendered only after explicit
@@ -1523,13 +1523,13 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - allow Developer Mode to ask an AI engineer about explicit selected
       evidence without granting repository write access.
   - Scope:
-    - combine local Capsule Diagnostics snapshot, selected developer context, and a
+    - combine local Capsule Analyst snapshot, selected developer context, and a
       user question into one outbound preview.
     - provider response is advisory only: likely files, hypotheses, suggested
       tests, and patch plan.
     - no file writes, no patch application, no git operations, no release
       operations.
-    - Capsule Diagnostics Developer Mode now exposes Preview/Ask Hivra Engineer
+    - Capsule Analyst Developer Mode now exposes Preview/Ask Hivra Engineer
       controls after selected context is built.
   - Acceptance:
     - empty selected context is rejected.
@@ -1641,7 +1641,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - prepare the AI Capsule Engineer feature set for a release-quality manual
       smoke pass.
   - Scope:
-    - manual macOS release smoke for Capsule Diagnostics, scoped AI analysis, Plugin
+    - manual macOS release smoke for Capsule Analyst, scoped AI analysis, Plugin
       Auditor, Developer Mode boundary, Workspace Preview, Selected Context,
       and Hivra Engineer Advisory Ask.
     - Android smoke remains a separate release pass after macOS is stable.
@@ -1713,7 +1713,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Added an `AiToolingModule` aggregate so `CapsuleDoctorScreen` keeps one
       AI tooling boundary instead of individual service fields for inspection,
       chat, plugin audit, developer workspace, and engineer advisory paths.
-    - Extended architecture contract gate so Capsule Diagnostics must keep using
+    - Extended architecture contract gate so Capsule Analyst must keep using
       `AiToolingModuleService`, while `widgets/` cannot construct runtime/module
       service graphs.
   - Verification:
@@ -1721,5 +1721,5 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - `flutter analyze`
     - `flutter test`
     - `cargo test --workspace`
-    - macOS release smoke for Capsule Diagnostics, plugins, chat, and trading drone.
+    - macOS release smoke for Capsule Analyst, plugins, chat, and trading drone.
   - Status: completed (2026-07-07).
