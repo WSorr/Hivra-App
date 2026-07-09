@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/bingx_futures_exchange_models.dart';
+import 'atomic_file_write_service.dart';
 import 'hivra_secure_storage_options.dart';
 import 'user_visible_data_directory_service.dart';
 
@@ -20,17 +21,20 @@ class BingxFuturesCredentialStore {
   final FlutterSecureStorage _secureStorage;
   final String? Function() _readActiveCapsuleRootHex;
   final UserVisibleDataDirectoryService _dirs;
+  final AtomicFileWriteService _atomicWrites;
 
   BingxFuturesCredentialStore({
     required String? Function() readActiveCapsuleRootHex,
     FlutterSecureStorage? secureStorage,
     UserVisibleDataDirectoryService? dirs,
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
   })  : _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
         _secureStorage = secureStorage ??
             const FlutterSecureStorage(
               mOptions: hivraMacOsSecureStorageOptions,
             ),
-        _dirs = dirs ?? const UserVisibleDataDirectoryService();
+        _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+        _atomicWrites = atomicWrites;
 
   Future<void> save(BingxFuturesApiCredentials credentials) async {
     await _migrateLegacyFallbackFile();
@@ -226,7 +230,7 @@ class BingxFuturesCredentialStore {
     if (!await file.parent.exists()) {
       await file.parent.create(recursive: true);
     }
-    await file.writeAsString(jsonEncode(map), flush: true);
+    await _atomicWrites.writeString(file, jsonEncode(map));
   }
 
   Future<(String, String)?> _readScopeFallback(String scope) async {

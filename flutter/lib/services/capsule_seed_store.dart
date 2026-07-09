@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'atomic_file_write_service.dart';
 import 'hivra_secure_storage_options.dart';
 import 'user_visible_data_directory_service.dart';
 
@@ -13,6 +14,7 @@ class CapsuleSeedStore {
 
   final FlutterSecureStorage _secureStorage;
   final UserVisibleDataDirectoryService _dirs;
+  final AtomicFileWriteService _atomicWrites;
   static final Map<String, Uint8List> _processSeedCache = <String, Uint8List>{};
   static final Map<String, Future<void>> _legacyMigrations =
       <String, Future<void>>{};
@@ -21,11 +23,13 @@ class CapsuleSeedStore {
   CapsuleSeedStore({
     FlutterSecureStorage? secureStorage,
     UserVisibleDataDirectoryService? dirs,
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
   })  : _secureStorage = secureStorage ??
             const FlutterSecureStorage(
               mOptions: hivraMacOsSecureStorageOptions,
             ),
-        _dirs = dirs ?? const UserVisibleDataDirectoryService();
+        _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+        _atomicWrites = atomicWrites;
 
   Future<void> storeSeed(String pubKeyHex, Uint8List seed) async {
     await _migrateLegacyFallbackFile();
@@ -114,7 +118,7 @@ class CapsuleSeedStore {
         await file.delete();
         return;
       }
-      await file.writeAsString(jsonEncode(map), flush: true);
+      await _atomicWrites.writeString(file, jsonEncode(map));
     } catch (_) {
       // Ignore fallback cleanup errors.
     }
