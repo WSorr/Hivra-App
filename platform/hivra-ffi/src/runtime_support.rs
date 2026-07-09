@@ -358,6 +358,50 @@ pub(crate) fn verify_ledger_event_signatures(ledger: &Ledger) -> Result<(), &'st
     Ok(())
 }
 
+pub(crate) fn validate_imported_ledger(
+    parsed: &Ledger,
+    owner: &PubKey,
+    verify_signatures: bool,
+) -> Result<(), &'static str> {
+    if parsed.owner() != owner {
+        return Err("owner mismatch");
+    }
+    if !parsed.verify() {
+        return Err("ledger inconsistent");
+    }
+    if verify_signatures {
+        verify_ledger_event_signatures(parsed)?;
+    }
+    if !parsed.events().is_empty() {
+        let Some(first) = parsed.events().first() else {
+            return Err("ledger missing capsule birth");
+        };
+        if first.kind() != EventKind::CapsuleCreated {
+            return Err("ledger missing capsule birth");
+        }
+        if first.signer() != parsed.owner() {
+            return Err("capsule birth signer mismatch");
+        }
+    }
+    let mut capsule_birth_index: Option<usize> = None;
+    for (index, event) in parsed.events().iter().enumerate() {
+        if event.kind() != EventKind::CapsuleCreated {
+            continue;
+        }
+        if capsule_birth_index.is_some() {
+            return Err("duplicate capsule birth");
+        }
+        capsule_birth_index = Some(index);
+        if index != 0 {
+            return Err("capsule birth misplaced");
+        }
+        if event.signer() != parsed.owner() {
+            return Err("capsule birth signer mismatch");
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn import_runtime_ledger(json: &str) -> Result<(), &'static str> {
     let mut runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_mut().ok_or("no capsule")?;
@@ -388,41 +432,7 @@ pub(crate) fn import_runtime_ledger(json: &str) -> Result<(), &'static str> {
         }
     };
 
-    if parsed.owner() != &capsule.pubkey {
-        return Err("owner mismatch");
-    }
-    if !parsed.verify() {
-        return Err("ledger inconsistent");
-    }
-    #[cfg(not(test))]
-    verify_ledger_event_signatures(&parsed)?;
-    if !parsed.events().is_empty() {
-        let Some(first) = parsed.events().first() else {
-            return Err("ledger missing capsule birth");
-        };
-        if first.kind() != EventKind::CapsuleCreated {
-            return Err("ledger missing capsule birth");
-        }
-        if first.signer() != parsed.owner() {
-            return Err("capsule birth signer mismatch");
-        }
-    }
-    let mut capsule_birth_index: Option<usize> = None;
-    for (index, event) in parsed.events().iter().enumerate() {
-        if event.kind() != EventKind::CapsuleCreated {
-            continue;
-        }
-        if capsule_birth_index.is_some() {
-            return Err("duplicate capsule birth");
-        }
-        capsule_birth_index = Some(index);
-        if index != 0 {
-            return Err("capsule birth misplaced");
-        }
-        if event.signer() != parsed.owner() {
-            return Err("capsule birth signer mismatch");
-        }
-    }
+    validate_imported_ledger(&parsed, &capsule.pubkey, cfg!(not(test)))?;
     observe_ledger_tail_ts(&parsed);
     capsule.ledger = parsed;
     Ok(())

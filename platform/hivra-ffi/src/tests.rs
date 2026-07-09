@@ -1,5 +1,6 @@
 use super::*;
 use crate::capsule_api::hivra_capsule_runtime_owner_public_key;
+use crate::runtime_support::validate_imported_ledger;
 use crate::seed_api::{hivra_seed_nostr_public_key, hivra_seed_root_public_key};
 use hivra_core::event_payloads::{RelationshipBrokenPayload, RelationshipEstablishedPayload};
 use std::sync::Mutex;
@@ -1225,6 +1226,54 @@ fn ledger_signature_validation_rejects_tampered_event() {
         verify_ledger_event_signatures(&invalid),
         Err("ledger event signature invalid")
     );
+}
+
+#[test]
+fn import_validation_rejects_tampered_event_when_signature_policy_enabled() {
+    let seed = test_seed(241);
+    let engine = build_engine(&seed);
+    let owner = engine.public_key().unwrap();
+    let mut ledger = Ledger::new(owner);
+
+    let birth_payload =
+        CapsuleCreatedPayload::new(Network::Neste.to_byte(), CapsuleType::Leaf as u8, [0u8; 32])
+            .to_bytes();
+    let unsigned_birth = Event::new(
+        EventKind::CapsuleCreated,
+        birth_payload.clone(),
+        Timestamp::from(0),
+        Signature::from([0u8; 64]),
+        owner,
+    );
+    let birth_signature = engine.sign_event(&unsigned_birth).unwrap();
+    ledger
+        .append(Event::new(
+            EventKind::CapsuleCreated,
+            birth_payload,
+            Timestamp::from(0),
+            birth_signature,
+            owner,
+        ))
+        .unwrap();
+
+    let prepared = engine
+        .prepare_domain_event(EventKind::InvitationExpired, vec![7u8; 32], None)
+        .unwrap();
+    let tampered = Event::new(
+        prepared.event.kind(),
+        vec![8u8; 32],
+        prepared.event.timestamp(),
+        *prepared.event.signature(),
+        *prepared.event.signer(),
+    );
+    ledger.append(tampered).unwrap();
+
+    assert!(ledger.verify());
+    assert_eq!(
+        validate_imported_ledger(&ledger, &owner, true),
+        Err("ledger event signature invalid")
+    );
+    assert_eq!(validate_imported_ledger(&ledger, &owner, false), Ok(()));
 }
 
 #[test]
