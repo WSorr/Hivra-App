@@ -560,9 +560,11 @@ Target:
 
 Implementation:
 
-- extend `flutter/lib/services/bingx_trading_contract_service.dart`.
-- optional future extraction: split intent mapping into a dedicated
-  service only if it reduces coupling without violating downward dependencies.
+- keep intent mapping in
+  `flutter/lib/services/bingx_futures_intent_use_case_service.dart`.
+- do not reintroduce the removed `bingx_trading_contract_service.dart`
+  boundary; futures intent preparation belongs to the futures application
+  service layer.
 - must emit:
   - `rule_set`,
   - `market_snapshot_hash`,
@@ -571,8 +573,7 @@ Implementation:
 
 Tests:
 
-- extend `flutter/test/bingx_trading_contract_service_test.dart`
-  or add dedicated futures intent tests.
+- maintain `flutter/test/bingx_futures_intent_use_case_service_test.dart`.
 
 ### WP-5. Host API Wiring + Guard
 
