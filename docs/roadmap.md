@@ -1044,6 +1044,43 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       encrypted ledger/history backup only, excluding seeds and API keys.
   - Status: planned.
 
+- `13.3 AI-Operated Staking Drone`
+  - Goal:
+    - provide a staking drone that monitors all user-staked crypto assets and
+      helps the user understand yield, risk, lockups, rewards, validator health,
+      and required maintenance actions.
+  - Boundary:
+    - This is a Staking Drone / financial-operations plugin, not Core.
+    - AI acts as an operator assistant: it explains portfolio state, detects
+      anomalies, ranks maintenance actions, and prepares user-readable plans.
+    - AI MUST NOT sign transactions, move funds, unstake, restake, compound, or
+      change validator/delegation choices without an explicit deterministic
+      action policy and user confirmation.
+    - wallet private keys, seed phrases, exchange API secrets, and raw signing
+      material MUST NOT be included in AI context.
+  - Required product model:
+    - inventory of staked assets across supported chains/exchanges.
+    - normalized staking position snapshots with chain, asset, amount,
+      validator/provider, lockup/unbonding state, reward state, and health
+      signals.
+    - deterministic alert rules for missed rewards, slashing risk, validator
+      degradation, unlock windows, excessive concentration, and stale data.
+    - optional AI explanations generated from redacted staking snapshots and
+      deterministic rule outputs.
+  - Hivra laws:
+    - Modularity: staking logic is owned by the Staking Drone; Core only
+      provides capsule runtime, Trust Layer, and plugin execution boundaries.
+    - Determinism: alerts and executable staking actions are derived from
+      canonical snapshots and deterministic policies, not AI prose.
+    - Downward dependencies: Staking Drone consumes wallet/exchange/chain
+      adapters through plugin host APIs; Core/Engine/Transport do not depend on
+      staking policy or AI.
+  - First deliverable:
+    - `Staking Drone v1` specification with read-only monitoring, redacted AI
+      operator context, supported-source inventory, and a no-autosign safety
+      contract.
+  - Status: planned.
+
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:
     - eliminate the remaining gap between documented TVH criteria and live entry behavior in execution surfaces.
