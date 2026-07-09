@@ -54,6 +54,8 @@ that include Capsule Analyst developer/AI tooling.
 
 - [ ] Hivra Engineer outbound preview shows capsule snapshot hash, developer
       context hash, snippet count, and payload size.
+- [ ] Preview/Ask Hivra Engineer stays disabled until selected context has at
+      least one included snippet.
 - [ ] Hivra Engineer request includes no-mutation constraints.
 - [ ] Hivra Engineer response is advisory only and does not claim files, git,
       ledger, plugin registry, tags, or releases were changed.

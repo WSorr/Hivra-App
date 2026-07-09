@@ -285,6 +285,8 @@ require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Selected Context includes only u
   "AI Engineer smoke covers Selected Context"
 require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Hivra Engineer outbound preview shows capsule snapshot hash' \
   "AI Engineer smoke covers Hivra Engineer outbound preview"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Preview/Ask Hivra Engineer stays disabled until selected context has at' \
+  "AI Engineer smoke covers empty selected-context guard"
 require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'AI advisory output is marked unverified until required gates are run' \
   "AI Engineer smoke covers Review Gate integration"
 
