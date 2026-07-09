@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+import 'atomic_file_write_service.dart';
+
 class UserVisibleDataDirectoryService {
   static const String _legacyContainerBundleId = 'com.hivra.hivraApp';
   static const String _rootName = 'Hivra';
@@ -15,9 +17,13 @@ class UserVisibleDataDirectoryService {
       '.legacy_documents_migration_v1.done';
 
   final String? _homeOverride;
+  final AtomicFileWriteService _atomicWrites;
 
-  const UserVisibleDataDirectoryService({String? homeOverride})
-      : _homeOverride = homeOverride;
+  const UserVisibleDataDirectoryService({
+    String? homeOverride,
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
+  })  : _homeOverride = homeOverride,
+        _atomicWrites = atomicWrites;
 
   Future<Directory> rootDirectory({bool create = false}) async {
     final home = _homeOverride ?? Platform.environment['HOME'];
@@ -79,7 +85,8 @@ class UserVisibleDataDirectoryService {
   }
 
   Future<void> _migrateLegacyDocumentsIfNeeded(Directory targetRoot) async {
-    final migrationMarker = File('${targetRoot.path}/$_legacyMigrationDoneFile');
+    final migrationMarker =
+        File('${targetRoot.path}/$_legacyMigrationDoneFile');
     if (await migrationMarker.exists()) return;
 
     final legacyDocs = await _legacyContainerDocumentsDirectory();
@@ -104,7 +111,10 @@ class UserVisibleDataDirectoryService {
       File('${targetRoot.path}/$_cardsFileName'),
     );
     await _migrateFlatLegacyCardsIfNeeded(targetRoot);
-    await migrationMarker.writeAsString(DateTime.now().toUtc().toIso8601String());
+    await _atomicWrites.writeString(
+      migrationMarker,
+      DateTime.now().toUtc().toIso8601String(),
+    );
   }
 
   Future<void> _migrateFlatLegacyCardsIfNeeded(Directory targetRoot) async {
@@ -120,7 +130,8 @@ class UserVisibleDataDirectoryService {
     } else {
       final merged = await _mergeCardsFile(legacyFlatCards, canonicalCards);
       if (merged != null) {
-        await canonicalCards.writeAsString(
+        await _atomicWrites.writeString(
+          canonicalCards,
           const JsonEncoder.withIndent('  ').convert(merged),
         );
       }
@@ -194,6 +205,6 @@ class UserVisibleDataDirectoryService {
     if (!await target.parent.exists()) {
       await target.parent.create(recursive: true);
     }
-    await source.copy(target.path);
+    await _atomicWrites.writeBytes(target, await source.readAsBytes());
   }
 }
