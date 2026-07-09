@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/wasm_plugin_models.dart';
+import 'atomic_file_write_service.dart';
 import 'user_visible_data_directory_service.dart';
 import 'wasm_plugin_package_preflight_service.dart';
 
@@ -9,14 +10,17 @@ class WasmPluginRegistryService {
   static const String _registryFileName = 'registry.json';
   final UserVisibleDataDirectoryService _dataDirs;
   final WasmPluginPackagePreflightService _preflight;
+  final AtomicFileWriteService _atomicWrites;
 
   const WasmPluginRegistryService({
     UserVisibleDataDirectoryService dataDirs =
         const UserVisibleDataDirectoryService(),
     WasmPluginPackagePreflightService preflight =
         const WasmPluginPackagePreflightService(),
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
   })  : _dataDirs = dataDirs,
-        _preflight = preflight;
+        _preflight = preflight,
+        _atomicWrites = atomicWrites;
 
   Future<Directory> pluginsDirectory({bool create = false}) async {
     return _dataDirs.pluginsDirectory(create: create);
@@ -59,7 +63,7 @@ class WasmPluginRegistryService {
   Future<void> _writeRegistry(List<WasmPluginRecord> records) async {
     final file = await _registryFile(createDir: true);
     final payload = records.map((record) => record.toJson()).toList();
-    await file.writeAsString(jsonEncode(payload), flush: true);
+    await _atomicWrites.writeString(file, jsonEncode(payload));
   }
 
   Future<WasmPluginRecord> installPluginFromFile(File sourceFile) async {

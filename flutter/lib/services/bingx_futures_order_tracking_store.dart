@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/bingx_futures_order_tracking_models.dart';
+import 'atomic_file_write_service.dart';
 import 'capsule_file_store.dart';
 
 class BingxFuturesOrderTrackingStore {
@@ -9,12 +10,15 @@ class BingxFuturesOrderTrackingStore {
 
   final String? Function() _readActiveCapsuleRootHex;
   final CapsuleFileStore _fileStore;
+  final AtomicFileWriteService _atomicWrites;
 
   const BingxFuturesOrderTrackingStore({
     required String? Function() readActiveCapsuleRootHex,
     CapsuleFileStore? fileStore,
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
   })  : _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
-        _fileStore = fileStore ?? const CapsuleFileStore();
+        _fileStore = fileStore ?? const CapsuleFileStore(),
+        _atomicWrites = atomicWrites;
 
   Future<void> save(BingxFuturesOrderTrackingState state) async {
     final file = await _stateFileForActiveCapsule(createDir: true);
@@ -25,7 +29,7 @@ class BingxFuturesOrderTrackingStore {
       }
       return;
     }
-    await file.writeAsString(jsonEncode(state.toJson()), flush: true);
+    await _atomicWrites.writeString(file, jsonEncode(state.toJson()));
   }
 
   Future<BingxFuturesOrderTrackingState?> load() async {

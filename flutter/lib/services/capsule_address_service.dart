@@ -6,6 +6,7 @@ import 'package:bech32/bech32.dart';
 
 import '../ffi/capsule_address_runtime.dart';
 import '../utils/hivra_id_format.dart';
+import 'atomic_file_write_service.dart';
 import 'user_visible_data_directory_service.dart';
 
 class CapsuleAddressCard {
@@ -59,12 +60,15 @@ class CapsuleAddressCard {
 class CapsuleAddressService {
   final UserVisibleDataDirectoryService _dirs;
   final CapsuleAddressRuntime? _runtime;
+  final AtomicFileWriteService _atomicWrites;
 
   const CapsuleAddressService({
     UserVisibleDataDirectoryService? dirs,
     CapsuleAddressRuntime? runtime,
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
   })  : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
-        _runtime = runtime;
+        _runtime = runtime,
+        _atomicWrites = atomicWrites;
 
   Future<CapsuleAddressCard?> buildOwnCard() async {
     final root = _runtime?.capsuleRootPublicKey();
@@ -305,7 +309,7 @@ class CapsuleAddressService {
     final root = await _dirs.rootDirectory(create: true);
     final file = File('${root.path}/capsule_contact_cards.json');
     if (!await file.exists()) {
-      await file.writeAsString('{}');
+      await _atomicWrites.writeString(file, '{}');
     }
     return file;
   }
@@ -318,7 +322,10 @@ class CapsuleAddressService {
 
   Future<void> _writeCards(Map<String, dynamic> cards) async {
     final file = await _cardsFile();
-    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(cards));
+    await _atomicWrites.writeString(
+      file,
+      const JsonEncoder.withIndent('  ').convert(cards),
+    );
   }
 
   Map<String, dynamic>? _parseJsonMap(String rawJson) {
