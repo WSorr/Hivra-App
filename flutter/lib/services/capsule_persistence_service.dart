@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../ffi/capsule_runtime_bootstrap_runtime.dart';
 import '../ffi/capsule_persistence_bindings.dart';
+import 'atomic_file_write_service.dart';
 import 'capsule_backup_codec.dart';
 import 'capsule_file_store.dart';
 import 'capsule_identity_reconciler_service.dart';
@@ -144,6 +145,7 @@ class CapsulePersistenceService {
   final CapsuleSeedStore _seedStore = CapsuleSeedStore();
   final UserVisibleDataDirectoryService _userVisibleDirs =
       const UserVisibleDataDirectoryService();
+  final AtomicFileWriteService _atomicWrites = const AtomicFileWriteService();
   late final CapsuleRuntimeBootstrapService _runtimeBootstrapService;
 
   Future<void> persistAfterCreate({
@@ -332,7 +334,7 @@ class CapsulePersistenceService {
     final file = File(
       '${backupsDir.path}/capsule-backup-${DateTime.now().toIso8601String()}.json',
     );
-    await file.writeAsString(backupJson, flush: true);
+    await _atomicWrites.writeString(file, backupJson);
     return file.path;
   }
 
@@ -351,7 +353,7 @@ class CapsulePersistenceService {
     );
 
     final outFile = File(targetPath);
-    await outFile.writeAsString(backupJson, flush: true);
+    await _atomicWrites.writeString(outFile, backupJson);
     return outFile.path;
   }
 
@@ -942,7 +944,7 @@ class CapsulePersistenceService {
       ledgerJson: ledgerJson,
     );
     final outFile = File(targetPath);
-    await outFile.writeAsString(backupJson, flush: true);
+    await _atomicWrites.writeString(outFile, backupJson);
     return outFile.path;
   }
 
@@ -1294,7 +1296,7 @@ class CapsulePersistenceService {
       if (active == pubKeyHex) {
         root['active'] = null;
       }
-      await indexFile.writeAsString(jsonEncode(root), flush: true);
+      await _atomicWrites.writeString(indexFile, jsonEncode(root));
     } catch (_) {}
   }
 
@@ -1308,7 +1310,7 @@ class CapsulePersistenceService {
       final map = _parseJsonMap(raw);
       if (map == null) return;
       map.remove(pubKeyHex);
-      await seedsFile.writeAsString(jsonEncode(map), flush: true);
+      await _atomicWrites.writeString(seedsFile, jsonEncode(map));
     } catch (_) {}
   }
 
@@ -1334,9 +1336,9 @@ class CapsulePersistenceService {
       for (final key in keysToRemove) {
         cards.remove(key);
       }
-      await cardsFile.writeAsString(
+      await _atomicWrites.writeString(
+        cardsFile,
         const JsonEncoder.withIndent('  ').convert(cards),
-        flush: true,
       );
     } catch (_) {}
   }
@@ -1506,9 +1508,9 @@ class CapsulePersistenceService {
     }
 
     if (!changed) return;
-    await cardsFile.writeAsString(
+    await _atomicWrites.writeString(
+      cardsFile,
       const JsonEncoder.withIndent('  ').convert(cards),
-      flush: true,
     );
   }
 
@@ -1516,7 +1518,7 @@ class CapsulePersistenceService {
     final root = await _userVisibleDirs.rootDirectory(create: true);
     final file = File('${root.path}/capsule_contact_cards.json');
     if (!await file.exists()) {
-      await file.writeAsString('{}', flush: true);
+      await _atomicWrites.writeString(file, '{}');
     }
     return file;
   }
