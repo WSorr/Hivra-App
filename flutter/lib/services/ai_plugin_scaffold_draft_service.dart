@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import 'atomic_file_write_service.dart';
+
 class AiPluginScaffoldDraftRequest {
   final String pluginRepoRootPath;
   final String pluginId;
@@ -53,7 +55,11 @@ class AiPluginScaffoldDraftService {
   static final RegExp _capabilityPattern =
       RegExp(r'^[a-z0-9][a-z0-9_.-]{2,127}$');
 
-  const AiPluginScaffoldDraftService();
+  final AtomicFileWriteService _atomicWrites;
+
+  const AiPluginScaffoldDraftService({
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
+  }) : _atomicWrites = atomicWrites;
 
   Future<AiPluginScaffoldDraftReport> createDraft(
     AiPluginScaffoldDraftRequest request,
@@ -126,7 +132,7 @@ class AiPluginScaffoldDraftService {
     final created = <String>[];
     for (final entry in files.entries) {
       final file = File('${draftRoot.path}/${entry.key}');
-      await file.writeAsString(entry.value, flush: true);
+      await _atomicWrites.writeString(file, entry.value);
       created.add('plugins/drafts/$slug/${entry.key}');
     }
     created.sort();
