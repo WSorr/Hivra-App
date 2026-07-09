@@ -275,6 +275,8 @@ require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Capsule Analyst opens from Setti
   "AI Engineer smoke covers Capsule Analyst entry"
 require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Outbound preview is shown before provider submission' \
   "AI Engineer smoke covers scoped AI preview"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Last selected inference provider persists across Capsule Analyst and' \
+  "AI Engineer smoke covers provider preference persistence"
 require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Installed plugin package audit renders package digest' \
   "AI Engineer smoke covers Plugin Auditor evidence"
 require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Developer Mode is disabled by default' \

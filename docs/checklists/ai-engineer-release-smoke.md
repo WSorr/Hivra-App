@@ -20,6 +20,8 @@ that include Capsule Analyst developer/AI tooling.
 
 - [ ] Inference provider can be selected explicitly before submission.
 - [ ] OpenAI/Gemini API key save/clear uses provider-isolated secure storage.
+- [ ] Last selected inference provider persists across Capsule Analyst and
+      Hivra Engineer reopen/restart.
 - [ ] Outbound preview is shown before provider submission.
 - [ ] Provider failure leaves capsule ledger, plugin registry, and files unchanged.
 
