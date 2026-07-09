@@ -10,6 +10,8 @@ class AiDoctorCredentialStore {
       'hivra.ai_doctor.local_openai.api_key.v1';
   static const String _localOpenAiBaseUrlKey =
       'hivra.ai_doctor.local_openai.base_url.v1';
+  static const String _preferredProviderKey =
+      'hivra.ai_doctor.preferred_provider.v1';
 
   final FlutterSecureStorage _secureStorage;
   final Map<InferenceProviderKind, String> _sessionApiKeys =
@@ -35,6 +37,7 @@ class AiDoctorCredentialStore {
       final existing = await _secureStorage.read(key: key);
       if (existing == normalized) {
         _sessionApiKeys[provider] = normalized;
+        await savePreferredProvider(provider);
         return;
       }
       await _secureStorage.write(
@@ -46,6 +49,7 @@ class AiDoctorCredentialStore {
         throw StateError('Secure ${provider.label} key read-back mismatch');
       }
       _sessionApiKeys[provider] = normalized;
+      await savePreferredProvider(provider);
     } catch (error) {
       throw StateError('Secure AI credential storage is unavailable: $error');
     }
@@ -75,6 +79,7 @@ class AiDoctorCredentialStore {
     final key = _keyForProvider(provider);
     try {
       await _secureStorage.delete(key: key);
+      await _clearPreferredProviderIf(provider);
     } catch (error) {
       throw StateError('Secure AI credential cleanup failed: $error');
     }
@@ -101,8 +106,34 @@ class AiDoctorCredentialStore {
       if (stored != normalized) {
         throw StateError('${provider.label} base URL read-back mismatch');
       }
+      await savePreferredProvider(provider);
     } catch (error) {
       throw StateError('Secure AI endpoint storage is unavailable: $error');
+    }
+  }
+
+  Future<void> savePreferredProvider(InferenceProviderKind provider) async {
+    try {
+      await _secureStorage.write(
+        key: _preferredProviderKey,
+        value: provider.id,
+      );
+    } catch (error) {
+      throw StateError('Secure AI provider preference storage failed: $error');
+    }
+  }
+
+  Future<InferenceProviderKind?> loadPreferredProvider() async {
+    try {
+      final stored = await _secureStorage.read(key: _preferredProviderKey);
+      final normalized = stored?.trim();
+      if (normalized == null || normalized.isEmpty) return null;
+      for (final provider in InferenceProviderKind.values) {
+        if (provider.id == normalized) return provider;
+      }
+      return null;
+    } catch (error) {
+      throw StateError('Secure AI provider preference load failed: $error');
     }
   }
 
@@ -126,9 +157,16 @@ class AiDoctorCredentialStore {
     if (key == null) return;
     try {
       await _secureStorage.delete(key: key);
+      await _clearPreferredProviderIf(provider);
     } catch (error) {
       throw StateError('Secure AI endpoint cleanup failed: $error');
     }
+  }
+
+  Future<void> _clearPreferredProviderIf(InferenceProviderKind provider) async {
+    final preferred = await loadPreferredProvider();
+    if (preferred != provider) return;
+    await _secureStorage.delete(key: _preferredProviderKey);
   }
 
   Future<void> saveOpenAiApiKey(String apiKey) {

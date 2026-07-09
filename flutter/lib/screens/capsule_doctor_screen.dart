@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -225,12 +227,37 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
   bool _busy = false;
 
   @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPreferredProvider());
+  }
+
+  @override
   void dispose() {
     _apiKeyController.dispose();
     _baseUrlController.dispose();
     _modelController.dispose();
     _queryController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPreferredProvider() async {
+    try {
+      final provider = await widget.chatService.loadPreferredProvider();
+      if (!mounted || provider == null) return;
+      setState(() {
+        _provider = provider;
+        _modelController.text = provider.defaultModel;
+        if (provider == InferenceProviderKind.localOpenAiCompatible) {
+          _baseUrlController.text = 'http://127.0.0.1:11434';
+        }
+      });
+    } catch (error) {
+      await _uiLog.log(
+        'ai_capsule_analyst',
+        'provider_preference_load_error ${_doctorErrorMessage(error)}',
+      );
+    }
   }
 
   Future<void> _saveProviderSettings() async {
@@ -381,6 +408,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<InferenceProviderKind>(
+              key: ValueKey<String>('capsule_analyst_provider_${_provider.id}'),
               initialValue: _provider,
               decoration: const InputDecoration(
                 labelText: 'Inference provider',
@@ -407,6 +435,15 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                         }
                         _error = null;
                       });
+                      unawaited(widget.chatService
+                          .savePreferredProvider(provider)
+                          .catchError((Object error) {
+                        return _uiLog.log(
+                          'ai_capsule_analyst',
+                          'provider_preference_save_error '
+                              '${_doctorErrorMessage(error)}',
+                        );
+                      }));
                     },
             ),
             const SizedBox(height: 12),
@@ -774,12 +811,34 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   bool _busy = false;
 
   @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPreferredProvider());
+  }
+
+  @override
   void dispose() {
     _pathsController.dispose();
     _selectedFilesController.dispose();
     _engineerModelController.dispose();
     _engineerQuestionController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPreferredProvider() async {
+    try {
+      final provider = await widget.engineerService.loadPreferredProvider();
+      if (!mounted || provider == null) return;
+      setState(() {
+        _engineerProvider = provider;
+        _engineerModelController.text = provider.defaultModel;
+      });
+    } catch (error) {
+      await _uiLog.log(
+        'hivra_engineer',
+        'provider_preference_load_error ${_doctorErrorMessage(error)}',
+      );
+    }
   }
 
   Future<void> _scan() async {
@@ -1158,6 +1217,9 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<InferenceProviderKind>(
+                key: ValueKey<String>(
+                  'hivra_engineer_provider_${_engineerProvider.id}',
+                ),
                 initialValue: _engineerProvider,
                 decoration: const InputDecoration(
                   labelText: 'Hivra Engineer provider',
@@ -1180,6 +1242,15 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
                           _engineerModelController.text = provider.defaultModel;
                           _error = null;
                         });
+                        unawaited(widget.engineerService
+                            .savePreferredProvider(provider)
+                            .catchError((Object error) {
+                          return _uiLog.log(
+                            'hivra_engineer',
+                            'provider_preference_save_error '
+                                '${_doctorErrorMessage(error)}',
+                          );
+                        }));
                       },
               ),
               const SizedBox(height: 12),

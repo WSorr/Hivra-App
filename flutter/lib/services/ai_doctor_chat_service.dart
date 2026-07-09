@@ -40,6 +40,14 @@ class AiDoctorChatService {
     return _credentialStore.saveApiKey(provider, apiKey);
   }
 
+  Future<void> savePreferredProvider(InferenceProviderKind provider) {
+    return _credentialStore.savePreferredProvider(provider);
+  }
+
+  Future<InferenceProviderKind?> loadPreferredProvider() {
+    return _credentialStore.loadPreferredProvider();
+  }
+
   Future<void> clearApiKey(InferenceProviderKind provider) {
     return _credentialStore.clearApiKey(provider);
   }

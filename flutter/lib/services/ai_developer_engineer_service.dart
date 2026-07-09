@@ -52,6 +52,14 @@ class AiDeveloperEngineerService {
             ((provider) =>
                 providerAdapter ?? inferenceProviderAdapterFor(provider));
 
+  Future<void> savePreferredProvider(InferenceProviderKind provider) {
+    return _credentialStore.savePreferredProvider(provider);
+  }
+
+  Future<InferenceProviderKind?> loadPreferredProvider() {
+    return _credentialStore.loadPreferredProvider();
+  }
+
   AiDeveloperEngineerPreview preview({
     required AiCapsuleInspectionSnapshot snapshot,
     required AiDeveloperWorkspaceSelectedContext selectedContext,

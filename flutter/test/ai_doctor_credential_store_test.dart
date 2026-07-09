@@ -76,8 +76,12 @@ void main() {
       await store.saveOpenAiApiKey(' sk-test ');
 
       expect(await store.loadOpenAiApiKey(), 'sk-test');
-      expect(secureStorage.values.length, 1);
-      expect(secureStorage.values.values.single, 'sk-test');
+      expect(
+        await store.loadPreferredProvider(),
+        InferenceProviderKind.openAi,
+      );
+      expect(secureStorage.values.values, contains('sk-test'));
+      expect(secureStorage.values.values, contains('openai'));
     });
 
     test('clears OpenAI key', () async {
@@ -88,6 +92,7 @@ void main() {
       await store.clearOpenAiApiKey();
 
       expect(await store.loadOpenAiApiKey(), isNull);
+      expect(await store.loadPreferredProvider(), isNull);
       expect(secureStorage.values, isEmpty);
     });
 
@@ -114,7 +119,22 @@ void main() {
         await store.loadBaseUrl(InferenceProviderKind.localOpenAiCompatible),
         'http://127.0.0.1:11434',
       );
-      expect(secureStorage.values.length, 3);
+      expect(
+        await store.loadPreferredProvider(),
+        InferenceProviderKind.localOpenAiCompatible,
+      );
+      expect(secureStorage.values.length, 4);
+    });
+
+    test('stores explicit preferred provider without key material', () async {
+      final secureStorage = _FakeSecureStorage();
+      final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+
+      await store.savePreferredProvider(InferenceProviderKind.gemini);
+
+      expect(await store.loadPreferredProvider(), InferenceProviderKind.gemini);
+      expect(secureStorage.values.length, 1);
+      expect(secureStorage.values.values.single, 'gemini');
     });
 
     test('fails closed when secure storage is unavailable', () async {
