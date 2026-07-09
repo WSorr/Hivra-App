@@ -985,6 +985,65 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       service.
   - Status: completed (2026-07-07).
 
+## Planned Product Tracks
+
+- `13.1 AI-Assisted Trading Analysis`
+  - Goal:
+    - connect the existing Capsule Analyst/Hivra Engineer AI tooling to the
+      Trading Drone as an advisory analysis layer.
+  - Boundary:
+    - AI reads trading-drone snapshots, decision envelopes, risk envelopes,
+      order-tracking state, and reason codes.
+    - AI explains signals, missing inputs, risk blocks, trend conflicts, and
+      weak TVH criteria.
+    - AI MUST NOT place orders, change risk policy, mutate trading intents, or
+      become an input to deterministic decision hashes.
+    - exchange API keys, recovery seed, private keys, and raw sensitive capsule
+      data MUST NOT be included in AI context.
+  - Hivra laws:
+    - Modularity: AI remains an advisory drone/tooling layer; Trading Drone
+      owns deterministic trade decisions and exchange execution.
+    - Determinism: Trading Drone decisions remain reproducible without AI
+      output.
+    - Downward dependencies: AI consumes exported application-level snapshots;
+      Core/Engine/Transport do not depend on AI or trading policy.
+  - First deliverable:
+    - `TradingDroneSnapshot` context for Capsule Analyst with redacted,
+      hash-linked decision/risk/order evidence.
+  - Status: planned.
+
+- `13.2 Distributed Capsule Backup Drone`
+  - Goal:
+    - allow a capsule to distribute encrypted backup shards across trusted peer
+      capsules.
+  - Boundary:
+    - This is a Backup Drone / application-layer protocol, not a Core ledger
+      feature.
+    - Core remains limited to Capsule, Ledger, Invitations, Trust Layer facts,
+      Pair Consensus inputs, and deterministic domain transitions.
+    - Trust Layer may provide peer eligibility, for example full trust links
+      across all five starter kinds.
+    - Transport delivers encrypted backup-shard envelopes; it does not inspect
+      backup payloads.
+  - Required safety model:
+    - backup is encrypted locally before sharding.
+    - use threshold recovery (`K-of-N`, for example 3-of-5) so any single peer
+      shard is useless.
+    - seed phrase, private keys, exchange API keys, and unencrypted ledger data
+      MUST NOT be stored on peer capsules.
+    - restore requires local user confirmation and enough valid shards.
+    - shard rotation/revocation must be specified before release.
+  - Hivra laws:
+    - Modularity: backup protocol is a drone with its own state and manifests.
+    - Determinism: shard manifests, shard ids, and restore verification are
+      canonical and hashable.
+    - Downward dependencies: Backup Drone consumes Trust Layer and Transport
+      APIs; Core does not depend on backup logic.
+  - First deliverable:
+    - `Distributed Backup Drone v1` specification and threat model for
+      encrypted ledger/history backup only, excluding seeds and API keys.
+  - Status: planned.
+
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:
     - eliminate the remaining gap between documented TVH criteria and live entry behavior in execution surfaces.
