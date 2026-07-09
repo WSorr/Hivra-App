@@ -942,11 +942,24 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
     return _availableRelativePaths().take(count).toList(growable: false);
   }
 
+  bool get _hasEngineerSnippets =>
+      (_selectedContext?.snippets.isNotEmpty ?? false);
+
+  String? get _engineerContextHint {
+    if (_selectedContext == null) {
+      return 'Build selected context before asking Hivra Engineer.';
+    }
+    if (!_hasEngineerSnippets) {
+      return 'Selected context has no snippets. Add at least one included file.';
+    }
+    return null;
+  }
+
   Future<void> _previewEngineerAsk() async {
     final selectedContext = _selectedContext;
-    if (selectedContext == null) {
+    if (selectedContext == null || selectedContext.snippets.isEmpty) {
       setState(() {
-        _error = 'Build selected developer context first';
+        _error = _engineerContextHint;
       });
       return;
     }
@@ -979,9 +992,9 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
 
   Future<void> _askEngineer() async {
     final selectedContext = _selectedContext;
-    if (selectedContext == null || _busy) {
+    if (selectedContext == null || selectedContext.snippets.isEmpty || _busy) {
       setState(() {
-        _error = 'Build selected developer context first';
+        _error = _engineerContextHint;
       });
       return;
     }
@@ -1038,6 +1051,8 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final engineerContextHint = _engineerContextHint;
+    final canAskEngineer = !_busy && _hasEngineerSnippets;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1188,17 +1203,26 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
                 ),
               ),
               const SizedBox(height: 8),
+              if (engineerContextHint != null) ...[
+                Text(
+                  engineerContextHint,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
                   OutlinedButton.icon(
-                    onPressed: _busy ? null : _previewEngineerAsk,
+                    onPressed: canAskEngineer ? _previewEngineerAsk : null,
                     icon: const Icon(Icons.visibility),
                     label: const Text('Preview engineer ask'),
                   ),
                   FilledButton.icon(
-                    onPressed: _busy ? null : _askEngineer,
+                    onPressed: canAskEngineer ? _askEngineer : null,
                     icon: const Icon(Icons.engineering),
                     label: const Text('Ask Hivra Engineer'),
                   ),
