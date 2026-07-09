@@ -253,9 +253,9 @@ require_absent "$ROOT/flutter/lib/services/plugin_host_contract_handler.dart" "p
 require_absent "$WASM_RUNTIME_SERVICE" "plugin_host_api_service\\.dart" \
   "wasm runtime service imports plugin host API DTOs from model boundary"
 require_present "$CAPSULE_DOCTOR_SCREEN" 'AiToolingModuleService\(runtime: widget\.runtime\)' \
-  "capsule diagnostics screen uses AI tooling module boundary"
+  "capsule analyst screen uses AI tooling module boundary"
 require_absent "$CAPSULE_DOCTOR_SCREEN" 'late final [A-Za-z0-9_]+Service |build[A-Za-z0-9_]*Service\(' \
-  "capsule diagnostics screen does not keep individual service fields"
+  "capsule analyst screen does not keep individual service fields"
 require_absent "$LEDGER_INSPECTOR_SCREEN" 'build[A-Za-z0-9_]*Service\(' \
   "ledger inspector screen uses module boundary instead of assembling service graph"
 require_absent "$WIDGETS" 'AiToolingModuleService|AppRuntimeService|build[A-Za-z0-9_]*Service\(' \
