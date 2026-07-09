@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
@@ -82,6 +83,22 @@ void main() {
 
     final tempFiles = <FileSystemEntity>[];
     await for (final entry in dir.list()) {
+      if (entry is File && entry.path.contains('.tmp.')) {
+        tempFiles.add(entry);
+      }
+    }
+    expect(tempFiles, isEmpty);
+  });
+
+  test('atomic byte writes persist bytes without leaving temp files', () async {
+    const atomicWrites = AtomicFileWriteService();
+    final target = File('${tempDocsDir.path}/plugin.zip');
+
+    await atomicWrites.writeBytes(target, const <int>[0, 1, 2, 3, 255]);
+
+    expect(await target.readAsBytes(), const <int>[0, 1, 2, 3, 255]);
+    final tempFiles = <FileSystemEntity>[];
+    await for (final entry in tempDocsDir.list()) {
       if (entry is File && entry.path.contains('.tmp.')) {
         tempFiles.add(entry);
       }

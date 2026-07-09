@@ -4,6 +4,17 @@ class AtomicFileWriteService {
   const AtomicFileWriteService();
 
   Future<void> writeString(File target, String contents) async {
+    await _write(target, (temp) => temp.writeAsString(contents, flush: true));
+  }
+
+  Future<void> writeBytes(File target, List<int> bytes) async {
+    await _write(target, (temp) => temp.writeAsBytes(bytes, flush: true));
+  }
+
+  Future<void> _write(
+    File target,
+    Future<File> Function(File temp) writeTemp,
+  ) async {
     final parent = target.parent;
     if (!await parent.exists()) {
       await parent.create(recursive: true);
@@ -15,7 +26,7 @@ class AtomicFileWriteService {
     }
 
     try {
-      await temp.writeAsString(contents, flush: true);
+      await writeTemp(temp);
       try {
         await temp.rename(target.path);
       } on FileSystemException {

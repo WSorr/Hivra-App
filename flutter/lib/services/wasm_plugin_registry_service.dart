@@ -89,7 +89,7 @@ class WasmPluginRegistryService {
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     final storedFileName = '$id$extension';
     final storedFile = File('${pluginsDir.path}/$storedFileName');
-    await sourceFile.copy(storedFile.path);
+    await _atomicWrites.writeBytes(storedFile, await sourceFile.readAsBytes());
     final sizeBytes = await storedFile.length();
 
     final record = WasmPluginRecord(
