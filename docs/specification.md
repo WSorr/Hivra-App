@@ -306,14 +306,14 @@ Switching:
 
 Diagnostics:
 
-- Capsule Diagnostics is the canonical user-facing local diagnostic surface.
-- Capsule Diagnostics MAY summarize bootstrap state, filesystem traces, ledger
+- Capsule Analyst is the canonical user-facing local diagnostic surface.
+- Capsule Analyst MAY summarize bootstrap state, filesystem traces, ledger
   projection, invitations, relationships, outbox, consensus, and plugin state.
-- Capsule Diagnostics MUST be deterministic for the same local files and runtime
+- Capsule Analyst MUST be deterministic for the same local files and runtime
   inputs.
-- Capsule Diagnostics MUST NOT upload recovery seed, ledger contents, transport
+- Capsule Analyst MUST NOT upload recovery seed, ledger contents, transport
   secrets, or plugin credentials to any AI/provider service.
-- Capsule Diagnostics MAY provide an optional scoped AI analysis over a user-selected,
+- Capsule Analyst MAY provide an optional scoped AI analysis over a user-selected,
   redacted diagnostic snapshot.
 - Scoped AI chat MUST show an outbound preview before provider submission,
   including selected sections, payload size, and snapshot hash.

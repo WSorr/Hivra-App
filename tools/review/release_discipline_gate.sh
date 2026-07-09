@@ -271,8 +271,8 @@ require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 4: Update Truth Preservatio
   "user lifetime checklist covers update safety"
 require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 5: Long-Pending Invitation Stability' \
   "user lifetime checklist covers pending stability"
-require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Capsule Diagnostics opens from Settings' \
-  "AI Engineer smoke covers Capsule Diagnostics entry"
+require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Capsule Analyst opens from Settings' \
+  "AI Engineer smoke covers Capsule Analyst entry"
 require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Outbound preview is shown before provider submission' \
   "AI Engineer smoke covers scoped AI preview"
 require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'Installed plugin package audit renders package digest' \

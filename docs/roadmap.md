@@ -1344,18 +1344,18 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - worker-provided capsule ledger snapshots follow the same rule.
   - Status: completed (2026-06-29).
 
-- `11.14 Capsule Diagnostics and macOS Runtime Seed Boundary`
+- `11.14 Capsule Analyst and macOS Runtime Seed Boundary`
   - Goal:
     - replace scattered bootstrap/trace diagnostics with one deterministic
       local diagnostic surface.
     - prevent macOS capsule switching from rewriting Keychain active-seed
       state and repeatedly prompting for passwords.
   - Implemented:
-    - added Capsule Diagnostics as the local user-facing diagnostic screen for
+    - added Capsule Analyst as the local user-facing diagnostic screen for
       bootstrap summary, filesystem trace, ledger projection, invitations,
       relationships, outbox, consensus, and plugin state.
     - removed separate Settings entries for bootstrap diagnostics and local
-      capsule trace; those summaries now live under Capsule Diagnostics.
+      capsule trace; those summaries now live under Capsule Analyst.
     - capsule recovery seed fallback migration now deduplicates secure-storage
       reads/writes in-process and remains fail-closed for plaintext fallback.
     - macOS keystore now keeps the active runtime seed in process-local memory
@@ -1371,9 +1371,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       repeated `SecKeychainItemModifyAttributesAndData` during capsule switches.
   - Status: completed (2026-07-05).
 
-- `11.15 Unified Capsule Diagnostics Module`
+- `11.15 Unified Capsule Analyst Module`
   - Goal:
-    - keep Capsule Diagnostics as the single user-facing diagnostic surface while
+    - keep Capsule Analyst as the single user-facing diagnostic surface while
       also consolidating bootstrap and filesystem trace diagnostics behind one
       internal diagnostic module.
     - prevent diagnostics from spreading back into Settings, UI screens, or
@@ -1389,7 +1389,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - no new upward dependencies from core/engine/platform into Flutter UI.
     - no provider/AI upload path for seed, ledger, transport secrets, or
       credentials.
-    - Capsule Diagnostics remains projection-only and does not mutate capsule state.
+    - Capsule Analyst remains projection-only and does not mutate capsule state.
   - Verification:
     - `flutter test test/ai_capsule_inspection_service_test.dart test/capsule_diagnostics_service_test.dart test/settings_service_test.dart`
     - `flutter analyze`
@@ -1398,7 +1398,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
 
 - `11.16 Scoped AI Capsule Analyst`
   - Goal:
-    - add an optional AI-provider advisory path to Capsule Diagnostics without
+    - add an optional AI-provider advisory path to Capsule Analyst without
       turning any external model into ledger truth or a runtime actor.
     - keep the first AI integration scoped to redacted, user-selected
       diagnostic summaries instead of repository access or raw capsule data.
@@ -1409,7 +1409,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - added an `InferenceProvider` boundary with provider-isolated keys,
       OpenAI Responses API support, Gemini GenerateContent support, and strict
       empty/malformed response rejection.
-    - added Capsule Diagnostics UI controls for provider key save/clear, model,
+    - added Capsule Analyst UI controls for provider key save/clear, model,
       question, selected context sections, outbound preview, and advisory
       response rendering.
   - Constraints:
