@@ -17,6 +17,7 @@ import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../services/app_runtime_service.dart';
+import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
 
 class TradingDroneScreen extends StatefulWidget {
@@ -1488,6 +1489,29 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.intent.request',
         'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} symbol=$symbol side=$_side type=$_orderType entry=$_entryMode qty=$quantityDecimal',
       );
+      if (peerHex.isNotEmpty) {
+        final attestation = await _module.attestationExchange.ensureForPeer(
+          peerHex,
+        );
+        await _module.uiLog.log(
+          'bingx.attestation.ensure',
+          'peer=${peerHex.substring(0, 8)}.. status=${attestation.status.name} '
+              'receive=${attestation.receiveCode}/${attestation.receivedCount}/${attestation.storedCount} '
+              'mismatch=${attestation.mismatchedEvidenceCount} '
+              'sent=${attestation.localEvidenceSent} send=${attestation.sendCode ?? "-"}',
+        );
+        if (!attestation.isReady) {
+          await _showSnack(
+            attestation.message ??
+                (attestation.status ==
+                        ConsensusAttestationExchangeStatus.syncing
+                    ? 'Pair consensus attestation syncing'
+                    : 'Pair consensus attestation blocked'),
+            seconds: 3,
+          );
+          return;
+        }
+      }
 
       final useCaseResult = await _module.intentUseCase
           .execute(

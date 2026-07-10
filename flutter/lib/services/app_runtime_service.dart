@@ -14,6 +14,7 @@ import 'capsule_diagnostics_service.dart';
 import 'capsule_state_manager.dart';
 import 'capsule_chat_delivery_service.dart';
 import 'consensus_attested_guard_service.dart';
+import 'consensus_attestation_exchange_service.dart';
 import 'consensus_attestation_sync_service.dart';
 import 'consensus_runtime_service.dart';
 import 'invitation_actions_service.dart';
@@ -115,6 +116,18 @@ class AppRuntimeService {
         runtime: _runtime,
         consensus: consensus,
       ),
+    );
+  }
+
+  ConsensusAttestationExchangeService
+      buildConsensusAttestationExchangeService() {
+    final addressService = CapsuleAddressService(
+      runtime: _runtime.capsuleAddressRuntime,
+    );
+    return ConsensusAttestationExchangeService(
+      sync: buildConsensusAttestationSyncService(),
+      loadRelationships: _ledgerView.loadRelationships,
+      listTrustedCards: addressService.listTrustedCards,
     );
   }
 

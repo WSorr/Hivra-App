@@ -8,6 +8,7 @@ import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import '../services/app_runtime_service.dart';
+import '../services/consensus_attestation_exchange_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../utils/runtime_capability_display.dart';
 
@@ -399,6 +400,27 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         'chat.send.request',
         'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} fullPeer=$peerHex textBytes=${messageText.length}',
       );
+      final attestation = await _module.attestationExchange.ensureForPeer(
+        peerHex,
+      );
+      await _module.uiLog.log(
+        'chat.attestation.ensure',
+        'peer=${peerHex.substring(0, 8)}.. status=${attestation.status.name} '
+            'receive=${attestation.receiveCode}/${attestation.receivedCount}/${attestation.storedCount} '
+            'mismatch=${attestation.mismatchedEvidenceCount} '
+            'sent=${attestation.localEvidenceSent} send=${attestation.sendCode ?? "-"}',
+      );
+      if (!attestation.isReady) {
+        setState(() {
+          _chatWorkspaceNotice = attestation.message ??
+              (attestation.status == ConsensusAttestationExchangeStatus.syncing
+                  ? 'Pair consensus attestation syncing'
+                  : 'Pair consensus attestation blocked');
+          _chatWorkspaceNoticeIsError =
+              attestation.status != ConsensusAttestationExchangeStatus.syncing;
+        });
+        return;
+      }
       final response = await _module.pluginHostApi.executeWithRuntimeHook(
         PluginHostApiRequest(
           schemaVersion: pluginHostApiSchemaVersion,

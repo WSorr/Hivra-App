@@ -1,5 +1,6 @@
 import 'app_runtime_service.dart';
 import 'capsule_chat_delivery_service.dart';
+import 'consensus_attestation_exchange_service.dart';
 import 'manual_consensus_check_service.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
@@ -11,6 +12,7 @@ class PluginRuntimeModule {
   final WasmPluginSourceCatalogService sourceCatalog;
   final ManualConsensusCheckService manualChecks;
   final PluginHostApiService pluginHostApi;
+  final ConsensusAttestationExchangeService attestationExchange;
   final CapsuleChatDeliveryService chatDelivery;
   final UiEventLogService uiLog;
 
@@ -19,6 +21,7 @@ class PluginRuntimeModule {
     required this.sourceCatalog,
     required this.manualChecks,
     required this.pluginHostApi,
+    required this.attestationExchange,
     required this.chatDelivery,
     required this.uiLog,
   });
@@ -37,6 +40,7 @@ class PluginRuntimeModuleService {
       sourceCatalog: const WasmPluginSourceCatalogService(),
       manualChecks: runtime.buildManualConsensusCheckService(),
       pluginHostApi: runtime.buildPluginHostApiService(),
+      attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
       uiLog: const UiEventLogService(),
     );

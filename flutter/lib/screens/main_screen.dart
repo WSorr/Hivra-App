@@ -33,6 +33,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _bootstrapping = true;
   Stopwatch? _launchStopwatch;
   bool _transportQuickSyncInFlight = false;
+  bool _attestationSyncInFlight = false;
   DateTime? _lastTransportQuickSyncAt;
   StreamSubscription<dynamic>? _connectivitySubscription;
   DateTime? _lastNetworkTriggeredSyncAt;
@@ -153,6 +154,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_syncInvitationsOnResume());
+      unawaited(
+        _receiveAttestationsBestEffort(
+          reason: 'resume',
+          capsuleHex: _activeCapsuleHex,
+        ),
+      );
       _loadCapsuleData();
       return;
     }
@@ -276,6 +283,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (result.code >= 0) {
       _loadCapsuleData();
     }
+    unawaited(
+      _receiveAttestationsBestEffort(
+        reason: reason,
+        capsuleHex: capsuleHex,
+      ),
+    );
   }
 
   bool _shouldSkipQuickTransportSync({required bool force}) {
@@ -341,6 +354,51 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _receiveAttestationsBestEffort({
+    required String reason,
+    String? capsuleHex,
+  }) async {
+    if (_isStaleCapsuleSyncRequest(capsuleHex)) {
+      await _uiLog.log(
+        'attestation.receive',
+        'reason=$reason skipped=stale opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
+      );
+      return;
+    }
+    if (_attestationSyncInFlight) {
+      await _uiLog.log(
+          'attestation.receive', 'reason=$reason skipped=inflight');
+      return;
+    }
+
+    _attestationSyncInFlight = true;
+    try {
+      final result = await _runtime
+          .buildConsensusAttestationSyncService()
+          .receiveAndStore();
+      await _uiLog.log(
+        'attestation.receive',
+        'reason=$reason code=${result.code} received=${result.receivedCount} '
+            'stored=${result.storedCount} rejected=${result.rejectedCount}',
+      );
+      if (!mounted) return;
+      if (_isStaleCapsuleSyncRequest(capsuleHex)) {
+        await _uiLog.log(
+          'attestation.receive',
+          'reason=$reason skipped=stale_after_receive opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
+        );
+        return;
+      }
+      if (result.storedCount > 0) {
+        _loadCapsuleData();
+      }
+    } catch (error) {
+      await _uiLog.log('attestation.receive', 'reason=$reason error=$error');
+    } finally {
+      _attestationSyncInFlight = false;
+    }
+  }
+
   void _scheduleLaunchReceive() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -353,6 +411,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (canRefreshAfterReceive) {
         _loadCapsuleData();
       }
+      unawaited(
+        _receiveAttestationsBestEffort(
+          reason: 'launch',
+          capsuleHex: _activeCapsuleHex,
+        ),
+      );
       debugPrint(
         '[StartupTiming] post_receive_refresh_ms='
         '${_launchStopwatch?.elapsedMilliseconds ?? -1}',

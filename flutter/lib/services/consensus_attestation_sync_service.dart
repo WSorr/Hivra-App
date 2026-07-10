@@ -318,6 +318,28 @@ class ConsensusAttestationSyncService {
         .toList(growable: false);
   }
 
+  Future<List<ConsensusAttestationEvidence>> loadVerifiedPairEvidence({
+    required String peerRootHex,
+  }) async {
+    final localRootHex = _localRootHex();
+    if (localRootHex == null) return const <ConsensusAttestationEvidence>[];
+    final peer = peerRootHex.trim().toLowerCase();
+    if (!_isHex(peer, 64) || peer == localRootHex) {
+      return const <ConsensusAttestationEvidence>[];
+    }
+    final pairRoots = <String>[localRootHex, peer]..sort();
+    final evidence = await _store.load(localRootHex);
+    return evidence
+        .where(_verifyEvidence)
+        .where(
+          (item) =>
+              item.pairRootsSorted.length == 2 &&
+              item.pairRootsSorted[0] == pairRoots[0] &&
+              item.pairRootsSorted[1] == pairRoots[1],
+        )
+        .toList(growable: false);
+  }
+
   ConsensusAttestationEvidence? _parseEvidencePayload(String payloadJson) {
     try {
       final decoded = jsonDecode(payloadJson);

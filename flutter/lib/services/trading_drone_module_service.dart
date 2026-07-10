@@ -15,6 +15,7 @@ import 'bingx_futures_risk_governor_service.dart';
 import 'bingx_futures_signal_rank_use_case_service.dart';
 import 'bingx_futures_strategy_naming_service.dart';
 import 'capsule_chat_delivery_service.dart';
+import 'consensus_attestation_exchange_service.dart';
 import 'manual_consensus_check_service.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
@@ -37,6 +38,7 @@ class TradingDroneModule {
   final BingxFuturesLiveStrategyUseCaseService liveStrategyUseCase;
   final BingxFuturesStrategyNamingService strategyNaming;
   final CapsuleChatDeliveryService chatDelivery;
+  final ConsensusAttestationExchangeService attestationExchange;
   final UiEventLogService uiLog;
   final BingxFuturesExecutionQueueService executionQueue;
 
@@ -58,6 +60,7 @@ class TradingDroneModule {
     required this.liveStrategyUseCase,
     required this.strategyNaming,
     required this.chatDelivery,
+    required this.attestationExchange,
     required this.uiLog,
     required this.executionQueue,
   });
@@ -110,6 +113,7 @@ class TradingDroneModuleService {
       ),
       strategyNaming: const BingxFuturesStrategyNamingService(),
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
+      attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       uiLog: const UiEventLogService(),
       executionQueue: executionQueue,
     );
