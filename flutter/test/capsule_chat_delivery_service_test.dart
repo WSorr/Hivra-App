@@ -438,6 +438,9 @@ class _FakeManualConsensusCheckService extends ManualConsensusCheckService {
 }
 
 class _FakeRuntime implements AppRuntimeRuntime {
+  @override
+  String? signConsensusCommitment(String commitmentHashHex) => null;
+
   final Uint8List? capsuleRootKey;
   final Map<String, Object?> workerBootstrap;
 

@@ -9,6 +9,46 @@ void main() {
   group('ConsensusProcessor', () {
     const processor = ConsensusProcessor();
 
+    test('attestation commitment is symmetric and domain separated', () {
+      final first = processor.buildAttestationCommitment(
+        localRootHex: 'a' * 64,
+        peerRootHex: 'b' * 64,
+        snapshotHashHex: 'c' * 64,
+      );
+      final mirrored = processor.buildAttestationCommitment(
+        localRootHex: 'b' * 64,
+        peerRootHex: 'a' * 64,
+        snapshotHashHex: 'c' * 64,
+      );
+
+      expect(first, isNotNull);
+      expect(mirrored, isNotNull);
+      expect(first!.canonicalJson, mirrored!.canonicalJson);
+      expect(first.commitmentHashHex, mirrored.commitmentHashHex);
+      expect(
+        first.canonicalJson,
+        contains('hivra.pair_consensus.attestation'),
+      );
+    });
+
+    test('attestation commitment rejects self-pair and malformed hashes', () {
+      expect(
+        processor.buildAttestationCommitment(
+          localRootHex: 'a' * 64,
+          peerRootHex: 'a' * 64,
+          snapshotHashHex: 'c' * 64,
+        ),
+        isNull,
+      );
+      expect(
+        processor.buildAttestationCommitment(
+          localRootHex: 'a' * 64,
+          peerRootHex: 'b' * 64,
+          snapshotHashHex: 'invalid',
+        ),
+        isNull,
+      );
+    });
     List<int> bytes32(int value) => List<int>.filled(32, value);
     String hex(List<int> bytes) =>
         bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();

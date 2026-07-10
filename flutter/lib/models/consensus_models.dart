@@ -108,6 +108,20 @@ class ConsensusVerifyParticipant {
   });
 }
 
+class ConsensusAttestationCommitment {
+  final List<String> pairRootsSorted;
+  final String snapshotHashHex;
+  final String canonicalJson;
+  final String commitmentHashHex;
+
+  const ConsensusAttestationCommitment({
+    required this.pairRootsSorted,
+    required this.snapshotHashHex,
+    required this.canonicalJson,
+    required this.commitmentHashHex,
+  });
+}
+
 typedef ConsensusSignatureVerifier = bool Function({
   required String messageHashHex,
   required String participantIdHex,

@@ -1,5 +1,12 @@
 use super::*;
 
+fn sign_root_digest32(seed: &Seed, message: &[u8; 32]) -> Result<[u8; 64], &'static str> {
+    let privkey = derive_root_keypair(seed).map_err(|_| "root key derivation failed")?;
+    Ed25519CryptoProvider::new()
+        .sign(message, &privkey)
+        .map_err(|_| "root signing failed")
+}
+
 /// Root runtime signing self-check.
 ///
 /// Returns:
@@ -66,6 +73,54 @@ pub unsafe extern "C" fn hivra_verify_ed25519_signature32(
             set_last_error("Verify ed25519 failed: signature mismatch");
             -2
         }
+    }
+}
+
+/// Sign a 32-byte domain commitment with the active Capsule root identity.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_sign_root_digest32(
+    message_ptr: *const u8,
+    signature_out: *mut u8,
+) -> i32 {
+    clear_last_error();
+    if message_ptr.is_null() || signature_out.is_null() {
+        set_last_error("Root signing failed: null pointer argument");
+        return -1;
+    }
+    let seed = match load_seed() {
+        Ok(seed) => seed,
+        Err(_) => {
+            set_last_error("Root signing failed: seed unavailable");
+            return -2;
+        }
+    };
+    let mut message = [0u8; 32];
+    message.copy_from_slice(std::slice::from_raw_parts(message_ptr, 32));
+    match sign_root_digest32(&seed, &message) {
+        Ok(signature) => {
+            std::ptr::copy_nonoverlapping(signature.as_ptr(), signature_out, 64);
+            0
+        }
+        Err(error) => {
+            set_last_error(error);
+            -3
+        }
+    }
+}
+
+#[cfg(test)]
+mod root_signing_tests {
+    use super::*;
+
+    #[test]
+    fn root_digest_signature_verifies_against_derived_root() {
+        let seed = Seed([37u8; 32]);
+        let message = [91u8; 32];
+        let signature = sign_root_digest32(&seed, &message).expect("signature");
+        let pubkey = derive_root_public_key(&seed).expect("root pubkey");
+        Ed25519CryptoProvider::new()
+            .verify(&message, &pubkey, &signature)
+            .expect("valid root signature");
     }
 }
 

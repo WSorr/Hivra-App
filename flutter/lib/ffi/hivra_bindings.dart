@@ -117,6 +117,14 @@ typedef HivraVerifyEd25519Signature32Dart = int Function(
   Pointer<Uint8> pubkey32,
   Pointer<Uint8> signature64,
 );
+typedef HivraSignRootDigest32C = Int32 Function(
+  Pointer<Uint8> message32,
+  Pointer<Uint8> signatureOut64,
+);
+typedef HivraSignRootDigest32Dart = int Function(
+  Pointer<Uint8> message32,
+  Pointer<Uint8> signatureOut64,
+);
 
 typedef HivraSendCapsuleChatC = Int32 Function(
   Pointer<Uint8> toPubkey,
@@ -271,6 +279,7 @@ class HivraBindings {
   HivraTransportReceiveQuickDart? _transportReceiveQuick;
   HivraRetryPendingOutgoingInvitationsDart? _retryPendingOutgoingInvitations;
   HivraVerifyEd25519Signature32Dart? _verifyEd25519Signature32;
+  HivraSignRootDigest32Dart? _signRootDigest32;
   HivraSendCapsuleChatDart? _sendCapsuleChat;
   HivraReceiveCapsuleChatJsonDart? _receiveCapsuleChatJson;
   HivraAcceptInvitationDart? _acceptInvitation;
@@ -407,6 +416,15 @@ class HivraBindings {
           .asFunction();
     } catch (_) {
       _verifyEd25519Signature32 = null;
+    }
+
+    try {
+      _signRootDigest32 = _lib
+          .lookup<NativeFunction<HivraSignRootDigest32C>>(
+              'hivra_sign_root_digest32')
+          .asFunction();
+    } catch (_) {
+      _signRootDigest32 = null;
     }
 
     try {
@@ -719,6 +737,22 @@ class HivraBindings {
     } finally {
       calloc.free(messagePtr);
       calloc.free(pubkeyPtr);
+      calloc.free(signaturePtr);
+    }
+  }
+
+  Uint8List? signRootDigest32(Uint8List message32) {
+    if (message32.length != 32) return null;
+    final signFn = _signRootDigest32;
+    if (signFn == null) return null;
+    final messagePtr = calloc<Uint8>(32);
+    final signaturePtr = calloc<Uint8>(64);
+    try {
+      messagePtr.asTypedList(32).setAll(0, message32);
+      if (signFn(messagePtr, signaturePtr) != 0) return null;
+      return Uint8List.fromList(signaturePtr.asTypedList(64));
+    } finally {
+      calloc.free(messagePtr);
       calloc.free(signaturePtr);
     }
   }

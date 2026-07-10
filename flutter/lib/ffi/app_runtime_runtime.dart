@@ -49,6 +49,8 @@ abstract class AppRuntimeRuntime {
     required String participantIdHex,
     required String signatureHex,
   });
+
+  String? signConsensusCommitment(String commitmentHashHex);
 }
 
 class HivraAppRuntimeRuntime implements AppRuntimeRuntime {
@@ -153,6 +155,17 @@ class HivraAppRuntimeRuntime implements AppRuntimeRuntime {
           signature64,
         ) ==
         0;
+  }
+
+  @override
+  String? signConsensusCommitment(String commitmentHashHex) {
+    final digest = _hexToBytes(commitmentHashHex, 32);
+    if (digest == null) return null;
+    final signature = _hivra.signRootDigest32(digest);
+    if (signature == null || signature.length != 64) return null;
+    return signature
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
   }
 
   Uint8List? _hexToBytes(String value, int expectedBytes) {

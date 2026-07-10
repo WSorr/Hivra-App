@@ -14,6 +14,38 @@ class ConsensusProcessor {
     LedgerViewSupport support = const LedgerViewSupport(),
   }) : _support = support;
 
+  ConsensusAttestationCommitment? buildAttestationCommitment({
+    required String localRootHex,
+    required String peerRootHex,
+    required String snapshotHashHex,
+  }) {
+    final local = _normalizedHex(localRootHex);
+    final peer = _normalizedHex(peerRootHex);
+    final snapshot = _normalizedHex(snapshotHashHex);
+    if (local == null ||
+        peer == null ||
+        snapshot == null ||
+        local.length != 64 ||
+        peer.length != 64 ||
+        snapshot.length != 64 ||
+        local == peer) {
+      return null;
+    }
+    final roots = <String>[local, peer]..sort();
+    final canonicalJson = jsonEncode(<String, dynamic>{
+      'domain': 'hivra.pair_consensus.attestation',
+      'schema_version': 1,
+      'pair_roots_sorted': roots,
+      'snapshot_hash': snapshot,
+    });
+    return ConsensusAttestationCommitment(
+      pairRootsSorted: List<String>.unmodifiable(roots),
+      snapshotHashHex: snapshot,
+      canonicalJson: canonicalJson,
+      commitmentHashHex: sha256.convert(utf8.encode(canonicalJson)).toString(),
+    );
+  }
+
   List<ConsensusPreview> preview(
     List<Map<String, dynamic>> events,
     Uint8List localTransportKey, {

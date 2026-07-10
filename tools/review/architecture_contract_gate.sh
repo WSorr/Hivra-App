@@ -71,6 +71,7 @@ BINDINGS="$ROOT/flutter/lib/ffi/hivra_bindings.dart"
 WASM_RUNTIME="$ROOT/platform/hivra-wasm-runtime/src/lib.rs"
 WASM_RUNTIME_SERVICE="$ROOT/flutter/lib/services/wasm_plugin_runtime_service.dart"
 FFI_TOML="$ROOT/platform/hivra-ffi/Cargo.toml"
+FFI_SELFCHECK="$ROOT/platform/hivra-ffi/src/selfcheck_api.rs"
 
 # 1) Dependency law for transport adapter.
 require_absent "$TRANSPORT_TOML" 'hivra-core' \
@@ -175,6 +176,10 @@ require_present "$RUNTIME" 'InvitationIntentHandler get invitationIntents' \
   "runtime exposes invitation intent boundary"
 require_present "$RUNTIME" 'verifySignature: _runtime\.verifyConsensusSignature' \
   "production consensus runtime wires cryptographic signature verification"
+require_present "$FFI_SELFCHECK" 'fn hivra_sign_root_digest32' \
+  "FFI exposes root signing only for fixed-size consensus commitments"
+require_present "$BINDINGS" "'hivra_sign_root_digest32'" \
+  "Flutter binds the root commitment signing adapter"
 require_absent "$SCREENS" "import '../services/invitation_actions_service.dart';" \
   "screens do not import invitation_actions_service directly"
 require_absent "$SCREENS" "import '../services/consensus_runtime_service.dart';" \
