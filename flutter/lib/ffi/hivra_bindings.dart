@@ -142,6 +142,22 @@ typedef HivraReceiveCapsuleChatJsonDart = int Function(
   Pointer<Pointer<Int8>> outJson,
 );
 
+typedef HivraSendPairConsensusAttestationC = Int32 Function(
+  Pointer<Uint8> toPubkey,
+  Pointer<Int8> payloadJson,
+);
+typedef HivraSendPairConsensusAttestationDart = int Function(
+  Pointer<Uint8> toPubkey,
+  Pointer<Int8> payloadJson,
+);
+
+typedef HivraReceivePairConsensusAttestationsJsonC = Int32 Function(
+  Pointer<Pointer<Int8>> outJson,
+);
+typedef HivraReceivePairConsensusAttestationsJsonDart = int Function(
+  Pointer<Pointer<Int8>> outJson,
+);
+
 typedef HivraAcceptInvitationC = Int32 Function(
   Pointer<Uint8> invitationId,
   Pointer<Uint8> fromPubkey,
@@ -282,6 +298,9 @@ class HivraBindings {
   HivraSignRootDigest32Dart? _signRootDigest32;
   HivraSendCapsuleChatDart? _sendCapsuleChat;
   HivraReceiveCapsuleChatJsonDart? _receiveCapsuleChatJson;
+  HivraSendPairConsensusAttestationDart? _sendPairConsensusAttestation;
+  HivraReceivePairConsensusAttestationsJsonDart?
+      _receivePairConsensusAttestationsJson;
   HivraAcceptInvitationDart? _acceptInvitation;
   HivraRejectInvitationDart? _rejectInvitation;
   HivraExpireInvitationDart? _expireInvitation;
@@ -443,6 +462,24 @@ class HivraBindings {
           .asFunction();
     } catch (_) {
       _receiveCapsuleChatJson = null;
+    }
+
+    try {
+      _sendPairConsensusAttestation = _lib
+          .lookup<NativeFunction<HivraSendPairConsensusAttestationC>>(
+              'hivra_send_pair_consensus_attestation')
+          .asFunction();
+    } catch (_) {
+      _sendPairConsensusAttestation = null;
+    }
+
+    try {
+      _receivePairConsensusAttestationsJson = _lib
+          .lookup<NativeFunction<HivraReceivePairConsensusAttestationsJsonC>>(
+              'hivra_receive_pair_consensus_attestations_json')
+          .asFunction();
+    } catch (_) {
+      _receivePairConsensusAttestationsJson = null;
     }
 
     try {
@@ -784,6 +821,48 @@ class HivraBindings {
     final outPtr = calloc<Pointer<Int8>>();
     try {
       final code = receiveCapsuleChatFn(outPtr);
+      final cstr = outPtr.value;
+      if (cstr == nullptr) {
+        return (code: code, json: null);
+      }
+      final json = cstr.cast<Utf8>().toDartString();
+      _freeString(cstr);
+      return (code: code, json: json);
+    } finally {
+      calloc.free(outPtr);
+    }
+  }
+
+  int sendPairConsensusAttestationCode(
+    Uint8List toPubkey,
+    String payloadJson,
+  ) {
+    if (toPubkey.length != 32 || payloadJson.trim().isEmpty) {
+      return -1;
+    }
+    final sendFn = _sendPairConsensusAttestation;
+    if (sendFn == null) {
+      return -1002;
+    }
+    final toPtr = calloc<Uint8>(32);
+    final payloadPtr = payloadJson.toNativeUtf8();
+    try {
+      toPtr.asTypedList(32).setAll(0, toPubkey);
+      return sendFn(toPtr, payloadPtr.cast<Int8>());
+    } finally {
+      calloc.free(toPtr);
+      calloc.free(payloadPtr);
+    }
+  }
+
+  ({int code, String? json}) receivePairConsensusAttestationsJson() {
+    final receiveFn = _receivePairConsensusAttestationsJson;
+    if (receiveFn == null) {
+      return (code: -1002, json: null);
+    }
+    final outPtr = calloc<Pointer<Int8>>();
+    try {
+      final code = receiveFn(outPtr);
       final cstr = outPtr.value;
       if (cstr == nullptr) {
         return (code: code, json: null);

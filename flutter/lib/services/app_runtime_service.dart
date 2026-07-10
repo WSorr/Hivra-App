@@ -13,6 +13,7 @@ import 'capsule_address_service.dart';
 import 'capsule_diagnostics_service.dart';
 import 'capsule_state_manager.dart';
 import 'capsule_chat_delivery_service.dart';
+import 'consensus_attestation_sync_service.dart';
 import 'consensus_runtime_service.dart';
 import 'invitation_actions_service.dart';
 import 'invitation_delivery_service.dart';
@@ -94,6 +95,13 @@ class AppRuntimeService {
 
   ManualConsensusCheckService buildManualConsensusCheckService() {
     return ManualConsensusCheckService(
+      consensus: buildConsensusRuntimeService(),
+    );
+  }
+
+  ConsensusAttestationSyncService buildConsensusAttestationSyncService() {
+    return ConsensusAttestationSyncService(
+      runtime: _runtime,
       consensus: buildConsensusRuntimeService(),
     );
   }

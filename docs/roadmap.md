@@ -1045,8 +1045,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         attestation commitments are symmetric and validated, and the FFI
         exposes fixed-size root signing without exposing seed/private key
         material to Flutter.
-      - 2c: capsule-scoped verified attestation store plus generic transport
-        delivery/fetch orchestration.
+      - 2c completed on 2026-07-10: pair attestations now have a dedicated
+        host transport kind, Flutter worker bindings, a capsule-scoped
+        `pair_consensus_attestations.json` store, and receive orchestration
+        that recomputes commitments and verifies root signatures before merge.
       - 2d: switch pair-scoped host guard from local signability to exact
         two-root attestation verification, then run focused manual smoke.
   - Status: active.

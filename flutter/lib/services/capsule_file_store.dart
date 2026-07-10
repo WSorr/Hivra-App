@@ -10,6 +10,8 @@ class CapsuleFileStore {
   static const String ledgerFileName = 'ledger.json';
   static const String backupFileName = 'capsule-backup.v1.json';
   static const String deliveryOutboxFileName = 'delivery_outbox.json';
+  static const String pairConsensusAttestationsFileName =
+      'pair_consensus_attestations.json';
   static const String capsulesDirName = 'capsules';
 
   final UserVisibleDataDirectoryService _dirs;
@@ -82,6 +84,9 @@ class CapsuleFileStore {
   File deliveryOutboxFile(Directory dir) =>
       File('${dir.path}/$deliveryOutboxFileName');
 
+  File pairConsensusAttestationsFile(Directory dir) =>
+      File('${dir.path}/$pairConsensusAttestationsFileName');
+
   Future<Map<String, dynamic>?> readState(Directory dir) async {
     final file = stateFile(dir);
     if (!await file.exists()) return null;
@@ -128,6 +133,23 @@ class CapsuleFileStore {
 
   Future<void> writeDeliveryOutbox(Directory dir, String rawJson) async {
     await _atomicWrites.writeString(deliveryOutboxFile(dir), rawJson);
+  }
+
+  Future<String?> readPairConsensusAttestations(Directory dir) async {
+    final file = pairConsensusAttestationsFile(dir);
+    if (!await file.exists()) return null;
+    final raw = await file.readAsString();
+    return raw.trim().isEmpty ? null : raw;
+  }
+
+  Future<void> writePairConsensusAttestations(
+    Directory dir,
+    String rawJson,
+  ) async {
+    await _atomicWrites.writeString(
+      pairConsensusAttestationsFile(dir),
+      rawJson,
+    );
   }
 
   Future<void> clearPersisted(

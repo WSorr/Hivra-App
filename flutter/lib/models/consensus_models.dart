@@ -122,6 +122,92 @@ class ConsensusAttestationCommitment {
   });
 }
 
+class ConsensusAttestationEvidence {
+  final int schemaVersion;
+  final List<String> pairRootsSorted;
+  final String snapshotHashHex;
+  final String commitmentHashHex;
+  final String signerRootHex;
+  final String signatureHex;
+  final String createdAtUtc;
+
+  const ConsensusAttestationEvidence({
+    required this.schemaVersion,
+    required this.pairRootsSorted,
+    required this.snapshotHashHex,
+    required this.commitmentHashHex,
+    required this.signerRootHex,
+    required this.signatureHex,
+    required this.createdAtUtc,
+  });
+
+  String get recordKey =>
+      '${pairRootsSorted.join(':')}::$snapshotHashHex::$signerRootHex';
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'schema_version': schemaVersion,
+        'pair_roots_sorted': pairRootsSorted,
+        'snapshot_hash': snapshotHashHex,
+        'commitment_hash': commitmentHashHex,
+        'signer_root': signerRootHex,
+        'signature': signatureHex,
+        'created_at_utc': createdAtUtc,
+      };
+
+  static ConsensusAttestationEvidence? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final map = Map<String, dynamic>.from(value);
+    final schemaVersion = _asInt(map['schema_version']);
+    final roots = _asStringList(map['pair_roots_sorted']);
+    final snapshotHashHex =
+        map['snapshot_hash']?.toString().trim().toLowerCase() ?? '';
+    final commitmentHashHex =
+        map['commitment_hash']?.toString().trim().toLowerCase() ?? '';
+    final signerRootHex =
+        map['signer_root']?.toString().trim().toLowerCase() ?? '';
+    final signatureHex =
+        map['signature']?.toString().trim().toLowerCase() ?? '';
+    final createdAtUtc = map['created_at_utc']?.toString().trim() ?? '';
+    if (schemaVersion != 1 ||
+        roots.length != 2 ||
+        !_isHex(roots[0], 64) ||
+        !_isHex(roots[1], 64) ||
+        roots[0].compareTo(roots[1]) >= 0 ||
+        !_isHex(snapshotHashHex, 64) ||
+        !_isHex(commitmentHashHex, 64) ||
+        !_isHex(signerRootHex, 64) ||
+        !_isHex(signatureHex, 128) ||
+        !roots.contains(signerRootHex) ||
+        DateTime.tryParse(createdAtUtc)?.isUtc != true) {
+      return null;
+    }
+    return ConsensusAttestationEvidence(
+      schemaVersion: schemaVersion!,
+      pairRootsSorted: List<String>.unmodifiable(roots),
+      snapshotHashHex: snapshotHashHex,
+      commitmentHashHex: commitmentHashHex,
+      signerRootHex: signerRootHex,
+      signatureHex: signatureHex,
+      createdAtUtc: createdAtUtc,
+    );
+  }
+
+  static int? _asInt(Object? value) {
+    if (value is int) return value;
+    return int.tryParse('$value');
+  }
+
+  static List<String> _asStringList(Object? value) {
+    if (value is! List) return const <String>[];
+    return value
+        .map((item) => item.toString().trim().toLowerCase())
+        .toList(growable: false);
+  }
+
+  static bool _isHex(String value, int length) =>
+      value.length == length && RegExp(r'^[0-9a-f]+$').hasMatch(value);
+}
+
 typedef ConsensusSignatureVerifier = bool Function({
   required String messageHashHex,
   required String participantIdHex,

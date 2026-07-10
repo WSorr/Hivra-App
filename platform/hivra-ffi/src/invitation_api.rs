@@ -607,6 +607,12 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         if crate::chat_api::queue_incoming_chat_if_match(&message, local_pubkey) {
             continue;
         }
+        if crate::consensus_attestation_api::queue_incoming_attestation_if_match(
+            &message,
+            local_pubkey,
+        ) {
+            continue;
+        }
 
         let to_matches = message.to == local_pubkey;
 

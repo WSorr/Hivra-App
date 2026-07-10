@@ -3,19 +3,20 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Write;
 
-const CAPSULE_CHAT_KIND: u32 = 4097;
-const CHAT_INBOX_CAPACITY: usize = 512;
+const PAIR_CONSENSUS_ATTESTATION_KIND: u32 = 4098;
+const ATTESTATION_INBOX_CAPACITY: usize = 512;
 
 #[derive(Clone, Serialize)]
-pub(crate) struct QueuedChatMessage {
+pub(crate) struct QueuedConsensusAttestation {
     from_hex: String,
     to_hex: String,
     payload_json: String,
     timestamp_ms: u64,
 }
 
-static CHAT_INBOX: Lazy<Mutex<HashMap<[u8; 32], Vec<QueuedChatMessage>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static CONSENSUS_ATTESTATION_INBOX: Lazy<
+    Mutex<HashMap<[u8; 32], Vec<QueuedConsensusAttestation>>>,
+> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 fn map_delivery_error(err: TransportError, default_code: i32) -> i32 {
     match err {
@@ -75,7 +76,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn load_chat_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32]), i32> {
+fn load_attestation_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32]), i32> {
     let sender_secret = match derive_nostr_keypair(seed) {
         Ok(key) => key,
         Err(_) => return Err(-3),
@@ -89,8 +90,11 @@ fn load_chat_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32]), i32> 
     Ok((sender_secret, sender_pubkey))
 }
 
-pub(crate) fn queue_incoming_chat_if_match(message: &Message, local_pubkey: [u8; 32]) -> bool {
-    if message.kind != CAPSULE_CHAT_KIND {
+pub(crate) fn queue_incoming_attestation_if_match(
+    message: &Message,
+    local_pubkey: [u8; 32],
+) -> bool {
+    if message.kind != PAIR_CONSENSUS_ATTESTATION_KIND {
         return false;
     }
 
@@ -108,7 +112,7 @@ pub(crate) fn queue_incoming_chat_if_match(message: &Message, local_pubkey: [u8;
 
     let from_hex = bytes_to_hex(&message.from);
     let to_hex = bytes_to_hex(&message.to);
-    let mut inbox = CHAT_INBOX.lock().unwrap();
+    let mut inbox = CONSENSUS_ATTESTATION_INBOX.lock().unwrap();
     let messages = inbox.entry(local_pubkey).or_insert_with(Vec::new);
 
     let duplicate = messages.iter().any(|queued| {
@@ -120,12 +124,12 @@ pub(crate) fn queue_incoming_chat_if_match(message: &Message, local_pubkey: [u8;
         return true;
     }
 
-    if messages.len() >= CHAT_INBOX_CAPACITY {
-        let overflow = messages.len() + 1 - CHAT_INBOX_CAPACITY;
+    if messages.len() >= ATTESTATION_INBOX_CAPACITY {
+        let overflow = messages.len() + 1 - ATTESTATION_INBOX_CAPACITY;
         messages.drain(0..overflow);
     }
 
-    messages.push(QueuedChatMessage {
+    messages.push(QueuedConsensusAttestation {
         from_hex,
         to_hex,
         payload_json: payload_json.to_string(),
@@ -135,32 +139,32 @@ pub(crate) fn queue_incoming_chat_if_match(message: &Message, local_pubkey: [u8;
     true
 }
 
-fn drain_queued_chat(local_pubkey: [u8; 32]) -> Vec<QueuedChatMessage> {
-    let mut inbox = CHAT_INBOX.lock().unwrap();
+fn drain_queued_attestations(local_pubkey: [u8; 32]) -> Vec<QueuedConsensusAttestation> {
+    let mut inbox = CONSENSUS_ATTESTATION_INBOX.lock().unwrap();
     inbox.remove(&local_pubkey).unwrap_or_default()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn hivra_send_capsule_chat(
+pub unsafe extern "C" fn hivra_send_pair_consensus_attestation(
     to_pubkey_ptr: *const u8,
     payload_json_ptr: *const c_char,
 ) -> i32 {
     clear_last_error();
     clear_delivery_receipts();
     if to_pubkey_ptr.is_null() || payload_json_ptr.is_null() {
-        set_last_error("Capsule chat send failed: invalid arguments");
+        set_last_error("Pair consensus attestation send failed: invalid arguments");
         return -1;
     }
 
     let payload_json = match CStr::from_ptr(payload_json_ptr).to_str() {
         Ok(value) => value.trim(),
         Err(_) => {
-            set_last_error("Capsule chat send failed: payload is not valid UTF-8");
+            set_last_error("Pair consensus attestation send failed: payload is not valid UTF-8");
             return -1;
         }
     };
     if payload_json.is_empty() {
-        set_last_error("Capsule chat send failed: payload is empty");
+        set_last_error("Pair consensus attestation send failed: payload is empty");
         return -1;
     }
 
@@ -171,7 +175,7 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
     let seed = match load_seed() {
         Ok(seed) => seed,
         Err(_) => {
-            set_last_error("Capsule chat send failed: seed not found");
+            set_last_error("Pair consensus attestation send failed: seed not found");
             return -2;
         }
     };
@@ -179,16 +183,18 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
     {
         let runtime = RUNTIME.lock().unwrap();
         if runtime.capsule.is_none() {
-            set_last_error("Capsule chat send failed: capsule runtime is not initialized");
+            set_last_error(
+                "Pair consensus attestation send failed: capsule runtime is not initialized",
+            );
             return -4;
         }
     }
 
-    let (sender_secret, sender_pubkey) = match load_chat_delivery_context(&seed) {
+    let (sender_secret, sender_pubkey) = match load_attestation_delivery_context(&seed) {
         Ok(context) => context,
         Err(code) => {
             set_last_error(format!(
-                "Capsule chat send failed: delivery context init failed (code {code})"
+                "Pair consensus attestation send failed: delivery context init failed (code {code})"
             ));
             return code;
         }
@@ -197,7 +203,7 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
     let message = Message {
         from: sender_pubkey,
         to: to_pubkey,
-        kind: CAPSULE_CHAT_KIND,
+        kind: PAIR_CONSENSUS_ATTESTATION_KIND,
         payload: payload_json.as_bytes().to_vec(),
         timestamp: now_ms(),
         invitation_id: None,
@@ -211,15 +217,15 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
                 .send_with_receipt(message.clone())
                 .map(|receipt| {
                     eprintln!(
-                        "[Chat/Nostr] accepted envelope={} by={}",
+                        "[ConsensusAttestation/Nostr] accepted envelope={} by={}",
                         receipt.envelope_id, receipt.accepted_by
                     );
-                    record_delivery_receipt("CapsuleChat", receipt);
+                    record_delivery_receipt("PairConsensusAttestation", receipt);
                 })
                 .map_err(|err| {
                     let reason = describe_transport_error(&err);
                     eprintln!(
-                        "[Chat/Nostr] send failed: {:?}{}",
+                        "[ConsensusAttestation/Nostr] send failed: {:?}{}",
                         err,
                         reason
                             .as_deref()
@@ -239,7 +245,7 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
             .and_then(|guard| guard.as_deref().map(|value| format!(": {value}")))
             .unwrap_or_default();
         set_last_error(format!(
-            "Capsule chat send failed: transport rejected message (code {code}{reason_suffix})"
+            "Pair consensus attestation send failed: transport rejected message (code {code}{reason_suffix})"
         ));
         return code;
     }
@@ -248,26 +254,28 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn hivra_receive_capsule_chat_json(out_json: *mut *mut c_char) -> i32 {
+pub unsafe extern "C" fn hivra_receive_pair_consensus_attestations_json(
+    out_json: *mut *mut c_char,
+) -> i32 {
     clear_last_error();
     if out_json.is_null() {
-        set_last_error("Capsule chat receive failed: output pointer is null");
+        set_last_error("Pair consensus attestation receive failed: output pointer is null");
         return -1;
     }
 
     let seed = match load_seed() {
         Ok(seed) => seed,
         Err(_) => {
-            set_last_error("Capsule chat receive failed: seed not found");
+            set_last_error("Pair consensus attestation receive failed: seed not found");
             return -2;
         }
     };
 
-    let (sender_secret, local_pubkey) = match load_chat_delivery_context(&seed) {
+    let (sender_secret, local_pubkey) = match load_attestation_delivery_context(&seed) {
         Ok(context) => context,
         Err(code) => {
             set_last_error(format!(
-                "Capsule chat receive failed: delivery context init failed (code {code})"
+                "Pair consensus attestation receive failed: delivery context init failed (code {code})"
             ));
             return code;
         }
@@ -276,7 +284,9 @@ pub unsafe extern "C" fn hivra_receive_capsule_chat_json(out_json: *mut *mut c_c
     {
         let runtime = RUNTIME.lock().unwrap();
         if runtime.capsule.is_none() {
-            set_last_error("Capsule chat receive failed: capsule runtime is not initialized");
+            set_last_error(
+                "Pair consensus attestation receive failed: capsule runtime is not initialized",
+            );
             return -4;
         }
     }
@@ -289,26 +299,23 @@ pub unsafe extern "C" fn hivra_receive_capsule_chat_json(out_json: *mut *mut c_c
         });
     if let Ok(messages) = fetched {
         for message in messages {
-            if crate::consensus_attestation_api::queue_incoming_attestation_if_match(
-                &message,
-                local_pubkey,
-            ) {
+            if crate::chat_api::queue_incoming_chat_if_match(&message, local_pubkey) {
                 continue;
             }
-            let _ = queue_incoming_chat_if_match(&message, local_pubkey);
+            let _ = queue_incoming_attestation_if_match(&message, local_pubkey);
         }
     } else if let Err(code) = fetched {
         set_last_error(format!(
-            "Capsule chat receive failed: transport receive error (code {code})"
+            "Pair consensus attestation receive failed: transport receive error (code {code})"
         ));
         return code;
     }
 
-    let queued = drain_queued_chat(local_pubkey);
+    let queued = drain_queued_attestations(local_pubkey);
     let json = match serde_json::to_string(&queued) {
         Ok(value) => value,
         Err(_) => {
-            set_last_error("Capsule chat receive failed: serialization error");
+            set_last_error("Pair consensus attestation receive failed: serialization error");
             return -7;
         }
     };
@@ -318,7 +325,7 @@ pub unsafe extern "C" fn hivra_receive_capsule_chat_json(out_json: *mut *mut c_c
             queued.len() as i32
         }
         Err(_) => {
-            set_last_error("Capsule chat receive failed: output contains NUL");
+            set_last_error("Pair consensus attestation receive failed: output contains NUL");
             -8
         }
     }

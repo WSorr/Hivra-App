@@ -44,6 +44,7 @@ pub(crate) fn clear_last_error() {
 
 mod capsule_api;
 mod chat_api;
+mod consensus_attestation_api;
 mod delivery_receipts_api;
 mod ffi_support;
 mod invitation_api;
