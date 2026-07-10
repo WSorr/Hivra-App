@@ -173,6 +173,8 @@ require_present "$INV_INTENT" 'class InvitationIntentHandler' \
   "InvitationIntentHandler exists"
 require_present "$RUNTIME" 'InvitationIntentHandler get invitationIntents' \
   "runtime exposes invitation intent boundary"
+require_present "$RUNTIME" 'verifySignature: _runtime\.verifyConsensusSignature' \
+  "production consensus runtime wires cryptographic signature verification"
 require_absent "$SCREENS" "import '../services/invitation_actions_service.dart';" \
   "screens do not import invitation_actions_service directly"
 require_absent "$SCREENS" "import '../services/consensus_runtime_service.dart';" \

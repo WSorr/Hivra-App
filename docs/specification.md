@@ -783,6 +783,35 @@ Rules:
 5. Pair-scoped smart-contract execution MUST be blocked when consensus state is `mismatch` or unresolved for required participants.
 6. Consensus logic MUST NOT be embedded in invitation form policy or screen-local UI orchestration.
 
+#### 8.4.1 Pair Attestation Protocol
+
+Local `signable(peer_hex)` proves only that one Capsule can derive an
+unblocked pair snapshot. It is not two-party consensus and MUST NOT by itself
+authorize a `pair_scoped` drone effect.
+
+The two-party protocol is host-owned and on demand:
+
+1. Both Capsules independently derive the same canonical pair snapshot hash.
+2. Each root identity signs a domain-separated attestation commitment that
+   binds protocol version, sorted pair roots, and snapshot hash.
+3. Attestations travel through the generic transport adapter boundary. They
+   are not Core domain events and do not enter the Capsule ledger.
+4. A capsule-scoped attestation store retains only verified evidence. Evidence
+   is keyed by pair roots and snapshot hash, so any pair-state change makes old
+   evidence inapplicable without mutable invalidation rules.
+5. Pair execution is authorized only when exactly the two expected root
+   identities have valid Ed25519 signatures over the same commitment.
+6. Missing transport, missing peer attestation, malformed participants,
+   unavailable signature verification, hash mismatch, or invalid signatures
+   fail closed with deterministic blocker codes.
+
+Dependency direction remains:
+
+`drone -> host guard -> consensus orchestration -> processor/models`, with
+transport and root-signing implemented only by host adapters below the
+orchestration boundary. UI may request synchronization and display evidence,
+but cannot create, approve, or cache consensus truth.
+
 ### 8.5 Drone Consensus Guard Standard
 
 Every WASM drone method MUST declare one execution scope:

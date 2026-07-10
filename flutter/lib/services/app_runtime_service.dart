@@ -82,6 +82,7 @@ class AppRuntimeService {
       exportLedger: _runtime.exportLedger,
       readLocalTransportKey: _runtime.capsuleNostrPublicKey,
       readLocalRootKey: _runtime.capsuleRootPublicKey,
+      verifySignature: _runtime.verifyConsensusSignature,
     );
   }
 

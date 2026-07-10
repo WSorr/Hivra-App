@@ -1038,6 +1038,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         failure have focused regression coverage; the architecture gate
         prevents reintroducing the late-worker bypass.
     - pass 2 (two-party signed Pair Consensus) is next.
+      - 2a completed on 2026-07-10: signature-set verification now fails
+        closed without a cryptographic verifier, and production runtime wires
+        the existing root Ed25519 verification adapter.
+      - 2b: canonical domain-separated pair attestation model and root-sign
+        FFI adapter.
+      - 2c: capsule-scoped verified attestation store plus generic transport
+        delivery/fetch orchestration.
+      - 2d: switch pair-scoped host guard from local signability to exact
+        two-root attestation verification, then run focused manual smoke.
   - Status: active.
 
 ## Planned Product Tracks

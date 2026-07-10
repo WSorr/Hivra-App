@@ -432,6 +432,26 @@ void main() {
       );
     });
 
+    test('verify fails closed when signature verifier is unavailable', () {
+      final participantHex = 'b' * 64;
+      final result = processor.verify(
+        expectedHashHex: 'a' * 64,
+        participants: <ConsensusVerifyParticipant>[
+          ConsensusVerifyParticipant(
+            participantId: participantHex,
+            hashHex: 'a' * 64,
+            signatureHex: 'c' * 128,
+          ),
+        ],
+      );
+
+      expect(result.state, ConsensusVerifyState.mismatch);
+      expect(
+        result.blockingFacts.map((fact) => fact.code),
+        contains('signature_verifier_unavailable'),
+      );
+    });
+
     test('verify blocks duplicate participant entries', () {
       final result = processor.verify(
         expectedHashHex: 'a' * 64,

@@ -44,6 +44,8 @@ class ConsensusBlockingFact {
         'invalid_signature' => subjectId == null
             ? 'Invalid signature'
             : 'Invalid signature ${_shortId(subjectId!)}',
+        'signature_verifier_unavailable' =>
+          'Consensus signature verifier unavailable',
         _ => key,
       };
 

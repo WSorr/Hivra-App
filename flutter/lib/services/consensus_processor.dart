@@ -583,6 +583,13 @@ class ConsensusProcessor {
     ConsensusSignatureVerifier? verifySignature,
   }) {
     final blockingFacts = <ConsensusBlockingFact>[];
+    if (verifySignature == null) {
+      blockingFacts.add(
+        const ConsensusBlockingFact(
+          code: 'signature_verifier_unavailable',
+        ),
+      );
+    }
     final normalizedExpected = _normalizedHex(expectedHashHex);
     if (normalizedExpected == null || normalizedExpected.length != 64) {
       blockingFacts
