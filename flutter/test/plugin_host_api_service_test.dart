@@ -122,6 +122,31 @@ void main() {
       expect(runtimeInvokeCount, 0);
     });
 
+    test('blocks pair futures execution without two-root attestation evidence',
+        () async {
+      var runtimeInvokeCount = 0;
+      final response = await _service(
+        readAttestedSignable: (_) async => ConsensusSignableResult(
+          preview: _signable(_peerHex).preview,
+          blockingFacts: const <ConsensusBlockingFact>[
+            ConsensusBlockingFact(code: 'pair_attestation_missing'),
+          ],
+        ),
+        onRuntimeInvoke: () => runtimeInvokeCount += 1,
+      ).executeWithRuntimeHook(
+        PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: bingxFuturesTradingPluginId,
+          method: placeBingxFuturesOrderIntentMethod,
+          args: _validBingxArgs(),
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.blocked);
+      expect(response.blockingFacts.first.code, 'pair_attestation_missing');
+      expect(runtimeInvokeCount, 0);
+    });
+
     test('executes plugin-owned futures signal ranking without peer preflight',
         () async {
       var runtimeInvokeCount = 0;
@@ -223,15 +248,20 @@ void main() {
 
 PluginHostApiService _service({
   BingxConsensusSignableReader readSignable = _signable,
+  BingxConsensusAsyncSignableReader? readAttestedSignable,
   PluginRuntimeBinding? runtimeBinding,
   PluginRuntimeInvokeEvidence? runtimeInvoke,
   void Function()? onRuntimeInvoke,
 }) {
   return PluginHostApiService(
     handlers: <PluginHostContractHandler>[
-      BingxFuturesPluginContractHandler(readSignable: readSignable),
+      BingxFuturesPluginContractHandler(
+        readSignable: readSignable,
+        readAttestedSignable: readAttestedSignable,
+      ),
       CapsuleChatPluginContractHandler(
         readSignable: readSignable,
+        readAttestedSignable: readAttestedSignable,
       ),
     ],
     resolveRuntimeBinding: (pluginId) => Future<PluginRuntimeBinding>.value(

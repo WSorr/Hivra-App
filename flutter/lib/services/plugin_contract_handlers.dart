@@ -10,14 +10,20 @@ import 'plugin_host_contract_handler.dart';
 typedef PluginConsensusSignableReader = ConsensusSignableResult Function(
   String peerHex,
 );
+typedef PluginConsensusAsyncSignableReader = Future<ConsensusSignableResult>
+    Function(String peerHex);
 typedef BingxConsensusSignableReader = PluginConsensusSignableReader;
+typedef BingxConsensusAsyncSignableReader = PluginConsensusAsyncSignableReader;
 
 class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
   final PluginConsensusSignableReader _readSignable;
+  final PluginConsensusAsyncSignableReader? _readAttestedSignable;
 
   const CapsuleChatPluginContractHandler({
     required PluginConsensusSignableReader readSignable,
-  }) : _readSignable = readSignable;
+    PluginConsensusAsyncSignableReader? readAttestedSignable,
+  })  : _readSignable = readSignable,
+        _readAttestedSignable = readAttestedSignable;
 
   @override
   String get pluginId => capsuleChatPluginId;
@@ -40,6 +46,17 @@ class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
     return _consensusPreflight(
       request: request,
       readSignable: _readSignable,
+    );
+  }
+
+  @override
+  Future<PluginHostContractResult?> preflightAsync(
+    PluginHostApiRequest request,
+  ) {
+    return _consensusPreflightAsync(
+      request: request,
+      readSignable: _readAttestedSignable,
+      fallbackReadSignable: _readSignable,
     );
   }
 
@@ -94,10 +111,13 @@ class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
 
 class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
   final BingxConsensusSignableReader _readSignable;
+  final BingxConsensusAsyncSignableReader? _readAttestedSignable;
 
   const BingxFuturesPluginContractHandler({
     required BingxConsensusSignableReader readSignable,
-  }) : _readSignable = readSignable;
+    BingxConsensusAsyncSignableReader? readAttestedSignable,
+  })  : _readSignable = readSignable,
+        _readAttestedSignable = readAttestedSignable;
 
   @override
   String get pluginId => bingxFuturesTradingPluginId;
@@ -133,6 +153,21 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
     return _consensusPreflight(
       request: request,
       readSignable: _readSignable,
+      allowSoloWhenPeerMissing: true,
+    );
+  }
+
+  @override
+  Future<PluginHostContractResult?> preflightAsync(
+    PluginHostApiRequest request,
+  ) {
+    if (request.method == rankBingxFuturesSignalsMethod) {
+      return Future<PluginHostContractResult?>.value();
+    }
+    return _consensusPreflightAsync(
+      request: request,
+      readSignable: _readAttestedSignable,
+      fallbackReadSignable: _readSignable,
       allowSoloWhenPeerMissing: true,
     );
   }
@@ -257,6 +292,32 @@ PluginHostContractResult? _consensusPreflight({
     );
   }
   final signable = readSignable(peerHex);
+  if (!signable.isSignable) {
+    return PluginHostContractResult.blocked(signable.blockingFacts);
+  }
+  return null;
+}
+
+Future<PluginHostContractResult?> _consensusPreflightAsync({
+  required PluginHostApiRequest request,
+  required PluginConsensusAsyncSignableReader? readSignable,
+  required PluginConsensusSignableReader fallbackReadSignable,
+  bool allowSoloWhenPeerMissing = false,
+}) async {
+  final peerHex =
+      request.args['peer_hex']?.toString().trim().toLowerCase() ?? '';
+  if (peerHex.isEmpty && allowSoloWhenPeerMissing) {
+    return null;
+  }
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex)) {
+    return const PluginHostContractResult.rejected(
+      code: 'invalid_args',
+      message: 'peer_hex must be a 64-char lowercase hex',
+    );
+  }
+  final signable = readSignable == null
+      ? fallbackReadSignable(peerHex)
+      : await readSignable(peerHex);
   if (!signable.isSignable) {
     return PluginHostContractResult.blocked(signable.blockingFacts);
   }

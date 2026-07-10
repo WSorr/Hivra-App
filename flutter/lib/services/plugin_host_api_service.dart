@@ -53,7 +53,7 @@ class PluginHostApiService {
         runtimeInvoke: null,
       );
     }
-    final preflightResponse = _preflightBeforeRuntime(
+    final preflightResponse = await _preflightBeforeRuntime(
       request,
       runtimeBinding,
     );
@@ -97,10 +97,10 @@ class PluginHostApiService {
     return _executeResolved(request, runtimeBinding, runtimeInvoke);
   }
 
-  PluginHostApiResponse? _preflightBeforeRuntime(
+  Future<PluginHostApiResponse?> _preflightBeforeRuntime(
     PluginHostApiRequest request,
     PluginRuntimeBinding runtimeBinding,
-  ) {
+  ) async {
     if (request.schemaVersion != schemaVersion) {
       return _rejected(
         pluginId: request.pluginId,
@@ -172,7 +172,7 @@ class PluginHostApiService {
         runtimeInvoke: null,
       );
     }
-    final result = handler.preflight(request);
+    final result = await handler.preflightAsync(request);
     if (result == null) return null;
     return switch (result.status) {
       PluginHostApiStatus.blocked => _blocked(

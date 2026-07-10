@@ -41,6 +41,10 @@ abstract interface class PluginHostContractHandler {
 
   PluginHostContractResult? preflight(PluginHostApiRequest request);
 
+  Future<PluginHostContractResult?> preflightAsync(
+    PluginHostApiRequest request,
+  );
+
   PluginHostContractResult execute(
     PluginHostApiRequest request, {
     PluginRuntimeInvokeEvidence? runtimeInvoke,

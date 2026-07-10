@@ -26,6 +26,8 @@ class ConsensusBlockingFact {
         'invalid_local_transport_key' => 'Invalid local transport key',
         'consensus_peer_not_selected' => 'Consensus peer not selected',
         'consensus_peer_not_found' => 'Consensus peer not found',
+        'pair_attestation_missing' => 'Pair attestation missing',
+        'pair_attestation_incomplete' => 'Pair attestation incomplete',
         'invalid_peer_id' => 'Invalid peer id',
         'invalid_expected_hash' => 'Invalid expected hash',
         'empty_signature_set' => 'Empty signature set',

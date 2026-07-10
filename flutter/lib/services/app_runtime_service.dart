@@ -13,6 +13,7 @@ import 'capsule_address_service.dart';
 import 'capsule_diagnostics_service.dart';
 import 'capsule_state_manager.dart';
 import 'capsule_chat_delivery_service.dart';
+import 'consensus_attested_guard_service.dart';
 import 'consensus_attestation_sync_service.dart';
 import 'consensus_runtime_service.dart';
 import 'invitation_actions_service.dart';
@@ -106,6 +107,17 @@ class AppRuntimeService {
     );
   }
 
+  ConsensusAttestedGuardService buildConsensusAttestedGuardService() {
+    final consensus = buildConsensusRuntimeService();
+    return ConsensusAttestedGuardService(
+      consensus: consensus,
+      attestations: ConsensusAttestationSyncService(
+        runtime: _runtime,
+        consensus: consensus,
+      ),
+    );
+  }
+
   CapsuleDiagnosticsService buildCapsuleDiagnosticsService() {
     return CapsuleDiagnosticsService(
       diagnoseBootstrap: _runtime.diagnoseBootstrapReport,
@@ -133,6 +145,13 @@ class AppRuntimeService {
 
   PluginHostApiService buildPluginHostApiService() {
     final consensus = buildConsensusRuntimeService();
+    final attestedGuard = ConsensusAttestedGuardService(
+      consensus: consensus,
+      attestations: ConsensusAttestationSyncService(
+        runtime: _runtime,
+        consensus: consensus,
+      ),
+    );
     final wasmRuntime = WasmPluginRuntimeService(
       invokeJson: _runtime.invokeWasmJson,
     );
@@ -140,9 +159,11 @@ class AppRuntimeService {
       handlers: <PluginHostContractHandler>[
         BingxFuturesPluginContractHandler(
           readSignable: consensus.signable,
+          readAttestedSignable: attestedGuard.signable,
         ),
         CapsuleChatPluginContractHandler(
           readSignable: consensus.signable,
+          readAttestedSignable: attestedGuard.signable,
         ),
       ],
       resolveRuntimeBinding: _resolvePluginRuntimeBinding,

@@ -117,6 +117,12 @@ class _CapturingHandler implements PluginHostContractHandler {
   PluginHostContractResult? preflight(PluginHostApiRequest request) => null;
 
   @override
+  Future<PluginHostContractResult?> preflightAsync(
+    PluginHostApiRequest request,
+  ) async =>
+      null;
+
+  @override
   PluginHostContractResult execute(
     PluginHostApiRequest request, {
     PluginRuntimeInvokeEvidence? runtimeInvoke,

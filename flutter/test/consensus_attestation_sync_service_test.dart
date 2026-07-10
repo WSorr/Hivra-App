@@ -10,6 +10,7 @@ import 'package:hivra_app/ffi/ledger_view_runtime.dart';
 import 'package:hivra_app/models/consensus_models.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
+import 'package:hivra_app/services/consensus_attested_guard_service.dart';
 import 'package:hivra_app/services/consensus_attestation_store.dart';
 import 'package:hivra_app/services/consensus_attestation_sync_service.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
@@ -331,6 +332,54 @@ void main() {
         stored.any((item) => item.snapshotHashHex == '2' * 64),
         isFalse,
       );
+    });
+
+    test('attested guard requires both pair roots to sign same snapshot',
+        () async {
+      final attestationService = ConsensusAttestationSyncService(
+        runtime: _FakeRuntime(localRootHex: localRoot),
+        consensus: _FakeConsensusRuntimeService(
+          peerHex: peerRoot,
+          snapshotHashHex: snapshotHash,
+        ),
+        store: store,
+        nowUtc: () => DateTime.utc(2026, 7, 10, 12),
+      );
+      final localEvidence = await attestationService.createLocalEvidence(
+        peerRootHex: peerRoot,
+      );
+      expect(localEvidence, isNotNull);
+
+      final guard = ConsensusAttestedGuardService(
+        consensus: _FakeConsensusRuntimeService(
+          peerHex: peerRoot,
+          snapshotHashHex: snapshotHash,
+        ),
+        attestations: attestationService,
+      );
+
+      final localOnly = await guard.signable(peerRoot);
+      expect(localOnly.isSignable, isFalse);
+      expect(
+        localOnly.blockingFacts.map((fact) => fact.code),
+        contains('pair_attestation_incomplete'),
+      );
+
+      await store.merge(localRoot, <ConsensusAttestationEvidence>[
+        ConsensusAttestationEvidence(
+          schemaVersion: 1,
+          pairRootsSorted: localEvidence!.pairRootsSorted,
+          snapshotHashHex: localEvidence.snapshotHashHex,
+          commitmentHashHex: localEvidence.commitmentHashHex,
+          signerRootHex: peerRoot,
+          signatureHex: 'e' * 128,
+          createdAtUtc: DateTime.utc(2026, 7, 10, 12, 1).toIso8601String(),
+        ),
+      ]);
+
+      final bothSigned = await guard.signable(peerRoot);
+      expect(bothSigned.isSignable, isTrue);
+      expect(bothSigned.blockingFacts, isEmpty);
     });
   });
 }

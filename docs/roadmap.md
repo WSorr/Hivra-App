@@ -1049,8 +1049,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         host transport kind, Flutter worker bindings, a capsule-scoped
         `pair_consensus_attestations.json` store, and receive orchestration
         that recomputes commitments and verifies root signatures before merge.
-      - 2d: switch pair-scoped host guard from local signability to exact
-        two-root attestation verification, then run focused manual smoke.
+      - 2d completed on 2026-07-10: pair-scoped plugin host runtime-hook
+        preflight now uses exact two-root verified attestation evidence instead
+        of local signability alone; solo futures and signal-ranking paths remain
+        consensus-free by design.
   - Status: active.
 
 ## Planned Product Tracks
