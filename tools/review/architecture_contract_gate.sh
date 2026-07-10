@@ -49,6 +49,7 @@ PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
 
 RUNTIME="$ROOT/flutter/lib/services/app_runtime_service.dart"
 INV_INTENT="$ROOT/flutter/lib/services/invitation_intent_handler.dart"
+INV_ACTIONS="$ROOT/flutter/lib/services/invitation_actions_service.dart"
 PLUGIN_GUARD="$ROOT/flutter/lib/services/plugin_execution_guard_service.dart"
 PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
 PLUGIN_CONTRACT_HANDLERS="$ROOT/flutter/lib/services/plugin_contract_handlers.dart"
@@ -176,6 +177,14 @@ require_absent "$SCREENS" "import '../services/invitation_actions_service.dart';
   "screens do not import invitation_actions_service directly"
 require_absent "$SCREENS" "import '../services/consensus_runtime_service.dart';" \
   "screens do not import consensus_runtime_service directly"
+require_present "$INV_ACTIONS" 'class CapsuleWorkerQueue' \
+  "invitation transport workers have a capsule-scoped queue"
+require_present "$INV_ACTIONS" 'capsuleHex: initialCapsuleHex' \
+  "queued invitation workers refresh bootstrap inside the capsule queue"
+require_present "$INV_ACTIONS" 'await _applyWorkerLedgerResult\(' \
+  "queued invitation workers persist ledger before releasing the capsule queue"
+require_absent "$INV_ACTIONS" '_scheduleLateWorkerLedgerApply' \
+  "timed-out invitation workers do not bypass capsule serialization"
 
 # 5) WASM plugin boundaries and readiness guard.
 require_present "$WASM_REGISTRY" 'class WasmPluginRegistryService' \

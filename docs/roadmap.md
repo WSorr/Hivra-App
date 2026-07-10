@@ -985,6 +985,61 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       service.
   - Status: completed (2026-07-07).
 
+- `12.3 Integrity and Reliability Remediation`
+  - Goal:
+    - close the July 2026 review findings in risk order without weakening the
+      three Hivra laws: modularity, determinism, and downward-only dependencies.
+  - Execution order:
+    1. Serialize all ledger-mutating transport workers per capsule across UI
+       timeouts, background retries, screen instances, and capsule switches.
+       A late worker may finish and persist its own capsule, but a second worker
+       MUST NOT start from the same ledger revision and create a competing tail.
+    2. Upgrade Pair Consensus from local signability to an explicit two-party
+       signed snapshot protocol. Pair-scoped drone effects MUST fail closed
+       until both root identities sign the same canonical pair hash.
+    3. Define and implement a cryptographically continuous ledger protocol in
+       which signed event identity commits to ordering-critical fields and the
+       previous signed history commitment. Migration compatibility MUST be
+       designed before changing the protocol version.
+    4. Replace aggregate delivery retry markers with event-scoped durable
+       delivery records bound to domain event/invitation id, recipient,
+       transport, and adapter receipt. One successful envelope MUST NOT resolve
+       unrelated pending deliveries.
+    5. Connect Trading Drone risk policy to persisted realized-loss history so
+       loss-streak cooldown and last-loss time are real production inputs, not
+       constant placeholders.
+    6. Migrate confidential transport payloads away from deprecated NIP-04 to
+       an authenticated current envelope while preserving the transport adapter
+       boundary and replay/idempotence rules.
+    7. Make plugin install/update/remove transactional and serialized; registry
+       state and package files MUST survive interruption without dead pointers
+       or lost concurrent updates.
+    8. Add encrypted backup envelopes and temporary-export cleanup, repair
+       stale protocol/WASM documentation, and continue splitting oversized UI
+       surfaces only at existing module boundaries.
+  - Verification contract:
+    - each pass adds a regression test that fails on the reviewed weakness.
+    - `tools/review/review_all.sh`, `cargo test --workspace`, `flutter analyze`,
+      and `flutter test` remain green after every pass.
+    - security- or protocol-changing passes require focused manual smoke before
+      release evidence can be recorded.
+    - important passes are committed separately; publication still follows the
+      guarded release workflow.
+  - Current progress:
+    - audit findings recorded and ordered on 2026-07-10.
+    - pass 1 completed on 2026-07-10:
+      - every invitation transport worker now enters one shared
+        capsule-scoped queue, including background retries and workers that
+        outlive a UI timeout.
+      - bootstrap is refreshed inside the queue and the resulting ledger is
+        applied or persisted before the next worker for that capsule starts.
+      - workers for different capsules remain independent.
+      - queue ordering, cross-capsule independence, and recovery after worker
+        failure have focused regression coverage; the architecture gate
+        prevents reintroducing the late-worker bypass.
+    - pass 2 (two-party signed Pair Consensus) is next.
+  - Status: active.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
