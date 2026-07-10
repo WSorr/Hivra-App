@@ -886,6 +886,283 @@ void main() {
     });
 
     test(
+        'mirror audit keeps hash stable for multiple active starter relationships',
+        () {
+      final rootA = Uint8List.fromList(bytes32(80));
+      final rootB = Uint8List.fromList(bytes32(81));
+      final transportA = Uint8List.fromList(bytes32(82));
+      final transportB = Uint8List.fromList(bytes32(83));
+      final invitation1 = Uint8List.fromList(bytes32(84));
+      final invitation2 = Uint8List.fromList(bytes32(85));
+      final starterA1 = Uint8List.fromList(bytes32(86));
+      final starterB1 = Uint8List.fromList(bytes32(87));
+      final starterA2 = Uint8List.fromList(bytes32(88));
+      final starterB2 = Uint8List.fromList(bytes32(89));
+
+      Map<String, dynamic> sent(List<int> id, List<int> ownStarter,
+          List<int> toTransport, int starterKind) {
+        return <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...id,
+            ...ownStarter,
+            ...toTransport,
+            starterKind,
+          ],
+        };
+      }
+
+      Map<String, dynamic> accepted(List<int> id, List<int> fromTransport,
+          List<int> createdStarter, List<int> accepterRoot) {
+        return <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...id,
+            ...fromTransport,
+            ...createdStarter,
+            ...accepterRoot,
+          ],
+        };
+      }
+
+      Map<String, dynamic> relationship({
+        required List<int> peerTransport,
+        required List<int> ownStarter,
+        required List<int> peerStarter,
+        required int starterKind,
+        required List<int> invitationId,
+        required List<int> senderTransport,
+        required List<int> senderStarter,
+        required List<int> peerRoot,
+        required List<int> senderRoot,
+      }) {
+        return <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            starterKind,
+            ...invitationId,
+            ...senderTransport,
+            starterKind,
+            ...senderStarter,
+            ...peerRoot,
+            ...senderRoot,
+          ],
+        };
+      }
+
+      final eventsA = <Map<String, dynamic>>[
+        sent(invitation1, starterA1, transportB, 1),
+        sent(invitation2, starterA2, transportB, 2),
+        accepted(invitation2, transportB, starterB2, rootB),
+        relationship(
+          peerTransport: transportB,
+          ownStarter: starterA2,
+          peerStarter: starterB2,
+          starterKind: 2,
+          invitationId: invitation2,
+          senderTransport: transportA,
+          senderStarter: starterA2,
+          peerRoot: rootB,
+          senderRoot: rootA,
+        ),
+        accepted(invitation1, transportB, starterB1, rootB),
+        relationship(
+          peerTransport: transportB,
+          ownStarter: starterA1,
+          peerStarter: starterB1,
+          starterKind: 1,
+          invitationId: invitation1,
+          senderTransport: transportA,
+          senderStarter: starterA1,
+          peerRoot: rootB,
+          senderRoot: rootA,
+        ),
+      ];
+      final eventsB = <Map<String, dynamic>>[
+        sent(invitation2, starterB2, transportA, 2),
+        sent(invitation1, starterB1, transportA, 1),
+        accepted(invitation1, transportA, starterA1, rootA),
+        relationship(
+          peerTransport: transportA,
+          ownStarter: starterB1,
+          peerStarter: starterA1,
+          starterKind: 1,
+          invitationId: invitation1,
+          senderTransport: transportB,
+          senderStarter: starterB1,
+          peerRoot: rootA,
+          senderRoot: rootB,
+        ),
+        accepted(invitation2, transportA, starterA2, rootA),
+        relationship(
+          peerTransport: transportA,
+          ownStarter: starterB2,
+          peerStarter: starterA2,
+          starterKind: 2,
+          invitationId: invitation2,
+          senderTransport: transportB,
+          senderStarter: starterB2,
+          peerRoot: rootA,
+          senderRoot: rootB,
+        ),
+      ];
+
+      final previewA = processor.preview(
+        eventsA,
+        transportA,
+        localRootKey: rootA,
+      );
+      final previewB = processor.preview(
+        eventsB,
+        transportB,
+        localRootKey: rootB,
+      );
+
+      expect(previewA, hasLength(1));
+      expect(previewB, hasLength(1));
+      expect(previewA.first.relationshipCount, equals(2));
+      expect(previewB.first.relationshipCount, equals(2));
+      expect(previewA.first.blockingFacts, isEmpty);
+      expect(previewB.first.blockingFacts, isEmpty);
+      expect(previewA.first.hashHex, equals(previewB.first.hashHex));
+      expect(
+        previewA.first.canonicalJson,
+        equals(previewB.first.canonicalJson),
+      );
+    });
+
+    test('mirror audit keeps finalized mutual break hash symmetric', () {
+      final invitationId = Uint8List.fromList(bytes32(90));
+      final rootA = Uint8List.fromList(bytes32(91));
+      final rootB = Uint8List.fromList(bytes32(92));
+      final transportA = Uint8List.fromList(bytes32(93));
+      final transportB = Uint8List.fromList(bytes32(94));
+      final starterA = Uint8List.fromList(bytes32(95));
+      final starterB = Uint8List.fromList(bytes32(96));
+
+      final eventsA = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...starterA,
+            ...transportB,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...transportB,
+            ...starterB,
+            ...rootB,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...transportB,
+            ...starterA,
+            ...starterB,
+            1,
+            ...invitationId,
+            ...transportA,
+            1,
+            ...starterA,
+            ...rootB,
+            ...rootA,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...transportB,
+            ...starterA,
+            ...rootB,
+          ],
+          'signer': rootA,
+        },
+      ];
+      final eventsB = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 1,
+          'payload': <int>[
+            ...invitationId,
+            ...starterB,
+            ...transportA,
+            1,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...transportA,
+            ...starterA,
+            ...rootA,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...transportA,
+            ...starterB,
+            ...starterA,
+            1,
+            ...invitationId,
+            ...transportB,
+            1,
+            ...starterB,
+            ...rootA,
+            ...rootB,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 8,
+          'payload': <int>[
+            ...transportA,
+            ...starterB,
+            ...rootA,
+          ],
+          'signer': rootB,
+        },
+      ];
+
+      final previewA = processor.preview(
+        eventsA,
+        transportA,
+        localRootKey: rootA,
+      );
+      final previewB = processor.preview(
+        eventsB,
+        transportB,
+        localRootKey: rootB,
+      );
+
+      expect(previewA, hasLength(1));
+      expect(previewB, hasLength(1));
+      expect(previewA.first.relationshipCount, equals(0));
+      expect(previewB.first.relationshipCount, equals(0));
+      expect(
+        previewA.first.blockingFacts.map((fact) => fact.code),
+        contains('relationship_broken'),
+      );
+      expect(
+        previewB.first.blockingFacts.map((fact) => fact.code),
+        contains('relationship_broken'),
+      );
+      expect(previewA.first.hashHex, equals(previewB.first.hashHex));
+      expect(
+        previewA.first.canonicalJson,
+        equals(previewB.first.canonicalJson),
+      );
+    });
+
+    test(
         'preview applies terminal invitation precedence accepted over rejected and expired',
         () {
       final invitationId = Uint8List.fromList(bytes32(41));
