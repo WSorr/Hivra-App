@@ -468,6 +468,11 @@ Transport delivery MAY use a capsule-scoped durable outbox file to retry
 effectful sends across screen switches, restarts, relay timeouts, and transient
 network failures.
 
+In v1, this file is a **delivery recovery index** over engine-owned pending
+events, not an independent event journal. A fully reliable event queue requires
+a stable domain-event identifier, recipient, payload digest, and matching
+per-event adapter receipt; it MUST NOT be claimed before those fields exist.
+
 Mandatory constraints:
 
 1. The outbox is not ledger truth.
@@ -480,6 +485,9 @@ Mandatory constraints:
 5. UI projections MUST still be rebuilt from ledger events.
 6. Delivered/terminal domain state MUST be derived from ledger append and
    replay policy, not from an outbox item status.
+7. Retry timing, receipt reconciliation, and capsule-scoped pump lifetime MUST
+   have one application-level owner. Screens, invitation use-cases, and drones
+   MUST NOT each create independent retry loops.
 
 Transport adapters MAY return adapter-level delivery receipts. A receipt means
 only that the adapter accepted or published a signed envelope (for example, a
@@ -782,6 +790,14 @@ Rules:
    - `verify` (check signature set and hash equality)
 5. Pair-scoped smart-contract execution MUST be blocked when consensus state is `mismatch` or unresolved for required participants.
 6. Consensus logic MUST NOT be embedded in invitation form policy or screen-local UI orchestration.
+
+For a signable pair snapshot, the projection MUST contain only facts scoped to
+the two selected root identities. Active relationship bindings are symmetric
+pair facts. Terminal invitation history remains available for ledger/UI
+diagnostics, but MUST NOT alter the signed pair snapshot: historical delivery
+may be asymmetric after the relationship has been established. A pending
+invitation or an unconfirmed remote break for the selected pair MUST still
+block signing.
 
 #### 8.4.1 Pair Attestation Protocol
 

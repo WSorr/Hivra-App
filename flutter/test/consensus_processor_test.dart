@@ -113,8 +113,10 @@ void main() {
         previews.first.canonicalJson.contains('"pair_transport_keys_sorted"'),
         isFalse,
       );
-      expect(previews.first.canonicalJson.contains('"status": "accepted"'),
-          isTrue);
+      expect(
+        previews.first.canonicalJson.contains('"finalized_invitations"'),
+        isFalse,
+      );
     });
 
     test('signable reports blocking facts for pending pairwise history', () {
@@ -681,6 +683,150 @@ void main() {
           equals(basePreview.first.canonicalJson));
     });
 
+    test('pair snapshot ignores ledger facts scoped to a third capsule', () {
+      final rootA = Uint8List.fromList(bytes32(101));
+      final rootB = Uint8List.fromList(bytes32(102));
+      final rootC = Uint8List.fromList(bytes32(103));
+      final transportA = Uint8List.fromList(bytes32(104));
+      final transportB = Uint8List.fromList(bytes32(105));
+      final transportC = Uint8List.fromList(bytes32(106));
+      final inviteAB = Uint8List.fromList(bytes32(107));
+      final inviteAC = Uint8List.fromList(bytes32(108));
+      final starterA = Uint8List.fromList(bytes32(109));
+      final starterB = Uint8List.fromList(bytes32(110));
+      final starterC = Uint8List.fromList(bytes32(111));
+
+      Map<String, dynamic> relationship({
+        required Uint8List peerTransport,
+        required Uint8List ownStarter,
+        required Uint8List peerStarter,
+        required Uint8List invitationId,
+        required Uint8List peerRoot,
+      }) =>
+          <String, dynamic>{
+            'kind': 7,
+            'payload': <int>[
+              ...peerTransport,
+              ...ownStarter,
+              ...peerStarter,
+              1,
+              ...invitationId,
+              ...transportA,
+              1,
+              ...bytes32(112),
+              ...peerRoot,
+              ...rootA,
+            ],
+          };
+
+      final pairOnly = <Map<String, dynamic>>[
+        relationship(
+          peerTransport: transportB,
+          ownStarter: starterA,
+          peerStarter: starterB,
+          invitationId: inviteAB,
+          peerRoot: rootB,
+        ),
+      ];
+      final withThirdCapsule = <Map<String, dynamic>>[
+        ...pairOnly,
+        relationship(
+          peerTransport: transportC,
+          ownStarter: starterA,
+          peerStarter: starterC,
+          invitationId: inviteAC,
+          peerRoot: rootC,
+        ),
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...inviteAC,
+            ...transportC,
+            ...starterC,
+            ...rootC,
+          ],
+        },
+      ];
+
+      final pairOnlyPreview = processor
+          .preview(pairOnly, transportA, localRootKey: rootA)
+          .singleWhere((row) => row.peerHex == hex(rootB));
+      final thirdCapsulePreview = processor
+          .preview(withThirdCapsule, transportA, localRootKey: rootA)
+          .singleWhere((row) => row.peerHex == hex(rootB));
+
+      expect(thirdCapsulePreview.hashHex, pairOnlyPreview.hashHex);
+      expect(thirdCapsulePreview.canonicalJson, pairOnlyPreview.canonicalJson);
+    });
+
+    test('pair snapshot ignores one-sided terminal invitation history', () {
+      final rootA = Uint8List.fromList(bytes32(121));
+      final rootB = Uint8List.fromList(bytes32(122));
+      final transportA = Uint8List.fromList(bytes32(123));
+      final transportB = Uint8List.fromList(bytes32(124));
+      final invitationId = Uint8List.fromList(bytes32(125));
+      final starterA = Uint8List.fromList(bytes32(126));
+      final starterB = Uint8List.fromList(bytes32(127));
+
+      final relationshipA = <String, dynamic>{
+        'kind': 7,
+        'payload': <int>[
+          ...transportB,
+          ...starterA,
+          ...starterB,
+          1,
+          ...invitationId,
+          ...transportA,
+          1,
+          ...bytes32(128),
+          ...rootB,
+          ...rootA,
+        ],
+      };
+      final relationshipB = <String, dynamic>{
+        'kind': 7,
+        'payload': <int>[
+          ...transportA,
+          ...starterB,
+          ...starterA,
+          1,
+          ...invitationId,
+          ...transportB,
+          1,
+          ...bytes32(129),
+          ...rootA,
+          ...rootB,
+        ],
+      };
+
+      final previewA = processor.preview(
+        <Map<String, dynamic>>[
+          relationshipA,
+          <String, dynamic>{
+            'kind': 2,
+            'payload': <int>[
+              ...invitationId,
+              ...transportB,
+              ...starterB,
+              ...rootB,
+            ],
+          },
+        ],
+        transportA,
+        localRootKey: rootA,
+      );
+      final previewB = processor.preview(
+        <Map<String, dynamic>>[relationshipB],
+        transportB,
+        localRootKey: rootB,
+      );
+
+      expect(previewA, hasLength(1));
+      expect(previewB, hasLength(1));
+      expect(previewA.single.hashHex, previewB.single.hashHex);
+      expect(previewA.single.canonicalJson, previewB.single.canonicalJson);
+    });
+
     test('preview hash is stable across event order and sender metadata noise',
         () {
       final invitationId = Uint8List.fromList(bytes32(31));
@@ -1225,12 +1371,10 @@ void main() {
       expect(previews, hasLength(1));
       expect(previews.first.invitationCount, equals(1));
       expect(previews.first.blockingFacts, isEmpty);
-      expect(previews.first.canonicalJson.contains('"status": "accepted"'),
-          isTrue);
-      expect(previews.first.canonicalJson.contains('"status": "rejected"'),
-          isFalse);
-      expect(previews.first.canonicalJson.contains('"status": "expired"'),
-          isFalse);
+      expect(
+        previews.first.canonicalJson.contains('"finalized_invitations"'),
+        isFalse,
+      );
     });
 
     test(

@@ -21,7 +21,12 @@ import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
 
 class TradingDroneScreen extends StatefulWidget {
-  const TradingDroneScreen({super.key});
+  final AppRuntimeService? runtime;
+
+  const TradingDroneScreen({
+    super.key,
+    this.runtime,
+  });
 
   @override
   State<TradingDroneScreen> createState() => _TradingDroneScreenState();
@@ -137,7 +142,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   void initState() {
     super.initState();
     _module = TradingDroneModuleService(
-      runtime: AppRuntimeService(),
+      runtime: widget.runtime ?? AppRuntimeService(),
     ).build();
     unawaited(_restoreOpenOrdersTrackingState());
     _loadPerpetualSymbols(silent: true);

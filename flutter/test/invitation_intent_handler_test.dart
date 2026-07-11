@@ -11,6 +11,7 @@ import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
 import 'package:hivra_app/services/invitation_actions_service.dart';
 import 'package:hivra_app/services/invitation_delivery_service.dart';
 import 'package:hivra_app/services/invitation_intent_handler.dart';
+import 'package:hivra_app/services/transport_health_policy_service.dart';
 
 void main() {
   group('InvitationIntentHandler quick fetch dedupe', () {
@@ -189,6 +190,55 @@ void main() {
       expect(results[0].code, 1);
       expect(results[1].code, 2);
     });
+
+    test('backs off repeated quick fetch after timeout for same capsule',
+        () async {
+      var calls = 0;
+      final health = TransportHealthPolicyService(
+        timeoutBackoff: const <Duration>[Duration(minutes: 1)],
+      );
+      final handler = InvitationIntentHandler(
+        delivery: const InvitationDeliveryService(),
+        activeCapsuleHexResolver: () => 'capsule-timeout',
+        transportHealth: health,
+        fetchInvitationsQuickAction: () async {
+          calls += 1;
+          return const InvitationWorkerResult(code: -1003);
+        },
+      );
+
+      final first = await handler.fetchInvitationsQuick();
+      final second = await handler.fetchInvitationsQuick();
+
+      expect(calls, 1);
+      expect(first.code, -1003);
+      expect(second.code, -3101);
+      expect(second.message, contains('cooling down'));
+    });
+
+    test('transport timeout backoff is scoped per capsule', () async {
+      var calls = 0;
+      var activeCapsule = 'capsule-timeout-a';
+      final health = TransportHealthPolicyService(
+        timeoutBackoff: const <Duration>[Duration(minutes: 1)],
+      );
+      final handler = InvitationIntentHandler(
+        delivery: const InvitationDeliveryService(),
+        activeCapsuleHexResolver: () => activeCapsule,
+        transportHealth: health,
+        fetchInvitationsQuickAction: () async {
+          calls += 1;
+          return const InvitationWorkerResult(code: -1003);
+        },
+      );
+
+      await handler.fetchInvitationsQuick();
+      activeCapsule = 'capsule-timeout-b';
+      final secondCapsule = await handler.fetchInvitationsQuick();
+
+      expect(calls, 2);
+      expect(secondCapsule.code, -1003);
+    });
   });
 
   group('InvitationIntentHandler expiry sweep', () {
@@ -348,7 +398,8 @@ void main() {
           await handler.fetchInvitationsQuick(capsuleHex: capsuleHex);
 
       expect(result.code, 0);
-      expect(actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
+      expect(
+          actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
       expect(actions.canceledInvitationCapsules, <String?>[capsuleHex]);
     });
 
@@ -449,10 +500,10 @@ void main() {
       final result = await handler.fetchInvitations();
 
       expect(result.code, -5);
-    expect(
-      result.message,
-      'Failed to fetch invitation deliveries. Check internet/VPN and retry. [code: -5; ffi: receive failed: relay timeout]',
-    );
+      expect(
+        result.message,
+        'Failed to fetch invitation deliveries. Check internet/VPN and retry. [code: -5; ffi: receive failed: relay timeout]',
+      );
     });
   });
 
@@ -867,7 +918,8 @@ void main() {
       expect(result.message, isNot(contains('Local acceptance is recorded')));
     });
 
-    test('returns -8 without FFI accept when invitation is absent after refresh',
+    test(
+        'returns -8 without FFI accept when invitation is absent after refresh',
         () async {
       final actions = _FakeInvitationActionsService()
         ..onFetchQuick = () async {
@@ -886,7 +938,8 @@ void main() {
       );
 
       expect(result.code, -8);
-      expect(result.message, 'Invitation is not available in active capsule ledger');
+      expect(result.message,
+          'Invitation is not available in active capsule ledger');
       expect(actions.acceptCalls, 0);
       expect(actions.fetchQuickCalls, 1);
       expect(actions.fetchCalls, 1);
@@ -1168,8 +1221,7 @@ class _FakeInvitationActionsService extends InvitationActionsService {
   InvitationWorkerResult rejectResult = const InvitationWorkerResult(code: 0);
   InvitationWorkerResult fetchQuickResult =
       const InvitationWorkerResult(code: -5);
-  InvitationWorkerResult fetchResult =
-      const InvitationWorkerResult(code: -5);
+  InvitationWorkerResult fetchResult = const InvitationWorkerResult(code: -5);
   Future<InvitationWorkerResult> Function()? onFetchQuick;
   Future<InvitationWorkerResult> Function()? onFetch;
   final List<String?> quickFetchCallsByCapsule = <String?>[];

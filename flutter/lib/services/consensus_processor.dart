@@ -504,21 +504,12 @@ class ConsensusProcessor {
       }
 
       final snapshot = <String, dynamic>{
-        'schema_version': 1,
+        // A pair attestation can only commit facts both participants can
+        // independently reconstruct. Terminal invitation history is useful for
+        // diagnostics, but delivery can be asymmetric after a relationship is
+        // already established. Pending invitations still block signing above.
+        'schema_version': 2,
         'pair_roots_sorted': pairRoots,
-        'finalized_invitations': finalizedInvitations.map((fact) {
-          final item = <String, dynamic>{
-            'invitation_id': fact.invitationId,
-            'status': fact.status,
-          };
-          if (fact.starterKinds.isNotEmpty) {
-            item['starter_kinds'] = fact.starterKinds.toList()..sort();
-          }
-          if (fact.rejected && fact.rejectReasons.isNotEmpty) {
-            item['reject_reason'] = (fact.rejectReasons.toList()..sort()).first;
-          }
-          return item;
-        }).toList(growable: false),
         'active_relationships': relationships
             .map((rel) => <String, dynamic>{
                   'invitation_id': rel.invitationId,

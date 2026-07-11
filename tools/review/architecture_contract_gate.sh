@@ -44,12 +44,14 @@ DOCS_README="$ROOT/docs/README.md"
 CHECKLIST="$ROOT/docs/checklists/architecture-review.md"
 ROADMAP="$ROOT/docs/roadmap.md"
 EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
+DELIVERY_LIFECYCLE_DOC="$ROOT/docs/architecture/transport-delivery-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
 
 RUNTIME="$ROOT/flutter/lib/services/app_runtime_service.dart"
 INV_INTENT="$ROOT/flutter/lib/services/invitation_intent_handler.dart"
 INV_ACTIONS="$ROOT/flutter/lib/services/invitation_actions_service.dart"
+DELIVERY_LIFECYCLE="$ROOT/flutter/lib/services/capsule_delivery_lifecycle_service.dart"
 FFI_INVITATION_API="$ROOT/platform/hivra-ffi/src/invitation_api.rs"
 FFI_CHAT_API="$ROOT/platform/hivra-ffi/src/chat_api.rs"
 PLUGIN_GUARD="$ROOT/flutter/lib/services/plugin_execution_guard_service.dart"
@@ -130,6 +132,10 @@ require_present "$CHECKLIST" 'Repo boundary is preserved: `Hivra-App` is host/ru
   "architecture checklist enforces app-vs-plugin repo boundary"
 require_present "$EXEC_DISCIPLINE" '^# Hivra Architecture Execution Discipline v1' \
   "execution discipline doc exists"
+require_present "$DELIVERY_LIFECYCLE_DOC" '^# Transport Delivery Lifecycle v1' \
+  "delivery lifecycle architecture doc exists"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'delivery recovery index' \
+  "delivery lifecycle doc distinguishes recovery index from reliable queue"
 require_present "$EXEC_DISCIPLINE" '^## 1\. Three Non-Negotiable Laws' \
   "execution discipline defines three non-negotiable laws"
 require_present "$EXEC_DISCIPLINE" 'UI intent -> use-case boundary -> runtime/FFI call -> ledger append -> projection rebuild -> UI render' \
@@ -218,6 +224,12 @@ require_present "$INV_ACTIONS" 'class CapsuleWorkerQueue' \
   "invitation transport workers have a capsule-scoped queue"
 require_present "$INV_ACTIONS" 'capsuleHex: initialCapsuleHex' \
   "queued invitation workers refresh bootstrap inside the capsule queue"
+require_present "$DELIVERY_LIFECYCLE" 'class CapsuleDeliveryLifecycleService' \
+  "delivery lifecycle owns shared retry scheduling"
+require_present "$DELIVERY_LIFECYCLE" 'receipt-to-outbox' \
+  "delivery lifecycle documents receipt reconciliation ownership"
+require_absent "$INV_ACTIONS" '_pendingRetryPumpByCapsule|_schedulePendingOutgoingRetryPump' \
+  "invitation actions do not own a parallel retry pump"
 require_present "$INV_ACTIONS" 'await _applyWorkerLedgerResult\(' \
   "queued invitation workers persist ledger before releasing the capsule queue"
 require_absent "$INV_ACTIONS" '_scheduleLateWorkerLedgerApply' \

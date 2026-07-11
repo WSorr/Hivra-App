@@ -373,9 +373,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     _attestationSyncInFlight = true;
     try {
-      final result = await _runtime
-          .buildConsensusAttestationSyncService()
-          .receiveAndStore();
+      final result = await _module.consensusAttestations.receiveAndStore();
       await _uiLog.log(
         'attestation.receive',
         'reason=$reason code=${result.code} received=${result.receivedCount} '
@@ -605,6 +603,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return WasmPluginsScreen(
           key: ValueKey('plugins-$_activeCapsuleHex-$_ledgerVersion'),
           embedded: true,
+          runtime: _runtime,
         );
       case 4:
         return SettingsScreen(

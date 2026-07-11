@@ -8,6 +8,7 @@ import '../models/consensus_models.dart';
 import 'consensus_attestation_store.dart';
 import 'consensus_processor.dart';
 import 'consensus_runtime_service.dart';
+import 'transport_health_policy_service.dart';
 
 const Duration _attestationSendWorkerTimeout = Duration(seconds: 35);
 const Duration _attestationReceiveWorkerTimeout = Duration(seconds: 30);
@@ -76,8 +77,9 @@ class ConsensusAttestationSyncService {
   final ConsensusAttestationWorkerRunner _sendWorkerRunner;
   final ConsensusAttestationWorkerRunner _receiveWorkerRunner;
   final ConsensusAttestationNowUtc _nowUtc;
+  final TransportHealthPolicyService _transportHealth;
 
-  const ConsensusAttestationSyncService({
+  ConsensusAttestationSyncService({
     required AppRuntimeRuntime runtime,
     required ConsensusRuntimeService consensus,
     ConsensusAttestationStore store = const ConsensusAttestationStore(),
@@ -87,13 +89,16 @@ class ConsensusAttestationSyncService {
     ConsensusAttestationWorkerRunner receiveWorkerRunner =
         _defaultReceiveWorkerRunner,
     ConsensusAttestationNowUtc nowUtc = _defaultNowUtc,
+    TransportHealthPolicyService? transportHealth,
   })  : _runtime = runtime,
         _consensus = consensus,
         _store = store,
         _processor = processor,
         _sendWorkerRunner = sendWorkerRunner,
         _receiveWorkerRunner = receiveWorkerRunner,
-        _nowUtc = nowUtc;
+        _nowUtc = nowUtc,
+        _transportHealth =
+            transportHealth ?? TransportHealthPolicyService.shared;
 
   Future<ConsensusAttestationEvidence?> createLocalEvidence({
     required String peerRootHex,
@@ -195,6 +200,18 @@ class ConsensusAttestationSyncService {
         rejectedCount: 0,
       );
     }
+    final health = _transportHealth.canRun(
+      capsuleHex: localRootHex,
+    );
+    if (!health.isAllowed) {
+      return ConsensusAttestationReceiveResult(
+        code: health.code,
+        errorMessage: health.message,
+        receivedCount: 0,
+        storedCount: 0,
+        rejectedCount: 0,
+      );
+    }
     final bootstrap = await _runtime.loadWorkerBootstrapArgs();
     if (bootstrap == null) {
       return const ConsensusAttestationReceiveResult(
@@ -215,6 +232,10 @@ class ConsensusAttestationSyncService {
       },
     );
     final code = (transport['result'] as int?) ?? -1003;
+    _transportHealth.recordResult(
+      capsuleHex: localRootHex,
+      code: code,
+    );
     final rawJson = transport['json'] as String?;
     final error = transport['lastError'] as String?;
     if (code < 0) {

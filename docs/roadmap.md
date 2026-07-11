@@ -492,16 +492,15 @@ Definition of done:
 - Reconstructing from ledger preserves linear per-slot ancestry and inviter provenance without introducing branch explosions.
 - Status: completed (2026-04-10, v1 scope).
 
-### 9.3 Pairwise Consensus Snapshot v1
+### 9.3 Pairwise Consensus Snapshot v2
 
 Goal:
 - Define the smallest pairwise state snapshot that two capsules can independently derive, hash, and sign the same way.
 
 Scope:
-- Build the first canonical pairwise snapshot from:
+- Build the canonical pairwise snapshot from:
   - `schema_version`
   - `pair_roots_sorted`
-  - `finalized_invitations`
   - `active_relationships`
 - Use terminal invitation precedence:
   - `accepted > rejected > expired > pending`
@@ -509,6 +508,10 @@ Scope:
   - no sender/receiver perspective bias
   - no transport delivery artifacts
   - no local-only counters or timestamps
+- Terminal invitation history is diagnostic-only after it has established a
+  relationship. It is not a signed snapshot input because one ledger can
+  receive a relationship binding before its corresponding terminal invitation
+  row. Pending invitations remain deterministic pair blockers.
 - Explicitly exclude local starter-state facts such as:
   - `created_count`
   - `burned_count`
@@ -520,10 +523,14 @@ Scope:
   - Added regression coverage in `consensus_processor_test.dart` to lock terminal invitation precedence in snapshot projection (`accepted > rejected > expired`).
   - Added regression coverage that local starter-only events (`StarterCreated` / `StarterBurned`) do not affect pairwise snapshot canonical JSON/hash when pairwise facts are unchanged.
   - Added regression coverage that pairwise snapshot canonical JSON/hash remains stable under event-order permutations and sender-metadata noise when pairwise facts are equivalent.
-  - Added regression coverage that symmetric A/B ledger perspectives derive the same pairwise snapshot canonical JSON/hash for equivalent pairwise facts.
+- Added regression coverage that symmetric A/B ledger perspectives derive the same pairwise snapshot canonical JSON/hash for equivalent pairwise facts.
+- Snapshot v2 excludes terminal invitation history from the signed payload so
+  that one-sided historical delivery and events involving third capsules cannot
+  change an A<->B attestation. Existing v1 attestations naturally become
+  inapplicable because the snapshot hash changes.
 
 Definition of done:
-- A fresh pair of capsules can derive the same `pairwise consensus snapshot v1` hash from local ledger truth.
+- A fresh pair of capsules can derive the same `pairwise consensus snapshot v2` hash from local ledger truth.
 - The snapshot is small and stable enough to serve as a signed execution precondition for future smart-contract plugins.
 - UI no longer presents a transport-derived key as the canonical capsule identity.
 - Status: completed (2026-04-10, v1 scope).
@@ -612,7 +619,7 @@ When tradeoffs are unclear, prefer:
 
 - `9.4 Root-Scoped Pairwise Consensus Truth`
   - Current shared truth still anchors peers on transport identity, not peer root identity.
-  - True root-scoped `pairwise consensus snapshot v1` cannot be derived from ledger alone until peer root identity is carried through invitation lineage and then anchored in relationship events.
+  - True root-scoped `pairwise consensus snapshot v2` cannot be derived from ledger alone until peer root identity is carried through invitation lineage and then anchored in relationship events.
   - Invitation lineage must first carry peer root truth so both sides can derive the same pair identity during accept/projection.
   - Relationship events then become the root-aware pair anchor:
     - extend `RelationshipEstablished` with `peer_root_pubkey` and `sender_root_pubkey`
@@ -1017,6 +1024,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     8. Add encrypted backup envelopes and temporary-export cleanup, repair
        stale protocol/WASM documentation, and continue splitting oversized UI
        surfaces only at existing module boundaries.
+    9. Add a shared Transport Health Policy v1 above host transport adapters.
+       It MUST provide capsule-scoped cooldown/backoff, network-degraded
+       diagnostics, manual retry semantics, and one policy surface reused by
+       invitations, chat, pair attestations, relationship notifications, and
+       trading signals. Ledger projection and pair consensus MUST remain
+       independent from transport health state.
   - Verification contract:
     - each pass adds a regression test that fails on the reviewed weakness.
     - `tools/review/review_all.sh`, `cargo test --workspace`, `flutter analyze`,
@@ -1053,6 +1066,44 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         preflight now uses exact two-root verified attestation evidence instead
         of local signability alone; solo futures and signal-ranking paths remain
         consensus-free by design.
+    - Transport Health Policy v1 debt recorded on 2026-07-11:
+      - existing `hivra-transport` remains a separate adapter module, but retry,
+        cooldown, preflight, and receive orchestration are currently split
+        across FFI and Flutter service paths.
+      - degraded-network behavior can make multiple subsystems repeatedly hit
+        the same failing transport (`-1003` fetch/receive timeouts) without one
+        shared cooldown state.
+      - implementation MUST follow `docs/checklists/transport-health-policy.md`
+        before release.
+      - first implementation slice completed on 2026-07-11:
+        - added a shared Flutter application-level
+          `TransportHealthPolicyService` with capsule-scoped timeout backoff.
+        - invitation receive, pair-attestation receive, chat receive, and
+          trading-signal receive paths now share one cooldown decision surface.
+        - manual send paths still record timeout/success results but are not
+          silently blocked by passive receive cooldown.
+        - focused regression coverage proves timeout -> cooldown -> success
+          recovery and cross-capsule independence for invitations, pair
+          attestations, and chat/trading-signal receive.
+      - remaining follow-up:
+        - route relationship-notification receive through the same policy.
+        - expose degraded-transport status in UI instead of only returning
+          service-level cooldown errors.
+    - Transport Delivery Lifecycle v1 consolidation slice completed on
+      2026-07-11:
+      - extracted retry timing, receipt reconciliation, and capsule-scoped
+        background-pump lifetime from `InvitationActionsService` into one
+        `CapsuleDeliveryLifecycleService`.
+      - invitation send/accept/reject recovery and locally initiated
+        relationship breaks now enqueue the same lifecycle; a relationship
+        break no longer waits for an unrelated invitation refresh to start
+        recovery.
+      - documented the hard boundary between Ledger truth, the recovery index,
+        lifecycle scheduling, transport adapters, and UI projection in
+        `docs/architecture/transport-delivery-lifecycle.md`.
+      - this intentionally does not close execution-order item 4: the current
+        outbox is still an aggregate recovery index and must gain event-scoped
+        identifiers and matching receipts before it can be a reliable queue.
   - Status: active.
 
 ## Planned Product Tracks

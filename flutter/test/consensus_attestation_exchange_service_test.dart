@@ -55,7 +55,7 @@ void main() {
       expect(sync.sentPeerTransportHex, peerTransportHex);
     });
 
-    test('blocks when pair evidence exists for different snapshots', () async {
+    test('ignores stale pair evidence from different snapshots', () async {
       const localRootHex =
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       const peerRootHex =
@@ -95,9 +95,10 @@ void main() {
 
       final result = await service.ensureForPeer(peerRootHex);
 
-      expect(result.status, ConsensusAttestationExchangeStatus.blocked);
+      expect(result.status, ConsensusAttestationExchangeStatus.syncing);
       expect(result.mismatchedEvidenceCount, 2);
-      expect(result.message, contains('snapshots differ'));
+      expect(result.message, contains('ignoring stale pair evidence'));
+      expect(sync.sentPeerRootHex, peerRootHex);
     });
   });
 }

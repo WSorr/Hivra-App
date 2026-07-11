@@ -10,6 +10,7 @@ import '../models/relationship.dart';
 import 'bingx_futures_execution_command_service.dart';
 import 'capsule_address_service.dart';
 import 'manual_consensus_check_service.dart';
+import 'transport_health_policy_service.dart';
 
 // Chat send may need two relay publish passes under degraded connectivity.
 // Keep timeout above a single slow relay cycle to avoid false -1003 while
@@ -19,26 +20,6 @@ const Duration _chatSendWorkerTimeout = Duration(seconds: 35);
 // plus event fetch. A shorter Dart timeout does not cancel the compute worker:
 // it can consume and mark events as seen after the caller has discarded them.
 const Duration _chatReceiveWorkerTimeout = Duration(seconds: 30);
-const Duration _chatSendRetryDelay = Duration(milliseconds: 900);
-
-bool chatSendShouldRetry({
-  required int code,
-  String? errorMessage,
-}) {
-  if (code == -1003 ||
-      code == -11 ||
-      code == -12 ||
-      code == -13 ||
-      code == -5 ||
-      code == -6) {
-    return true;
-  }
-  final message = (errorMessage ?? '').toLowerCase();
-  return message.contains('timeout') ||
-      message.contains('timed out') ||
-      message.contains('connection') ||
-      message.contains('relay');
-}
 
 String tradeSignalInboxRecordId({
   required String fromHex,
@@ -144,6 +125,7 @@ class CapsuleChatDeliveryService {
   final ExecutionPolicyResolver _executionPolicyForPeer;
   final ExecutionKnownIntentLookup? _hasKnownIntentHash;
   final UtcNowProvider _nowUtc;
+  final TransportHealthPolicyService _transportHealth;
 
   CapsuleChatDeliveryService({
     required AppRuntimeRuntime runtime,
@@ -157,6 +139,7 @@ class CapsuleChatDeliveryService {
     ExecutionPolicyResolver? executionPolicyForPeer,
     ExecutionKnownIntentLookup? hasKnownIntentHash,
     UtcNowProvider nowUtc = _defaultNowUtc,
+    TransportHealthPolicyService? transportHealth,
   })  : _runtime = runtime,
         _manualChecks = manualChecks,
         _loadRelationships = loadRelationships ?? _emptyRelationships,
@@ -172,7 +155,9 @@ class CapsuleChatDeliveryService {
         _executionPolicyForPeer =
             executionPolicyForPeer ?? _defaultExecutionPolicyForPeer,
         _hasKnownIntentHash = hasKnownIntentHash,
-        _nowUtc = nowUtc;
+        _nowUtc = nowUtc,
+        _transportHealth =
+            transportHealth ?? TransportHealthPolicyService.shared;
 
   List<CapsuleTradeSignalInboxMessage> loadCachedTradeSignals() {
     final root = _runtime.capsuleRootPublicKey();
@@ -247,26 +232,15 @@ class CapsuleChatDeliveryService {
       );
     }
 
-    var workerResult = await runWorker();
-    var code = (workerResult['result'] as int?) ?? -1003;
-    var lastError = workerResult['lastError'] as String?;
-    var deliveryReceiptsJson = workerResult['deliveryReceiptsJson'] as String?;
-    if (code != 0 && chatSendShouldRetry(code: code, errorMessage: lastError)) {
-      await Future<void>.delayed(_chatSendRetryDelay);
-      final retry = await runWorker();
-      final retryCode = (retry['result'] as int?) ?? -1003;
-      final retryError = retry['lastError'] as String?;
-      final retryReceiptsJson = retry['deliveryReceiptsJson'] as String?;
-      if (retryCode == 0) {
-        code = 0;
-        lastError = null;
-        deliveryReceiptsJson = retryReceiptsJson;
-      } else {
-        code = retryCode;
-        lastError = retryError ?? lastError;
-        deliveryReceiptsJson = retryReceiptsJson ?? deliveryReceiptsJson;
-      }
-    }
+    final workerResult = await runWorker();
+    final code = (workerResult['result'] as int?) ?? -1003;
+    final lastError = workerResult['lastError'] as String?;
+    final deliveryReceiptsJson =
+        workerResult['deliveryReceiptsJson'] as String?;
+    _transportHealth.recordResult(
+      capsuleHex: _localCapsuleRootHex(),
+      code: code,
+    );
     if (code != 0) {
       return CapsuleChatDeliverySendResult(
         isSuccess: false,
@@ -289,6 +263,19 @@ class CapsuleChatDeliveryService {
   }
 
   Future<CapsuleChatDeliveryReceiveResult> receiveAndFilter() async {
+    final localRootHex = _localCapsuleRootHex();
+    final health = _transportHealth.canRun(
+      capsuleHex: localRootHex,
+    );
+    if (!health.isAllowed) {
+      return CapsuleChatDeliveryReceiveResult(
+        code: health.code,
+        errorMessage: health.message,
+        droppedByConsensus: 0,
+        messages: const <CapsuleChatInboxMessage>[],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+      );
+    }
     final bootstrap = await _runtime.loadWorkerBootstrapArgs();
     if (bootstrap == null) {
       return CapsuleChatDeliveryReceiveResult(
@@ -309,6 +296,10 @@ class CapsuleChatDeliveryService {
       },
     );
     final code = (transport['result'] as int?) ?? -1003;
+    _transportHealth.recordResult(
+      capsuleHex: localRootHex,
+      code: code,
+    );
     final rawJson = transport['json'] as String?;
     final transportError = transport['lastError'] as String?;
     if (code < 0) {

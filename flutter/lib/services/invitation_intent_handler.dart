@@ -6,6 +6,7 @@ import 'capsule_state_manager.dart';
 import 'invitation_actions_service.dart';
 import 'invitation_delivery_service.dart';
 import 'ledger_view_service.dart';
+import 'transport_health_policy_service.dart';
 
 class InvitationIntentResult {
   final int code;
@@ -78,6 +79,7 @@ class InvitationIntentHandler {
   final Future<InvitationWorkerResult> Function()? _fetchInvitationsAction;
   final Future<InvitationWorkerResult> Function()? _fetchInvitationsQuickAction;
   final String Function()? _activeCapsuleHexResolver;
+  final TransportHealthPolicyService _transportHealth;
 
   InvitationIntentHandler({
     InvitationActionsService? actions,
@@ -88,6 +90,7 @@ class InvitationIntentHandler {
     Future<InvitationWorkerResult> Function()? fetchInvitationsAction,
     Future<InvitationWorkerResult> Function()? fetchInvitationsQuickAction,
     String Function()? activeCapsuleHexResolver,
+    TransportHealthPolicyService? transportHealth,
   })  : _actions = actions,
         _delivery = delivery,
         _stateManager = stateManager,
@@ -95,7 +98,9 @@ class InvitationIntentHandler {
         _invitationsLoader = invitationsLoader,
         _fetchInvitationsAction = fetchInvitationsAction,
         _fetchInvitationsQuickAction = fetchInvitationsQuickAction,
-        _activeCapsuleHexResolver = activeCapsuleHexResolver;
+        _activeCapsuleHexResolver = activeCapsuleHexResolver,
+        _transportHealth =
+            transportHealth ?? TransportHealthPolicyService.shared;
 
   List<Invitation> loadInvitations({String? capsuleHex}) {
     final expectedCapsuleHex = _normalizeExplicitCapsuleHex(capsuleHex);
@@ -253,9 +258,25 @@ class InvitationIntentHandler {
     final operationCapsuleHex = _capsuleHexOrNull(
       explicitCapsuleHex: capsuleHex,
     );
+    final health = _transportHealth.canRun(
+      capsuleHex: operationCapsuleHex,
+    );
+    if (!health.isAllowed) {
+      await _expireOverdueOutgoingInvitationsIfNeeded(
+        capsuleHex: operationCapsuleHex,
+      );
+      return InvitationIntentResult(
+        code: health.code,
+        message: health.message,
+      );
+    }
     final workerResult = await (_fetchInvitationsAction?.call() ??
         _requireActions().fetchInvitations(capsuleHex: operationCapsuleHex));
     final code = workerResult.code;
+    _transportHealth.recordResult(
+      capsuleHex: operationCapsuleHex,
+      code: code,
+    );
     await _expireOverdueOutgoingInvitationsIfNeeded(
       capsuleHex: operationCapsuleHex,
     );
@@ -319,10 +340,26 @@ class InvitationIntentHandler {
     final operationCapsuleHex = _capsuleHexOrNull(
       explicitCapsuleHex: capsuleHex,
     );
+    final health = _transportHealth.canRun(
+      capsuleHex: operationCapsuleHex,
+    );
+    if (!health.isAllowed) {
+      await _expireOverdueOutgoingInvitationsIfNeeded(
+        capsuleHex: operationCapsuleHex,
+      );
+      return InvitationIntentResult(
+        code: health.code,
+        message: health.message,
+      );
+    }
     final workerResult = await (_fetchInvitationsQuickAction?.call() ??
         _requireActions()
             .fetchInvitationsQuick(capsuleHex: operationCapsuleHex));
     final code = workerResult.code;
+    _transportHealth.recordResult(
+      capsuleHex: operationCapsuleHex,
+      code: code,
+    );
     await _expireOverdueOutgoingInvitationsIfNeeded(
       capsuleHex: operationCapsuleHex,
     );

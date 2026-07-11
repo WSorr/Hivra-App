@@ -114,24 +114,10 @@ class ConsensusAttestationExchangeService {
         await _sync.loadVerifiedPairEvidence(peerRootHex: normalizedPeer);
     final mismatchedEvidenceCount =
         _mismatchedEvidenceCount(pairEvidence, verified);
-    if (_hasBothPairSigners(pairEvidence) && mismatchedEvidenceCount > 0) {
-      return ConsensusAttestationExchangeResult(
-        status: ConsensusAttestationExchangeStatus.blocked,
-        message:
-            'Pair consensus snapshots differ; sync ledgers before retrying',
-        receiveCode: received.code,
-        receivedCount: received.receivedCount,
-        storedCount: received.storedCount,
-        mismatchedEvidenceCount: mismatchedEvidenceCount,
-        localEvidenceSent: sent.isSuccess,
-        sendCode: sent.code,
-      );
-    }
-
     return ConsensusAttestationExchangeResult(
       status: ConsensusAttestationExchangeStatus.syncing,
       message: sent.isSuccess
-          ? 'Pair consensus attestation sent; waiting for peer attestation'
+          ? _syncingMessage(mismatchedEvidenceCount)
           : sent.errorMessage ?? 'Pair consensus attestation send failed',
       receiveCode: received.code,
       receivedCount: received.receivedCount,
@@ -140,6 +126,13 @@ class ConsensusAttestationExchangeService {
       localEvidenceSent: sent.isSuccess,
       sendCode: sent.code,
     );
+  }
+
+  String _syncingMessage(int mismatchedEvidenceCount) {
+    if (mismatchedEvidenceCount > 0) {
+      return 'Pair consensus attestation sent; ignoring stale pair evidence and waiting for current peer attestation';
+    }
+    return 'Pair consensus attestation sent; waiting for peer attestation';
   }
 
   bool _hasTwoRootEvidence(Iterable<ConsensusAttestationEvidence> evidence) {
@@ -169,14 +162,6 @@ class ConsensusAttestationExchangeService {
     return pairEvidence
         .where((item) => !currentKeys.contains(item.recordKey))
         .length;
-  }
-
-  bool _hasBothPairSigners(List<ConsensusAttestationEvidence> evidence) {
-    if (evidence.isEmpty) return false;
-    final pairRoots = evidence.first.pairRootsSorted;
-    if (pairRoots.length != 2) return false;
-    final signers = evidence.map((item) => item.signerRootHex).toSet();
-    return pairRoots.every(signers.contains);
   }
 
   Future<String?> _resolvePeerTransportHex(String peerRootHex) async {

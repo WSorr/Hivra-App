@@ -83,7 +83,17 @@ Contains:
 - effect and async resolution discipline
 - module creation checklist and refactor acceptance criteria
 
-### 9) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
+### 9) `architecture/transport-delivery-lifecycle.md` (delivery architecture)
+Use this when changing invitations, relationship notifications, outbox, relay
+retries, or receipt handling.
+
+Contains:
+- Ledger/outbox/lifecycle/adapter/UI ownership boundaries
+- canonical delivery execution path
+- migration rules for durable and ephemeral transport channels
+- delivery lifecycle review exit criteria
+
+### 10) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
 Use this when implementing TVH/signal logic for the BingX futures plugin.
 
 Contains:
@@ -92,7 +102,7 @@ Contains:
 - v1 entry criteria (long/short), risk filters, and output schema
 - host API and capability boundary for futures intent preparation
 
-### 10) `checklists/trading-drone-spec-runtime-parity.md` (drone parity checklist)
+### 11) `checklists/trading-drone-spec-runtime-parity.md` (drone parity checklist)
 Use this after any drone logic change and before release packaging.
 
 Contains:
@@ -101,7 +111,7 @@ Contains:
 - required automated test evidence list
 - required manual verification records for release candidates
 
-### 11) `checklists/trading-drone-evidence-log.md` (drone evidence journal)
+### 12) `checklists/trading-drone-evidence-log.md` (drone evidence journal)
 Use this to record build-tagged decision/execution evidence across macOS and Android release-candidate runs.
 
 Contains:
@@ -109,7 +119,7 @@ Contains:
 - decision/execution envelope hash traceability
 - risk-path coverage records
 - deterministic coverage check command
-### 12) `plugins/bingx_futures_trading_drone_goal_contract_v1.md` (drone goal contract)
+### 13) `plugins/bingx_futures_trading_drone_goal_contract_v1.md` (drone goal contract)
 Use this as the operational anchor for trading-drone development cadence.
 
 Contains:
@@ -128,10 +138,11 @@ Contains:
 6. `capsule-addressing-model.md` when touching invitation addressing or peer endpoint resolution
 7. `checklists/user-lifetime-safety-pack.md` when preparing release candidates
 8. `architecture-execution-discipline.md` when designing/refactoring module boundaries and async behavior
-9. `plugins/bingx_futures_trading_drone_spec_v1.md` when implementing trading-drone logic
-10. `plugins/bingx_futures_trading_drone_goal_contract_v1.md` to keep drone work aligned with one operational target
-11. `checklists/trading-drone-spec-runtime-parity.md` before drone release packaging and manual smoke sign-off
-12. `checklists/trading-drone-evidence-log.md` to capture build-tagged parity evidence
+9. `architecture/transport-delivery-lifecycle.md` when changing delivery or relay recovery
+10. `plugins/bingx_futures_trading_drone_spec_v1.md` when implementing trading-drone logic
+11. `plugins/bingx_futures_trading_drone_goal_contract_v1.md` to keep drone work aligned with one operational target
+12. `checklists/trading-drone-spec-runtime-parity.md` before drone release packaging and manual smoke sign-off
+13. `checklists/trading-drone-evidence-log.md` to capture build-tagged parity evidence
 
 ## Update Rules
 

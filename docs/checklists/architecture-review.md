@@ -23,6 +23,9 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Engine does not absorb UI policy or rendering concerns.
 - [ ] Core remains pure and deterministic with no time/RNG/crypto calls.
 - [ ] Transport remains provider/adapter-only and does not reimplement Engine orchestration.
+- [ ] Transport health/backoff policy follows
+      `docs/checklists/transport-health-policy.md` instead of being duplicated
+      inside screens or feature-specific services.
 
 ## Modularity
 
@@ -33,6 +36,13 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Screens remain projection/action surfaces and do not become service
       locators for broad feature graphs.
 - [ ] No new cross-cutting timer, watcher, or hidden background pipeline was introduced.
+- [ ] New transport retry/receive loops share the common transport health
+      policy and cannot spin independently under degraded network conditions.
+- [ ] Delivery recovery follows
+      `docs/architecture/transport-delivery-lifecycle.md`: one lifecycle owns
+      retry timing, receipt reconciliation, and capsule-scoped pump lifetime.
+- [ ] The outbox is described accurately as a recovery index unless every item
+      is bound to a concrete domain-event id and matching per-event receipt.
 - [ ] Any new module has explicit non-overlapping ownership.
 - [ ] New modules map to one skeleton layer only (`UI Projection` | `Application Use Cases` | `Domain Core` | `Ledger` | `Transport` | `WASM Plugin Host`).
 - [ ] AI/provider tooling remains outside Core and outside generic runtime

@@ -11,13 +11,16 @@ import '../services/app_runtime_service.dart';
 import '../services/consensus_attestation_exchange_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../utils/runtime_capability_display.dart';
+import 'trading_drone_screen.dart';
 
 class WasmPluginsScreen extends StatefulWidget {
   final bool embedded;
+  final AppRuntimeService? runtime;
 
   const WasmPluginsScreen({
     super.key,
     this.embedded = false,
+    this.runtime,
   });
 
   @override
@@ -73,7 +76,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   void initState() {
     super.initState();
     _module = PluginRuntimeModuleService(
-      runtime: AppRuntimeService(),
+      runtime: widget.runtime ?? AppRuntimeService(),
     ).build();
     _reload();
     _reloadSourceCatalog();
@@ -729,8 +732,13 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                       onOpenWorkspacePressed: (record) {
                         switch (record.pluginId) {
                           case bingxFuturesTradingPluginId:
-                            return () => Navigator.of(context)
-                                .pushNamed('/trading_drone');
+                            return () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => TradingDroneScreen(
+                                      runtime: widget.runtime,
+                                    ),
+                                  ),
+                                );
                           case capsuleChatPluginId:
                             return _openCapsuleChatWorkspace;
                           default:

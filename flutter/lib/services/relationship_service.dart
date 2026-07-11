@@ -6,7 +6,7 @@ import '../models/relationship.dart';
 import '../models/relationship_peer_group.dart';
 import '../utils/hivra_id_format.dart';
 import 'capsule_address_service.dart';
-import 'delivery_outbox_store.dart';
+import 'capsule_delivery_lifecycle_service.dart';
 import 'delivery_transport_contract.dart';
 
 typedef RelationshipGroupsLoader = List<RelationshipPeerGroup> Function();
@@ -22,7 +22,7 @@ class RelationshipService {
   final RelationshipBreaker _breakRelationship;
   final LedgerSnapshotPersister _persistLedgerSnapshot;
   final CapsuleAddressService _addressService;
-  final DeliveryOutboxStore _outboxStore;
+  final CapsuleDeliveryLifecycleService? _deliveryLifecycle;
   final String? _activeCapsuleHex;
 
   RelationshipService({
@@ -30,13 +30,13 @@ class RelationshipService {
     required RelationshipBreaker breakRelationship,
     required LedgerSnapshotPersister persistLedgerSnapshot,
     CapsuleAddressService? addressService,
-    DeliveryOutboxStore outboxStore = const DeliveryOutboxStore(),
+    CapsuleDeliveryLifecycleService? deliveryLifecycle,
     String? activeCapsuleHex,
   })  : _loadRelationshipGroups = loadRelationshipGroups,
         _breakRelationship = breakRelationship,
         _persistLedgerSnapshot = persistLedgerSnapshot,
         _addressService = addressService ?? const CapsuleAddressService(),
-        _outboxStore = outboxStore,
+        _deliveryLifecycle = deliveryLifecycle,
         _activeCapsuleHex = activeCapsuleHex;
 
   List<RelationshipPeerGroup> loadRelationshipGroups() {
@@ -189,13 +189,12 @@ class RelationshipService {
     if (!ok) return false;
     await _persistLedgerSnapshot();
     final capsuleHex = _activeCapsuleHex?.trim().toLowerCase();
-    if (capsuleHex != null && capsuleHex.isNotEmpty) {
-      await _outboxStore.enqueue(
+    final lifecycle = _deliveryLifecycle;
+    if (capsuleHex != null && capsuleHex.isNotEmpty && lifecycle != null) {
+      await lifecycle.enqueue(
         capsuleHex: capsuleHex,
-        transport: DeliveryTransportId.nostr,
         kind: DeliveryOutboxKind.relationshipBroken,
         reason: DeliveryOutboxReason.localRelationshipBreak,
-        now: DateTime.now().toUtc(),
       );
     }
     return true;

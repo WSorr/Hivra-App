@@ -14,6 +14,7 @@ import 'package:hivra_app/services/consensus_attested_guard_service.dart';
 import 'package:hivra_app/services/consensus_attestation_store.dart';
 import 'package:hivra_app/services/consensus_attestation_sync_service.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
+import 'package:hivra_app/services/transport_health_policy_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _TestUserVisibleDataDirectoryService
@@ -332,6 +333,38 @@ void main() {
         stored.any((item) => item.snapshotHashHex == '2' * 64),
         isFalse,
       );
+    });
+
+    test('receive honors shared transport timeout cooldown', () async {
+      var receiveCalls = 0;
+      final health = TransportHealthPolicyService(
+        timeoutBackoff: const <Duration>[Duration(minutes: 1)],
+      );
+      final service = ConsensusAttestationSyncService(
+        runtime: _FakeRuntime(localRootHex: localRoot),
+        consensus: _FakeConsensusRuntimeService(
+          peerHex: peerRoot,
+          snapshotHashHex: snapshotHash,
+        ),
+        store: store,
+        transportHealth: health,
+        receiveWorkerRunner: (_) async {
+          receiveCalls += 1;
+          return <String, Object?>{
+            'result': -1003,
+            'json': null,
+            'lastError': 'Pair consensus attestation fetch timed out',
+          };
+        },
+      );
+
+      final first = await service.receiveAndStore();
+      final second = await service.receiveAndStore();
+
+      expect(receiveCalls, 1);
+      expect(first.code, -1003);
+      expect(second.code, -3101);
+      expect(second.errorMessage, contains('cooling down'));
     });
 
     test('attested guard requires both pair roots to sign same snapshot',

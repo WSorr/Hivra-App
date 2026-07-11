@@ -11,6 +11,7 @@ import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
 import 'capsule_address_service.dart';
 import 'capsule_diagnostics_service.dart';
+import 'capsule_delivery_lifecycle_service.dart';
 import 'capsule_state_manager.dart';
 import 'capsule_chat_delivery_service.dart';
 import 'consensus_attested_guard_service.dart';
@@ -34,6 +35,7 @@ import 'wasm_plugin_runtime_service.dart';
 class AppRuntimeService {
   final AppRuntimeRuntime _runtime;
   late final CapsuleStateManager _stateManager;
+  late final CapsuleDeliveryLifecycleService _deliveryLifecycle;
   late final InvitationActionsService _invitationActions;
   late final InvitationIntentHandler _invitationIntents;
   late final LedgerViewService _ledgerView;
@@ -43,8 +45,14 @@ class AppRuntimeService {
   }) : _runtime = runtime ?? HivraAppRuntimeRuntime() {
     _ledgerView = LedgerViewService(runtime: _runtime.ledgerViewRuntime);
     _stateManager = CapsuleStateManager(_ledgerView);
+    _deliveryLifecycle = CapsuleDeliveryLifecycleService(
+      retryRunner: (capsuleHex) => _invitationActions.retryPendingDelivery(
+        capsuleHex: capsuleHex,
+      ),
+    );
     _invitationActions = InvitationActionsService(
       runtime: _runtime.invitationActionsRuntime,
+      deliveryLifecycle: _deliveryLifecycle,
     );
     _invitationIntents = InvitationIntentHandler(
       actions: _invitationActions,
@@ -57,6 +65,7 @@ class AppRuntimeService {
   CapsuleStateManager get stateManager => _stateManager;
   InvitationIntentHandler get invitationIntents => _invitationIntents;
   LedgerViewService get ledgerView => _ledgerView;
+  CapsuleDeliveryLifecycleService get deliveryLifecycle => _deliveryLifecycle;
 
   Future<bool> bootstrapActiveCapsuleRuntime() {
     return _runtime.bootstrapActiveCapsuleRuntime();
@@ -271,6 +280,7 @@ class AppRuntimeService {
       loadRelationshipGroups: _ledgerView.loadRelationshipGroups,
       breakRelationship: _runtime.breakRelationship,
       persistLedgerSnapshot: _runtime.persistLedgerSnapshot,
+      deliveryLifecycle: _deliveryLifecycle,
       activeCapsuleHex: activeCapsuleHex,
     );
   }

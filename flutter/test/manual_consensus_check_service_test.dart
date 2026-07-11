@@ -69,7 +69,7 @@ void main() {
       expect(checks.first.blockingFacts, isEmpty);
       expect(checks.first.hashHex, hasLength(64));
       expect(
-          checks.first.canonicalJson.contains('"schema_version": 1'), isTrue);
+          checks.first.canonicalJson.contains('"schema_version": 2'), isTrue);
     });
   });
 }

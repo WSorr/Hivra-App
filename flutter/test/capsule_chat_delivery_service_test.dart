@@ -15,45 +15,9 @@ import 'package:hivra_app/services/consensus_runtime_service.dart';
 import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
+import 'package:hivra_app/services/transport_health_policy_service.dart';
 
 void main() {
-  group('chatSendShouldRetry', () {
-    test('retries for transient timeout/transport codes', () {
-      expect(chatSendShouldRetry(code: -1003), isTrue);
-      expect(chatSendShouldRetry(code: -11), isTrue);
-      expect(chatSendShouldRetry(code: -12), isTrue);
-      expect(chatSendShouldRetry(code: -13), isTrue);
-      expect(chatSendShouldRetry(code: -6), isTrue);
-    });
-
-    test('retries when error message signals transient relay issues', () {
-      expect(
-        chatSendShouldRetry(
-          code: -1,
-          errorMessage: 'relay connection dropped',
-        ),
-        isTrue,
-      );
-      expect(
-        chatSendShouldRetry(
-          code: -1,
-          errorMessage: 'timed out while publishing',
-        ),
-        isTrue,
-      );
-    });
-
-    test('does not retry deterministic validation failures', () {
-      expect(
-        chatSendShouldRetry(
-          code: -1,
-          errorMessage: 'peer_hex must be a 64-char lowercase hex',
-        ),
-        isFalse,
-      );
-    });
-  });
-
   group('tradeSignalInboxRecordId', () {
     test('separates same signal_id from different peers', () {
       const signalId = 'sig-123';
@@ -197,6 +161,43 @@ void main() {
     );
   });
 
+  test('chat receive honors shared transport timeout cooldown', () async {
+    const localRootHex =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    var receiveCalls = 0;
+    final health = TransportHealthPolicyService(
+      timeoutBackoff: const <Duration>[Duration(minutes: 1)],
+    );
+    final service = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(
+        const <ManualConsensusCheck>[],
+      ),
+      transportHealth: health,
+      receiveWorkerRunner: (_) async {
+        receiveCalls += 1;
+        return <String, Object?>{
+          'result': -1003,
+          'json': null,
+          'lastError': 'Chat fetch timed out',
+        };
+      },
+    );
+
+    final first = await service.receiveAndFilter();
+    final second = await service.receiveAndFilter();
+
+    expect(receiveCalls, 1);
+    expect(first.code, -1003);
+    expect(second.code, -3101);
+    expect(second.errorMessage, contains('cooling down'));
+  });
+
   test(
       'prefers contact-card transport when root also appears as relationship peer',
       () async {
@@ -271,6 +272,65 @@ void main() {
     expect(result.isSuccess, isTrue);
     expect(result.deliveryPeerHex, equals(peerTransportHex));
     expect(_bytesToHex(sentToPubkey!), equals(peerTransportHex));
+  });
+
+  test('chat send does not create a hidden second transport attempt', () async {
+    const peerRootHex =
+        '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+    const peerTransportHex =
+        'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627';
+    const localRootHex =
+        '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+    var sendCalls = 0;
+    final service = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(
+        <ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerRootHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ],
+      ),
+      listTrustedCards: () async => const <CapsuleAddressCard>[
+        CapsuleAddressCard(
+          rootKey:
+              'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
+          rootHex: peerRootHex,
+          nostrNpub:
+              'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
+          nostrHex: peerTransportHex,
+        ),
+      ],
+      sendWorkerRunner: (_) async {
+        sendCalls += 1;
+        return <String, Object?>{
+          'result': -1003,
+          'lastError': 'relay timeout',
+        };
+      },
+    );
+
+    final result = await service.sendCanonicalEnvelope(
+      peerHex: peerRootHex,
+      canonicalEnvelopeJson: '{"message_text":"hello"}',
+    );
+
+    expect(result.isSuccess, isFalse);
+    expect(result.code, -1003);
+    expect(sendCalls, 1);
   });
 
   group('CapsuleChatDeliveryService execution command flow', () {
