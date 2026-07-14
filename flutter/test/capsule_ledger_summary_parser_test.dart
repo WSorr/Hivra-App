@@ -148,7 +148,7 @@ void main() {
       };
     }
 
-    test('pending count follows invitation terminal precedence', () {
+    test('pending count follows first-terminal invitation semantics', () {
       final self = rep(0xaa);
       final peer = rep(0xbb);
       final otherPeer = rep(0xcc);

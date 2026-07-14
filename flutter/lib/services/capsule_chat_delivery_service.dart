@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../ffi/app_runtime_runtime.dart';
 import '../ffi/capsule_chat_runtime.dart';
 import '../models/capsule_chat_models.dart';
+import '../models/consensus_models.dart';
 import '../models/relationship.dart';
 import 'bingx_futures_execution_command_service.dart';
 import 'capsule_address_service.dart';
@@ -41,6 +42,9 @@ typedef ChatWorkerRunner = Future<Map<String, Object?>> Function(
 );
 typedef ChatRelationshipsLoader = List<Relationship> Function();
 typedef ChatTrustedCardsLoader = Future<List<CapsuleAddressCard>> Function();
+typedef ChatAttestedSignableReader = Future<ConsensusSignableResult> Function(
+  String peerRootHex,
+);
 typedef ExecutionPolicyResolver = BingxExecutionPolicy Function(
   String peerHex,
 );
@@ -116,6 +120,7 @@ class CapsuleTradeSignalInboxStore {
 class CapsuleChatDeliveryService {
   final AppRuntimeRuntime _runtime;
   final ManualConsensusCheckService _manualChecks;
+  final ChatAttestedSignableReader? _readAttestedSignable;
   final ChatRelationshipsLoader _loadRelationships;
   final ChatTrustedCardsLoader _listTrustedCards;
   final ChatWorkerRunner _sendWorkerRunner;
@@ -130,6 +135,7 @@ class CapsuleChatDeliveryService {
   CapsuleChatDeliveryService({
     required AppRuntimeRuntime runtime,
     required ManualConsensusCheckService manualChecks,
+    ChatAttestedSignableReader? readAttestedSignable,
     ChatRelationshipsLoader? loadRelationships,
     ChatTrustedCardsLoader? listTrustedCards,
     ChatWorkerRunner sendWorkerRunner = _defaultSendWorkerRunner,
@@ -142,6 +148,7 @@ class CapsuleChatDeliveryService {
     TransportHealthPolicyService? transportHealth,
   })  : _runtime = runtime,
         _manualChecks = manualChecks,
+        _readAttestedSignable = readAttestedSignable,
         _loadRelationships = loadRelationships ?? _emptyRelationships,
         _listTrustedCards = listTrustedCards ?? _emptyTrustedCards,
         _sendWorkerRunner = sendWorkerRunner,
@@ -171,7 +178,7 @@ class CapsuleChatDeliveryService {
     required String peerHex,
     required String canonicalEnvelopeJson,
   }) async {
-    if (!_isPeerSignable(peerHex)) {
+    if (!await _isPeerAttestedSignable(peerHex)) {
       return const CapsuleChatDeliverySendResult(
         isSuccess: false,
         blockedByConsensus: true,
@@ -344,12 +351,17 @@ class CapsuleChatDeliveryService {
       );
     }
 
-    final checks = _manualChecks.loadChecks();
-    final signablePeers = <String>{
-      for (final check in checks)
-        if (check.isSignable) check.peerHex.trim().toLowerCase(),
-    };
     final identityIndex = await _loadPeerIdentityIndex();
+    final signableCache = <String, bool>{};
+
+    Future<bool> isAttestedSignable(String peerHex) async {
+      final normalized = peerHex.trim().toLowerCase();
+      final cached = signableCache[normalized];
+      if (cached != null) return cached;
+      final isSignable = await _isPeerAttestedSignable(normalized);
+      signableCache[normalized] = isSignable;
+      return isSignable;
+    }
 
     final byId = <String, CapsuleChatInboxMessage>{};
     final byTradeSignalId = <String, CapsuleTradeSignalInboxMessage>{};
@@ -370,8 +382,10 @@ class CapsuleChatDeliveryService {
       }
       final consensusPeerHex =
           identityIndex.resolveConsensusForIncoming(fromHex);
-      final isSignablePeer = signablePeers.contains(consensusPeerHex) ||
-          signablePeers.contains(fromHex);
+      var isSignablePeer = await isAttestedSignable(consensusPeerHex);
+      if (!isSignablePeer && consensusPeerHex != fromHex) {
+        isSignablePeer = await isAttestedSignable(fromHex);
+      }
       if (!isSignablePeer) {
         droppedByConsensus += 1;
         continue;
@@ -541,6 +555,14 @@ class CapsuleChatDeliveryService {
       }
     }
     return false;
+  }
+
+  Future<bool> _isPeerAttestedSignable(String peerHex) async {
+    final readAttestedSignable = _readAttestedSignable;
+    if (readAttestedSignable == null) {
+      return _isPeerSignable(peerHex);
+    }
+    return (await readAttestedSignable(peerHex)).isSignable;
   }
 
   Future<_PeerIdentityIndex> _loadPeerIdentityIndex() async {

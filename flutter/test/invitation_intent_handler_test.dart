@@ -241,8 +241,9 @@ void main() {
     });
   });
 
-  group('InvitationIntentHandler expiry sweep', () {
-    test('auto-expires only overdue outgoing pending invitations', () async {
+  group('InvitationIntentHandler pending timeout policy', () {
+    test('does not auto-expire outgoing invitations without a response',
+        () async {
       String idForByte(int value) =>
           base64.encode(Uint8List.fromList(List<int>.filled(32, value)));
 
@@ -323,14 +324,10 @@ void main() {
       final result = await handler.fetchInvitationsQuick();
 
       expect(result.code, 0);
-      expect(actions.canceledInvitationIds, <String>[
-        overdueOutgoingPending.id,
-        overdueOutgoingProjectionExpired.id,
-      ]);
+      expect(actions.canceledInvitationIds, isEmpty);
     });
 
-    test('scopes expiry sweep to explicit capsule and skips stale capsule',
-        () async {
+    test('does not auto-expire stale capsule invitations', () async {
       String idForByte(int value) =>
           base64.encode(Uint8List.fromList(List<int>.filled(32, value)));
 
@@ -367,7 +364,7 @@ void main() {
       expect(actions.canceledInvitationCapsules, isEmpty);
     });
 
-    test('passes explicit capsule to expiry cancel action', () async {
+    test('does not auto-expire explicit capsule invitations', () async {
       String idForByte(int value) =>
           base64.encode(Uint8List.fromList(List<int>.filled(32, value)));
 
@@ -398,12 +395,11 @@ void main() {
           await handler.fetchInvitationsQuick(capsuleHex: capsuleHex);
 
       expect(result.code, 0);
-      expect(
-          actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
-      expect(actions.canceledInvitationCapsules, <String?>[capsuleHex]);
+      expect(actions.canceledInvitationIds, isEmpty);
+      expect(actions.canceledInvitationCapsules, isEmpty);
     });
 
-    test('runs expiry sweep even when quick fetch is skipped by cooldown',
+    test('does not auto-expire when quick fetch is skipped by cooldown',
         () async {
       String idForByte(int value) =>
           base64.encode(Uint8List.fromList(List<int>.filled(32, value)));
@@ -448,10 +444,10 @@ void main() {
 
       final second = await handler.fetchInvitationsQuick();
       expect(second.message, 'Skipped duplicate quick fetch');
-      expect(actions.canceledInvitationIds, <String>[candidate.id]);
+      expect(actions.canceledInvitationIds, isEmpty);
     });
 
-    test('runs expiry sweep even when full fetch returns receive failure',
+    test('does not auto-expire when full fetch returns receive failure',
         () async {
       String idForByte(int value) =>
           base64.encode(Uint8List.fromList(List<int>.filled(32, value)));
@@ -483,8 +479,7 @@ void main() {
         result.message,
         'Failed to fetch invitation deliveries. Check internet/VPN and retry. [code: -5]',
       );
-      expect(
-          actions.canceledInvitationIds, <String>[overdueOutgoingPending.id]);
+      expect(actions.canceledInvitationIds, isEmpty);
     });
 
     test('includes ffi diagnostics on receive failure when available',

@@ -32,8 +32,13 @@ class RelationshipProjectionService {
     final localOwnerB64 = localOwner == null ? null : base64.encode(localOwner);
     final localTransportB64 =
         localTransport == null ? null : base64.encode(localTransport);
-    final peerRootByInvitationId =
-        _collectPeerRootsByInvitationId(events, localOwner, localTransport);
+    final terminalKindByInvitationId = <String, int>{};
+    final peerRootByInvitationId = _collectPeerRootsByInvitationId(
+      events,
+      localOwner,
+      localTransport,
+      terminalKindByInvitationId: terminalKindByInvitationId,
+    );
     final byKey = <String, Relationship>{};
 
     for (final e in events) {
@@ -43,6 +48,14 @@ class RelationshipProjectionService {
       if (kind == 7) {
         final established = _parseRelationshipEstablished(payload);
         if (established == null) continue;
+        final terminalKind = established.invitationId == null
+            ? null
+            : terminalKindByInvitationId[established.invitationId!];
+        if (terminalKind == 3 || terminalKind == 4) {
+          // Rejected/expired invitation lineage cannot establish a relation,
+          // even if a stale RelationshipEstablished row arrives later.
+          continue;
+        }
         final oriented = _orientEstablishedForLocal(
           established,
           localOwnerB64: localOwnerB64,
@@ -146,8 +159,9 @@ class RelationshipProjectionService {
   Map<String, String> _collectPeerRootsByInvitationId(
     List<dynamic> events,
     Uint8List? localOwner,
-    Uint8List? localTransport,
-  ) {
+    Uint8List? localTransport, {
+    required Map<String, int> terminalKindByInvitationId,
+  }) {
     final map = <String, String>{};
     final hasLocalOwner = localOwner != null && localOwner.length == 32;
     final localOwnerB64 = hasLocalOwner ? base64.encode(localOwner) : null;
@@ -155,9 +169,10 @@ class RelationshipProjectionService {
         localTransport != null && localTransport.length == 32;
     final localTransportB64 =
         hasLocalTransport ? base64.encode(localTransport) : null;
-    final offerLineageIds = <String>{};
+    final offerLineageEventIndexById = <String, int>{};
 
-    for (final eventRaw in events) {
+    for (var eventIndex = 0; eventIndex < events.length; eventIndex++) {
+      final eventRaw = events[eventIndex];
       if (eventRaw is! Map) continue;
       final event = Map<String, dynamic>.from(eventRaw);
       final kind = _support.kindCode(event['kind']);
@@ -188,22 +203,22 @@ class RelationshipProjectionService {
       }
 
       final invitationId = base64.encode(payload.sublist(0, 32));
-      offerLineageIds.add(invitationId);
+      offerLineageEventIndexById.putIfAbsent(invitationId, () => eventIndex);
     }
 
-    for (final eventRaw in events) {
+    final resolvedTerminalIds = <String>{};
+    for (var eventIndex = 0; eventIndex < events.length; eventIndex++) {
+      final eventRaw = events[eventIndex];
       if (eventRaw is! Map) continue;
       final event = Map<String, dynamic>.from(eventRaw);
       final kind = _support.kindCode(event['kind']);
       final payload = _support.payloadBytes(event['payload']);
       final signerBytes = _support.payloadBytes(event['signer']);
       final signerIsValid = signerBytes.length == 32;
-      final signer = signerIsValid
-          ? Uint8List.fromList(signerBytes)
-          : Uint8List(0);
-      final signerMatchesLocal = hasLocalOwner &&
-          signerIsValid &&
-          _support.eq32(signer, localOwner);
+      final signer =
+          signerIsValid ? Uint8List.fromList(signerBytes) : Uint8List(0);
+      final signerMatchesLocal =
+          hasLocalOwner && signerIsValid && _support.eq32(signer, localOwner);
 
       if (kind == 9 && (payload.length == 128 || payload.length == 129)) {
         if (!signerIsValid || signerMatchesLocal) {
@@ -223,16 +238,29 @@ class RelationshipProjectionService {
         continue;
       }
 
-      if (kind == 2 && payload.length == 128) {
+      final terminalShapeValid = switch (kind) {
+        2 => payload.length == 96 || payload.length == 128,
+        3 => payload.length == 33,
+        4 => payload.length == 32,
+        _ => false,
+      };
+      if (terminalShapeValid && signerIsValid) {
+        final invitationId = base64.encode(payload.sublist(0, 32));
+        final offerEventIndex = offerLineageEventIndexById[invitationId];
+        if (offerEventIndex == null ||
+            eventIndex <= offerEventIndex ||
+            !resolvedTerminalIds.add(invitationId)) {
+          continue;
+        }
+        terminalKindByInvitationId[invitationId] = kind;
+        if (kind != 2 || payload.length != 128) {
+          continue;
+        }
         if (localTransportB64 == null) {
           continue;
         }
         final fromPubkey = base64.encode(payload.sublist(32, 64));
         if (fromPubkey != localTransportB64) {
-          continue;
-        }
-        final invitationId = base64.encode(payload.sublist(0, 32));
-        if (!offerLineageIds.contains(invitationId)) {
           continue;
         }
         if (!(hasLocalOwner && signerIsValid && !signerMatchesLocal)) {

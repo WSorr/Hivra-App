@@ -154,6 +154,7 @@ class AppRuntimeService {
     return CapsuleChatDeliveryService(
       runtime: _runtime,
       manualChecks: buildManualConsensusCheckService(),
+      readAttestedSignable: buildConsensusAttestedGuardService().signable,
       loadRelationships: _ledgerView.loadRelationships,
       listTrustedCards: addressService.listTrustedCards,
     );

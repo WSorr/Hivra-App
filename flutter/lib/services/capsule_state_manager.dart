@@ -94,3 +94,17 @@ class CapsuleStateManager {
     );
   }
 }
+
+bool capsuleStateMatchesSelection({
+  required CapsuleState state,
+  required String selectedCapsuleHex,
+  String? runtimeRootHex,
+}) {
+  final selected = selectedCapsuleHex.trim().toLowerCase();
+  if (selected.isEmpty) return true;
+  final stateHex = state.publicKey
+      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+      .join();
+  final rootHex = runtimeRootHex?.trim().toLowerCase();
+  return stateHex == selected || rootHex == selected;
+}

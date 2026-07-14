@@ -4,7 +4,19 @@ This folder contains the canonical project documentation for the current Hivra v
 
 ## Documents
 
-### 1) `specification.md` (normative)
+### 1) `product-axis.md` (canonical evaluation contract)
+
+Use this before designing or reviewing any material product or architecture
+change.
+
+Contains:
+- the permanent product axis and two canonical workflow lanes
+- user-ownership, replay, effect-lifecycle, and isolation invariants
+- predictable extension rules for drones, transports, Core, and networks
+- a pre-implementation capability-closure proof and architecture runway
+- a mandatory change scorecard and comparable improvement evidence
+
+### 2) `specification.md` (normative)
 Use this as the source of truth for implementation and review.
 
 Contains:
@@ -16,7 +28,7 @@ Contains:
 
 If there is any conflict, `specification.md` wins.
 
-### 2) `hivra-conceptual-model.md` (product model)
+### 3) `hivra-conceptual-model.md` (product model)
 Use this to understand product intent, user-facing mechanics, and behavior scenarios.
 
 Contains:
@@ -27,7 +39,7 @@ Contains:
 
 This document must stay consistent with `specification.md`.
 
-### 3) `roadmap.md` (engineering priorities)
+### 4) `roadmap.md` (engineering priorities)
 Use this to track the current engineering direction and the highest-value stabilization work.
 
 Contains:
@@ -37,7 +49,7 @@ Contains:
 - release discipline and preflight expectations
 - medium-term architecture and plugin-host work
 
-### 4) `android-keystore-migration.md` (implementation note)
+### 5) `android-keystore-migration.md` (implementation note)
 Use this when working on Android seed-storage hardening.
 
 Contains:
@@ -46,7 +58,7 @@ Contains:
 - migration path for existing Android users
 - implementation constraints and rollout checkpoints
 
-### 5) `identity-decoupling-migration.md` (implementation note)
+### 6) `identity-decoupling-migration.md` (implementation note)
 Use this when working on canonical capsule identity and transport-key separation.
 
 Contains:
@@ -55,7 +67,7 @@ Contains:
 - phased migration plan
 - upgrade-safety decision points and constraints
 
-### 6) `capsule-addressing-model.md` (design note)
+### 7) `capsule-addressing-model.md` (design note)
 Use this when working on peer addressing after root identity became canonical.
 
 Contains:
@@ -64,7 +76,7 @@ Contains:
 - the public capsule card model
 - trusted peer records and encrypted endpoint updates
 
-### 7) `checklists/user-lifetime-safety-pack.md` (release safety checklist)
+### 8) `checklists/user-lifetime-safety-pack.md` (release safety checklist)
 Use this to validate the real-world user path (one or two capsules across long-term use, restore, and update).
 
 Contains:
@@ -74,7 +86,7 @@ Contains:
 - update truth-preservation checks
 - pending invitation stability checks
 
-### 8) `architecture-execution-discipline.md` (architecture execution standard)
+### 9) `architecture-execution-discipline.md` (architecture execution standard)
 Use this when introducing/refactoring modules and async flows.
 
 Contains:
@@ -83,7 +95,7 @@ Contains:
 - effect and async resolution discipline
 - module creation checklist and refactor acceptance criteria
 
-### 9) `architecture/transport-delivery-lifecycle.md` (delivery architecture)
+### 10) `architecture/transport-delivery-lifecycle.md` (delivery architecture)
 Use this when changing invitations, relationship notifications, outbox, relay
 retries, or receipt handling.
 
@@ -93,7 +105,7 @@ Contains:
 - migration rules for durable and ephemeral transport channels
 - delivery lifecycle review exit criteria
 
-### 10) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
+### 11) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
 Use this when implementing TVH/signal logic for the BingX futures plugin.
 
 Contains:
@@ -102,7 +114,7 @@ Contains:
 - v1 entry criteria (long/short), risk filters, and output schema
 - host API and capability boundary for futures intent preparation
 
-### 11) `checklists/trading-drone-spec-runtime-parity.md` (drone parity checklist)
+### 12) `checklists/trading-drone-spec-runtime-parity.md` (drone parity checklist)
 Use this after any drone logic change and before release packaging.
 
 Contains:
@@ -111,7 +123,7 @@ Contains:
 - required automated test evidence list
 - required manual verification records for release candidates
 
-### 12) `checklists/trading-drone-evidence-log.md` (drone evidence journal)
+### 13) `checklists/trading-drone-evidence-log.md` (drone evidence journal)
 Use this to record build-tagged decision/execution evidence across macOS and Android release-candidate runs.
 
 Contains:
@@ -119,7 +131,7 @@ Contains:
 - decision/execution envelope hash traceability
 - risk-path coverage records
 - deterministic coverage check command
-### 13) `plugins/bingx_futures_trading_drone_goal_contract_v1.md` (drone goal contract)
+### 14) `plugins/bingx_futures_trading_drone_goal_contract_v1.md` (drone goal contract)
 Use this as the operational anchor for trading-drone development cadence.
 
 Contains:
@@ -128,28 +140,48 @@ Contains:
 - mandatory patch->test->smoke cadence
 - acceptance gates and ownership rule
 
+### 15) `architecture-v2-blueprint.md` (design-only architecture map)
+
+Use this when planning Hivra 2.0 in parallel with the maintained 1.x line.
+
+Contains:
+- the 1.x/2.0 version boundary
+- capability ownership and dependency maps
+- contract-placement and anti-entropy rules
+- self-governing architecture evidence requirements
+- migration work packages and design exit criteria
+
+This document is non-normative for 1.x. `specification.md` continues to win for
+all current runtime and release behavior.
+
 ## Recommended Reading Order
 
-1. `specification.md`
-2. `hivra-conceptual-model.md`
-3. `roadmap.md`
-4. `android-keystore-migration.md` when touching Android seed storage
-5. `identity-decoupling-migration.md` when touching root identity or transport key derivation
-6. `capsule-addressing-model.md` when touching invitation addressing or peer endpoint resolution
-7. `checklists/user-lifetime-safety-pack.md` when preparing release candidates
-8. `architecture-execution-discipline.md` when designing/refactoring module boundaries and async behavior
-9. `architecture/transport-delivery-lifecycle.md` when changing delivery or relay recovery
-10. `plugins/bingx_futures_trading_drone_spec_v1.md` when implementing trading-drone logic
-11. `plugins/bingx_futures_trading_drone_goal_contract_v1.md` to keep drone work aligned with one operational target
-12. `checklists/trading-drone-spec-runtime-parity.md` before drone release packaging and manual smoke sign-off
-13. `checklists/trading-drone-evidence-log.md` to capture build-tagged parity evidence
+1. `product-axis.md`
+2. `specification.md`
+3. `hivra-conceptual-model.md`
+4. `roadmap.md`
+5. `android-keystore-migration.md` when touching Android seed storage
+6. `identity-decoupling-migration.md` when touching root identity or transport key derivation
+7. `capsule-addressing-model.md` when touching invitation addressing or peer endpoint resolution
+8. `checklists/user-lifetime-safety-pack.md` when preparing release candidates
+9. `architecture-execution-discipline.md` when designing/refactoring module boundaries and async behavior
+10. `architecture/transport-delivery-lifecycle.md` when changing delivery or relay recovery
+11. `plugins/bingx_futures_trading_drone_spec_v1.md` when implementing trading-drone logic
+12. `plugins/bingx_futures_trading_drone_goal_contract_v1.md` to keep drone work aligned with one operational target
+13. `checklists/trading-drone-spec-runtime-parity.md` before drone release packaging and manual smoke sign-off
+14. `checklists/trading-drone-evidence-log.md` to capture build-tagged parity evidence
+15. `architecture-v2-blueprint.md` when designing 2.0 ownership, contracts, or migration units
 
 ## Update Rules
 
 - Any protocol, invariant, event, or UI contract change must update `specification.md` in the same PR.
+- Every material change must pass the `product-axis.md` scorecard and name its
+  capability owner, lane mapping, axis gain, and removal delta.
 - If product behavior/flows are affected, update `hivra-conceptual-model.md` in the same PR.
 - Keep terminology consistent: Capsule, Starter, Invitation, Relationship, Ledger, Network.
 - All product-bound documentation and code comments must be in English.
+- 2.0 design work must not alter the normative 1.x specification until a
+  capability migration is explicitly approved.
 
 ## Quick PR Checklist
 

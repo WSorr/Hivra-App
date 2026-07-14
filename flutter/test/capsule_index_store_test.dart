@@ -4,7 +4,27 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/services/capsule_index_store.dart';
+import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
+
+class _DelayedAtomicFileWriteService extends AtomicFileWriteService {
+  int concurrentWrites = 0;
+  int maxConcurrentWrites = 0;
+
+  @override
+  Future<void> writeString(File target, String contents) async {
+    concurrentWrites += 1;
+    if (concurrentWrites > maxConcurrentWrites) {
+      maxConcurrentWrites = concurrentWrites;
+    }
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await super.writeString(target, contents);
+    } finally {
+      concurrentWrites -= 1;
+    }
+  }
+}
 
 class _TestUserVisibleDataDirectoryService
     extends UserVisibleDataDirectoryService {
@@ -62,6 +82,51 @@ void main() {
     final index = await store.read();
     expect(index.activePubKeyHex, equals(capsuleB));
     expect(index.capsules.keys.toSet(), equals({capsuleA, capsuleB}));
+  });
+
+  test('serializes metadata upsert with explicit active selection', () async {
+    const capsuleA =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const capsuleB =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    final writes = _DelayedAtomicFileWriteService();
+    final serializedStore = CapsuleIndexStore(
+      dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      atomicWrites: writes,
+    );
+
+    await serializedStore.upsert(capsuleA);
+    await serializedStore.upsert(capsuleB);
+    await serializedStore.setActive(capsuleA);
+
+    await Future.wait(<Future<void>>[
+      serializedStore.setActive(capsuleB),
+      serializedStore.upsert(capsuleA),
+      serializedStore.upsert(capsuleB),
+    ]);
+
+    final index = await serializedStore.read();
+    expect(index.activePubKeyHex, capsuleB);
+    expect(writes.maxConcurrentWrites, 1);
+  });
+
+  test('reconciled metadata cannot overwrite a newer active selection',
+      () async {
+    const capsuleA =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const capsuleB =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    await store.upsert(capsuleA);
+    await store.upsert(capsuleB);
+    await store.setActive(capsuleA);
+    final staleReconciledIndex = await store.read();
+
+    await store.setActive(capsuleB);
+    await store.writePreservingActive(staleReconciledIndex);
+
+    final index = await store.read();
+    expect(index.activePubKeyHex, capsuleB);
   });
 
   test('writes index without leaving temp files', () async {
@@ -164,7 +229,8 @@ void main() {
     );
 
     final index = await store.read();
-    expect(index.capsules.keys.toSet(), equals({indexedCapsule, missingCapsule}));
+    expect(
+        index.capsules.keys.toSet(), equals({indexedCapsule, missingCapsule}));
     final repaired = index.capsules[missingCapsule];
     expect(repaired, isNotNull);
     expect(repaired!.isGenesis, isTrue);

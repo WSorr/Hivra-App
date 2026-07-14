@@ -41,9 +41,11 @@ DEP_CHECK="$ROOT/tools/review/dependency_check.sh"
 SPEC="$ROOT/docs/specification.md"
 README="$ROOT/README.md"
 DOCS_README="$ROOT/docs/README.md"
+PRODUCT_AXIS="$ROOT/docs/product-axis.md"
 CHECKLIST="$ROOT/docs/checklists/architecture-review.md"
 ROADMAP="$ROOT/docs/roadmap.md"
 EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
+V2_BLUEPRINT="$ROOT/docs/architecture-v2-blueprint.md"
 DELIVERY_LIFECYCLE_DOC="$ROOT/docs/architecture/transport-delivery-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
@@ -74,6 +76,8 @@ CONSENSUS="$ROOT/flutter/lib/services/consensus_processor.dart"
 CONSENSUS_ATTESTATION_SYNC="$ROOT/flutter/lib/services/consensus_attestation_sync_service.dart"
 CONSENSUS_ATTESTATION_STORE="$ROOT/flutter/lib/services/consensus_attestation_store.dart"
 CAPSULE_FILE_STORE="$ROOT/flutter/lib/services/capsule_file_store.dart"
+CAPSULE_INDEX_STORE="$ROOT/flutter/lib/services/capsule_index_store.dart"
+CAPSULE_PERSISTENCE="$ROOT/flutter/lib/services/capsule_persistence_service.dart"
 BINDINGS="$ROOT/flutter/lib/ffi/hivra_bindings.dart"
 WASM_RUNTIME="$ROOT/platform/hivra-wasm-runtime/src/lib.rs"
 WASM_RUNTIME_SERVICE="$ROOT/flutter/lib/services/wasm_plugin_runtime_service.dart"
@@ -102,6 +106,32 @@ require_present "$README" '`hivra-transport` is adapter-only and does \*\*not\*\
   "root README documents transport->core ban"
 
 # 3) Spec/checklist anti-sprawl + engine/plugin contracts.
+require_present "$PRODUCT_AXIS" '^## 1\. Axis Statement' \
+  "product axis defines one permanent evaluation direction"
+require_present "$PRODUCT_AXIS" '^## 2\. Two Canonical Lanes' \
+  "product axis defines truth and effect lanes"
+require_present "$PRODUCT_AXIS" '^## 3\. Permanent Product Invariants' \
+  "product axis defines stable product invariants"
+require_present "$PRODUCT_AXIS" '^## 5\. Pre-Implementation Capability Closure' \
+  "product axis requires capability closure before implementation"
+require_present "$PRODUCT_AXIS" '^### 5\.4 Feasibility verdict' \
+  "product axis defines explicit feasibility verdicts"
+require_present "$PRODUCT_AXIS" '`NEEDS_PROTOCOL`; Pair Consensus composition is not assumed sufficient' \
+  "product axis does not assume pair consensus closes group protocols"
+require_present "$PRODUCT_AXIS" 'A pass-through DTO that copies another contract' \
+  "product axis forbids pass-through DTO prostheses"
+require_present "$PRODUCT_AXIS" '^## 6\. Change Scorecard' \
+  "product axis defines a comparable change scorecard"
+require_present "$PRODUCT_AXIS" 'Replacement with deletion' \
+  "product axis requires replacement-path removal"
+require_present "$SPEC" '^### 0\.1 Product Axis' \
+  "specification binds implementation to product axis"
+require_present "$CHECKLIST" '^## Product Axis' \
+  "architecture review applies product-axis checks"
+require_present "$ROADMAP" '^## Product Axis Gate' \
+  "roadmap rejects work without measurable axis gain"
+require_present "$DOCS_README" 'product-axis\.md' \
+  "docs index starts from product axis"
 require_present "$SPEC" 'Structural Minimality Contract \(Anti-Sprawl\)' \
   "spec defines anti-sprawl structural contract"
 require_present "$SPEC" 'Flutter Boundary Direction' \
@@ -152,6 +182,32 @@ require_present "$EXEC_DISCIPLINE" '^## 4\. Async Resolution Discipline' \
   "execution discipline defines async resolution rules"
 require_present "$EXEC_DISCIPLINE" '^## 7\. Plugin Repository Boundary' \
   "execution discipline defines plugin repository boundary"
+require_present "$V2_BLUEPRINT" '^Status: design-only draft\.' \
+  "v2 blueprint cannot silently change normative v1 behavior"
+require_present "$V2_BLUEPRINT" '^## 4\. Capability Map' \
+  "v2 blueprint defines capability ownership map"
+require_present "$V2_BLUEPRINT" '^## 7\. Anti-Entropy Budget' \
+  "v2 blueprint defines measurable anti-entropy budget"
+require_present "$V2_BLUEPRINT" '^## 8\. Self-Governing Architecture Map' \
+  "v2 blueprint requires generated architecture evidence"
+require_present "$V2_BLUEPRINT" '^## 9\. Migration Rule: Strangler With Deletion' \
+  "v2 blueprint requires replacement-path deletion"
+require_present "$V2_BLUEPRINT" 'separate immutable `birth_mode` \(Genesis/Proto\) from runtime role' \
+  "v2 blueprint separates capsule birth mode from runtime role"
+require_present "$V2_BLUEPRINT" 'define Hood as a separately namespaced experimental network' \
+  "v2 blueprint requires isolated Hood network design"
+require_present "$SPEC" 'Birth mode \(`Genesis` or `Proto`\) is not a runtime role\.' \
+  "v1 specification separates birth mode from runtime role"
+require_present "$SPEC" 'The supported 1\.x runtime operates Capsules in Neste only\.' \
+  "v1 specification does not claim active Hood support"
+require_present "$SPEC" 'first-valid-terminal semantics' \
+  "v1 specification defines first-valid-terminal invitation lifecycle"
+require_absent "$SPEC" 'accepted > rejected > expired' \
+  "v1 specification has no obsolete terminal precedence"
+require_present "$DOCS_README" 'architecture-v2-blueprint\.md' \
+  "docs index references v2 architecture blueprint"
+require_present "$ROADMAP" '^## Parallel Version Tracks' \
+  "roadmap separates maintained v1 and design-only v2 tracks"
 require_present "$EXTERNAL_PLUGIN_SOURCE" '^## Repository boundary contract \(mandatory\)' \
   "external plugin source doc defines mandatory repo boundary contract"
 require_present "$EXTERNAL_PLUGIN_SOURCE" '`Hivra-App` repository is host/runtime only\.' \
@@ -246,6 +302,16 @@ require_present "$INV_ACTIONS" 'await _applyWorkerLedgerResult\(' \
   "queued invitation workers persist ledger before releasing the capsule queue"
 require_absent "$INV_ACTIONS" '_scheduleLateWorkerLedgerApply' \
   "timed-out invitation workers do not bypass capsule serialization"
+require_present "$CAPSULE_INDEX_STORE" '_serializeMutation' \
+  "capsule index serializes selection and metadata mutations"
+require_present "$CAPSULE_INDEX_STORE" 'writePreservingActive' \
+  "capsule index reconciliation preserves the latest explicit selection"
+require_absent "$CAPSULE_PERSISTENCE" '_touchActiveCapsule' \
+  "background persistence cannot use the legacy active-selection writer"
+require_present "$CAPSULE_PERSISTENCE" '_touchRuntimeCapsuleMetadata' \
+  "background persistence updates runtime capsule metadata only"
+require_present "$MAIN_SCREEN" 'capsuleStateMatchesSelection' \
+  "main screen rejects transient projections from another capsule"
 
 # 5) WASM plugin boundaries and readiness guard.
 require_present "$WASM_REGISTRY" 'class WasmPluginRegistryService' \

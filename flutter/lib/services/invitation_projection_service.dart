@@ -46,9 +46,7 @@ class InvitationProjectionService {
     };
 
     final offersById = <String, _ProjectedInvitationOffer>{};
-    final acceptedAtById = <String, DateTime>{};
-    final rejectedById = <String, ({DateTime at, RejectionReason reason})>{};
-    final expiredAtById = <String, DateTime>{};
+    final terminalById = <String, _ProjectedInvitationTerminal>{};
 
     for (final e in events) {
       final kind = _support.kindCode(e['kind']);
@@ -151,10 +149,12 @@ class InvitationProjectionService {
           continue;
         }
         final id = base64.encode(payload.sublist(0, 32));
-        final existing = acceptedAtById[id];
-        acceptedAtById[id] = existing == null || timestamp.isBefore(existing)
-            ? timestamp
-            : existing;
+        if (offersById.containsKey(id) && !terminalById.containsKey(id)) {
+          terminalById[id] = _ProjectedInvitationTerminal(
+            status: InvitationStatus.accepted,
+            at: timestamp,
+          );
+        }
       } else if (kind == 3 && payload.length == 33) {
         final signerBytes = _support.payloadBytes(e['signer']);
         if (signerBytes.length != 32) {
@@ -164,45 +164,39 @@ class InvitationProjectionService {
         final reason = payload[32] == 0
             ? RejectionReason.emptySlot
             : RejectionReason.other;
-        final existing = rejectedById[id];
-        rejectedById[id] = existing == null || timestamp.isBefore(existing.at)
-            ? (at: timestamp, reason: reason)
-            : existing;
+        if (offersById.containsKey(id) && !terminalById.containsKey(id)) {
+          terminalById[id] = _ProjectedInvitationTerminal(
+            status: InvitationStatus.rejected,
+            at: timestamp,
+            rejectionReason: reason,
+          );
+        }
       } else if (kind == 4 && payload.length == 32) {
         final signerBytes = _support.payloadBytes(e['signer']);
         if (signerBytes.length != 32) {
           continue;
         }
         final id = base64.encode(payload.sublist(0, 32));
-        final existing = expiredAtById[id];
-        expiredAtById[id] = existing == null || timestamp.isBefore(existing)
-            ? timestamp
-            : existing;
+        if (offersById.containsKey(id) && !terminalById.containsKey(id)) {
+          terminalById[id] = _ProjectedInvitationTerminal(
+            status: InvitationStatus.expired,
+            at: timestamp,
+          );
+        }
       }
     }
 
-    final now = DateTime.now();
     final list = offersById.values.map((offer) {
-      final expiresAt =
-          offer.isIncoming ? null : offer.sentAt.add(const Duration(hours: 24));
       InvitationStatus status = InvitationStatus.pending;
       DateTime? respondedAt;
       RejectionReason? rejectionReason;
-      if (acceptedAtById.containsKey(offer.id)) {
-        status = InvitationStatus.accepted;
-        respondedAt = acceptedAtById[offer.id];
-      } else if (rejectedById.containsKey(offer.id)) {
-        status = InvitationStatus.rejected;
-        respondedAt = rejectedById[offer.id]!.at;
-        rejectionReason = rejectedById[offer.id]!.reason;
-      } else if (expiredAtById.containsKey(offer.id)) {
-        status = InvitationStatus.expired;
-        respondedAt = expiredAtById[offer.id];
-      } else if (!offer.isIncoming &&
-          expiresAt != null &&
-          expiresAt.isBefore(now)) {
-        status = InvitationStatus.expired;
-        respondedAt = expiresAt;
+      final terminal = terminalById[offer.id];
+      final expiresAt =
+          terminal?.status == InvitationStatus.expired ? terminal?.at : null;
+      if (terminal != null) {
+        status = terminal.status;
+        respondedAt = terminal.at;
+        rejectionReason = terminal.rejectionReason;
       }
       return Invitation(
         id: offer.id,
@@ -283,5 +277,17 @@ class _ProjectedInvitationOffer {
     required this.starterSlot,
     required this.isIncoming,
     required this.sentAt,
+  });
+}
+
+class _ProjectedInvitationTerminal {
+  final InvitationStatus status;
+  final DateTime at;
+  final RejectionReason? rejectionReason;
+
+  const _ProjectedInvitationTerminal({
+    required this.status,
+    required this.at,
+    this.rejectionReason,
   });
 }

@@ -915,6 +915,71 @@ void main() {
     );
 
     test(
+      'does not establish relationship after first rejected terminal',
+      () {
+        const t0 = 1890003254600;
+        final localOwner = rep(0xaa);
+        final localTransport = rep(0xa1);
+        final peerTransport = rep(0xb3);
+        final peerRoot = rep(0xdd);
+        final serviceWithRuntimeIdentity =
+            RelationshipProjectionService.withOwnerKeyProvider(
+          () => Uint8List.fromList(localOwner),
+          support,
+          runtimeTransportPublicKey: () => Uint8List.fromList(localTransport),
+        );
+        final root = <String, dynamic>{
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'InvitationSent',
+              payload: <int>[
+                ...rep(0x69),
+                ...rep(0x21),
+                ...peerTransport,
+              ],
+              timestamp: t0,
+              signer: localOwner,
+            ),
+            event(
+              kind: 'InvitationRejected',
+              payload: <int>[...rep(0x69), 1],
+              timestamp: t0 + 1,
+              signer: peerTransport,
+            ),
+            event(
+              kind: 'InvitationAccepted',
+              payload: <int>[
+                ...rep(0x69),
+                ...localTransport,
+                ...rep(0x31),
+                ...peerRoot,
+              ],
+              timestamp: t0 + 2,
+              signer: peerTransport,
+            ),
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xb3,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x69,
+                senderByte: 0xb3,
+                senderStarterByte: 0x61,
+              ),
+              timestamp: t0 + 3,
+            ),
+          ],
+        };
+
+        final projected = serviceWithRuntimeIdentity.loadRelationships(root);
+
+        expect(projected, isEmpty);
+      },
+    );
+
+    test(
       'does not infer peer root from InvitationAccepted lineage when local transport is unavailable',
       () {
         const t0 = 1890003254700;
@@ -938,7 +1003,8 @@ void main() {
               kind: 'InvitationAccepted',
               payload: <int>[
                 ...rep(0x6b), // invitation id
-                ...rep(0xa1), // from_pubkey (local transport, unknown in runtime)
+                ...rep(
+                    0xa1), // from_pubkey (local transport, unknown in runtime)
                 ...rep(0x31), // created_starter_id
                 ...peerRoot, // accepter_root_pubkey
               ],

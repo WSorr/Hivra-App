@@ -233,7 +233,7 @@ class CapsulePersistenceService {
     final dir = await _currentCapsuleDir(hivra);
     final ledgerJson = await _fileStore.readLedger(dir);
     if (ledgerJson != null && hivra.importLedger(ledgerJson)) {
-      await _touchActiveCapsule(hivra);
+      await _touchRuntimeCapsuleMetadata(hivra);
       return true;
     }
     return importBackupEnvelopeIfExists(hivra);
@@ -253,7 +253,7 @@ class CapsulePersistenceService {
     }
     await _fileStore.writeLedger(dir, ledger);
     await _writeBackupEnvelopeForLedger(dir, ledger);
-    await _touchActiveCapsule(hivra);
+    await _touchRuntimeCapsuleMetadata(hivra);
     return true;
   }
 
@@ -314,7 +314,7 @@ class CapsulePersistenceService {
 
     final dir = await _currentCapsuleDir(hivra, create: true);
     await _fileStore.writeBackup(dir, backupJson);
-    await _touchActiveCapsule(hivra);
+    await _touchRuntimeCapsuleMetadata(hivra);
     return _fileStore.backupPath(dir);
   }
 
@@ -366,7 +366,7 @@ class CapsulePersistenceService {
     if (ledgerJson == null) return false;
     final imported = hivra.importLedger(ledgerJson);
     if (imported) {
-      await _touchActiveCapsule(hivra);
+      await _touchRuntimeCapsuleMetadata(hivra);
     }
     return imported;
   }
@@ -1633,7 +1633,8 @@ class CapsulePersistenceService {
     return _bytesToHex(key);
   }
 
-  Future<void> _touchActiveCapsule(CapsulePersistenceBindings hivra) async {
+  Future<void> _touchRuntimeCapsuleMetadata(
+      CapsulePersistenceBindings hivra) async {
     final runtimeHex = _hexFromKey(hivra.capsuleRuntimeOwnerPublicKey());
     if (runtimeHex == null || runtimeHex.isEmpty) return;
 
@@ -1650,17 +1651,12 @@ class CapsulePersistenceService {
         rootHex.isNotEmpty &&
         await _seedStore.hasStoredSeed(rootHex)) {
       pubKeyHex = rootHex;
-    } else if (activeHex != null &&
-        activeHex.isNotEmpty &&
-        await _seedStore.hasStoredSeed(activeHex)) {
-      pubKeyHex = activeHex;
     }
 
     await _upsertCapsuleIndex(
       pubKeyHex,
       identityMode: _detectIdentityMode(hivra, pubKeyHex),
     );
-    await _setActiveCapsule(pubKeyHex);
     await _reconcileCapsuleIdentityIndex(hivra);
   }
 
@@ -1687,7 +1683,7 @@ class CapsulePersistenceService {
   }
 
   Future<void> _writeIndex(CapsulesIndex index) async {
-    await _indexStore.write(index);
+    await _indexStore.writePreservingActive(index);
   }
 
   String _detectIdentityMode(

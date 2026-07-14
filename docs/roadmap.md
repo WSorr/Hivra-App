@@ -14,6 +14,62 @@ Hivra is a local-first runtime for user-owned Capsules, not a social network or 
 - Drones are the primary extension model; chat, trading, staking, AI, and future tools must stay outside Core.
 - Core remains minimal: Capsule, Ledger, Invitations, Trust Layer facts, Pair Consensus inputs, and deterministic transitions.
 
+## Product Axis Gate
+
+Every roadmap item is evaluated against `docs/product-axis.md` before work
+starts and after it lands. It must name:
+
+- the permanent invariant strengthened or risk removed;
+- the sole capability owner;
+- a `READY` pre-implementation capability-closure verdict and complete contract
+  trace;
+- its truth-lane and/or effect-lane mapping;
+- its stable event or operation identity;
+- the old path or ambiguity removed or sealed;
+- replay, restart, concurrency, migration, and platform evidence as applicable.
+
+Feature volume is not progress by itself. Work that adds paths, owners, or
+dependencies without a measurable product-axis gain is not scheduled.
+`NEEDS_CONTRACT` and `NEEDS_PROTOCOL` work first closes the missing architecture;
+it does not enter production behind temporary DTOs or parallel facades.
+
+## Parallel Version Tracks
+
+### Hivra 1.x: maintained product line
+
+The current line remains the only production/release target. Work is limited to
+security, correctness, deterministic recovery, platform parity, release
+discipline, and refactors that demonstrably remove or seal an existing path.
+The normative authority remains `docs/specification.md`.
+
+### Hivra 2.0: architecture design line
+
+Hivra 2.0 is designed in parallel without introducing a second production
+runtime into 1.x. Its authority is the design-only
+`docs/architecture-v2-blueprint.md` until an individual migration unit is
+approved.
+
+Current 2.0 program:
+
+- `V2-0` baseline current capability owners, entrypoints, facts, projections,
+  effects, dependency edges, and closure verdicts for the known architecture
+  runway;
+- `V2-1` define Core capability contracts and deterministic golden vectors;
+- `V2-2` define effect ports and one durable lifecycle per effect;
+- `V2-3` define the capability-scoped WASM host and projection-only app shell;
+- `V2-4` migrate one capability at a time and delete each replaced 1.x path.
+
+2.0 design constraints also include:
+
+- separate Genesis/Proto birth mode from Leaf/Relay runtime role;
+- keep 1.x on Neste;
+- introduce Hood only as a fully isolated experimental network across ledger,
+  slots, operational stores, drone state, delivery queues, and consensus
+  evidence.
+
+The first active item is `V2-0`. No 2.0 runtime implementation starts before
+the blueprint design exit criteria are satisfied.
+
 ## Current Priorities
 
 ### 1. Replay Safety
@@ -502,8 +558,10 @@ Scope:
   - `schema_version`
   - `pair_roots_sorted`
   - `active_relationships`
-- Use terminal invitation precedence:
-  - `accepted > rejected > expired > pending`
+- Use first-valid-terminal invitation semantics:
+  - offer anchor must precede terminal state in local ledger order
+  - first valid `accepted`, `rejected`, or `expired` wins permanently
+  - later conflicting or duplicate terminal rows cannot change state/effects
 - Keep the snapshot symmetric:
   - no sender/receiver perspective bias
   - no transport delivery artifacts
@@ -520,9 +578,12 @@ Scope:
 - Treat richer lineage or starter-state checks as future snapshot/schema revisions rather than overloading v1.
 - Current progress:
   - Canonical consensus snapshot key naming now matches spec/roadmap contract (`pair_roots_sorted`), and legacy `pair_transport_keys_sorted` key emission was removed from `ConsensusProcessor`.
-  - Added regression coverage in `consensus_processor_test.dart` to lock terminal invitation precedence in snapshot projection (`accepted > rejected > expired`).
+  - Added regression coverage in `consensus_processor_test.dart` to lock
+    first-valid-terminal semantics in pair projection.
   - Added regression coverage that local starter-only events (`StarterCreated` / `StarterBurned`) do not affect pairwise snapshot canonical JSON/hash when pairwise facts are unchanged.
-  - Added regression coverage that pairwise snapshot canonical JSON/hash remains stable under event-order permutations and sender-metadata noise when pairwise facts are equivalent.
+  - Added regression coverage that pairwise snapshot canonical JSON/hash remains
+    stable under non-lifecycle sender-metadata noise when pairwise facts are
+    equivalent. Lifecycle ordering itself is authoritative.
 - Added regression coverage that symmetric A/B ledger perspectives derive the same pairwise snapshot canonical JSON/hash for equivalent pairwise facts.
 - Snapshot v2 excludes terminal invitation history from the signed payload so
   that one-sided historical delivery and events involving third capsules cannot
@@ -680,8 +741,8 @@ When tradeoffs are unclear, prefer:
       - quick-fetch cooldown now applies only after successful fetch results (`code >= 0`), so transient receive failures do not suppress immediate retry on the same capsule
     - FFI now reuses per-capsule Nostr transport sessions (default + quick profiles) across send/receive/accept/reject/break paths instead of recreating transport on each action, reducing relay re-handshake churn during capsule switches and periodic refreshes
     - `hivra_reject_invitation` is now ledger-first: local `InvitationRejected` append occurs before/beside transport delivery so UI projections do not re-surface the same invitation as actionable pending during relay timeout/degradation windows; outbound reject delivery remains best-effort.
-    - Added deterministic overdue-invitation sweep in `InvitationIntentHandler` for outgoing `pending` rows past 24h, appending `InvitationExpired` through existing `cancelInvitation/expire` path so local slot locks are released even when transport fetch returns no new events
-    - Added `invitation_intent_handler_test.dart` coverage that auto-expiry sweep only applies to overdue outgoing `pending` invitations (does not touch incoming, fresh pending, or already terminal invitations) and still runs on both quick-fetch cooldown skips and receive-failure fetch cycles.
+    - Superseded: outgoing invitations no longer auto-expire after 24h. Network silence is not a pairwise terminal fact; starters remain locked until accept/reject arrives or the user explicitly cancels.
+    - Added `invitation_intent_handler_test.dart` coverage that fetch/quick-fetch paths do not synthesize `InvitationExpired` from overdue local timeouts.
     - Invitation projection now falls back to ledger `owner` when runtime owner key is temporarily unavailable, preserving incoming/outgoing classification from ledger truth instead of dropping invitation rows to empty.
     - Invitation projection incoming/outgoing classification is now local-identity aware (`owner + runtime transport`): offers addressed to local transport key are treated as incoming even when owner/root differs, reducing mixed root/transport pending misclassification.
     - Capsule selector summary parsing now feeds invitation/relationship projections with derived local transport identity when available (legacy owner key or root-seed nostr derivation), keeping header pending/relationship counters aligned with runtime screens in mixed root/transport histories.
@@ -692,10 +753,19 @@ When tradeoffs are unclear, prefer:
     - Invitations async actions/fetch now drop stale completions when active capsule changes mid-flight, preventing old-capsule delivery/result messages from mutating the currently selected capsule view after switch.
     - `InvitationActionsService.rejectInvitation` timeout path now mirrors send/accept behavior by scheduling late worker-ledger apply, so timed-out reject workers can still reconcile local ledger truth when completion arrives after UI timeout.
     - `InvitationIntentHandler.rejectInvitation` now treats transport-failure codes with recorded local ledger state as success (`Local rejection is recorded`) and also trusts terminal local projection fallback, reducing duplicate-reject loops when network delivery degrades after local reject append.
-    - Invitation projection terminal resolution is now order-invariant for anchored lifecycles: `InvitationAccepted/Rejected/Expired` are applied by `invitation_id` precedence (`accepted > rejected > expired`) whenever an offer lineage exists anywhere in local ledger history, eliminating replay-order drift while still ignoring orphan terminal rows without offer anchor.
-    - Added `invitation_projection_service_test.dart` regression coverage that terminal precedence (`accepted > rejected > expired`) remains stable regardless of terminal-event ordering.
+    - Invitation projection now matches FFI ingress with first-valid-terminal
+      semantics: an offer must already exist, the first terminal row wins, and
+      later duplicate/conflicting terminal rows cannot replace it.
+    - Added `invitation_projection_service_test.dart` regression coverage for
+      accepted/rejected/expired first-terminal cases and terminal-before-offer
+      rejection.
+    - Consensus and relationship projections now suppress
+      `RelationshipEstablished` rows whose invitation lineage was first
+      finalized as rejected or expired; a late accepted row cannot restore the
+      relationship or rewrite peer-root inference.
     - `InvitationIntentHandler` now short-circuits repeated terminal `accept/reject` attempts using current local projection state, so stale UI rows cannot re-trigger duplicate terminal actions against already resolved invitation lineage.
-    - Duplicate terminal rows now resolve deterministic terminal timestamp by taking the earliest terminal event per invitation lifecycle, reducing replay-order drift in `respondedAt` projection.
+    - `respondedAt` comes from the first valid terminal ledger row; later rows
+      cannot replace it using a smaller timestamp.
     - Invitation terminal projection (`Accepted/Rejected/Expired`) now requires valid signer width (32-byte signer), so malformed/imported unsigned terminal rows cannot mutate pending/terminal state.
     - Invitation projection now filters foreign invitation rows by local addressing rules: `InvitationReceived` must target local identity and be remote-signed, while foreign `InvitationSent` rows that are neither local-signed nor local-addressed are ignored, reducing phantom pending queues in merged/imported ledgers.
   - Status: completed (2026-04-10, v1 scope).
@@ -1104,6 +1174,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - this intentionally does not close execution-order item 4: the current
         outbox is still an aggregate recovery index and must gain event-scoped
         identifiers and matching receipts before it can be a reliable queue.
+    - Capsule Selection Ownership remediation completed on 2026-07-14:
+      - explicit create/recover/select flows remain the only writers allowed to
+        change `capsules_index.active`;
+      - ledger persistence and worker completion update capsule metadata without
+        changing the selected capsule;
+      - index read-modify-write operations are serialized so a background
+        metadata upsert cannot restore a stale active pointer;
+      - MainScreen pins one capsule selection for its lifetime and ignores a
+        transient foreign runtime projection while a worker restores the
+        selected runtime.
   - Status: active.
 
 ## Planned Product Tracks

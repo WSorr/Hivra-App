@@ -827,7 +827,7 @@ void main() {
       expect(previewA.single.canonicalJson, previewB.single.canonicalJson);
     });
 
-    test('preview hash is stable across event order and sender metadata noise',
+    test('preview hash is stable across non-lifecycle sender metadata noise',
         () {
       final invitationId = Uint8List.fromList(bytes32(31));
       final ownStarter = Uint8List.fromList(bytes32(32));
@@ -847,6 +847,14 @@ void main() {
           ],
         },
         <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...bytes32(40),
+            ...bytes32(41),
+          ],
+        },
+        <String, dynamic>{
           'kind': 7,
           'payload': <int>[
             ...peerTransport,
@@ -861,23 +869,16 @@ void main() {
             ...bytes32(39),
           ],
         },
-        <String, dynamic>{
-          'kind': 2,
-          'payload': <int>[
-            ...invitationId,
-            ...bytes32(40),
-            ...bytes32(41),
-          ],
-        },
       ];
 
       final reorderedWithSenderNoise = <Map<String, dynamic>>[
         <String, dynamic>{
-          'kind': 2,
+          'kind': 1,
           'payload': <int>[
             ...invitationId,
-            ...bytes32(52),
-            ...bytes32(53),
+            ...ownStarter,
+            ...peerTransport,
+            1,
           ],
         },
         <String, dynamic>{
@@ -887,6 +888,14 @@ void main() {
             ...bytes32(55),
             2,
             0,
+          ],
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...bytes32(52),
+            ...bytes32(53),
           ],
         },
         <String, dynamic>{
@@ -902,15 +911,6 @@ void main() {
             ...bytes32(57),
             ...peerRoot,
             ...bytes32(58),
-          ],
-        },
-        <String, dynamic>{
-          'kind': 1,
-          'payload': <int>[
-            ...invitationId,
-            ...ownStarter,
-            ...peerTransport,
-            1,
           ],
         },
       ];
@@ -1308,9 +1308,7 @@ void main() {
       );
     });
 
-    test(
-        'preview applies terminal invitation precedence accepted over rejected and expired',
-        () {
+    test('preview keeps the first valid terminal invitation state', () {
       final invitationId = Uint8List.fromList(bytes32(41));
       final ownStarter = Uint8List.fromList(bytes32(42));
       final peerTransport = Uint8List.fromList(bytes32(43));
@@ -1370,7 +1368,11 @@ void main() {
 
       expect(previews, hasLength(1));
       expect(previews.first.invitationCount, equals(1));
-      expect(previews.first.blockingFacts, isEmpty);
+      expect(previews.first.relationshipCount, equals(0));
+      expect(
+        previews.first.blockingFacts.map((fact) => fact.code),
+        contains('no_active_relationship'),
+      );
       expect(
         previews.first.canonicalJson.contains('"finalized_invitations"'),
         isFalse,

@@ -19,6 +19,20 @@ Chat, trading, staking, AI, and other user-facing capabilities are drones/plugin
 
 The key architectural rule in this revision is strict layer isolation: Core knows nothing about transport, cryptography, time, or RNG. All external dependencies are injected through the Engine.
 
+### 0.1 Product Axis
+
+All implementation and architecture changes MUST preserve the canonical Hivra
+product axis defined in `product-axis.md`:
+
+> A user-owned Capsule turns explicit intent and authenticated input into
+> reproducible local truth through one deterministic capability path, while
+> every external effect follows one durable, idempotent lifecycle.
+
+Confirmed Core state follows the truth lane. Network, storage, crypto,
+exchange, and provider work follows the effect lane. A production workflow MUST
+NOT create a third path, a second capability owner, a second projection truth,
+or a parallel effect lifecycle.
+
 ---
 
 ## 1. Philosophy and Fundamental Principles
@@ -196,11 +210,25 @@ Capsule is an application instance, the user identity.
 ```rust
 struct Capsule {
     pubkey: PubKey,           // 32 bytes, identifier
-    network: Network,          // Neste | Hood
+    network: Network,          // Neste in the supported 1.x runtime
     ledger: Ledger,            // append-only event log
     // Slots are a projection from the ledger, not stored directly
 }
 ```
+
+Capsule birth mode and runtime role are independent concepts:
+
+- `Genesis` birth creates the initial five local starters.
+- `Proto` birth starts without local starters and gains them through accepted
+  invitation lineage.
+- `Leaf` / future `Relay` describe runtime behavior and MUST NOT determine
+  starter birth.
+
+The persisted 1.x `CapsuleCreated.capsule_type` byte is a legacy field currently
+used as the Genesis/Proto birth marker despite the Rust enum names
+`Relay`/`Leaf`. This naming collision is implementation debt, not protocol
+meaning. It MUST be separated into explicit `birth_mode` and `runtime_role`
+contracts before Relay is implemented.
 
 #### 3.3.2 Starter
 
@@ -257,11 +285,20 @@ Signed event protocol v4:
 - New protocol v4 runtime state MUST NOT be initialized with legacy Nostr owner
   identity. Nostr keys are transport keys only.
 
-Ledger is an append-only log of signed events.
+Ledger is the single source of truth for Core domain facts and their
+deterministic projections. It is not the storage authority for operational or
+private application state such as transport retry records, contact-card
+routing caches, pair-attestation evidence, plugin installation records, drone
+journals, or credentials.
 
-- Single source of truth.
-- Full state is recovered by replaying events.
-- Events are immutable; deletion or overwrite is forbidden.
+- Core domain state is recovered by replaying ledger events.
+- Events are append-only; deletion or overwrite is forbidden.
+- Protocol v4 signatures authenticate the canonical event identity
+  `SHA256(version || kind || payload)` under `event.signer`.
+- `timestamp` and ledger position are not part of that signed identity in v4.
+- `last_hash` is a deterministic 64-bit replay checksum, not a cryptographic
+  history commitment. Cryptographic sequence/metadata commitment is an active
+  protocol-hardening debt and MUST NOT be claimed by UI or release material.
 
 #### 3.3.5 Relationship
 
@@ -598,19 +635,31 @@ All state changes happen through signed events.
 
 ```rust
 struct Event {
-    version: u8,        // protocol version (3)
+    version: u8,        // protocol version (4)
     kind: EventKind,     // event type
     payload: Vec<u8>,    // type-specific fields (binary)
     timestamp: u64,      // from Engine
     signature: Signature,// capsule owner signature
+    signer: PubKey,      // root key used to verify signature
 }
 ```
+
+Canonical event identity and signature message:
+
+```text
+SHA256(version || kind || payload)
+```
+
+`timestamp`, `signature`, and `signer` are serialized event fields but are not
+included in the protocol-v4 event identity.
 
 ### 7.2 Event Types
 
 Event | Fields
 --- | ---
+CapsuleCreated | owner_pubkey, capsule birth mode, network
 InvitationSent | invitation_id, starter_id, to_pubkey, sender_root_pubkey? (optional root provenance carried with invitation lineage)
+InvitationReceived | invitation_id, starter_id, to_pubkey, sender_root_pubkey? (local materialization of received lineage)
 InvitationAccepted | invitation_id, from_pubkey, created_starter_id (recipient starter used for the relationship; if accept created a new invited starter, this is that starter ID), accepter_root_pubkey? (optional until root-aware lineage becomes canonical)
 InvitationRejected | invitation_id, reason (EmptySlot | Other)
 InvitationExpired | invitation_id
@@ -643,7 +692,7 @@ To preserve deterministic replay across upgrades, payload parsers MUST accept le
 
 Event | Allowed payload lengths | Notes
 --- | --- | ---
-InvitationSent / InvitationReceived | 96, 97, 128, 129 bytes | `97/129` include starter-kind hint byte; `128/129` include `sender_root_pubkey` at bytes `[96..128]`
+InvitationSent / InvitationReceived | 96, 97, 128, 129, 161 bytes | `97/129` include starter-kind hint byte; `128/129` include `sender_root_pubkey` at bytes `[96..128]`; `161` carries root provenance, starter-kind hint at byte `128`, and sender Nostr transport key at bytes `[129..161]`
 InvitationAccepted | 96, 128 bytes | `128` includes `accepter_root_pubkey` at bytes `[96..128]`
 RelationshipEstablished | 194, 226, 258 bytes | `226` adds `peer_root_pubkey`; `258` adds both `peer_root_pubkey` and `sender_root_pubkey`
 RelationshipBroken | 64, 96 bytes | `96` adds `peer_root_pubkey`
@@ -755,9 +804,20 @@ Incoming invitation handling MUST be layered and deterministic:
    - `InvitationAccepted`, `InvitationRejected`, and `InvitationExpired` MUST resolve an existing invitation lifecycle in local ledger context.
    - Terminal events without a matching invitation offer MUST be discarded as orphan terminal deliveries.
 3. Only accepted ingress events are appended to ledger.
-4. Invitation projection is rebuilt from ledger events by `invitation_id` with deterministic precedence:
-   - `accepted > rejected > expired > pending`
-   - terminal precedence MUST be order-invariant for anchored invitations: if an offer lineage exists in local ledger history, out-of-order terminal delivery still resolves to the same terminal status.
+4. Invitation projection is rebuilt from ledger events by `invitation_id` using
+   first-valid-terminal semantics:
+   - the invitation offer MUST already exist in local ledger order;
+   - the first valid `InvitationAccepted`, `InvitationRejected`, or
+     `InvitationExpired` event changes `pending` to its terminal state;
+   - later terminal events for the same invitation are ignored for state and
+     effects, regardless of their kind or embedded timestamp;
+   - a terminal event before its offer is orphan history and MUST NOT become
+     applicable merely because an offer appears later;
+   - when the winning terminal is `Rejected` or `Expired`, a
+     `RelationshipEstablished` row tied to that invitation lineage MUST NOT
+     project an active relationship. A relationship row may arrive before its
+     accepted terminal during asynchronous delivery, but remains blocked while
+     the invitation is pending.
 5. UI action queues MUST be projection-driven:
    - actionable incoming queue: incoming invitations with `pending` status only
    - actionable outgoing queue: outgoing invitations with `pending` status only
@@ -783,6 +843,25 @@ A starter is burned ONLY at the sender and only when ALL conditions are met:
 - When available, relationship history SHOULD preserve root-aware pair anchor fields (`peer_root_pubkey`, `sender_root_pubkey`) so pairwise consensus can remain root-scoped across transport adapters.
 - Either side can break at any time (RelationshipBroken).
 - Starters are not burned on break.
+
+Relationship break is a pair-scoped state machine, not a counter of
+`RelationshipBroken` rows:
+
+1. `active`: the latest lifecycle episode is established and has no applicable
+   break.
+2. `locally_broken`: the local owner signed a break; local relationship truth
+   changes immediately and delivery acknowledgment is not required for local
+   sovereignty.
+3. `pending_remote_break`: a valid remote-signed break notification was
+   received; the relationship remains visible locally but pair-scoped execution
+   is blocked until the local user confirms it.
+4. `confirmed_broken`: local confirmation appends the local-signed break for
+   that episode and acknowledges convergence to the initiator.
+
+A later valid `RelationshipEstablished` starts a new lifecycle episode and
+supersedes older break-delivery retries for the same relationship key. A replay
+from an older episode MUST NOT break the new episode. Local-finalized break has
+precedence over a duplicate remote-pending notification from the same episode.
 
 ### 8.4 Pairwise Consensus Computation Mode
 
@@ -851,8 +930,10 @@ Rules:
 
 1. `pair_scoped` methods MUST require an explicit `peer_hex` root identity.
 2. `pair_scoped` methods MUST call the shared Consensus Guard boundary before
-   execution. The only valid runtime truth is `ConsensusRuntimeService.signable(peer_hex)`
-   over ledger-derived events.
+   execution. The guard MUST first derive local
+   `ConsensusRuntimeService.signable(peer_hex)` over ledger-derived events and
+   then require verified two-root attestation evidence for that exact pair and
+   snapshot hash. Local signability alone is never authorization.
 3. A method MUST NOT treat "any signable peer" as permission for a different,
    missing, or unresolved peer.
 4. A method MUST NOT use UI-selected peer lists, contact cards, transport
@@ -872,9 +953,9 @@ Rules:
 2. Starter cannot change owner.
 3. Starter cannot change type.
 4. Starter can only be Active or Burned.
-5. Ledger is the single source of truth.
-6. Capsule state fully recovers from ledger.
-7. All state changes occur via events.
+5. Ledger is the single source of truth for Core domain facts.
+6. Core domain state fully recovers from ledger.
+7. All Core domain state changes occur via signed events.
 8. Core does not call time, RNG, or crypto.
 9. Private key is never passed into Core.
 10. UI renders projections and dispatches intents; it does not own domain orchestration.
@@ -938,7 +1019,9 @@ Any migration or refactor in this area must preserve:
 
 ---
 
-## 11. Roles
+## 11. Runtime Roles
+
+Birth mode (`Genesis` or `Proto`) is not a runtime role.
 
 ### 11.1 Leaf (Regular Capsule)
 
@@ -946,12 +1029,15 @@ Any migration or refactor in this area must preserve:
 - Can reject invitations.
 - Can break relationships.
 
-### 11.2 Relay (Forwarder, Android Only)
+### 11.2 Relay (Planned Forwarder Role)
 
-- Same as Leaf.
+- Relay is not implemented in the supported 1.x runtime.
+- When implemented, it remains a role independent from Genesis/Proto birth.
+- It has the same Core capabilities as Leaf.
 - Can store messages for trusted peers.
 - Requires battery > 20% and free space.
 - Retention max 24 hours.
+- Relay retention expiry is not capsule consensus and MUST NOT synthesize `InvitationExpired`.
 - Turning off Relay deletes all stored messages.
 
 ### 11.3 Trusted Peers
@@ -965,7 +1051,11 @@ List of capsules allowed to store messages.
 
 ## 12. Networks
 
-Two fully isolated universes:
+The supported 1.x runtime operates Capsules in Neste only.
+
+Hood is reserved for a future 2.0+ experimental runtime. When Hood is
+implemented, it forms a fully isolated universe rather than a UI mode over the
+same Capsule state:
 
 Network | Purpose
 --- | ---
@@ -975,13 +1065,22 @@ Hood | Test, sandbox
 Rules:
 
 - Full isolation (events from Neste do not affect Hood).
-- Each capsule has two independent slot sets.
+- A network-scoped Capsule state has its own ledger, slots, operational stores,
+  plugin/drone state, delivery queues, and consensus evidence.
 - Same type in different networks = different starters.
+- A transport envelope MUST carry an authenticated network scope and MUST be
+  rejected before domain projection when it targets another network.
+- No 1.x UI toggle may claim to activate Hood before those isolation boundaries
+  exist.
 
 ---
 
 ## 13. Current Limitations (Not Implemented)
 
+- Android Relay forwarding runtime and foreign-message retention policy
+- Local Reputation runtime
+- Hood experimental runtime and its fully isolated storage, identity-routing,
+  transport, plugin-state, and consensus boundaries
 - Friend-based recovery (planned for v4.x)
 - Kick mechanic (forced break)
 - Multisignatures

@@ -182,7 +182,10 @@ class ConsensusProcessor {
         final invitationId = _hex(payload.sublist(0, 32));
         final fact = inviteFactsById.putIfAbsent(
           invitationId,
-          () => _PairwiseInviteFact(invitationId),
+          () => _PairwiseInviteFact(
+            invitationId,
+            offerEventIndex: eventIndex,
+          ),
         );
         final transportPeerHex = isIncoming ? signerHex : toPubkeyHex;
         if (transportPeerHex != null && transportPeerHex.isNotEmpty) {
@@ -348,7 +351,8 @@ class ConsensusProcessor {
       }
     }
 
-    for (final event in events) {
+    for (var eventIndex = 0; eventIndex < events.length; eventIndex++) {
+      final event = events[eventIndex];
       final kind = _support.kindLabel(event['kind']);
       final payload = _payloadBytes(event['payload']);
       final signer = _bytes32(event['signer']);
@@ -360,7 +364,12 @@ class ConsensusProcessor {
 
       switch (kind) {
         case 'InvitationAccepted':
-          fact.accepted = true;
+          if (!fact.resolveTerminal(
+            status: 'accepted',
+            eventIndex: eventIndex,
+          )) {
+            break;
+          }
           final signerHex = signer == null ? null : _hex(signer);
           if (payload.length >= 128 &&
               localTransportHex != null &&
@@ -373,12 +382,18 @@ class ConsensusProcessor {
           break;
         case 'InvitationRejected':
           if (payload.length >= 33) {
-            fact.rejected = true;
-            fact.rejectReasons.add(payload[32]);
+            fact.resolveTerminal(
+              status: 'rejected',
+              eventIndex: eventIndex,
+              rejectReason: payload[32],
+            );
           }
           break;
         case 'InvitationExpired':
-          fact.expired = true;
+          fact.resolveTerminal(
+            status: 'expired',
+            eventIndex: eventIndex,
+          );
           break;
       }
     }
@@ -453,7 +468,12 @@ class ConsensusProcessor {
           <_PairwiseInviteFact>[])
         ..sort((a, b) => a.invitationId.compareTo(b.invitationId));
       final relationships = (relationshipFactsByPeer[peerRootHex] ??
-          <_PairwiseRelationshipFact>[])
+              <_PairwiseRelationshipFact>[])
+          .where((relationship) {
+        final terminalStatus =
+            inviteFactsById[relationship.invitationId]?.status;
+        return terminalStatus != 'rejected' && terminalStatus != 'expired';
+      }).toList()
         ..sort((a, b) {
           final inviteCmp = a.invitationId.compareTo(b.invitationId);
           if (inviteCmp != 0) return inviteCmp;
@@ -747,20 +767,32 @@ class ConsensusProcessor {
 
 class _PairwiseInviteFact {
   final String invitationId;
+  final int offerEventIndex;
   final Set<int> starterKinds = <int>{};
   final Set<int> rejectReasons = <int>{};
-  bool accepted = false;
-  bool rejected = false;
-  bool expired = false;
+  String? _terminalStatus;
 
-  _PairwiseInviteFact(this.invitationId);
+  _PairwiseInviteFact(
+    this.invitationId, {
+    required this.offerEventIndex,
+  });
 
-  String get status {
-    if (accepted) return 'accepted';
-    if (rejected) return 'rejected';
-    if (expired) return 'expired';
-    return 'pending';
+  bool resolveTerminal({
+    required String status,
+    required int eventIndex,
+    int? rejectReason,
+  }) {
+    if (eventIndex <= offerEventIndex || _terminalStatus != null) {
+      return false;
+    }
+    _terminalStatus = status;
+    if (rejectReason != null) {
+      rejectReasons.add(rejectReason);
+    }
+    return true;
   }
+
+  String get status => _terminalStatus ?? 'pending';
 }
 
 class _PairwiseRelationshipFact {

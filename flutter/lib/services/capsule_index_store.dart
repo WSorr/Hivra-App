@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -17,6 +18,7 @@ class CapsulesIndex {
 
 class CapsuleIndexStore {
   static const String _indexFileName = 'capsules_index.json';
+  static Future<void> _mutationTail = Future<void>.value();
   final UserVisibleDataDirectoryService _dirs;
   final AtomicFileWriteService _atomicWrites;
 
@@ -26,7 +28,11 @@ class CapsuleIndexStore {
   })  : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
         _atomicWrites = atomicWrites;
 
-  Future<CapsulesIndex> read() async {
+  Future<CapsulesIndex> read() {
+    return _serializeMutation(_readUnlocked);
+  }
+
+  Future<CapsulesIndex> _readUnlocked() async {
     final capsulesRoot = await _dirs.capsulesDirectory(create: false);
     final indexFile = File('${capsulesRoot.path}/$_indexFileName');
     CapsulesIndex index;
@@ -43,21 +49,38 @@ class CapsuleIndexStore {
 
     final repaired = await _repairFromCapsuleDirectories(index, capsulesRoot);
     if (!_sameIndexState(index, repaired)) {
-      await write(repaired);
+      await _writeUnlocked(repaired);
     }
     return repaired;
   }
 
-  Future<void> write(CapsulesIndex index) async {
+  Future<void> write(CapsulesIndex index) {
+    return _serializeMutation(() => _writeUnlocked(index));
+  }
+
+  Future<void> writePreservingActive(CapsulesIndex index) {
+    return _serializeMutation(() async {
+      final current = await _readUnlocked();
+      final latestActive = current.activePubKeyHex;
+      if (latestActive != null && index.capsules.containsKey(latestActive)) {
+        index.activePubKeyHex = latestActive;
+      }
+      await _writeUnlocked(index);
+    });
+  }
+
+  Future<void> _writeUnlocked(CapsulesIndex index) async {
     final capsulesRoot = await _dirs.capsulesDirectory(create: true);
     final indexFile = File('${capsulesRoot.path}/$_indexFileName');
     await _atomicWrites.writeString(indexFile, _toJson(index));
   }
 
-  Future<void> setActive(String pubKeyHex) async {
-    final index = await read();
-    index.activePubKeyHex = pubKeyHex;
-    await write(index);
+  Future<void> setActive(String pubKeyHex) {
+    return _serializeMutation(() async {
+      final index = await _readUnlocked();
+      index.activePubKeyHex = pubKeyHex;
+      await _writeUnlocked(index);
+    });
   }
 
   Future<void> upsert(
@@ -65,19 +88,35 @@ class CapsuleIndexStore {
     bool? isGenesis,
     bool? isNeste,
     String? identityMode,
-  }) async {
-    final index = await read();
-    final now = DateTime.now().toUtc();
-    final existing = index.capsules[pubKeyHex];
-    index.capsules[pubKeyHex] = CapsuleIndexEntry(
-      pubKeyHex: pubKeyHex,
-      createdAt: existing?.createdAt ?? now,
-      lastActive: now,
-      isGenesis: isGenesis ?? existing?.isGenesis ?? false,
-      isNeste: isNeste ?? existing?.isNeste ?? true,
-      identityMode: identityMode ?? existing?.identityMode ?? 'root_owner',
-    );
-    await write(index);
+  }) {
+    return _serializeMutation(() async {
+      final index = await _readUnlocked();
+      final now = DateTime.now().toUtc();
+      final existing = index.capsules[pubKeyHex];
+      index.capsules[pubKeyHex] = CapsuleIndexEntry(
+        pubKeyHex: pubKeyHex,
+        createdAt: existing?.createdAt ?? now,
+        lastActive: now,
+        isGenesis: isGenesis ?? existing?.isGenesis ?? false,
+        isNeste: isNeste ?? existing?.isNeste ?? true,
+        identityMode: identityMode ?? existing?.identityMode ?? 'root_owner',
+      );
+      await _writeUnlocked(index);
+    });
+  }
+
+  Future<T> _serializeMutation<T>(Future<T> Function() operation) {
+    final previous = _mutationTail;
+    final release = Completer<void>();
+    _mutationTail = release.future;
+    return () async {
+      await previous;
+      try {
+        return await operation();
+      } finally {
+        release.complete();
+      }
+    }();
   }
 
   CapsulesIndex _fromJson(String raw) {

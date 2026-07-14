@@ -333,6 +333,123 @@ void main() {
     expect(sendCalls, 1);
   });
 
+  test('chat send requires pair attestation when guard is available', () async {
+    const peerRootHex =
+        '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+    const localRootHex =
+        '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+    var sendCalls = 0;
+    final service = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(
+        <ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerRootHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ],
+      ),
+      readAttestedSignable: (_) async => const ConsensusSignableResult(
+        preview: null,
+        blockingFacts: <ConsensusBlockingFact>[
+          ConsensusBlockingFact(code: 'pair_attestation_missing'),
+        ],
+      ),
+      sendWorkerRunner: (_) async {
+        sendCalls += 1;
+        return <String, Object?>{
+          'result': 0,
+          'lastError': null,
+        };
+      },
+    );
+
+    final result = await service.sendCanonicalEnvelope(
+      peerHex: peerRootHex,
+      canonicalEnvelopeJson: '{"message_text":"hello"}',
+    );
+
+    expect(result.isSuccess, isFalse);
+    expect(result.blockedByConsensus, isTrue);
+    expect(result.code, -2001);
+    expect(sendCalls, 0);
+  });
+
+  test('chat receive drops messages without pair attestation', () async {
+    const peerRootHex =
+        '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+    const localRootHex =
+        '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+    final envelope = jsonEncode(<String, Object?>{
+      'message_text': 'hello',
+      'created_at_utc': '2026-07-14T09:00:00.000Z',
+      'envelope_hash_hex':
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    });
+    final service = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(
+        <ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerRootHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ],
+      ),
+      readAttestedSignable: (_) async => const ConsensusSignableResult(
+        preview: null,
+        blockingFacts: <ConsensusBlockingFact>[
+          ConsensusBlockingFact(code: 'pair_attestation_missing'),
+        ],
+      ),
+      transportHealth: TransportHealthPolicyService(
+        timeoutBackoff: const <Duration>[Duration(minutes: 1)],
+      ),
+      receiveWorkerRunner: (_) async => <String, Object?>{
+        'result': 0,
+        'json': jsonEncode(
+          <Map<String, Object?>>[
+            <String, Object?>{
+              'from_hex': peerRootHex,
+              'payload_json': envelope,
+              'timestamp_ms': 1,
+            },
+          ],
+        ),
+        'lastError': null,
+      },
+    );
+
+    final result = await service.receiveAndFilter();
+
+    expect(result.messages, isEmpty);
+    expect(result.droppedByConsensus, 1);
+  });
+
   group('CapsuleChatDeliveryService execution command flow', () {
     const peerHex =
         '1111111111111111111111111111111111111111111111111111111111111111';

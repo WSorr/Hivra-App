@@ -76,7 +76,15 @@ It is public metadata, not secret material.
 
 ### 4.2 Trusted Peer Record
 
-Once a capsule card is received, the local capsule stores a trusted peer record.
+The local capsule stores a peer card only after an explicit trust-producing
+action:
+
+- the user imports the public card; or
+- the user accepts an invitation and the accepted lineage contains valid peer
+  root and Nostr transport keys.
+
+Merely receiving or rejecting an invitation does not create a stored trusted
+peer card in the current runtime.
 
 This local record is the working routing cache for the peer.
 
@@ -87,6 +95,15 @@ It may contain:
 - optional labels or capabilities
 
 This is local state, not a global naming system.
+
+Current lifecycle:
+
+- invitation rejection or expiry leaves no automatically created card;
+- relationship break does not automatically delete an existing card because
+  routing knowledge and an active relationship are distinct facts;
+- card removal is an explicit local user action;
+- endpoint rotation/update is not yet an implemented protocol and must not be
+  inferred from an unrelated transport event.
 
 ### 4.3 Encrypted Endpoint Update
 

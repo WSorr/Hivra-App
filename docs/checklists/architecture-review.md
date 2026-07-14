@@ -2,6 +2,31 @@
 
 Use this checklist when reviewing structural changes, not just feature behavior.
 
+## Product Axis
+
+- [ ] The change names the `product-axis.md` invariant it strengthens or the
+      measured risk it removes.
+- [ ] The change maps to the truth lane, effect lane, or both; no third state or
+      effect path was introduced.
+- [ ] The sole capability owner and public contract are explicit.
+- [ ] The proposal has a `READY` capability-closure verdict with a complete
+      `entrypoint -> command -> owner -> fact/effect -> port -> adapter -> result`
+      trace.
+- [ ] Every required value has a named creator, validator, persistence owner,
+      version, and deletion lifecycle.
+- [ ] No pass-through DTO duplicates an existing capability contract merely to
+      cross a service or directory boundary.
+- [ ] Adapter wire DTOs and UI view models remain private to their boundaries
+      and are mapped exactly at semantic boundaries.
+- [ ] Stable event/operation identity survives timeout, retry, restart, refresh,
+      and capsule switching.
+- [ ] Failure remains visible and fail-closed instead of becoming empty or
+      successful state.
+- [ ] The removed, sealed, or narrowed path is named; added structure is not
+      accepted as improvement by itself.
+- [ ] Replay, restart, concurrency, migration, and macOS/Android evidence are
+      selected according to the changed boundary.
+
 ## Dependency Law
 
 - [ ] Dependencies flow strictly downward.
@@ -73,7 +98,9 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Plugins cannot bypass Engine validation/Core invariants.
 - [ ] Transport adapters are not modeled as WASM drones; drones request delivery only through host APIs.
 - [ ] Every drone method declares exactly one scope: `solo`, `market_scan`, or `pair_scoped`.
-- [ ] Pair-scoped plugin execution requires explicit `peer_hex` and is gated by `ConsensusRuntimeService.signable(peer_hex)`.
+- [ ] Pair-scoped plugin execution requires explicit `peer_hex`, local
+      `ConsensusRuntimeService.signable(peer_hex)`, and verified attestations
+      from exactly both pair roots over the same snapshot hash.
 - [ ] No pair-scoped path treats "any signable peer" as authorization for a missing or different peer.
 - [ ] Market-scan/diagnostic bypasses do not send peer-scoped commands, broadcast pair-scoped intent, or execute peer-scoped effects.
 - [ ] Plugin inputs/outputs are deterministic for identical inputs.

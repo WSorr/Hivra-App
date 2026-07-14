@@ -41,7 +41,7 @@ void main() {
     );
   }
 
-  testWidgets('shows expires row for outgoing pending invitation',
+  testWidgets('does not show expires row for outgoing pending invitation',
       (WidgetTester tester) async {
     final inv = invitation(
       status: InvitationStatus.pending,
@@ -51,7 +51,7 @@ void main() {
 
     await pumpCard(tester, inv);
 
-    expect(expiresRowFinder(), findsOneWidget);
+    expect(expiresRowFinder(), findsNothing);
   });
 
   testWidgets('does not show expires row for accepted invitation',

@@ -180,22 +180,6 @@ class InvitationCard extends StatelessWidget {
                       value: _formatDate(invitation.respondedAt!),
                     ),
                   ),
-                if (invitation.isOutgoing &&
-                    invitation.status == InvitationStatus.pending &&
-                    invitation.expiresAt != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: _timeRow(
-                      icon: invitation.isExpired
-                          ? Icons.warning_amber_rounded
-                          : Icons.hourglass_empty,
-                      label: 'Expires',
-                      value: _formatDate(invitation.expiresAt!),
-                      color: invitation.isExpired
-                          ? Colors.orange
-                          : Colors.grey.shade600,
-                    ),
-                  ),
               ],
             ),
 

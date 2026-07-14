@@ -425,8 +425,26 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void _loadCapsuleData() {
     _stateManager.refreshWithFullState();
     final state = _stateManager.state;
-    final displayKey = _runtime.capsuleRootPublicKey() ?? state.publicKey;
-    final activeCapsuleHex = _bytesToHex(state.publicKey);
+    final runtimeRootKey = _runtime.capsuleRootPublicKey();
+    final runtimeRootHex = runtimeRootKey == null
+        ? null
+        : _bytesToHex(runtimeRootKey).toLowerCase();
+    if (!capsuleStateMatchesSelection(
+      state: state,
+      selectedCapsuleHex: _activeCapsuleHex,
+      runtimeRootHex: runtimeRootHex,
+    )) {
+      debugPrint(
+        '[CapsuleSelection] projection_stale_skip '
+        'selected=$_activeCapsuleHex runtimeOwner=${_bytesToHex(state.publicKey)} '
+        'runtimeRoot=${runtimeRootHex ?? 'none'}',
+      );
+      return;
+    }
+    final displayKey = runtimeRootKey ?? state.publicKey;
+    final activeCapsuleHex = _activeCapsuleHex.isNotEmpty
+        ? _activeCapsuleHex
+        : (runtimeRootHex ?? _bytesToHex(state.publicKey));
     var pendingInvitations = state.pendingInvitations;
 
     // Keep header pending counter aligned with Invitations projection while

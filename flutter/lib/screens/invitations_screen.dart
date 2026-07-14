@@ -846,7 +846,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                       leading: Icon(Icons.lock_clock, color: Colors.orange),
                       title: Text('Starters are locked'),
                       subtitle: Text(
-                          'Invitations lock starters for 24h. Cancel to unlock early.'),
+                          'Invitations lock starters until a response arrives. Cancel to unlock manually.'),
                     ),
                   )
                 else

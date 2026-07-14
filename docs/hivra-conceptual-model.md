@@ -76,6 +76,12 @@ Hivra is not a global shared computer. It is closer to a pocket capsule computer
 
 The important architectural point is that capsule state is primary. Transport exists to exchange messages between capsules, but capsule identity, ledger truth, and recovery must remain owned by the capsule itself.
 
+The permanent product axis is therefore simple: a user-owned Capsule turns
+explicit intent and authenticated input into reproducible local truth through
+one deterministic capability path, while every external effect follows one
+durable, idempotent lifecycle. New drones and transports extend the edges of
+this system; they do not change who owns Capsule truth.
+
 Trusted links are not the product and Hivra is not a social network. There are no likes, followers, algorithmic feeds, global discovery, people search, or public network maps. Trusted links are internal trust facts created through real-world invitations and reused by drones when they need safe interaction with other Capsules.
 
 Applications normally own user relationships. Hivra moves trusted relationships into the user-owned Capsule. A Chat Drone can use the Trust Layer to know which Capsules can communicate; a Trading Drone can use it for trusted counterparties; an AI Drone can use it for shared context; a Staking Drone may work alone and not use it at all.
@@ -90,7 +96,7 @@ If you invite someone who does not have that slipper and they refuse to create i
 
 1. No global discovery — only manual add via pubkey
 2. Trusted links are created through invitations, not search
-3. Android can be Relay, iOS only Leaf (optional)
+3. Relay is a future optional runtime role, independent from capsule birth
 4. Starters are unique identifiers, not economic tokens
 5. Starter names are just names (Juice/Spark/Seed/Pulse/Kick), not functions
 6. Transport is an abstraction layer (currently Nostr, others can be added)
@@ -111,10 +117,12 @@ What a capsule has:
 
 - Canonical capsule root public key — the primary identity
 - 5 slots — exactly five, no more, no less
-- Role — Leaf (regular) or Relay (forwarder, Android only)
+- Birth mode — Genesis (five initial starters) or Proto (starts empty)
+- Runtime role — Leaf today; Relay is planned independently from birth mode
 - Trusted peers — list of capsules allowed to store your messages (Relay only)
 - Ledger — local signed log of all events
-- Two networks — Neste (main) and Hood (test) — fully isolated states
+- Network — Neste in 1.x; Hood may be introduced in 2.0+ only with fully
+  isolated state
 
 Identity model:
 
@@ -166,7 +174,11 @@ Characteristics:
 
 ### 2.4 Ledger (Local Register)
 
-Ledger is the heart of the capsule. Everything is recorded here.
+Ledger is the heart of Core domain truth. Capsule birth, starters,
+invitations, and relationship facts are recorded here and reconstructed by
+replay. Operational delivery state, contact-card routing caches,
+pair-attestation evidence, plugin records, private drone journals, and secrets
+remain in their dedicated stores and are not ledger facts.
 
 What it stores:
 
@@ -197,7 +209,15 @@ Properties:
 
 Important: One starter can participate in multiple relationships. 5 starters != 5 relationships.
 
-### 2.6 Role
+### 2.6 Birth Modes and Runtime Roles
+
+Genesis and Proto describe how starter history begins:
+
+- Genesis starts with five locally generated starters.
+- Proto starts empty and obtains starter generations through accepted
+  invitation lineage.
+
+Leaf and Relay describe runtime behavior. They do not alter starter birth.
 
 Leaf — regular capsule:
 
@@ -206,7 +226,7 @@ Leaf — regular capsule:
 - Can reject invitations
 - Can break relationships
 
-Relay — Android only, manual enable:
+Relay — planned role, not implemented in the current runtime:
 
 - Same as Leaf
 - Can store messages for trusted peers
@@ -224,7 +244,9 @@ What it does NOT enable: auto-accept invitations, starter access
 
 ### 2.8 Networks
 
-Two fully isolated universes:
+Hivra 1.x supports Neste. Hood is a 2.0+ experimental-network design target,
+not a second active state inside the current Capsule. When implemented, the
+networks are fully isolated universes:
 
 Network | Purpose
 --- | ---
@@ -234,8 +256,10 @@ Hood | Test, sandbox
 Rules:
 
 - Full isolation (events from Neste do not affect Hood)
-- Each capsule has two independent slot sets
+- Each network-scoped Capsule state has an independent ledger, slots,
+  operational stores, drone state, delivery queues, and consensus evidence
 - Same type in different networks = different starters
+- Cross-network transport events are rejected before projection
 
 ---
 
@@ -298,10 +322,11 @@ Case E: Slot occupied + REJECT
 - A receives, unlocks their starter
 - Result: no relationship
 
-Case F: Timeout (B no response)
+Case F: No response yet
 
-- A can cancel after 24 hours
-- Starter A is unlocked
+- A keeps the starter locked while waiting for a pair-terminal response
+- A may explicitly cancel the invitation to unlock the starter
+- No local clock timeout creates a pair-terminal ledger fact
 
 ### 3.2 Burn Rule (CRITICAL)
 
@@ -331,7 +356,7 @@ Breaking:
 - RelationshipBroken recorded in ledger
 - Starters are NOT burned on break
 
-### 3.4 Relay
+### 3.4 Relay (planned, not implemented in the current runtime)
 
 Relay conditions:
 
@@ -348,11 +373,11 @@ Process:
 4. Relay V forwards message
 5. Relay V deletes stored message
 
-Retention time: 24 hours
+Relay retention is transport policy, not capsule truth.
 
 Relay off: all stored foreign messages are deleted immediately
 
-### 3.5 Local Reputation
+### 3.5 Local Reputation (planned, not implemented in the current runtime)
 
 Only for rating relay reliability. Local only.
 
@@ -374,8 +399,8 @@ Invitation received, own type exists, empty slot, accepted | Relationship establ
 Invitation received, own type exists, no empty slot, accepted | Relationship established on existing type, starter A unlocked
 Invitation received, empty slot, rejected | STARTER A BURNED
 Invitation received, slot occupied, rejected | Starter A unlocked, no relationship
-Recipient offline | Relay (if trusted) stores for 24h
-No response for 24h | Message deleted, starter A unlocked
+Recipient offline | Relay may retain or drop the message according to transport policy
+No response | Starter remains locked until accept/reject arrives or sender explicitly cancels
 Relay turned off | All stored messages deleted
 Relationship broken | Relationship removed, starters remain
 Invite with locked starter | Error: starter busy

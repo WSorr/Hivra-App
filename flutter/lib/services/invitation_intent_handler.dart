@@ -262,9 +262,6 @@ class InvitationIntentHandler {
       capsuleHex: operationCapsuleHex,
     );
     if (!health.isAllowed) {
-      await _expireOverdueOutgoingInvitationsIfNeeded(
-        capsuleHex: operationCapsuleHex,
-      );
       return InvitationIntentResult(
         code: health.code,
         message: health.message,
@@ -276,9 +273,6 @@ class InvitationIntentHandler {
     _transportHealth.recordResult(
       capsuleHex: operationCapsuleHex,
       code: code,
-    );
-    await _expireOverdueOutgoingInvitationsIfNeeded(
-      capsuleHex: operationCapsuleHex,
     );
     final diagnostics = _receiveDiagnostics(workerResult);
     return InvitationIntentResult(
@@ -310,9 +304,6 @@ class InvitationIntentHandler {
     final lastQuickFetchAt = _lastQuickFetchAtByCapsule[operationCapsuleHex];
     if (lastQuickFetchAt != null &&
         DateTime.now().difference(lastQuickFetchAt) < _quickFetchCooldown) {
-      await _expireOverdueOutgoingInvitationsIfNeeded(
-        capsuleHex: operationCapsuleHex,
-      );
       return const InvitationIntentResult(
         code: 0,
         message: 'Skipped duplicate quick fetch',
@@ -344,9 +335,6 @@ class InvitationIntentHandler {
       capsuleHex: operationCapsuleHex,
     );
     if (!health.isAllowed) {
-      await _expireOverdueOutgoingInvitationsIfNeeded(
-        capsuleHex: operationCapsuleHex,
-      );
       return InvitationIntentResult(
         code: health.code,
         message: health.message,
@@ -359,9 +347,6 @@ class InvitationIntentHandler {
     _transportHealth.recordResult(
       capsuleHex: operationCapsuleHex,
       code: code,
-    );
-    await _expireOverdueOutgoingInvitationsIfNeeded(
-      capsuleHex: operationCapsuleHex,
     );
     final diagnostics = _receiveDiagnostics(workerResult);
     return InvitationIntentResult(
@@ -494,11 +479,6 @@ class InvitationIntentHandler {
       final fullResult = await (_fetchInvitationsAction?.call() ??
           _requireActions().fetchInvitations(capsuleHex: capsuleHex));
       code = fullResult.code;
-    }
-    if (code >= 0) {
-      await _expireOverdueOutgoingInvitationsIfNeeded(
-        capsuleHex: capsuleHex,
-      );
     }
     return code;
   }
@@ -665,64 +645,6 @@ class InvitationIntentHandler {
     return normalized;
   }
 
-  Future<void> _expireOverdueOutgoingInvitationsIfNeeded({
-    String? capsuleHex,
-  }) async {
-    final actions = _actions;
-    if (actions == null) {
-      return;
-    }
-    final operationCapsuleHex = _capsuleHexOrNull(
-      explicitCapsuleHex: capsuleHex,
-    );
-
-    final now = DateTime.now();
-    final overdueOutgoingPending = loadInvitations(
-      capsuleHex: operationCapsuleHex,
-    )
-        .where((invitation) =>
-            invitation.isOutgoing &&
-            invitation.expiresAt != null &&
-            invitation.expiresAt!.isBefore(now) &&
-            _isLocallyOverdueButNotLedgerFinalized(invitation))
-        .toList(growable: false);
-    if (overdueOutgoingPending.isEmpty) {
-      return;
-    }
-
-    for (final invitation in overdueOutgoingPending) {
-      final invitationId = _decodeB64_32(invitation.id);
-      if (invitationId == null) {
-        continue;
-      }
-      final ok = await actions.cancelInvitation(
-        invitationId,
-        capsuleHex: operationCapsuleHex,
-      );
-      if (!ok) continue;
-    }
-  }
-
-  bool _isLocallyOverdueButNotLedgerFinalized(Invitation invitation) {
-    if (invitation.status == InvitationStatus.pending) {
-      return true;
-    }
-
-    if (invitation.status != InvitationStatus.expired) {
-      return false;
-    }
-
-    // Projection marks overdue outgoing invitations as `expired` even before
-    // a ledger InvitationExpired event exists. In that synthetic state
-    // respondedAt equals expiresAt. We should append a real expiration event.
-    final respondedAt = invitation.respondedAt;
-    final expiresAt = invitation.expiresAt;
-    if (respondedAt == null || expiresAt == null) {
-      return false;
-    }
-    return respondedAt == expiresAt;
-  }
-
   bool _isInvitationLocallyTerminal(
     String invitationId, {
     String? capsuleHex,
@@ -812,9 +734,6 @@ class InvitationIntentHandler {
     if (workerResult.code < 0) {
       return false;
     }
-    await _expireOverdueOutgoingInvitationsIfNeeded(
-      capsuleHex: capsuleHex,
-    );
     return _hasNewPendingOutgoingInvitation(
       toPubkeyB64: toPubkeyB64,
       starterSlot: starterSlot,

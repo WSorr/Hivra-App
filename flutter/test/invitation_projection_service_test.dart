@@ -595,7 +595,7 @@ void main() {
       expect(invitation.rejectionReason, RejectionReason.emptySlot);
     });
 
-    test('enforces terminal precedence accepted > rejected', () {
+    test('keeps first accepted terminal when a later rejection appears', () {
       final invitationId = _bytes32(14);
       final starterId = _bytes32(34);
       final createdStarterId = _bytes32(54);
@@ -638,7 +638,7 @@ void main() {
       expect(invitations.single.status, InvitationStatus.accepted);
     });
 
-    test('keeps accepted precedence regardless terminal event order', () {
+    test('keeps first rejected terminal when later terminal events appear', () {
       final invitationId = _bytes32(240);
       final starterId = _bytes32(241);
       final createdStarterId = _bytes32(242);
@@ -684,10 +684,11 @@ void main() {
       });
 
       expect(invitations, hasLength(1));
-      expect(invitations.single.status, InvitationStatus.accepted);
+      expect(invitations.single.status, InvitationStatus.rejected);
+      expect(invitations.single.rejectionReason, RejectionReason.emptySlot);
     });
 
-    test('uses earliest accepted timestamp across duplicate accepted events',
+    test('uses first accepted ledger entry across duplicate accepted events',
         () {
       final invitationId = _bytes32(243);
       final starterId = _bytes32(244);
@@ -736,7 +737,7 @@ void main() {
       expect(invitations.single.status, InvitationStatus.accepted);
       expect(
         invitations.single.respondedAt,
-        equals(DateTime.fromMillisecondsSinceEpoch(t0 + 3)),
+        equals(DateTime.fromMillisecondsSinceEpoch(t0 + 5)),
       );
     });
 
@@ -880,7 +881,7 @@ void main() {
       expect(invitations.single.status, InvitationStatus.pending);
     });
 
-    test('applies accepted even when terminal arrives before local offer', () {
+    test('ignores accepted terminal that arrives before local offer', () {
       final invitationId = _bytes32(215);
       final starterId = _bytes32(216);
       final createdStarterId = _bytes32(217);
@@ -914,10 +915,10 @@ void main() {
       });
 
       expect(invitations, hasLength(1));
-      expect(invitations.single.status, InvitationStatus.accepted);
+      expect(invitations.single.status, InvitationStatus.pending);
     });
 
-    test('applies rejected even when terminal arrives before local offer', () {
+    test('ignores rejected terminal that arrives before local offer', () {
       final invitationId = _bytes32(218);
       final starterId = _bytes32(219);
       final t0 = _futureBaseTimestampMs();
@@ -946,10 +947,10 @@ void main() {
       });
 
       expect(invitations, hasLength(1));
-      expect(invitations.single.status, InvitationStatus.rejected);
+      expect(invitations.single.status, InvitationStatus.pending);
     });
 
-    test('applies expired even when terminal arrives before local offer', () {
+    test('ignores expired terminal that arrives before local offer', () {
       final invitationId = _bytes32(220);
       final starterId = _bytes32(221);
       final t0 = _futureBaseTimestampMs();
@@ -978,7 +979,7 @@ void main() {
       });
 
       expect(invitations, hasLength(1));
-      expect(invitations.single.status, InvitationStatus.expired);
+      expect(invitations.single.status, InvitationStatus.pending);
     });
 
     test(
@@ -1204,8 +1205,7 @@ void main() {
       expect(invitation.fromRootPubkey, _base64(senderRoot));
     });
 
-    test(
-        'auto-expire timeout applies to overdue outgoing only, not overdue incoming',
+    test('overdue invitations stay pending without a ledger terminal event',
         () {
       final outgoingId = _bytes32(201);
       final incomingId = _bytes32(202);
@@ -1247,8 +1247,8 @@ void main() {
           invitations.firstWhere((inv) => inv.id == _id(incomingId));
 
       expect(outgoing.isOutgoing, isTrue);
-      expect(outgoing.status, InvitationStatus.expired);
-      expect(outgoing.expiresAt, isNotNull);
+      expect(outgoing.status, InvitationStatus.pending);
+      expect(outgoing.expiresAt, isNull);
 
       expect(incoming.isIncoming, isTrue);
       expect(incoming.status, InvitationStatus.pending);

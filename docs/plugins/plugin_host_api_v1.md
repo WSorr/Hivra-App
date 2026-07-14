@@ -1,13 +1,17 @@
-# Plugin Host API v1 (Pre-WASM Execution)
+# Plugin Host API v1 (WASM Execution Boundary)
 
-This document defines the first deterministic host API boundary used before wasm runtime execution is mounted.
+This document defines the deterministic host API boundary used by the current
+bounded WASM runtime and retained host-side adapters.
 
 ## Scope
 
-- No wasm bytecode execution.
+- WASM bytecode execution through the bounded `wasmi_v1` runtime for resolved
+  external packages.
 - Explicit API boundary for plugin calls.
 - Guard-first behavior:
-  - pair-scoped calls are blocked when consensus is not signable.
+  - pair-scoped calls are blocked unless the local snapshot is signable and
+    the host has verified attestations from exactly both pair roots over that
+    snapshot hash.
 
 ## Supported Contracts (v1)
 
@@ -97,7 +101,7 @@ This document defines the first deterministic host API boundary used before wasm
 ## Notes
 
 - This API is an application-layer boundary and does not grant plugin storage or ledger-write privileges.
-- It exists to lock deterministic host semantics before introducing wasm runtime execution.
+- It locks deterministic host semantics around current WASM execution.
 - Runtime execution source is resolved by host-side binding policy:
   - `execute(...)` forces `host_fallback`
   - `executeWithRuntimeHook(...)` may resolve installed package metadata and emit `external_package`
@@ -119,7 +123,8 @@ This document defines the first deterministic host API boundary used before wasm
     without pair consensus, but must not mutate pair-scoped state or execute
     peer-scoped effects.
   - `pair_scoped` methods require `peer_hex` and must call
-    `ConsensusRuntimeService.signable(peer_hex)` through the host guard.
+    the attested host guard. `ConsensusRuntimeService.signable(peer_hex)` is
+    only the local snapshot precondition; it is not sufficient authorization.
   - host code must never replace a missing or unresolved `peer_hex` with "any
     signable peer".
 - Current runtime executes plugin-owned semantics through bounded `wasmi_v1`:
