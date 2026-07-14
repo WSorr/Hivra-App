@@ -97,10 +97,15 @@ To prevent architecture drift into duplicated "modules for modules", implementat
 Rules:
 
 - A new module MUST map to one of these six layers.
-- A module MUST NOT duplicate responsibilities already owned by another layer.
+- A domain fact, effect lifecycle, or projection rule MUST have exactly one
+  owner module. A new module MUST replace or narrow the prior owner; it MUST
+  NOT coexist as a parallel orchestration path.
 - UI MUST NOT contain domain orchestration logic.
 - Application MUST treat ledger-derived projection as the only domain truth.
 - Plugin host MUST extend capabilities without changing dependency direction.
+- Every effect path MUST have one capsule binding, one queue/lifecycle owner,
+  and one result-application route. Timeout, retry, refresh, or screen changes
+  MUST NOT create a competing route.
 
 ### 2.4 Flutter Boundary Direction
 
@@ -121,6 +126,12 @@ Forbidden inside Flutter:
 - direct FFI calls from widgets
 - duplicated projection logic in multiple screens
 - cross-screen orchestration coupling
+- feature-graph construction inside generic capsule/runtime services
+- lateral concrete-service dependencies when a lower-layer contract exists
+
+Composition rule: concrete feature graphs are assembled only at the application
+composition root or a feature-module facade. Generic runtime services expose
+neutral capsule/runtime primitives and MUST NOT become feature service locators.
 
 ---
 

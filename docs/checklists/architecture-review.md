@@ -16,6 +16,8 @@ Use this checklist when reviewing structural changes, not just feature behavior.
       does not construct AI, trading, plugin, or other feature-specific graphs.
 - [ ] Feature modules assemble feature services behind explicit module/facade
       boundaries before screens consume them.
+- [ ] Concrete feature graphs are assembled only by the composition root or a
+      feature-module facade; generic runtime services are not service locators.
 
 ## Engine Integrity
 
@@ -44,6 +46,10 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] The outbox is described accurately as a recovery index unless every item
       is bound to a concrete domain-event id and matching per-event receipt.
 - [ ] Any new module has explicit non-overlapping ownership.
+- [ ] Every fact, effect lifecycle, and projection rule has one named owner
+      after the change; the prior owner/path was removed or narrowed.
+- [ ] The change records what code/path was deleted or narrowed instead of
+      adding a parallel implementation.
 - [ ] New modules map to one skeleton layer only (`UI Projection` | `Application Use Cases` | `Domain Core` | `Ledger` | `Transport` | `WASM Plugin Host`).
 - [ ] AI/provider tooling remains outside Core and outside generic runtime
       services; it is composed through an application-level AI tooling module.
@@ -56,6 +62,9 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Startup order is `import ledger first`, `receive second`.
 - [ ] New code does not add hidden side effects to validation or lookup paths.
 - [ ] Application logic does not create a second truth beside ledger-derived projection.
+- [ ] Each async effect has one capsule binding, one queue/lifecycle owner, and
+      one result-application route across timeout, retry, refresh, and screen
+      switching.
 
 ## WASM Plugin Host
 

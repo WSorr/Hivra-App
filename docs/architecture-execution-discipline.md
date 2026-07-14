@@ -10,15 +10,39 @@ It is an internal Hivra standard and should be applied to all new modules and re
 
 ## 1. Three Non-Negotiable Laws
 
-1. Modularity by explicit ownership:
-   - each module has one layer owner and one responsibility
-   - no duplicate orchestration in screens and services at the same time
-2. Determinism by ledger truth:
+1. **Modularity means one owner per responsibility.**
+   - each domain fact, effect lifecycle, and projection rule has exactly one
+     owner module
+   - a new module must take over an existing responsibility and remove or
+     narrow the old path; adding a parallel owner is not modularization
+   - screens, feature facades, and runtime services must not orchestrate the
+     same workflow independently
+   - a module API exposes actions and results, never its internal service graph
+2. **Determinism means one input route and one result.**
    - domain state is projected from ledger events
    - replaying the same ledger history yields the same projection
-3. Dependencies strictly downward:
-   - no upward imports
-   - no lateral bypass across layer boundaries
+   - every async effect is bound to one capsule, one queue/lifecycle owner, and
+     one result-application path
+   - timeout, retry, refresh, or a screen switch must not create a second
+     competing operation or a second truth
+3. **Dependencies strictly downward means contracts down, composition up.**
+   - no upward imports or lateral bypass across layer boundaries
+   - UI depends on feature APIs, feature modules depend on neutral runtime
+     contracts, and effects stay below those contracts
+   - the application composition root is the only place that connects concrete
+     implementations; generic runtime services do not assemble feature graphs
+
+### Mandatory Change Questions
+
+Before code is added or moved, the author must answer all four questions:
+
+1. Who is the sole owner after this change?
+2. What is the sole route of the effect from intent to persisted result?
+3. Which lower-layer contract is used instead of a concrete lateral dependency?
+4. Which old path, owner, or code is removed or narrowed?
+
+If any answer is not singular and explicit, the change does not satisfy the
+three laws and must not proceed as a new layer of glue.
 
 ## 2. Execution Path Contract
 
@@ -61,6 +85,8 @@ Additional rules:
 - never keep UI spinners open after the operation is resolved
 - close action dialogs/snackbars immediately on submit, then show short result status
 - retries must be explicit and user-visible
+- a retry owner is unique per effect class; another screen or service may not
+  start a competing retry loop
 
 ## 5. Projection Discipline
 
@@ -77,10 +103,12 @@ No screen-local reinterpretation of terminal states is allowed.
 Before adding a new module, verify:
 
 1. It maps to an existing layer in the six-layer skeleton.
-2. It does not duplicate an existing owner.
-3. Its dependencies point only downward.
-4. Its state output is reconstructible from ledger truth.
-5. It has regression tests for replay/idempotence where applicable.
+2. It names the sole owner it replaces or narrows.
+3. Its action path has one queue/lifecycle and one result-application route.
+4. Its dependencies point only downward through lower-layer contracts.
+5. Its state output is reconstructible from ledger truth where it is domain
+   state.
+6. It has regression tests for replay/idempotence where applicable.
 
 ## 7. Plugin Repository Boundary
 
@@ -100,6 +128,7 @@ Rules:
 A refactor is considered valid only when:
 
 - no upward dependency is introduced
+- no parallel owner or parallel effect path remains
 - deterministic replay behavior is unchanged or improved
 - projection semantics remain aligned across summary and detail screens
 - review gates and tests pass

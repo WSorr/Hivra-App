@@ -138,6 +138,14 @@ require_present "$DELIVERY_LIFECYCLE_DOC" 'delivery recovery index' \
   "delivery lifecycle doc distinguishes recovery index from reliable queue"
 require_present "$EXEC_DISCIPLINE" '^## 1\. Three Non-Negotiable Laws' \
   "execution discipline defines three non-negotiable laws"
+require_present "$EXEC_DISCIPLINE" 'Modularity means one owner per responsibility' \
+  "execution discipline requires one owner per responsibility"
+require_present "$EXEC_DISCIPLINE" 'Determinism means one input route and one result' \
+  "execution discipline requires one effect route and result"
+require_present "$EXEC_DISCIPLINE" 'Dependencies strictly downward means contracts down, composition up' \
+  "execution discipline requires downward contracts and top-level composition"
+require_present "$EXEC_DISCIPLINE" '^### Mandatory Change Questions' \
+  "execution discipline requires pre-change ownership questions"
 require_present "$EXEC_DISCIPLINE" 'UI intent -> use-case boundary -> runtime/FFI call -> ledger append -> projection rebuild -> UI render' \
   "execution discipline defines canonical action path"
 require_present "$EXEC_DISCIPLINE" '^## 4\. Async Resolution Discipline' \
@@ -180,6 +188,10 @@ require_present "$CHECKLIST" 'UI intent -> use-case boundary -> runtime/FFI call
   "architecture checklist enforces canonical action path review"
 require_present "$CHECKLIST" 'Async flows resolve once and ignore stale completions' \
   "architecture checklist enforces async resolve-once review"
+require_present "$CHECKLIST" 'Every fact, effect lifecycle, and projection rule has one named owner' \
+  "architecture checklist enforces unique ownership"
+require_present "$CHECKLIST" 'Each async effect has one capsule binding, one queue/lifecycle owner' \
+  "architecture checklist enforces one async effect route"
 
 # 4) Flutter invitation flow application boundary.
 require_present "$INV_INTENT" 'class InvitationIntentHandler' \
