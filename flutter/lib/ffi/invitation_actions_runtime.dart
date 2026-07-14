@@ -138,12 +138,14 @@ Map<String, Object?> cancelInvitationInWorker(Map<String, Object?> args) {
   }
 
   final invitationId = args['invitationId'] as Uint8List;
-  final ok = hivra.expireInvitation(invitationId);
+  final result = hivra.expireInvitationCode(invitationId);
   final lastError = hivra.lastErrorMessage();
+  final localCancelRecorded = result == 0 || result <= -5;
   return <String, Object?>{
-    'result': ok ? 0 : -1,
-    'ledgerJson': ok ? hivra.exportLedger() : null,
+    'result': result,
+    'ledgerJson': localCancelRecorded ? hivra.exportLedger() : null,
     'lastError': lastError,
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
   };
 }
 
@@ -163,7 +165,7 @@ abstract class InvitationActionsRuntime {
     String ledgerJson,
   );
 
-  bool expireInvitation(Uint8List invitationId);
+  int expireInvitationCode(Uint8List invitationId);
 
   Future<bool> persistLedgerSnapshot();
 }
@@ -213,8 +215,8 @@ class HivraInvitationActionsRuntime implements InvitationActionsRuntime {
   }
 
   @override
-  bool expireInvitation(Uint8List invitationId) {
-    return _hivra.expireInvitation(invitationId);
+  int expireInvitationCode(Uint8List invitationId) {
+    return _hivra.expireInvitationCode(invitationId);
   }
 
   @override

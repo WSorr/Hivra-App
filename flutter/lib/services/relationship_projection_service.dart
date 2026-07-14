@@ -170,6 +170,7 @@ class RelationshipProjectionService {
     final localTransportB64 =
         hasLocalTransport ? base64.encode(localTransport) : null;
     final offerLineageEventIndexById = <String, int>{};
+    final incomingOfferSignerById = <String, String>{};
 
     for (var eventIndex = 0; eventIndex < events.length; eventIndex++) {
       final eventRaw = events[eventIndex];
@@ -204,6 +205,12 @@ class RelationshipProjectionService {
 
       final invitationId = base64.encode(payload.sublist(0, 32));
       offerLineageEventIndexById.putIfAbsent(invitationId, () => eventIndex);
+      if (kind == 9) {
+        incomingOfferSignerById.putIfAbsent(
+          invitationId,
+          () => base64.encode(signer),
+        );
+      }
     }
 
     final resolvedTerminalIds = <String>{};
@@ -247,9 +254,14 @@ class RelationshipProjectionService {
       if (terminalShapeValid && signerIsValid) {
         final invitationId = base64.encode(payload.sublist(0, 32));
         final offerEventIndex = offerLineageEventIndexById[invitationId];
-        if (offerEventIndex == null ||
-            eventIndex <= offerEventIndex ||
-            !resolvedTerminalIds.add(invitationId)) {
+        // The original incoming-offer signer can revoke an offer even if this
+        // capsule optimistically accepted it before receiving the revocation.
+        final senderRevocation = kind == 4 &&
+            incomingOfferSignerById[invitationId] == base64.encode(signer);
+        if (offerEventIndex == null || eventIndex <= offerEventIndex) {
+          continue;
+        }
+        if (!resolvedTerminalIds.add(invitationId) && !senderRevocation) {
           continue;
         }
         terminalKindByInvitationId[invitationId] = kind;

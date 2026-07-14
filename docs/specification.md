@@ -805,19 +805,27 @@ Incoming invitation handling MUST be layered and deterministic:
    - Terminal events without a matching invitation offer MUST be discarded as orphan terminal deliveries.
 3. Only accepted ingress events are appended to ledger.
 4. Invitation projection is rebuilt from ledger events by `invitation_id` using
-   first-valid-terminal semantics:
+   first-valid-terminal semantics, with one sender-sovereignty exception:
    - the invitation offer MUST already exist in local ledger order;
    - the first valid `InvitationAccepted`, `InvitationRejected`, or
      `InvitationExpired` event changes `pending` to its terminal state;
    - later terminal events for the same invitation are ignored for state and
-     effects, regardless of their kind or embedded timestamp;
+     effects, regardless of their kind or embedded timestamp, except a valid
+     sender revoke;
+   - `InvitationExpired` signed by the original sender of an incoming offer is
+     a sender revoke. It MAY supersede a recipient-local optimistic
+     `InvitationAccepted` when the sender had not recorded that acceptance.
+     The revoke MUST match the exact `invitation_id` and the original offer
+     signer; an expiry signed by any other identity is ignored;
    - a terminal event before its offer is orphan history and MUST NOT become
      applicable merely because an offer appears later;
    - when the winning terminal is `Rejected` or `Expired`, a
      `RelationshipEstablished` row tied to that invitation lineage MUST NOT
      project an active relationship. A relationship row may arrive before its
      accepted terminal during asynchronous delivery, but remains blocked while
-     the invitation is pending.
+     the invitation is pending. If a sender revoke arrives after an optimistic
+     acceptance, its lineage-created starter remains auditable in the ledger
+     but MUST NOT occupy an active starter slot.
 5. UI action queues MUST be projection-driven:
    - actionable incoming queue: incoming invitations with `pending` status only
    - actionable outgoing queue: outgoing invitations with `pending` status only

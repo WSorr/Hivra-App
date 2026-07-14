@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -11,11 +12,14 @@ import 'package:hivra_app/models/relationship.dart';
 import 'package:hivra_app/models/starter.dart';
 import 'package:hivra_app/services/bingx_futures_execution_command_service.dart';
 import 'package:hivra_app/services/capsule_address_service.dart';
+import 'package:hivra_app/services/capsule_chat_deferred_inbox_store.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
 import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
+import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/transport_health_policy_service.dart';
+import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 void main() {
   group('tradeSignalInboxRecordId', () {
@@ -387,18 +391,29 @@ void main() {
     expect(sendCalls, 0);
   });
 
-  test('chat receive drops messages without pair attestation', () async {
+  test('chat receive defers messages until pair attestation arrives', () async {
     const peerRootHex =
         '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
     const localRootHex =
         '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+    final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+    addTearDown(() async {
+      if (await tempHome.exists()) {
+        await tempHome.delete(recursive: true);
+      }
+    });
+    final deferredStore = CapsuleChatDeferredInboxStore(
+      fileStore: CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      ),
+    );
     final envelope = jsonEncode(<String, Object?>{
       'message_text': 'hello',
       'created_at_utc': '2026-07-14T09:00:00.000Z',
       'envelope_hash_hex':
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     });
-    final service = CapsuleChatDeliveryService(
+    final blockedService = CapsuleChatDeliveryService(
       runtime: _FakeRuntime(
         capsuleRootKey: _hexToBytes(localRootHex),
         workerBootstrap: const <String, Object?>{
@@ -426,6 +441,7 @@ void main() {
           ConsensusBlockingFact(code: 'pair_attestation_missing'),
         ],
       ),
+      deferredInboxStore: deferredStore,
       transportHealth: TransportHealthPolicyService(
         timeoutBackoff: const <Duration>[Duration(minutes: 1)],
       ),
@@ -444,10 +460,66 @@ void main() {
       },
     );
 
-    final result = await service.receiveAndFilter();
+    final blocked = await blockedService.receiveAndFilter();
 
-    expect(result.messages, isEmpty);
-    expect(result.droppedByConsensus, 1);
+    expect(blocked.messages, isEmpty);
+    expect(blocked.droppedByConsensus, 0);
+    expect(blocked.deferredByConsensus, 1);
+    expect(await deferredStore.load(localRootHex), hasLength(1));
+
+    final readyService = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(
+        <ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerRootHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ],
+      ),
+      readAttestedSignable: (_) async => const ConsensusSignableResult(
+        preview: ConsensusPreview(
+          peerHex: peerRootHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+        blockingFacts: <ConsensusBlockingFact>[],
+      ),
+      deferredInboxStore: deferredStore,
+      transportHealth: TransportHealthPolicyService(
+        timeoutBackoff: const <Duration>[Duration(minutes: 1)],
+      ),
+      receiveWorkerRunner: (_) async => <String, Object?>{
+        'result': 0,
+        'json': null,
+        'lastError': null,
+      },
+    );
+
+    final ready = await readyService.receiveAndFilter();
+
+    expect(ready.messages, hasLength(1));
+    expect(ready.messages.single.messageText, equals('hello'));
+    expect(ready.droppedByConsensus, 0);
+    expect(ready.deferredByConsensus, 0);
+    expect(await deferredStore.load(localRootHex), isEmpty);
   });
 
   group('CapsuleChatDeliveryService execution command flow', () {
@@ -755,7 +827,7 @@ class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
   Future<bool> bootstrapActiveCapsuleRuntime() async => true;
 
   @override
-  bool expireInvitation(Uint8List invitationId) => false;
+  int expireInvitationCode(Uint8List invitationId) => -1;
 
   @override
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs({

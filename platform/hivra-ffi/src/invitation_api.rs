@@ -1,4 +1,5 @@
 use super::*;
+use crate::invitation_support::incoming_invitation_expired_matches_runtime;
 use hivra_core::event_payloads::RelationshipBrokenPayload;
 use std::sync::{Mutex, OnceLock};
 
@@ -147,6 +148,7 @@ fn proof_signer_matches_payload(kind: EventKind, payload: &[u8], signer: PubKey)
             payload[64..96] == signer.as_bytes()[..]
         }
         EventKind::InvitationRejected => true,
+        EventKind::InvitationExpired => true,
         _ => false,
     }
 }
@@ -283,6 +285,7 @@ fn retry_pending_outgoing_invitations_over_transport(
         let retry_label = match pending_delivery.kind {
             EventKind::InvitationAccepted => "InvitationAcceptedRetry",
             EventKind::InvitationRejected => "InvitationRejectedRetry",
+            EventKind::InvitationExpired => "InvitationExpiredRetry",
             _ => "InvitationTerminalRetry",
         };
         let message = Message {
@@ -645,7 +648,21 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
                 false
             };
 
-        if !to_matches && !payload_targets_local {
+        // InvitationExpired only carries invitation_id. Accept it as addressed
+        // to this capsule only when the local ledger already has the matching
+        // incoming offer from the same signer/root. Ledger remains the routing
+        // source of truth; unrelated cancel messages still fail closed.
+        let expired_targets_local = if kind == EventKind::InvitationExpired
+            && message.payload.len() == 32
+        {
+            let mut invitation_id = [0u8; 32];
+            invitation_id.copy_from_slice(&message.payload);
+            incoming_invitation_expired_matches_runtime(&invitation_id, PubKey::from(message.from))
+        } else {
+            false
+        };
+
+        if !to_matches && !payload_targets_local && !expired_targets_local {
             eprintln!("[Delivery/Nostr] Skip message: not addressed to local capsule");
             continue;
         }
@@ -747,7 +764,8 @@ pub unsafe extern "C" fn hivra_accept_invitation(
             "[Accept] skip resolved invitation={:02x?}",
             &invitation_id[..4]
         );
-        return 0;
+        set_last_error("Accept invitation failed: invitation is no longer pending");
+        return -15;
     }
 
     let seed = match load_seed() {
@@ -1055,6 +1073,11 @@ pub unsafe extern "C" fn hivra_expire_invitation(invitation_id_ptr: *const u8) -
         return 0;
     }
 
+    let peer_pubkey = match find_invitation_sent_in_runtime(&invitation_id) {
+        Some(record) if !record.is_incoming => record.peer_pubkey,
+        _ => return -4,
+    };
+
     let seed = match load_seed() {
         Ok(seed) => seed,
         Err(_) => return -2,
@@ -1064,8 +1087,63 @@ pub unsafe extern "C" fn hivra_expire_invitation(invitation_id_ptr: *const u8) -
         Ok(prepared) => prepared,
         Err(_) => return -3,
     };
+    let delivery_payload = prepared.event.payload().to_vec();
+    let delivery_timestamp = prepared.event.timestamp().as_u64();
+    let delivery_to = *peer_pubkey.as_bytes();
+    let delivery_proof = domain_event_proof(&prepared.event);
     match append_prepared_event(prepared) {
-        Ok(_) => 0,
+        Ok(_) => {
+            match load_invitation_delivery_context(&seed) {
+                Ok((sender_secret, sender_pubkey)) => {
+                    let message = Message {
+                        from: sender_pubkey,
+                        to: delivery_to,
+                        kind: EventKind::InvitationExpired as u32,
+                        payload: delivery_payload,
+                        timestamp: delivery_timestamp,
+                        invitation_id: Some(invitation_id),
+                        domain_event: Some(delivery_proof),
+                    };
+                    set_last_delivery_reason(None);
+                    if let Err(code) = with_cached_nostr_transport(
+                        sender_secret,
+                        TransportProfile::Quick,
+                        -5,
+                        |transport| match send_delivery_message(
+                            transport,
+                            &message,
+                            -6,
+                            "InvitationExpired",
+                        ) {
+                            Ok(_) => Ok(()),
+                            Err((code, reason)) => {
+                                set_last_delivery_reason(reason);
+                                Err(code)
+                            }
+                        },
+                    ) {
+                        let reason_suffix = take_last_delivery_reason()
+                            .as_deref()
+                            .map(|value| format!("; reason: {value}"))
+                            .unwrap_or_default();
+                        eprintln!(
+                            "[Delivery/Nostr] InvitationExpired local append ok; delivery failed ({}){}",
+                            code,
+                            reason_suffix
+                        );
+                        return code;
+                    }
+                }
+                Err(code) => {
+                    eprintln!(
+                        "[Delivery/Nostr] InvitationExpired local append ok; delivery context unavailable ({})",
+                        code
+                    );
+                    return code;
+                }
+            }
+            0
+        }
         Err(_) => -3,
     }
 }

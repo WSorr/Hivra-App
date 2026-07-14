@@ -1599,7 +1599,7 @@ fn replay_policy_skips_expired_without_matching_outgoing_offer() {
 }
 
 #[test]
-fn replay_policy_allows_first_expired_for_unresolved_outgoing_invitation() {
+fn replay_policy_allows_first_expired_for_unresolved_incoming_invitation() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
 
@@ -1610,7 +1610,13 @@ fn replay_policy_allows_first_expired_for_unresolved_outgoing_invitation() {
     let own_starter_id = derive_starter_id(&local_seed, 0);
 
     set_runtime_capsule(local_pubkey, Network::Neste);
-    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+    append_invitation_sent_for_test(
+        invitation_id,
+        own_starter_id,
+        *local_pubkey.as_bytes(),
+        Some(0),
+        Some(peer_pubkey),
+    );
 
     assert!(!should_skip_incoming_delivery_append(
         EventKind::InvitationExpired,
@@ -1659,7 +1665,7 @@ fn replay_policy_skips_conflicting_rejected_after_accepted_resolution() {
 }
 
 #[test]
-fn replay_policy_skips_conflicting_expired_after_accepted_resolution() {
+fn replay_policy_skips_untrusted_expired_after_accepted_resolution() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
 
@@ -1686,6 +1692,46 @@ fn replay_policy_skips_conflicting_expired_after_accepted_resolution() {
 
     assert!(invitation_is_resolved_in_runtime(&invitation_id));
     assert!(should_skip_incoming_delivery_append(
+        EventKind::InvitationExpired,
+        &invitation_id,
+        PubKey::from(peer_pubkey),
+    ));
+}
+
+#[test]
+fn replay_policy_allows_sender_revoke_after_optimistic_incoming_acceptance() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(148);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [132u8; 32];
+    let invitation_id = [154u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let created_starter_id = derive_starter_id(&test_seed(149), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(
+        invitation_id,
+        own_starter_id,
+        *local_pubkey.as_bytes(),
+        Some(0),
+        Some(peer_pubkey),
+    );
+    append_runtime_event(
+        EventKind::InvitationAccepted,
+        &InvitationAcceptedPayload {
+            invitation_id,
+            from_pubkey: local_pubkey,
+            created_starter_id: StarterId::from(created_starter_id),
+            accepter_root_pubkey: None,
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    assert!(invitation_is_resolved_in_runtime(&invitation_id));
+    assert!(!should_skip_incoming_delivery_append(
         EventKind::InvitationExpired,
         &invitation_id,
         PubKey::from(peer_pubkey),

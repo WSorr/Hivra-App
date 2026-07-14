@@ -51,6 +51,7 @@ impl SlotLayout {
         let mut layout = Self::empty();
         let owner = ledger.owner();
         let mut burned_starters: Vec<StarterId> = Vec::new();
+        let revoked_created_starters = revoked_created_starter_ids(ledger);
 
         for event in ledger.events() {
             if event.signer() != owner {
@@ -64,6 +65,16 @@ impl SlotLayout {
                             .iter()
                             .any(|burned_id| *burned_id == payload.starter_id)
                         {
+                            continue;
+                        }
+                        if revoked_created_starters
+                            .iter()
+                            .any(|revoked_id| *revoked_id == payload.starter_id)
+                        {
+                            // A sender-signed invitation revoke can arrive after
+                            // a local optimistic accept. Its lineage-created
+                            // starter remains auditable in the ledger but must
+                            // not occupy a live slot.
                             continue;
                         }
 
@@ -198,6 +209,56 @@ impl SlotLayout {
             SlotState::Empty => false,
         })
     }
+}
+
+fn revoked_created_starter_ids(ledger: &Ledger) -> Vec<StarterId> {
+    let mut expired_invitation_ids: Vec<[u8; 32]> = Vec::new();
+    for event in ledger.events() {
+        if event.kind() != EventKind::InvitationExpired {
+            continue;
+        }
+        let Ok(payload) = InvitationExpiredPayload::from_bytes(event.payload()) else {
+            continue;
+        };
+        let sender_signed_offer_exists = ledger.events().iter().any(|offer_event| {
+            if offer_event.kind() != EventKind::InvitationReceived
+                || offer_event.signer() != event.signer()
+            {
+                return false;
+            }
+            offer_event
+                .payload()
+                .get(..32)
+                .is_some_and(|id| id == payload.invitation_id)
+        });
+        if sender_signed_offer_exists
+            && !expired_invitation_ids
+                .iter()
+                .any(|invitation_id| *invitation_id == payload.invitation_id)
+        {
+            expired_invitation_ids.push(payload.invitation_id);
+        }
+    }
+
+    let mut revoked_starters = Vec::new();
+    for event in ledger.events() {
+        if event.kind() != EventKind::InvitationAccepted {
+            continue;
+        }
+        let Ok(payload) = InvitationAcceptedPayload::from_bytes(event.payload()) else {
+            continue;
+        };
+        if expired_invitation_ids
+            .iter()
+            .any(|invitation_id| *invitation_id == payload.invitation_id)
+            && !revoked_starters
+                .iter()
+                .any(|starter_id| *starter_id == payload.created_starter_id)
+        {
+            revoked_starters.push(payload.created_starter_id);
+        }
+    }
+    revoked_starters
 }
 
 fn starter_kind_for_id(ledger: &Ledger, starter_id: StarterId) -> Option<StarterKind> {
@@ -734,5 +795,57 @@ mod tests {
             SlotState::Occupied(StarterId::from([1u8; 32]))
         );
         assert_eq!(layout.find_first_empty(), SlotIndex::new(1));
+    }
+
+    #[test]
+    fn sender_revoke_releases_starter_created_by_optimistic_acceptance() {
+        let owner = PubKey::from([7u8; 32]);
+        let peer = PubKey::from([8u8; 32]);
+        let invitation_id = [9u8; 32];
+        let created_starter_id = StarterId::from([10u8; 32]);
+        let mut ledger = Ledger::new(owner);
+
+        append_event_with_signer(
+            &mut ledger,
+            EventKind::InvitationReceived,
+            &InvitationSentPayload {
+                invitation_id,
+                starter_id: StarterId::from([11u8; 32]),
+                to_pubkey: owner,
+                sender_root_pubkey: Some(peer),
+            }
+            .to_bytes(),
+            1,
+            peer,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationAccepted,
+            &InvitationAcceptedPayload {
+                invitation_id,
+                created_starter_id,
+                from_pubkey: owner,
+                accepter_root_pubkey: None,
+            }
+            .to_bytes(),
+            2,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::StarterCreated,
+            &starter_created(10, StarterKind::Kick),
+            3,
+        );
+        append_event_with_signer(
+            &mut ledger,
+            EventKind::InvitationExpired,
+            &InvitationExpiredPayload { invitation_id }.to_bytes(),
+            4,
+            peer,
+        );
+
+        let layout = SlotLayout::from_ledger(&ledger);
+        assert_eq!(layout.find_by_starter(created_starter_id), None);
+        assert_eq!(layout.find_first_empty(), SlotIndex::new(0));
     }
 }

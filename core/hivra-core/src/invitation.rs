@@ -120,6 +120,7 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
 }
 
 pub fn invitation_status(ledger: &Ledger, invitation_id: [u8; 32]) -> InvitationStatus {
+    let mut accepted: Option<(StarterId, PubKey)> = None;
     let mut rejected: Option<RejectReason> = None;
     let mut expired = false;
 
@@ -130,10 +131,7 @@ pub fn invitation_status(ledger: &Ledger, invitation_id: [u8; 32]) -> Invitation
                     continue;
                 };
                 if payload.invitation_id == invitation_id {
-                    return InvitationStatus::Accepted {
-                        created_starter_id: payload.created_starter_id,
-                        from_pubkey: payload.from_pubkey,
-                    };
+                    accepted.get_or_insert((payload.created_starter_id, payload.from_pubkey));
                 }
             }
             EventKind::InvitationRejected => {
@@ -156,11 +154,17 @@ pub fn invitation_status(ledger: &Ledger, invitation_id: [u8; 32]) -> Invitation
         }
     }
 
-    if let Some(reason) = rejected {
-        return InvitationStatus::Rejected { reason };
-    }
     if expired {
         return InvitationStatus::Expired;
+    }
+    if let Some((created_starter_id, from_pubkey)) = accepted {
+        return InvitationStatus::Accepted {
+            created_starter_id,
+            from_pubkey,
+        };
+    }
+    if let Some(reason) = rejected {
+        return InvitationStatus::Rejected { reason };
     }
     InvitationStatus::Pending
 }
@@ -317,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn invitation_status_prefers_rejected_over_expired_without_accepted() {
+    fn sender_revoke_prefers_expired_over_optimistic_acceptance() {
         let owner = PubKey::from([11u8; 32]);
         let peer = PubKey::from([12u8; 32]);
         let invitation_id = [43u8; 32];
@@ -337,26 +341,26 @@ mod tests {
         );
         append_event(
             &mut ledger,
-            EventKind::InvitationExpired,
-            &InvitationExpiredPayload { invitation_id }.to_bytes(),
+            EventKind::InvitationAccepted,
+            &InvitationAcceptedPayload {
+                invitation_id,
+                created_starter_id: StarterId::from([14u8; 32]),
+                from_pubkey: peer,
+                accepter_root_pubkey: None,
+            }
+            .to_bytes(),
             2,
         );
         append_event(
             &mut ledger,
-            EventKind::InvitationRejected,
-            &InvitationRejectedPayload {
-                invitation_id,
-                reason: RejectReason::Other,
-            }
-            .to_bytes(),
+            EventKind::InvitationExpired,
+            &InvitationExpiredPayload { invitation_id }.to_bytes(),
             3,
         );
 
         assert_eq!(
             invitation_status(&ledger, invitation_id),
-            InvitationStatus::Rejected {
-                reason: RejectReason::Other,
-            }
+            InvitationStatus::Expired
         );
     }
 

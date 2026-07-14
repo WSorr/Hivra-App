@@ -1467,6 +1467,75 @@ void main() {
       );
     });
 
+    test('sender revoke removes an optimistically accepted relationship', () {
+      final invitationId = Uint8List.fromList(bytes32(82));
+      final ownStarter = Uint8List.fromList(bytes32(83));
+      final peerStarter = Uint8List.fromList(bytes32(84));
+      final localTransport = Uint8List.fromList(bytes32(85));
+      final localRoot = Uint8List.fromList(bytes32(86));
+      final peerTransport = Uint8List.fromList(bytes32(87));
+      final peerRoot = Uint8List.fromList(bytes32(88));
+      final senderStarter = Uint8List.fromList(bytes32(89));
+
+      final events = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'kind': 9,
+          'payload': <int>[
+            ...invitationId,
+            ...peerStarter,
+            ...localTransport,
+            ...peerRoot,
+            1,
+          ],
+          'signer': peerTransport,
+        },
+        <String, dynamic>{
+          'kind': 2,
+          'payload': <int>[
+            ...invitationId,
+            ...localTransport,
+            ...ownStarter,
+          ],
+          'signer': localRoot,
+        },
+        <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...peerTransport,
+            1,
+            ...senderStarter,
+            ...peerRoot,
+            ...localRoot,
+          ],
+          'signer': localRoot,
+        },
+        <String, dynamic>{
+          'kind': 4,
+          'payload': <int>[...invitationId],
+          'signer': peerTransport,
+        },
+      ];
+
+      final previews = processor.preview(
+        events,
+        localTransport,
+        localRootKey: localRoot,
+      );
+
+      expect(previews, hasLength(1));
+      expect(previews.single.peerHex, hex(peerRoot));
+      expect(previews.single.relationshipCount, 0);
+      expect(
+        previews.single.blockingFacts.map((fact) => fact.code),
+        contains('no_active_relationship'),
+      );
+    });
+
     test(
         'preview ignores incoming invitation events not addressed to local transport key',
         () {

@@ -10,6 +10,7 @@ class CapsuleFileStore {
   static const String ledgerFileName = 'ledger.json';
   static const String backupFileName = 'capsule-backup.v1.json';
   static const String deliveryOutboxFileName = 'delivery_outbox.json';
+  static const String chatDeferredInboxFileName = 'chat_deferred_inbox.v1.json';
   static const String pairConsensusAttestationsFileName =
       'pair_consensus_attestations.json';
   static const String capsulesDirName = 'capsules';
@@ -84,6 +85,9 @@ class CapsuleFileStore {
   File deliveryOutboxFile(Directory dir) =>
       File('${dir.path}/$deliveryOutboxFileName');
 
+  File chatDeferredInboxFile(Directory dir) =>
+      File('${dir.path}/$chatDeferredInboxFileName');
+
   File pairConsensusAttestationsFile(Directory dir) =>
       File('${dir.path}/$pairConsensusAttestationsFileName');
 
@@ -133,6 +137,17 @@ class CapsuleFileStore {
 
   Future<void> writeDeliveryOutbox(Directory dir, String rawJson) async {
     await _atomicWrites.writeString(deliveryOutboxFile(dir), rawJson);
+  }
+
+  Future<String?> readChatDeferredInbox(Directory dir) async {
+    final file = chatDeferredInboxFile(dir);
+    if (!await file.exists()) return null;
+    final raw = await file.readAsString();
+    return raw.trim().isEmpty ? null : raw;
+  }
+
+  Future<void> writeChatDeferredInbox(Directory dir, String rawJson) async {
+    await _atomicWrites.writeString(chatDeferredInboxFile(dir), rawJson);
   }
 
   Future<String?> readPairConsensusAttestations(Directory dir) async {

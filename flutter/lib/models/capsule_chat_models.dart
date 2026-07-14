@@ -137,6 +137,7 @@ class CapsuleChatDeliveryReceiveResult {
   final int code;
   final String? errorMessage;
   final int droppedByConsensus;
+  final int deferredByConsensus;
   final List<CapsuleChatInboxMessage> messages;
   final List<CapsuleTradeSignalInboxMessage> tradeSignals;
   final List<CapsuleExecutionCommandDecisionMessage> executionDecisions;
@@ -146,6 +147,7 @@ class CapsuleChatDeliveryReceiveResult {
     required this.code,
     required this.errorMessage,
     required this.droppedByConsensus,
+    this.deferredByConsensus = 0,
     required this.messages,
     required this.tradeSignals,
     this.executionDecisions = const <CapsuleExecutionCommandDecisionMessage>[],

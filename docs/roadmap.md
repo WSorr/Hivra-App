@@ -92,14 +92,14 @@ Scope:
     - duplicated `RelationshipBroken` delivery (no duplicate break facts)
     - replayed incoming offer for already resolved invitation (blocked)
   - Incoming delivery append now uses centralized replay guard policy (`should_skip_incoming_delivery_append`) in FFI receive path.
-  - Replay policy now explicitly blocks conflicting terminal invitation replays (`Accepted/Rejected/Expired`) once invitation lineage is already resolved.
+  - Replay policy blocks conflicting terminal invitation replays once invitation lineage is resolved, except a sender-signed `InvitationExpired` revoke for the exact incoming offer. That revoke may settle a recipient-local optimistic acceptance and releases its lineage-created starter from active projection.
   - Added regression coverage for:
     - conflicting terminal replay skipped for resolved invitation
     - first terminal event still accepted for unresolved invitation
     - `InvitationRejected` replay skipped when no matching outgoing offer exists
     - `InvitationRejected` replay skipped when invitation lineage is already terminal-accepted
     - `InvitationExpired` replay skipped when no matching outgoing offer exists
-    - `InvitationExpired` replay skipped when invitation lineage is already terminal-accepted
+    - untrusted `InvitationExpired` replay skipped when invitation lineage is already terminal-accepted
     - out-of-order `InvitationAccepted` delivery (before local outgoing offer exists) is skipped and does not create relationship side effects
     - out-of-order `InvitationRejected` delivery (before local outgoing offer exists) is skipped and does not pre-burn local starter state
     - out-of-order `InvitationExpired` delivery (before local outgoing offer exists) is skipped and does not pre-resolve invitation lineage
@@ -558,10 +558,11 @@ Scope:
   - `schema_version`
   - `pair_roots_sorted`
   - `active_relationships`
-- Use first-valid-terminal invitation semantics:
+- Use first-valid-terminal invitation semantics, with a sender-sovereignty revoke exception:
   - offer anchor must precede terminal state in local ledger order
   - first valid `accepted`, `rejected`, or `expired` wins permanently
-  - later conflicting or duplicate terminal rows cannot change state/effects
+  - later conflicting or duplicate terminal rows cannot change state/effects,
+    except `expired` signed by the original incoming-offer sender
 - Keep the snapshot symmetric:
   - no sender/receiver perspective bias
   - no transport delivery artifacts

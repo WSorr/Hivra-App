@@ -166,6 +166,8 @@ class InvitationDeliveryService {
         return 'Delivery relay rejected InvitationAccepted';
       case -14:
         return 'Delivery relay requires or rejected authentication';
+      case -15:
+        return 'Invitation is no longer pending';
       case -8:
         return 'Matching incoming invitation not found in ledger';
       case -9:

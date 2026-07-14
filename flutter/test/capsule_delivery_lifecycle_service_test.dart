@@ -125,5 +125,31 @@ void main() {
       expect(item.nextAttemptAt, now.add(const Duration(seconds: 8)));
       expect(item.lastError, 'relay timeout');
     });
+
+    test('invitation terminal receipt accepts expired cancel delivery',
+        () async {
+      final lifecycle = CapsuleDeliveryLifecycleService(
+        outbox: outbox,
+        now: () => now,
+        retryRunner: (_) async => const CapsuleDeliveryCycleResult(code: 0),
+      );
+      await lifecycle.enqueue(
+        capsuleHex: capsuleA,
+        kind: DeliveryOutboxKind.invitationTerminal,
+        reason: DeliveryOutboxReason.invitationTerminalRetry,
+      );
+
+      await lifecycle.recordCycle(
+        capsuleHex: capsuleA,
+        result: const CapsuleDeliveryCycleResult(
+          code: 0,
+          deliveryReceiptsJson:
+              '{"receipts":[{"label":"InvitationExpired","receipt":{"transport":"nostr"}}]}',
+        ),
+      );
+
+      expect((await outbox.load(capsuleA)).single.status,
+          DeliveryOutboxStatus.delivered);
+    });
   });
 }

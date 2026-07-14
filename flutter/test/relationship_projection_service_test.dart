@@ -626,6 +626,62 @@ void main() {
       },
     );
 
+    test('sender revoke suppresses relationship from optimistic acceptance',
+        () {
+      const t0 = 1890003235000;
+      final localOwner = rep(0xaa);
+      final sender = rep(0xb1);
+      final invitationId = rep(0x52);
+      final root = <String, dynamic>{
+        'owner': localOwner,
+        'events': <Map<String, dynamic>>[
+          event(
+            kind: 'InvitationReceived',
+            payload: <int>[
+              ...invitationId,
+              ...rep(0x21),
+              ...localOwner,
+              ...rep(0xcc),
+              1,
+            ],
+            timestamp: t0 + 1,
+            signer: sender,
+          ),
+          event(
+            kind: 'InvitationAccepted',
+            payload: <int>[
+              ...invitationId,
+              ...localOwner,
+              ...rep(0x31),
+            ],
+            timestamp: t0 + 2,
+            signer: localOwner,
+          ),
+          event(
+            kind: 'RelationshipEstablished',
+            payload: relationshipEstablishedPayload(
+              peerByte: 0xb1,
+              ownStarterByte: 0x21,
+              peerStarterByte: 0x31,
+              kindByte: 1,
+              invitationByte: 0x52,
+              senderByte: 0xb1,
+              senderStarterByte: 0x61,
+            ),
+            timestamp: t0 + 3,
+          ),
+          event(
+            kind: 'InvitationExpired',
+            payload: invitationId,
+            timestamp: t0 + 4,
+            signer: sender,
+          ),
+        ],
+      };
+
+      expect(service.loadRelationships(root), isEmpty);
+    });
+
     test(
       'does not infer peer root from local root-augmented InvitationSent lineage',
       () {

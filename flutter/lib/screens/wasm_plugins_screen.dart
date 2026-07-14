@@ -47,6 +47,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   List<CapsuleChatInboxMessage> _chatInbox = const <CapsuleChatInboxMessage>[];
 
   int _chatDroppedByConsensus = 0;
+  int _chatDeferredByConsensus = 0;
 
   static const List<_BoundaryRule> _boundaryRules = <_BoundaryRule>[
     _BoundaryRule(
@@ -604,6 +605,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                           workspaceNoticeIsError: _chatWorkspaceNoticeIsError,
                           inbox: _chatInbox,
                           droppedByConsensus: _chatDroppedByConsensus,
+                          deferredByConsensus: _chatDeferredByConsensus,
                           peerController: _chatPeerController,
                           messageController: _chatMessageController,
                           onUsePeerPressed: () =>
@@ -648,7 +650,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       stopwatch.stop();
       await _module.uiLog.log(
         'chat.fetch.result',
-        'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus}'
+        'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus} deferred=${result.deferredByConsensus}'
             '${result.errorMessage == null ? "" : " error=${result.errorMessage}"}',
       );
       if (!mounted) return;
@@ -668,8 +670,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       final droppedNote = result.droppedByConsensus > 0
           ? ' · dropped ${result.droppedByConsensus} by consensus'
           : '';
+      final deferredNote = result.deferredByConsensus > 0
+          ? ' · deferred ${result.deferredByConsensus} until attestation'
+          : '';
       final updateNotice =
-          'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}, cmd +${result.executionDecisions.length}, receipt +${result.executionReceipts.length}$droppedNote';
+          'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}, cmd +${result.executionDecisions.length}, receipt +${result.executionReceipts.length}$droppedNote$deferredNote';
       setState(() {
         final byId = <String, CapsuleChatInboxMessage>{
           for (final message in _chatInbox) message.id: message,
@@ -681,6 +686,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
 
         _chatDroppedByConsensus = result.droppedByConsensus;
+        _chatDeferredByConsensus = result.deferredByConsensus;
         _chatInbox = List<CapsuleChatInboxMessage>.unmodifiable(merged);
         if (!silentWhenEmpty || hasUpdates) {
           _chatWorkspaceNotice = updateNotice;
@@ -1671,6 +1677,7 @@ class _CapsuleChatPanel extends StatelessWidget {
   final bool workspaceNoticeIsError;
   final List<CapsuleChatInboxMessage> inbox;
   final int droppedByConsensus;
+  final int deferredByConsensus;
   final TextEditingController peerController;
   final TextEditingController messageController;
   final Future<void> Function() onUsePeerPressed;
@@ -1685,6 +1692,7 @@ class _CapsuleChatPanel extends StatelessWidget {
     required this.workspaceNoticeIsError,
     required this.inbox,
     required this.droppedByConsensus,
+    required this.deferredByConsensus,
     required this.peerController,
     required this.messageController,
     required this.onUsePeerPressed,
@@ -1981,6 +1989,11 @@ class _CapsuleChatPanel extends StatelessWidget {
                 _InfoChip(
                   icon: Icons.filter_alt_off_outlined,
                   label: 'Hidden by consensus: $droppedByConsensus',
+                ),
+              if (deferredByConsensus > 0)
+                _InfoChip(
+                  icon: Icons.pending_actions_outlined,
+                  label: 'Deferred until attestation: $deferredByConsensus',
                 ),
             ],
           ),

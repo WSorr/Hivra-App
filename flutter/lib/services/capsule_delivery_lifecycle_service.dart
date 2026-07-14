@@ -160,7 +160,9 @@ class CapsuleDeliveryLifecycleService {
       DeliveryOutboxKind.invitationTerminal => label == 'InvitationAccepted' ||
           label == 'InvitationAcceptedRetry' ||
           label == 'InvitationRejected' ||
-          label == 'InvitationRejectedRetry',
+          label == 'InvitationRejectedRetry' ||
+          label == 'InvitationExpired' ||
+          label == 'InvitationExpiredRetry',
       DeliveryOutboxKind.relationshipBroken =>
         label == 'RelationshipBroken' || label == 'RelationshipBrokenRetry',
       _ => false,

@@ -1132,6 +1132,51 @@ void main() {
       expect(invitation.status, InvitationStatus.expired);
     });
 
+    test('sender revoke supersedes a recipient optimistic acceptance', () {
+      final invitationId = _bytes32(118);
+      final starterId = _bytes32(138);
+      final createdStarterId = _bytes32(158);
+      final t0 = _futureBaseTimestampMs();
+      final service = serviceForSelf(self);
+
+      final invitations = service.loadInvitations(<String, dynamic>{
+        'events': <Map<String, dynamic>>[
+          _event(
+            kind: 'InvitationReceived',
+            payload: _offerPayload(
+              invitationId: invitationId,
+              starterId: starterId,
+              toPubkey: self,
+              senderRootPubkey: peer,
+              kindByte: 1,
+            ),
+            signer: peer,
+            timestamp: t0 + 1,
+          ),
+          _event(
+            kind: 'InvitationAccepted',
+            payload: _acceptedPayload(
+              invitationId: invitationId,
+              createdStarterId: createdStarterId,
+              fromPubkey: self,
+            ),
+            signer: self,
+            timestamp: t0 + 2,
+          ),
+          _event(
+            kind: 'InvitationExpired',
+            payload: invitationId,
+            signer: peer,
+            timestamp: t0 + 3,
+          ),
+        ],
+      });
+
+      expect(invitations, hasLength(1));
+      expect(invitations.single.isIncoming, isTrue);
+      expect(invitations.single.status, InvitationStatus.expired);
+    });
+
     test('supports root-augmented invitation payload variants', () {
       final invitationId = _bytes32(16);
       final starterId = _bytes32(36);

@@ -1304,7 +1304,7 @@ class _NoopInvitationActionsRuntime implements InvitationActionsRuntime {
   Future<bool> bootstrapActiveCapsuleRuntime() async => true;
 
   @override
-  bool expireInvitation(Uint8List invitationId) => true;
+  int expireInvitationCode(Uint8List invitationId) => 0;
 
   @override
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs({

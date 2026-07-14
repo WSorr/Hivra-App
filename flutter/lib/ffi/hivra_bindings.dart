@@ -928,15 +928,19 @@ class HivraBindings {
   }
 
   bool expireInvitation(Uint8List invitationId) {
-    if (invitationId.length != 32) return false;
+    return expireInvitationCode(invitationId) == 0;
+  }
+
+  int expireInvitationCode(Uint8List invitationId) {
+    if (invitationId.length != 32) return -1;
     final invitationIdPtr = calloc<Uint8>(32);
     try {
       final expireInvitationFn = _expireInvitation;
       if (expireInvitationFn == null) {
-        return false;
+        return -1002;
       }
       invitationIdPtr.asTypedList(32).setAll(0, invitationId);
-      return expireInvitationFn(invitationIdPtr) == 0;
+      return expireInvitationFn(invitationIdPtr);
     } finally {
       calloc.free(invitationIdPtr);
     }

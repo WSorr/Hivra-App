@@ -455,11 +455,23 @@ pub(crate) fn pending_outgoing_invitation_terminal_deliveries_in_runtime(
 
     let local_root_pubkey = capsule.pubkey;
     let mut incoming_offers: HashMap<[u8; 32], PubKey> = HashMap::new();
+    let mut outgoing_offers: HashMap<[u8; 32], PubKey> = HashMap::new();
     let mut pending: HashMap<([u8; 32], EventKind), PendingOutgoingInvitationTerminalDelivery> =
         HashMap::new();
 
     for event in capsule.ledger.events() {
         match event.kind() {
+            EventKind::InvitationSent if event.signer() == &local_root_pubkey => {
+                let payload = event.payload();
+                if !invitation_payload_has_known_shape(payload) {
+                    continue;
+                }
+                let mut invitation_id = [0u8; 32];
+                invitation_id.copy_from_slice(&payload[..32]);
+                let mut to_pubkey = [0u8; 32];
+                to_pubkey.copy_from_slice(&payload[64..96]);
+                outgoing_offers.insert(invitation_id, PubKey::from(to_pubkey));
+            }
             EventKind::InvitationReceived => {
                 let payload = event.payload();
                 if !invitation_payload_has_known_shape(payload) {
@@ -480,6 +492,26 @@ pub(crate) fn pending_outgoing_invitation_terminal_deliveries_in_runtime(
                     continue;
                 };
                 let Some(to_pubkey) = incoming_offers.get(&invitation_id).copied() else {
+                    continue;
+                };
+                pending.insert(
+                    (invitation_id, event.kind()),
+                    PendingOutgoingInvitationTerminalDelivery {
+                        to_pubkey: *to_pubkey.as_bytes(),
+                        kind: event.kind(),
+                        payload: event.payload().to_vec(),
+                        timestamp: event.timestamp().as_u64(),
+                        invitation_id,
+                    },
+                );
+            }
+            EventKind::InvitationExpired if event.signer() == &local_root_pubkey => {
+                let Some(invitation_id) =
+                    invitation_id_from_terminal_payload(event.kind(), event.payload())
+                else {
+                    continue;
+                };
+                let Some(to_pubkey) = outgoing_offers.get(&invitation_id).copied() else {
                     continue;
                 };
                 pending.insert(
@@ -610,18 +642,37 @@ pub(crate) fn should_skip_incoming_delivery_append_with_timestamp(
     }
 
     if let Some(invitation_id) = invitation_id_from_terminal_payload(local_kind, payload) {
-        if invitation_is_resolved_in_runtime(&invitation_id) {
+        let sender_revocation = local_kind == EventKind::InvitationExpired
+            && incoming_invitation_expired_matches_runtime(&invitation_id, signer);
+        if invitation_is_resolved_in_runtime(&invitation_id) && !sender_revocation {
             return true;
         }
-        if (local_kind == EventKind::InvitationAccepted
-            || local_kind == EventKind::InvitationRejected
-            || local_kind == EventKind::InvitationExpired)
-            && find_invitation_sent_in_runtime_with_direction(&invitation_id, Some(false)).is_none()
-        {
-            // Terminal delivery must resolve an existing outgoing offer.
-            // Otherwise we can append orphan terminal events that
-            // inflate local projection without a matching InvitationSent.
-            return true;
+        match local_kind {
+            EventKind::InvitationAccepted | EventKind::InvitationRejected => {
+                if find_invitation_sent_in_runtime_with_direction(&invitation_id, Some(false))
+                    .is_none()
+                {
+                    // Accept/reject terminal delivery must resolve an existing
+                    // outgoing offer.
+                    return true;
+                }
+            }
+            EventKind::InvitationExpired => {
+                let Some(record) =
+                    find_invitation_sent_in_runtime_with_direction(&invitation_id, Some(true))
+                else {
+                    // Cancel terminal delivery must resolve an existing
+                    // incoming offer.
+                    return true;
+                };
+                let signer_matches_transport = record.peer_pubkey == signer;
+                let signer_matches_root =
+                    record.sender_root_pubkey.is_some_and(|root| root == signer);
+                if !signer_matches_transport && !signer_matches_root {
+                    return true;
+                }
+            }
+            _ => {}
         }
     }
 
@@ -743,6 +794,17 @@ pub(crate) fn find_invitation_sent_in_runtime_with_direction(
     }
 
     None
+}
+
+pub(crate) fn incoming_invitation_expired_matches_runtime(
+    invitation_id: &[u8; 32],
+    signer: PubKey,
+) -> bool {
+    let Some(record) = find_invitation_sent_in_runtime_with_direction(invitation_id, Some(true))
+    else {
+        return false;
+    };
+    record.peer_pubkey == signer || record.sender_root_pubkey.is_some_and(|root| root == signer)
 }
 
 pub(crate) fn debug_log_invitation_sent_candidates(label: &str, target_invitation_id: &[u8; 32]) {

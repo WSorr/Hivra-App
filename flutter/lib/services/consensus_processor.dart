@@ -390,9 +390,15 @@ class ConsensusProcessor {
           }
           break;
         case 'InvitationExpired':
-          fact.resolveTerminal(
+          final signerHex = signer == null ? null : _hex(signer);
+          final senderTransportHex = inviteTransportPeerById[invitationId];
+          final senderRootHex = inviteRootPeerById[invitationId];
+          final senderRevocation = signerHex != null &&
+              (signerHex == senderTransportHex || signerHex == senderRootHex);
+          fact.resolveExpired(
             status: 'expired',
             eventIndex: eventIndex,
+            senderRevocation: senderRevocation,
           );
           break;
       }
@@ -789,6 +795,17 @@ class _PairwiseInviteFact {
     if (rejectReason != null) {
       rejectReasons.add(rejectReason);
     }
+    return true;
+  }
+
+  bool resolveExpired({
+    required String status,
+    required int eventIndex,
+    required bool senderRevocation,
+  }) {
+    if (eventIndex <= offerEventIndex) return false;
+    if (_terminalStatus != null && !senderRevocation) return false;
+    _terminalStatus = status;
     return true;
   }
 

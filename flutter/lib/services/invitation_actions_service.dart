@@ -281,7 +281,7 @@ class InvitationActionsService {
       final lastError = workerResult['lastError'] as String?;
       final deliveryReceiptsJson =
           workerResult['deliveryReceiptsJson'] as String?;
-      if (code != 0) {
+      if (ledgerJson != null) {
         await _deliveryLifecycle.enqueue(
           capsuleHex: bootstrapActiveHex,
           kind: DeliveryOutboxKind.invitationSent,
@@ -494,7 +494,7 @@ class InvitationActionsService {
       final code = (workerResult['result'] as int?) ?? -1003;
       final ledgerJson = workerResult['ledgerJson'] as String?;
       final lastError = workerResult['lastError'] as String?;
-      if (code != 0) {
+      if (ledgerJson != null) {
         await _enqueueInvitationTerminalRetry(
           bootstrapActiveHex: bootstrapActiveHex,
         );
@@ -534,13 +534,28 @@ class InvitationActionsService {
             'invitationId': invitationId,
           },
         ),
-        shouldApplyLedger: (result) => ((result['result'] as int?) ?? -1) == 0,
+        shouldApplyLedger: (result) => result['ledgerJson'] is String,
       );
 
       final code = (workerResult['result'] as int?) ?? -1;
-      if (code != 0) return false;
+      final ledgerJson = workerResult['ledgerJson'] as String?;
+      final lastError = workerResult['lastError'] as String?;
+      final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
+      if (ledgerJson != null) {
+        await _enqueueInvitationTerminalRetry(
+          bootstrapActiveHex: bootstrapActiveHex,
+        );
+      }
+      await _deliveryLifecycle.recordCycle(
+        capsuleHex: bootstrapActiveHex,
+        result: CapsuleDeliveryCycleResult(
+          code: code,
+          lastError: lastError,
+          deliveryReceiptsJson: workerResult['deliveryReceiptsJson'] as String?,
+        ),
+      );
 
-      return true;
+      return code == 0 || ledgerJson != null;
     });
   }
 }

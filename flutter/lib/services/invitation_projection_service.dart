@@ -177,7 +177,14 @@ class InvitationProjectionService {
           continue;
         }
         final id = base64.encode(payload.sublist(0, 32));
-        if (offersById.containsKey(id) && !terminalById.containsKey(id)) {
+        final offer = offersById[id];
+        final senderRevocation = offer?.isIncoming == true &&
+            offer!.fromPubkey == base64.encode(signerBytes);
+        if (offer != null &&
+            (!terminalById.containsKey(id) || senderRevocation)) {
+          // The offer sender may revoke a still-unacknowledged invitation.
+          // This intentionally supersedes a recipient-local optimistic accept
+          // if the revoke reaches the receiver later.
           terminalById[id] = _ProjectedInvitationTerminal(
             status: InvitationStatus.expired,
             at: timestamp,

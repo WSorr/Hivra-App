@@ -10,6 +10,7 @@ import '../models/consensus_models.dart';
 import '../models/relationship.dart';
 import 'bingx_futures_execution_command_service.dart';
 import 'capsule_address_service.dart';
+import 'capsule_chat_deferred_inbox_store.dart';
 import 'manual_consensus_check_service.dart';
 import 'transport_health_policy_service.dart';
 
@@ -125,6 +126,7 @@ class CapsuleChatDeliveryService {
   final ChatTrustedCardsLoader _listTrustedCards;
   final ChatWorkerRunner _sendWorkerRunner;
   final ChatWorkerRunner _receiveWorkerRunner;
+  final CapsuleChatDeferredInboxStore _deferredInboxStore;
   final CapsuleTradeSignalInboxStore _tradeSignalInboxStore;
   final BingxFuturesExecutionCommandService _executionCommandService;
   final ExecutionPolicyResolver _executionPolicyForPeer;
@@ -140,6 +142,7 @@ class CapsuleChatDeliveryService {
     ChatTrustedCardsLoader? listTrustedCards,
     ChatWorkerRunner sendWorkerRunner = _defaultSendWorkerRunner,
     ChatWorkerRunner receiveWorkerRunner = _defaultReceiveWorkerRunner,
+    CapsuleChatDeferredInboxStore? deferredInboxStore,
     CapsuleTradeSignalInboxStore? tradeSignalInboxStore,
     BingxFuturesExecutionCommandService? executionCommandService,
     ExecutionPolicyResolver? executionPolicyForPeer,
@@ -153,6 +156,8 @@ class CapsuleChatDeliveryService {
         _listTrustedCards = listTrustedCards ?? _emptyTrustedCards,
         _sendWorkerRunner = sendWorkerRunner,
         _receiveWorkerRunner = receiveWorkerRunner,
+        _deferredInboxStore =
+            deferredInboxStore ?? const CapsuleChatDeferredInboxStore(),
         _tradeSignalInboxStore =
             tradeSignalInboxStore ?? CapsuleTradeSignalInboxStore.shared,
         _executionCommandService = executionCommandService ??
@@ -279,6 +284,7 @@ class CapsuleChatDeliveryService {
         code: health.code,
         errorMessage: health.message,
         droppedByConsensus: 0,
+        deferredByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
         tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
@@ -289,6 +295,7 @@ class CapsuleChatDeliveryService {
         code: -1004,
         errorMessage: 'Chat worker bootstrap unavailable',
         droppedByConsensus: 0,
+        deferredByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
         tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
@@ -314,53 +321,52 @@ class CapsuleChatDeliveryService {
         code: code,
         errorMessage: transportError,
         droppedByConsensus: 0,
+        deferredByConsensus: 0,
         messages: const <CapsuleChatInboxMessage>[],
         tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
       );
     }
 
+    final List<dynamic> decoded;
     if (rawJson == null || rawJson.trim().isEmpty) {
-      return CapsuleChatDeliveryReceiveResult(
-        code: code,
-        errorMessage: null,
-        droppedByConsensus: 0,
-        messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
-      );
-    }
-
-    final dynamic decoded;
-    try {
-      decoded = jsonDecode(rawJson);
-    } catch (_) {
-      return CapsuleChatDeliveryReceiveResult(
-        code: -2002,
-        errorMessage: 'Chat receive payload is not valid JSON',
-        droppedByConsensus: 0,
-        messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
-      );
-    }
-    if (decoded is! List) {
-      return CapsuleChatDeliveryReceiveResult(
-        code: -2002,
-        errorMessage: 'Chat receive payload has invalid shape',
-        droppedByConsensus: 0,
-        messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
-      );
+      decoded = const <dynamic>[];
+    } else {
+      final dynamic parsed;
+      try {
+        parsed = jsonDecode(rawJson);
+      } catch (_) {
+        return CapsuleChatDeliveryReceiveResult(
+          code: -2002,
+          errorMessage: 'Chat receive payload is not valid JSON',
+          droppedByConsensus: 0,
+          deferredByConsensus: 0,
+          messages: const <CapsuleChatInboxMessage>[],
+          tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+        );
+      }
+      if (parsed is! List) {
+        return CapsuleChatDeliveryReceiveResult(
+          code: -2002,
+          errorMessage: 'Chat receive payload has invalid shape',
+          droppedByConsensus: 0,
+          deferredByConsensus: 0,
+          messages: const <CapsuleChatInboxMessage>[],
+          tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+        );
+      }
+      decoded = List<dynamic>.from(parsed);
     }
 
     final identityIndex = await _loadPeerIdentityIndex();
-    final signableCache = <String, bool>{};
+    final signableCache = <String, ConsensusSignableResult>{};
 
-    Future<bool> isAttestedSignable(String peerHex) async {
+    Future<ConsensusSignableResult> readSignable(String peerHex) async {
       final normalized = peerHex.trim().toLowerCase();
       final cached = signableCache[normalized];
       if (cached != null) return cached;
-      final isSignable = await _isPeerAttestedSignable(normalized);
-      signableCache[normalized] = isSignable;
-      return isSignable;
+      final result = await _readPeerAttestedSignable(normalized);
+      signableCache[normalized] = result;
+      return result;
     }
 
     final byId = <String, CapsuleChatInboxMessage>{};
@@ -370,6 +376,21 @@ class CapsuleChatDeliveryService {
     final byExecutionReceiptId =
         <String, CapsuleExecutionReceiptInboxMessage>{};
     var droppedByConsensus = 0;
+    var deferredByConsensus = 0;
+    final remainingDeferred = <CapsuleChatDeferredInboxItem>[];
+    final nextDeferred = <CapsuleChatDeferredInboxItem>[];
+    final now = _nowUtc();
+    final activeCapsuleHex = bootstrap['activeCapsuleHex']?.toString() ?? '';
+    final deferredItems = await _deferredInboxStore.load(localRootHex ?? '');
+    final incomingItems = <_ChatTransportItem>[
+      for (final item in deferredItems)
+        _ChatTransportItem(
+          fromHex: item.fromHex,
+          payloadJson: item.payloadJson,
+          timestampMs: item.timestampMs,
+          deferredItem: item,
+        ),
+    ];
 
     for (final item in decoded) {
       if (item is! Map) continue;
@@ -380,14 +401,45 @@ class CapsuleChatDeliveryService {
       if (!_isLowerHex64(fromHex) || payloadJson.isEmpty) {
         continue;
       }
+      incomingItems.add(_ChatTransportItem(
+        fromHex: fromHex,
+        payloadJson: payloadJson,
+        timestampMs: timestampMs,
+      ));
+    }
+
+    for (final item in incomingItems) {
+      final fromHex = item.fromHex;
+      final payloadJson = item.payloadJson;
+      final timestampMs = item.timestampMs;
       final consensusPeerHex =
           identityIndex.resolveConsensusForIncoming(fromHex);
-      var isSignablePeer = await isAttestedSignable(consensusPeerHex);
-      if (!isSignablePeer && consensusPeerHex != fromHex) {
-        isSignablePeer = await isAttestedSignable(fromHex);
+      var signable = await readSignable(consensusPeerHex);
+      if (!signable.isSignable && consensusPeerHex != fromHex) {
+        signable = await readSignable(fromHex);
       }
+      final isSignablePeer = signable.isSignable;
       if (!isSignablePeer) {
-        droppedByConsensus += 1;
+        if (_shouldDeferForConsensus(signable) && localRootHex != null) {
+          deferredByConsensus += 1;
+          final deferredItem = item.deferredItem;
+          if (deferredItem == null) {
+            nextDeferred.add(_deferredInboxStore.create(
+              capsuleHex: localRootHex,
+              fromHex: fromHex,
+              payloadJson: payloadJson,
+              timestampMs: timestampMs,
+              now: now,
+            ));
+          } else {
+            remainingDeferred.add(deferredItem.copyWith(
+              lastSeenAt: now,
+              attempts: deferredItem.attempts + 1,
+            ));
+          }
+        } else {
+          droppedByConsensus += 1;
+        }
         continue;
       }
 
@@ -467,8 +519,20 @@ class CapsuleChatDeliveryService {
       ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     final tradeSignals = byTradeSignalId.values.toList()
       ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    final activeCapsuleHex = bootstrap['activeCapsuleHex']?.toString() ?? '';
     _tradeSignalInboxStore.merge(activeCapsuleHex, tradeSignals);
+    if (localRootHex != null) {
+      final deferredById = <String, CapsuleChatDeferredInboxItem>{
+        for (final item in remainingDeferred) item.id: item,
+      };
+      for (final item in nextDeferred) {
+        deferredById[item.id] = item;
+      }
+      await _deferredInboxStore.replaceAll(
+        capsuleHex: localRootHex,
+        items: deferredById.values,
+        now: now,
+      );
+    }
     final executionDecisions = byExecutionDecisionId.values.toList()
       ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     final executionReceipts = byExecutionReceiptId.values.toList()
@@ -478,6 +542,7 @@ class CapsuleChatDeliveryService {
       code: code,
       errorMessage: null,
       droppedByConsensus: droppedByConsensus,
+      deferredByConsensus: deferredByConsensus,
       messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
       tradeSignals:
           List<CapsuleTradeSignalInboxMessage>.unmodifiable(tradeSignals),
@@ -546,23 +611,58 @@ class CapsuleChatDeliveryService {
     );
   }
 
-  bool _isPeerSignable(String peerHex) {
+  ManualConsensusCheck? _manualConsensusForPeer(String peerHex) {
     final normalized = peerHex.trim().toLowerCase();
     final checks = _manualChecks.loadChecks();
     for (final check in checks) {
       if (check.peerHex.trim().toLowerCase() == normalized) {
-        return check.isSignable;
+        return check;
       }
     }
-    return false;
+    return null;
   }
 
   Future<bool> _isPeerAttestedSignable(String peerHex) async {
+    return (await _readPeerAttestedSignable(peerHex)).isSignable;
+  }
+
+  Future<ConsensusSignableResult> _readPeerAttestedSignable(
+    String peerHex,
+  ) async {
     final readAttestedSignable = _readAttestedSignable;
     if (readAttestedSignable == null) {
-      return _isPeerSignable(peerHex);
+      final check = _manualConsensusForPeer(peerHex);
+      final isSignable = check?.isSignable ?? false;
+      return ConsensusSignableResult(
+        preview: check == null
+            ? null
+            : ConsensusPreview(
+                peerHex: check.peerHex,
+                peerLabel: check.peerLabel,
+                invitationCount: check.invitationCount,
+                relationshipCount: check.relationshipCount,
+                hashHex: check.hashHex,
+                canonicalJson: check.canonicalJson,
+                blockingFacts: check.blockingFacts,
+              ),
+        blockingFacts: isSignable
+            ? const <ConsensusBlockingFact>[]
+            : check?.blockingFacts ??
+                const <ConsensusBlockingFact>[
+                  ConsensusBlockingFact(code: 'pair_consensus_missing'),
+                ],
+      );
     }
-    return (await readAttestedSignable(peerHex)).isSignable;
+    return readAttestedSignable(peerHex);
+  }
+
+  bool _shouldDeferForConsensus(ConsensusSignableResult signable) {
+    return signable.blockingFacts.any((fact) {
+      final code = fact.code.trim().toLowerCase();
+      return code == 'pair_attestation_missing' ||
+          code == 'pair_attestation_incomplete' ||
+          code == 'pair_consensus_attestation_missing';
+    });
   }
 
   Future<_PeerIdentityIndex> _loadPeerIdentityIndex() async {
@@ -798,6 +898,20 @@ class CapsuleChatDeliveryService {
     final canonical = '$fromHex|$timestampMs|$payloadJson';
     return sha256.convert(utf8.encode(canonical)).toString();
   }
+}
+
+class _ChatTransportItem {
+  final String fromHex;
+  final String payloadJson;
+  final int timestampMs;
+  final CapsuleChatDeferredInboxItem? deferredItem;
+
+  const _ChatTransportItem({
+    required this.fromHex,
+    required this.payloadJson,
+    required this.timestampMs,
+    this.deferredItem,
+  });
 }
 
 class _PeerIdentityIndex {
