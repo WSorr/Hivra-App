@@ -154,6 +154,19 @@ Contains:
 This document is non-normative for 1.x. `specification.md` continues to win for
 all current runtime and release behavior.
 
+### 16) `development-control.md` (current-stage navigation)
+
+Use this at the start and end of every engineering session.
+
+Contains:
+- the current 1.x / 2.0 development board
+- the exact distinction between maintenance, release, and design work
+- the session protocol that keeps a change tied to one owner, invariant, and
+  verification boundary
+
+It is a navigation layer only. It links to the specification, roadmap, and
+architecture blueprint rather than duplicating their rules.
+
 ## Recommended Reading Order
 
 1. `product-axis.md`
@@ -171,6 +184,7 @@ all current runtime and release behavior.
 13. `checklists/trading-drone-spec-runtime-parity.md` before drone release packaging and manual smoke sign-off
 14. `checklists/trading-drone-evidence-log.md` to capture build-tagged parity evidence
 15. `architecture-v2-blueprint.md` when designing 2.0 ownership, contracts, or migration units
+16. `development-control.md` before resuming, scoping, or closing any work item
 
 ## Update Rules
 

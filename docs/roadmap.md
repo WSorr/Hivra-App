@@ -35,6 +35,10 @@ it does not enter production behind temporary DTOs or parallel facades.
 
 ## Parallel Version Tracks
 
+The current one-page navigation board and session protocol live in
+`docs/development-control.md`. This roadmap remains the detailed engineering
+history and status authority for individual work items.
+
 ### Hivra 1.x: maintained product line
 
 The current line remains the only production/release target. Work is limited to

@@ -1,4 +1,4 @@
-# Hivra Protocol
+# Hivra
 
 Hivra is a local-first runtime for user-owned Capsules.
 
@@ -17,20 +17,57 @@ Trusted links form a **Core Trust Layer**, not a social network. They are intern
 
 Applications normally own their own user relationships. Hivra moves trusted interaction state into the user-owned Capsule, so WASM drones can reuse the same Trust Layer instead of rebuilding isolated contact systems.
 
+## Current Development State
+
+Hivra has two deliberately separate development lines:
+
+- **Hivra 1.x** is the only maintained, tested, and releasable runtime. Current
+  work is focused on integrity, reliable delivery, deterministic recovery,
+  platform parity, and removal of proven architectural debt.
+- **Hivra 2.0** is a design-and-proof program. It is currently inventorying
+  capability owners, contracts, facts, projections, effects, and dependency
+  edges. It does not introduce a second production runtime into 1.x.
+
+The short current-stage board is
+[Hivra Development Control](docs/development-control.md). The detailed work
+history and active remediation program remain in the
+[Roadmap](docs/roadmap.md).
+
 ## Architecture
 
-This repository implements the current Hivra v1 specification:
+This repository implements the current Hivra 1.x runtime:
 
-- **Core** — Pure domain logic (deterministic, no I/O, no crypto knowledge)
-- **Engine** — Orchestration layer (time, RNG, crypto provider)
-- **Transport** — Host adapter layer for delivery (Nostr now; Matrix, BLE, and local mesh later)
-- **Platform** — OS-specific implementations (SecureKeyStore)
-- **Plugin Host** — WASM drone runtime with capability gates
-- **Flutter UI** — Cross-platform interface
+- **Core** — deterministic domain facts, transitions, replay, and projections;
+  no platform or network I/O.
+- **Engine** — domain use-case orchestration through explicit clock, randomness,
+  and cryptographic contracts.
+- **Adapters** — cryptography and transport implementations. Nostr is the
+  currently mounted transport.
+- **Platform** — FFI composition, secure key storage, and the WASM runtime.
+- **Plugin Host** — capability-gated host APIs for external WASM drones.
+- **Flutter App Shell** — local projection and explicit user-action surfaces
+  for macOS and Android.
 
 Chat, trading, staking, AI, and other user-facing features are drones, not Core. Core stays minimal: Capsule, Ledger, Invitations, Trust Layer, Pair Consensus, and the runtime contracts required for safe drone execution.
 
 Transport adapters are not WASM drones. They are host-level system adapters that move signed capsule envelopes through external networks. WASM drones can request delivery through host APIs, but they do not get direct network, keychain, relay, or transport-session access.
+
+### Repository Layout
+
+- `core/` — deterministic Hivra domain.
+- `engine/` — use-case orchestration over Core contracts.
+- `adapters/` — transport and cryptographic adapter implementations.
+- `platform/` — FFI, key storage, and WASM runtime composition.
+- `flutter/` — application shell, projections, platform integration, and tests.
+- `docs/` — canonical specification, architecture, roadmap, and checklists.
+- `tools/review/` — deterministic architecture, dependency, documentation, and
+  security gates.
+- `tools/release/` — guarded macOS, Android, and GitHub release workflows.
+
+Drone source packages are developed and released separately from the host
+application. This repository owns the Capsule runtime, plugin host contracts,
+installation boundary, and runtime integration; it must not absorb plugin
+business logic back into the application.
 
 ### Compile-Time Dependency Contract
 
@@ -48,9 +85,17 @@ Transport adapters are not WASM drones. They are host-level system adapters that
 
 ## Specification Documents
 
+- [Product Axis](docs/product-axis.md)
 - [Hivra Protocol Specification](docs/specification.md)
 - [Hivra Conceptual Model](docs/hivra-conceptual-model.md)
+- [Current Development Control](docs/development-control.md)
+- [Engineering Roadmap](docs/roadmap.md)
+- [Hivra 2.0 Architecture Blueprint](docs/architecture-v2-blueprint.md)
 - [Docs Map](docs/README.md)
+
+Authority order matters: the 1.x specification is normative for current
+runtime behavior; the 2.0 blueprint is design-only until a migration unit is
+explicitly approved.
 
 ## Identity and Key Derivation
 
@@ -108,23 +153,51 @@ Shown on app launch when at least one capsule exists.
 
 ### Prerequisites
 
-- Rust 1.75+
-- Flutter 3.22+
+- A current Rust toolchain compatible with the workspace `edition = "2021"`.
+- Flutter with Dart `>=3.2.0 <4.0.0`.
 - Android SDK (API 36) for Android builds
 - Xcode 15+ for macOS builds
 
-### Build
+The manifests and platform tooling are the version authority; this README does
+not pin a second, easily stale SDK matrix.
+
+### Development Verification
 
 ```bash
-# Build all Rust crates
-cargo build --release
+# From the repository root
+cargo test --workspace
+tools/review/review_all.sh
 
-# Build Flutter for current dev target (macOS)
 cd flutter
-flutter build macos
+flutter analyze
+flutter test
 ```
 
-For current local development, use macOS target only (`flutter run -d macos`).
+For a focused local macOS build:
+
+```bash
+cd flutter
+flutter build macos --release
+```
+
+Android and macOS are both supported release targets. Platform behavior must be
+smoke-tested from fresh release artifacts before publication; a successful
+debug run is not release evidence.
+
+### Guarded Releases
+
+Do not publish artifacts with raw Flutter or GitHub commands. The approved
+workflow is owned by `tools/release/`:
+
+```bash
+tools/release/macos_release.sh --version <tag> --channel <test|public>
+tools/release/android_release.sh --version <tag> --channel <test|public>
+tools/release/publish_github_release.sh --version <tag> --channel <test|public>
+```
+
+These commands enforce version rules, automated preflight, artifact checks,
+manual platform sign-off, and checksum publication. See the release checklists
+under `docs/checklists/` before choosing a tag.
 
 ### Cleanup Local Build Artifacts
 
