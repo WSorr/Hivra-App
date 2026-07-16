@@ -2811,8 +2811,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 autocorrect: false,
                 enableSuggestions: false,
                 decoration: InputDecoration(
-                  labelText: 'Peer hex (64 lowercase chars)',
-                  hintText: 'bbbb...bbbb',
+                  labelText: 'Peer hex (optional, 64 lowercase chars)',
+                  hintText: 'Leave empty for solo trading',
                   filled: true,
                   fillColor: const Color(0xFF0F141C),
                   border: OutlineInputBorder(
