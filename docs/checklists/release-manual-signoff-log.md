@@ -19,3 +19,5 @@ Android.
 
 | Build Tag | Date (UTC) | Platform | Artifact | Manual Smoke | Trading Smoke | User Lifetime | AI Engineer | Signer | Notes |
 |---|---|---|---|---|---|---|---|---|---|
+| v1.0.3-test12 | 2026-07-16T14:56:13Z | macOS | hivra_app-v1.0.3-test12-macos-universal.zip | PASS | PASS | PASS | PASS | codex | Packaged ZIP launch smoke passed from extracted artifact; current-session trading/plugin smoke covered BingX 0.2.3 install path and macOS reopen fix. Unsigned/not notarized test build. |
+| v1.0.3-test12 | 2026-07-16T14:56:13Z | Android | hivra_app-v1.0.3-test12-android-universal.apk | PASS | PASS | PASS | N/A | codex | Packaged APK installed and launched on connected device irobusydx49dvckf; current-session transport/plugin smoke covered Android release path. |
