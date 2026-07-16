@@ -49,6 +49,9 @@ class SettingsService {
 
   Future<void> importCardJson(String raw) => _contactCards.importCardJson(raw);
 
+  Future<void> importCardPayload(String raw) =>
+      _contactCards.importCardPayload(raw);
+
   Future<List<CapsuleAddressCard>> listTrustedCards() =>
       _contactCards.listTrustedCards();
 

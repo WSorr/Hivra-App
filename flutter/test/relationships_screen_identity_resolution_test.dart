@@ -53,7 +53,7 @@ void main() {
 
       final service = RelationshipService(
         loadRelationshipGroups: () => groups,
-        breakRelationship: (_, __, ___) => true,
+        breakRelationship: (_, _, _) => true,
         persistLedgerSnapshot: () async {},
         addressService: _FakeCapsuleAddressService(
           cards: <CapsuleAddressCard>[

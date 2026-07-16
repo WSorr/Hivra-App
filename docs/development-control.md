@@ -27,7 +27,7 @@ table, then open only the linked authority for the selected work item.
 | --- | --- | --- | --- | --- |
 | **1.x maintained runtime** | Active | `12.3` integrity and reliability remediation | The latest unit, invitation cancellation plus deferred chat delivery, is committed in `8dedd6e`. Flutter analysis and the full Flutter suite passed for that commit. | Resume the next explicitly scoped `12.3` pass. Do not blend it with feature work or redesign. |
 | **1.x release** | Not yet requested for `8dedd6e` | Manual macOS and Android smoke remains a separate release decision. | Release checklist, clean worktree, tagged artifacts, platform evidence. | A commit is not automatically a release. |
-| **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, and forbidden dependency edges. | A reviewed ownership/dependency baseline and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence. |
+| **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, and forbidden dependency edges. The App Shell must follow the Human-Facing Capsule Experience contract in `architecture-v2-blueprint.md`. | A reviewed ownership/dependency baseline and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence. |
 | **Future product tracks** | Parked | AI trading advice, distributed backup drone, staking drone. | Their own approved contract and capability-closure result. | They do not preempt active 1.x integrity work. |
 
 `12.3` is deliberately an ordered remediation program, not a grab bag. Its

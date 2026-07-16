@@ -30,7 +30,7 @@ void main() {
     var persistCalls = 0;
     final service = RelationshipService(
       loadRelationshipGroups: () => const [],
-      breakRelationship: (_, __, ___) {
+      breakRelationship: (_, _, _) {
         breakCalls += 1;
         return true;
       },
@@ -53,7 +53,7 @@ void main() {
     var persistCalls = 0;
     final service = RelationshipService(
       loadRelationshipGroups: () => const [],
-      breakRelationship: (_, __, ___) {
+      breakRelationship: (_, _, _) {
         breakCalls += 1;
         return true;
       },
@@ -74,7 +74,7 @@ void main() {
     var persistCalls = 0;
     final service = RelationshipService(
       loadRelationshipGroups: () => const [],
-      breakRelationship: (_, __, ___) {
+      breakRelationship: (_, _, _) {
         breakCalls += 1;
         return true;
       },
@@ -95,7 +95,7 @@ void main() {
     var persistCalls = 0;
     final service = RelationshipService(
       loadRelationshipGroups: () => const [],
-      breakRelationship: (_, __, ___) {
+      breakRelationship: (_, _, _) {
         breakCalls += 1;
         return true;
       },
@@ -118,7 +118,7 @@ void main() {
     var persistCalls = 0;
     final service = RelationshipService(
       loadRelationshipGroups: () => const [],
-      breakRelationship: (_, __, ___) {
+      breakRelationship: (_, _, _) {
         breakCalls += 1;
         return false;
       },
@@ -151,7 +151,7 @@ void main() {
 
     final service = RelationshipService(
       loadRelationshipGroups: () => const [],
-      breakRelationship: (_, __, ___) => true,
+      breakRelationship: (_, _, _) => true,
       persistLedgerSnapshot: () async {},
       addressService: _FakeCapsuleAddressService(
         cards: <CapsuleAddressCard>[
@@ -181,7 +181,7 @@ void main() {
 
     final service = RelationshipService(
       loadRelationshipGroups: () => const [],
-      breakRelationship: (_, __, ___) => true,
+      breakRelationship: (_, _, _) => true,
       persistLedgerSnapshot: () async {},
       addressService: _FakeCapsuleAddressService(
         cards: <CapsuleAddressCard>[
@@ -231,7 +231,7 @@ void main() {
 
     final service = RelationshipService(
       loadRelationshipGroups: () => groups,
-      breakRelationship: (_, __, ___) => true,
+      breakRelationship: (_, _, _) => true,
       persistLedgerSnapshot: () async {},
       addressService:
           const _FakeCapsuleAddressService(cards: <CapsuleAddressCard>[]),
@@ -281,7 +281,7 @@ void main() {
 
     final service = RelationshipService(
       loadRelationshipGroups: () => groups,
-      breakRelationship: (_, __, ___) => true,
+      breakRelationship: (_, _, _) => true,
       persistLedgerSnapshot: () async {},
       addressService:
           const _FakeCapsuleAddressService(cards: <CapsuleAddressCard>[]),
@@ -331,7 +331,7 @@ void main() {
 
     final service = RelationshipService(
       loadRelationshipGroups: () => groups,
-      breakRelationship: (_, __, ___) => true,
+      breakRelationship: (_, _, _) => true,
       persistLedgerSnapshot: () async {},
       addressService: _FakeCapsuleAddressService(
         cards: <CapsuleAddressCard>[
@@ -369,7 +369,7 @@ void main() {
 
     final service = RelationshipService(
       loadRelationshipGroups: () => const <RelationshipPeerGroup>[],
-      breakRelationship: (_, __, ___) => true,
+      breakRelationship: (_, _, _) => true,
       persistLedgerSnapshot: () async {},
       addressService: _FakeCapsuleAddressService(
         cards: <CapsuleAddressCard>[
@@ -438,7 +438,7 @@ void main() {
 
     final service = RelationshipService(
       loadRelationshipGroups: () => <RelationshipPeerGroup>[group],
-      breakRelationship: (_, __, ___) => true,
+      breakRelationship: (_, _, _) => true,
       persistLedgerSnapshot: () async {},
     );
 
@@ -482,7 +482,7 @@ void main() {
 
     final service = RelationshipService(
       loadRelationshipGroups: () => <RelationshipPeerGroup>[group],
-      breakRelationship: (_, __, ___) => true,
+      breakRelationship: (_, _, _) => true,
       persistLedgerSnapshot: () async {},
     );
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../services/settings_service.dart';
 import '../utils/hivra_id_format.dart';
 
@@ -64,26 +66,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _notifyLedgerChanged();
   }
 
-  Future<void> _copyContactCard() async {
+  Future<void> _showOwnCardDialog() async {
     final card = await widget.service.buildOwnCard();
     if (card == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not build capsule card')),
-      );
-      return;
-    }
-
-    await Clipboard.setData(ClipboardData(text: card.toPrettyJson()));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Capsule card copied')),
-    );
-  }
-
-  Future<void> _showOwnCardDialog() async {
-    final json = await widget.service.exportOwnCardJson();
-    if (json == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not build capsule card')),
@@ -95,11 +80,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('My capsule card'),
+        title: const Text('Share capsule card'),
         content: SizedBox(
-          width: 560,
-          child: SingleChildScrollView(
-            child: SelectableText(json),
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'The other person scans this code in Hivra to add your capsule address.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(12),
+                child: QrImageView(
+                  data: card.toQrPayload(),
+                  size: 248,
+                  backgroundColor: Colors.white,
+                  eyeStyle: const QrEyeStyle(color: Colors.black),
+                  dataModuleStyle: const QrDataModuleStyle(color: Colors.black),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SelectableText(
+                HivraIdFormat.short(card.rootKey),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'This card contains public routing information only.',
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
         actions: [
@@ -109,10 +122,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           FilledButton.icon(
             onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: json));
+              await Clipboard.setData(
+                ClipboardData(text: card.toPrettyJson()),
+              );
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Capsule card copied')),
+                const SnackBar(content: Text('Capsule card JSON copied')),
               );
             },
             icon: const Icon(Icons.copy),
@@ -141,7 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Paste the JSON capsule card shared by the other capsule.',
+                  'Scan the other capsule QR code or paste its shared card.',
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -168,7 +183,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 controller.text = clipboard?.text?.trim() ?? '';
                 setDialogState(() => errorText = null);
               },
-              child: const Text('Paste clipboard'),
+              child: const Text('Paste'),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                final scanned = await Navigator.of(dialogContext).push<String>(
+                  MaterialPageRoute(
+                    builder: (_) => const _CapsuleCardScannerScreen(),
+                  ),
+                );
+                if (scanned == null || !dialogContext.mounted) return;
+                controller.text = scanned;
+                setDialogState(() => errorText = null);
+              },
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Scan QR'),
             ),
             FilledButton(
               onPressed: () async {
@@ -178,7 +207,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   return;
                 }
                 try {
-                  await widget.service.importCardJson(raw);
+                  await widget.service.importCardPayload(raw);
                   await _loadContactCount();
                   if (!dialogContext.mounted) return;
                   Navigator.of(dialogContext).pop();
@@ -214,7 +243,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 : ListView.separated(
                     shrinkWrap: true,
                     itemCount: cards.length,
-                    separatorBuilder: (_, __) => const Divider(height: 16),
+                    separatorBuilder: (_, _) => const Divider(height: 16),
                     itemBuilder: (context, index) {
                       final card = cards[index];
                       return ListTile(
@@ -371,20 +400,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.badge),
-                title: const Text('Copy my capsule card'),
-                subtitle: const Text('Copy capsule address card as JSON'),
-                onTap: _copyContactCard,
-              ),
-              ListTile(
-                leading: const Icon(Icons.qr_code_2),
-                title: const Text('Show my capsule card'),
-                subtitle: const Text('View the JSON shared with remote peers'),
+                title: const Text('Share my capsule card'),
+                subtitle: const Text('Show QR code or copy address card JSON'),
                 onTap: _showOwnCardDialog,
               ),
               ListTile(
-                leading: const Icon(Icons.download),
-                title: const Text('Import peer capsule card'),
-                subtitle: const Text('Paste JSON from clipboard or message'),
+                leading: const Icon(Icons.qr_code_scanner),
+                title: const Text('Add a capsule'),
+                subtitle: const Text('Scan a QR code or paste a shared card'),
                 onTap: _importPeerCard,
               ),
               ListTile(
@@ -429,6 +452,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         ...children,
       ],
+    );
+  }
+}
+
+class _CapsuleCardScannerScreen extends StatefulWidget {
+  const _CapsuleCardScannerScreen();
+
+  @override
+  State<_CapsuleCardScannerScreen> createState() =>
+      _CapsuleCardScannerScreenState();
+}
+
+class _CapsuleCardScannerScreenState extends State<_CapsuleCardScannerScreen> {
+  final MobileScannerController _controller = MobileScannerController(
+    formats: const [BarcodeFormat.qrCode],
+  );
+  bool _handled = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_handled) return;
+    final value = capture.barcodes
+        .map((barcode) => barcode.rawValue?.trim())
+        .whereType<String>()
+        .firstOrNull;
+    if (value == null || value.isEmpty) return;
+    _handled = true;
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Scan capsule card')),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          MobileScanner(
+            controller: _controller,
+            onDetect: _onDetect,
+            errorBuilder: (_, error) => Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Camera unavailable: ${error.errorCode.name}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+          const SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Point the camera at a Hivra capsule card QR code.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

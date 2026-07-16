@@ -856,6 +856,17 @@ class _FakeCapsuleAddressRuntime implements CapsuleAddressRuntime {
 
   @override
   Uint8List? capsuleRootPublicKey() => null;
+
+  @override
+  Uint8List? signRootDigest32(Uint8List message32) => null;
+
+  @override
+  bool verifyRootDigest32({
+    required Uint8List message32,
+    required Uint8List pubkey32,
+    required Uint8List signature64,
+  }) =>
+      false;
 }
 
 String? _nullLedgerExport() => null;

@@ -178,6 +178,98 @@ The architecture review records deltas, not only totals:
 These are signals, not arbitrary size limits. A large cohesive owner is safer
 than ten microfiles that distribute one responsibility.
 
+## 7.1 Human-Facing Capsule Experience
+
+Hivra 2.0 makes the Capsule understandable without asking a normal user to
+learn its internal protocol vocabulary. A person operates a Capsule, trusted
+links, and drones; they do not operate hashes, transport keys, ledger indices,
+or starter instances as primary product objects.
+
+This is a product contract for the App Shell. It does not weaken or hide the
+underlying security model: the same verified ledger facts, lineage rules, and
+effect evidence remain available through deliberate inspection.
+
+### Progressive disclosure contract
+
+The default Capsule experience presents:
+
+- whether the Capsule is ready, needs attention, or is waiting for an explicit
+  user decision;
+- trusted links, invitations, and their human-readable history;
+- installed drones and their user-facing actions;
+- a Capsule Map that explains the Capsule's history and current trust state.
+
+The default experience does not lead with starter ids, slot numbers, root or
+transport keys, event hashes, consensus commitments, raw ledger events, or
+adapter diagnostics.
+
+Those facts remain reachable through explicit depth:
+
+```text
+Capsule Home
+  -> Capsule Map / relationship history
+    -> lineage and decision details
+      -> starter lifecycle and fact evidence
+        -> technical diagnostics (ledger, signatures, hashes, transport trace)
+```
+
+Each layer must explain why the user is seeing the next layer. A technical
+identifier without its role, lifecycle, and related human action is not a
+usable interface.
+
+### Capsule Map contract
+
+`Capsule Map` is a dedicated application projection owned by the App Shell. It
+turns confirmed Capsule history into an explorable, clickable picture:
+
+- Capsule birth and recovery milestones;
+- invitation sent, accepted, rejected, expired, or cancelled;
+- trust-link establishment, break, and later re-establishment;
+- relationship episodes and their current state;
+- drone history only where the drone explicitly publishes user-visible,
+  non-sensitive facts.
+
+A click on a connection opens its relationship history. A deeper click may
+open the starter lineage that caused a trust episode, including burn or
+recovery history. This keeps starter lineage available for understanding and
+audit without making it the normal navigation model.
+
+The map is never an independent history store. It is reconstructed from the
+same ledger projection as all other Capsule state. Operational evidence such
+as transport attempts, delivery receipts, and diagnostic failures must be
+visually marked as operational evidence, not rendered as confirmed Capsule
+truth.
+
+### Engineering boundary
+
+Ledger Inspector, raw hashes, signatures, root/transport identities, consensus
+evidence, bootstrap state, delivery queues, and traces belong behind an
+explicit Diagnostics or Developer Mode boundary. They are required for
+recovery, audit, and engineering, but are not normal-user navigation.
+
+Developer Mode must be explicit, scoped, and reversible. It must not change
+Capsule truth, grant a drone additional capabilities, or make a diagnostic
+screen the owner of a domain action.
+
+### App Shell acceptance rules
+
+1. A normal user can understand current Capsule state and resolve required
+   actions without reading a hash or starter id.
+2. No security-relevant decision becomes invisible: destructive or irreversible
+   consequences are expressed in human language before confirmation.
+3. Every user-facing state shown by Home, Map, or relationship screens comes
+   from one named projection owner, not screen-local reconstruction.
+4. The same ledger history produces the same map and history projection;
+   ordering and grouping rules are canonical and testable.
+5. A technical drill-down can explain any visible relationship state back to
+   its confirmed facts and, when necessary, its starter lineage.
+6. Visual polish must not introduce a parallel state machine, hidden
+   persistence, or an alternate action path.
+
+The first 2.0 App Shell contract must name the Capsule Map's input projection,
+canonical grouping/order rules, detail routes, and the diagnostics boundary
+before visual implementation begins.
+
 ## 8. Self-Governing Architecture Map
 
 The final 2.0 map must be generated from code and checked in CI rather than

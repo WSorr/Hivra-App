@@ -507,7 +507,7 @@ void main() {
         () async {
       final actions = _FakeInvitationActionsService();
       final completer = Completer<InvitationWorkerResult>();
-      actions.onSend = (_, __) => completer.future;
+      actions.onSend = (_, _) => completer.future;
       final handler = InvitationIntentHandler(
         actions: actions,
         delivery: const InvitationDeliveryService(),
@@ -555,7 +555,7 @@ void main() {
       final recipientB64 = base64.encode(recipient);
       List<Invitation> projectedInvitations = <Invitation>[];
       final actions = _FakeInvitationActionsService()
-        ..onSend = (_, __) async {
+        ..onSend = (_, _) async {
           projectedInvitations = <Invitation>[
             Invitation(
               id: base64.encode(Uint8List.fromList(List<int>.filled(32, 90))),
@@ -637,7 +637,7 @@ void main() {
       final recipientB64 = base64.encode(recipient);
       List<Invitation> projectedInvitations = <Invitation>[];
       final actions = _FakeInvitationActionsService()
-        ..onSend = (_, __) async {
+        ..onSend = (_, _) async {
           projectedInvitations = <Invitation>[
             Invitation(
               id: base64.encode(Uint8List.fromList(List<int>.filled(32, 91))),
@@ -714,7 +714,7 @@ void main() {
       final recipientB64 = base64.encode(recipient);
       List<Invitation> projectedInvitations = <Invitation>[];
       final actions = _FakeInvitationActionsService()
-        ..onSend = (_, __) async {
+        ..onSend = (_, _) async {
           projectedInvitations = <Invitation>[
             Invitation(
               id: base64.encode(Uint8List.fromList(List<int>.filled(32, 97))),
@@ -957,7 +957,7 @@ void main() {
         ),
       ];
       final actions = _FakeInvitationActionsService()
-        ..onAccept = (_, __) async {
+        ..onAccept = (_, _) async {
           projectedInvitations = <Invitation>[
             Invitation(
               id: invitationIdB64,
@@ -998,7 +998,7 @@ void main() {
 
       late final _FakeInvitationActionsService actions;
       actions = _FakeInvitationActionsService()
-        ..onAccept = (_, __) async {
+        ..onAccept = (_, _) async {
           if (actions.acceptCalls == 1) {
             return const InvitationWorkerResult(
               code: -8,
@@ -1046,7 +1046,7 @@ void main() {
 
       late final _FakeInvitationActionsService actions;
       actions = _FakeInvitationActionsService()
-        ..onAccept = (_, __) async {
+        ..onAccept = (_, _) async {
           if (actions.acceptCalls == 1) {
             return const InvitationWorkerResult(
               code: -8,

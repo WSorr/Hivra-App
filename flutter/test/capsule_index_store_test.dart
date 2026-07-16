@@ -199,6 +199,14 @@ void main() {
     final missingDir = Directory('${capsulesRoot.path}/$missingCapsule');
     await indexedDir.create(recursive: true);
     await missingDir.create(recursive: true);
+    await File('${indexedDir.path}/capsule_state.json').writeAsString(
+      jsonEncode({
+        'isGenesis': false,
+        'isNeste': true,
+        'identityMode': 'root_owner',
+      }),
+      flush: true,
+    );
 
     final missingState = File('${missingDir.path}/capsule_state.json');
     await missingState.writeAsString(
@@ -236,5 +244,72 @@ void main() {
     expect(repaired!.isGenesis, isTrue);
     expect(repaired.isNeste, isFalse);
     expect(repaired.identityMode, equals('legacy_nostr_owner'));
+  });
+
+  test('does not synthesize capsule entry from service-only directory',
+      () async {
+    const ghostCapsule =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    final capsulesRoot = Directory('${tempDocsDir.path}/capsules');
+    final ghostDir = Directory('${capsulesRoot.path}/$ghostCapsule');
+    await ghostDir.create(recursive: true);
+    await File('${ghostDir.path}/chat_deferred_inbox.v1.json').writeAsString(
+      '{"schema_version":1,"items":[]}',
+      flush: true,
+    );
+
+    final index = await store.read();
+
+    expect(index.capsules.containsKey(ghostCapsule), isFalse);
+  });
+
+  test('prunes indexed capsule entry backed only by service files', () async {
+    const realCapsule =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const ghostCapsule =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    final capsulesRoot = Directory('${tempDocsDir.path}/capsules');
+    final realDir = Directory('${capsulesRoot.path}/$realCapsule');
+    final ghostDir = Directory('${capsulesRoot.path}/$ghostCapsule');
+    await realDir.create(recursive: true);
+    await ghostDir.create(recursive: true);
+    await File('${realDir.path}/capsule_state.json').writeAsString(
+      '{"isGenesis":true,"isNeste":true,"identityMode":"root_owner"}',
+      flush: true,
+    );
+    await File('${ghostDir.path}/chat_deferred_inbox.v1.json').writeAsString(
+      '{"schema_version":1,"items":[]}',
+      flush: true,
+    );
+    final indexFile = File('${capsulesRoot.path}/capsules_index.json');
+    await indexFile.writeAsString(
+      jsonEncode({
+        'active': ghostCapsule,
+        'capsules': {
+          realCapsule: {
+            'pubKeyHex': realCapsule,
+            'createdAt': '2026-03-28T00:00:00.000Z',
+            'lastActive': '2026-03-28T00:00:00.000Z',
+            'isGenesis': true,
+            'isNeste': true,
+            'identityMode': 'root_owner',
+          },
+          ghostCapsule: {
+            'pubKeyHex': ghostCapsule,
+            'createdAt': '2026-03-28T00:00:00.000Z',
+            'lastActive': '2026-03-28T00:00:00.000Z',
+            'isGenesis': false,
+            'isNeste': true,
+            'identityMode': 'root_owner',
+          },
+        },
+      }),
+      flush: true,
+    );
+
+    final index = await store.read();
+
+    expect(index.activePubKeyHex, isNull);
+    expect(index.capsules.keys.toSet(), equals({realCapsule}));
   });
 }

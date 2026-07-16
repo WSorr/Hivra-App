@@ -287,7 +287,7 @@ PluginHostApiService _service({
             ],
           ),
     ),
-    resolveRuntimeInvoke: (request, __) =>
+    resolveRuntimeInvoke: (request, _) =>
         Future<PluginRuntimeInvokeEvidence>.sync(() {
       onRuntimeInvoke?.call();
       return runtimeInvoke ??

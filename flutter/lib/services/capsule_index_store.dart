@@ -176,6 +176,15 @@ class CapsuleIndexStore {
     if (!await capsulesRoot.exists()) return index;
 
     final capsules = Map<String, CapsuleIndexEntry>.from(index.capsules);
+
+    for (final entry in index.capsules.entries) {
+      final capsuleDir = Directory('${capsulesRoot.path}/${entry.key}');
+      if (await capsuleDir.exists() &&
+          !await _hasAuthoritativeCapsuleArtifact(capsuleDir)) {
+        capsules.remove(entry.key);
+      }
+    }
+
     await for (final entity in capsulesRoot.list(followLinks: false)) {
       if (entity is! Directory) continue;
       final segments = entity.uri.pathSegments
@@ -185,6 +194,7 @@ class CapsuleIndexStore {
       final pubKeyHex = segments.last;
       if (!_isPubKeyHex(pubKeyHex)) continue;
       if (capsules.containsKey(pubKeyHex)) continue;
+      if (!await _hasAuthoritativeCapsuleArtifact(entity)) continue;
       capsules[pubKeyHex] = await _synthesizeEntry(pubKeyHex, entity);
     }
 
@@ -194,6 +204,18 @@ class CapsuleIndexStore {
     }
 
     return CapsulesIndex(activePubKeyHex: active, capsules: capsules);
+  }
+
+  Future<bool> _hasAuthoritativeCapsuleArtifact(Directory capsuleDir) async {
+    for (final fileName in const <String>[
+      'capsule_state.json',
+      'ledger.json',
+      'capsule-backup.v1.json',
+    ]) {
+      final file = File('${capsuleDir.path}/$fileName');
+      if (await file.exists()) return true;
+    }
+    return false;
   }
 
   Future<CapsuleIndexEntry> _synthesizeEntry(

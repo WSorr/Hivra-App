@@ -74,6 +74,40 @@ This object may be shared as:
 
 It is public metadata, not secret material.
 
+The current QR representation is a versioned envelope:
+
+```text
+hivra:card:v1:<base64url(canonical public card JSON)>
+```
+
+The envelope version is the QR transport format, not the contact-card schema
+version. It carries the same public card validated by JSON import; it does not
+create a second address-card schema. A QR scanner therefore imports the card
+through the same root/transport validation and trusted-peer store as a pasted
+card.
+
+Newly generated cards use card `version: 2` and include a root Ed25519 proof:
+
+```json
+{
+  "proof": {
+    "algorithm": "ed25519-sha256-root-v1",
+    "signatureHex": "<64-byte signature hex>"
+  }
+}
+```
+
+The signature covers a domain-separated SHA-256 digest of the canonical card
+body without `proof`. Import must verify that:
+
+- `rootKey` and `rootHex` decode to the same 32-byte root key.
+- `transports.nostr.npub` and `transports.nostr.hex` decode to the same
+  32-byte Nostr transport key.
+- card v2 proof verifies against `rootHex`.
+
+Card v1 remains a legacy compatibility format for existing local cards, but it
+is not self-authenticating.
+
 ### 4.2 Trusted Peer Record
 
 The local capsule stores a peer card only after an explicit trust-producing

@@ -154,7 +154,7 @@ Shown on app launch when at least one capsule exists.
 ### Prerequisites
 
 - A current Rust toolchain compatible with the workspace `edition = "2021"`.
-- Flutter with Dart `>=3.2.0 <4.0.0`.
+- Flutter with Dart `>=3.7.0 <4.0.0`.
 - Android SDK (API 36) for Android builds
 - Xcode 15+ for macOS builds
 
