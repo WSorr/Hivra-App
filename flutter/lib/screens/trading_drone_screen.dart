@@ -37,6 +37,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   static const Duration _openOrdersPollInterval = Duration(seconds: 12);
   static const double _zoneNearBps = 15.0;
   static const double _zoneFarBps = 35.0;
+  static const double _fallbackRiskEquityQuote = 100.0;
   static const double _defaultStopLossPercent = 10.0;
   static const List<double> _stopLossPercentOptions = <double>[
     5.0,
@@ -1132,13 +1133,23 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _fittingMaxNotional = true;
     });
     try {
-      final fallbackEquity =
-          double.tryParse(_maxNotionalUsdtController.text.trim()) ?? 100.0;
       final riskInput = await _module.exchangeRiskInput.read(
         exchangeService: _module.exchangeService,
         credentials: credentials,
-        fallbackEquityQuote: fallbackEquity,
+        fallbackEquityQuote: _fallbackRiskEquityQuote,
       );
+      if (riskInput.usedBalanceFallback) {
+        await _module.uiLog.log(
+          'bingx.risk.autofit.blocked',
+          'reason=balance_unavailable fallback_equity='
+              '${riskInput.accountEquityQuoteDecimal}',
+        );
+        await _showSnack(
+          'Cannot auto-fit risk: BingX balance unavailable',
+          seconds: 4,
+        );
+        return;
+      }
       final equity = _toNum(riskInput.accountEquityQuoteDecimal);
       if (equity == null || equity <= 0) {
         await _showSnack('Cannot auto-fit risk: invalid equity');
@@ -1851,14 +1862,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _executing = true;
     });
     try {
-      final equityProxy =
-          double.tryParse(_maxNotionalUsdtController.text.trim()) ?? 100.0;
       final useCaseResult = await _module.executionUseCase.execute(
         screen: 'trading_drone',
         rawIntentResult: result,
         credentials: credentials,
         riskPolicy: _executionRiskPolicy,
-        fallbackEquityQuote: equityProxy,
+        fallbackEquityQuote: _fallbackRiskEquityQuote,
         testOrder: _useTestOrderEndpoint,
       );
       for (final diagnostic in useCaseResult.diagnostics) {
@@ -2008,14 +2017,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       await _showSnack('Save BingX API credentials first');
       return null;
     }
-    final equityProxy =
-        double.tryParse(_maxNotionalUsdtController.text.trim()) ?? 100.0;
     final evaluation = await _module.executionUseCase.evaluateRisk(
       payload: payload,
       rawIntentResult: rawIntentResult,
       credentials: credentials,
       riskPolicy: _executionRiskPolicy,
-      fallbackEquityQuote: equityProxy,
+      fallbackEquityQuote: _fallbackRiskEquityQuote,
     );
     for (final diagnostic in evaluation.diagnostics) {
       await _module.uiLog.log('bingx.exchange.risk_detail', diagnostic);
