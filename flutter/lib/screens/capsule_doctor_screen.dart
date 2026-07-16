@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -28,10 +29,7 @@ String _doctorErrorMessage(Object error) {
 class CapsuleDoctorScreen extends StatefulWidget {
   final AppRuntimeService runtime;
 
-  const CapsuleDoctorScreen({
-    super.key,
-    required this.runtime,
-  });
+  const CapsuleDoctorScreen({super.key, required this.runtime});
 
   @override
   State<CapsuleDoctorScreen> createState() => _CapsuleDoctorScreenState();
@@ -142,10 +140,7 @@ class _ReportView extends StatelessWidget {
           (finding) => AiCapsuleFindingCard(finding: finding),
         ),
         const SizedBox(height: 12),
-        _AiDoctorChatCard(
-          snapshot: report.snapshot,
-          chatService: chatService,
-        ),
+        _AiDoctorChatCard(snapshot: report.snapshot, chatService: chatService),
         const SizedBox(height: 12),
         _PluginAuditCard(service: pluginAuditService),
         const SizedBox(height: 12),
@@ -196,10 +191,7 @@ class _AiDoctorChatCard extends StatefulWidget {
   final AiCapsuleInspectionSnapshot snapshot;
   final AiDoctorChatService chatService;
 
-  const _AiDoctorChatCard({
-    required this.snapshot,
-    required this.chatService,
-  });
+  const _AiDoctorChatCard({required this.snapshot, required this.chatService});
 
   @override
   State<_AiDoctorChatCard> createState() => _AiDoctorChatCardState();
@@ -212,8 +204,9 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
   final TextEditingController _baseUrlController = TextEditingController(
     text: 'http://127.0.0.1:11434',
   );
-  final TextEditingController _modelController =
-      TextEditingController(text: AiDoctorChatService.defaultModel);
+  final TextEditingController _modelController = TextEditingController(
+    text: AiDoctorChatService.defaultModel,
+  );
   final TextEditingController _queryController = TextEditingController(
     text: 'What should I check next in this capsule?',
   );
@@ -267,8 +260,10 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
         await widget.chatService.saveApiKey(_provider, _apiKeyController.text);
       }
       if (_provider == InferenceProviderKind.localOpenAiCompatible) {
-        await widget.chatService
-            .saveBaseUrl(_provider, _baseUrlController.text);
+        await widget.chatService.saveBaseUrl(
+          _provider,
+          _baseUrlController.text,
+        );
       }
       await _uiLog.log(
         'ai_capsule_analyst',
@@ -312,9 +307,10 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
 
   Future<void> _askAnalyst() async {
     await _run(() async {
-      final model = _modelController.text.trim().isEmpty
-          ? _provider.defaultModel
-          : _modelController.text.trim();
+      final model =
+          _modelController.text.trim().isEmpty
+              ? _provider.defaultModel
+              : _modelController.text.trim();
       await _uiLog.log(
         'ai_capsule_analyst',
         'ask_start provider=${_provider.id} model=$model '
@@ -422,29 +418,32 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                     ),
                   )
                   .toList(growable: false),
-              onChanged: _busy
-                  ? null
-                  : (provider) {
-                      if (provider == null) return;
-                      setState(() {
-                        _provider = provider;
-                        _modelController.text = provider.defaultModel;
-                        if (provider ==
-                            InferenceProviderKind.localOpenAiCompatible) {
-                          _baseUrlController.text = 'http://127.0.0.1:11434';
-                        }
-                        _error = null;
-                      });
-                      unawaited(widget.chatService
-                          .savePreferredProvider(provider)
-                          .catchError((Object error) {
-                        return _uiLog.log(
-                          'ai_capsule_analyst',
-                          'provider_preference_save_error '
-                              '${_doctorErrorMessage(error)}',
+              onChanged:
+                  _busy
+                      ? null
+                      : (provider) {
+                        if (provider == null) return;
+                        setState(() {
+                          _provider = provider;
+                          _modelController.text = provider.defaultModel;
+                          if (provider ==
+                              InferenceProviderKind.localOpenAiCompatible) {
+                            _baseUrlController.text = 'http://127.0.0.1:11434';
+                          }
+                          _error = null;
+                        });
+                        unawaited(
+                          widget.chatService
+                              .savePreferredProvider(provider)
+                              .catchError((Object error) {
+                                return _uiLog.log(
+                                  'ai_capsule_analyst',
+                                  'provider_preference_save_error '
+                                      '${_doctorErrorMessage(error)}',
+                                );
+                              }),
                         );
-                      }));
-                    },
+                      },
             ),
             const SizedBox(height: 12),
             if (_provider == InferenceProviderKind.localOpenAiCompatible) ...[
@@ -463,10 +462,12 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
               controller: _apiKeyController,
               obscureText: _provider.requiresApiKey,
               decoration: InputDecoration(
-                labelText: _provider.requiresApiKey
-                    ? '${_provider.label} API key'
-                    : '${_provider.label} optional API key',
-                helperText: 'Stored only in secure storage. '
+                labelText:
+                    _provider.requiresApiKey
+                        ? '${_provider.label} API key'
+                        : '${_provider.label} optional API key',
+                helperText:
+                    'Stored only in secure storage. '
                     'Provider keys are isolated.',
                 border: OutlineInputBorder(),
               ),
@@ -517,17 +518,18 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                     (section) => FilterChip(
                       label: Text(section.label),
                       selected: _sections.contains(section),
-                      onSelected: _busy
-                          ? null
-                          : (selected) {
-                              setState(() {
-                                if (selected) {
-                                  _sections.add(section);
-                                } else {
-                                  _sections.remove(section);
-                                }
-                              });
-                            },
+                      onSelected:
+                          _busy
+                              ? null
+                              : (selected) {
+                                setState(() {
+                                  if (selected) {
+                                    _sections.add(section);
+                                  } else {
+                                    _sections.remove(section);
+                                  }
+                                });
+                              },
                     ),
                   )
                   .toList(growable: false),
@@ -559,10 +561,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
             ],
             if (_answer != null) ...[
               const SizedBox(height: 12),
-              SelectableText(
-                _answer!,
-                style: theme.textTheme.bodyMedium,
-              ),
+              SelectableText(_answer!, style: theme.textTheme.bodyMedium),
             ],
           ],
         ),
@@ -612,9 +611,10 @@ class _PluginAuditCardState extends State<_PluginAuditCard> {
                   children: [
                     Icon(
                       Icons.extension,
-                      color: report == null
-                          ? null
-                          : aiPluginAuditStatusColor(report.statusLabel),
+                      color:
+                          report == null
+                              ? null
+                              : aiPluginAuditStatusColor(report.statusLabel),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -692,12 +692,13 @@ class _DeveloperModeBoundaryState extends State<_DeveloperModeBoundary> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
-      color: _enabled
-          ? Color.alphaBlend(
-              Colors.orange.withValues(alpha: 0.12),
-              theme.cardColor,
-            )
-          : null,
+      color:
+          _enabled
+              ? Color.alphaBlend(
+                Colors.orange.withValues(alpha: 0.12),
+                theme.cardColor,
+              )
+              : null,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -795,12 +796,13 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   );
   final TextEditingController _selectedFilesController =
       TextEditingController();
-  final TextEditingController _engineerModelController =
-      TextEditingController(text: AiDeveloperEngineerService.defaultModel);
+  final TextEditingController _engineerModelController = TextEditingController(
+    text: AiDeveloperEngineerService.defaultModel,
+  );
   final TextEditingController _engineerQuestionController =
       TextEditingController(
-    text: 'What is the safest next code path to inspect?',
-  );
+        text: 'What is the safest next code path to inspect?',
+      );
   AiDeveloperWorkspaceReport? _report;
   AiDeveloperWorkspaceSelectedContext? _selectedContext;
   AiDeveloperEngineerPreview? _engineerPreview;
@@ -848,10 +850,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
       _error = null;
     });
     try {
-      final paths = _pathsController.text
-          .split(RegExp(r'[\n,]+'))
-          .map((path) => path.trim())
-          .where((path) => path.isNotEmpty);
+      final paths = _allowedWorkspacePaths();
       final pathCount = paths.length;
       await _uiLog.log(
         'hivra_engineer',
@@ -954,16 +953,48 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
     }
   }
 
+  Future<void> _pickWorkspaceDirectory() async {
+    if (_busy) return;
+    final selectedPath = await getDirectoryPath(
+      confirmButtonText: 'Add repository',
+    );
+    if (selectedPath == null || selectedPath.trim().isEmpty) return;
+    final paths = _allowedWorkspacePaths().toSet();
+    paths.add(selectedPath.trim());
+    final sorted = paths.toList()..sort();
+    _pathsController.text = sorted.join('\n');
+    _pathsController.selection = TextSelection.collapsed(
+      offset: _pathsController.text.length,
+    );
+    await _uiLog.log(
+      'hivra_engineer',
+      'workspace_path_added paths=${sorted.length}',
+    );
+    if (!mounted) return;
+    setState(() {
+      _error = null;
+    });
+  }
+
+  List<String> _allowedWorkspacePaths() {
+    return _pathsController.text
+        .split(RegExp(r'[\n,]+'))
+        .map((path) => path.trim())
+        .where((path) => path.isNotEmpty)
+        .toList(growable: false);
+  }
+
   void _addSelectedFile(String relativePath) {
     _addSuggestedFiles(<String>[relativePath]);
   }
 
   void _addSuggestedFiles(Iterable<String> relativePaths) {
-    final selected = _selectedFilesController.text
-        .split(RegExp(r'[\n,]+'))
-        .map((path) => path.trim())
-        .where((path) => path.isNotEmpty)
-        .toSet();
+    final selected =
+        _selectedFilesController.text
+            .split(RegExp(r'[\n,]+'))
+            .map((path) => path.trim())
+            .where((path) => path.isNotEmpty)
+            .toSet();
     selected.addAll(
       relativePaths.map((path) => path.trim()).where((path) => path.isNotEmpty),
     );
@@ -980,12 +1011,13 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   List<String> _availableRelativePaths() {
     final report = _report;
     if (report == null) return const <String>[];
-    final paths = report.repositories
-        .expand((repo) => repo.files)
-        .map((file) => file.relativePath)
-        .toSet()
-        .toList()
-      ..sort();
+    final paths =
+        report.repositories
+            .expand((repo) => repo.files)
+            .map((file) => file.relativePath)
+            .toSet()
+            .toList()
+          ..sort();
     return paths;
   }
 
@@ -1062,9 +1094,10 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
       _error = null;
     });
     try {
-      final model = _engineerModelController.text.trim().isEmpty
-          ? _engineerProvider.defaultModel
-          : _engineerModelController.text.trim();
+      final model =
+          _engineerModelController.text.trim().isEmpty
+              ? _engineerProvider.defaultModel
+              : _engineerModelController.text.trim();
       await _uiLog.log(
         'hivra_engineer',
         'ask_start provider=${_engineerProvider.id} model=$model '
@@ -1153,10 +1186,21 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
               ),
             ),
             const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: _busy ? null : _scan,
-              icon: const Icon(Icons.manage_search),
-              label: const Text('Scan workspace preview'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: _busy ? null : _scan,
+                  icon: const Icon(Icons.manage_search),
+                  label: const Text('Scan workspace preview'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _pickWorkspaceDirectory,
+                  icon: const Icon(Icons.create_new_folder_outlined),
+                  label: const Text('Add folder'),
+                ),
+              ],
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -1233,25 +1277,29 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
                       ),
                     )
                     .toList(growable: false),
-                onChanged: _busy
-                    ? null
-                    : (provider) {
-                        if (provider == null) return;
-                        setState(() {
-                          _engineerProvider = provider;
-                          _engineerModelController.text = provider.defaultModel;
-                          _error = null;
-                        });
-                        unawaited(widget.engineerService
-                            .savePreferredProvider(provider)
-                            .catchError((Object error) {
-                          return _uiLog.log(
-                            'hivra_engineer',
-                            'provider_preference_save_error '
-                                '${_doctorErrorMessage(error)}',
+                onChanged:
+                    _busy
+                        ? null
+                        : (provider) {
+                          if (provider == null) return;
+                          setState(() {
+                            _engineerProvider = provider;
+                            _engineerModelController.text =
+                                provider.defaultModel;
+                            _error = null;
+                          });
+                          unawaited(
+                            widget.engineerService
+                                .savePreferredProvider(provider)
+                                .catchError((Object error) {
+                                  return _uiLog.log(
+                                    'hivra_engineer',
+                                    'provider_preference_save_error '
+                                        '${_doctorErrorMessage(error)}',
+                                  );
+                                }),
                           );
-                        }));
-                      },
+                        },
               ),
               const SizedBox(height: 12),
               TextField(

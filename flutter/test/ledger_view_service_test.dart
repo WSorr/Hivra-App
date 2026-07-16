@@ -9,29 +9,34 @@ import 'package:hivra_app/services/ledger_view_service.dart';
 void main() {
   group('LedgerViewService', () {
     List<int> bytes32(int value) => List<int>.filled(32, value);
+    List<int> starterCreatedPayload({
+      required int starterByte,
+      required int kindByte,
+    }) => <int>[
+      ...bytes32(starterByte),
+      ...bytes32(starterByte + 1),
+      kindByte,
+      1,
+    ];
 
     test('keeps awaiting-history state when ledger has zero events', () {
       final owner = bytes32(0xaa);
       final starterInState = bytes32(0x21);
 
       final service = LedgerViewService.withSources(
-        exportLedger: () => jsonEncode(<String, dynamic>{
-          'owner': owner,
-          'events': <Object>[],
-          'last_hash': '0xdeadbeef',
-        }),
-        exportCapsuleState: () => jsonEncode(<String, dynamic>{
-          'public_key': owner,
-          'version': 7,
-          'ledger_hash': 'abc',
-          'slots': <Object?>[
-            starterInState,
-            null,
-            null,
-            null,
-            null,
-          ],
-        }),
+        exportLedger:
+            () => jsonEncode(<String, dynamic>{
+              'owner': owner,
+              'events': <Object>[],
+              'last_hash': '0xdeadbeef',
+            }),
+        exportCapsuleState:
+            () => jsonEncode(<String, dynamic>{
+              'public_key': owner,
+              'version': 7,
+              'ledger_hash': 'abc',
+              'slots': <Object?>[starterInState, null, null, null, null],
+            }),
         readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
       );
 
@@ -47,47 +52,96 @@ void main() {
       expect(snapshot.lockedStarterSlots, isEmpty);
     });
 
-    test('treats non-empty ledger as history and keeps slot projection', () {
-      final owner = bytes32(0xaa);
-      final starterInState = bytes32(0x21);
+    test(
+      'treats non-empty ledger as history and ignores stale state slots',
+      () {
+        final owner = bytes32(0xaa);
+        final starterInState = bytes32(0x21);
 
-      final service = LedgerViewService.withSources(
-        exportLedger: () => jsonEncode(<String, dynamic>{
-          'owner': owner,
-          'events': <Map<String, dynamic>>[
+        final service = LedgerViewService.withSources(
+          exportLedger:
+              () => jsonEncode(<String, dynamic>{
+                'owner': owner,
+                'events': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'kind': 'CapsuleCreated',
+                    'payload': <int>[1, 1],
+                    'timestamp': 1891000000000,
+                    'signer': owner,
+                  },
+                ],
+                'last_hash': '0xbeef',
+              }),
+          exportCapsuleState:
+              () => jsonEncode(<String, dynamic>{
+                'public_key': owner,
+                'version': 9,
+                'ledger_hash': '123',
+                'slots': <Object?>[starterInState, null, null, null, null],
+              }),
+          readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
+        );
+
+        final snapshot = service.loadCapsuleSnapshot();
+
+        expect(snapshot.hasLedgerHistory, isTrue);
+        expect(snapshot.starterCount, equals(0));
+        expect(snapshot.pendingInvitations, equals(0));
+        expect(snapshot.relationshipCount, equals(0));
+        expect(snapshot.version, equals(9));
+        expect(snapshot.ledgerHashHex, equals('123'));
+        expect(snapshot.starterIds.whereType<Uint8List>(), isEmpty);
+      },
+    );
+
+    test('projects starter slots from ledger when capsule state is stale', () {
+      final owner = bytes32(0xaa);
+      final ledgerJson = jsonEncode(<String, dynamic>{
+        'owner': owner,
+        'events': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'kind': 'CapsuleCreated',
+            'payload': <int>[1, 1],
+            'timestamp': 1891000000000,
+            'signer': owner,
+          },
+          for (final entry in <(int, int)>[(0x21, 1), (0x31, 2), (0x41, 3)])
             <String, dynamic>{
-              'kind': 'CapsuleCreated',
-              'payload': <int>[1, 1],
-              'timestamp': 1891000000000,
+              'kind': 'StarterCreated',
+              'payload': starterCreatedPayload(
+                starterByte: entry.$1,
+                kindByte: entry.$2,
+              ),
+              'timestamp': 1891000000000 + entry.$1,
               'signer': owner,
             },
-          ],
-          'last_hash': '0xbeef',
-        }),
-        exportCapsuleState: () => jsonEncode(<String, dynamic>{
-          'public_key': owner,
-          'version': 9,
-          'ledger_hash': '123',
-          'slots': <Object?>[
-            starterInState,
-            null,
-            null,
-            null,
-            null,
-          ],
-        }),
+        ],
+        'last_hash': '0xbeef',
+      });
+
+      final service = LedgerViewService.withSources(
+        exportLedger: () => ledgerJson,
+        exportCapsuleState:
+            () => jsonEncode(<String, dynamic>{
+              'public_key': owner,
+              'version': 4,
+              'ledger_hash': 'beef',
+              'slots': <Object?>[null, null, null, null, null],
+            }),
         readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
       );
 
       final snapshot = service.loadCapsuleSnapshot();
+      final summary = const CapsuleLedgerSummaryParser().parse(
+        ledgerJson,
+        (bytes) => bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
+      );
 
       expect(snapshot.hasLedgerHistory, isTrue);
-      expect(snapshot.starterCount, equals(1));
-      expect(snapshot.pendingInvitations, equals(0));
-      expect(snapshot.relationshipCount, equals(0));
-      expect(snapshot.version, equals(9));
-      expect(snapshot.ledgerHashHex, equals('123'));
-      expect(snapshot.starterIds.whereType<Uint8List>(), hasLength(1));
+      expect(snapshot.starterCount, equals(summary.starterCount));
+      expect(snapshot.starterCount, equals(3));
+      expect(snapshot.starterIds.whereType<Uint8List>(), hasLength(3));
+      expect(snapshot.starterKinds.whereType<String>(), hasLength(3));
     });
 
     test(
@@ -147,18 +201,13 @@ void main() {
 
         final service = LedgerViewService.withSources(
           exportLedger: () => ledgerJson,
-          exportCapsuleState: () => jsonEncode(<String, dynamic>{
-            'public_key': owner,
-            'version': 3,
-            'ledger_hash': 'feed',
-            'slots': <Object?>[
-              ownStarter,
-              null,
-              null,
-              null,
-              null,
-            ],
-          }),
+          exportCapsuleState:
+              () => jsonEncode(<String, dynamic>{
+                'public_key': owner,
+                'version': 3,
+                'ledger_hash': 'feed',
+                'slots': <Object?>[ownStarter, null, null, null, null],
+              }),
           readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
           readRuntimeTransportPublicKey: () => Uint8List.fromList(transport),
         );
@@ -196,36 +245,41 @@ void main() {
         ];
 
         final service = LedgerViewService.withSources(
-          exportLedger: () => jsonEncode(<String, dynamic>{
-            'owner': owner,
-            'events': <Map<String, dynamic>>[
-              <String, dynamic>{
-                'kind': 'CapsuleCreated',
-                'payload': <int>[1, 0],
-                'timestamp': 1891000000000,
-                'signer': owner,
-              },
-              <String, dynamic>{
-                'kind': 'InvitationSent',
-                'payload': invitationSentPayload,
-                'timestamp': 1891000001000,
-                'signer': unresolvedSigner,
-              },
-            ],
-            'last_hash': '0xface',
-          }),
-          exportCapsuleState: () => jsonEncode(<String, dynamic>{
-            'public_key': owner,
-            'version': 2,
-            'ledger_hash': 'face',
-            'slots': <Object?>[
-              localStarter,
-              null,
-              null,
-              null,
-              null,
-            ],
-          }),
+          exportLedger:
+              () => jsonEncode(<String, dynamic>{
+                'owner': owner,
+                'events': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'kind': 'CapsuleCreated',
+                    'payload': <int>[1, 0],
+                    'timestamp': 1891000000000,
+                    'signer': owner,
+                  },
+                  <String, dynamic>{
+                    'kind': 'StarterCreated',
+                    'payload': starterCreatedPayload(
+                      starterByte: 0x21,
+                      kindByte: 1,
+                    ),
+                    'timestamp': 1891000000500,
+                    'signer': owner,
+                  },
+                  <String, dynamic>{
+                    'kind': 'InvitationSent',
+                    'payload': invitationSentPayload,
+                    'timestamp': 1891000001000,
+                    'signer': unresolvedSigner,
+                  },
+                ],
+                'last_hash': '0xface',
+              }),
+          exportCapsuleState:
+              () => jsonEncode(<String, dynamic>{
+                'public_key': owner,
+                'version': 2,
+                'ledger_hash': 'face',
+                'slots': <Object?>[localStarter, null, null, null, null],
+              }),
           readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
         );
 

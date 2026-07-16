@@ -1361,6 +1361,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         symbol: symbol,
         peerHex: peerHex,
         forceConsensusSignable: peerHex.isEmpty,
+        zoneEvaluationSide: _side,
       );
       if (liveDecision == null) return;
       final live = liveDecision;

@@ -27,13 +27,12 @@ class LedgerViewService {
   late final RelationshipProjectionService _relationshipProjection;
 
   LedgerViewService({required LedgerViewRuntime runtime})
-      : _exportLedger = runtime.exportLedger,
-        _exportCapsuleState = runtime.exportCapsuleStateJson,
-        _readRuntimeOwnerPublicKey = runtime.capsuleRuntimeOwnerPublicKey,
-        _readRuntimeTransportPublicKey =
-            runtime.capsuleRuntimeTransportPublicKey,
-        _support = const LedgerViewSupport(),
-        _summaryParser = const CapsuleLedgerSummaryParser() {
+    : _exportLedger = runtime.exportLedger,
+      _exportCapsuleState = runtime.exportCapsuleStateJson,
+      _readRuntimeOwnerPublicKey = runtime.capsuleRuntimeOwnerPublicKey,
+      _readRuntimeTransportPublicKey = runtime.capsuleRuntimeTransportPublicKey,
+      _support = const LedgerViewSupport(),
+      _summaryParser = const CapsuleLedgerSummaryParser() {
     _invitationProjection = InvitationProjectionService.withOwnerKeyProvider(
       _readRuntimeOwnerPublicKey,
       _support,
@@ -41,10 +40,10 @@ class LedgerViewService {
     );
     _relationshipProjection =
         RelationshipProjectionService.withOwnerKeyProvider(
-      _readRuntimeOwnerPublicKey,
-      _support,
-      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
-    );
+          _readRuntimeOwnerPublicKey,
+          _support,
+          runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
+        );
   }
 
   LedgerViewService.withSources({
@@ -55,13 +54,13 @@ class LedgerViewService {
     LedgerViewSupport support = const LedgerViewSupport(),
     CapsuleLedgerSummaryParser summaryParser =
         const CapsuleLedgerSummaryParser(),
-  })  : _exportLedger = exportLedger,
-        _exportCapsuleState = exportCapsuleState,
-        _readRuntimeOwnerPublicKey = readRuntimeOwnerPublicKey,
-        _readRuntimeTransportPublicKey =
-            readRuntimeTransportPublicKey ?? _emptyRuntimeTransportKey,
-        _support = support,
-        _summaryParser = summaryParser {
+  }) : _exportLedger = exportLedger,
+       _exportCapsuleState = exportCapsuleState,
+       _readRuntimeOwnerPublicKey = readRuntimeOwnerPublicKey,
+       _readRuntimeTransportPublicKey =
+           readRuntimeTransportPublicKey ?? _emptyRuntimeTransportKey,
+       _support = support,
+       _summaryParser = summaryParser {
     _invitationProjection = InvitationProjectionService.withOwnerKeyProvider(
       _readRuntimeOwnerPublicKey,
       _support,
@@ -69,10 +68,10 @@ class LedgerViewService {
     );
     _relationshipProjection =
         RelationshipProjectionService.withOwnerKeyProvider(
-      _readRuntimeOwnerPublicKey,
-      _support,
-      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
-    );
+          _readRuntimeOwnerPublicKey,
+          _support,
+          runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
+        );
   }
 
   static Uint8List? _emptyRuntimeTransportKey() => null;
@@ -80,7 +79,8 @@ class LedgerViewService {
   CapsuleLedgerSnapshot loadCapsuleSnapshot() {
     final root = _exportLedgerRoot();
     final capsuleState = _exportCapsuleStateRoot();
-    final pubKey = _bytes32List(capsuleState?['public_key']) ??
+    final pubKey =
+        _bytes32List(capsuleState?['public_key']) ??
         _readRuntimeOwnerPublicKey() ??
         Uint8List(0);
 
@@ -114,13 +114,14 @@ class LedgerViewService {
       );
     }
 
-    final starterIds = _starterIdsFromCapsuleState(capsuleState);
+    final starterIds = _starterIdsFromLedger(root);
     final starterKinds = _starterKindsFromLedger(root, starterIds);
     final starterCount = starterIds.whereType<Uint8List>().length;
 
-    final version = capsuleState?['version'] is num
-        ? (capsuleState!['version'] as num).toInt()
-        : events.length;
+    final version =
+        capsuleState?['version'] is num
+            ? (capsuleState!['version'] as num).toInt()
+            : events.length;
     final rawHash = capsuleState?['ledger_hash'] ?? root['last_hash'];
     final hashHex = rawHash == null ? '0' : rawHash.toString();
 
@@ -131,12 +132,15 @@ class LedgerViewService {
       runtimeTransportPublicKey: _readRuntimeTransportPublicKey(),
       starterIds: starterIds,
     );
-    final lockedStarterSlots = invitations
-        .where((invitation) =>
-            invitation.status == InvitationStatus.pending &&
-            invitation.starterSlot != null)
-        .map((invitation) => invitation.starterSlot!)
-        .toSet();
+    final lockedStarterSlots =
+        invitations
+            .where(
+              (invitation) =>
+                  invitation.status == InvitationStatus.pending &&
+                  invitation.starterSlot != null,
+            )
+            .map((invitation) => invitation.starterSlot!)
+            .toSet();
 
     return CapsuleLedgerSnapshot(
       publicKey: pubKey,
@@ -171,8 +175,9 @@ class LedgerViewService {
     return _relationshipProjection.loadRelationships(ledgerRoot);
   }
 
-  List<RelationshipPeerGroup> loadRelationshipGroups(
-      {Map<String, dynamic>? root}) {
+  List<RelationshipPeerGroup> loadRelationshipGroups({
+    Map<String, dynamic>? root,
+  }) {
     final ledgerRoot = root ?? _exportLedgerRoot();
     if (ledgerRoot == null) return <RelationshipPeerGroup>[];
     return _relationshipProjection.loadRelationshipGroups(ledgerRoot);
@@ -209,6 +214,61 @@ class LedgerViewService {
       if (slot == null) return null;
       return _bytes32List(slot);
     });
+  }
+
+  List<Uint8List?> _starterIdsFromLedger(Map<String, dynamic> root) {
+    final owner = _bytes32List(root['owner']);
+    final slots = List<Uint8List?>.filled(5, null);
+    final burnedStarterIds = <String>{};
+
+    for (final eventRaw in _support.events(root)) {
+      if (eventRaw is! Map) continue;
+      final event = Map<String, dynamic>.from(eventRaw);
+      final signer = _bytes32List(event['signer']);
+      if (owner != null && signer != null && !_sameBytes(owner, signer)) {
+        continue;
+      }
+
+      final kind = _support.kindCode(event['kind']);
+      final payload = _support.payloadBytes(event['payload']);
+      switch (kind) {
+        case 5:
+          if (payload.length < 65) break;
+          final starterId = Uint8List.fromList(payload.sublist(0, 32));
+          final key = base64.encode(starterId);
+          if (burnedStarterIds.contains(key)) break;
+          if (slots.any(
+            (slot) => slot != null && _sameBytes(slot, starterId),
+          )) {
+            break;
+          }
+          final freeIndex = slots.indexWhere((slot) => slot == null);
+          if (freeIndex >= 0) slots[freeIndex] = starterId;
+          break;
+        case 6:
+          if (payload.length < 32) break;
+          final starterId = Uint8List.fromList(payload.sublist(0, 32));
+          final key = base64.encode(starterId);
+          final index = slots.indexWhere(
+            (slot) => slot != null && _sameBytes(slot, starterId),
+          );
+          if (index >= 0) slots[index] = null;
+          burnedStarterIds.add(key);
+          break;
+        default:
+          break;
+      }
+    }
+
+    return slots;
+  }
+
+  bool _sameBytes(Uint8List a, Uint8List b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   List<String?> _starterKindsFromLedger(
