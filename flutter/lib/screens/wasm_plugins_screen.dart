@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -17,11 +18,7 @@ class WasmPluginsScreen extends StatefulWidget {
   final bool embedded;
   final AppRuntimeService? runtime;
 
-  const WasmPluginsScreen({
-    super.key,
-    this.embedded = false,
-    this.runtime,
-  });
+  const WasmPluginsScreen({super.key, this.embedded = false, this.runtime});
 
   @override
   State<WasmPluginsScreen> createState() => _WasmPluginsScreenState();
@@ -30,8 +27,9 @@ class WasmPluginsScreen extends StatefulWidget {
 class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   late final PluginRuntimeModule _module;
   final TextEditingController _chatPeerController = TextEditingController();
-  final TextEditingController _chatMessageController =
-      TextEditingController(text: 'hello from capsule chat');
+  final TextEditingController _chatMessageController = TextEditingController(
+    text: 'hello from capsule chat',
+  );
   List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
   WasmPluginSourceCatalog? _sourceCatalogSnapshot;
   String? _sourceCatalogError;
@@ -76,9 +74,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   @override
   void initState() {
     super.initState();
-    _module = PluginRuntimeModuleService(
-      runtime: widget.runtime ?? AppRuntimeService(),
-    ).build();
+    _module =
+        PluginRuntimeModuleService(
+          runtime: widget.runtime ?? AppRuntimeService(),
+        ).build();
     _reload();
     _reloadSourceCatalog();
   }
@@ -168,12 +167,14 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         SnackBar(content: Text('Installed ${record.displayName}')),
       );
     } on FormatException catch (error) {
-      await _module.uiLog
-          .log('plugin.install.error', 'format=${error.message}');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
+      await _module.uiLog.log(
+        'plugin.install.error',
+        'format=${error.message}',
       );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     } catch (error) {
       await _module.uiLog.log('plugin.install.error', 'exception=$error');
       if (!mounted) return;
@@ -204,22 +205,24 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   }
 
   Future<void> _removePlugin(WasmPluginRecord record) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Remove plugin'),
-            content: Text('Remove ${record.displayName} from this device?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+          builder:
+              (context) => AlertDialog(
+                title: const Text('Remove plugin'),
+                content: Text('Remove ${record.displayName} from this device?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Remove'),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Remove'),
-              ),
-            ],
-          ),
         ) ??
         false;
     if (!confirmed) return;
@@ -227,9 +230,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     await _module.registry.removePlugin(record.id);
     await _reload();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Removed ${record.displayName}')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Removed ${record.displayName}')));
   }
 
   Future<void> _installFromSource(WasmPluginSourceCatalogEntry entry) async {
@@ -286,26 +289,23 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            'Failed to install ${entry.displayName}: $error',
-          ),
+          content: Text('Failed to install ${entry.displayName}: $error'),
           duration: const Duration(seconds: 2),
         ),
       );
     } finally {
       if (mounted) {
         setState(() {
-          _installingSourceEntryIds = _installingSourceEntryIds
-              .where((value) => value != entry.id)
-              .toSet();
+          _installingSourceEntryIds =
+              _installingSourceEntryIds
+                  .where((value) => value != entry.id)
+                  .toSet();
         });
       }
     }
   }
 
-  Future<String?> _selectConsensusPeer({
-    required String hint,
-  }) async {
+  Future<String?> _selectConsensusPeer({required String hint}) async {
     final checks = _module.manualChecks.loadChecks();
     if (checks.isEmpty) {
       if (!mounted) return null;
@@ -354,15 +354,16 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                     check.peerHex,
                     style: const TextStyle(fontFamily: 'monospace'),
                   ),
-                  trailing: check.isSignable
-                      ? const Text(
-                          'Signable',
-                          style: TextStyle(color: Colors.green),
-                        )
-                      : const Text(
-                          'Blocked',
-                          style: TextStyle(color: Colors.orange),
-                        ),
+                  trailing:
+                      check.isSignable
+                          ? const Text(
+                            'Signable',
+                            style: TextStyle(color: Colors.green),
+                          )
+                          : const Text(
+                            'Blocked',
+                            style: TextStyle(color: Colors.orange),
+                          ),
                   onTap: () => Navigator.of(sheetContext).pop(check.peerHex),
                 ),
             ],
@@ -416,7 +417,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       );
       if (!attestation.isReady) {
         setState(() {
-          _chatWorkspaceNotice = attestation.message ??
+          _chatWorkspaceNotice =
+              attestation.message ??
               (attestation.status == ConsensusAttestationExchangeStatus.syncing
                   ? 'Pair consensus attestation syncing'
                   : 'Pair consensus attestation blocked');
@@ -448,9 +450,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         case PluginHostApiStatus.executed:
           final envelopeHash =
               response.result?['envelope_hash_hex']?.toString() ?? '';
-          final shortHash = envelopeHash.length >= 12
-              ? '${envelopeHash.substring(0, 12)}..'
-              : envelopeHash;
+          final shortHash =
+              envelopeHash.length >= 12
+                  ? '${envelopeHash.substring(0, 12)}..'
+                  : envelopeHash;
           final canonicalEnvelopeJson =
               response.result?['canonical_envelope_json']?.toString() ?? '';
           final sendResult = await _module.chatDelivery.sendCanonicalEnvelope(
@@ -463,7 +466,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               'code=${sendResult.code} blocked=${sendResult.blockedByConsensus} deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} message=${sendResult.errorMessage ?? "unknown"}',
             );
             setState(() {
-              _chatWorkspaceNotice = sendResult.errorMessage ??
+              _chatWorkspaceNotice =
+                  sendResult.errorMessage ??
                   'Chat transport failed (code ${sendResult.code})';
               _chatWorkspaceNoticeIsError = true;
             });
@@ -480,9 +484,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           await _refreshCapsuleChatInbox(silentWhenEmpty: true);
           break;
         case PluginHostApiStatus.blocked:
-          final reason = response.blockingFacts.isEmpty
-              ? 'Consensus guard blocked execution.'
-              : response.blockingFacts.first.label;
+          final reason =
+              response.blockingFacts.isEmpty
+                  ? 'Consensus guard blocked execution.'
+                  : response.blockingFacts.first.label;
           await _module.uiLog.log(
             'chat.send.blocked',
             '$reason source=${_executionSourceInfo(response)}',
@@ -524,9 +529,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            Future<void> runAndRefresh(
-              Future<void> Function() action,
-            ) async {
+            Future<void> runAndRefresh(Future<void> Function() action) async {
               final pending = action();
               setDialogState(() {});
               await pending;
@@ -608,10 +611,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                           deferredByConsensus: _chatDeferredByConsensus,
                           peerController: _chatPeerController,
                           messageController: _chatMessageController,
-                          onUsePeerPressed: () =>
-                              runAndRefresh(_fillPeerFromConsensus),
-                          onRefreshInboxPressed: () =>
-                              runAndRefresh(_refreshCapsuleChatInbox),
+                          onUsePeerPressed:
+                              () => runAndRefresh(_fillPeerFromConsensus),
+                          onRefreshInboxPressed:
+                              () => runAndRefresh(_refreshCapsuleChatInbox),
                           onRunPressed: () => runAndRefresh(_runCapsuleChat),
                         ),
                       ),
@@ -648,6 +651,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       final stopwatch = Stopwatch()..start();
       final result = await _module.chatDelivery.receiveAndFilter();
       stopwatch.stop();
+      _refreshAttestationsAfterTransportReceive('plugin_chat_fetch');
       await _module.uiLog.log(
         'chat.fetch.result',
         'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus} deferred=${result.deferredByConsensus}'
@@ -656,23 +660,27 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       if (!mounted) return;
       if (result.code < 0) {
         setState(() {
-          _chatWorkspaceNotice = result.errorMessage ??
+          _chatWorkspaceNotice =
+              result.errorMessage ??
               'Chat receive failed (code ${result.code})';
           _chatWorkspaceNoticeIsError = true;
         });
         return;
       }
 
-      final hasUpdates = result.messages.isNotEmpty ||
+      final hasUpdates =
+          result.messages.isNotEmpty ||
           result.tradeSignals.isNotEmpty ||
           result.executionDecisions.isNotEmpty ||
           result.executionReceipts.isNotEmpty;
-      final droppedNote = result.droppedByConsensus > 0
-          ? ' · dropped ${result.droppedByConsensus} by consensus'
-          : '';
-      final deferredNote = result.deferredByConsensus > 0
-          ? ' · deferred ${result.deferredByConsensus} until attestation'
-          : '';
+      final droppedNote =
+          result.droppedByConsensus > 0
+              ? ' · dropped ${result.droppedByConsensus} by consensus'
+              : '';
+      final deferredNote =
+          result.deferredByConsensus > 0
+              ? ' · deferred ${result.deferredByConsensus} until attestation'
+              : '';
       final updateNotice =
           'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}, cmd +${result.executionDecisions.length}, receipt +${result.executionReceipts.length}$droppedNote$deferredNote';
       setState(() {
@@ -682,8 +690,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         for (final message in result.messages) {
           byId[message.id] = message;
         }
-        final merged = byId.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+        final merged =
+            byId.values.toList()
+              ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
 
         _chatDroppedByConsensus = result.droppedByConsensus;
         _chatDeferredByConsensus = result.deferredByConsensus;
@@ -698,13 +707,24 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     }
   }
 
+  void _refreshAttestationsAfterTransportReceive(String reason) {
+    unawaited(() async {
+      final result = await _module.attestationExchange.receiveAndAnswerStored();
+      await _module.uiLog.log(
+        'attestation.receive',
+        'reason=$reason code=${result.code} received=${result.receivedCount} stored=${result.storedCount} rejected=${result.rejectedCount}',
+      );
+    }());
+  }
+
   @override
   Widget build(BuildContext context) {
     final content = LayoutBuilder(
       builder: (context, constraints) {
-        final horizontalPadding = constraints.maxWidth < 600
-            ? 12.0
-            : constraints.maxWidth < 1000
+        final horizontalPadding =
+            constraints.maxWidth < 600
+                ? 12.0
+                : constraints.maxWidth < 1000
                 ? 20.0
                 : 28.0;
 
@@ -739,12 +759,13 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                         switch (record.pluginId) {
                           case bingxFuturesTradingPluginId:
                             return () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => TradingDroneScreen(
+                              MaterialPageRoute<void>(
+                                builder:
+                                    (_) => TradingDroneScreen(
                                       runtime: widget.runtime,
                                     ),
-                                  ),
-                                );
+                              ),
+                            );
                           case capsuleChatPluginId:
                             return _openCapsuleChatWorkspace;
                           default:
@@ -758,7 +779,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                       sourceName: _sourceCatalogSnapshot?.sourceName,
                       sourceId: _sourceCatalogSnapshot?.sourceId,
                       sourceError: _sourceCatalogError,
-                      entries: _sourceCatalogSnapshot?.entries ??
+                      entries:
+                          _sourceCatalogSnapshot?.entries ??
                           const <WasmPluginSourceCatalogEntry>[],
                       installed: _installed,
                       installingEntryIds: _installingSourceEntryIds,
@@ -776,11 +798,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                         const SizedBox(height: 12),
                         _PluginGrid(
                           maxColumns: 3,
-                          children: _boundaryRules
-                              .map(
-                                (rule) => _RuleTile(rule: rule),
-                              )
-                              .toList(),
+                          children:
+                              _boundaryRules
+                                  .map((rule) => _RuleTile(rule: rule))
+                                  .toList(),
                         ),
                       ],
                     ),
@@ -882,11 +903,7 @@ class _PluginScreenOverview extends StatelessWidget {
           if (constraints.maxWidth < 700) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                description,
-                const SizedBox(height: 14),
-                metrics,
-              ],
+              children: [description, const SizedBox(height: 14), metrics],
             );
           }
           return Row(
@@ -907,11 +924,7 @@ class _OverviewMetric extends StatelessWidget {
   final String label;
   final Color? accent;
 
-  const _OverviewMetric({
-    required this.icon,
-    required this.label,
-    this.accent,
-  });
+  const _OverviewMetric({required this.icon, required this.label, this.accent});
 
   @override
   Widget build(BuildContext context) {
@@ -960,10 +973,7 @@ class _AdvancedPluginTools extends StatelessWidget {
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(18, 2, 18, 18),
-          leading: const Icon(
-            Icons.tune_rounded,
-            color: Color(0xFF9FA8B6),
-          ),
+          leading: const Icon(Icons.tune_rounded, color: Color(0xFF9FA8B6)),
           title: const Text(
             'Advanced tools',
             style: TextStyle(fontWeight: FontWeight.w800),
@@ -1015,30 +1025,25 @@ class _InstalledSection extends StatelessWidget {
                 children: [
                   Text(
                     'Installed plugins',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                   SizedBox(height: 4),
                   Text(
                     'Packages available to this device.',
-                    style: TextStyle(
-                      color: Color(0xFF9CA7B5),
-                      height: 1.35,
-                    ),
+                    style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
                   ),
                 ],
               );
               final action = FilledButton.icon(
                 onPressed: installing ? null : onInstallPressed,
-                icon: installing
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.add_rounded),
+                icon:
+                    installing
+                        ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.add_rounded),
                 label: Text(installing ? 'Installing' : 'Add package'),
               );
 
@@ -1069,15 +1074,18 @@ class _InstalledSection extends StatelessWidget {
           else
             _PluginGrid(
               maxColumns: 3,
-              children: installed
-                  .map(
-                    (record) => _InstalledPluginTile(
-                      record: record,
-                      onRemovePressed: () => onRemovePressed(record),
-                      onOpenWorkspacePressed: onOpenWorkspacePressed(record),
-                    ),
-                  )
-                  .toList(),
+              children:
+                  installed
+                      .map(
+                        (record) => _InstalledPluginTile(
+                          record: record,
+                          onRemovePressed: () => onRemovePressed(record),
+                          onOpenWorkspacePressed: onOpenWorkspacePressed(
+                            record,
+                          ),
+                        ),
+                      )
+                      .toList(),
             ),
         ],
       ),
@@ -1095,7 +1103,7 @@ class _SourceCatalogSection extends StatelessWidget {
   final Set<String> installingEntryIds;
   final Future<void> Function() onRefreshPressed;
   final Future<void> Function(WasmPluginSourceCatalogEntry entry)
-      onInstallPressed;
+  onInstallPressed;
 
   const _SourceCatalogSection({
     required this.loading,
@@ -1128,10 +1136,7 @@ class _SourceCatalogSection extends StatelessWidget {
                 children: [
                   const Text(
                     'Discover plugins',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -1148,13 +1153,14 @@ class _SourceCatalogSection extends StatelessWidget {
               final action = IconButton(
                 onPressed: loading ? null : onRefreshPressed,
                 tooltip: 'Refresh catalog',
-                icon: loading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh_rounded),
+                icon:
+                    loading
+                        ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.refresh_rounded),
               );
 
               return Row(
@@ -1179,10 +1185,7 @@ class _SourceCatalogSection extends StatelessWidget {
               ),
               child: Text(
                 sourceError!,
-                style: const TextStyle(
-                  color: Color(0xFFFFA4A4),
-                  height: 1.35,
-                ),
+                style: const TextStyle(color: Color(0xFFFFA4A4), height: 1.35),
               ),
             )
           else if (loading)
@@ -1204,16 +1207,17 @@ class _SourceCatalogSection extends StatelessWidget {
           else
             _PluginGrid(
               maxColumns: 3,
-              children: entries.map((entry) {
-                final busy = installingEntryIds.contains(entry.id);
-                final installedAlready = _isEntryInstalled(entry);
-                return _CatalogEntryTile(
-                  entry: entry,
-                  busy: busy,
-                  installed: installedAlready,
-                  onInstallPressed: () => onInstallPressed(entry),
-                );
-              }).toList(),
+              children:
+                  entries.map((entry) {
+                    final busy = installingEntryIds.contains(entry.id);
+                    final installedAlready = _isEntryInstalled(entry);
+                    return _CatalogEntryTile(
+                      entry: entry,
+                      busy: busy,
+                      installed: installedAlready,
+                      onInstallPressed: () => onInstallPressed(entry),
+                    );
+                  }).toList(),
             ),
         ],
       ),
@@ -1343,21 +1347,22 @@ class _CatalogEntryTile extends StatelessWidget {
               const Spacer(),
               FilledButton.tonalIcon(
                 onPressed: busy || installed ? null : onInstallPressed,
-                icon: installed
-                    ? const Icon(Icons.check_circle_rounded, size: 18)
-                    : busy
+                icon:
+                    installed
+                        ? const Icon(Icons.check_circle_rounded, size: 18)
+                        : busy
                         ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                         : const Icon(Icons.download_rounded, size: 18),
                 label: Text(
                   installed
                       ? 'Installed'
                       : busy
-                          ? 'Installing'
-                          : 'Install',
+                      ? 'Installing'
+                      : 'Install',
                 ),
               ),
             ],
@@ -1384,9 +1389,10 @@ class _InstalledPluginTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayName = record.displayName.isEmpty
-        ? record.originalFileName
-        : record.displayName;
+    final displayName =
+        record.displayName.isEmpty
+            ? record.originalFileName
+            : record.displayName;
     final accent = _accentForName(displayName);
     final isZipPackage = record.packageKind.trim().toLowerCase() == 'zip';
     final runtimeAbi = record.runtimeAbi?.trim() ?? '';
@@ -1465,9 +1471,10 @@ class _InstalledPluginTile extends StatelessWidget {
                     children: [
                       _StatusPill(
                         label: ready ? 'Ready' : 'Needs attention',
-                        accent: ready
-                            ? const Color(0xFF75D98A)
-                            : const Color(0xFFFFA06B),
+                        accent:
+                            ready
+                                ? const Color(0xFF75D98A)
+                                : const Color(0xFFFFA06B),
                       ),
                       if (record.pluginVersion?.trim().isNotEmpty == true)
                         _OverviewMetric(
@@ -1493,8 +1500,10 @@ class _InstalledPluginTile extends StatelessWidget {
             child: ExpansionTile(
               dense: true,
               visualDensity: VisualDensity.compact,
-              tilePadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+              tilePadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 0,
+              ),
               childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
               title: const Text(
                 'Technical details',
@@ -1527,26 +1536,31 @@ class _InstalledPluginTile extends StatelessWidget {
                         ),
                       if (isZipPackage)
                         _InfoChip(
-                          icon: abiMatches
-                              ? Icons.check_circle_outline_rounded
-                              : Icons.error_outline_rounded,
+                          icon:
+                              abiMatches
+                                  ? Icons.check_circle_outline_rounded
+                                  : Icons.error_outline_rounded,
                           label:
                               runtimeAbi.isEmpty ? 'ABI missing' : runtimeAbi,
-                          accent: abiMatches
-                              ? const Color(0xFF75D98A)
-                              : const Color(0xFFFF8A7A),
+                          accent:
+                              abiMatches
+                                  ? const Color(0xFF75D98A)
+                                  : const Color(0xFFFF8A7A),
                         ),
                       if (isZipPackage)
                         _InfoChip(
-                          icon: entryMatches
-                              ? Icons.check_circle_outline_rounded
-                              : Icons.error_outline_rounded,
-                          label: runtimeEntryExport.isEmpty
-                              ? 'Entry missing'
-                              : runtimeEntryExport,
-                          accent: entryMatches
-                              ? const Color(0xFF75D98A)
-                              : const Color(0xFFFF8A7A),
+                          icon:
+                              entryMatches
+                                  ? Icons.check_circle_outline_rounded
+                                  : Icons.error_outline_rounded,
+                          label:
+                              runtimeEntryExport.isEmpty
+                                  ? 'Entry missing'
+                                  : runtimeEntryExport,
+                          accent:
+                              entryMatches
+                                  ? const Color(0xFF75D98A)
+                                  : const Color(0xFFFF8A7A),
                         ),
                       if (record.capabilities.isNotEmpty)
                         _InfoChip(
@@ -1639,10 +1653,7 @@ class _SectionTitle extends StatelessWidget {
   final String title;
   final String subtitle;
 
-  const _SectionTitle({
-    required this.title,
-    required this.subtitle,
-  });
+  const _SectionTitle({required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
@@ -1651,18 +1662,12 @@ class _SectionTitle extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-          ),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Text(
           subtitle,
-          style: const TextStyle(
-            color: Color(0xFF96A2B2),
-            height: 1.35,
-          ),
+          style: const TextStyle(color: Color(0xFF96A2B2), height: 1.35),
         ),
       ],
     );
@@ -1718,18 +1723,19 @@ class _CapsuleChatPanel extends StatelessWidget {
     };
     final details = switch (status) {
       PluginHostApiStatus.executed => () {
-          final hash = response?.result?['envelope_hash_hex']?.toString() ?? '';
-          return hash.isEmpty
-              ? 'Deterministic envelope created.'
-              : 'Envelope hash: ${hash.substring(0, hash.length < 16 ? hash.length : 16)}..';
-        }(),
-      PluginHostApiStatus.blocked => response!.blockingFacts.isEmpty
-          ? 'Consensus guard blocked execution.'
-          : response.blockingFacts.first.label,
+        final hash = response?.result?['envelope_hash_hex']?.toString() ?? '';
+        return hash.isEmpty
+            ? 'Deterministic envelope created.'
+            : 'Envelope hash: ${hash.substring(0, hash.length < 16 ? hash.length : 16)}..';
+      }(),
+      PluginHostApiStatus.blocked =>
+        response!.blockingFacts.isEmpty
+            ? 'Consensus guard blocked execution.'
+            : response.blockingFacts.first.label,
       PluginHostApiStatus.rejected => _hostRejectedMessage(
-          response!,
-          fallback: 'Input rejected by host API.',
-        ),
+        response!,
+        fallback: 'Input rejected by host API.',
+      ),
       null =>
         'Deterministic host envelope + transport send, guarded by pairwise consensus.',
     };
@@ -1747,19 +1753,18 @@ class _CapsuleChatPanel extends StatelessWidget {
           if (workspaceNotice != null) ...[
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: workspaceNoticeIsError
-                    ? const Color(0xFF2A1D1F)
-                    : const Color(0xFF173020),
+                color:
+                    workspaceNoticeIsError
+                        ? const Color(0xFF2A1D1F)
+                        : const Color(0xFF173020),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: workspaceNoticeIsError
-                      ? const Color(0xFF6B3A3F)
-                      : const Color(0xFF315F3E),
+                  color:
+                      workspaceNoticeIsError
+                          ? const Color(0xFF6B3A3F)
+                          : const Color(0xFF315F3E),
                 ),
               ),
               child: Row(
@@ -1769,18 +1774,20 @@ class _CapsuleChatPanel extends StatelessWidget {
                         ? Icons.error_outline_rounded
                         : Icons.check_circle_outline_rounded,
                     size: 18,
-                    color: workspaceNoticeIsError
-                        ? const Color(0xFFFFA4A4)
-                        : const Color(0xFF75D98A),
+                    color:
+                        workspaceNoticeIsError
+                            ? const Color(0xFFFFA4A4)
+                            : const Color(0xFF75D98A),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       workspaceNotice!,
                       style: TextStyle(
-                        color: workspaceNoticeIsError
-                            ? const Color(0xFFFFB4B4)
-                            : const Color(0xFF9BE4AA),
+                        color:
+                            workspaceNoticeIsError
+                                ? const Color(0xFFFFB4B4)
+                                : const Color(0xFF9BE4AA),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1866,24 +1873,26 @@ class _CapsuleChatPanel extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed:
                     running || refreshingInbox ? null : onRefreshInboxPressed,
-                icon: refreshingInbox
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh_rounded),
+                icon:
+                    refreshingInbox
+                        ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.refresh_rounded),
                 label: Text(refreshingInbox ? 'Fetching' : 'Fetch Inbox'),
               ),
               FilledButton.icon(
                 onPressed: running ? null : onRunPressed,
-                icon: running
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send_rounded),
+                icon:
+                    running
+                        ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.send_rounded),
                 label: Text(running ? 'Preparing' : 'Run Capsule Chat'),
               ),
             ],
@@ -1913,25 +1922,29 @@ class _CapsuleChatPanel extends StatelessWidget {
                   ),
                 if ((response.executionRuntimeAbi?.trim().isNotEmpty ?? false))
                   _InfoChip(
-                    icon: _runtimeAbiMatches(response)
-                        ? Icons.check_circle_outline_rounded
-                        : Icons.error_outline_rounded,
+                    icon:
+                        _runtimeAbiMatches(response)
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.error_outline_rounded,
                     label: 'ABI: ${response.executionRuntimeAbi!.trim()}',
-                    accent: _runtimeAbiMatches(response)
-                        ? const Color(0xFF75D98A)
-                        : const Color(0xFFFF8A7A),
+                    accent:
+                        _runtimeAbiMatches(response)
+                            ? const Color(0xFF75D98A)
+                            : const Color(0xFFFF8A7A),
                   ),
                 if ((response.executionRuntimeEntryExport?.trim().isNotEmpty ??
                     false))
                   _InfoChip(
-                    icon: _runtimeEntryMatches(response)
-                        ? Icons.check_circle_outline_rounded
-                        : Icons.error_outline_rounded,
+                    icon:
+                        _runtimeEntryMatches(response)
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.error_outline_rounded,
                     label:
                         'Entry: ${response.executionRuntimeEntryExport!.trim()}',
-                    accent: _runtimeEntryMatches(response)
-                        ? const Color(0xFF75D98A)
-                        : const Color(0xFFFF8A7A),
+                    accent:
+                        _runtimeEntryMatches(response)
+                            ? const Color(0xFF75D98A)
+                            : const Color(0xFFFF8A7A),
                   ),
                 if ((response.executionRuntimeModulePath?.trim().isNotEmpty ??
                     false))
@@ -2007,9 +2020,9 @@ class _CapsuleChatPanel extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            ...inbox.reversed.take(8).map(
-                  (message) => _ChatInboxRow(message: message),
-                ),
+            ...inbox.reversed
+                .take(8)
+                .map((message) => _ChatInboxRow(message: message)),
           ],
         ],
       ),
@@ -2024,12 +2037,14 @@ class _ChatInboxRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shortPeer = message.fromHex.length >= 12
-        ? '${message.fromHex.substring(0, 6)}...${message.fromHex.substring(message.fromHex.length - 4)}'
-        : message.fromHex;
-    final shortHash = message.envelopeHashHex.length >= 12
-        ? '${message.envelopeHashHex.substring(0, 12)}..'
-        : message.envelopeHashHex;
+    final shortPeer =
+        message.fromHex.length >= 12
+            ? '${message.fromHex.substring(0, 6)}...${message.fromHex.substring(message.fromHex.length - 4)}'
+            : message.fromHex;
+    final shortHash =
+        message.envelopeHashHex.length >= 12
+            ? '${message.envelopeHashHex.substring(0, 12)}..'
+            : message.envelopeHashHex;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -2053,10 +2068,7 @@ class _ChatInboxRow extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             'from $shortPeer · ${message.createdAtUtc}${shortHash.isEmpty ? '' : ' · $shortHash'}',
-            style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFF95A5B7),
-            ),
+            style: const TextStyle(fontSize: 11, color: Color(0xFF95A5B7)),
           ),
         ],
       ),
@@ -2116,10 +2128,7 @@ List<Widget> _runtimeCapabilityChips(PluginHostApiResponse response) {
   }
   final widgets = <Widget>[
     for (final capability in summary.visibleCapabilities)
-      _InfoChip(
-        icon: Icons.shield_outlined,
-        label: capability,
-      ),
+      _InfoChip(icon: Icons.shield_outlined, label: capability),
   ];
   if (summary.hiddenCount > 0) {
     widgets.add(
@@ -2192,23 +2201,21 @@ class _PluginGrid extends StatelessWidget {
   final List<Widget> children;
   final int? maxColumns;
 
-  const _PluginGrid({
-    required this.children,
-    this.maxColumns,
-  });
+  const _PluginGrid({required this.children, this.maxColumns});
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        var columns = width >= 1120
-            ? 4
-            : width >= 780
+        var columns =
+            width >= 1120
+                ? 4
+                : width >= 780
                 ? 3
                 : width >= 540
-                    ? 2
-                    : 1;
+                ? 2
+                : 1;
         if (maxColumns != null && columns > maxColumns!) {
           columns = maxColumns!;
         }
@@ -2220,14 +2227,10 @@ class _PluginGrid extends StatelessWidget {
         return Wrap(
           spacing: gap,
           runSpacing: gap,
-          children: children
-              .map(
-                (child) => SizedBox(
-                  width: itemWidth,
-                  child: child,
-                ),
-              )
-              .toList(),
+          children:
+              children
+                  .map((child) => SizedBox(width: itemWidth, child: child))
+                  .toList(),
         );
       },
     );
@@ -2259,18 +2262,12 @@ class _RuleTile extends StatelessWidget {
           const SizedBox(height: 28),
           Text(
             rule.title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 16,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
           ),
           const SizedBox(height: 6),
           Text(
             rule.description,
-            style: const TextStyle(
-              color: Color(0xFF9EABBA),
-              height: 1.35,
-            ),
+            style: const TextStyle(color: Color(0xFF9EABBA), height: 1.35),
           ),
         ],
       ),
@@ -2314,10 +2311,7 @@ class _StatusPill extends StatelessWidget {
   final String label;
   final Color accent;
 
-  const _StatusPill({
-    required this.label,
-    required this.accent,
-  });
+  const _StatusPill({required this.label, required this.accent});
 
   @override
   Widget build(BuildContext context) {
@@ -2329,10 +2323,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          color: accent,
-          fontWeight: FontWeight.w800,
-        ),
+        style: TextStyle(color: accent, fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -2343,11 +2334,7 @@ class _InfoChip extends StatelessWidget {
   final String label;
   final Color? accent;
 
-  const _InfoChip({
-    required this.icon,
-    required this.label,
-    this.accent,
-  });
+  const _InfoChip({required this.icon, required this.label, this.accent});
 
   @override
   Widget build(BuildContext context) {
@@ -2356,8 +2343,10 @@ class _InfoChip extends StatelessWidget {
         accent == null ? const Color(0xFF10161D) : accent!.withAlpha(28);
     final borderColor =
         accent == null ? const Color(0xFF29313D) : accent!.withAlpha(120);
-    final maxWidth =
-        (MediaQuery.sizeOf(context).width - 80).clamp(160.0, 520.0);
+    final maxWidth = (MediaQuery.sizeOf(context).width - 80).clamp(
+      160.0,
+      520.0,
+    );
     return Container(
       constraints: BoxConstraints(maxWidth: maxWidth),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
