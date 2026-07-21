@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'ai_capsule_inspection_service.dart';
+import 'inference_provider_adapter.dart';
 
 enum AiDoctorContextSection {
   capsule('capsule', 'Capsule'),
@@ -38,14 +39,12 @@ class AiDoctorOutboundPreview {
       sections.map((section) => section.label).join(', ');
 }
 
-class AiDoctorPrompt {
-  final String instructions;
-  final String inputJson;
+class AiDoctorPrompt extends InferencePrompt {
   final AiDoctorOutboundPreview preview;
 
   const AiDoctorPrompt({
-    required this.instructions,
-    required this.inputJson,
+    required super.instructions,
+    required super.inputJson,
     required this.preview,
   });
 }
@@ -64,8 +63,9 @@ class AiDoctorPromptService {
     if (normalizedQuery.isEmpty) {
       throw ArgumentError('AI Analyst query is empty');
     }
-    final selected = sections.toSet().toList()
-      ..sort((left, right) => left.index.compareTo(right.index));
+    final selected =
+        sections.toSet().toList()
+          ..sort((left, right) => left.index.compareTo(right.index));
     if (selected.isEmpty) {
       throw ArgumentError('At least one context section must be selected');
     }

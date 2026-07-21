@@ -4,7 +4,6 @@ import 'package:hivra_app/services/ai_capsule_inspection_service.dart';
 import 'package:hivra_app/services/ai_developer_engineer_service.dart';
 import 'package:hivra_app/services/ai_developer_workspace_service.dart';
 import 'package:hivra_app/services/ai_doctor_credential_store.dart';
-import 'package:hivra_app/services/ai_doctor_prompt_service.dart';
 import 'package:hivra_app/services/ai_doctor_provider_adapter.dart';
 
 class _FakeSecureStorage extends FlutterSecureStorage {
@@ -43,7 +42,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
 }
 
 class _FakeProvider implements AiDoctorProviderAdapter {
-  AiDoctorPrompt? lastPrompt;
+  InferencePrompt? lastPrompt;
   String? lastBaseUrl;
   int callCount = 0;
 
@@ -54,7 +53,7 @@ class _FakeProvider implements AiDoctorProviderAdapter {
   Future<AiDoctorProviderResponse> ask({
     required String apiKey,
     required String model,
-    required AiDoctorPrompt prompt,
+    required InferencePrompt prompt,
     String? baseUrl,
   }) async {
     callCount++;
@@ -71,7 +70,7 @@ class _ThrowingProvider implements AiDoctorProviderAdapter {
   final Object error;
 
   _ThrowingProvider([Object? error])
-      : error = error ?? StateError('provider failed');
+    : error = error ?? StateError('provider failed');
 
   @override
   InferenceProviderKind get provider => InferenceProviderKind.openAi;
@@ -80,7 +79,7 @@ class _ThrowingProvider implements AiDoctorProviderAdapter {
   Future<AiDoctorProviderResponse> ask({
     required String apiKey,
     required String model,
-    required AiDoctorPrompt prompt,
+    required InferencePrompt prompt,
     String? baseUrl,
   }) async {
     throw error;
@@ -91,8 +90,9 @@ void main() {
   group('AiDeveloperEngineerService', () {
     test('builds advisory payload from selected context only', () async {
       final secureStorage = _FakeSecureStorage();
-      final credentialStore =
-          AiDoctorCredentialStore(secureStorage: secureStorage);
+      final credentialStore = AiDoctorCredentialStore(
+        secureStorage: secureStorage,
+      );
       await credentialStore.saveOpenAiApiKey('sk-test');
       final provider = _FakeProvider();
       final service = AiDeveloperEngineerService(
@@ -145,43 +145,46 @@ void main() {
       expect(provider.callCount, 0);
     });
 
-    test('local OpenAI-compatible provider requires base URL, not API key',
-        () async {
-      final secureStorage = _FakeSecureStorage();
-      final credentialStore =
-          AiDoctorCredentialStore(secureStorage: secureStorage);
-      final provider = _FakeProvider();
-      final service = AiDeveloperEngineerService(
-        credentialStore: credentialStore,
-        providerAdapter: provider,
-      );
+    test(
+      'local OpenAI-compatible provider requires base URL, not API key',
+      () async {
+        final secureStorage = _FakeSecureStorage();
+        final credentialStore = AiDoctorCredentialStore(
+          secureStorage: secureStorage,
+        );
+        final provider = _FakeProvider();
+        final service = AiDeveloperEngineerService(
+          credentialStore: credentialStore,
+          providerAdapter: provider,
+        );
 
-      await expectLater(
-        service.ask(
+        await expectLater(
+          service.ask(
+            snapshot: _snapshot(),
+            selectedContext: _selectedContext(),
+            question: 'check',
+            provider: InferenceProviderKind.localOpenAiCompatible,
+          ),
+          throwsA(isA<StateError>()),
+        );
+        expect(provider.callCount, 0);
+
+        await credentialStore.saveBaseUrl(
+          InferenceProviderKind.localOpenAiCompatible,
+          'http://127.0.0.1:11434',
+        );
+        final result = await service.ask(
           snapshot: _snapshot(),
           selectedContext: _selectedContext(),
           question: 'check',
           provider: InferenceProviderKind.localOpenAiCompatible,
-        ),
-        throwsA(isA<StateError>()),
-      );
-      expect(provider.callCount, 0);
+        );
 
-      await credentialStore.saveBaseUrl(
-        InferenceProviderKind.localOpenAiCompatible,
-        'http://127.0.0.1:11434',
-      );
-      final result = await service.ask(
-        snapshot: _snapshot(),
-        selectedContext: _selectedContext(),
-        question: 'check',
-        provider: InferenceProviderKind.localOpenAiCompatible,
-      );
-
-      expect(result.providerResponse.text, contains('Finding'));
-      expect(provider.callCount, 1);
-      expect(provider.lastBaseUrl, 'http://127.0.0.1:11434');
-    });
+        expect(result.providerResponse.text, contains('Finding'));
+        expect(provider.callCount, 1);
+        expect(provider.lastBaseUrl, 'http://127.0.0.1:11434');
+      },
+    );
 
     test('rejects empty selected context', () {
       final service = AiDeveloperEngineerService(
@@ -208,8 +211,9 @@ void main() {
 
     test('rejects denylisted selected paths before provider call', () async {
       final secureStorage = _FakeSecureStorage();
-      final credentialStore =
-          AiDoctorCredentialStore(secureStorage: secureStorage);
+      final credentialStore = AiDoctorCredentialStore(
+        secureStorage: secureStorage,
+      );
       await credentialStore.saveOpenAiApiKey('sk-test');
       final provider = _FakeProvider();
       final service = AiDeveloperEngineerService(
@@ -234,8 +238,9 @@ void main() {
 
     test('rejects oversized payload before provider call', () async {
       final secureStorage = _FakeSecureStorage();
-      final credentialStore =
-          AiDoctorCredentialStore(secureStorage: secureStorage);
+      final credentialStore = AiDoctorCredentialStore(
+        secureStorage: secureStorage,
+      );
       await credentialStore.saveOpenAiApiKey('sk-test');
       final provider = _FakeProvider();
       final service = AiDeveloperEngineerService(
@@ -256,8 +261,9 @@ void main() {
 
     test('provider failure leaves caller with error only', () async {
       final secureStorage = _FakeSecureStorage();
-      final credentialStore =
-          AiDoctorCredentialStore(secureStorage: secureStorage);
+      final credentialStore = AiDoctorCredentialStore(
+        secureStorage: secureStorage,
+      );
       await credentialStore.saveOpenAiApiKey('sk-test');
       final service = AiDeveloperEngineerService(
         credentialStore: credentialStore,
@@ -274,31 +280,34 @@ void main() {
       );
     });
 
-    test('provider timeout and rate-limit failures are surfaced only',
-        () async {
-      for (final error in <StateError>[
-        StateError('AI provider request timed out'),
-        StateError('AI provider request failed: rate limit'),
-      ]) {
-        final secureStorage = _FakeSecureStorage();
-        final credentialStore =
-            AiDoctorCredentialStore(secureStorage: secureStorage);
-        await credentialStore.saveOpenAiApiKey('sk-test');
-        final service = AiDeveloperEngineerService(
-          credentialStore: credentialStore,
-          providerAdapter: _ThrowingProvider(error),
-        );
+    test(
+      'provider timeout and rate-limit failures are surfaced only',
+      () async {
+        for (final error in <StateError>[
+          StateError('AI provider request timed out'),
+          StateError('AI provider request failed: rate limit'),
+        ]) {
+          final secureStorage = _FakeSecureStorage();
+          final credentialStore = AiDoctorCredentialStore(
+            secureStorage: secureStorage,
+          );
+          await credentialStore.saveOpenAiApiKey('sk-test');
+          final service = AiDeveloperEngineerService(
+            credentialStore: credentialStore,
+            providerAdapter: _ThrowingProvider(error),
+          );
 
-        await expectLater(
-          service.ask(
-            snapshot: _snapshot(),
-            selectedContext: _selectedContext(),
-            question: 'check',
-          ),
-          throwsA(isA<StateError>()),
-        );
-      }
-    });
+          await expectLater(
+            service.ask(
+              snapshot: _snapshot(),
+              selectedContext: _selectedContext(),
+              question: 'check',
+            ),
+            throwsA(isA<StateError>()),
+          );
+        }
+      },
+    );
   });
 }
 

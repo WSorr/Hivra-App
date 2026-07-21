@@ -10,6 +10,7 @@ class InvitationCard extends StatelessWidget {
   final String? loadingAction;
   final String? peerDisplayOverride;
   final String? peerIdentityHint;
+  final VoidCallback? onOpenHistory;
 
   const InvitationCard({
     super.key,
@@ -21,6 +22,7 @@ class InvitationCard extends StatelessWidget {
     this.loadingAction,
     this.peerDisplayOverride,
     this.peerIdentityHint,
+    this.onOpenHistory,
   });
 
   @override
@@ -28,262 +30,279 @@ class InvitationCard extends StatelessWidget {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: invitation.kind.color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  invitation.kind.displayName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: invitation.status.color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    invitation.status.displayName,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: invitation.status.color,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onOpenHistory,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: invitation.kind.color,
+                      shape: BoxShape.circle,
                     ),
                   ),
-                ),
-                const Spacer(),
-                if (invitation.isIncoming)
-                  const Icon(Icons.arrow_downward, size: 16, color: Colors.grey)
-                else
-                  const Icon(Icons.arrow_upward, size: 16, color: Colors.grey),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2B2833),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF433F50)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.tag, size: 16, color: Colors.grey.shade300),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: Text.rich(
-                      TextSpan(
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade100,
-                        ),
-                        children: [
-                          TextSpan(
-                            text: 'Invite ',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade400,
-                            ),
-                          ),
-                          TextSpan(
-                            text: invitation.invitationIdDisplay,
-                            style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                  Text(
+                    invitation.kind.displayName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: invitation.status.color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      invitation.status.displayName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: invitation.status.color,
                       ),
                     ),
                   ),
+                  const Spacer(),
+                  if (invitation.isIncoming)
+                    const Icon(
+                      Icons.arrow_downward,
+                      size: 16,
+                      color: Colors.grey,
+                    )
+                  else
+                    const Icon(
+                      Icons.arrow_upward,
+                      size: 16,
+                      color: Colors.grey,
+                    ),
                 ],
               ),
-            ),
 
-            const SizedBox(height: 10),
+              const SizedBox(height: 12),
 
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _chip(
-                  label: invitation.isIncoming ? 'From' : 'To',
-                  value: peerDisplayOverride ?? invitation.peerKeyDisplay,
-                ),
-                if (invitation.starterSlot != null)
-                  _chip(
-                    label: 'Starter',
-                    value: 'Slot ${invitation.starterSlot! + 1}',
-                    foreground: Colors.blue.shade700,
-                    background: Colors.blue.shade50,
-                  ),
-              ],
-            ),
-
-            if (peerIdentityHint != null && peerIdentityHint!.trim().isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  peerIdentityHint!,
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ),
-
-            const SizedBox(height: 8),
-
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _timeRow(
-                  icon: Icons.schedule,
-                  label: 'Sent',
-                  value: _formatDate(invitation.sentAt),
-                ),
-                if (invitation.respondedAt != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: _timeRow(
-                      icon: switch (invitation.status) {
-                        InvitationStatus.rejected => Icons.block,
-                        InvitationStatus.expired =>
-                          Icons.hourglass_disabled_outlined,
-                        _ => Icons.check_circle_outline,
-                      },
-                      label: switch (invitation.status) {
-                        InvitationStatus.rejected => 'Rejected',
-                        InvitationStatus.accepted => 'Accepted',
-                        InvitationStatus.expired => 'Expired',
-                        _ => 'Responded',
-                      },
-                      value: _formatDate(invitation.respondedAt!),
-                    ),
-                  ),
-              ],
-            ),
-
-            if (invitation.rejectionReason != null) ...[
-              const SizedBox(height: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF31262A),
+                  color: const Color(0xFF2B2833),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF4A353B)),
+                  border: Border.all(color: const Color(0xFF433F50)),
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.warning,
-                      size: 16,
-                      color: Colors.red.shade300,
-                    ),
+                    Icon(Icons.tag, size: 16, color: Colors.grey.shade300),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        invitation.rejectionReason!.displayName,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.red.shade200,
+                      child: Text.rich(
+                        TextSpan(
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade100,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: 'Invite ',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Colors.grey.shade400,
+                              ),
+                            ),
+                            TextSpan(
+                              text: invitation.invitationIdDisplay,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
 
-            // Actions
-            if (invitation.status == InvitationStatus.pending &&
-                !invitation.isExpired) ...[
-              const SizedBox(height: 16),
-              if (invitation.isIncoming)
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: isLoading ? null : onAccept,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                        ),
-                        child: isLoading && loadingAction == 'accept'
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text('Accept'),
-                      ),
+              const SizedBox(height: 10),
+
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _chip(
+                    label: invitation.isIncoming ? 'From' : 'To',
+                    value: peerDisplayOverride ?? invitation.peerKeyDisplay,
+                  ),
+                  if (invitation.starterSlot != null)
+                    _chip(
+                      label: 'Starter',
+                      value: 'Slot ${invitation.starterSlot! + 1}',
+                      foreground: Colors.blue.shade700,
+                      background: Colors.blue.shade50,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: isLoading ? null : onReject,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                        ),
-                        child: isLoading && loadingAction == 'reject'
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('Reject'),
-                      ),
-                    ),
-                  ],
-                )
-              else
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: isLoading ? null : onCancel,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                        ),
-                        child: isLoading && loadingAction == 'cancel'
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('Cancel'),
-                      ),
-                    ),
-                  ],
+                ],
+              ),
+
+              if (peerIdentityHint != null &&
+                  peerIdentityHint!.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    peerIdentityHint!,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
                 ),
+
+              const SizedBox(height: 8),
+
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _timeRow(
+                    icon: Icons.schedule,
+                    label: 'Sent',
+                    value: _formatDate(invitation.sentAt),
+                  ),
+                  if (invitation.respondedAt != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: _timeRow(
+                        icon: switch (invitation.status) {
+                          InvitationStatus.rejected => Icons.block,
+                          InvitationStatus.expired =>
+                            Icons.hourglass_disabled_outlined,
+                          _ => Icons.check_circle_outline,
+                        },
+                        label: switch (invitation.status) {
+                          InvitationStatus.rejected => 'Rejected',
+                          InvitationStatus.accepted => 'Accepted',
+                          InvitationStatus.expired => 'Expired',
+                          _ => 'Responded',
+                        },
+                        value: _formatDate(invitation.respondedAt!),
+                      ),
+                    ),
+                ],
+              ),
+
+              if (invitation.rejectionReason != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF31262A),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF4A353B)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning, size: 16, color: Colors.red.shade300),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          invitation.rejectionReason!.displayName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade200,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // Actions
+              if (invitation.status == InvitationStatus.pending &&
+                  !invitation.isExpired) ...[
+                const SizedBox(height: 16),
+                if (invitation.isIncoming)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: isLoading ? null : onAccept,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                          ),
+                          child:
+                              isLoading && loadingAction == 'accept'
+                                  ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                  : const Text('Accept'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: isLoading ? null : onReject,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                          ),
+                          child:
+                              isLoading && loadingAction == 'reject'
+                                  ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                  : const Text('Reject'),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: isLoading ? null : onCancel,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                          ),
+                          child:
+                              isLoading && loadingAction == 'cancel'
+                                  ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                  : const Text('Cancel'),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -358,10 +377,7 @@ class InvitationCard extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           '$label $value',
-          style: TextStyle(
-            fontSize: 12,
-            color: resolvedColor,
-          ),
+          style: TextStyle(fontSize: 12, color: resolvedColor),
         ),
       ],
     );

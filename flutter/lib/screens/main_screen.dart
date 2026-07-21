@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import '../services/app_runtime_service.dart';
+import '../services/capsule_history_projection_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/invitation_intent_handler.dart';
 import '../services/main_screen_module_service.dart';
@@ -11,6 +12,7 @@ import '../services/ui_event_log_service.dart';
 import '../models/consensus_models.dart';
 import '../models/invitation.dart';
 import 'starters_screen.dart';
+import 'capsule_history_screen.dart';
 import 'invitations_screen.dart';
 import 'relationships_screen.dart';
 import 'settings_screen.dart';
@@ -634,6 +636,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           runtime: _runtime,
           activeCapsuleHex: _activeCapsuleHex,
           onLedgerChanged: _handleLedgerChanged,
+          onOpenHistory: _openCapsuleHistory,
         );
       case 1:
         return InvitationsScreen(
@@ -642,6 +645,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           activeCapsuleHex: _activeCapsuleHex,
           ledgerVersion: _ledgerVersion,
           onLedgerChanged: _handleLedgerChanged,
+          onOpenHistory: _openCapsuleHistory,
         );
       case 2:
         return RelationshipsScreen(
@@ -651,6 +655,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           ),
           onLedgerChanged: _handleLedgerChanged,
           onSyncTransport: _syncRelationshipsTransport,
+          onOpenHistory: _openCapsuleHistory,
         );
       case 3:
         return WasmPluginsScreen(
@@ -669,8 +674,22 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           runtime: _runtime,
           activeCapsuleHex: _activeCapsuleHex,
           onLedgerChanged: _handleLedgerChanged,
+          onOpenHistory: _openCapsuleHistory,
         );
     }
+  }
+
+  Future<void> _openCapsuleHistory(CapsuleHistorySubject subject) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => CapsuleHistoryScreen(
+              subject: subject,
+              history: _module.capsuleHistory,
+              aiAdvisor: _module.capsuleHistoryAi,
+            ),
+      ),
+    );
   }
 
   Widget _buildAwaitingHistoryState() {

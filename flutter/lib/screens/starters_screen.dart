@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import '../models/invitation.dart';
 import '../services/app_runtime_service.dart';
+import '../services/capsule_history_projection_service.dart';
 import '../services/invitation_delivery_service.dart';
 import '../services/invitation_intent_handler.dart';
 import '../services/ui_event_log_service.dart';
@@ -14,12 +15,14 @@ class StartersScreen extends StatefulWidget {
   final AppRuntimeService runtime;
   final String activeCapsuleHex;
   final Future<void> Function()? onLedgerChanged;
+  final Future<void> Function(CapsuleHistorySubject subject)? onOpenHistory;
 
   const StartersScreen({
     super.key,
     required this.runtime,
     required this.activeCapsuleHex,
     this.onLedgerChanged,
+    this.onOpenHistory,
   });
 
   @override
@@ -76,266 +79,313 @@ class _StartersScreenState extends State<StartersScreen> {
 
     return showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text('Invite with ${slot['type']}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Enter recipient public key:'),
-              const SizedBox(height: 8),
-              const Text(
-                'Supports: h... (if imported) or another supported delivery address',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: pubkeyController,
-                decoration: InputDecoration(
-                  hintText: 'Public key',
-                  border: const OutlineInputBorder(),
-                  errorText: formError,
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: Text('Invite with ${slot['type']}'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Enter recipient public key:'),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Supports: h... (if imported) or another supported delivery address',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: pubkeyController,
+                        decoration: InputDecoration(
+                          hintText: 'Public key',
+                          border: const OutlineInputBorder(),
+                          errorText: formError,
+                        ),
+                        maxLines: 2,
+                        onChanged: (_) {
+                          if (formError != null) {
+                            setDialogState(() => formError = null);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          isSending ? null : () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      onPressed:
+                          isSending
+                              ? null
+                              : () async {
+                                final input = pubkeyController.text.trim();
+                                if (input.isEmpty) {
+                                  setDialogState(
+                                    () =>
+                                        formError =
+                                            'Please enter a capsule address or delivery address',
+                                  );
+                                  return;
+                                }
+
+                                setDialogState(() {
+                                  isSending = true;
+                                });
+
+                                final resolution = await _delivery
+                                    .resolveRecipientAddress(
+                                      input,
+                                      selfRootKey:
+                                          widget.runtime.capsuleRootPublicKey(),
+                                      selfNostrKey:
+                                          widget.runtime
+                                              .capsuleNostrPublicKey(),
+                                    );
+                                if (!context.mounted) return;
+                                if (!resolution.isSuccess) {
+                                  unawaited(
+                                    _uiLog.log(
+                                      'starters.send.resolve_failed',
+                                      resolution.errorMessage ??
+                                          'Could not resolve recipient address',
+                                    ),
+                                  );
+                                  setDialogState(() {
+                                    formError =
+                                        resolution.errorMessage ??
+                                        'Could not resolve recipient address';
+                                    isSending = false;
+                                  });
+                                  return;
+                                }
+
+                                final slotIndex =
+                                    slot['index'] is int
+                                        ? slot['index'] as int
+                                        : -1;
+                                if (slotIndex < 0 || slotIndex > 4) {
+                                  unawaited(
+                                    _uiLog.log(
+                                      'starters.send.invalid_slot',
+                                      'slot=$slotIndex input=$input',
+                                    ),
+                                  );
+                                  setDialogState(() {
+                                    formError = 'Invalid starter slot';
+                                    isSending = false;
+                                  });
+                                  return;
+                                }
+
+                                final startedAt = DateTime.now();
+                                final operationCapsuleHex =
+                                    widget.activeCapsuleHex;
+                                InvitationIntentResult? sendResult;
+                                try {
+                                  unawaited(
+                                    _uiLog.log(
+                                      'starters.send.request',
+                                      'slot=$slotIndex peer=$input',
+                                    ),
+                                  );
+                                  final preflight = await _intents
+                                      .preflightSend(
+                                        capsuleHex: operationCapsuleHex,
+                                      );
+                                  unawaited(
+                                    _uiLog.log(
+                                      'starters.send.preflight',
+                                      'slot=$slotIndex relayHealthy=${preflight.relayHealthy} code=${preflight.code} message=${preflight.message}',
+                                    ),
+                                  );
+                                  if (!preflight.relayHealthy && mounted) {
+                                    UiFeedbackService.showSnackBar(
+                                      this.context,
+                                      'Relay seems offline/unstable. We will still record local send and retry in background.',
+                                      source: 'starters.send.preflight',
+                                      duration: const Duration(seconds: 4),
+                                      enableCopy: false,
+                                    );
+                                  }
+
+                                  sendResult = await _intents.sendInvitation(
+                                    resolution.transportRecipient!,
+                                    slotIndex,
+                                    capsuleHex: operationCapsuleHex,
+                                  );
+                                  final result = sendResult;
+                                  final recipientTransportB64 = base64.encode(
+                                    resolution.transportRecipient!,
+                                  );
+                                  var projectedPending = _intents
+                                      .loadInvitations(
+                                        capsuleHex: operationCapsuleHex,
+                                      )
+                                      .where(
+                                        (invitation) =>
+                                            invitation.isOutgoing &&
+                                            invitation.status ==
+                                                InvitationStatus.pending &&
+                                            invitation.starterSlot ==
+                                                slotIndex &&
+                                            invitation.toPubkey ==
+                                                recipientTransportB64,
+                                      )
+                                      .toList(growable: false);
+                                  unawaited(
+                                    _uiLog.log(
+                                      'starters.send.result',
+                                      'slot=$slotIndex code=${result.code} message=${result.message}',
+                                    ),
+                                  );
+                                  unawaited(
+                                    _uiLog.log(
+                                      'starters.send.ledger_projection',
+                                      'slot=$slotIndex pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
+                                    ),
+                                  );
+                                  if (!result.isSuccess) {
+                                    if (context.mounted) {
+                                      setDialogState(() {
+                                        formError = result.message;
+                                        isSending = false;
+                                      });
+                                    }
+                                    if (mounted) {
+                                      UiFeedbackService.showSnackBar(
+                                        this.context,
+                                        result.message,
+                                        source: 'starters.send',
+                                        duration: const Duration(seconds: 3),
+                                        enableCopy: false,
+                                      );
+                                    }
+                                    return;
+                                  }
+
+                                  if (projectedPending.isEmpty) {
+                                    final quickResult = await _intents
+                                        .fetchInvitationsQuick(
+                                          capsuleHex: operationCapsuleHex,
+                                        );
+                                    projectedPending = _intents
+                                        .loadInvitations(
+                                          capsuleHex: operationCapsuleHex,
+                                        )
+                                        .where(
+                                          (invitation) =>
+                                              invitation.isOutgoing &&
+                                              invitation.status ==
+                                                  InvitationStatus.pending &&
+                                              invitation.starterSlot ==
+                                                  slotIndex &&
+                                              invitation.toPubkey ==
+                                                  recipientTransportB64,
+                                        )
+                                        .toList(growable: false);
+                                    unawaited(
+                                      _uiLog.log(
+                                        'starters.send.ledger_projection.retry',
+                                        'slot=$slotIndex quickFetchCode=${quickResult.code} pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
+                                      ),
+                                    );
+                                  }
+
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop();
+                                  }
+                                  final peerPreview =
+                                      input.length <= 8
+                                          ? input
+                                          : '${input.substring(0, 8)}...';
+                                  final normalizedResultMessage =
+                                      result.message.toLowerCase();
+                                  final locallyRecordedOnly =
+                                      normalizedResultMessage.contains(
+                                        'local invitation is recorded',
+                                      ) ||
+                                      normalizedResultMessage.contains(
+                                        'local pending invitation is recorded',
+                                      );
+                                  final ledgerProjected =
+                                      projectedPending.isNotEmpty;
+                                  final successUiMessage =
+                                      locallyRecordedOnly
+                                          ? 'Invitation recorded locally for $peerPreview. '
+                                              'Relay delivery is retrying in background; receiver may see it after refresh.'
+                                          : ledgerProjected
+                                          ? 'Invitation sent to $peerPreview. '
+                                              'Receiver should pull to refresh Invitations.'
+                                          : 'Invitation send returned success, but pending is not projected yet. '
+                                              'Refresh Invitations to verify ledger projection.';
+                                  if (mounted) {
+                                    UiFeedbackService.showSnackBar(
+                                      this.context,
+                                      successUiMessage,
+                                      source: 'starters.send',
+                                      duration: const Duration(seconds: 5),
+                                      enableCopy: false,
+                                    );
+
+                                    setState(() {
+                                      slot['locked'] = true;
+                                    });
+                                    _loadSlots();
+                                  }
+                                  await widget.onLedgerChanged?.call();
+                                } catch (e) {
+                                  unawaited(
+                                    _uiLog.log('starters.send.exception', '$e'),
+                                  );
+                                  if (mounted) {
+                                    UiFeedbackService.showSnackBar(
+                                      this.context,
+                                      'Failed to send: $e',
+                                      source: 'starters.send',
+                                      duration: const Duration(seconds: 3),
+                                      enableCopy: false,
+                                    );
+                                  }
+                                  if (context.mounted) {
+                                    setDialogState(() {
+                                      isSending = false;
+                                    });
+                                  }
+                                } finally {
+                                  final elapsedMs =
+                                      DateTime.now()
+                                          .difference(startedAt)
+                                          .inMilliseconds;
+                                  unawaited(
+                                    _uiLog.log(
+                                      'starters.send.finally',
+                                      'slot=$slotIndex elapsedMs=$elapsedMs resultCode=${sendResult?.code ?? 'none'} contextMounted=${context.mounted} widgetMounted=$mounted',
+                                    ),
+                                  );
+                                  if (context.mounted && isSending) {
+                                    setDialogState(() {
+                                      isSending = false;
+                                    });
+                                  }
+                                }
+                              },
+                      child:
+                          isSending
+                              ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Text('Send Invitation'),
+                    ),
+                  ],
                 ),
-                maxLines: 2,
-                onChanged: (_) {
-                  if (formError != null) {
-                    setDialogState(() => formError = null);
-                  }
-                },
-              ),
-            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: isSending ? null : () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: isSending
-                  ? null
-                  : () async {
-                      final input = pubkeyController.text.trim();
-                      if (input.isEmpty) {
-                        setDialogState(
-                          () => formError =
-                              'Please enter a capsule address or delivery address',
-                        );
-                        return;
-                      }
-
-                      setDialogState(() {
-                        isSending = true;
-                      });
-
-                      final resolution =
-                          await _delivery.resolveRecipientAddress(
-                        input,
-                        selfRootKey: widget.runtime.capsuleRootPublicKey(),
-                        selfNostrKey: widget.runtime.capsuleNostrPublicKey(),
-                      );
-                      if (!context.mounted) return;
-                      if (!resolution.isSuccess) {
-                        unawaited(_uiLog.log(
-                          'starters.send.resolve_failed',
-                          resolution.errorMessage ??
-                              'Could not resolve recipient address',
-                        ));
-                        setDialogState(
-                          () {
-                            formError = resolution.errorMessage ??
-                                'Could not resolve recipient address';
-                            isSending = false;
-                          },
-                        );
-                        return;
-                      }
-
-                      final slotIndex =
-                          slot['index'] is int ? slot['index'] as int : -1;
-                      if (slotIndex < 0 || slotIndex > 4) {
-                        unawaited(
-                          _uiLog.log(
-                            'starters.send.invalid_slot',
-                            'slot=$slotIndex input=$input',
-                          ),
-                        );
-                        setDialogState(() {
-                          formError = 'Invalid starter slot';
-                          isSending = false;
-                        });
-                        return;
-                      }
-
-                      final startedAt = DateTime.now();
-                      final operationCapsuleHex = widget.activeCapsuleHex;
-                      InvitationIntentResult? sendResult;
-                      try {
-                        unawaited(_uiLog.log(
-                          'starters.send.request',
-                          'slot=$slotIndex peer=$input',
-                        ));
-                        final preflight = await _intents.preflightSend(
-                          capsuleHex: operationCapsuleHex,
-                        );
-                        unawaited(_uiLog.log(
-                          'starters.send.preflight',
-                          'slot=$slotIndex relayHealthy=${preflight.relayHealthy} code=${preflight.code} message=${preflight.message}',
-                        ));
-                        if (!preflight.relayHealthy && mounted) {
-                          UiFeedbackService.showSnackBar(
-                            this.context,
-                            'Relay seems offline/unstable. We will still record local send and retry in background.',
-                            source: 'starters.send.preflight',
-                            duration: const Duration(seconds: 4),
-                            enableCopy: false,
-                          );
-                        }
-
-                        sendResult = await _intents.sendInvitation(
-                          resolution.transportRecipient!,
-                          slotIndex,
-                          capsuleHex: operationCapsuleHex,
-                        );
-                        final result = sendResult;
-                        final recipientTransportB64 =
-                            base64.encode(resolution.transportRecipient!);
-                        var projectedPending = _intents
-                            .loadInvitations(capsuleHex: operationCapsuleHex)
-                            .where((invitation) =>
-                                invitation.isOutgoing &&
-                                invitation.status == InvitationStatus.pending &&
-                                invitation.starterSlot == slotIndex &&
-                                invitation.toPubkey == recipientTransportB64)
-                            .toList(growable: false);
-                        unawaited(_uiLog.log(
-                          'starters.send.result',
-                          'slot=$slotIndex code=${result.code} message=${result.message}',
-                        ));
-                        unawaited(_uiLog.log(
-                          'starters.send.ledger_projection',
-                          'slot=$slotIndex pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
-                        ));
-                        if (!result.isSuccess) {
-                          if (context.mounted) {
-                            setDialogState(() {
-                              formError = result.message;
-                              isSending = false;
-                            });
-                          }
-                          if (mounted) {
-                            UiFeedbackService.showSnackBar(
-                              this.context,
-                              result.message,
-                              source: 'starters.send',
-                              duration: const Duration(seconds: 3),
-                              enableCopy: false,
-                            );
-                          }
-                          return;
-                        }
-
-                        if (projectedPending.isEmpty) {
-                          final quickResult =
-                              await _intents.fetchInvitationsQuick(
-                            capsuleHex: operationCapsuleHex,
-                          );
-                          projectedPending = _intents
-                              .loadInvitations(capsuleHex: operationCapsuleHex)
-                              .where((invitation) =>
-                                  invitation.isOutgoing &&
-                                  invitation.status ==
-                                      InvitationStatus.pending &&
-                                  invitation.starterSlot == slotIndex &&
-                                  invitation.toPubkey == recipientTransportB64)
-                              .toList(growable: false);
-                          unawaited(_uiLog.log(
-                            'starters.send.ledger_projection.retry',
-                            'slot=$slotIndex quickFetchCode=${quickResult.code} pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
-                          ));
-                        }
-
-                        if (context.mounted) {
-                          Navigator.of(context).pop();
-                        }
-                        final peerPreview = input.length <= 8
-                            ? input
-                            : '${input.substring(0, 8)}...';
-                        final normalizedResultMessage =
-                            result.message.toLowerCase();
-                        final locallyRecordedOnly =
-                            normalizedResultMessage.contains(
-                                  'local invitation is recorded',
-                                ) ||
-                                normalizedResultMessage.contains(
-                                  'local pending invitation is recorded',
-                                );
-                        final ledgerProjected = projectedPending.isNotEmpty;
-                        final successUiMessage = locallyRecordedOnly
-                            ? 'Invitation recorded locally for $peerPreview. '
-                                'Relay delivery is retrying in background; receiver may see it after refresh.'
-                            : ledgerProjected
-                                ? 'Invitation sent to $peerPreview. '
-                                    'Receiver should pull to refresh Invitations.'
-                                : 'Invitation send returned success, but pending is not projected yet. '
-                                    'Refresh Invitations to verify ledger projection.';
-                        if (mounted) {
-                          UiFeedbackService.showSnackBar(
-                            this.context,
-                            successUiMessage,
-                            source: 'starters.send',
-                            duration: const Duration(seconds: 5),
-                            enableCopy: false,
-                          );
-
-                          setState(() {
-                            slot['locked'] = true;
-                          });
-                          _loadSlots();
-                        }
-                        await widget.onLedgerChanged?.call();
-                      } catch (e) {
-                        unawaited(_uiLog.log('starters.send.exception', '$e'));
-                        if (mounted) {
-                          UiFeedbackService.showSnackBar(
-                            this.context,
-                            'Failed to send: $e',
-                            source: 'starters.send',
-                            duration: const Duration(seconds: 3),
-                            enableCopy: false,
-                          );
-                        }
-                        if (context.mounted) {
-                          setDialogState(() {
-                            isSending = false;
-                          });
-                        }
-                      } finally {
-                        final elapsedMs =
-                            DateTime.now().difference(startedAt).inMilliseconds;
-                        unawaited(
-                          _uiLog.log(
-                            'starters.send.finally',
-                            'slot=$slotIndex elapsedMs=$elapsedMs resultCode=${sendResult?.code ?? 'none'} contextMounted=${context.mounted} widgetMounted=$mounted',
-                          ),
-                        );
-                        if (context.mounted && isSending) {
-                          setDialogState(() {
-                            isSending = false;
-                          });
-                        }
-                      }
-                    },
-              child: isSending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Send Invitation'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -366,100 +416,117 @@ class _StartersScreenState extends State<StartersScreen> {
     final String displayType = occupied ? type : 'Empty';
     final bool locked = slot['locked'];
 
+    final starterIdRaw = slot['starterIdRaw'] as Uint8List?;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap:
+            occupied && starterIdRaw != null && widget.onOpenHistory != null
+                ? () => widget.onOpenHistory!(
+                  CapsuleHistorySubject.starter(
+                    starterId: base64.encode(starterIdRaw),
+                    displayLabel: '$displayType · Slot ${slot['index'] + 1}',
                   ),
-                  decoration: BoxDecoration(
-                    color: _getTypeColor(displayType).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _getTypeColor(displayType)),
-                  ),
-                  child: Text(
-                    displayType,
-                    style: TextStyle(
-                      color: _getTypeColor(displayType),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  'Slot ${slot['index'] + 1}',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (occupied) ...[
+                )
+                : null,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
                 children: [
-                  const Icon(Icons.fingerprint, size: 16, color: Colors.green),
-                  const SizedBox(width: 8),
-                  Expanded(
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _getTypeColor(displayType).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: _getTypeColor(displayType)),
+                    ),
                     child: Text(
-                      'ID: ${slot['starterId']}',
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
+                      displayType,
+                      style: TextStyle(
+                        color: _getTypeColor(displayType),
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
+                  const Spacer(),
+                  Text(
+                    'Slot ${slot['index'] + 1}',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    locked ? Icons.lock : Icons.lock_open,
-                    size: 16,
-                    color: locked ? Colors.orange : Colors.green,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    locked ? 'Locked (invitation pending)' : 'Available',
-                    style: TextStyle(
+              const SizedBox(height: 12),
+              if (occupied) ...[
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.fingerprint,
+                      size: 16,
+                      color: Colors.green,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'ID: ${slot['starterId']}',
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      locked ? Icons.lock : Icons.lock_open,
+                      size: 16,
                       color: locked ? Colors.orange : Colors.green,
                     ),
-                  ),
-                ],
-              ),
-            ] else ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade900,
-                  borderRadius: BorderRadius.circular(8),
+                    const SizedBox(width: 8),
+                    Text(
+                      locked ? 'Locked (invitation pending)' : 'Available',
+                      style: TextStyle(
+                        color: locked ? Colors.orange : Colors.green,
+                      ),
+                    ),
+                  ],
                 ),
-                child: const Center(
-                  child: Text(
-                    'Empty slot - ready to receive',
-                    style: TextStyle(color: Colors.grey),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade900,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Empty slot - ready to receive',
+                      style: TextStyle(color: Colors.grey),
+                    ),
                   ),
                 ),
-              ),
+              ],
+              const SizedBox(height: 8),
+              if (occupied && !locked)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _showInviteDialog(slot),
+                    icon: const Icon(Icons.send),
+                    label: const Text('Invite'),
+                  ),
+                ),
             ],
-            const SizedBox(height: 8),
-            if (occupied && !locked)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => _showInviteDialog(slot),
-                  icon: const Icon(Icons.send),
-                  label: const Text('Invite'),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );

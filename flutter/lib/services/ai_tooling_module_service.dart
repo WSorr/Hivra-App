@@ -4,6 +4,7 @@ import 'ai_developer_remote_repository_cache_service.dart';
 import 'ai_developer_workspace_service.dart';
 import 'ai_doctor_chat_service.dart';
 import 'ai_doctor_credential_store.dart';
+import 'capsule_history_ai_advisor_service.dart';
 import 'ai_patch_proposal_service.dart';
 import 'ai_plugin_audit_service.dart';
 import 'ai_plugin_scaffold_draft_service.dart';
@@ -13,9 +14,8 @@ import 'app_runtime_service.dart';
 class AiToolingModuleService {
   final AppRuntimeService _runtime;
 
-  const AiToolingModuleService({
-    required AppRuntimeService runtime,
-  }) : _runtime = runtime;
+  const AiToolingModuleService({required AppRuntimeService runtime})
+    : _runtime = runtime;
 
   AiToolingModule buildModule() {
     return AiToolingModule(
@@ -41,7 +41,11 @@ class AiToolingModuleService {
   }
 
   AiDoctorChatService buildCapsuleAnalystChatService() {
-    return AiDoctorChatService(
+    return AiDoctorChatService(credentialStore: AiDoctorCredentialStore());
+  }
+
+  CapsuleHistoryAiAdvisorService buildCapsuleHistoryAiAdvisorService() {
+    return CapsuleHistoryAiAdvisorService(
       credentialStore: AiDoctorCredentialStore(),
     );
   }
@@ -61,7 +65,7 @@ class AiToolingModuleService {
   }
 
   AiDeveloperRemoteRepositoryCacheService
-      buildDeveloperRemoteRepositoryCacheService() {
+  buildDeveloperRemoteRepositoryCacheService() {
     return const AiDeveloperRemoteRepositoryCacheService();
   }
 

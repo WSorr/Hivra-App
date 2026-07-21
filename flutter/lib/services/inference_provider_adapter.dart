@@ -2,16 +2,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'ai_doctor_prompt_service.dart';
-
 typedef InferenceHttpClientFactory = HttpClient Function();
 
+class InferencePrompt {
+  final String instructions;
+  final String inputJson;
+
+  const InferencePrompt({required this.instructions, required this.inputJson});
+}
+
 enum InferenceProviderKind {
-  openAi(
-    id: 'openai',
-    label: 'OpenAI',
-    defaultModel: 'gpt-5.5',
-  ),
+  openAi(id: 'openai', label: 'OpenAI', defaultModel: 'gpt-5.5'),
   gemini(
     id: 'gemini',
     label: 'Gemini',
@@ -56,7 +57,7 @@ abstract class InferenceProviderAdapter {
   Future<InferenceProviderResponse> ask({
     required String apiKey,
     required String model,
-    required AiDoctorPrompt prompt,
+    required InferencePrompt prompt,
     String? baseUrl,
   });
 }
@@ -71,8 +72,8 @@ class OpenAiResponsesInferenceProviderAdapter
     Uri? endpoint,
     this.timeout = const Duration(seconds: 60),
     InferenceHttpClientFactory? clientFactory,
-  })  : endpoint = endpoint ?? Uri.https('api.openai.com', '/v1/responses'),
-        _clientFactory = clientFactory ?? HttpClient.new;
+  }) : endpoint = endpoint ?? Uri.https('api.openai.com', '/v1/responses'),
+       _clientFactory = clientFactory ?? HttpClient.new;
 
   @override
   InferenceProviderKind get provider => InferenceProviderKind.openAi;
@@ -81,7 +82,7 @@ class OpenAiResponsesInferenceProviderAdapter
   Future<InferenceProviderResponse> ask({
     required String apiKey,
     required String model,
-    required AiDoctorPrompt prompt,
+    required InferencePrompt prompt,
     String? baseUrl,
   }) async {
     final normalizedKey = apiKey.trim();
@@ -97,19 +98,24 @@ class OpenAiResponsesInferenceProviderAdapter
     try {
       final request = await client.postUrl(endpoint).timeout(timeout);
       request.headers.contentType = ContentType.json;
-      request.headers
-          .set(HttpHeaders.authorizationHeader, 'Bearer $normalizedKey');
-      request.write(jsonEncode(<String, dynamic>{
-        'model': normalizedModel,
-        'store': false,
-        'instructions': prompt.instructions,
-        'input': prompt.inputJson,
-      }));
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $normalizedKey',
+      );
+      request.write(
+        jsonEncode(<String, dynamic>{
+          'model': normalizedModel,
+          'store': false,
+          'instructions': prompt.instructions,
+          'input': prompt.inputJson,
+        }),
+      );
       final response = await request.close().timeout(timeout);
       final body = await utf8.decodeStream(response).timeout(timeout);
       final decoded = jsonDecode(body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message = _openAiFriendlyErrorMessage(
+        final message =
+            _openAiFriendlyErrorMessage(
               decoded,
               statusCode: response.statusCode,
             ) ??
@@ -177,9 +183,10 @@ class GeminiGenerateContentInferenceProviderAdapter
     Uri? baseEndpoint,
     this.timeout = const Duration(seconds: 60),
     InferenceHttpClientFactory? clientFactory,
-  })  : baseEndpoint = baseEndpoint ??
-            Uri.https('generativelanguage.googleapis.com', '/v1beta/models'),
-        _clientFactory = clientFactory ?? HttpClient.new;
+  }) : baseEndpoint =
+           baseEndpoint ??
+           Uri.https('generativelanguage.googleapis.com', '/v1beta/models'),
+       _clientFactory = clientFactory ?? HttpClient.new;
 
   @override
   InferenceProviderKind get provider => InferenceProviderKind.gemini;
@@ -188,7 +195,7 @@ class GeminiGenerateContentInferenceProviderAdapter
   Future<InferenceProviderResponse> ask({
     required String apiKey,
     required String model,
-    required AiDoctorPrompt prompt,
+    required InferencePrompt prompt,
     String? baseUrl,
   }) async {
     final normalizedKey = apiKey.trim();
@@ -201,7 +208,8 @@ class GeminiGenerateContentInferenceProviderAdapter
     }
 
     final endpoint = baseEndpoint.replace(
-      path: '${baseEndpoint.path}/${Uri.encodeComponent(normalizedModel)}'
+      path:
+          '${baseEndpoint.path}/${Uri.encodeComponent(normalizedModel)}'
           ':generateContent',
     );
     final client = _clientFactory();
@@ -209,26 +217,29 @@ class GeminiGenerateContentInferenceProviderAdapter
       final request = await client.postUrl(endpoint).timeout(timeout);
       request.headers.contentType = ContentType.json;
       request.headers.set('x-goog-api-key', normalizedKey);
-      request.write(jsonEncode(<String, dynamic>{
-        'systemInstruction': <String, dynamic>{
-          'parts': <Map<String, String>>[
-            <String, String>{'text': prompt.instructions},
-          ],
-        },
-        'contents': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'role': 'user',
+      request.write(
+        jsonEncode(<String, dynamic>{
+          'systemInstruction': <String, dynamic>{
             'parts': <Map<String, String>>[
-              <String, String>{'text': prompt.inputJson},
+              <String, String>{'text': prompt.instructions},
             ],
           },
-        ],
-      }));
+          'contents': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'role': 'user',
+              'parts': <Map<String, String>>[
+                <String, String>{'text': prompt.inputJson},
+              ],
+            },
+          ],
+        }),
+      );
       final response = await request.close().timeout(timeout);
       final body = await utf8.decodeStream(response).timeout(timeout);
       final decoded = jsonDecode(body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message = _geminiFriendlyErrorMessage(
+        final message =
+            _geminiFriendlyErrorMessage(
               decoded,
               statusCode: response.statusCode,
             ) ??
@@ -294,7 +305,7 @@ class LocalOpenAiCompatibleInferenceProviderAdapter
   Future<InferenceProviderResponse> ask({
     required String apiKey,
     required String model,
-    required AiDoctorPrompt prompt,
+    required InferencePrompt prompt,
     String? baseUrl,
   }) async {
     final normalizedModel = model.trim();
@@ -308,29 +319,27 @@ class LocalOpenAiCompatibleInferenceProviderAdapter
       request.headers.contentType = ContentType.json;
       final normalizedKey = apiKey.trim();
       if (normalizedKey.isNotEmpty) {
-        request.headers
-            .set(HttpHeaders.authorizationHeader, 'Bearer $normalizedKey');
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer $normalizedKey',
+        );
       }
-      request.write(jsonEncode(<String, dynamic>{
-        'model': normalizedModel,
-        'messages': <Map<String, String>>[
-          <String, String>{
-            'role': 'system',
-            'content': prompt.instructions,
-          },
-          <String, String>{
-            'role': 'user',
-            'content': prompt.inputJson,
-          },
-        ],
-        'stream': false,
-      }));
+      request.write(
+        jsonEncode(<String, dynamic>{
+          'model': normalizedModel,
+          'messages': <Map<String, String>>[
+            <String, String>{'role': 'system', 'content': prompt.instructions},
+            <String, String>{'role': 'user', 'content': prompt.inputJson},
+          ],
+          'stream': false,
+        }),
+      );
       final response = await request.close().timeout(timeout);
       final body = await utf8.decodeStream(response).timeout(timeout);
       final decoded = jsonDecode(body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message = _providerErrorMessage(decoded) ??
-            'HTTP ${response.statusCode}';
+        final message =
+            _providerErrorMessage(decoded) ?? 'HTTP ${response.statusCode}';
         throw StateError('AI provider request failed: $message');
       }
       final text = extractOutputText(decoded);
@@ -361,9 +370,10 @@ class LocalOpenAiCompatibleInferenceProviderAdapter
     if (base.scheme != 'http' && base.scheme != 'https') {
       throw ArgumentError('Local OpenAI-compatible base URL must use HTTP(S)');
     }
-    final cleanPath = base.path.endsWith('/')
-        ? base.path.substring(0, base.path.length - 1)
-        : base.path;
+    final cleanPath =
+        base.path.endsWith('/')
+            ? base.path.substring(0, base.path.length - 1)
+            : base.path;
     return base.replace(path: '$cleanPath/v1/chat/completions');
   }
 

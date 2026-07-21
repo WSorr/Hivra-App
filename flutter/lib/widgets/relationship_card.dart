@@ -16,16 +16,17 @@ class RelationshipCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isActive = relationship.isActive;
+    const brokenSurface = Color(0xFF21191D);
+    const brokenBorder = Color(0xFF633038);
+    const brokenAccent = Color(0xFFFF6B63);
 
     return Card(
       elevation: isActive ? 2 : 0,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      color: isActive ? null : Colors.grey.shade100,
+      color: isActive ? null : brokenSurface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(
-          color: isActive ? Colors.transparent : Colors.red.shade200,
-        ),
+        side: BorderSide(color: isActive ? Colors.transparent : brokenBorder),
       ),
       child: InkWell(
         onTap: onTap,
@@ -54,7 +55,7 @@ class RelationshipCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              
+
               // Relationship info
               Expanded(
                 child: Column(
@@ -101,14 +102,16 @@ class RelationshipCard extends StatelessWidget {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.red.shade100,
-                          borderRadius: BorderRadius.circular(4),
+                          color: brokenAccent.withAlpha(28),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: brokenAccent.withAlpha(72)),
                         ),
                         child: const Text(
                           'Broken',
                           style: TextStyle(
                             fontSize: 10,
-                            color: Colors.red,
+                            color: brokenAccent,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
@@ -116,7 +119,7 @@ class RelationshipCard extends StatelessWidget {
                   ],
                 ),
               ),
-              
+
               // Actions
               if (relationship.isActive && onBreak != null)
                 IconButton(
@@ -134,7 +137,7 @@ class RelationshipCard extends StatelessWidget {
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     final difference = now.difference(date);
-    
+
     if (difference.inDays > 30) {
       return '${difference.inDays ~/ 30} months';
     } else if (difference.inDays > 0) {
