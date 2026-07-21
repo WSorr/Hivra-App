@@ -26,25 +26,28 @@ void main() {
 
       final service = ConsensusAttestationExchangeService(
         sync: sync,
-        loadRelationships: () => <Relationship>[
-          Relationship(
-            peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
-            peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
-            kind: StarterKind.juice,
-            ownStarterId: base64Encode(Uint8List(32)),
-            peerStarterId:
-                base64Encode(Uint8List.fromList(List<int>.filled(32, 1))),
-            establishedAt: DateTime.utc(2026, 7, 10),
-          ),
-        ],
-        listTrustedCards: () async => const <CapsuleAddressCard>[
-          CapsuleAddressCard(
-            rootKey: 'h1peer',
-            rootHex: peerRootHex,
-            nostrNpub: 'npub1peer',
-            nostrHex: peerTransportHex,
-          ),
-        ],
+        loadRelationships:
+            () => <Relationship>[
+              Relationship(
+                peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                kind: StarterKind.juice,
+                ownStarterId: base64Encode(Uint8List(32)),
+                peerStarterId: base64Encode(
+                  Uint8List.fromList(List<int>.filled(32, 1)),
+                ),
+                establishedAt: DateTime.utc(2026, 7, 10),
+              ),
+            ],
+        listTrustedCards:
+            () async => const <CapsuleAddressCard>[
+              CapsuleAddressCard(
+                rootKey: 'h1peer',
+                rootHex: peerRootHex,
+                nostrNpub: 'npub1peer',
+                nostrHex: peerTransportHex,
+              ),
+            ],
       );
 
       final result = await service.ensureForPeer(peerRootHex);
@@ -54,6 +57,92 @@ void main() {
       expect(sync.sentPeerRootHex, peerRootHex);
       expect(sync.sentPeerTransportHex, peerTransportHex);
     });
+
+    test('blocks root-addressed peer without transport card', () async {
+      const peerRootHex =
+          '1111111111111111111111111111111111111111111111111111111111111111';
+      final sync = _FakeConsensusAttestationSyncService();
+
+      final service = ConsensusAttestationExchangeService(
+        sync: sync,
+        loadRelationships:
+            () => <Relationship>[
+              Relationship(
+                peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                kind: StarterKind.juice,
+                ownStarterId: base64Encode(Uint8List(32)),
+                peerStarterId: base64Encode(
+                  Uint8List.fromList(List<int>.filled(32, 1)),
+                ),
+                establishedAt: DateTime.utc(2026, 7, 10),
+              ),
+            ],
+        listTrustedCards: () async => const <CapsuleAddressCard>[],
+      );
+
+      final result = await service.ensureForPeer(peerRootHex);
+
+      expect(result.status, ConsensusAttestationExchangeStatus.blocked);
+      expect(result.message, contains('No transport endpoint'));
+      expect(sync.sentPeerRootHex, isNull);
+      expect(sync.sentPeerTransportHex, isNull);
+    });
+
+    test(
+      'recovers peer transport from incoming invitation ledger fact',
+      () async {
+        const peerRootHex =
+            '1111111111111111111111111111111111111111111111111111111111111111';
+        const peerTransportHex =
+            '2222222222222222222222222222222222222222222222222222222222222222';
+        const localRootHex =
+            '3333333333333333333333333333333333333333333333333333333333333333';
+        final sync = _FakeConsensusAttestationSyncService();
+        final invitationPayload = <int>[
+          ...Uint8List.fromList(List<int>.filled(32, 1)),
+          ...Uint8List.fromList(List<int>.filled(32, 2)),
+          ..._hexToBytes(localRootHex),
+          ..._hexToBytes(peerRootHex),
+          0,
+          ..._hexToBytes(peerTransportHex),
+        ];
+        final ledgerJson = jsonEncode(<String, Object?>{
+          'events': <Map<String, Object?>>[
+            <String, Object?>{
+              'kind': 'InvitationReceived',
+              'payload': invitationPayload,
+            },
+          ],
+        });
+
+        final service = ConsensusAttestationExchangeService(
+          sync: sync,
+          loadRelationships:
+              () => <Relationship>[
+                Relationship(
+                  peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                  peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                  kind: StarterKind.juice,
+                  ownStarterId: base64Encode(Uint8List(32)),
+                  peerStarterId: base64Encode(
+                    Uint8List.fromList(List<int>.filled(32, 1)),
+                  ),
+                  establishedAt: DateTime.utc(2026, 7, 10),
+                ),
+              ],
+          listTrustedCards: () async => const <CapsuleAddressCard>[],
+          exportLedger: () => ledgerJson,
+        );
+
+        final result = await service.ensureForPeer(peerRootHex);
+
+        expect(result.status, ConsensusAttestationExchangeStatus.syncing);
+        expect(result.localEvidenceSent, isTrue);
+        expect(sync.sentPeerRootHex, peerRootHex);
+        expect(sync.sentPeerTransportHex, peerTransportHex);
+      },
+    );
 
     test('ignores stale pair evidence from different snapshots', () async {
       const localRootHex =
@@ -82,15 +171,16 @@ void main() {
       final service = ConsensusAttestationExchangeService(
         sync: sync,
         loadRelationships: () => <Relationship>[],
-        listTrustedCards: () async => const <CapsuleAddressCard>[
-          CapsuleAddressCard(
-            rootKey: 'h1peer',
-            rootHex: peerRootHex,
-            nostrNpub: 'npub1peer',
-            nostrHex:
-                'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-          ),
-        ],
+        listTrustedCards:
+            () async => const <CapsuleAddressCard>[
+              CapsuleAddressCard(
+                rootKey: 'h1peer',
+                rootHex: peerRootHex,
+                nostrNpub: 'npub1peer',
+                nostrHex:
+                    'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+              ),
+            ],
       );
 
       final result = await service.ensureForPeer(peerRootHex);
@@ -100,41 +190,132 @@ void main() {
       expect(result.message, contains('ignoring stale pair evidence'));
       expect(sync.sentPeerRootHex, peerRootHex);
     });
+
+    test(
+      'becomes ready when peer attestation arrives after local send',
+      () async {
+        const localRootHex =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        const peerRootHex =
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        const snapshotHashHex =
+            '3333333333333333333333333333333333333333333333333333333333333333';
+        final sync = _FakeConsensusAttestationSyncService(
+          verifiedResponses: <List<ConsensusAttestationEvidence>>[
+            const <ConsensusAttestationEvidence>[],
+            <ConsensusAttestationEvidence>[
+              _evidence(
+                localRootHex: localRootHex,
+                peerRootHex: peerRootHex,
+                snapshotHashHex: snapshotHashHex,
+                signerRootHex: localRootHex,
+              ),
+              _evidence(
+                localRootHex: localRootHex,
+                peerRootHex: peerRootHex,
+                snapshotHashHex: snapshotHashHex,
+                signerRootHex: peerRootHex,
+              ),
+            ],
+          ],
+          receiveResults: const <ConsensusAttestationReceiveResult>[
+            ConsensusAttestationReceiveResult(
+              code: 0,
+              errorMessage: null,
+              receivedCount: 0,
+              storedCount: 0,
+              rejectedCount: 0,
+            ),
+            ConsensusAttestationReceiveResult(
+              code: 0,
+              errorMessage: null,
+              receivedCount: 1,
+              storedCount: 1,
+              rejectedCount: 0,
+            ),
+          ],
+        );
+
+        final service = ConsensusAttestationExchangeService(
+          sync: sync,
+          loadRelationships: () => <Relationship>[],
+          listTrustedCards:
+              () async => const <CapsuleAddressCard>[
+                CapsuleAddressCard(
+                  rootKey: 'h1peer',
+                  rootHex: peerRootHex,
+                  nostrNpub: 'npub1peer',
+                  nostrHex:
+                      'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+                ),
+              ],
+        );
+
+        final result = await service.ensureForPeer(peerRootHex);
+
+        expect(result.status, ConsensusAttestationExchangeStatus.ready);
+        expect(result.localEvidenceSent, isTrue);
+        expect(result.receivedCount, 1);
+        expect(result.storedCount, 1);
+        expect(sync.receiveCalls, 2);
+        expect(sync.sentPeerRootHex, peerRootHex);
+      },
+    );
   });
 }
 
 class _FakeConsensusAttestationSyncService
     extends ConsensusAttestationSyncService {
   final List<ConsensusAttestationEvidence> pairEvidence;
+  final List<List<ConsensusAttestationEvidence>> verifiedResponses;
+  final List<ConsensusAttestationReceiveResult> receiveResults;
   String? sentPeerRootHex;
   String? sentPeerTransportHex;
+  int receiveCalls = 0;
+  int verifiedCalls = 0;
 
   _FakeConsensusAttestationSyncService({
     this.pairEvidence = const <ConsensusAttestationEvidence>[],
+    this.verifiedResponses = const <List<ConsensusAttestationEvidence>>[
+      <ConsensusAttestationEvidence>[],
+    ],
+    this.receiveResults = const <ConsensusAttestationReceiveResult>[
+      ConsensusAttestationReceiveResult(
+        code: 0,
+        errorMessage: null,
+        receivedCount: 0,
+        storedCount: 0,
+        rejectedCount: 0,
+      ),
+    ],
   }) : super(
-          runtime: _FakeRuntime(),
-          consensus: ConsensusRuntimeService(
-            exportLedger: () => null,
-            readLocalTransportKey: () => null,
-          ),
-        );
+         runtime: _FakeRuntime(),
+         consensus: ConsensusRuntimeService(
+           exportLedger: () => null,
+           readLocalTransportKey: () => null,
+         ),
+       );
 
   @override
   Future<ConsensusAttestationReceiveResult> receiveAndStore() async {
-    return const ConsensusAttestationReceiveResult(
-      code: 0,
-      errorMessage: null,
-      receivedCount: 0,
-      storedCount: 0,
-      rejectedCount: 0,
-    );
+    final index =
+        receiveCalls < receiveResults.length
+            ? receiveCalls
+            : receiveResults.length - 1;
+    receiveCalls += 1;
+    return receiveResults[index];
   }
 
   @override
   Future<List<ConsensusAttestationEvidence>> loadVerifiedForPair({
     required String peerRootHex,
   }) async {
-    return const <ConsensusAttestationEvidence>[];
+    final index =
+        verifiedCalls < verifiedResponses.length
+            ? verifiedCalls
+            : verifiedResponses.length - 1;
+    verifiedCalls += 1;
+    return verifiedResponses[index];
   }
 
   @override
@@ -194,8 +375,7 @@ class _FakeRuntime implements AppRuntimeRuntime {
     required Uint8List moduleBytes,
     required String entryExport,
     required Uint8List inputJsonBytes,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs() =>
@@ -206,8 +386,7 @@ class _FakeRuntime implements AppRuntimeRuntime {
     Uint8List peerPubkey,
     Uint8List ownStarterId,
     Uint8List peerStarterId,
-  ) =>
-      throw UnimplementedError();
+  ) => throw UnimplementedError();
 
   @override
   Future<CapsuleTraceReport> diagnoseCapsuleTraces() =>
@@ -222,8 +401,7 @@ class _FakeRuntime implements AppRuntimeRuntime {
     required String messageHashHex,
     required String participantIdHex,
     required String signatureHex,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   String? signConsensusCommitment(String commitmentHashHex) =>

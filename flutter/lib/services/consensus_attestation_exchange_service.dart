@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -5,16 +6,14 @@ import '../models/consensus_models.dart';
 import '../models/relationship.dart';
 import 'capsule_address_service.dart';
 import 'consensus_attestation_sync_service.dart';
+import 'ledger_view_support.dart';
 
 typedef AttestationRelationshipsLoader = List<Relationship> Function();
-typedef AttestationTrustedCardsLoader = Future<List<CapsuleAddressCard>>
-    Function();
+typedef AttestationTrustedCardsLoader =
+    Future<List<CapsuleAddressCard>> Function();
+typedef AttestationLedgerExporter = String? Function();
 
-enum ConsensusAttestationExchangeStatus {
-  ready,
-  syncing,
-  blocked,
-}
+enum ConsensusAttestationExchangeStatus { ready, syncing, blocked }
 
 class ConsensusAttestationExchangeResult {
   final ConsensusAttestationExchangeStatus status;
@@ -44,14 +43,18 @@ class ConsensusAttestationExchangeService {
   final ConsensusAttestationSyncService _sync;
   final AttestationRelationshipsLoader _loadRelationships;
   final AttestationTrustedCardsLoader _listTrustedCards;
+  final AttestationLedgerExporter _exportLedger;
+  final LedgerViewSupport _ledgerSupport = const LedgerViewSupport();
 
-  const ConsensusAttestationExchangeService({
+  ConsensusAttestationExchangeService({
     required ConsensusAttestationSyncService sync,
     required AttestationRelationshipsLoader loadRelationships,
     required AttestationTrustedCardsLoader listTrustedCards,
-  })  : _sync = sync,
-        _loadRelationships = loadRelationships,
-        _listTrustedCards = listTrustedCards;
+    AttestationLedgerExporter? exportLedger,
+  }) : _sync = sync,
+       _loadRelationships = loadRelationships,
+       _listTrustedCards = listTrustedCards,
+       _exportLedger = exportLedger ?? _nullAttestationLedgerExport;
 
   Future<ConsensusAttestationExchangeResult> ensureForPeer(
     String peerRootHex,
@@ -71,6 +74,13 @@ class ConsensusAttestationExchangeService {
     final received = await _sync.receiveAndStore();
     var verified = await _sync.loadVerifiedForPair(peerRootHex: normalizedPeer);
     if (_hasTwoRootEvidence(verified)) {
+      final peerTransportHex = await _resolvePeerTransportHex(normalizedPeer);
+      if (peerTransportHex != null) {
+        _announceReadyEvidence(
+          peerRootHex: normalizedPeer,
+          peerTransportHex: peerTransportHex,
+        );
+      }
       return ConsensusAttestationExchangeResult(
         status: ConsensusAttestationExchangeStatus.ready,
         message: null,
@@ -97,34 +107,138 @@ class ConsensusAttestationExchangeService {
       peerRootHex: normalizedPeer,
       peerTransportHex: peerTransportHex,
     );
+    var effectiveReceive = received;
+    if (sent.isSuccess) {
+      effectiveReceive = _combineReceiveResults(
+        received,
+        await _sync.receiveAndStore(),
+      );
+    }
     verified = await _sync.loadVerifiedForPair(peerRootHex: normalizedPeer);
     if (_hasTwoRootEvidence(verified)) {
       return ConsensusAttestationExchangeResult(
         status: ConsensusAttestationExchangeStatus.ready,
         message: null,
-        receiveCode: received.code,
-        receivedCount: received.receivedCount,
-        storedCount: received.storedCount,
+        receiveCode: effectiveReceive.code,
+        receivedCount: effectiveReceive.receivedCount,
+        storedCount: effectiveReceive.storedCount,
         localEvidenceSent: sent.isSuccess,
         sendCode: sent.code,
       );
     }
 
-    final pairEvidence =
-        await _sync.loadVerifiedPairEvidence(peerRootHex: normalizedPeer);
-    final mismatchedEvidenceCount =
-        _mismatchedEvidenceCount(pairEvidence, verified);
+    final pairEvidence = await _sync.loadVerifiedPairEvidence(
+      peerRootHex: normalizedPeer,
+    );
+    final mismatchedEvidenceCount = _mismatchedEvidenceCount(
+      pairEvidence,
+      verified,
+    );
     return ConsensusAttestationExchangeResult(
       status: ConsensusAttestationExchangeStatus.syncing,
-      message: sent.isSuccess
-          ? _syncingMessage(mismatchedEvidenceCount)
-          : sent.errorMessage ?? 'Pair consensus attestation send failed',
-      receiveCode: received.code,
-      receivedCount: received.receivedCount,
-      storedCount: received.storedCount,
+      message:
+          sent.isSuccess
+              ? _syncingMessage(mismatchedEvidenceCount)
+              : sent.errorMessage ?? 'Pair consensus attestation send failed',
+      receiveCode: effectiveReceive.code,
+      receivedCount: effectiveReceive.receivedCount,
+      storedCount: effectiveReceive.storedCount,
       mismatchedEvidenceCount: mismatchedEvidenceCount,
       localEvidenceSent: sent.isSuccess,
       sendCode: sent.code,
+    );
+  }
+
+  Future<ConsensusAttestationSendResult> announceForPeer(
+    String peerRootHex,
+  ) async {
+    final normalizedPeer = _normalizeHex64(peerRootHex);
+    if (normalizedPeer == null) {
+      return const ConsensusAttestationSendResult(
+        isSuccess: false,
+        code: -1,
+        errorMessage: 'Invalid consensus peer',
+        evidence: null,
+      );
+    }
+    final peerTransportHex = await _resolvePeerTransportHex(normalizedPeer);
+    if (peerTransportHex == null) {
+      return const ConsensusAttestationSendResult(
+        isSuccess: false,
+        code: -1,
+        errorMessage: 'No transport endpoint mapped for consensus peer',
+        evidence: null,
+      );
+    }
+    return _sync.sendLocalEvidence(
+      peerRootHex: normalizedPeer,
+      peerTransportHex: peerTransportHex,
+    );
+  }
+
+  Future<ConsensusAttestationReceiveResult> receiveAndAnswerStored() async {
+    final receive = await _sync.receiveAndStore();
+    if (receive.storedEvidence.isEmpty) {
+      return receive;
+    }
+    final localRootHex = _sync.localRootHex();
+    if (localRootHex == null) {
+      return receive;
+    }
+    final peers = <String>{};
+    for (final evidence in receive.storedEvidence) {
+      if (evidence.pairRootsSorted.length != 2 ||
+          !evidence.pairRootsSorted.contains(localRootHex)) {
+        continue;
+      }
+      for (final root in evidence.pairRootsSorted) {
+        if (root != localRootHex) {
+          peers.add(root);
+        }
+      }
+    }
+    for (final peerRootHex in peers) {
+      await announceForPeer(peerRootHex);
+    }
+    return receive;
+  }
+
+  void _announceReadyEvidence({
+    required String peerRootHex,
+    required String peerTransportHex,
+  }) {
+    unawaited(
+      _sync
+          .sendLocalEvidence(
+            peerRootHex: peerRootHex,
+            peerTransportHex: peerTransportHex,
+          )
+          .catchError(
+            (_) => const ConsensusAttestationSendResult(
+              isSuccess: false,
+              code: -1,
+              errorMessage: 'Pair consensus attestation announce failed',
+              evidence: null,
+            ),
+          ),
+    );
+  }
+
+  ConsensusAttestationReceiveResult _combineReceiveResults(
+    ConsensusAttestationReceiveResult first,
+    ConsensusAttestationReceiveResult second,
+  ) {
+    final effectiveCode = second.code < 0 ? second.code : first.code;
+    return ConsensusAttestationReceiveResult(
+      code: effectiveCode,
+      errorMessage: second.errorMessage ?? first.errorMessage,
+      receivedCount: first.receivedCount + second.receivedCount,
+      storedCount: first.storedCount + second.storedCount,
+      rejectedCount: first.rejectedCount + second.rejectedCount,
+      storedEvidence: <ConsensusAttestationEvidence>[
+        ...first.storedEvidence,
+        ...second.storedEvidence,
+      ],
     );
   }
 
@@ -175,7 +289,7 @@ class ConsensusAttestationExchangeService {
       final rootHex = _decodeB64ToHex32(peerRoot);
       if (rootHex == null || rootHex != peerRootHex) continue;
       final transportHex = _decodeB64ToHex32(relationship.peerPubkey);
-      if (transportHex != null) {
+      if (transportHex != null && transportHex != rootHex) {
         rootToTransport.putIfAbsent(rootHex, () => transportHex);
       }
     }
@@ -184,8 +298,27 @@ class ConsensusAttestationExchangeService {
     for (final card in cards) {
       if (_normalizeHex64(card.rootHex) != peerRootHex) continue;
       final transportHex = _normalizeHex64(card.nostrHex);
-      if (transportHex != null) {
+      if (transportHex != null && transportHex != peerRootHex) {
         rootToTransport[peerRootHex] = transportHex;
+      }
+    }
+
+    final ledgerRoot = _ledgerSupport.exportLedgerRoot(_exportLedger());
+    if (ledgerRoot != null) {
+      for (final raw in _ledgerSupport.events(ledgerRoot)) {
+        if (raw is! Map) continue;
+        final event = Map<String, dynamic>.from(raw);
+        if (_ledgerSupport.kindCode(event['kind']) != 9) continue;
+        final payload = _ledgerSupport.payloadBytes(event['payload']);
+        if (payload.length < 161) continue;
+        final senderRoot = _hex(Uint8List.fromList(payload.sublist(96, 128)));
+        if (senderRoot != peerRootHex) continue;
+        final senderTransport = _hex(
+          Uint8List.fromList(payload.sublist(129, 161)),
+        );
+        if (senderTransport != peerRootHex) {
+          rootToTransport[peerRootHex] = senderTransport;
+        }
       }
     }
     return rootToTransport[peerRootHex];
@@ -222,3 +355,5 @@ class ConsensusAttestationExchangeService {
     return out.toString();
   }
 }
+
+String? _nullAttestationLedgerExport() => null;

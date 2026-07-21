@@ -47,10 +47,7 @@ List<int> _rejectedPayload({
   required List<int> invitationId,
   required int reason,
 }) {
-  return <int>[
-    ...invitationId,
-    reason,
-  ];
+  return <int>[...invitationId, reason];
 }
 
 Map<String, dynamic> _event({
@@ -106,34 +103,35 @@ void main() {
     }
 
     test(
-        'does not classify self-addressed self-signed sent invitation as incoming',
-        () {
-      final invitationId = _bytes32(11);
-      final starterId = _bytes32(31);
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceForSelf(self);
+      'does not classify self-addressed self-signed sent invitation as incoming',
+      () {
+        final invitationId = _bytes32(11);
+        final starterId = _bytes32(31);
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceForSelf(self);
 
-      final invitations = service.loadInvitations(<String, dynamic>{
-        'events': <Map<String, dynamic>>[
-          _event(
-            kind: 'InvitationSent',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: self,
-              kindByte: 0,
+        final invitations = service.loadInvitations(<String, dynamic>{
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: self,
+                kindByte: 0,
+              ),
+              signer: self,
+              timestamp: t0 + 1,
             ),
-            signer: self,
-            timestamp: t0 + 1,
-          ),
-        ],
-      });
+          ],
+        });
 
-      expect(invitations, hasLength(1));
-      expect(invitations.single.isIncoming, isFalse);
-      expect(invitations.single.isOutgoing, isTrue);
-      expect(invitations.single.status, InvitationStatus.pending);
-    });
+        expect(invitations, hasLength(1));
+        expect(invitations.single.isIncoming, isFalse);
+        expect(invitations.single.isOutgoing, isTrue);
+        expect(invitations.single.status, InvitationStatus.pending);
+      },
+    );
 
     test('ignores sent invitation to local capsule from peer', () {
       final invitationId = _bytes32(12);
@@ -161,40 +159,35 @@ void main() {
     });
 
     test(
-        'ignores peer sent invitation when starter id collides with local slot',
-        () {
-      final invitationId = _bytes32(112);
-      final collidedStarter = Uint8List.fromList(_bytes32(132));
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceForSelf(self);
+      'ignores peer sent invitation when starter id collides with local slot',
+      () {
+        final invitationId = _bytes32(112);
+        final collidedStarter = Uint8List.fromList(_bytes32(132));
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceForSelf(self);
 
-      final invitations = service.loadInvitations(
-        <String, dynamic>{
-          'events': <Map<String, dynamic>>[
-            _event(
-              kind: 'InvitationSent',
-              payload: _offerPayload(
-                invitationId: invitationId,
-                starterId: collidedStarter,
-                toPubkey: self,
-                kindByte: 1,
+        final invitations = service.loadInvitations(
+          <String, dynamic>{
+            'events': <Map<String, dynamic>>[
+              _event(
+                kind: 'InvitationSent',
+                payload: _offerPayload(
+                  invitationId: invitationId,
+                  starterId: collidedStarter,
+                  toPubkey: self,
+                  kindByte: 1,
+                ),
+                signer: peer,
+                timestamp: t0 + 1,
               ),
-              signer: peer,
-              timestamp: t0 + 1,
-            ),
-          ],
-        },
-        starterIds: <Uint8List?>[
-          collidedStarter,
-          null,
-          null,
-          null,
-          null,
-        ],
-      );
+            ],
+          },
+          starterIds: <Uint8List?>[collidedStarter, null, null, null, null],
+        );
 
-      expect(invitations, isEmpty);
-    });
+        expect(invitations, isEmpty);
+      },
+    );
 
     test('ignores sent invitation addressed to local transport key', () {
       final localOwner = Uint8List.fromList(_bytes32(151));
@@ -227,63 +220,65 @@ void main() {
     });
 
     test(
-        'ignores sent invitation addressed to ledger owner when runtime owner is unavailable',
-        () {
-      final invitationId = _bytes32(122);
-      final starterId = _bytes32(142);
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceWithoutRuntimeOwner();
+      'ignores sent invitation addressed to ledger owner when runtime owner is unavailable',
+      () {
+        final invitationId = _bytes32(122);
+        final starterId = _bytes32(142);
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceWithoutRuntimeOwner();
 
-      final invitations = service.loadInvitations(<String, dynamic>{
-        'owner': self.toList(),
-        'events': <Map<String, dynamic>>[
-          _event(
-            kind: 'InvitationSent',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: self,
-              kindByte: 1,
+        final invitations = service.loadInvitations(<String, dynamic>{
+          'owner': self.toList(),
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: self,
+                kindByte: 1,
+              ),
+              signer: peer,
+              timestamp: t0 + 1,
             ),
-            signer: peer,
-            timestamp: t0 + 1,
-          ),
-        ],
-      });
+          ],
+        });
 
-      expect(invitations, isEmpty);
-    });
+        expect(invitations, isEmpty);
+      },
+    );
 
     test(
-        'keeps local outgoing when runtime owner is stale but ledger owner is current',
-        () {
-      final invitationId = _bytes32(123);
-      final starterId = _bytes32(143);
-      final staleRuntimeOwner = Uint8List.fromList(_bytes32(250));
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceForIdentity(ownerKey: staleRuntimeOwner);
+      'keeps local outgoing when runtime owner is stale but ledger owner is current',
+      () {
+        final invitationId = _bytes32(123);
+        final starterId = _bytes32(143);
+        final staleRuntimeOwner = Uint8List.fromList(_bytes32(250));
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceForIdentity(ownerKey: staleRuntimeOwner);
 
-      final invitations = service.loadInvitations(<String, dynamic>{
-        'owner': self.toList(),
-        'events': <Map<String, dynamic>>[
-          _event(
-            kind: 'InvitationSent',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: peer,
-              kindByte: 2,
+        final invitations = service.loadInvitations(<String, dynamic>{
+          'owner': self.toList(),
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: peer,
+                kindByte: 2,
+              ),
+              signer: self,
+              timestamp: t0 + 1,
             ),
-            signer: self,
-            timestamp: t0 + 1,
-          ),
-        ],
-      });
+          ],
+        });
 
-      expect(invitations, hasLength(1));
-      expect(invitations.single.isOutgoing, isTrue);
-      expect(invitations.single.status, InvitationStatus.pending);
-    });
+        expect(invitations, hasLength(1));
+        expect(invitations.single.isOutgoing, isTrue);
+        expect(invitations.single.status, InvitationStatus.pending);
+      },
+    );
 
     test('ignores offer events with malformed or missing signer', () {
       final invitationId = _bytes32(124);
@@ -337,113 +332,97 @@ void main() {
     });
 
     test(
-        'keeps local outgoing InvitationSent when starter matches local slot and signer is unresolved',
-        () {
-      final invitationId = _bytes32(201);
-      final localStarter = Uint8List.fromList(_bytes32(202));
-      final foreignRecipient = Uint8List.fromList(_bytes32(203));
-      final unresolvedSigner = Uint8List.fromList(_bytes32(204));
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceForSelf(self);
+      'keeps local outgoing InvitationSent when starter matches local slot and signer is unresolved',
+      () {
+        final invitationId = _bytes32(201);
+        final localStarter = Uint8List.fromList(_bytes32(202));
+        final foreignRecipient = Uint8List.fromList(_bytes32(203));
+        final unresolvedSigner = Uint8List.fromList(_bytes32(204));
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceForSelf(self);
 
-      final invitations = service.loadInvitations(
-        <String, dynamic>{
-          'events': <Map<String, dynamic>>[
-            _event(
-              kind: 'InvitationSent',
-              payload: _offerPayload(
-                invitationId: invitationId,
-                starterId: localStarter,
-                toPubkey: foreignRecipient,
-                kindByte: 1,
+        final invitations = service.loadInvitations(
+          <String, dynamic>{
+            'events': <Map<String, dynamic>>[
+              _event(
+                kind: 'InvitationSent',
+                payload: _offerPayload(
+                  invitationId: invitationId,
+                  starterId: localStarter,
+                  toPubkey: foreignRecipient,
+                  kindByte: 1,
+                ),
+                signer: unresolvedSigner,
+                timestamp: t0 + 1,
               ),
-              signer: unresolvedSigner,
-              timestamp: t0 + 1,
-            ),
-          ],
-        },
-        starterIds: <Uint8List?>[
-          localStarter,
-          null,
-          null,
-          null,
-          null,
-        ],
-      );
+            ],
+          },
+          starterIds: <Uint8List?>[localStarter, null, null, null, null],
+        );
 
-      expect(invitations, hasLength(1));
-      expect(invitations.single.isOutgoing, isTrue);
-      expect(invitations.single.isIncoming, isFalse);
-      expect(invitations.single.starterSlot, 0);
-      expect(invitations.single.status, InvitationStatus.pending);
-    });
+        expect(invitations, hasLength(1));
+        expect(invitations.single.isOutgoing, isTrue);
+        expect(invitations.single.isIncoming, isFalse);
+        expect(invitations.single.starterSlot, 0);
+        expect(invitations.single.status, InvitationStatus.pending);
+      },
+    );
 
     test(
-        'projects lineage outgoing InvitationSent payload with sender transport',
-        () {
-      final invitationId = _bytes32(221);
-      final localStarter = Uint8List.fromList(_bytes32(222));
-      final recipientTransport = Uint8List.fromList(_bytes32(223));
-      final senderTransport = Uint8List.fromList(_bytes32(224));
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceForSelf(self);
+      'projects lineage outgoing InvitationSent payload with sender transport',
+      () {
+        final invitationId = _bytes32(221);
+        final localStarter = Uint8List.fromList(_bytes32(222));
+        final recipientTransport = Uint8List.fromList(_bytes32(223));
+        final senderTransport = Uint8List.fromList(_bytes32(224));
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceForSelf(self);
 
-      final invitations = service.loadInvitations(
-        <String, dynamic>{
-          'owner': self.toList(),
-          'events': <Map<String, dynamic>>[
-            _event(
-              kind: 'InvitationSent',
-              payload: _offerPayload(
-                invitationId: invitationId,
-                starterId: localStarter,
-                toPubkey: recipientTransport,
-                senderRootPubkey: self,
-                senderTransportPubkey: senderTransport,
-                kindByte: 3,
+        final invitations = service.loadInvitations(
+          <String, dynamic>{
+            'owner': self.toList(),
+            'events': <Map<String, dynamic>>[
+              _event(
+                kind: 'InvitationSent',
+                payload: _offerPayload(
+                  invitationId: invitationId,
+                  starterId: localStarter,
+                  toPubkey: recipientTransport,
+                  senderRootPubkey: self,
+                  senderTransportPubkey: senderTransport,
+                  kindByte: 3,
+                ),
+                signer: self,
+                timestamp: t0 + 1,
               ),
-              signer: self,
-              timestamp: t0 + 1,
-            ),
-          ],
-        },
-        starterIds: <Uint8List?>[
-          localStarter,
-          null,
-          null,
-          null,
-          null,
-        ],
-      );
+            ],
+          },
+          starterIds: <Uint8List?>[localStarter, null, null, null, null],
+        );
 
-      expect(invitations, hasLength(1));
-      expect(invitations.single.isOutgoing, isTrue);
-      expect(invitations.single.status, InvitationStatus.pending);
-      expect(invitations.single.starterSlot, 0);
-      expect(invitations.single.kind, StarterKind.pulse);
-    });
+        expect(invitations, hasLength(1));
+        expect(invitations.single.isOutgoing, isTrue);
+        expect(invitations.single.status, InvitationStatus.pending);
+        expect(invitations.single.starterSlot, 0);
+        expect(invitations.single.kind, StarterKind.pulse);
+      },
+    );
 
     test(
-        'keeps local outgoing InvitationSent when starter exists in local ledger and signer is unresolved',
-        () {
-      final invitationId = _bytes32(211);
-      final localStarter = Uint8List.fromList(_bytes32(212));
-      final foreignRecipient = Uint8List.fromList(_bytes32(213));
-      final unresolvedSigner = Uint8List.fromList(_bytes32(214));
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceForSelf(self);
+      'keeps local outgoing InvitationSent when starter exists in local ledger and signer is unresolved',
+      () {
+        final invitationId = _bytes32(211);
+        final localStarter = Uint8List.fromList(_bytes32(212));
+        final foreignRecipient = Uint8List.fromList(_bytes32(213));
+        final unresolvedSigner = Uint8List.fromList(_bytes32(214));
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceForSelf(self);
 
-      final invitations = service.loadInvitations(
-        <String, dynamic>{
+        final invitations = service.loadInvitations(<String, dynamic>{
           'events': <Map<String, dynamic>>[
             _event(
               kind: 'StarterCreated',
-              payload: <int>[
-                ...localStarter,
-                ...List<int>.filled(32, 0),
-                1,
-                0,
-              ],
+              payload: <int>[...localStarter, ...List<int>.filled(32, 0), 1, 0],
               signer: self,
               timestamp: t0,
             ),
@@ -459,16 +438,15 @@ void main() {
               timestamp: t0 + 1,
             ),
           ],
-        },
-        starterIds: List<Uint8List?>.filled(5, null),
-      );
+        }, starterIds: List<Uint8List?>.filled(5, null));
 
-      expect(invitations, hasLength(1));
-      expect(invitations.single.isOutgoing, isTrue);
-      expect(invitations.single.isIncoming, isFalse);
-      expect(invitations.single.starterSlot, isNull);
-      expect(invitations.single.status, InvitationStatus.pending);
-    });
+        expect(invitations, hasLength(1));
+        expect(invitations.single.isOutgoing, isTrue);
+        expect(invitations.single.isIncoming, isFalse);
+        expect(invitations.single.starterSlot, isNull);
+        expect(invitations.single.status, InvitationStatus.pending);
+      },
+    );
 
     test('ignores InvitationReceived not addressed to local identity', () {
       final invitationId = _bytes32(126);
@@ -688,58 +666,60 @@ void main() {
       expect(invitations.single.rejectionReason, RejectionReason.emptySlot);
     });
 
-    test('uses first accepted ledger entry across duplicate accepted events',
-        () {
-      final invitationId = _bytes32(243);
-      final starterId = _bytes32(244);
-      final createdStarterIdA = _bytes32(245);
-      final createdStarterIdB = _bytes32(246);
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceForSelf(self);
+    test(
+      'uses first accepted ledger entry across duplicate accepted events',
+      () {
+        final invitationId = _bytes32(243);
+        final starterId = _bytes32(244);
+        final createdStarterIdA = _bytes32(245);
+        final createdStarterIdB = _bytes32(246);
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceForSelf(self);
 
-      final invitations = service.loadInvitations(<String, dynamic>{
-        'events': <Map<String, dynamic>>[
-          _event(
-            kind: 'InvitationSent',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: peer,
-              kindByte: 4,
+        final invitations = service.loadInvitations(<String, dynamic>{
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: peer,
+                kindByte: 4,
+              ),
+              signer: self,
+              timestamp: t0 + 1,
             ),
-            signer: self,
-            timestamp: t0 + 1,
-          ),
-          _event(
-            kind: 'InvitationAccepted',
-            payload: _acceptedPayload(
-              invitationId: invitationId,
-              createdStarterId: createdStarterIdA,
-              fromPubkey: peer,
+            _event(
+              kind: 'InvitationAccepted',
+              payload: _acceptedPayload(
+                invitationId: invitationId,
+                createdStarterId: createdStarterIdA,
+                fromPubkey: peer,
+              ),
+              signer: peer,
+              timestamp: t0 + 5,
             ),
-            signer: peer,
-            timestamp: t0 + 5,
-          ),
-          _event(
-            kind: 'InvitationAccepted',
-            payload: _acceptedPayload(
-              invitationId: invitationId,
-              createdStarterId: createdStarterIdB,
-              fromPubkey: peer,
+            _event(
+              kind: 'InvitationAccepted',
+              payload: _acceptedPayload(
+                invitationId: invitationId,
+                createdStarterId: createdStarterIdB,
+                fromPubkey: peer,
+              ),
+              signer: peer,
+              timestamp: t0 + 3,
             ),
-            signer: peer,
-            timestamp: t0 + 3,
-          ),
-        ],
-      });
+          ],
+        });
 
-      expect(invitations, hasLength(1));
-      expect(invitations.single.status, InvitationStatus.accepted);
-      expect(
-        invitations.single.respondedAt,
-        equals(DateTime.fromMillisecondsSinceEpoch(t0 + 5)),
-      );
-    });
+        expect(invitations, hasLength(1));
+        expect(invitations.single.status, InvitationStatus.accepted);
+        expect(
+          invitations.single.respondedAt,
+          equals(DateTime.fromMillisecondsSinceEpoch(t0 + 5)),
+        );
+      },
+    );
 
     test('updates outgoing invitation to accepted when response arrives', () {
       final invitationId = _bytes32(15);
@@ -983,154 +963,157 @@ void main() {
     });
 
     test(
-        'restore fallback keeps resolved outgoing invitation accepted after replayed offer',
-        () {
-      final invitationId = _bytes32(115);
-      final starterId = _bytes32(135);
-      final createdStarterId = _bytes32(155);
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceWithoutRuntimeOwner();
+      'restore fallback keeps resolved outgoing invitation accepted after replayed offer',
+      () {
+        final invitationId = _bytes32(115);
+        final starterId = _bytes32(135);
+        final createdStarterId = _bytes32(155);
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceWithoutRuntimeOwner();
 
-      final invitations = service.loadInvitations(<String, dynamic>{
-        'owner': self.toList(),
-        'events': <Map<String, dynamic>>[
-          _event(
-            kind: 'InvitationSent',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: peer,
-              kindByte: 4,
+        final invitations = service.loadInvitations(<String, dynamic>{
+          'owner': self.toList(),
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: peer,
+                kindByte: 4,
+              ),
+              signer: self,
+              timestamp: t0 + 1,
             ),
-            signer: self,
-            timestamp: t0 + 1,
-          ),
-          _event(
-            kind: 'InvitationAccepted',
-            payload: _acceptedPayload(
-              invitationId: invitationId,
-              createdStarterId: createdStarterId,
-              fromPubkey: peer,
+            _event(
+              kind: 'InvitationAccepted',
+              payload: _acceptedPayload(
+                invitationId: invitationId,
+                createdStarterId: createdStarterId,
+                fromPubkey: peer,
+              ),
+              signer: peer,
+              timestamp: t0 + 2,
             ),
-            signer: peer,
-            timestamp: t0 + 2,
-          ),
-          _event(
-            kind: 'InvitationSent',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: peer,
-              kindByte: 4,
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: peer,
+                kindByte: 4,
+              ),
+              signer: self,
+              timestamp: t0 + 3,
             ),
-            signer: self,
-            timestamp: t0 + 3,
-          ),
-        ],
-      });
+          ],
+        });
 
-      expect(invitations, hasLength(1));
-      final invitation = invitations.single;
-      expect(invitation.isOutgoing, isTrue);
-      expect(invitation.status, InvitationStatus.accepted);
-    });
+        expect(invitations, hasLength(1));
+        final invitation = invitations.single;
+        expect(invitation.isOutgoing, isTrue);
+        expect(invitation.status, InvitationStatus.accepted);
+      },
+    );
 
     test(
-        'restore fallback keeps rejected incoming invitation rejected after replayed offer',
-        () {
-      final invitationId = _bytes32(116);
-      final starterId = _bytes32(136);
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceWithoutRuntimeOwner();
+      'restore fallback keeps rejected incoming invitation rejected after replayed offer',
+      () {
+        final invitationId = _bytes32(116);
+        final starterId = _bytes32(136);
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceWithoutRuntimeOwner();
 
-      final invitations = service.loadInvitations(<String, dynamic>{
-        'owner': self.toList(),
-        'events': <Map<String, dynamic>>[
-          _event(
-            kind: 'InvitationReceived',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: self,
-              kindByte: 2,
+        final invitations = service.loadInvitations(<String, dynamic>{
+          'owner': self.toList(),
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationReceived',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: self,
+                kindByte: 2,
+              ),
+              signer: peer,
+              timestamp: t0 + 1,
             ),
-            signer: peer,
-            timestamp: t0 + 1,
-          ),
-          _event(
-            kind: 'InvitationRejected',
-            payload: _rejectedPayload(invitationId: invitationId, reason: 0),
-            signer: self,
-            timestamp: t0 + 2,
-          ),
-          _event(
-            kind: 'InvitationReceived',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: self,
-              kindByte: 2,
+            _event(
+              kind: 'InvitationRejected',
+              payload: _rejectedPayload(invitationId: invitationId, reason: 0),
+              signer: self,
+              timestamp: t0 + 2,
             ),
-            signer: peer,
-            timestamp: t0 + 3,
-          ),
-        ],
-      });
+            _event(
+              kind: 'InvitationReceived',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: self,
+                kindByte: 2,
+              ),
+              signer: peer,
+              timestamp: t0 + 3,
+            ),
+          ],
+        });
 
-      expect(invitations, hasLength(1));
-      final invitation = invitations.single;
-      expect(invitation.isIncoming, isTrue);
-      expect(invitation.status, InvitationStatus.rejected);
-      expect(invitation.rejectionReason, RejectionReason.emptySlot);
-    });
+        expect(invitations, hasLength(1));
+        final invitation = invitations.single;
+        expect(invitation.isIncoming, isTrue);
+        expect(invitation.status, InvitationStatus.rejected);
+        expect(invitation.rejectionReason, RejectionReason.emptySlot);
+      },
+    );
 
     test(
-        'restore fallback keeps expired outgoing invitation expired after replayed offer',
-        () {
-      final invitationId = _bytes32(117);
-      final starterId = _bytes32(137);
-      final t0 = _futureBaseTimestampMs();
-      final service = serviceWithoutRuntimeOwner();
+      'restore fallback keeps expired outgoing invitation expired after replayed offer',
+      () {
+        final invitationId = _bytes32(117);
+        final starterId = _bytes32(137);
+        final t0 = _futureBaseTimestampMs();
+        final service = serviceWithoutRuntimeOwner();
 
-      final invitations = service.loadInvitations(<String, dynamic>{
-        'owner': self.toList(),
-        'events': <Map<String, dynamic>>[
-          _event(
-            kind: 'InvitationSent',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: peer,
-              kindByte: 1,
+        final invitations = service.loadInvitations(<String, dynamic>{
+          'owner': self.toList(),
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: peer,
+                kindByte: 1,
+              ),
+              signer: self,
+              timestamp: t0 + 1,
             ),
-            signer: self,
-            timestamp: t0 + 1,
-          ),
-          _event(
-            kind: 'InvitationExpired',
-            payload: invitationId,
-            signer: self,
-            timestamp: t0 + 2,
-          ),
-          _event(
-            kind: 'InvitationSent',
-            payload: _offerPayload(
-              invitationId: invitationId,
-              starterId: starterId,
-              toPubkey: peer,
-              kindByte: 1,
+            _event(
+              kind: 'InvitationExpired',
+              payload: invitationId,
+              signer: self,
+              timestamp: t0 + 2,
             ),
-            signer: self,
-            timestamp: t0 + 3,
-          ),
-        ],
-      });
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: invitationId,
+                starterId: starterId,
+                toPubkey: peer,
+                kindByte: 1,
+              ),
+              signer: self,
+              timestamp: t0 + 3,
+            ),
+          ],
+        });
 
-      expect(invitations, hasLength(1));
-      final invitation = invitations.single;
-      expect(invitation.isOutgoing, isTrue);
-      expect(invitation.status, InvitationStatus.expired);
-    });
+        expect(invitations, hasLength(1));
+        final invitation = invitations.single;
+        expect(invitation.isOutgoing, isTrue);
+        expect(invitation.status, InvitationStatus.expired);
+      },
+    );
 
     test('sender revoke supersedes a recipient optimistic acceptance', () {
       final invitationId = _bytes32(118);
@@ -1223,6 +1206,7 @@ void main() {
       final invitationId = _bytes32(17);
       final starterId = _bytes32(37);
       final senderRoot = _bytes32(67);
+      final senderTransport = _bytes32(68);
       final t0 = _futureBaseTimestampMs();
       final service = serviceForSelf(self);
 
@@ -1235,6 +1219,7 @@ void main() {
               starterId: starterId,
               toPubkey: self,
               senderRootPubkey: senderRoot,
+              senderTransportPubkey: senderTransport,
               kindByte: 2,
             ),
             signer: peer,
@@ -1246,59 +1231,63 @@ void main() {
       expect(invitations, hasLength(1));
       final invitation = invitations.single;
       expect(invitation.isIncoming, isTrue);
-      expect(invitation.fromPubkey, _base64(peer));
+      expect(invitation.fromPubkey, _base64(senderTransport));
       expect(invitation.fromRootPubkey, _base64(senderRoot));
     });
 
-    test('overdue invitations stay pending without a ledger terminal event',
-        () {
-      final outgoingId = _bytes32(201);
-      final incomingId = _bytes32(202);
-      final starterId = _bytes32(203);
-      final t0 = _pastBaseTimestampMs();
-      final service = serviceForSelf(self);
+    test(
+      'overdue invitations stay pending without a ledger terminal event',
+      () {
+        final outgoingId = _bytes32(201);
+        final incomingId = _bytes32(202);
+        final starterId = _bytes32(203);
+        final t0 = _pastBaseTimestampMs();
+        final service = serviceForSelf(self);
 
-      final invitations = service.loadInvitations(<String, dynamic>{
-        'events': <Map<String, dynamic>>[
-          _event(
-            kind: 'InvitationSent',
-            payload: _offerPayload(
-              invitationId: outgoingId,
-              starterId: starterId,
-              toPubkey: peer,
-              kindByte: 1,
+        final invitations = service.loadInvitations(<String, dynamic>{
+          'events': <Map<String, dynamic>>[
+            _event(
+              kind: 'InvitationSent',
+              payload: _offerPayload(
+                invitationId: outgoingId,
+                starterId: starterId,
+                toPubkey: peer,
+                kindByte: 1,
+              ),
+              signer: self,
+              timestamp: t0 + 1,
             ),
-            signer: self,
-            timestamp: t0 + 1,
-          ),
-          _event(
-            kind: 'InvitationReceived',
-            payload: _offerPayload(
-              invitationId: incomingId,
-              starterId: starterId,
-              toPubkey: self,
-              kindByte: 1,
+            _event(
+              kind: 'InvitationReceived',
+              payload: _offerPayload(
+                invitationId: incomingId,
+                starterId: starterId,
+                toPubkey: self,
+                kindByte: 1,
+              ),
+              signer: peer,
+              timestamp: t0 + 2,
             ),
-            signer: peer,
-            timestamp: t0 + 2,
-          ),
-        ],
-      });
+          ],
+        });
 
-      expect(invitations, hasLength(2));
-      final outgoing =
-          invitations.firstWhere((inv) => inv.id == _id(outgoingId));
-      final incoming =
-          invitations.firstWhere((inv) => inv.id == _id(incomingId));
+        expect(invitations, hasLength(2));
+        final outgoing = invitations.firstWhere(
+          (inv) => inv.id == _id(outgoingId),
+        );
+        final incoming = invitations.firstWhere(
+          (inv) => inv.id == _id(incomingId),
+        );
 
-      expect(outgoing.isOutgoing, isTrue);
-      expect(outgoing.status, InvitationStatus.pending);
-      expect(outgoing.expiresAt, isNull);
+        expect(outgoing.isOutgoing, isTrue);
+        expect(outgoing.status, InvitationStatus.pending);
+        expect(outgoing.expiresAt, isNull);
 
-      expect(incoming.isIncoming, isTrue);
-      expect(incoming.status, InvitationStatus.pending);
-      expect(incoming.expiresAt, isNull);
-    });
+        expect(incoming.isIncoming, isTrue);
+        expect(incoming.status, InvitationStatus.pending);
+        expect(incoming.expiresAt, isNull);
+      },
+    );
   });
 }
 

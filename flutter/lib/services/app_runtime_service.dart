@@ -40,15 +40,14 @@ class AppRuntimeService {
   late final InvitationIntentHandler _invitationIntents;
   late final LedgerViewService _ledgerView;
 
-  AppRuntimeService({
-    AppRuntimeRuntime? runtime,
-  }) : _runtime = runtime ?? HivraAppRuntimeRuntime() {
+  AppRuntimeService({AppRuntimeRuntime? runtime})
+    : _runtime = runtime ?? HivraAppRuntimeRuntime() {
     _ledgerView = LedgerViewService(runtime: _runtime.ledgerViewRuntime);
     _stateManager = CapsuleStateManager(_ledgerView);
     _deliveryLifecycle = CapsuleDeliveryLifecycleService(
-      retryRunner: (capsuleHex) => _invitationActions.retryPendingDelivery(
-        capsuleHex: capsuleHex,
-      ),
+      retryRunner:
+          (capsuleHex) =>
+              _invitationActions.retryPendingDelivery(capsuleHex: capsuleHex),
     );
     _invitationActions = InvitationActionsService(
       runtime: _runtime.invitationActionsRuntime,
@@ -129,7 +128,7 @@ class AppRuntimeService {
   }
 
   ConsensusAttestationExchangeService
-      buildConsensusAttestationExchangeService() {
+  buildConsensusAttestationExchangeService() {
     final addressService = CapsuleAddressService(
       runtime: _runtime.capsuleAddressRuntime,
     );
@@ -137,6 +136,7 @@ class AppRuntimeService {
       sync: buildConsensusAttestationSyncService(),
       loadRelationships: _ledgerView.loadRelationships,
       listTrustedCards: addressService.listTrustedCards,
+      exportLedger: _runtime.exportLedger,
     );
   }
 
@@ -161,9 +161,7 @@ class AppRuntimeService {
   }
 
   CapsuleAddressService buildCapsuleAddressService() {
-    return CapsuleAddressService(
-      runtime: _runtime.capsuleAddressRuntime,
-    );
+    return CapsuleAddressService(runtime: _runtime.capsuleAddressRuntime);
   }
 
   PluginHostApiService buildPluginHostApiService() {
@@ -190,10 +188,9 @@ class AppRuntimeService {
         ),
       ],
       resolveRuntimeBinding: _resolvePluginRuntimeBinding,
-      resolveRuntimeInvoke: (request, binding) => wasmRuntime.invoke(
-        request: request,
-        binding: binding,
-      ),
+      resolveRuntimeInvoke:
+          (request, binding) =>
+              wasmRuntime.invoke(request: request, binding: binding),
     );
   }
 
@@ -274,9 +271,7 @@ class AppRuntimeService {
   String _hex(Uint8List bytes) =>
       bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
-  RelationshipService buildRelationshipService({
-    String? activeCapsuleHex,
-  }) {
+  RelationshipService buildRelationshipService({String? activeCapsuleHex}) {
     return RelationshipService(
       loadRelationshipGroups: _ledgerView.loadRelationshipGroups,
       breakRelationship: _runtime.breakRelationship,

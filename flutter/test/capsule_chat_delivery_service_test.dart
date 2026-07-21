@@ -90,21 +90,21 @@ void main() {
     });
   });
 
-  test('trade signals received by chat remain available to trading drone',
-      () async {
-    const peerHex =
-        '1111111111111111111111111111111111111111111111111111111111111111';
-    const localRootHex =
-        '2222222222222222222222222222222222222222222222222222222222222222';
-    final store = CapsuleTradeSignalInboxStore();
-    final runtime = _FakeRuntime(
-      capsuleRootKey: _hexToBytes(localRootHex),
-      workerBootstrap: const <String, Object?>{
-        'activeCapsuleHex': localRootHex,
-      },
-    );
-    final checks = _FakeManualConsensusCheckService(
-      <ManualConsensusCheck>[
+  test(
+    'trade signals received by chat remain available to trading drone',
+    () async {
+      const peerHex =
+          '1111111111111111111111111111111111111111111111111111111111111111';
+      const localRootHex =
+          '2222222222222222222222222222222222222222222222222222222222222222';
+      final store = CapsuleTradeSignalInboxStore();
+      final runtime = _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      );
+      final checks = _FakeManualConsensusCheckService(<ManualConsensusCheck>[
         const ManualConsensusCheck(
           peerHex: peerHex,
           peerLabel: 'peer',
@@ -116,54 +116,53 @@ void main() {
           isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
-      ],
-    );
-    final payloadJson = jsonEncode(<String, Object?>{
-      'contract_kind': 'bingx_trade_signal_v1',
-      'signal_id': 'sig-shared',
-      'symbol': 'BTC-USDT',
-      'side': 'buy',
-      'order_type': 'limit',
-      'quantity_decimal': '0.01',
-      'entry_mode': 'zone_pending',
-      'intent_hash_hex':
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      'created_at_utc': '2026-06-13T09:00:00.000Z',
-      'canonical_intent_json': '{"symbol":"BTC-USDT"}',
-    });
-    final chatService = CapsuleChatDeliveryService(
-      runtime: runtime,
-      manualChecks: checks,
-      tradeSignalInboxStore: store,
-      receiveWorkerRunner: (_) async => <String, Object?>{
-        'result': 1,
-        'json': jsonEncode(
-          <Map<String, Object?>>[
-            <String, Object?>{
-              'from_hex': peerHex,
-              'payload_json': payloadJson,
-              'timestamp_ms': 1,
+      ]);
+      final payloadJson = jsonEncode(<String, Object?>{
+        'contract_kind': 'bingx_trade_signal_v1',
+        'signal_id': 'sig-shared',
+        'symbol': 'BTC-USDT',
+        'side': 'buy',
+        'order_type': 'limit',
+        'quantity_decimal': '0.01',
+        'entry_mode': 'zone_pending',
+        'intent_hash_hex':
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'created_at_utc': '2026-06-13T09:00:00.000Z',
+        'canonical_intent_json': '{"symbol":"BTC-USDT"}',
+      });
+      final chatService = CapsuleChatDeliveryService(
+        runtime: runtime,
+        manualChecks: checks,
+        tradeSignalInboxStore: store,
+        receiveWorkerRunner:
+            (_) async => <String, Object?>{
+              'result': 1,
+              'json': jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'from_hex': peerHex,
+                  'payload_json': payloadJson,
+                  'timestamp_ms': 1,
+                },
+              ]),
+              'lastError': null,
             },
-          ],
-        ),
-        'lastError': null,
-      },
-    );
-    final droneService = CapsuleChatDeliveryService(
-      runtime: runtime,
-      manualChecks: checks,
-      tradeSignalInboxStore: store,
-    );
+      );
+      final droneService = CapsuleChatDeliveryService(
+        runtime: runtime,
+        manualChecks: checks,
+        tradeSignalInboxStore: store,
+      );
 
-    final received = await chatService.receiveAndFilter();
+      final received = await chatService.receiveAndFilter();
 
-    expect(received.tradeSignals, hasLength(1));
-    expect(droneService.loadCachedTradeSignals(), hasLength(1));
-    expect(
-      droneService.loadCachedTradeSignals().single.signalId,
-      equals('sig-shared'),
-    );
-  });
+      expect(received.tradeSignals, hasLength(1));
+      expect(droneService.loadCachedTradeSignals(), hasLength(1));
+      expect(
+        droneService.loadCachedTradeSignals().single.signalId,
+        equals('sig-shared'),
+      );
+    },
+  );
 
   test('chat receive honors shared transport timeout cooldown', () async {
     const localRootHex =
@@ -203,25 +202,24 @@ void main() {
   });
 
   test(
-      'prefers contact-card transport when root also appears as relationship peer',
-      () async {
-    const peerRootHex =
-        '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
-    const peerTransportHex =
-        'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627';
-    const localRootHex =
-        '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
-    Uint8List? sentToPubkey;
+    'prefers contact-card transport when root also appears as relationship peer',
+    () async {
+      const peerRootHex =
+          '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+      const peerTransportHex =
+          'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627';
+      const localRootHex =
+          '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+      Uint8List? sentToPubkey;
 
-    final service = CapsuleChatDeliveryService(
-      runtime: _FakeRuntime(
-        capsuleRootKey: _hexToBytes(localRootHex),
-        workerBootstrap: const <String, Object?>{
-          'activeCapsuleHex': localRootHex,
-        },
-      ),
-      manualChecks: _FakeManualConsensusCheckService(
-        <ManualConsensusCheck>[
+      final service = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
+        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
           const ManualConsensusCheck(
             peerHex: peerRootHex,
             peerLabel: 'peer',
@@ -233,50 +231,189 @@ void main() {
             isSignable: true,
             blockingFacts: <ConsensusBlockingFact>[],
           ),
+        ]),
+        loadRelationships:
+            () => <Relationship>[
+              Relationship(
+                // Regression shape: a mixed root/transport ledger can expose the
+                // root as peerPubkey. Sending must still prefer the contact card
+                // transport endpoint for a root-addressed peer.
+                peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                kind: StarterKind.juice,
+                ownStarterId: base64Encode(Uint8List(32)),
+                peerStarterId: base64Encode(
+                  Uint8List.fromList(List<int>.filled(32, 1)),
+                ),
+                establishedAt: DateTime.utc(2026, 6, 28),
+              ),
+            ],
+        listTrustedCards:
+            () async => const <CapsuleAddressCard>[
+              CapsuleAddressCard(
+                rootKey:
+                    'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
+                rootHex: peerRootHex,
+                nostrNpub:
+                    'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
+                nostrHex: peerTransportHex,
+              ),
+            ],
+        sendWorkerRunner: (args) async {
+          sentToPubkey = args['toPubkey'] as Uint8List;
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
+      );
+
+      final result = await service.sendCanonicalEnvelope(
+        peerHex: peerRootHex,
+        canonicalEnvelopeJson: '{"message_text":"hello"}',
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.deliveryPeerHex, equals(peerTransportHex));
+      expect(_bytesToHex(sentToPubkey!), equals(peerTransportHex));
+    },
+  );
+
+  test(
+    'chat send rejects root-only relationship without transport card',
+    () async {
+      const peerRootHex =
+          '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+      const localRootHex =
+          '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+      var sendCalls = 0;
+
+      final service = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
+        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerRootHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ]),
+        loadRelationships:
+            () => <Relationship>[
+              Relationship(
+                peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                kind: StarterKind.juice,
+                ownStarterId: base64Encode(Uint8List(32)),
+                peerStarterId: base64Encode(
+                  Uint8List.fromList(List<int>.filled(32, 1)),
+                ),
+                establishedAt: DateTime.utc(2026, 6, 28),
+              ),
+            ],
+        sendWorkerRunner: (_) async {
+          sendCalls += 1;
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
+      );
+
+      final result = await service.sendCanonicalEnvelope(
+        peerHex: peerRootHex,
+        canonicalEnvelopeJson: '{"message_text":"hello"}',
+      );
+
+      expect(result.isSuccess, isFalse);
+      expect(result.code, -2003);
+      expect(result.errorMessage, contains('No transport endpoint'));
+      expect(sendCalls, 0);
+    },
+  );
+
+  test(
+    'chat send recovers transport endpoint from incoming invitation ledger fact',
+    () async {
+      const peerRootHex =
+          '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+      const peerTransportHex =
+          'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627';
+      const localRootHex =
+          '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+      Uint8List? sentToPubkey;
+
+      final invitationPayload = <int>[
+        ...Uint8List.fromList(List<int>.filled(32, 1)),
+        ...Uint8List.fromList(List<int>.filled(32, 2)),
+        ..._hexToBytes(localRootHex),
+        ..._hexToBytes(peerRootHex),
+        0,
+        ..._hexToBytes(peerTransportHex),
+      ];
+      final ledgerJson = jsonEncode(<String, Object?>{
+        'events': <Map<String, Object?>>[
+          <String, Object?>{
+            'kind': 'InvitationReceived',
+            'payload': invitationPayload,
+          },
         ],
-      ),
-      loadRelationships: () => <Relationship>[
-        Relationship(
-          // Regression shape: a mixed root/transport ledger can expose the
-          // root as peerPubkey. Sending must still prefer the contact card
-          // transport endpoint for a root-addressed peer.
-          peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
-          peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
-          kind: StarterKind.juice,
-          ownStarterId: base64Encode(Uint8List(32)),
-          peerStarterId:
-              base64Encode(Uint8List.fromList(List<int>.filled(32, 1))),
-          establishedAt: DateTime.utc(2026, 6, 28),
-        ),
-      ],
-      listTrustedCards: () async => const <CapsuleAddressCard>[
-        CapsuleAddressCard(
-          rootKey:
-              'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
-          rootHex: peerRootHex,
-          nostrNpub:
-              'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
-          nostrHex: peerTransportHex,
-        ),
-      ],
-      sendWorkerRunner: (args) async {
-        sentToPubkey = args['toPubkey'] as Uint8List;
-        return <String, Object?>{
-          'result': 0,
-          'lastError': null,
-        };
-      },
-    );
+      });
 
-    final result = await service.sendCanonicalEnvelope(
-      peerHex: peerRootHex,
-      canonicalEnvelopeJson: '{"message_text":"hello"}',
-    );
+      final service = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          ledgerJson: ledgerJson,
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
+        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerRootHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ]),
+        loadRelationships:
+            () => <Relationship>[
+              Relationship(
+                peerPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                peerRootPubkey: base64Encode(_hexToBytes(peerRootHex)),
+                kind: StarterKind.juice,
+                ownStarterId: base64Encode(Uint8List(32)),
+                peerStarterId: base64Encode(
+                  Uint8List.fromList(List<int>.filled(32, 1)),
+                ),
+                establishedAt: DateTime.utc(2026, 6, 28),
+              ),
+            ],
+        sendWorkerRunner: (args) async {
+          sentToPubkey = args['toPubkey'] as Uint8List;
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
+      );
 
-    expect(result.isSuccess, isTrue);
-    expect(result.deliveryPeerHex, equals(peerTransportHex));
-    expect(_bytesToHex(sentToPubkey!), equals(peerTransportHex));
-  });
+      final result = await service.sendCanonicalEnvelope(
+        peerHex: peerRootHex,
+        canonicalEnvelopeJson: '{"message_text":"hello"}',
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.deliveryPeerHex, equals(peerTransportHex));
+      expect(_bytesToHex(sentToPubkey!), equals(peerTransportHex));
+    },
+  );
 
   test('chat send does not create a hidden second transport attempt', () async {
     const peerRootHex =
@@ -293,37 +430,33 @@ void main() {
           'activeCapsuleHex': localRootHex,
         },
       ),
-      manualChecks: _FakeManualConsensusCheckService(
-        <ManualConsensusCheck>[
-          const ManualConsensusCheck(
-            peerHex: peerRootHex,
-            peerLabel: 'peer',
-            invitationCount: 1,
-            relationshipCount: 1,
-            hashHex:
-                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-            canonicalJson: '{}',
-            isSignable: true,
-            blockingFacts: <ConsensusBlockingFact>[],
-          ),
-        ],
-      ),
-      listTrustedCards: () async => const <CapsuleAddressCard>[
-        CapsuleAddressCard(
-          rootKey:
-              'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
-          rootHex: peerRootHex,
-          nostrNpub:
-              'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
-          nostrHex: peerTransportHex,
+      manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+        const ManualConsensusCheck(
+          peerHex: peerRootHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
         ),
-      ],
+      ]),
+      listTrustedCards:
+          () async => const <CapsuleAddressCard>[
+            CapsuleAddressCard(
+              rootKey:
+                  'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
+              rootHex: peerRootHex,
+              nostrNpub:
+                  'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
+              nostrHex: peerTransportHex,
+            ),
+          ],
       sendWorkerRunner: (_) async {
         sendCalls += 1;
-        return <String, Object?>{
-          'result': -1003,
-          'lastError': 'relay timeout',
-        };
+        return <String, Object?>{'result': -1003, 'lastError': 'relay timeout'};
       },
     );
 
@@ -350,33 +483,29 @@ void main() {
           'activeCapsuleHex': localRootHex,
         },
       ),
-      manualChecks: _FakeManualConsensusCheckService(
-        <ManualConsensusCheck>[
-          const ManualConsensusCheck(
-            peerHex: peerRootHex,
-            peerLabel: 'peer',
-            invitationCount: 1,
-            relationshipCount: 1,
-            hashHex:
-                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-            canonicalJson: '{}',
-            isSignable: true,
-            blockingFacts: <ConsensusBlockingFact>[],
+      manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+        const ManualConsensusCheck(
+          peerHex: peerRootHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      ]),
+      readAttestedSignable:
+          (_) async => const ConsensusSignableResult(
+            preview: null,
+            blockingFacts: <ConsensusBlockingFact>[
+              ConsensusBlockingFact(code: 'pair_attestation_missing'),
+            ],
           ),
-        ],
-      ),
-      readAttestedSignable: (_) async => const ConsensusSignableResult(
-        preview: null,
-        blockingFacts: <ConsensusBlockingFact>[
-          ConsensusBlockingFact(code: 'pair_attestation_missing'),
-        ],
-      ),
       sendWorkerRunner: (_) async {
         sendCalls += 1;
-        return <String, Object?>{
-          'result': 0,
-          'lastError': null,
-        };
+        return <String, Object?>{'result': 0, 'lastError': null};
       },
     );
 
@@ -420,44 +549,42 @@ void main() {
           'activeCapsuleHex': localRootHex,
         },
       ),
-      manualChecks: _FakeManualConsensusCheckService(
-        <ManualConsensusCheck>[
-          const ManualConsensusCheck(
-            peerHex: peerRootHex,
-            peerLabel: 'peer',
-            invitationCount: 1,
-            relationshipCount: 1,
-            hashHex:
-                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-            canonicalJson: '{}',
-            isSignable: true,
-            blockingFacts: <ConsensusBlockingFact>[],
+      manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+        const ManualConsensusCheck(
+          peerHex: peerRootHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      ]),
+      readAttestedSignable:
+          (_) async => const ConsensusSignableResult(
+            preview: null,
+            blockingFacts: <ConsensusBlockingFact>[
+              ConsensusBlockingFact(code: 'pair_attestation_missing'),
+            ],
           ),
-        ],
-      ),
-      readAttestedSignable: (_) async => const ConsensusSignableResult(
-        preview: null,
-        blockingFacts: <ConsensusBlockingFact>[
-          ConsensusBlockingFact(code: 'pair_attestation_missing'),
-        ],
-      ),
       deferredInboxStore: deferredStore,
       transportHealth: TransportHealthPolicyService(
         timeoutBackoff: const <Duration>[Duration(minutes: 1)],
       ),
-      receiveWorkerRunner: (_) async => <String, Object?>{
-        'result': 0,
-        'json': jsonEncode(
-          <Map<String, Object?>>[
-            <String, Object?>{
-              'from_hex': peerRootHex,
-              'payload_json': envelope,
-              'timestamp_ms': 1,
-            },
-          ],
-        ),
-        'lastError': null,
-      },
+      receiveWorkerRunner:
+          (_) async => <String, Object?>{
+            'result': 0,
+            'json': jsonEncode(<Map<String, Object?>>[
+              <String, Object?>{
+                'from_hex': peerRootHex,
+                'payload_json': envelope,
+                'timestamp_ms': 1,
+              },
+            ]),
+            'lastError': null,
+          },
     );
 
     final blocked = await blockedService.receiveAndFilter();
@@ -474,23 +601,8 @@ void main() {
           'activeCapsuleHex': localRootHex,
         },
       ),
-      manualChecks: _FakeManualConsensusCheckService(
-        <ManualConsensusCheck>[
-          const ManualConsensusCheck(
-            peerHex: peerRootHex,
-            peerLabel: 'peer',
-            invitationCount: 1,
-            relationshipCount: 1,
-            hashHex:
-                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-            canonicalJson: '{}',
-            isSignable: true,
-            blockingFacts: <ConsensusBlockingFact>[],
-          ),
-        ],
-      ),
-      readAttestedSignable: (_) async => const ConsensusSignableResult(
-        preview: ConsensusPreview(
+      manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+        const ManualConsensusCheck(
           peerHex: peerRootHex,
           peerLabel: 'peer',
           invitationCount: 1,
@@ -498,19 +610,34 @@ void main() {
           hashHex:
               'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonicalJson: '{}',
+          isSignable: true,
           blockingFacts: <ConsensusBlockingFact>[],
         ),
-        blockingFacts: <ConsensusBlockingFact>[],
-      ),
+      ]),
+      readAttestedSignable:
+          (_) async => const ConsensusSignableResult(
+            preview: ConsensusPreview(
+              peerHex: peerRootHex,
+              peerLabel: 'peer',
+              invitationCount: 1,
+              relationshipCount: 1,
+              hashHex:
+                  'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+              canonicalJson: '{}',
+              blockingFacts: <ConsensusBlockingFact>[],
+            ),
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
       deferredInboxStore: deferredStore,
       transportHealth: TransportHealthPolicyService(
         timeoutBackoff: const <Duration>[Duration(minutes: 1)],
       ),
-      receiveWorkerRunner: (_) async => <String, Object?>{
-        'result': 0,
-        'json': null,
-        'lastError': null,
-      },
+      receiveWorkerRunner:
+          (_) async => <String, Object?>{
+            'result': 0,
+            'json': null,
+            'lastError': null,
+          },
     );
 
     final ready = await readyService.receiveAndFilter();
@@ -529,34 +656,32 @@ void main() {
         '2222222222222222222222222222222222222222222222222222222222222222';
 
     test(
-        'evaluates incoming futures execution command and emits receipt decision',
-        () async {
-      final replayStore = InMemoryBingxExecutionCommandReplayStore();
-      final commandService =
-          BingxFuturesExecutionCommandService(replayStore: replayStore);
-      final commandEnvelope = commandService.buildCommandEnvelope(
-        commandId: 'cmd-1',
-        intentHashHex:
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        symbol: 'BTCUSDT',
-        side: 'buy',
-        quantityDecimal: '0.1',
-        entryPriceDecimal: '65000',
-        stopLossDecimal: '64000',
-        takeProfitDecimal: '68000',
-        leverageDecimal: '3',
-        riskPercentDecimal: '1.5',
-        createdAtUtc: DateTime.utc(2026, 4, 25, 12, 0, 0).toIso8601String(),
-        expiresAtUtc: DateTime.utc(2026, 4, 25, 12, 5, 0).toIso8601String(),
-        targetCapsuleRootHex: localRootHex,
-      );
+      'evaluates incoming futures execution command and emits receipt decision',
+      () async {
+        final replayStore = InMemoryBingxExecutionCommandReplayStore();
+        final commandService = BingxFuturesExecutionCommandService(
+          replayStore: replayStore,
+        );
+        final commandEnvelope = commandService.buildCommandEnvelope(
+          commandId: 'cmd-1',
+          intentHashHex:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          symbol: 'BTCUSDT',
+          side: 'buy',
+          quantityDecimal: '0.1',
+          entryPriceDecimal: '65000',
+          stopLossDecimal: '64000',
+          takeProfitDecimal: '68000',
+          leverageDecimal: '3',
+          riskPercentDecimal: '1.5',
+          createdAtUtc: DateTime.utc(2026, 4, 25, 12, 0, 0).toIso8601String(),
+          expiresAtUtc: DateTime.utc(2026, 4, 25, 12, 5, 0).toIso8601String(),
+          targetCapsuleRootHex: localRootHex,
+        );
 
-      final service = CapsuleChatDeliveryService(
-        runtime: _FakeRuntime(
-          capsuleRootKey: _hexToBytes(localRootHex),
-        ),
-        manualChecks: _FakeManualConsensusCheckService(
-          <ManualConsensusCheck>[
+        final service = CapsuleChatDeliveryService(
+          runtime: _FakeRuntime(capsuleRootKey: _hexToBytes(localRootHex)),
+          manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
             const ManualConsensusCheck(
               peerHex: peerHex,
               peerLabel: 'peer',
@@ -568,44 +693,48 @@ void main() {
               isSignable: true,
               blockingFacts: <ConsensusBlockingFact>[],
             ),
-          ],
-        ),
-        executionCommandService: commandService,
-        executionPolicyForPeer: (_) => const BingxExecutionPolicy(
-          allowedSymbols: <String>{'BTCUSDT'},
-          maxLeverage: 5,
-          maxRiskPercent: 2,
-        ),
-        nowUtc: () => DateTime.utc(2026, 4, 25, 12, 1, 0),
-        receiveWorkerRunner: (_) async => <String, Object?>{
-          'result': 0,
-          'json': jsonEncode(
-            <Map<String, Object?>>[
-              <String, Object?>{
-                'from_hex': peerHex,
-                'payload_json': commandEnvelope,
-                'timestamp_ms': 1,
+          ]),
+          executionCommandService: commandService,
+          executionPolicyForPeer:
+              (_) => const BingxExecutionPolicy(
+                allowedSymbols: <String>{'BTCUSDT'},
+                maxLeverage: 5,
+                maxRiskPercent: 2,
+              ),
+          nowUtc: () => DateTime.utc(2026, 4, 25, 12, 1, 0),
+          receiveWorkerRunner:
+              (_) async => <String, Object?>{
+                'result': 0,
+                'json': jsonEncode(<Map<String, Object?>>[
+                  <String, Object?>{
+                    'from_hex': peerHex,
+                    'payload_json': commandEnvelope,
+                    'timestamp_ms': 1,
+                  },
+                ]),
+                'lastError': null,
               },
-            ],
-          ),
-          'lastError': null,
-        },
-      );
+        );
 
-      final result = await service.receiveAndFilter();
+        final result = await service.receiveAndFilter();
 
-      expect(result.code, equals(0));
-      expect(result.messages, isEmpty);
-      expect(result.tradeSignals, isEmpty);
-      expect(result.executionReceipts, isEmpty);
-      expect(result.executionDecisions, hasLength(1));
-      expect(result.executionDecisions.single.commandId, equals('cmd-1'));
-      expect(result.executionDecisions.single.decision, equals('accepted'));
-      expect(result.executionDecisions.single.decisionCode,
-          equals('accepted_for_execution'));
-      expect(
-          result.executionDecisions.single.receiptDeliveryCode, equals(-2003));
-    });
+        expect(result.code, equals(0));
+        expect(result.messages, isEmpty);
+        expect(result.tradeSignals, isEmpty);
+        expect(result.executionReceipts, isEmpty);
+        expect(result.executionDecisions, hasLength(1));
+        expect(result.executionDecisions.single.commandId, equals('cmd-1'));
+        expect(result.executionDecisions.single.decision, equals('accepted'));
+        expect(
+          result.executionDecisions.single.decisionCode,
+          equals('accepted_for_execution'),
+        );
+        expect(
+          result.executionDecisions.single.receiptDeliveryCode,
+          equals(-2003),
+        );
+      },
+    );
 
     test('parses incoming execution receipt envelope', () async {
       final payloadJson = jsonEncode(<String, Object?>{
@@ -624,37 +753,32 @@ void main() {
       });
 
       final service = CapsuleChatDeliveryService(
-        runtime: _FakeRuntime(
-          capsuleRootKey: _hexToBytes(localRootHex),
-        ),
-        manualChecks: _FakeManualConsensusCheckService(
-          <ManualConsensusCheck>[
-            const ManualConsensusCheck(
-              peerHex: peerHex,
-              peerLabel: 'peer',
-              invitationCount: 1,
-              relationshipCount: 1,
-              hashHex:
-                  'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-              canonicalJson: '{}',
-              isSignable: true,
-              blockingFacts: <ConsensusBlockingFact>[],
-            ),
-          ],
-        ),
-        receiveWorkerRunner: (_) async => <String, Object?>{
-          'result': 0,
-          'json': jsonEncode(
-            <Map<String, Object?>>[
-              <String, Object?>{
-                'from_hex': peerHex,
-                'payload_json': payloadJson,
-                'timestamp_ms': 99,
-              },
-            ],
+        runtime: _FakeRuntime(capsuleRootKey: _hexToBytes(localRootHex)),
+        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
           ),
-          'lastError': null,
-        },
+        ]),
+        receiveWorkerRunner:
+            (_) async => <String, Object?>{
+              'result': 0,
+              'json': jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'from_hex': peerHex,
+                  'payload_json': payloadJson,
+                  'timestamp_ms': 99,
+                },
+              ]),
+              'lastError': null,
+            },
       );
 
       final result = await service.receiveAndFilter();
@@ -664,8 +788,10 @@ void main() {
       expect(result.executionReceipts, hasLength(1));
       expect(result.executionReceipts.single.commandId, equals('cmd-9'));
       expect(result.executionReceipts.single.decision, equals('rejected'));
-      expect(result.executionReceipts.single.decisionCode,
-          equals('policy_symbol_blocked'));
+      expect(
+        result.executionReceipts.single.decisionCode,
+        equals('policy_symbol_blocked'),
+      );
     });
   });
 }
@@ -674,12 +800,12 @@ class _FakeManualConsensusCheckService extends ManualConsensusCheckService {
   final List<ManualConsensusCheck> _checks;
 
   _FakeManualConsensusCheckService(this._checks)
-      : super(
-          consensus: const ConsensusRuntimeService(
-            exportLedger: _nullLedgerExport,
-            readLocalTransportKey: _nullTransportKey,
-          ),
-        );
+    : super(
+        consensus: const ConsensusRuntimeService(
+          exportLedger: _nullLedgerExport,
+          readLocalTransportKey: _nullTransportKey,
+        ),
+      );
 
   @override
   List<ManualConsensusCheck> loadChecks() =>
@@ -692,10 +818,12 @@ class _FakeRuntime implements AppRuntimeRuntime {
 
   final Uint8List? capsuleRootKey;
   final Map<String, Object?> workerBootstrap;
+  final String? ledgerJson;
 
   _FakeRuntime({
     required this.capsuleRootKey,
     this.workerBootstrap = const <String, Object?>{},
+    this.ledgerJson,
   });
 
   @override
@@ -725,15 +853,14 @@ class _FakeRuntime implements AppRuntimeRuntime {
   Uint8List? loadSeed() => null;
 
   @override
-  String? exportLedger() => null;
+  String? exportLedger() => ledgerJson;
 
   @override
   String? invokeWasmJson({
     required Uint8List moduleBytes,
     required String entryExport,
     required Uint8List inputJsonBytes,
-  }) =>
-      null;
+  }) => null;
 
   @override
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs() async =>
@@ -832,8 +959,7 @@ class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
   @override
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs({
     String? capsuleHex,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<bool> persistLedgerSnapshot() async => false;
@@ -865,8 +991,7 @@ class _FakeCapsuleAddressRuntime implements CapsuleAddressRuntime {
     required Uint8List message32,
     required Uint8List pubkey32,
     required Uint8List signature64,
-  }) =>
-      false;
+  }) => false;
 }
 
 String? _nullLedgerExport() => null;

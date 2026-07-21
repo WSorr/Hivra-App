@@ -8,6 +8,7 @@ import '../services/capsule_state_manager.dart';
 import '../services/invitation_intent_handler.dart';
 import '../services/main_screen_module_service.dart';
 import '../services/ui_event_log_service.dart';
+import '../models/consensus_models.dart';
 import '../models/invitation.dart';
 import 'starters_screen.dart';
 import 'invitations_screen.dart';
@@ -88,8 +89,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   void _listenConnectivityChanges() {
     _connectivitySubscription?.cancel();
-    _connectivitySubscription =
-        Connectivity().onConnectivityChanged.listen((dynamic result) {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      dynamic result,
+    ) {
       final hasTransport = _hasUsableTransport(result);
       if (!hasTransport) return;
       if (!mounted || _bootstrapping) return;
@@ -188,9 +190,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       );
       final staleAfterReceive = _isStaleCapsuleSyncRequest(operationCapsuleHex);
       if (result.code < 0) {
-        debugPrint(
-          '[StartupTiming] launch_receive_failed_code=${result.code}',
-        );
+        debugPrint('[StartupTiming] launch_receive_failed_code=${result.code}');
       }
       debugPrint(
         '[StartupTiming] launch_receive_done_ms='
@@ -284,10 +284,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _loadCapsuleData();
     }
     unawaited(
-      _receiveAttestationsBestEffort(
-        reason: reason,
-        capsuleHex: capsuleHex,
-      ),
+      _receiveAttestationsBestEffort(reason: reason, capsuleHex: capsuleHex),
     );
   }
 
@@ -367,7 +364,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
     if (_attestationSyncInFlight) {
       await _uiLog.log(
-          'attestation.receive', 'reason=$reason skipped=inflight');
+        'attestation.receive',
+        'reason=$reason skipped=inflight',
+      );
       return;
     }
 
@@ -388,12 +387,43 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return;
       }
       if (result.storedCount > 0) {
+        unawaited(_answerStoredAttestations(result.storedEvidence));
         _loadCapsuleData();
       }
     } catch (error) {
       await _uiLog.log('attestation.receive', 'reason=$reason error=$error');
     } finally {
       _attestationSyncInFlight = false;
+    }
+  }
+
+  Future<void> _answerStoredAttestations(
+    List<ConsensusAttestationEvidence> evidence,
+  ) async {
+    if (evidence.isEmpty || _activeCapsuleHex.isEmpty) return;
+    final peers = <String>{};
+    for (final item in evidence) {
+      if (!item.pairRootsSorted.contains(_activeCapsuleHex)) continue;
+      for (final root in item.pairRootsSorted) {
+        if (root != _activeCapsuleHex) peers.add(root);
+      }
+    }
+    for (final peerRootHex in peers) {
+      try {
+        final result = await _module.attestationExchange.announceForPeer(
+          peerRootHex,
+        );
+        await _uiLog.log(
+          'attestation.answer',
+          'peer=${peerRootHex.substring(0, 8)}.. code=${result.code} '
+              'sent=${result.isSuccess}',
+        );
+      } catch (error) {
+        await _uiLog.log(
+          'attestation.answer',
+          'peer=${peerRootHex.substring(0, 8)}.. error=$error',
+        );
+      }
     }
   }
 
@@ -426,9 +456,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _stateManager.refreshWithFullState();
     final state = _stateManager.state;
     final runtimeRootKey = _runtime.capsuleRootPublicKey();
-    final runtimeRootHex = runtimeRootKey == null
-        ? null
-        : _bytesToHex(runtimeRootKey).toLowerCase();
+    final runtimeRootHex =
+        runtimeRootKey == null
+            ? null
+            : _bytesToHex(runtimeRootKey).toLowerCase();
     if (!capsuleStateMatchesSelection(
       state: state,
       selectedCapsuleHex: _activeCapsuleHex,
@@ -442,18 +473,22 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       return;
     }
     final displayKey = runtimeRootKey ?? state.publicKey;
-    final activeCapsuleHex = _activeCapsuleHex.isNotEmpty
-        ? _activeCapsuleHex
-        : (runtimeRootHex ?? _bytesToHex(state.publicKey));
+    final activeCapsuleHex =
+        _activeCapsuleHex.isNotEmpty
+            ? _activeCapsuleHex
+            : (runtimeRootHex ?? _bytesToHex(state.publicKey));
     var pendingInvitations = state.pendingInvitations;
 
     // Keep header pending counter aligned with Invitations projection while
     // user is on Invitations screen (same source of truth as visible list).
     if (_selectedIndex == 1) {
-      pendingInvitations = _invitationIntents
-          .loadInvitations(capsuleHex: activeCapsuleHex)
-          .where((invitation) => invitation.status == InvitationStatus.pending)
-          .length;
+      pendingInvitations =
+          _invitationIntents
+              .loadInvitations(capsuleHex: activeCapsuleHex)
+              .where(
+                (invitation) => invitation.status == InvitationStatus.pending,
+              )
+              .length;
     }
 
     setState(() {
@@ -533,9 +568,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (!mounted) return;
       _loadCapsuleData();
       if (result.code < 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result.message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result.message)));
       }
       return;
     }
@@ -660,10 +695,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               'This capsule is loaded, but its local ledger has no events yet. '
               'Import a ledger, restore a backup, or receive transport events to activate the capsule view.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey.shade400,
-                height: 1.4,
-              ),
+              style: TextStyle(color: Colors.grey.shade400, height: 1.4),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -689,10 +721,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             Text(
               'Settings stays available for import and recovery.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey.shade500,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
             ),
           ],
         ),
@@ -703,9 +732,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (_bootstrapping) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -731,9 +758,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: _isNeste
-                                  ? Colors.green.shade900
-                                  : Colors.orange.shade900,
+                              color:
+                                  _isNeste
+                                      ? Colors.green.shade900
+                                      : Colors.orange.shade900,
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -741,26 +769,26 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
-                                color: _isNeste
-                                    ? Colors.green.shade300
-                                    : Colors.orange.shade300,
+                                color:
+                                    _isNeste
+                                        ? Colors.green.shade300
+                                        : Colors.orange.shade300,
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Tooltip(
-                              message: _publicKeyText.isEmpty
-                                  ? 'No capsule key'
-                                  : _publicKeyText,
+                              message:
+                                  _publicKeyText.isEmpty
+                                      ? 'No capsule key'
+                                      : _publicKeyText,
                               waitDuration: const Duration(milliseconds: 200),
                               showDuration: const Duration(seconds: 12),
                               preferBelow: false,
                               verticalOffset: 18,
                               padding: const EdgeInsets.all(12),
-                              constraints: const BoxConstraints(
-                                maxWidth: 520,
-                              ),
+                              constraints: const BoxConstraints(maxWidth: 520),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF11161D),
                                 borderRadius: BorderRadius.circular(10),
@@ -788,17 +816,22 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                             icon: const Icon(Icons.copy, size: 16),
                             splashRadius: 16,
                             tooltip: 'Copy capsule key',
-                            onPressed: _publicKeyText.isEmpty
-                                ? null
-                                : () async {
-                                    await Clipboard.setData(
-                                        ClipboardData(text: _publicKeyText));
-                                    if (!context.mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text('Capsule key copied')),
-                                    );
-                                  },
+                            onPressed:
+                                _publicKeyText.isEmpty
+                                    ? null
+                                    : () async {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: _publicKeyText),
+                                      );
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Capsule key copied'),
+                                        ),
+                                      );
+                                    },
                           ),
                         ],
                       ),
@@ -865,10 +898,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             icon: Icon(Icons.grid_3x3),
             label: 'Starters',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.mail),
-            label: 'Invitations',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.mail), label: 'Invitations'),
           BottomNavigationBarItem(
             icon: Icon(Icons.people),
             label: 'Relationships',

@@ -13,8 +13,8 @@ import 'transport_health_policy_service.dart';
 const Duration _attestationSendWorkerTimeout = Duration(seconds: 35);
 const Duration _attestationReceiveWorkerTimeout = Duration(seconds: 30);
 
-typedef ConsensusAttestationWorkerRunner = Future<Map<String, Object?>>
-    Function(Map<String, Object?> args);
+typedef ConsensusAttestationWorkerRunner =
+    Future<Map<String, Object?>> Function(Map<String, Object?> args);
 typedef ConsensusAttestationNowUtc = DateTime Function();
 
 Future<Map<String, Object?>> _defaultSendWorkerRunner(
@@ -59,6 +59,7 @@ class ConsensusAttestationReceiveResult {
   final int receivedCount;
   final int storedCount;
   final int rejectedCount;
+  final List<ConsensusAttestationEvidence> storedEvidence;
 
   const ConsensusAttestationReceiveResult({
     required this.code,
@@ -66,6 +67,7 @@ class ConsensusAttestationReceiveResult {
     required this.receivedCount,
     required this.storedCount,
     required this.rejectedCount,
+    this.storedEvidence = const <ConsensusAttestationEvidence>[],
   });
 }
 
@@ -90,15 +92,15 @@ class ConsensusAttestationSyncService {
         _defaultReceiveWorkerRunner,
     ConsensusAttestationNowUtc nowUtc = _defaultNowUtc,
     TransportHealthPolicyService? transportHealth,
-  })  : _runtime = runtime,
-        _consensus = consensus,
-        _store = store,
-        _processor = processor,
-        _sendWorkerRunner = sendWorkerRunner,
-        _receiveWorkerRunner = receiveWorkerRunner,
-        _nowUtc = nowUtc,
-        _transportHealth =
-            transportHealth ?? TransportHealthPolicyService.shared;
+  }) : _runtime = runtime,
+       _consensus = consensus,
+       _store = store,
+       _processor = processor,
+       _sendWorkerRunner = sendWorkerRunner,
+       _receiveWorkerRunner = receiveWorkerRunner,
+       _nowUtc = nowUtc,
+       _transportHealth =
+           transportHealth ?? TransportHealthPolicyService.shared;
 
   Future<ConsensusAttestationEvidence?> createLocalEvidence({
     required String peerRootHex,
@@ -114,8 +116,9 @@ class ConsensusAttestationSyncService {
       snapshotHashHex: snapshotHashHex,
     );
     if (commitment == null) return null;
-    final signatureHex =
-        _runtime.signConsensusCommitment(commitment.commitmentHashHex);
+    final signatureHex = _runtime.signConsensusCommitment(
+      commitment.commitmentHashHex,
+    );
     if (signatureHex == null || !_isHex(signatureHex, 128)) return null;
     final evidence = ConsensusAttestationEvidence(
       schemaVersion: 1,
@@ -163,19 +166,18 @@ class ConsensusAttestationSyncService {
       );
     }
 
-    final workerResult = await _sendWorkerRunner(
-      <String, Object?>{
-        ...bootstrap,
-        'toPubkey': peerBytes,
-        'payloadJson': jsonEncode(evidence.toJson()),
-      },
-    ).timeout(
+    final workerResult = await _sendWorkerRunner(<String, Object?>{
+      ...bootstrap,
+      'toPubkey': peerBytes,
+      'payloadJson': jsonEncode(evidence.toJson()),
+    }).timeout(
       _attestationSendWorkerTimeout,
-      onTimeout: () => <String, Object?>{
-        'result': -1003,
-        'lastError':
-            'Pair consensus attestation send timed out locally; relay delivery may still complete',
-      },
+      onTimeout:
+          () => <String, Object?>{
+            'result': -1003,
+            'lastError':
+                'Pair consensus attestation send timed out locally; relay delivery may still complete',
+          },
     );
     final code = (workerResult['result'] as int?) ?? -1003;
     final error = workerResult['lastError'] as String?;
@@ -200,9 +202,7 @@ class ConsensusAttestationSyncService {
         rejectedCount: 0,
       );
     }
-    final health = _transportHealth.canRun(
-      capsuleHex: localRootHex,
-    );
+    final health = _transportHealth.canRun(capsuleHex: localRootHex);
     if (!health.isAllowed) {
       return ConsensusAttestationReceiveResult(
         code: health.code,
@@ -225,17 +225,15 @@ class ConsensusAttestationSyncService {
 
     final transport = await _receiveWorkerRunner(bootstrap).timeout(
       _attestationReceiveWorkerTimeout,
-      onTimeout: () => <String, Object?>{
-        'result': -1003,
-        'json': null,
-        'lastError': 'Pair consensus attestation fetch timed out',
-      },
+      onTimeout:
+          () => <String, Object?>{
+            'result': -1003,
+            'json': null,
+            'lastError': 'Pair consensus attestation fetch timed out',
+          },
     );
     final code = (transport['result'] as int?) ?? -1003;
-    _transportHealth.recordResult(
-      capsuleHex: localRootHex,
-      code: code,
-    );
+    _transportHealth.recordResult(capsuleHex: localRootHex, code: code);
     final rawJson = transport['json'] as String?;
     final error = transport['lastError'] as String?;
     if (code < 0) {
@@ -310,6 +308,7 @@ class ConsensusAttestationSyncService {
       receivedCount: decoded.length,
       storedCount: verified.length,
       rejectedCount: rejected,
+      storedEvidence: List<ConsensusAttestationEvidence>.unmodifiable(verified),
     );
   }
 
@@ -360,6 +359,8 @@ class ConsensusAttestationSyncService {
         )
         .toList(growable: false);
   }
+
+  String? localRootHex() => _localRootHex();
 
   ConsensusAttestationEvidence? _parseEvidencePayload(String payloadJson) {
     try {

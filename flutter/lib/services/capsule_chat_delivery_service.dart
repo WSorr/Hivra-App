@@ -12,6 +12,7 @@ import 'bingx_futures_execution_command_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_chat_deferred_inbox_store.dart';
 import 'manual_consensus_check_service.dart';
+import 'ledger_view_support.dart';
 import 'transport_health_policy_service.dart';
 
 // Chat send may need two relay publish passes under degraded connectivity.
@@ -38,17 +39,13 @@ String tradeSignalInboxRecordId({
   return sha256.convert(utf8.encode(canonical)).toString();
 }
 
-typedef ChatWorkerRunner = Future<Map<String, Object?>> Function(
-  Map<String, Object?> args,
-);
+typedef ChatWorkerRunner =
+    Future<Map<String, Object?>> Function(Map<String, Object?> args);
 typedef ChatRelationshipsLoader = List<Relationship> Function();
 typedef ChatTrustedCardsLoader = Future<List<CapsuleAddressCard>> Function();
-typedef ChatAttestedSignableReader = Future<ConsensusSignableResult> Function(
-  String peerRootHex,
-);
-typedef ExecutionPolicyResolver = BingxExecutionPolicy Function(
-  String peerHex,
-);
+typedef ChatAttestedSignableReader =
+    Future<ConsensusSignableResult> Function(String peerRootHex);
+typedef ExecutionPolicyResolver = BingxExecutionPolicy Function(String peerHex);
 typedef ExecutionKnownIntentLookup = bool Function(String intentHashHex);
 typedef UtcNowProvider = DateTime Function();
 
@@ -86,14 +83,14 @@ class CapsuleTradeSignalInboxStore {
       CapsuleTradeSignalInboxStore();
 
   final Map<String, Map<String, CapsuleTradeSignalInboxMessage>>
-      _signalsByCapsule =
-      <String, Map<String, CapsuleTradeSignalInboxMessage>>{};
+  _signalsByCapsule = <String, Map<String, CapsuleTradeSignalInboxMessage>>{};
 
   CapsuleTradeSignalInboxStore();
 
   List<CapsuleTradeSignalInboxMessage> load(String capsuleRootHex) {
     final normalized = capsuleRootHex.trim().toLowerCase();
-    final signals = _signalsByCapsule[normalized]?.values.toList() ??
+    final signals =
+        _signalsByCapsule[normalized]?.values.toList() ??
         <CapsuleTradeSignalInboxMessage>[];
     signals.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     return List<CapsuleTradeSignalInboxMessage>.unmodifiable(signals);
@@ -133,6 +130,7 @@ class CapsuleChatDeliveryService {
   final ExecutionKnownIntentLookup? _hasKnownIntentHash;
   final UtcNowProvider _nowUtc;
   final TransportHealthPolicyService _transportHealth;
+  final LedgerViewSupport _ledgerSupport = const LedgerViewSupport();
 
   CapsuleChatDeliveryService({
     required AppRuntimeRuntime runtime,
@@ -149,27 +147,28 @@ class CapsuleChatDeliveryService {
     ExecutionKnownIntentLookup? hasKnownIntentHash,
     UtcNowProvider nowUtc = _defaultNowUtc,
     TransportHealthPolicyService? transportHealth,
-  })  : _runtime = runtime,
-        _manualChecks = manualChecks,
-        _readAttestedSignable = readAttestedSignable,
-        _loadRelationships = loadRelationships ?? _emptyRelationships,
-        _listTrustedCards = listTrustedCards ?? _emptyTrustedCards,
-        _sendWorkerRunner = sendWorkerRunner,
-        _receiveWorkerRunner = receiveWorkerRunner,
-        _deferredInboxStore =
-            deferredInboxStore ?? const CapsuleChatDeferredInboxStore(),
-        _tradeSignalInboxStore =
-            tradeSignalInboxStore ?? CapsuleTradeSignalInboxStore.shared,
-        _executionCommandService = executionCommandService ??
-            BingxFuturesExecutionCommandService(
-              replayStore: InMemoryBingxExecutionCommandReplayStore(),
-            ),
-        _executionPolicyForPeer =
-            executionPolicyForPeer ?? _defaultExecutionPolicyForPeer,
-        _hasKnownIntentHash = hasKnownIntentHash,
-        _nowUtc = nowUtc,
-        _transportHealth =
-            transportHealth ?? TransportHealthPolicyService.shared;
+  }) : _runtime = runtime,
+       _manualChecks = manualChecks,
+       _readAttestedSignable = readAttestedSignable,
+       _loadRelationships = loadRelationships ?? _emptyRelationships,
+       _listTrustedCards = listTrustedCards ?? _emptyTrustedCards,
+       _sendWorkerRunner = sendWorkerRunner,
+       _receiveWorkerRunner = receiveWorkerRunner,
+       _deferredInboxStore =
+           deferredInboxStore ?? const CapsuleChatDeferredInboxStore(),
+       _tradeSignalInboxStore =
+           tradeSignalInboxStore ?? CapsuleTradeSignalInboxStore.shared,
+       _executionCommandService =
+           executionCommandService ??
+           BingxFuturesExecutionCommandService(
+             replayStore: InMemoryBingxExecutionCommandReplayStore(),
+           ),
+       _executionPolicyForPeer =
+           executionPolicyForPeer ?? _defaultExecutionPolicyForPeer,
+       _hasKnownIntentHash = hasKnownIntentHash,
+       _nowUtc = nowUtc,
+       _transportHealth =
+           transportHealth ?? TransportHealthPolicyService.shared;
 
   List<CapsuleTradeSignalInboxMessage> loadCachedTradeSignals() {
     final root = _runtime.capsuleRootPublicKey();
@@ -228,19 +227,18 @@ class CapsuleChatDeliveryService {
     }
 
     Future<Map<String, Object?>> runWorker() {
-      return _sendWorkerRunner(
-        <String, Object?>{
-          ...bootstrap,
-          'toPubkey': peerBytes,
-          'payloadJson': canonicalEnvelopeJson,
-        },
-      ).timeout(
+      return _sendWorkerRunner(<String, Object?>{
+        ...bootstrap,
+        'toPubkey': peerBytes,
+        'payloadJson': canonicalEnvelopeJson,
+      }).timeout(
         _chatSendWorkerTimeout,
-        onTimeout: () => <String, Object?>{
-          'result': -1003,
-          'lastError':
-              'Chat send timed out locally; relay delivery may still complete',
-        },
+        onTimeout:
+            () => <String, Object?>{
+              'result': -1003,
+              'lastError':
+                  'Chat send timed out locally; relay delivery may still complete',
+            },
       );
     }
 
@@ -276,9 +274,7 @@ class CapsuleChatDeliveryService {
 
   Future<CapsuleChatDeliveryReceiveResult> receiveAndFilter() async {
     final localRootHex = _localCapsuleRootHex();
-    final health = _transportHealth.canRun(
-      capsuleHex: localRootHex,
-    );
+    final health = _transportHealth.canRun(capsuleHex: localRootHex);
     if (!health.isAllowed) {
       return CapsuleChatDeliveryReceiveResult(
         code: health.code,
@@ -303,17 +299,15 @@ class CapsuleChatDeliveryService {
 
     final transport = await _receiveWorkerRunner(bootstrap).timeout(
       _chatReceiveWorkerTimeout,
-      onTimeout: () => <String, Object?>{
-        'result': -1003,
-        'json': null,
-        'lastError': 'Chat fetch timed out',
-      },
+      onTimeout:
+          () => <String, Object?>{
+            'result': -1003,
+            'json': null,
+            'lastError': 'Chat fetch timed out',
+          },
     );
     final code = (transport['result'] as int?) ?? -1003;
-    _transportHealth.recordResult(
-      capsuleHex: localRootHex,
-      code: code,
-    );
+    _transportHealth.recordResult(capsuleHex: localRootHex, code: code);
     final rawJson = transport['json'] as String?;
     final transportError = transport['lastError'] as String?;
     if (code < 0) {
@@ -401,19 +395,22 @@ class CapsuleChatDeliveryService {
       if (!_isLowerHex64(fromHex) || payloadJson.isEmpty) {
         continue;
       }
-      incomingItems.add(_ChatTransportItem(
-        fromHex: fromHex,
-        payloadJson: payloadJson,
-        timestampMs: timestampMs,
-      ));
+      incomingItems.add(
+        _ChatTransportItem(
+          fromHex: fromHex,
+          payloadJson: payloadJson,
+          timestampMs: timestampMs,
+        ),
+      );
     }
 
     for (final item in incomingItems) {
       final fromHex = item.fromHex;
       final payloadJson = item.payloadJson;
       final timestampMs = item.timestampMs;
-      final consensusPeerHex =
-          identityIndex.resolveConsensusForIncoming(fromHex);
+      final consensusPeerHex = identityIndex.resolveConsensusForIncoming(
+        fromHex,
+      );
       var signable = await readSignable(consensusPeerHex);
       if (!signable.isSignable && consensusPeerHex != fromHex) {
         signable = await readSignable(fromHex);
@@ -424,18 +421,22 @@ class CapsuleChatDeliveryService {
           deferredByConsensus += 1;
           final deferredItem = item.deferredItem;
           if (deferredItem == null) {
-            nextDeferred.add(_deferredInboxStore.create(
-              capsuleHex: localRootHex,
-              fromHex: fromHex,
-              payloadJson: payloadJson,
-              timestampMs: timestampMs,
-              now: now,
-            ));
+            nextDeferred.add(
+              _deferredInboxStore.create(
+                capsuleHex: localRootHex,
+                fromHex: fromHex,
+                payloadJson: payloadJson,
+                timestampMs: timestampMs,
+                now: now,
+              ),
+            );
           } else {
-            remainingDeferred.add(deferredItem.copyWith(
-              lastSeenAt: now,
-              attempts: deferredItem.attempts + 1,
-            ));
+            remainingDeferred.add(
+              deferredItem.copyWith(
+                lastSeenAt: now,
+                attempts: deferredItem.attempts + 1,
+              ),
+            );
           }
         } else {
           droppedByConsensus += 1;
@@ -445,9 +446,10 @@ class CapsuleChatDeliveryService {
 
       final envelope = _parseEnvelope(payloadJson);
       if (envelope != null) {
-        final id = envelope['envelope_hash_hex']!.isEmpty
-            ? _stableMessageId(consensusPeerHex, timestampMs, payloadJson)
-            : envelope['envelope_hash_hex']!;
+        final id =
+            envelope['envelope_hash_hex']!.isEmpty
+                ? _stableMessageId(consensusPeerHex, timestampMs, payloadJson)
+                : envelope['envelope_hash_hex']!;
 
         byId[id] = CapsuleChatInboxMessage(
           id: id,
@@ -515,10 +517,12 @@ class CapsuleChatDeliveryService {
       );
     }
 
-    final messages = byId.values.toList()
-      ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    final tradeSignals = byTradeSignalId.values.toList()
-      ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    final messages =
+        byId.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    final tradeSignals =
+        byTradeSignalId.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     _tradeSignalInboxStore.merge(activeCapsuleHex, tradeSignals);
     if (localRootHex != null) {
       final deferredById = <String, CapsuleChatDeferredInboxItem>{
@@ -533,10 +537,12 @@ class CapsuleChatDeliveryService {
         now: now,
       );
     }
-    final executionDecisions = byExecutionDecisionId.values.toList()
-      ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    final executionReceipts = byExecutionReceiptId.values.toList()
-      ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    final executionDecisions =
+        byExecutionDecisionId.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    final executionReceipts =
+        byExecutionReceiptId.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
 
     return CapsuleChatDeliveryReceiveResult(
       code: code,
@@ -544,12 +550,13 @@ class CapsuleChatDeliveryService {
       droppedByConsensus: droppedByConsensus,
       deferredByConsensus: deferredByConsensus,
       messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
-      tradeSignals:
-          List<CapsuleTradeSignalInboxMessage>.unmodifiable(tradeSignals),
+      tradeSignals: List<CapsuleTradeSignalInboxMessage>.unmodifiable(
+        tradeSignals,
+      ),
       executionDecisions:
           List<CapsuleExecutionCommandDecisionMessage>.unmodifiable(
-        executionDecisions,
-      ),
+            executionDecisions,
+          ),
       executionReceipts: List<CapsuleExecutionReceiptInboxMessage>.unmodifiable(
         executionReceipts,
       ),
@@ -557,7 +564,7 @@ class CapsuleChatDeliveryService {
   }
 
   Future<CapsuleExecutionCommandDecisionMessage?>
-      _processExecutionCommandEnvelope({
+  _processExecutionCommandEnvelope({
     required String payloadJson,
     required String consensusPeerHex,
     required bool isSignablePeer,
@@ -634,23 +641,25 @@ class CapsuleChatDeliveryService {
       final check = _manualConsensusForPeer(peerHex);
       final isSignable = check?.isSignable ?? false;
       return ConsensusSignableResult(
-        preview: check == null
-            ? null
-            : ConsensusPreview(
-                peerHex: check.peerHex,
-                peerLabel: check.peerLabel,
-                invitationCount: check.invitationCount,
-                relationshipCount: check.relationshipCount,
-                hashHex: check.hashHex,
-                canonicalJson: check.canonicalJson,
-                blockingFacts: check.blockingFacts,
-              ),
-        blockingFacts: isSignable
-            ? const <ConsensusBlockingFact>[]
-            : check?.blockingFacts ??
-                const <ConsensusBlockingFact>[
-                  ConsensusBlockingFact(code: 'pair_consensus_missing'),
-                ],
+        preview:
+            check == null
+                ? null
+                : ConsensusPreview(
+                  peerHex: check.peerHex,
+                  peerLabel: check.peerLabel,
+                  invitationCount: check.invitationCount,
+                  relationshipCount: check.relationshipCount,
+                  hashHex: check.hashHex,
+                  canonicalJson: check.canonicalJson,
+                  blockingFacts: check.blockingFacts,
+                ),
+        blockingFacts:
+            isSignable
+                ? const <ConsensusBlockingFact>[]
+                : check?.blockingFacts ??
+                    const <ConsensusBlockingFact>[
+                      ConsensusBlockingFact(code: 'pair_consensus_missing'),
+                    ],
       );
     }
     return readAttestedSignable(peerHex);
@@ -677,16 +686,21 @@ class CapsuleChatDeliveryService {
       }
       final transportHex = _decodeB64ToHex32(relationship.peerPubkey);
       if (transportHex == null) continue;
-      transportPeers.add(transportHex);
 
       final peerRoot = relationship.peerRootPubkey;
       if (peerRoot == null || peerRoot.isEmpty) {
+        transportPeers.add(transportHex);
         continue;
       }
       final rootHex = _decodeB64ToHex32(peerRoot);
       if (rootHex == null) continue;
-      transportToRoot.putIfAbsent(transportHex, () => rootHex);
-      rootToTransport.putIfAbsent(rootHex, () => transportHex);
+      _rememberPeerTransport(
+        transportPeers: transportPeers,
+        transportToRoot: transportToRoot,
+        rootToTransport: rootToTransport,
+        rootHex: rootHex,
+        transportHex: transportHex,
+      );
     }
 
     List<CapsuleAddressCard> cards;
@@ -699,16 +713,71 @@ class CapsuleChatDeliveryService {
       final rootHex = _normalizeHex32(card.rootHex);
       final transportHex = _normalizeHex32(card.nostrHex);
       if (rootHex == null || transportHex == null) continue;
-      transportPeers.add(transportHex);
-      transportToRoot[transportHex] = rootHex;
-      rootToTransport[rootHex] = transportHex;
+      _rememberPeerTransport(
+        transportPeers: transportPeers,
+        transportToRoot: transportToRoot,
+        rootToTransport: rootToTransport,
+        rootHex: rootHex,
+        transportHex: transportHex,
+      );
     }
+
+    _mergeInvitationIdentityFacts(
+      transportPeers: transportPeers,
+      transportToRoot: transportToRoot,
+      rootToTransport: rootToTransport,
+    );
 
     return _PeerIdentityIndex(
       transportPeers: transportPeers,
       transportToRoot: transportToRoot,
       rootToTransport: rootToTransport,
     );
+  }
+
+  void _mergeInvitationIdentityFacts({
+    required Set<String> transportPeers,
+    required Map<String, String> transportToRoot,
+    required Map<String, String> rootToTransport,
+  }) {
+    final ledgerRoot = _ledgerSupport.exportLedgerRoot(_runtime.exportLedger());
+    if (ledgerRoot == null) return;
+
+    for (final raw in _ledgerSupport.events(ledgerRoot)) {
+      if (raw is! Map) continue;
+      final event = Map<String, dynamic>.from(raw);
+      if (_ledgerSupport.kindCode(event['kind']) != 9) continue;
+      final payload = _ledgerSupport.payloadBytes(event['payload']);
+      if (payload.length < 161) continue;
+
+      final senderRoot = _hex(Uint8List.fromList(payload.sublist(96, 128)));
+      final senderTransport = _hex(
+        Uint8List.fromList(payload.sublist(129, 161)),
+      );
+      _rememberPeerTransport(
+        transportPeers: transportPeers,
+        transportToRoot: transportToRoot,
+        rootToTransport: rootToTransport,
+        rootHex: senderRoot,
+        transportHex: senderTransport,
+      );
+    }
+  }
+
+  void _rememberPeerTransport({
+    required Set<String> transportPeers,
+    required Map<String, String> transportToRoot,
+    required Map<String, String> rootToTransport,
+    required String rootHex,
+    required String transportHex,
+  }) {
+    if (rootHex == transportHex) return;
+    transportPeers.add(transportHex);
+    transportToRoot[transportHex] = rootHex;
+    final current = rootToTransport[rootHex];
+    if (current == null || current == rootHex) {
+      rootToTransport[rootHex] = transportHex;
+    }
   }
 
   Uint8List? _hexToBytes(String hex) {
@@ -923,9 +992,9 @@ class _PeerIdentityIndex {
     required Set<String> transportPeers,
     required Map<String, String> transportToRoot,
     required Map<String, String> rootToTransport,
-  })  : _transportPeers = transportPeers,
-        _transportToRoot = transportToRoot,
-        _rootToTransport = rootToTransport;
+  }) : _transportPeers = transportPeers,
+       _transportToRoot = transportToRoot,
+       _rootToTransport = rootToTransport;
 
   String? resolveTransportForSend(String peerHex) {
     final normalized = peerHex.trim().toLowerCase();

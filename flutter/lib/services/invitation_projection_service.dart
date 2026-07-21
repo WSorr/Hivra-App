@@ -14,8 +14,8 @@ class InvitationProjectionService {
     Uint8List? Function() runtimeOwnerPublicKey,
     this._support, {
     Uint8List? Function()? runtimeTransportPublicKey,
-  })  : _runtimeOwnerPublicKey = runtimeOwnerPublicKey,
-        _runtimeTransportPublicKey = runtimeTransportPublicKey;
+  }) : _runtimeOwnerPublicKey = runtimeOwnerPublicKey,
+       _runtimeTransportPublicKey = runtimeTransportPublicKey;
 
   List<Invitation> loadInvitations(
     Map<String, dynamic> root, {
@@ -31,8 +31,8 @@ class InvitationProjectionService {
       if (_support.kindCode(e['kind']) != 5) continue;
       final payload = _support.payloadBytes(e['payload']);
       if (payload.length != 66) continue;
-      starterKinds[base64.encode(payload.sublist(0, 32))] =
-          _support.starterKindFromByte(payload[64]);
+      starterKinds[base64.encode(payload.sublist(0, 32))] = _support
+          .starterKindFromByte(payload[64]);
     }
 
     final ownStarterBySlot = <int, Uint8List>{};
@@ -74,20 +74,29 @@ class InvitationProjectionService {
           129 || 161 => 128,
           _ => null,
         };
-        final kindFromPayload = kindByteOffset == null
-            ? null
-            : _support.starterKindFromByte(payload[kindByteOffset]);
-        final senderRoot = payload.length >= 128
-            ? Uint8List.fromList(payload.sublist(96, 128))
-            : null;
+        final kindFromPayload =
+            kindByteOffset == null
+                ? null
+                : _support.starterKindFromByte(payload[kindByteOffset]);
+        final senderRoot =
+            payload.length >= 128
+                ? Uint8List.fromList(payload.sublist(96, 128))
+                : null;
+        final senderTransport =
+            payload.length >= 161
+                ? Uint8List.fromList(payload.sublist(129, 161))
+                : signer;
 
         final id = base64.encode(invitationId);
         final current = offersById[id];
-        final starterSlot =
-            _support.slotForStarterId(starterId, ownStarterBySlot);
+        final starterSlot = _support.slotForStarterId(
+          starterId,
+          ownStarterBySlot,
+        );
         final matchesOwnStarter = starterSlot != null;
-        final localStarterKnownFromLedger =
-            localStarterIds.contains(starterIdB64);
+        final localStarterKnownFromLedger = localStarterIds.contains(
+          starterIdB64,
+        );
         final isIncomingByAddress = _matchesLocalIdentity(
           toPubkey,
           owners: selfOwners,
@@ -128,12 +137,14 @@ class InvitationProjectionService {
         final isIncoming = kind == 9 || (isIncomingByAddress && !signerIsSelf);
         final candidateOffer = _ProjectedInvitationOffer(
           id: id,
-          fromPubkey: base64.encode(signer),
-          fromRootPubkey: isIncoming && senderRoot != null
-              ? base64.encode(senderRoot)
-              : null,
+          fromPubkey: base64.encode(isIncoming ? senderTransport : signer),
+          fromRootPubkey:
+              isIncoming && senderRoot != null
+                  ? base64.encode(senderRoot)
+                  : null,
           toPubkey: isIncoming ? null : base64.encode(toPubkey),
-          kind: kindFromPayload ??
+          kind:
+              kindFromPayload ??
               starterKinds[starterIdB64] ??
               StarterKind.juice,
           starterSlot: isIncoming ? null : starterSlot,
@@ -161,9 +172,10 @@ class InvitationProjectionService {
           continue;
         }
         final id = base64.encode(payload.sublist(0, 32));
-        final reason = payload[32] == 0
-            ? RejectionReason.emptySlot
-            : RejectionReason.other;
+        final reason =
+            payload[32] == 0
+                ? RejectionReason.emptySlot
+                : RejectionReason.other;
         if (offersById.containsKey(id) && !terminalById.containsKey(id)) {
           terminalById[id] = _ProjectedInvitationTerminal(
             status: InvitationStatus.rejected,
@@ -178,7 +190,8 @@ class InvitationProjectionService {
         }
         final id = base64.encode(payload.sublist(0, 32));
         final offer = offersById[id];
-        final senderRevocation = offer?.isIncoming == true &&
+        final senderRevocation =
+            offer?.isIncoming == true &&
             offer!.fromPubkey == base64.encode(signerBytes);
         if (offer != null &&
             (!terminalById.containsKey(id) || senderRevocation)) {
@@ -193,32 +206,35 @@ class InvitationProjectionService {
       }
     }
 
-    final list = offersById.values.map((offer) {
-      InvitationStatus status = InvitationStatus.pending;
-      DateTime? respondedAt;
-      RejectionReason? rejectionReason;
-      final terminal = terminalById[offer.id];
-      final expiresAt =
-          terminal?.status == InvitationStatus.expired ? terminal?.at : null;
-      if (terminal != null) {
-        status = terminal.status;
-        respondedAt = terminal.at;
-        rejectionReason = terminal.rejectionReason;
-      }
-      return Invitation(
-        id: offer.id,
-        fromPubkey: offer.fromPubkey,
-        fromRootPubkey: offer.fromRootPubkey,
-        toPubkey: offer.toPubkey,
-        kind: offer.kind,
-        starterSlot: offer.starterSlot,
-        status: status,
-        sentAt: offer.sentAt,
-        expiresAt: expiresAt,
-        respondedAt: respondedAt,
-        rejectionReason: rejectionReason,
-      );
-    }).toList();
+    final list =
+        offersById.values.map((offer) {
+          InvitationStatus status = InvitationStatus.pending;
+          DateTime? respondedAt;
+          RejectionReason? rejectionReason;
+          final terminal = terminalById[offer.id];
+          final expiresAt =
+              terminal?.status == InvitationStatus.expired
+                  ? terminal?.at
+                  : null;
+          if (terminal != null) {
+            status = terminal.status;
+            respondedAt = terminal.at;
+            rejectionReason = terminal.rejectionReason;
+          }
+          return Invitation(
+            id: offer.id,
+            fromPubkey: offer.fromPubkey,
+            fromRootPubkey: offer.fromRootPubkey,
+            toPubkey: offer.toPubkey,
+            kind: offer.kind,
+            starterSlot: offer.starterSlot,
+            status: status,
+            sentAt: offer.sentAt,
+            expiresAt: expiresAt,
+            respondedAt: respondedAt,
+            rejectionReason: rejectionReason,
+          );
+        }).toList();
     list.sort((a, b) => b.sentAt.compareTo(a.sentAt));
     return list;
   }
