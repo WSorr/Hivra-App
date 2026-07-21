@@ -15,7 +15,8 @@ class CapsuleLedgerSummaryParser {
 
   CapsuleLedgerSummary parse(
     String json,
-    String Function(Uint8List bytes) toHex, {
+    String Function(Uint8List bytes) _, {
+    Object? coreProjection,
     Uint8List? runtimeOwnerPublicKey,
     Uint8List? runtimeTransportPublicKey,
   }) {
@@ -25,51 +26,18 @@ class CapsuleLedgerSummaryParser {
       if (ledger == null) return CapsuleLedgerSummary.empty();
       final events = _support.events(ledger);
 
-      final activeStartersById = <String, int>{};
-      final burnedStarterIds = <String>{};
-
-      for (final eventRaw in events) {
-        if (eventRaw is! Map) continue;
-        final event = Map<String, dynamic>.from(eventRaw);
-        final kind = _support.kindCode(event['kind']);
-        final payload = _support.payloadBytes(event['payload']);
-
-        switch (kind) {
-          case 5:
-            final starter = _parseStarterCreated(payload);
-            if (starter != null) {
-              final starterIdHex = toHex(Uint8List.fromList(starter.starterId));
-              if (burnedStarterIds.contains(starterIdHex)) {
-                break;
-              }
-              if (activeStartersById.containsKey(starterIdHex)) {
-                break;
-              }
-              activeStartersById[starterIdHex] = starter.kindCode;
-            }
-            break;
-          case 6:
-            final burnedId = _parseStarterBurnedId(payload);
-            if (burnedId != null) {
-              final starterIdHex = toHex(Uint8List.fromList(burnedId));
-              activeStartersById.remove(starterIdHex);
-              burnedStarterIds.add(starterIdHex);
-            }
-            break;
-          default:
-            break;
-        }
-      }
-
-      final starterCount = activeStartersById.length.clamp(0, 5);
+      final ledgerVersion = events.length;
+      final ledgerHashHex = _parseLedgerHashHex(ledger['last_hash']);
+      final starterCount = _starterCountFromCoreProjection(
+        coreProjection,
+        ledgerVersion: ledgerVersion,
+        ledgerHashHex: ledgerHashHex,
+      );
       final sharedCounters = projectSharedCountersFromLedgerRoot(
         ledger,
         runtimeOwnerPublicKey: runtimeOwnerPublicKey,
         runtimeTransportPublicKey: runtimeTransportPublicKey,
       );
-      final ledgerVersion = events.length;
-      final ledgerHashHex = _parseLedgerHashHex(ledger['last_hash']);
-
       return CapsuleLedgerSummary(
         starterCount: starterCount,
         relationshipCount: sharedCounters.relationshipCount,
@@ -83,7 +51,7 @@ class CapsuleLedgerSummaryParser {
   }
 
   ({int relationshipCount, int pendingInvitations})
-      projectSharedCountersFromLedgerRoot(
+  projectSharedCountersFromLedgerRoot(
     Map<String, dynamic> ledger, {
     Uint8List? runtimeOwnerPublicKey,
     Uint8List? runtimeTransportPublicKey,
@@ -103,28 +71,27 @@ class CapsuleLedgerSummaryParser {
     final projection = InvitationProjectionService.withOwnerKeyProvider(
       readOwner,
       _support,
-      runtimeTransportPublicKey: runtimeTransportPublicKey == null
-          ? null
-          : () => runtimeTransportPublicKey,
+      runtimeTransportPublicKey:
+          runtimeTransportPublicKey == null
+              ? null
+              : () => runtimeTransportPublicKey,
     );
     final relationshipProjection =
         RelationshipProjectionService.withOwnerKeyProvider(
-      readOwner,
-      _support,
-      runtimeTransportPublicKey: runtimeTransportPublicKey == null
-          ? null
-          : () => runtimeTransportPublicKey,
-    );
+          readOwner,
+          _support,
+          runtimeTransportPublicKey:
+              runtimeTransportPublicKey == null
+                  ? null
+                  : () => runtimeTransportPublicKey,
+        );
     final relationshipCount = relationshipProjection
         .loadRelationshipGroups(ledger)
         .where((group) => group.isActive)
         .length
         .clamp(0, 9999);
     final pendingInvitations = projection
-        .loadInvitations(
-          ledger,
-          starterIds: starterIds,
-        )
+        .loadInvitations(ledger, starterIds: starterIds)
         .where((invitation) => invitation.status == InvitationStatus.pending)
         .length
         .clamp(0, 9999);
@@ -149,17 +116,26 @@ class CapsuleLedgerSummaryParser {
     return null;
   }
 
-  _StarterRecord? _parseStarterCreated(Uint8List payload) {
-    if (payload.length < 66) return null;
-    final kindCode = payload[64];
-    if (kindCode < 0 || kindCode > 4) return null;
-    final starterId = payload.sublist(0, 32);
-    return _StarterRecord(kindCode: kindCode, starterId: starterId);
+  int _starterCountFromCoreProjection(
+    Object? raw, {
+    required int ledgerVersion,
+    required String ledgerHashHex,
+  }) {
+    if (raw is! Map) return 0;
+    final projection = Map<String, dynamic>.from(raw);
+    final version = projection['version'];
+    if (version is! num || version.toInt() != ledgerVersion) return 0;
+    if (_parseLedgerHashHex(projection['ledger_hash']) != ledgerHashHex) {
+      return 0;
+    }
+    final slots = projection['slots'];
+    if (slots is! List || slots.length != 5) return 0;
+    return slots.where((slot) => _isStarterId(slot)).length;
   }
 
-  Uint8List? _parseStarterBurnedId(Uint8List payload) {
-    if (payload.length < 32) return null;
-    return payload.sublist(0, 32);
+  bool _isStarterId(Object? raw) {
+    if (raw is! List || raw.length != 32) return false;
+    return raw.every((byte) => byte is num && byte >= 0 && byte <= 255);
   }
 
   String _parseLedgerHashHex(dynamic raw) {
@@ -182,11 +158,4 @@ class CapsuleLedgerSummaryParser {
     }
     return '0';
   }
-}
-
-class _StarterRecord {
-  final int kindCode;
-  final Uint8List starterId;
-
-  _StarterRecord({required this.kindCode, required this.starterId});
 }

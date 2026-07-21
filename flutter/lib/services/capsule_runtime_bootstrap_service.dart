@@ -21,8 +21,8 @@ class CapsuleRuntimeBootstrapService {
     CapsuleLedgerSummaryParser summaryParser =
         const CapsuleLedgerSummaryParser(),
     LedgerViewSupport support = const LedgerViewSupport(),
-  })  : _summaryParser = summaryParser,
-        _support = support;
+  }) : _summaryParser = summaryParser,
+       _support = support;
 
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrap(
     String pubKeyHex, {
@@ -30,20 +30,22 @@ class CapsuleRuntimeBootstrapService {
     CapsuleRuntimeBootstrapRuntime? runtime,
     required String Function(Uint8List bytes) bytesToHex,
   }) async {
-    final seed = runtime == null
-        ? await _seedStore.loadSeed(pubKeyHex)
-        : await _seedStore.loadValidatedSeed(
-            pubKeyHex,
-            isValidSeed: (seed) => _seedMatchesCapsule(
-              runtime,
-              seed,
+    final seed =
+        runtime == null
+            ? await _seedStore.loadSeed(pubKeyHex)
+            : await _seedStore.loadValidatedSeed(
               pubKeyHex,
-              bytesToHex,
-              identityMode: identityMode,
-            ),
-            persistValidatedSeed: (seed) =>
-                _seedStore.storeSeed(pubKeyHex, seed),
-          );
+              isValidSeed:
+                  (seed) => _seedMatchesCapsule(
+                    runtime,
+                    seed,
+                    pubKeyHex,
+                    bytesToHex,
+                    identityMode: identityMode,
+                  ),
+              persistValidatedSeed:
+                  (seed) => _seedStore.storeSeed(pubKeyHex, seed),
+            );
     if (seed == null) return null;
 
     final dir = await _fileStore.capsuleDirForHex(pubKeyHex, create: true);
@@ -72,15 +74,18 @@ class CapsuleRuntimeBootstrapService {
       ledgerCandidate,
       backupCandidate,
     );
-    final primaryLedgerRoot = orderedCandidates.isNotEmpty
-        ? _parseLedgerRoot(orderedCandidates.first.json)
-        : null;
+    final primaryLedgerRoot =
+        orderedCandidates.isNotEmpty
+            ? _parseLedgerRoot(orderedCandidates.first.json)
+            : null;
     final ledgerJson =
         orderedCandidates.isNotEmpty ? orderedCandidates.first.json : null;
-    final isGenesis = _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
+    final isGenesis =
+        _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
         stateGenesis ??
         false;
-    final isNeste = _support.inferNesteFromLedgerRoot(primaryLedgerRoot) ??
+    final isNeste =
+        _support.inferNesteFromLedgerRoot(primaryLedgerRoot) ??
         stateNeste ??
         true;
 
@@ -116,16 +121,18 @@ class CapsuleRuntimeBootstrapService {
     final stateNeste = _stateNeste(state);
     final ledgerJson = runtime.exportLedger();
     final ledgerRoot = _parseLedgerRoot(ledgerJson);
-    final isGenesis = _support.inferGenesisFromLedgerRoot(ledgerRoot) ??
+    final isGenesis =
+        _support.inferGenesisFromLedgerRoot(ledgerRoot) ??
         stateGenesis ??
         false;
     final isNeste =
         _support.inferNesteFromLedgerRoot(ledgerRoot) ?? stateNeste ?? true;
     final rootPubKey = runtime.capsuleRootPublicKey();
     final runtimeHex = bytesToHex(runtimeOwner);
-    final rootHex = rootPubKey != null && rootPubKey.length == 32
-        ? bytesToHex(rootPubKey)
-        : null;
+    final rootHex =
+        rootPubKey != null && rootPubKey.length == 32
+            ? bytesToHex(rootPubKey)
+            : null;
     final identityMode =
         runtimeHex == rootHex ? 'root_owner' : 'legacy_nostr_owner';
 
@@ -137,9 +144,10 @@ class CapsuleRuntimeBootstrapService {
       identityMode: identityMode,
       ledgerJson:
           (ledgerJson != null && ledgerJson.isNotEmpty) ? ledgerJson : null,
-      ledgerImportCandidates: (ledgerJson != null && ledgerJson.isNotEmpty)
-          ? <String>[ledgerJson]
-          : const <String>[],
+      ledgerImportCandidates:
+          (ledgerJson != null && ledgerJson.isNotEmpty)
+              ? <String>[ledgerJson]
+              : const <String>[],
     );
   }
 
@@ -153,13 +161,14 @@ class CapsuleRuntimeBootstrapService {
 
     final seed = await _seedStore.loadValidatedSeed(
       pubKeyHex,
-      isValidSeed: (seed) => _seedMatchesCapsule(
-        runtime,
-        seed,
-        pubKeyHex,
-        bytesToHex,
-        identityMode: identityMode,
-      ),
+      isValidSeed:
+          (seed) => _seedMatchesCapsule(
+            runtime,
+            seed,
+            pubKeyHex,
+            bytesToHex,
+            identityMode: identityMode,
+          ),
       persistValidatedSeed: (seed) => _seedStore.storeSeed(pubKeyHex, seed),
     );
     if (seed == null) return false;
@@ -175,7 +184,8 @@ class CapsuleRuntimeBootstrapService {
       source: _LedgerSource.ledger,
     );
     final backupJson = await _fileStore.readBackup(dir);
-    final hasStoredHistory = (storedLedgerJson?.trim().isNotEmpty ?? false) ||
+    final hasStoredHistory =
+        (storedLedgerJson?.trim().isNotEmpty ?? false) ||
         (backupJson?.trim().isNotEmpty ?? false);
     var importedHistory = false;
 
@@ -193,13 +203,16 @@ class CapsuleRuntimeBootstrapService {
       ledgerCandidate,
       backupCandidate,
     );
-    final primaryLedgerRoot = orderedCandidates.isNotEmpty
-        ? _parseLedgerRoot(orderedCandidates.first.json)
-        : null;
-    final isGenesis = _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
+    final primaryLedgerRoot =
+        orderedCandidates.isNotEmpty
+            ? _parseLedgerRoot(orderedCandidates.first.json)
+            : null;
+    final isGenesis =
+        _support.inferGenesisFromLedgerRoot(primaryLedgerRoot) ??
         _stateGenesis(state) ??
         false;
-    final isNeste = _support.inferNesteFromLedgerRoot(primaryLedgerRoot) ??
+    final isNeste =
+        _support.inferNesteFromLedgerRoot(primaryLedgerRoot) ??
         _stateNeste(state) ??
         true;
     if (!runtime.createCapsule(
@@ -241,6 +254,7 @@ class CapsuleRuntimeBootstrapService {
       return false;
     }
     await _fileStore.writeLedger(dir, exported);
+    await _fileStore.writeCoreProjection(dir, runtime.exportCapsuleStateJson());
     return true;
   }
 
@@ -280,9 +294,12 @@ class CapsuleRuntimeBootstrapService {
     return false;
   }
 
-  _LedgerCandidate? _ledgerCandidateForCapsule(String? ledgerJson,
-      String pubKeyHex, String Function(Uint8List bytes) bytesToHex,
-      {required _LedgerSource source}) {
+  _LedgerCandidate? _ledgerCandidateForCapsule(
+    String? ledgerJson,
+    String pubKeyHex,
+    String Function(Uint8List bytes) bytesToHex, {
+    required _LedgerSource source,
+  }) {
     final ledger = _parseLedgerRoot(ledgerJson);
     if (ledger == null) return null;
     final events = _support.events(ledger);
@@ -326,9 +343,10 @@ class CapsuleRuntimeBootstrapService {
     final primary = _selectPreferredLedgerCandidate(ledger, backup);
     if (primary == null) return const <_LedgerCandidate>[];
 
-    final secondary = identical(primary, ledger)
-        ? backup
-        : identical(primary, backup)
+    final secondary =
+        identical(primary, ledger)
+            ? backup
+            : identical(primary, backup)
             ? ledger
             : null;
     if (secondary == null) return <_LedgerCandidate>[primary];

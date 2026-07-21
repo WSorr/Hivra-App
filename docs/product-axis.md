@@ -40,6 +40,12 @@ authenticated input or explicit user/drone intent
 Only confirmed Core facts use this lane. Capsule birth, starters, invitations,
 relationships, and other normative Core transitions belong here.
 
+The sole projection owner is the Core domain projector. One replay produces
+scoped `CurrentView`, `PairView`, and `HistoryView` read models. UI, consensus,
+and drones consume these contracts; they do not reinterpret raw domain events.
+Projection caches are disposable and valid only while their ledger/protocol
+binding matches.
+
 ### 2.2 Effect lane
 
 ```text

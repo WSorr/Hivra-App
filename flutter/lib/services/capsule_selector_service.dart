@@ -41,8 +41,8 @@ class CapsuleSelectorService {
   CapsuleSelectorService([
     CapsuleSelectorRuntime? runtime,
     UiEventLogService uiLog = const UiEventLogService(),
-  ])  : _runtime = runtime ?? HivraCapsuleSelectorRuntime(),
-        _uiLog = uiLog;
+  ]) : _runtime = runtime ?? HivraCapsuleSelectorRuntime(),
+       _uiLog = uiLog;
 
   Future<List<CapsuleSelectorItem>> loadCapsules() async {
     await _uiLog.log('capsule.selector.service', 'list.start');
@@ -163,8 +163,12 @@ class CapsuleSelectorService {
       }
     }
 
-    final collapsed = byDisplay.values.toList()
-      ..sort((a, b) => b.lastActive.compareTo(a.lastActive));
+    final collapsed =
+        byDisplay.values.toList()..sort((a, b) {
+          final byCreatedAt = a.createdAt.compareTo(b.createdAt);
+          if (byCreatedAt != 0) return byCreatedAt;
+          return a.publicKeyHex.compareTo(b.publicKeyHex);
+        });
     return collapsed;
   }
 

@@ -17,6 +17,52 @@ import 'package:hivra_app/services/consensus_runtime_service.dart';
 
 void main() {
   group('ConsensusAttestationExchangeService', () {
+    test('uses current verified evidence without transport receive', () async {
+      const localRootHex =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const peerRootHex =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      const snapshotHashHex =
+          '3333333333333333333333333333333333333333333333333333333333333333';
+      final sync = _FakeConsensusAttestationSyncService(
+        verifiedResponses: <List<ConsensusAttestationEvidence>>[
+          <ConsensusAttestationEvidence>[
+            _evidence(
+              localRootHex: localRootHex,
+              peerRootHex: peerRootHex,
+              snapshotHashHex: snapshotHashHex,
+              signerRootHex: localRootHex,
+            ),
+            _evidence(
+              localRootHex: localRootHex,
+              peerRootHex: peerRootHex,
+              snapshotHashHex: snapshotHashHex,
+              signerRootHex: peerRootHex,
+            ),
+          ],
+        ],
+      );
+      final service = ConsensusAttestationExchangeService(
+        sync: sync,
+        loadRelationships: () => <Relationship>[],
+        listTrustedCards:
+            () async => const <CapsuleAddressCard>[
+              CapsuleAddressCard(
+                rootKey: 'h1peer',
+                rootHex: peerRootHex,
+                nostrNpub: 'npub1peer',
+                nostrHex:
+                    'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+              ),
+            ],
+      );
+
+      final result = await service.ensureForPeer(peerRootHex);
+
+      expect(result.status, ConsensusAttestationExchangeStatus.ready);
+      expect(sync.receiveCalls, 0);
+    });
+
     test('prefers contact-card transport for root-addressed peer', () async {
       const peerRootHex =
           '1111111111111111111111111111111111111111111111111111111111111111';
@@ -202,6 +248,7 @@ void main() {
             '3333333333333333333333333333333333333333333333333333333333333333';
         final sync = _FakeConsensusAttestationSyncService(
           verifiedResponses: <List<ConsensusAttestationEvidence>>[
+            const <ConsensusAttestationEvidence>[],
             const <ConsensusAttestationEvidence>[],
             <ConsensusAttestationEvidence>[
               _evidence(

@@ -1032,6 +1032,100 @@ void main() {
     });
 
     test(
+        'current relationship snapshot ignores invitation delivery episode ids',
+        () {
+      final rootA = Uint8List.fromList(bytes32(78));
+      final rootB = Uint8List.fromList(bytes32(79));
+      final transportA = Uint8List.fromList(bytes32(80));
+      final transportB = Uint8List.fromList(bytes32(81));
+      final starterA = Uint8List.fromList(bytes32(82));
+      final starterB = Uint8List.fromList(bytes32(83));
+      final invitationA1 = Uint8List.fromList(bytes32(84));
+      final invitationA2 = Uint8List.fromList(bytes32(85));
+      final invitationB = Uint8List.fromList(bytes32(86));
+
+      Map<String, dynamic> relationship({
+        required List<int> peerTransport,
+        required List<int> ownStarter,
+        required List<int> peerStarter,
+        required List<int> invitationId,
+        required List<int> senderTransport,
+        required List<int> peerRoot,
+        required List<int> senderRoot,
+      }) {
+        return <String, dynamic>{
+          'kind': 7,
+          'payload': <int>[
+            ...peerTransport,
+            ...ownStarter,
+            ...peerStarter,
+            1,
+            ...invitationId,
+            ...senderTransport,
+            1,
+            ...ownStarter,
+            ...peerRoot,
+            ...senderRoot,
+          ],
+        };
+      }
+
+      final previewA = processor.preview(
+        <Map<String, dynamic>>[
+          relationship(
+            peerTransport: transportB,
+            ownStarter: starterA,
+            peerStarter: starterB,
+            invitationId: invitationA1,
+            senderTransport: transportA,
+            peerRoot: rootB,
+            senderRoot: rootA,
+          ),
+          relationship(
+            peerTransport: transportB,
+            ownStarter: starterA,
+            peerStarter: starterB,
+            invitationId: invitationA2,
+            senderTransport: transportA,
+            peerRoot: rootB,
+            senderRoot: rootA,
+          ),
+        ],
+        transportA,
+        localRootKey: rootA,
+      );
+      final previewB = processor.preview(
+        <Map<String, dynamic>>[
+          relationship(
+            peerTransport: transportA,
+            ownStarter: starterB,
+            peerStarter: starterA,
+            invitationId: invitationB,
+            senderTransport: transportB,
+            peerRoot: rootA,
+            senderRoot: rootB,
+          ),
+        ],
+        transportB,
+        localRootKey: rootB,
+      );
+
+      expect(previewA, hasLength(1));
+      expect(previewB, hasLength(1));
+      expect(previewA.first.relationshipCount, equals(1));
+      expect(previewB.first.relationshipCount, equals(1));
+      expect(previewA.first.blockingFacts, isEmpty);
+      expect(previewB.first.blockingFacts, isEmpty);
+      expect(previewA.first.hashHex, equals(previewB.first.hashHex));
+      expect(
+        previewA.first.canonicalJson,
+        equals(previewB.first.canonicalJson),
+      );
+      expect(previewA.first.canonicalJson, contains('"schema_version": 3'));
+      expect(previewA.first.canonicalJson, isNot(contains('invitation_id')));
+    });
+
+    test(
         'mirror audit keeps hash stable for multiple active starter relationships',
         () {
       final rootA = Uint8List.fromList(bytes32(80));

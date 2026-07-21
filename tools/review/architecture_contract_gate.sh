@@ -72,6 +72,8 @@ SERVICES="$ROOT/flutter/lib/services"
 INSPECTOR="$ROOT/flutter/lib/screens/ledger_inspector_screen.dart"
 PAIRWISE="$ROOT/flutter/lib/services/pairwise_snapshot_service.dart"
 SUPPORT="$ROOT/flutter/lib/services/ledger_view_support.dart"
+LEDGER_VIEW="$ROOT/flutter/lib/services/ledger_view_service.dart"
+LEDGER_SUMMARY="$ROOT/flutter/lib/services/capsule_ledger_summary_parser.dart"
 CONSENSUS="$ROOT/flutter/lib/services/consensus_processor.dart"
 CONSENSUS_ATTESTATION_SYNC="$ROOT/flutter/lib/services/consensus_attestation_sync_service.dart"
 CONSENSUS_ATTESTATION_STORE="$ROOT/flutter/lib/services/consensus_attestation_store.dart"
@@ -134,6 +136,22 @@ require_present "$DOCS_README" 'product-axis\.md' \
   "docs index starts from product axis"
 require_present "$SPEC" 'Structural Minimality Contract \(Anti-Sprawl\)' \
   "spec defines anti-sprawl structural contract"
+require_present "$SPEC" 'Canonical Domain Projection Contract' \
+  "spec defines canonical Core projection contract"
+require_present "$SPEC" '`CurrentView`' \
+  "spec defines current-state canonical view"
+require_present "$SPEC" '`PairView`' \
+  "spec defines pair-consensus canonical view"
+require_present "$SPEC" '`HistoryView`' \
+  "spec defines history/audit canonical view"
+require_present "$SPEC" 'MUST NOT independently walk raw events' \
+  "spec forbids independent domain replay outside Core"
+require_present "$PRODUCT_AXIS" 'CurrentView.*PairView.*HistoryView' \
+  "product axis binds consumers to canonical scoped views"
+require_present "$CHECKLIST" 'Normative domain lifecycle semantics are interpreted once' \
+  "architecture review checks single domain interpreter"
+require_present "$ROADMAP" 'Canonical Core Projection Convergence' \
+  "roadmap tracks canonical projection convergence debt"
 require_present "$SPEC" 'Flutter Boundary Direction' \
   "spec defines downward direction inside Flutter boundary"
 require_present "$SPEC" 'WASM Plugin Host Contract' \
@@ -443,5 +461,15 @@ require_absent "$BINDINGS" 'starterExists|getStarterId|getStarterType' \
   "flutter bindings do not expose legacy per-slot starter probes"
 require_absent "$BINDINGS" 'hivra_starter_get_id|hivra_starter_get_type|hivra_starter_exists' \
   "flutter bindings do not bind legacy starter FFI symbols"
+require_present "$LEDGER_VIEW" '_starterIdsFromCapsuleState\(capsuleState\)' \
+  "ledger view consumes Core-owned starter slot projection"
+require_present "$LEDGER_VIEW" 'stateVersion == events\.length' \
+  "ledger view requires a version-matched Core projection"
+require_absent "$LEDGER_VIEW" '_starterIdsFromLedger|StarterBurned.*StarterCreated|StarterCreated.*StarterBurned' \
+  "ledger view does not mirror starter lifecycle transitions"
+require_present "$LEDGER_SUMMARY" '_starterCountFromCoreProjection' \
+  "capsule selector consumes Core-owned starter slot projection"
+require_absent "$LEDGER_SUMMARY" '_parseStarterCreated|_parseStarterBurnedId|activeStartersById' \
+  "capsule selector does not mirror starter lifecycle transitions"
 
 exit "$STATUS"

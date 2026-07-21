@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:bech32/bech32.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/services/capsule_index_store.dart';
+import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/capsule_persistence_service.dart';
 
 void main() {
@@ -15,9 +17,7 @@ void main() {
       'version': 1,
       'rootHex': rootHex,
       'transports': {
-        'nostr': {
-          'hex': nostrHex,
-        },
+        'nostr': {'hex': nostrHex},
       },
     };
     List<int> convertBits(List<int> data, int from, int to, bool pad) {
@@ -108,9 +108,7 @@ void main() {
         'version': 1,
         'rootKey': encodeBech32('h', rootHex),
         'transports': {
-          'nostr': {
-            'npub': encodeBech32('npub', nostrHex),
-          },
+          'nostr': {'npub': encodeBech32('npub', nostrHex)},
         },
       };
       expect(
@@ -141,9 +139,7 @@ void main() {
         'version': 1,
         'rootHex': rootHex,
         'transports': {
-          'nostr': {
-            'npub': encodeBech32('npub', nostrHex),
-          },
+          'nostr': {'npub': encodeBech32('npub', nostrHex)},
         },
       };
       expect(
@@ -168,6 +164,44 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('requiresCapsuleIdentityReconciliation', () {
+    final now = DateTime.utc(2026, 7, 21);
+
+    CapsuleIndexEntry entry(String key, String mode) => CapsuleIndexEntry(
+      pubKeyHex: key,
+      createdAt: now,
+      lastActive: now,
+      isGenesis: false,
+      isNeste: true,
+      identityMode: mode,
+    );
+
+    test('does not unlock current root-owner capsules', () {
+      final index = CapsulesIndex(
+        activePubKeyHex: 'a',
+        capsules: <String, CapsuleIndexEntry>{
+          'a': entry('a', 'root_owner'),
+          'b': entry('b', 'root_owner'),
+          'c': entry('c', 'root_owner'),
+        },
+      );
+
+      expect(requiresCapsuleIdentityReconciliation(index), isFalse);
+    });
+
+    test('keeps legacy alias migration enabled', () {
+      final index = CapsulesIndex(
+        activePubKeyHex: 'a',
+        capsules: <String, CapsuleIndexEntry>{
+          'a': entry('a', 'root_owner'),
+          'b': entry('b', 'legacy_nostr_owner'),
+        },
+      );
+
+      expect(requiresCapsuleIdentityReconciliation(index), isTrue);
     });
   });
 }

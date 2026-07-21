@@ -29,8 +29,9 @@ void main() {
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
   setUp(() async {
-    tempDocsDir =
-        await Directory.systemTemp.createTemp('hivra_file_store_test_');
+    tempDocsDir = await Directory.systemTemp.createTemp(
+      'hivra_file_store_test_',
+    );
     store = CapsuleFileStore(
       dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
     );
@@ -89,6 +90,28 @@ void main() {
     }
     expect(tempFiles, isEmpty);
   });
+
+  test(
+    'Core projection is merged without replacing capsule metadata',
+    () async {
+      final dir = await store.capsuleDirForHex(capsuleHex, create: true);
+      await store.writeState(dir, <String, dynamic>{
+        'isGenesis': true,
+        'isNeste': true,
+      });
+
+      final written = await store.writeCoreProjection(
+        dir,
+        '{"version":7,"ledger_hash":"42","slots":[null,null,null,null,null]}',
+      );
+      final state = await store.readState(dir);
+
+      expect(written, isTrue);
+      expect(state?['isGenesis'], isTrue);
+      expect(state?['isNeste'], isTrue);
+      expect((state?['coreProjection'] as Map?)?['version'], 7);
+    },
+  );
 
   test('atomic byte writes persist bytes without leaving temp files', () async {
     const atomicWrites = AtomicFileWriteService();

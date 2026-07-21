@@ -24,16 +24,15 @@ class InvitationModule {
 class InvitationModuleService {
   final AppRuntimeService runtime;
 
-  const InvitationModuleService({
-    required this.runtime,
-  });
+  const InvitationModuleService({required this.runtime});
 
   InvitationModule build() {
+    final addressBook = runtime.buildCapsuleAddressService();
     return InvitationModule(
-      delivery: const InvitationDeliveryService(),
+      delivery: InvitationDeliveryService(contactCards: addressBook),
       intents: runtime.invitationIntents,
       relationships: runtime.buildRelationshipService(),
-      addressBook: runtime.buildCapsuleAddressService(),
+      addressBook: addressBook,
       uiLog: const UiEventLogService(),
     );
   }

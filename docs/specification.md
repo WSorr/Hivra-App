@@ -292,6 +292,14 @@ routing caches, pair-attestation evidence, plugin installation records, drone
 journals, or credentials.
 
 - Core domain state is recovered by replaying ledger events.
+- Starter-slot lifecycle projection is owned exclusively by Core. UI and
+  application services MUST consume the version-matched Core capsule-state
+  projection and MUST NOT independently replay starter lifecycle events to
+  derive active slots.
+- Inactive-capsule summaries MAY cache that Core capsule-state projection next
+  to the ledger. A cached projection is valid only when both its event version
+  and ledger hash match the stored ledger; otherwise starter state fails closed
+  until Core refreshes the snapshot.
 - Events are append-only; deletion or overwrite is forbidden.
 - Protocol v4 signatures authenticate the canonical event identity
   `SHA256(version || kind || payload)` under `event.signer`.
@@ -299,6 +307,37 @@ journals, or credentials.
 - `last_hash` is a deterministic 64-bit replay checksum, not a cryptographic
   history commitment. Cryptographic sequence/metadata commitment is an active
   protocol-hardening debt and MUST NOT be claimed by UI or release material.
+
+### 3.1.1 Canonical Domain Projection Contract
+
+Core MUST be the sole interpreter of normative domain-event lifecycle
+semantics. Replaying the same valid ledger through the same protocol version
+MUST produce one canonical domain state. Application code, UI, consensus, and
+drones MUST NOT independently walk raw events to decide whether a starter,
+invitation, relationship, or other Core fact is currently active.
+
+Core exposes scoped read models derived from that one replay result:
+
+- `CurrentView` contains only effective current state after terminal and
+  superseding events. Normal user-facing screens consume this view and do not
+  surface obsolete injuries after recovery unless the user opens history.
+- `PairView` contains only current facts and immutable lineage required for the
+  selected pair. Pair consensus hashes this view; unrelated Capsule events and
+  superseded pair episodes do not enter the active commitment.
+- `HistoryView` contains the complete typed chronology for one explicitly
+  selected subject and is used only for inspection, explanation, and audit.
+
+These are views of one canonical state machine, not three event interpreters.
+If a required view is missing, the lower Core projection contract MUST be
+extended; Flutter or a drone MUST NOT introduce a temporary replay policy.
+Inspector-only raw decoding MAY display evidence, but MUST NOT authorize an
+action, compute consensus, or feed current domain state.
+
+All persisted projection caches are disposable materialized views. They MUST
+be bound to ledger identity, protocol version, event version, and ledger hash;
+a missing or mismatched binding fails closed and triggers Core replay. Cached
+projection data MUST never be imported as a domain fact or used to mutate the
+ledger.
 
 #### 3.3.5 Relationship
 
@@ -922,6 +961,13 @@ may be asymmetric after the relationship has been established. A pending
 invitation or an unconfirmed remote break for the selected pair MUST still
 block signing.
 
+Pair snapshot schema v3 commits current active relationship state, not the
+delivery episode that produced it. Each active relationship entry contains
+only `relationship_kind` and the sorted `starter_pair`; `invitation_id` remains
+ledger lineage and MUST NOT enter the canonical pair snapshot. Repeated
+establishment rows with the same relationship kind and sorted starter pair
+MUST collapse to one active relationship fact before hashing.
+
 #### 8.4.1 Pair Attestation Protocol
 
 Local `signable(peer_hex)` proves only that one Capsule can derive an
@@ -995,6 +1041,7 @@ Rules:
 11. Application logic cannot create a second truth beside ledger-derived state.
 12. Plugin execution cannot bypass consensus guard requirements for pair-scoped actions.
 13. New architecture modules require explicit non-overlapping ownership.
+14. Starter-slot state is projected once in Core; upper layers may render it but MUST NOT reimplement its transition rules.
 
 ---
 

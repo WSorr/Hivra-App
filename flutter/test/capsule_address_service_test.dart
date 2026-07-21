@@ -30,8 +30,9 @@ void main() {
   late CapsuleAddressService service;
 
   setUp(() async {
-    tempDocsDir =
-        await Directory.systemTemp.createTemp('hivra_address_service_test_');
+    tempDocsDir = await Directory.systemTemp.createTemp(
+      'hivra_address_service_test_',
+    );
     service = CapsuleAddressService(
       dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
     );
@@ -45,8 +46,9 @@ void main() {
 
   test('imports, lists, resolves and removes trusted card', () async {
     final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 255 - i));
+    final nostrBytes = Uint8List.fromList(
+      List<int>.generate(32, (i) => 255 - i),
+    );
     final rootKey = HivraIdFormat.formatCapsuleKeyBytes(rootBytes);
     final rootHex = _toHex(rootBytes);
     final nostrHex = _toHex(nostrBytes);
@@ -86,17 +88,21 @@ void main() {
     );
   });
 
-  test('imports contact card pasted with non-breaking JSON whitespace',
-      () async {
-    final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 1));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 254 - i));
-    final rootKey = HivraIdFormat.formatCapsuleKeyBytes(rootBytes);
-    final rootHex = _toHex(rootBytes);
-    final nostrHex = _toHex(nostrBytes);
-    final nbsp = String.fromCharCode(0x00A0);
+  test(
+    'imports contact card pasted with non-breaking JSON whitespace',
+    () async {
+      final rootBytes = Uint8List.fromList(
+        List<int>.generate(32, (i) => i + 1),
+      );
+      final nostrBytes = Uint8List.fromList(
+        List<int>.generate(32, (i) => 254 - i),
+      );
+      final rootKey = HivraIdFormat.formatCapsuleKeyBytes(rootBytes);
+      final rootHex = _toHex(rootBytes);
+      final nostrHex = _toHex(nostrBytes);
+      final nbsp = String.fromCharCode(0x00A0);
 
-    final rawCard = '''
+      final rawCard = '''
 {
 $nbsp$nbsp"version": 1,
 $nbsp$nbsp"rootKey": "$rootKey",
@@ -110,40 +116,48 @@ $nbsp$nbsp}
 }
 ''';
 
-    await service.importCardJson(rawCard);
+      await service.importCardJson(rawCard);
 
-    expect(await service.contactCount(), 1);
-    final resolved = await service.resolveNostrRecipient(rootKey);
-    expect(resolved, isNotNull);
-    expect(_toHex(resolved!), nostrHex);
-  });
+      expect(await service.contactCount(), 1);
+      final resolved = await service.resolveNostrRecipient(rootKey);
+      expect(resolved, isNotNull);
+      expect(_toHex(resolved!), nostrHex);
+    },
+  );
 
-  test('round trips the canonical QR envelope through card validation',
-      () async {
-    final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 2));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 252 - i));
-    final card = CapsuleAddressCard(
-      rootKey: HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
-      rootHex: _toHex(rootBytes),
-      nostrNpub: _toHex(nostrBytes),
-      nostrHex: _toHex(nostrBytes),
-    );
+  test(
+    'round trips the canonical QR envelope through card validation',
+    () async {
+      final rootBytes = Uint8List.fromList(
+        List<int>.generate(32, (i) => i + 2),
+      );
+      final nostrBytes = Uint8List.fromList(
+        List<int>.generate(32, (i) => 252 - i),
+      );
+      final card = CapsuleAddressCard(
+        rootKey: HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
+        rootHex: _toHex(rootBytes),
+        nostrNpub: _toHex(nostrBytes),
+        nostrHex: _toHex(nostrBytes),
+      );
 
-    await service.importCardPayload(card.toQrPayload());
+      await service.importCardPayload(card.toQrPayload());
 
-    final listed = await service.listTrustedCards();
-    expect(listed, hasLength(1));
-    expect(listed.single.rootKey, card.rootKey);
-    expect(listed.single.nostrHex, card.nostrHex);
-  });
+      final listed = await service.listTrustedCards();
+      expect(listed, hasLength(1));
+      expect(listed.single.rootKey, card.rootKey);
+      expect(listed.single.nostrHex, card.nostrHex);
+    },
+  );
 
   test('builds signed v2 own card when root signer is available', () async {
     final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 9));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 210 - i));
-    final signatureBytes =
-        Uint8List.fromList(List<int>.generate(64, (i) => 90 + (i % 20)));
+    final nostrBytes = Uint8List.fromList(
+      List<int>.generate(32, (i) => 210 - i),
+    );
+    final signatureBytes = Uint8List.fromList(
+      List<int>.generate(64, (i) => 90 + (i % 20)),
+    );
     final signedService = CapsuleAddressService(
       dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
       runtime: _FakeCapsuleAddressRuntime(
@@ -163,8 +177,9 @@ $nbsp$nbsp}
 
   test('builds legacy v1 own card when root signer is unavailable', () async {
     final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 10));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 205 - i));
+    final nostrBytes = Uint8List.fromList(
+      List<int>.generate(32, (i) => 205 - i),
+    );
     final unsignedService = CapsuleAddressService(
       dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
       runtime: _FakeCapsuleAddressRuntime(
@@ -181,50 +196,97 @@ $nbsp$nbsp}
     expect(card.toJson().containsKey('proof'), isFalse);
   });
 
-  test('imports signed v2 contact card after root signature verification',
-      () async {
-    final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 11));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 200 - i));
-    final signatureBytes =
-        Uint8List.fromList(List<int>.generate(64, (i) => 120 + (i % 40)));
-    final unsignedCard = CapsuleAddressCard(
-      version: 2,
-      rootKey: HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
-      rootHex: _toHex(rootBytes),
-      nostrNpub: _toHex(nostrBytes),
-      nostrHex: _toHex(nostrBytes),
+  test('excludes own card only from invitation recipients', () async {
+    final ownRoot = Uint8List.fromList(
+      List<int>.generate(32, (index) => index + 20),
     );
-    final signedCard = CapsuleAddressCard(
-      version: 2,
-      rootKey: unsignedCard.rootKey,
-      rootHex: unsignedCard.rootHex,
-      nostrNpub: unsignedCard.nostrNpub,
-      nostrHex: unsignedCard.nostrHex,
-      signatureHex: _toHex(signatureBytes),
+    final ownNostr = Uint8List.fromList(
+      List<int>.generate(32, (index) => 200 - index),
     );
-    final verifyingService = CapsuleAddressService(
+    final peerRoot = Uint8List.fromList(
+      List<int>.generate(32, (index) => index + 60),
+    );
+    final peerNostr = Uint8List.fromList(
+      List<int>.generate(32, (index) => 160 - index),
+    );
+    final runtimeService = CapsuleAddressService(
       dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
-      runtime: _FakeCapsuleAddressRuntime(
-        verifiedDigestHex: _toHex(unsignedCard.signingDigest32()),
-        verifiedPubkeyHex: _toHex(rootBytes),
-        verifiedSignatureHex: _toHex(signatureBytes),
-      ),
+      runtime: _FakeCapsuleAddressRuntime(rootPubkey: ownRoot),
     );
 
-    await verifyingService.importCardPayload(signedCard.toQrPayload());
+    await runtimeService.importCardJson(
+      CapsuleAddressCard(
+        rootKey: HivraIdFormat.formatCapsuleKeyBytes(ownRoot),
+        rootHex: _toHex(ownRoot),
+        nostrNpub: _toHex(ownNostr),
+        nostrHex: _toHex(ownNostr),
+      ).toPrettyJson(),
+    );
+    await runtimeService.importCardJson(
+      CapsuleAddressCard(
+        rootKey: HivraIdFormat.formatCapsuleKeyBytes(peerRoot),
+        rootHex: _toHex(peerRoot),
+        nostrNpub: _toHex(peerNostr),
+        nostrHex: _toHex(peerNostr),
+      ).toPrettyJson(),
+    );
 
-    expect(await verifyingService.contactCount(), 1);
-    final listed = await verifyingService.listTrustedCards();
-    expect(listed.single.version, 2);
-    expect(listed.single.signatureHex, _toHex(signatureBytes));
+    expect(await runtimeService.listTrustedCards(), hasLength(2));
+    final recipients = await runtimeService.listInvitationRecipients();
+    expect(recipients, hasLength(1));
+    expect(recipients.single.rootHex, _toHex(peerRoot));
   });
 
-  test('rejects signed v2 contact card when verifier is unavailable',
-      () async {
+  test(
+    'imports signed v2 contact card after root signature verification',
+    () async {
+      final rootBytes = Uint8List.fromList(
+        List<int>.generate(32, (i) => i + 11),
+      );
+      final nostrBytes = Uint8List.fromList(
+        List<int>.generate(32, (i) => 200 - i),
+      );
+      final signatureBytes = Uint8List.fromList(
+        List<int>.generate(64, (i) => 120 + (i % 40)),
+      );
+      final unsignedCard = CapsuleAddressCard(
+        version: 2,
+        rootKey: HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
+        rootHex: _toHex(rootBytes),
+        nostrNpub: _toHex(nostrBytes),
+        nostrHex: _toHex(nostrBytes),
+      );
+      final signedCard = CapsuleAddressCard(
+        version: 2,
+        rootKey: unsignedCard.rootKey,
+        rootHex: unsignedCard.rootHex,
+        nostrNpub: unsignedCard.nostrNpub,
+        nostrHex: unsignedCard.nostrHex,
+        signatureHex: _toHex(signatureBytes),
+      );
+      final verifyingService = CapsuleAddressService(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+        runtime: _FakeCapsuleAddressRuntime(
+          verifiedDigestHex: _toHex(unsignedCard.signingDigest32()),
+          verifiedPubkeyHex: _toHex(rootBytes),
+          verifiedSignatureHex: _toHex(signatureBytes),
+        ),
+      );
+
+      await verifyingService.importCardPayload(signedCard.toQrPayload());
+
+      expect(await verifyingService.contactCount(), 1);
+      final listed = await verifyingService.listTrustedCards();
+      expect(listed.single.version, 2);
+      expect(listed.single.signatureHex, _toHex(signatureBytes));
+    },
+  );
+
+  test('rejects signed v2 contact card when verifier is unavailable', () async {
     final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 13));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 190 - i));
+    final nostrBytes = Uint8List.fromList(
+      List<int>.generate(32, (i) => 190 - i),
+    );
     final card = CapsuleAddressCard(
       version: 2,
       rootKey: HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
@@ -243,10 +305,12 @@ $nbsp$nbsp}
 
   test('rejects contact card with mismatched root representations', () async {
     final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 3));
-    final otherRootBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => i + 4));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 240 - i));
+    final otherRootBytes = Uint8List.fromList(
+      List<int>.generate(32, (i) => i + 4),
+    );
+    final nostrBytes = Uint8List.fromList(
+      List<int>.generate(32, (i) => 240 - i),
+    );
     final rawCard = jsonEncode({
       'version': 1,
       'rootKey': HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
@@ -265,10 +329,12 @@ $nbsp$nbsp}
 
   test('rejects contact card with mismatched Nostr representations', () async {
     final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 5));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 230 - i));
-    final otherNostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 220 - i));
+    final nostrBytes = Uint8List.fromList(
+      List<int>.generate(32, (i) => 230 - i),
+    );
+    final otherNostrBytes = Uint8List.fromList(
+      List<int>.generate(32, (i) => 220 - i),
+    );
     final rawCard = jsonEncode({
       'version': 1,
       'rootKey': HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
@@ -298,29 +364,34 @@ $nbsp$nbsp}
     );
   });
 
-  test('upserts trusted card from invitation root and transport keys',
-      () async {
-    final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 7));
-    final nostrBytes =
-        Uint8List.fromList(List<int>.generate(32, (i) => 180 - i));
-    final rootKey = HivraIdFormat.formatCapsuleKeyBytes(rootBytes);
+  test(
+    'upserts trusted card from invitation root and transport keys',
+    () async {
+      final rootBytes = Uint8List.fromList(
+        List<int>.generate(32, (i) => i + 7),
+      );
+      final nostrBytes = Uint8List.fromList(
+        List<int>.generate(32, (i) => 180 - i),
+      );
+      final rootKey = HivraIdFormat.formatCapsuleKeyBytes(rootBytes);
 
-    final saved = await service.upsertTrustedCardFromKeys(
-      rootPubkey: rootBytes,
-      nostrPubkey: nostrBytes,
-    );
+      final saved = await service.upsertTrustedCardFromKeys(
+        rootPubkey: rootBytes,
+        nostrPubkey: nostrBytes,
+      );
 
-    expect(saved, isTrue);
-    expect(await service.contactCount(), 1);
-    final listed = await service.listTrustedCards();
-    expect(listed.single.rootKey, rootKey);
-    expect(listed.single.rootHex, _toHex(rootBytes));
-    expect(listed.single.nostrHex, _toHex(nostrBytes));
+      expect(saved, isTrue);
+      expect(await service.contactCount(), 1);
+      final listed = await service.listTrustedCards();
+      expect(listed.single.rootKey, rootKey);
+      expect(listed.single.rootHex, _toHex(rootBytes));
+      expect(listed.single.nostrHex, _toHex(nostrBytes));
 
-    final resolved = await service.resolveNostrRecipient(rootKey);
-    expect(resolved, isNotNull);
-    expect(_toHex(resolved!), _toHex(nostrBytes));
-  });
+      final resolved = await service.resolveNostrRecipient(rootKey);
+      expect(resolved, isNotNull);
+      expect(_toHex(resolved!), _toHex(nostrBytes));
+    },
+  );
 
   test('does not upsert trusted card from malformed key lengths', () async {
     final saved = await service.upsertTrustedCardFromKeys(

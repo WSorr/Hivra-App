@@ -114,6 +114,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   String _signalScanScope = _signalScanScopeCore;
 
   PluginHostApiResponse? _lastIntentResponse;
+  String? _intentBlockingMessage;
   BingxFuturesOrderExecutionResult? _lastExecution;
   BingxFuturesOpenOrdersResult? _lastOpenOrdersRead;
   BingxFuturesCancelOrderResult? _lastCancelOrder;
@@ -1493,6 +1494,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _runningIntent = true;
         _intentProgressLabel = 'Starting';
         _lastIntentResponse = null;
+        _intentBlockingMessage = null;
       });
     }
     await _module.uiLog.log('bingx.intent.tap', 'accepted=true');
@@ -1596,6 +1598,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           live.zoneLowDecimal == null ||
           live.zoneHighDecimal == null) {
         final message = _formatLiveDecisionBlockedMessage(live);
+        if (mounted) {
+          setState(() {
+            _intentBlockingMessage = message;
+          });
+        }
         await _module.uiLog.log(
           'bingx.strategy.live_decision.blocked',
           'symbol=$symbol message=$message '
@@ -1753,6 +1760,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       if (!mounted) return;
       setState(() {
         _lastIntentResponse = response;
+        _intentBlockingMessage =
+            response.status == PluginHostApiStatus.executed
+                ? null
+                : response.errorMessage ?? 'Intent was not prepared.';
       });
       finalStatus = response.status;
       final decisionEnvelope = useCaseResult.decisionEnvelope;
@@ -1983,6 +1994,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _entryMode = decoded['entry_mode']?.toString() ?? signal.entryMode;
       _strategyTagController.text = decoded['strategy_tag']?.toString() ?? '';
       _lastIntentResponse = null;
+      _intentBlockingMessage = null;
 
       if (_entryMode == 'zone_pending') {
         _zoneSide =
@@ -2956,7 +2968,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     return Column(
       children: [
-        for (final entry in _signalRankEntries.take(8))
+        for (final entry in _signalRankEntries)
           Container(
             margin: const EdgeInsets.only(bottom: 8),
             decoration: BoxDecoration(
@@ -3012,8 +3024,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canBroadcast =
-        _lastIntentResponse?.status == PluginHostApiStatus.executed;
+    final hasExecutableIntent =
+        _lastIntentResponse?.status == PluginHostApiStatus.executed &&
+        _lastIntentResponse?.result != null;
+    final canBroadcast = hasExecutableIntent;
     final shortIntentHash =
         _lastIntentResponse?.result?['intent_hash_hex']?.toString() ?? '';
     final intentHashLabel =
@@ -3516,6 +3530,22 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     ),
                 ],
               ),
+              if (_intentBlockingMessage != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3A2418),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFB86B35)),
+                  ),
+                  child: Text(
+                    _intentBlockingMessage!,
+                    style: const TextStyle(color: Color(0xFFFFC58F)),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 14),
@@ -3586,7 +3616,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 runSpacing: 10,
                 children: [
                   FilledButton.icon(
-                    onPressed: _executing ? null : _executeLastIntent,
+                    onPressed:
+                        _executing || !hasExecutableIntent
+                            ? null
+                            : _executeLastIntent,
                     icon:
                         _executing
                             ? const SizedBox(
@@ -3598,6 +3631,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     label: Text(
                       _executing
                           ? 'Sending to BingX'
+                          : !hasExecutableIntent
+                          ? 'Run Intent to Enable Order'
                           : _useTestOrderEndpoint
                           ? 'Send Test Order to BingX'
                           : 'Send Live Order to BingX',

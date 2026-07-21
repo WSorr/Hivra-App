@@ -17,6 +17,22 @@ void main() {
 
     List<int> rep(int value) => List<int>.filled(32, value);
 
+    Map<String, dynamic> coreProjection({
+      required int version,
+      String ledgerHash = '0',
+      required List<int> occupiedSlotBytes,
+    }) {
+      final slots = List<Object?>.filled(5, null);
+      for (var index = 0; index < occupiedSlotBytes.length; index++) {
+        slots[index] = rep(occupiedSlotBytes[index]);
+      }
+      return <String, dynamic>{
+        'version': version,
+        'ledger_hash': ledgerHash,
+        'slots': slots,
+      };
+    }
+
     List<int> invitationSentPayload({
       required int invitationByte,
       required int starterByte,
@@ -47,15 +63,10 @@ void main() {
       required int invitationByte,
       int reason = 1,
     }) {
-      return <int>[
-        ...rep(invitationByte),
-        reason,
-      ];
+      return <int>[...rep(invitationByte), reason];
     }
 
-    List<int> invitationExpiredPayload({
-      required int invitationByte,
-    }) {
+    List<int> invitationExpiredPayload({required int invitationByte}) {
       return rep(invitationByte);
     }
 
@@ -63,17 +74,10 @@ void main() {
       required int starterByte,
       required int kindByte,
     }) {
-      return <int>[
-        ...rep(starterByte),
-        ...rep(0xee),
-        kindByte,
-        0,
-      ];
+      return <int>[...rep(starterByte), ...rep(0xee), kindByte, 0];
     }
 
-    List<int> starterBurnedPayload({
-      required int starterByte,
-    }) {
+    List<int> starterBurnedPayload({required int starterByte}) {
       return rep(starterByte);
     }
 
@@ -102,10 +106,7 @@ void main() {
       required int peerByte,
       required int ownStarterByte,
     }) {
-      return <int>[
-        ...rep(peerByte),
-        ...rep(ownStarterByte),
-      ];
+      return <int>[...rep(peerByte), ...rep(ownStarterByte)];
     }
 
     List<int> relationshipEstablishedPayloadWithRoots({
@@ -237,9 +238,10 @@ void main() {
         final ownerRoot = rep(0xaa);
         final localTransport = rep(0xab);
         final peer = rep(0xbb);
-        final t0 = DateTime.now()
-            .subtract(const Duration(hours: 2))
-            .millisecondsSinceEpoch;
+        final t0 =
+            DateTime.now()
+                .subtract(const Duration(hours: 2))
+                .millisecondsSinceEpoch;
 
         final ledger = jsonEncode(<String, dynamic>{
           'owner': ownerRoot,
@@ -274,9 +276,10 @@ void main() {
       () {
         final runtimeOwner = Uint8List.fromList(rep(0xaa));
         final peer = rep(0xbb);
-        final t0 = DateTime.now()
-            .subtract(const Duration(hours: 2))
-            .millisecondsSinceEpoch;
+        final t0 =
+            DateTime.now()
+                .subtract(const Duration(hours: 2))
+                .millisecondsSinceEpoch;
 
         final ledger = jsonEncode(<String, dynamic>{
           'owner': <int>[170, 170], // malformed owner field
@@ -306,8 +309,7 @@ void main() {
       },
     );
 
-    test('starter count ignores duplicate StarterCreated for active starter id',
-        () {
+    test('starter count comes from matching Core projection', () {
       final self = rep(0xaa);
       const t0 = 1800000150000;
 
@@ -329,48 +331,90 @@ void main() {
         ],
       });
 
-      final summary = parser.parse(ledger, toHex);
+      final summary = parser.parse(
+        ledger,
+        toHex,
+        coreProjection: coreProjection(
+          version: 2,
+          occupiedSlotBytes: const <int>[0x21],
+        ),
+      );
       expect(summary.starterCount, equals(1));
     });
 
     test(
-        'starter count does not reactivate burned starter id on later StarterCreated',
-        () {
-      final self = rep(0xaa);
-      const t0 = 1800000160000;
+      'starter count does not replay historical starter lifecycle in Dart',
+      () {
+        final self = rep(0xaa);
+        const t0 = 1800000160000;
 
+        final ledger = jsonEncode(<String, dynamic>{
+          'owner': self,
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'StarterCreated',
+              payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
+              timestamp: t0 + 1,
+              signer: self,
+            ),
+            event(
+              kind: 'StarterBurned',
+              payload: starterBurnedPayload(starterByte: 0x21),
+              timestamp: t0 + 2,
+              signer: self,
+            ),
+            event(
+              kind: 'StarterCreated',
+              payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
+              timestamp: t0 + 3,
+              signer: self,
+            ),
+            event(
+              kind: 'StarterCreated',
+              payload: starterCreatedPayload(starterByte: 0x22, kindByte: 2),
+              timestamp: t0 + 4,
+              signer: self,
+            ),
+          ],
+        });
+
+        final summary = parser.parse(
+          ledger,
+          toHex,
+          coreProjection: coreProjection(
+            version: 4,
+            occupiedSlotBytes: const <int>[0x22],
+          ),
+        );
+        expect(summary.starterCount, equals(1));
+      },
+    );
+
+    test('starter count fails closed for a stale Core projection', () {
+      final self = rep(0xaa);
       final ledger = jsonEncode(<String, dynamic>{
         'owner': self,
+        'last_hash': '42',
         'events': <Map<String, dynamic>>[
           event(
             kind: 'StarterCreated',
             payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
-            timestamp: t0 + 1,
-            signer: self,
-          ),
-          event(
-            kind: 'StarterBurned',
-            payload: starterBurnedPayload(starterByte: 0x21),
-            timestamp: t0 + 2,
-            signer: self,
-          ),
-          event(
-            kind: 'StarterCreated',
-            payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
-            timestamp: t0 + 3,
-            signer: self,
-          ),
-          event(
-            kind: 'StarterCreated',
-            payload: starterCreatedPayload(starterByte: 0x22, kindByte: 2),
-            timestamp: t0 + 4,
+            timestamp: 1800000160001,
             signer: self,
           ),
         ],
       });
 
-      final summary = parser.parse(ledger, toHex);
-      expect(summary.starterCount, equals(1));
+      final summary = parser.parse(
+        ledger,
+        toHex,
+        coreProjection: coreProjection(
+          version: 1,
+          ledgerHash: '41',
+          occupiedSlotBytes: const <int>[0x21],
+        ),
+      );
+      expect(summary.starterCount, isZero);
     });
 
     test('parseBytesField decodes hex and base64 payload strings', () {
@@ -386,332 +430,360 @@ void main() {
     });
 
     test(
-        'update safety fixture keeps counters stable and aligned with projections',
-        () {
-      const support = LedgerViewSupport();
-      final self = rep(0xaa);
-      final relationshipProjection =
-          RelationshipProjectionService.withOwnerKeyProvider(
-        () => Uint8List.fromList(self),
-        support,
-      );
-      final peerA = rep(0xbb);
-      final peerB = rep(0xcc);
-      const t0 = 1890000000000;
+      'update safety fixture keeps counters stable and aligned with projections',
+      () {
+        const support = LedgerViewSupport();
+        final self = rep(0xaa);
+        final relationshipProjection =
+            RelationshipProjectionService.withOwnerKeyProvider(
+              () => Uint8List.fromList(self),
+              support,
+            );
+        final peerA = rep(0xbb);
+        final peerB = rep(0xcc);
+        const t0 = 1890000000000;
 
-      final ledger = jsonEncode(<String, dynamic>{
-        'owner': self,
-        'last_hash': '0xabc123',
-        'events': <Map<String, dynamic>>[
-          event(
-            kind: 'StarterCreated',
-            payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
-            timestamp: t0 + 1,
-            signer: self,
-          ),
-          event(
-            kind: 'StarterCreated',
-            payload: starterCreatedPayload(starterByte: 0x22, kindByte: 2),
-            timestamp: t0 + 2,
-            signer: self,
-          ),
-          event(
-            kind: 'StarterCreated',
-            payload: starterCreatedPayload(starterByte: 0x23, kindByte: 3),
-            timestamp: t0 + 3,
-            signer: self,
-          ),
-          event(
-            kind: 'StarterCreated',
-            payload: starterCreatedPayload(starterByte: 0x24, kindByte: 4),
-            timestamp: t0 + 4,
-            signer: self,
-          ),
-          event(
-            kind: 'StarterBurned',
-            payload: starterBurnedPayload(starterByte: 0x22),
-            timestamp: t0 + 5,
-            signer: self,
-          ),
-          event(
-            kind: 'RelationshipEstablished',
-            payload: relationshipEstablishedPayload(
-              peerByte: 0xbb,
-              ownStarterByte: 0x21,
-              peerStarterByte: 0x31,
-              kindByte: 1,
-              invitationByte: 0x41,
-              senderByte: 0xbb,
-              senderStarterByte: 0x61,
+        final ledger = jsonEncode(<String, dynamic>{
+          'owner': self,
+          'last_hash': '0xabc123',
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'StarterCreated',
+              payload: starterCreatedPayload(starterByte: 0x21, kindByte: 1),
+              timestamp: t0 + 1,
+              signer: self,
             ),
-            timestamp: t0 + 6,
-            signer: self,
-          ),
-          event(
-            kind: 'RelationshipEstablished',
-            payload: relationshipEstablishedPayload(
-              peerByte: 0xcc,
-              ownStarterByte: 0x23,
-              peerStarterByte: 0x32,
-              kindByte: 2,
-              invitationByte: 0x42,
-              senderByte: 0xcc,
-              senderStarterByte: 0x62,
+            event(
+              kind: 'StarterCreated',
+              payload: starterCreatedPayload(starterByte: 0x22, kindByte: 2),
+              timestamp: t0 + 2,
+              signer: self,
             ),
-            timestamp: t0 + 7,
-            signer: self,
-          ),
-          event(
-            kind: 'RelationshipBroken',
-            payload:
-                relationshipBrokenPayload(peerByte: 0xbb, ownStarterByte: 0x21),
-            timestamp: t0 + 8,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationSent',
-            payload: invitationSentPayload(
-              invitationByte: 0x51,
-              starterByte: 0x21,
-              toPubkey: peerA,
-              starterKindByte: 1,
+            event(
+              kind: 'StarterCreated',
+              payload: starterCreatedPayload(starterByte: 0x23, kindByte: 3),
+              timestamp: t0 + 3,
+              signer: self,
             ),
-            timestamp: t0 + 9,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationReceived',
-            payload: invitationSentPayload(
-              invitationByte: 0x52,
-              starterByte: 0x31,
-              toPubkey: self,
-              starterKindByte: 2,
+            event(
+              kind: 'StarterCreated',
+              payload: starterCreatedPayload(starterByte: 0x24, kindByte: 4),
+              timestamp: t0 + 4,
+              signer: self,
             ),
-            timestamp: t0 + 10,
-            signer: peerA,
-          ),
-          event(
-            kind: 'InvitationSent',
-            payload: invitationSentPayload(
-              invitationByte: 0x53,
-              starterByte: 0x23,
-              toPubkey: peerB,
-              starterKindByte: 3,
+            event(
+              kind: 'StarterBurned',
+              payload: starterBurnedPayload(starterByte: 0x22),
+              timestamp: t0 + 5,
+              signer: self,
             ),
-            timestamp: t0 + 11,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationAccepted',
-            payload: invitationAcceptedPayload(
-              invitationByte: 0x53,
-              fromByte: 0xcc,
-              createdStarterByte: 0x73,
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xbb,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x41,
+                senderByte: 0xbb,
+                senderStarterByte: 0x61,
+              ),
+              timestamp: t0 + 6,
+              signer: self,
             ),
-            timestamp: t0 + 12,
-            signer: peerB,
-          ),
-          event(
-            kind: 'InvitationReceived',
-            payload: invitationSentPayload(
-              invitationByte: 0x54,
-              starterByte: 0x32,
-              toPubkey: self,
-              starterKindByte: 4,
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayload(
+                peerByte: 0xcc,
+                ownStarterByte: 0x23,
+                peerStarterByte: 0x32,
+                kindByte: 2,
+                invitationByte: 0x42,
+                senderByte: 0xcc,
+                senderStarterByte: 0x62,
+              ),
+              timestamp: t0 + 7,
+              signer: self,
             ),
-            timestamp: t0 + 13,
-            signer: peerB,
-          ),
-          event(
-            kind: 'InvitationRejected',
-            payload: invitationRejectedPayload(invitationByte: 0x54, reason: 0),
-            timestamp: t0 + 14,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationSent',
-            payload: invitationSentPayload(
-              invitationByte: 0x55,
-              starterByte: 0x24,
-              toPubkey: peerA,
+            event(
+              kind: 'RelationshipBroken',
+              payload: relationshipBrokenPayload(
+                peerByte: 0xbb,
+                ownStarterByte: 0x21,
+              ),
+              timestamp: t0 + 8,
+              signer: self,
             ),
-            timestamp: t0 + 15,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationExpired',
-            payload: invitationExpiredPayload(invitationByte: 0x55),
-            timestamp: t0 + 16,
-            signer: self,
-          ),
-        ],
-      });
+            event(
+              kind: 'InvitationSent',
+              payload: invitationSentPayload(
+                invitationByte: 0x51,
+                starterByte: 0x21,
+                toPubkey: peerA,
+                starterKindByte: 1,
+              ),
+              timestamp: t0 + 9,
+              signer: self,
+            ),
+            event(
+              kind: 'InvitationReceived',
+              payload: invitationSentPayload(
+                invitationByte: 0x52,
+                starterByte: 0x31,
+                toPubkey: self,
+                starterKindByte: 2,
+              ),
+              timestamp: t0 + 10,
+              signer: peerA,
+            ),
+            event(
+              kind: 'InvitationSent',
+              payload: invitationSentPayload(
+                invitationByte: 0x53,
+                starterByte: 0x23,
+                toPubkey: peerB,
+                starterKindByte: 3,
+              ),
+              timestamp: t0 + 11,
+              signer: self,
+            ),
+            event(
+              kind: 'InvitationAccepted',
+              payload: invitationAcceptedPayload(
+                invitationByte: 0x53,
+                fromByte: 0xcc,
+                createdStarterByte: 0x73,
+              ),
+              timestamp: t0 + 12,
+              signer: peerB,
+            ),
+            event(
+              kind: 'InvitationReceived',
+              payload: invitationSentPayload(
+                invitationByte: 0x54,
+                starterByte: 0x32,
+                toPubkey: self,
+                starterKindByte: 4,
+              ),
+              timestamp: t0 + 13,
+              signer: peerB,
+            ),
+            event(
+              kind: 'InvitationRejected',
+              payload: invitationRejectedPayload(
+                invitationByte: 0x54,
+                reason: 0,
+              ),
+              timestamp: t0 + 14,
+              signer: self,
+            ),
+            event(
+              kind: 'InvitationSent',
+              payload: invitationSentPayload(
+                invitationByte: 0x55,
+                starterByte: 0x24,
+                toPubkey: peerA,
+              ),
+              timestamp: t0 + 15,
+              signer: self,
+            ),
+            event(
+              kind: 'InvitationExpired',
+              payload: invitationExpiredPayload(invitationByte: 0x55),
+              timestamp: t0 + 16,
+              signer: self,
+            ),
+          ],
+        });
 
-      final summaryA = parser.parse(ledger, toHex);
-      final summaryB = parser.parse(ledger, toHex);
-      final root = support.exportLedgerRoot(ledger)!;
-      final invitationProjection =
-          InvitationProjectionService.withOwnerKeyProvider(
-        () => Uint8List.fromList(self),
-        support,
-      );
-      final pendingFromProjection = invitationProjection
-          .loadInvitations(root)
-          .where((invitation) => invitation.status == InvitationStatus.pending)
-          .length;
-      final relationshipCountFromProjection = relationshipProjection
-          .loadRelationshipGroups(root)
-          .where((group) => group.isActive)
-          .length;
+        final projection = coreProjection(
+          version: 16,
+          ledgerHash: '0xabc123',
+          occupiedSlotBytes: const <int>[0x21, 0x23, 0x24],
+        );
+        final summaryA = parser.parse(
+          ledger,
+          toHex,
+          coreProjection: projection,
+        );
+        final summaryB = parser.parse(
+          ledger,
+          toHex,
+          coreProjection: projection,
+        );
+        final root = support.exportLedgerRoot(ledger)!;
+        final invitationProjection =
+            InvitationProjectionService.withOwnerKeyProvider(
+              () => Uint8List.fromList(self),
+              support,
+            );
+        final pendingFromProjection =
+            invitationProjection
+                .loadInvitations(root)
+                .where(
+                  (invitation) => invitation.status == InvitationStatus.pending,
+                )
+                .length;
+        final relationshipCountFromProjection =
+            relationshipProjection
+                .loadRelationshipGroups(root)
+                .where((group) => group.isActive)
+                .length;
 
-      expect(summaryA.starterCount, equals(3));
-      expect(summaryA.relationshipCount, equals(1));
-      expect(summaryA.pendingInvitations, equals(2));
-      expect(summaryA.ledgerVersion, equals(16));
-      expect(summaryA.ledgerHashHex, equals('abc123'));
+        expect(summaryA.starterCount, equals(3));
+        expect(summaryA.relationshipCount, equals(1));
+        expect(summaryA.pendingInvitations, equals(2));
+        expect(summaryA.ledgerVersion, equals(16));
+        expect(summaryA.ledgerHashHex, equals('abc123'));
 
-      expect(summaryB.starterCount, equals(summaryA.starterCount));
-      expect(summaryB.relationshipCount, equals(summaryA.relationshipCount));
-      expect(summaryB.pendingInvitations, equals(summaryA.pendingInvitations));
-      expect(summaryB.ledgerVersion, equals(summaryA.ledgerVersion));
-      expect(summaryB.ledgerHashHex, equals(summaryA.ledgerHashHex));
+        expect(summaryB.starterCount, equals(summaryA.starterCount));
+        expect(summaryB.relationshipCount, equals(summaryA.relationshipCount));
+        expect(
+          summaryB.pendingInvitations,
+          equals(summaryA.pendingInvitations),
+        );
+        expect(summaryB.ledgerVersion, equals(summaryA.ledgerVersion));
+        expect(summaryB.ledgerHashHex, equals(summaryA.ledgerHashHex));
 
-      expect(summaryA.pendingInvitations, equals(pendingFromProjection));
-      expect(
-        summaryA.relationshipCount,
-        equals(relationshipCountFromProjection),
-      );
-    });
-
-    test(
-        'resolved invitations do not resurrect as pending after replayed offer events',
-        () {
-      final self = rep(0xaa);
-      final peer = rep(0xbb);
-      const t0 = 1890001000000;
-
-      final ledger = jsonEncode(<String, dynamic>{
-        'owner': self,
-        'events': <Map<String, dynamic>>[
-          event(
-            kind: 'InvitationSent',
-            payload: invitationSentPayload(
-              invitationByte: 0x61,
-              starterByte: 0x21,
-              toPubkey: peer,
-            ),
-            timestamp: t0 + 1,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationAccepted',
-            payload: invitationAcceptedPayload(
-              invitationByte: 0x61,
-              fromByte: 0xbb,
-              createdStarterByte: 0x71,
-            ),
-            timestamp: t0 + 2,
-            signer: peer,
-          ),
-          event(
-            kind: 'InvitationSent',
-            payload: invitationSentPayload(
-              invitationByte: 0x61,
-              starterByte: 0x21,
-              toPubkey: peer,
-            ),
-            timestamp: t0 + 3,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationReceived',
-            payload: invitationSentPayload(
-              invitationByte: 0x62,
-              starterByte: 0x31,
-              toPubkey: self,
-            ),
-            timestamp: t0 + 4,
-            signer: peer,
-          ),
-          event(
-            kind: 'InvitationRejected',
-            payload: invitationRejectedPayload(invitationByte: 0x62),
-            timestamp: t0 + 5,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationReceived',
-            payload: invitationSentPayload(
-              invitationByte: 0x62,
-              starterByte: 0x31,
-              toPubkey: self,
-            ),
-            timestamp: t0 + 6,
-            signer: peer,
-          ),
-          event(
-            kind: 'InvitationSent',
-            payload: invitationSentPayload(
-              invitationByte: 0x63,
-              starterByte: 0x22,
-              toPubkey: peer,
-            ),
-            timestamp: t0 + 7,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationExpired',
-            payload: invitationExpiredPayload(invitationByte: 0x63),
-            timestamp: t0 + 8,
-            signer: self,
-          ),
-          event(
-            kind: 'InvitationSent',
-            payload: invitationSentPayload(
-              invitationByte: 0x63,
-              starterByte: 0x22,
-              toPubkey: peer,
-            ),
-            timestamp: t0 + 9,
-            signer: self,
-          ),
-        ],
-      });
-
-      final summary = parser.parse(ledger, toHex);
-      expect(summary.pendingInvitations, equals(0));
-    });
+        expect(summaryA.pendingInvitations, equals(pendingFromProjection));
+        expect(
+          summaryA.relationshipCount,
+          equals(relationshipCountFromProjection),
+        );
+      },
+    );
 
     test(
-        'relationship count supports root-augmented RelationshipEstablished payload',
-        () {
-      final self = rep(0xaa);
-      const t0 = 1890002000000;
-      final ledger = jsonEncode(<String, dynamic>{
-        'owner': self,
-        'events': <Map<String, dynamic>>[
-          event(
-            kind: 'RelationshipEstablished',
-            payload: relationshipEstablishedPayloadWithRoots(
-              peerByte: 0xbb,
-              ownStarterByte: 0x21,
-              peerStarterByte: 0x31,
-              kindByte: 1,
-              invitationByte: 0x41,
-              senderByte: 0xbb,
-              senderStarterByte: 0x61,
-              peerRootByte: 0xcc,
-              senderRootByte: 0xaa,
-            ),
-            timestamp: t0 + 1,
-            signer: self,
-          ),
-        ],
-      });
+      'resolved invitations do not resurrect as pending after replayed offer events',
+      () {
+        final self = rep(0xaa);
+        final peer = rep(0xbb);
+        const t0 = 1890001000000;
 
-      final summary = parser.parse(ledger, toHex);
-      expect(summary.relationshipCount, equals(1));
-    });
+        final ledger = jsonEncode(<String, dynamic>{
+          'owner': self,
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'InvitationSent',
+              payload: invitationSentPayload(
+                invitationByte: 0x61,
+                starterByte: 0x21,
+                toPubkey: peer,
+              ),
+              timestamp: t0 + 1,
+              signer: self,
+            ),
+            event(
+              kind: 'InvitationAccepted',
+              payload: invitationAcceptedPayload(
+                invitationByte: 0x61,
+                fromByte: 0xbb,
+                createdStarterByte: 0x71,
+              ),
+              timestamp: t0 + 2,
+              signer: peer,
+            ),
+            event(
+              kind: 'InvitationSent',
+              payload: invitationSentPayload(
+                invitationByte: 0x61,
+                starterByte: 0x21,
+                toPubkey: peer,
+              ),
+              timestamp: t0 + 3,
+              signer: self,
+            ),
+            event(
+              kind: 'InvitationReceived',
+              payload: invitationSentPayload(
+                invitationByte: 0x62,
+                starterByte: 0x31,
+                toPubkey: self,
+              ),
+              timestamp: t0 + 4,
+              signer: peer,
+            ),
+            event(
+              kind: 'InvitationRejected',
+              payload: invitationRejectedPayload(invitationByte: 0x62),
+              timestamp: t0 + 5,
+              signer: self,
+            ),
+            event(
+              kind: 'InvitationReceived',
+              payload: invitationSentPayload(
+                invitationByte: 0x62,
+                starterByte: 0x31,
+                toPubkey: self,
+              ),
+              timestamp: t0 + 6,
+              signer: peer,
+            ),
+            event(
+              kind: 'InvitationSent',
+              payload: invitationSentPayload(
+                invitationByte: 0x63,
+                starterByte: 0x22,
+                toPubkey: peer,
+              ),
+              timestamp: t0 + 7,
+              signer: self,
+            ),
+            event(
+              kind: 'InvitationExpired',
+              payload: invitationExpiredPayload(invitationByte: 0x63),
+              timestamp: t0 + 8,
+              signer: self,
+            ),
+            event(
+              kind: 'InvitationSent',
+              payload: invitationSentPayload(
+                invitationByte: 0x63,
+                starterByte: 0x22,
+                toPubkey: peer,
+              ),
+              timestamp: t0 + 9,
+              signer: self,
+            ),
+          ],
+        });
+
+        final summary = parser.parse(ledger, toHex);
+        expect(summary.pendingInvitations, equals(0));
+      },
+    );
+
+    test(
+      'relationship count supports root-augmented RelationshipEstablished payload',
+      () {
+        final self = rep(0xaa);
+        const t0 = 1890002000000;
+        final ledger = jsonEncode(<String, dynamic>{
+          'owner': self,
+          'events': <Map<String, dynamic>>[
+            event(
+              kind: 'RelationshipEstablished',
+              payload: relationshipEstablishedPayloadWithRoots(
+                peerByte: 0xbb,
+                ownStarterByte: 0x21,
+                peerStarterByte: 0x31,
+                kindByte: 1,
+                invitationByte: 0x41,
+                senderByte: 0xbb,
+                senderStarterByte: 0x61,
+                peerRootByte: 0xcc,
+                senderRootByte: 0xaa,
+              ),
+              timestamp: t0 + 1,
+              signer: self,
+            ),
+          ],
+        });
+
+        final summary = parser.parse(ledger, toHex);
+        expect(summary.relationshipCount, equals(1));
+      },
+    );
 
     test(
       'relationship count collapses mixed transport links with the same peer root',
@@ -789,7 +861,9 @@ void main() {
             event(
               kind: 'RelationshipBroken',
               payload: relationshipBrokenPayload(
-                  peerByte: 0xbb, ownStarterByte: 0x21),
+                peerByte: 0xbb,
+                ownStarterByte: 0x21,
+              ),
               timestamp: t0 + 2,
               signer: peer,
             ),

@@ -10,6 +10,7 @@ import '../services/invitation_intent_handler.dart';
 import '../services/ui_event_log_service.dart';
 import '../services/ui_feedback_service.dart';
 import '../utils/hivra_id_format.dart';
+import '../widgets/invitation_recipient_field.dart';
 
 class StartersScreen extends StatefulWidget {
   final AppRuntimeService runtime;
@@ -30,7 +31,7 @@ class StartersScreen extends StatefulWidget {
 }
 
 class _StartersScreenState extends State<StartersScreen> {
-  final InvitationDeliveryService _delivery = const InvitationDeliveryService();
+  late final InvitationDeliveryService _delivery;
   final UiEventLogService _uiLog = const UiEventLogService();
   late final InvitationIntentHandler _intents;
   List<Map<String, dynamic>> _slots = const [];
@@ -38,6 +39,9 @@ class _StartersScreenState extends State<StartersScreen> {
   @override
   void initState() {
     super.initState();
+    _delivery = InvitationDeliveryService(
+      contactCards: widget.runtime.buildCapsuleAddressService(),
+    );
     _intents = widget.runtime.invitationIntents;
     _loadSlots();
   }
@@ -74,6 +78,11 @@ class _StartersScreenState extends State<StartersScreen> {
 
   Future<void> _showInviteDialog(Map<String, dynamic> slot) async {
     final TextEditingController pubkeyController = TextEditingController();
+    final contacts =
+        await widget.runtime
+            .buildCapsuleAddressService()
+            .listInvitationRecipients();
+    if (!mounted) return;
     String? formError;
     bool isSending = false;
 
@@ -87,21 +96,15 @@ class _StartersScreenState extends State<StartersScreen> {
                   content: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('Enter recipient public key:'),
-                      const SizedBox(height: 8),
                       const Text(
-                        'Supports: h... (if imported) or another supported delivery address',
+                        'Choose a saved capsule or paste its complete contact card.',
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                       const SizedBox(height: 16),
-                      TextField(
+                      InvitationRecipientField(
                         controller: pubkeyController,
-                        decoration: InputDecoration(
-                          hintText: 'Public key',
-                          border: const OutlineInputBorder(),
-                          errorText: formError,
-                        ),
-                        maxLines: 2,
+                        contacts: contacts,
+                        errorText: formError,
                         onChanged: (_) {
                           if (formError != null) {
                             setDialogState(() => formError = null);

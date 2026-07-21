@@ -114,14 +114,18 @@ class LedgerViewService {
       );
     }
 
-    final starterIds = _starterIdsFromLedger(root);
+    final stateVersion =
+        capsuleState?['version'] is num
+            ? (capsuleState!['version'] as num).toInt()
+            : null;
+    final starterIds =
+        stateVersion == events.length
+            ? _starterIdsFromCapsuleState(capsuleState)
+            : List<Uint8List?>.filled(5, null);
     final starterKinds = _starterKindsFromLedger(root, starterIds);
     final starterCount = starterIds.whereType<Uint8List>().length;
 
-    final version =
-        capsuleState?['version'] is num
-            ? (capsuleState!['version'] as num).toInt()
-            : events.length;
+    final version = stateVersion ?? events.length;
     final rawHash = capsuleState?['ledger_hash'] ?? root['last_hash'];
     final hashHex = rawHash == null ? '0' : rawHash.toString();
 
@@ -214,61 +218,6 @@ class LedgerViewService {
       if (slot == null) return null;
       return _bytes32List(slot);
     });
-  }
-
-  List<Uint8List?> _starterIdsFromLedger(Map<String, dynamic> root) {
-    final owner = _bytes32List(root['owner']);
-    final slots = List<Uint8List?>.filled(5, null);
-    final burnedStarterIds = <String>{};
-
-    for (final eventRaw in _support.events(root)) {
-      if (eventRaw is! Map) continue;
-      final event = Map<String, dynamic>.from(eventRaw);
-      final signer = _bytes32List(event['signer']);
-      if (owner != null && signer != null && !_sameBytes(owner, signer)) {
-        continue;
-      }
-
-      final kind = _support.kindCode(event['kind']);
-      final payload = _support.payloadBytes(event['payload']);
-      switch (kind) {
-        case 5:
-          if (payload.length < 65) break;
-          final starterId = Uint8List.fromList(payload.sublist(0, 32));
-          final key = base64.encode(starterId);
-          if (burnedStarterIds.contains(key)) break;
-          if (slots.any(
-            (slot) => slot != null && _sameBytes(slot, starterId),
-          )) {
-            break;
-          }
-          final freeIndex = slots.indexWhere((slot) => slot == null);
-          if (freeIndex >= 0) slots[freeIndex] = starterId;
-          break;
-        case 6:
-          if (payload.length < 32) break;
-          final starterId = Uint8List.fromList(payload.sublist(0, 32));
-          final key = base64.encode(starterId);
-          final index = slots.indexWhere(
-            (slot) => slot != null && _sameBytes(slot, starterId),
-          );
-          if (index >= 0) slots[index] = null;
-          burnedStarterIds.add(key);
-          break;
-        default:
-          break;
-      }
-    }
-
-    return slots;
-  }
-
-  bool _sameBytes(Uint8List a, Uint8List b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
   }
 
   List<String?> _starterKindsFromLedger(

@@ -7,52 +7,58 @@ import 'package:hivra_app/services/invitation_actions_service.dart';
 
 void main() {
   group('InvitationActionsService worker ledger application', () {
-    test('restores selected runtime after persisting non-active worker ledger',
-        () async {
-      final runtime = _FakeInvitationActionsRuntime(
-        activeCapsuleHex:
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      );
-      final service = InvitationActionsService(
-        runtime: runtime,
-        workerQueue: CapsuleWorkerQueue(),
-      );
-      const workerCapsule =
-          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    test(
+      'restores selected runtime after persisting non-active worker ledger',
+      () async {
+        final runtime = _FakeInvitationActionsRuntime(
+          activeCapsuleHex:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        );
+        final service = InvitationActionsService(
+          runtime: runtime,
+          workerQueue: CapsuleWorkerQueue(),
+        );
+        const workerCapsule =
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-      await service.applyWorkerLedgerResultForTest(
-        bootstrapActiveHex: workerCapsule,
-        ledgerJson: '{"owner":"b"}',
-      );
+        await service.applyWorkerLedgerResultForTest(
+          bootstrapActiveHex: workerCapsule,
+          ledgerJson: '{"owner":"b"}',
+          capsuleStateJson: '{"version":1}',
+        );
 
-      expect(runtime.persistedLedgers, <String, String>{
-        workerCapsule: '{"owner":"b"}',
-      });
-      expect(runtime.appliedLedgers, isEmpty);
-      expect(runtime.bootstrapActiveCalls, 1);
-    });
+        expect(runtime.persistedLedgers, <String, String>{
+          workerCapsule: '{"owner":"b"}',
+        });
+        expect(runtime.appliedLedgers, isEmpty);
+        expect(runtime.persistedStates[workerCapsule], '{"version":1}');
+        expect(runtime.bootstrapActiveCalls, 1);
+      },
+    );
 
-    test('applies active worker ledger directly without re-bootstrap',
-        () async {
-      const activeCapsule =
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      final runtime = _FakeInvitationActionsRuntime(
-        activeCapsuleHex: activeCapsule,
-      );
-      final service = InvitationActionsService(
-        runtime: runtime,
-        workerQueue: CapsuleWorkerQueue(),
-      );
+    test(
+      'applies active worker ledger directly without re-bootstrap',
+      () async {
+        const activeCapsule =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        final runtime = _FakeInvitationActionsRuntime(
+          activeCapsuleHex: activeCapsule,
+        );
+        final service = InvitationActionsService(
+          runtime: runtime,
+          workerQueue: CapsuleWorkerQueue(),
+        );
 
-      await service.applyWorkerLedgerResultForTest(
-        bootstrapActiveHex: activeCapsule,
-        ledgerJson: '{"owner":"a"}',
-      );
+        await service.applyWorkerLedgerResultForTest(
+          bootstrapActiveHex: activeCapsule,
+          ledgerJson: '{"owner":"a"}',
+        );
 
-      expect(runtime.persistedLedgers, isEmpty);
-      expect(runtime.appliedLedgers, <String>['{"owner":"a"}']);
-      expect(runtime.bootstrapActiveCalls, 0);
-    });
+        expect(runtime.persistedLedgers, isEmpty);
+        expect(runtime.appliedLedgers, <String>['{"owner":"a"}']);
+        expect(runtime.bootstrapActiveCalls, 0);
+      },
+    );
   });
 
   group('CapsuleWorkerQueue', () {
@@ -80,23 +86,17 @@ void main() {
 
       firstWorkerMayFinish.complete();
       await Future<void>.delayed(Duration.zero);
-      expect(
-        trace,
-        <String>['first.worker.start', 'first.persist.start'],
-      );
+      expect(trace, <String>['first.worker.start', 'first.persist.start']);
 
       firstPersistenceMayFinish.complete();
       expect(await first, 1);
       expect(await second, 2);
-      expect(
-        trace,
-        <String>[
-          'first.worker.start',
-          'first.persist.start',
-          'first.persist.done',
-          'second.worker.start',
-        ],
-      );
+      expect(trace, <String>[
+        'first.worker.start',
+        'first.persist.start',
+        'first.persist.done',
+        'second.worker.start',
+      ]);
     });
 
     test('does not serialize independent capsules behind each other', () async {
@@ -136,6 +136,7 @@ class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
 
   final String? activeCapsuleHex;
   final Map<String, String> persistedLedgers = <String, String>{};
+  final Map<String, String> persistedStates = <String, String>{};
   final List<String> appliedLedgers = <String>[];
   int bootstrapActiveCalls = 0;
 
@@ -164,9 +165,13 @@ class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
   @override
   Future<void> persistLedgerSnapshotForCapsuleHex(
     String pubKeyHex,
-    String ledgerJson,
-  ) async {
+    String ledgerJson, {
+    String? capsuleStateJson,
+  }) async {
     persistedLedgers[pubKeyHex] = ledgerJson;
+    if (capsuleStateJson != null) {
+      persistedStates[pubKeyHex] = capsuleStateJson;
+    }
   }
 
   @override

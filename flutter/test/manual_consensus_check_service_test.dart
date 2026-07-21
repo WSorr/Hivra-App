@@ -57,19 +57,27 @@ void main() {
       final service = ManualConsensusCheckService(
         consensus: ConsensusRuntimeService(
           exportLedger: () => ledgerJson,
-          readLocalTransportKey: () =>
-              Uint8List.fromList(List<int>.filled(32, 11)),
+          readLocalTransportKey:
+              () => Uint8List.fromList(List<int>.filled(32, 11)),
         ),
       );
 
       final checks = service.loadChecks();
 
       expect(checks, hasLength(1));
-      expect(checks.first.isSignable, isTrue);
+      expect(
+        checks.first.isSignable,
+        isTrue,
+        reason: checks.first.blockingFacts
+            .map((fact) => '${fact.code}:${fact.subjectId ?? "-"}')
+            .join(','),
+      );
       expect(checks.first.blockingFacts, isEmpty);
       expect(checks.first.hashHex, hasLength(64));
       expect(
-          checks.first.canonicalJson.contains('"schema_version": 2'), isTrue);
+        checks.first.canonicalJson.contains('"schema_version": 3'),
+        isTrue,
+      );
     });
   });
 }

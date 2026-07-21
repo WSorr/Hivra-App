@@ -21,8 +21,8 @@ class CapsuleFileStore {
   const CapsuleFileStore({
     UserVisibleDataDirectoryService? dirs,
     AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
-  })  : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
-        _atomicWrites = atomicWrites;
+  }) : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+       _atomicWrites = atomicWrites;
 
   Future<Directory> docsDirectory() async {
     return _dirs.rootDirectory(create: true);
@@ -104,6 +104,28 @@ class CapsuleFileStore {
 
   Future<void> writeState(Directory dir, Map<String, dynamic> state) async {
     await _atomicWrites.writeString(stateFile(dir), jsonEncode(state));
+  }
+
+  Future<bool> writeCoreProjection(
+    Directory dir,
+    String? projectionJson,
+  ) async {
+    if (projectionJson == null || projectionJson.trim().isEmpty) return false;
+    try {
+      final projection = _parseJsonMap(projectionJson);
+      if (projection == null ||
+          projection['version'] is! num ||
+          projection['ledger_hash'] == null ||
+          projection['slots'] is! List) {
+        return false;
+      }
+      final state = await readState(dir) ?? <String, dynamic>{};
+      state['coreProjection'] = projection;
+      await writeState(dir, state);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<String?> readLedger(Directory dir) async {

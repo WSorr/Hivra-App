@@ -256,6 +256,41 @@ Definition of done:
 - Header counts, list screens, and detail views use the same underlying projection semantics.
 - Status: completed (2026-04-15).
 
+### 5.1 Canonical Core Projection Convergence
+
+Goal:
+- Replace shared-but-application-owned domain replay with one canonical Core
+  projector and scoped `CurrentView`, `PairView`, and `HistoryView` contracts.
+
+Current finding:
+- Starter-slot state now has one Core owner, but invitation and relationship
+  lifecycle projection still lives in Flutter services.
+- `CapsuleState.relationships_count` in Core and
+  `RelationshipProjectionService` in Flutter are competing potential owners
+  and must not remain as separate semantic implementations.
+
+Required migration units:
+1. Inventory every raw-ledger domain reader and classify it as current state,
+   pair consensus, history/audit, or non-domain operational evidence.
+2. Define versioned Core projection outputs and golden replay vectors for
+   invitation terminal precedence, relationship episodes, starter lineage,
+   pair scope, and history scope.
+3. Move invitation and relationship lifecycle interpretation behind the Core
+   projection boundary, then remove the replaced Flutter event walkers in the
+   same migration units.
+4. Make UI counters, screens, consensus, and drone guards consume only the
+   appropriate canonical view.
+5. Gate against new raw-event lifecycle interpretation outside Core and verify
+   cache rejection on ledger/protocol version or hash mismatch.
+
+Definition of done:
+- One valid ledger and protocol version produce exactly one canonical domain
+  state on macOS and Android.
+- Current UI hides superseded history; explicit history remains complete;
+  pair consensus contains only current pair-scoped truth and required lineage.
+- No application or plugin module owns a second lifecycle reducer.
+- Status: active correctness/architecture debt (2026-07-21).
+
 ## Release Discipline
 
 ### 6. Release Preflight as a Gate
@@ -552,7 +587,7 @@ Definition of done:
 - Reconstructing from ledger preserves linear per-slot ancestry and inviter provenance without introducing branch explosions.
 - Status: completed (2026-04-10, v1 scope).
 
-### 9.3 Pairwise Consensus Snapshot v2
+### 9.3 Pairwise Consensus Snapshot v3
 
 Goal:
 - Define the smallest pairwise state snapshot that two capsules can independently derive, hash, and sign the same way.
@@ -590,13 +625,17 @@ Scope:
     stable under non-lifecycle sender-metadata noise when pairwise facts are
     equivalent. Lifecycle ordering itself is authoritative.
 - Added regression coverage that symmetric A/B ledger perspectives derive the same pairwise snapshot canonical JSON/hash for equivalent pairwise facts.
-- Snapshot v2 excludes terminal invitation history from the signed payload so
+- Snapshot v2 excluded terminal invitation history from the signed payload so
   that one-sided historical delivery and events involving third capsules cannot
   change an A<->B attestation. Existing v1 attestations naturally become
   inapplicable because the snapshot hash changes.
+- Snapshot v3 also excludes `invitation_id` from each active relationship and
+  collapses repeated establishment episodes by `relationship_kind` plus sorted
+  `starter_pair`. Invitation lineage remains in the ledger, while consensus
+  commits only the current live pair state.
 
 Definition of done:
-- A fresh pair of capsules can derive the same `pairwise consensus snapshot v2` hash from local ledger truth.
+- A fresh pair of capsules can derive the same `pairwise consensus snapshot v3` hash from local ledger truth.
 - The snapshot is small and stable enough to serve as a signed execution precondition for future smart-contract plugins.
 - UI no longer presents a transport-derived key as the canonical capsule identity.
 - Status: completed (2026-04-10, v1 scope).

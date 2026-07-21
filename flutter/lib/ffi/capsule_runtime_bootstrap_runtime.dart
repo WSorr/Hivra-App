@@ -15,6 +15,8 @@ abstract class CapsuleRuntimeBootstrapRuntime {
 
   String? exportLedger();
 
+  String? exportCapsuleStateJson();
+
   bool saveSeed(Uint8List seed);
 
   bool createCapsule(
@@ -36,7 +38,7 @@ class HivraCapsuleRuntimeBootstrapRuntime
   final HivraBindings _hivra;
 
   HivraCapsuleRuntimeBootstrapRuntime([HivraBindings? hivra])
-      : _hivra = hivra ?? HivraBindings();
+    : _hivra = hivra ?? HivraBindings();
 
   @override
   int get legacyNostrOwnerMode => HivraBindings.legacyNostrOwnerMode;
@@ -56,6 +58,9 @@ class HivraCapsuleRuntimeBootstrapRuntime
 
   @override
   String? exportLedger() => _hivra.exportLedger();
+
+  @override
+  String? exportCapsuleStateJson() => _hivra.exportCapsuleStateJson();
 
   @override
   bool saveSeed(Uint8List seed) => _hivra.saveSeed(seed);

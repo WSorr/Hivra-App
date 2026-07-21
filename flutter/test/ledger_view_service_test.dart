@@ -94,7 +94,7 @@ void main() {
       },
     );
 
-    test('projects starter slots from ledger when capsule state is stale', () {
+    test('uses only the version-matched Core slot projection', () {
       final owner = bytes32(0xaa);
       final ledgerJson = jsonEncode(<String, dynamic>{
         'owner': owner,
@@ -126,22 +126,49 @@ void main() {
               'public_key': owner,
               'version': 4,
               'ledger_hash': 'beef',
-              'slots': <Object?>[null, null, null, null, null],
+              'slots': <Object?>[bytes32(0x41), null, null, null, null],
             }),
         readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
       );
 
       final snapshot = service.loadCapsuleSnapshot();
-      final summary = const CapsuleLedgerSummaryParser().parse(
-        ledgerJson,
-        (bytes) => bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
+      expect(snapshot.hasLedgerHistory, isTrue);
+      expect(snapshot.starterCount, equals(1));
+      expect(snapshot.starterIds.whereType<Uint8List>(), hasLength(1));
+      expect(snapshot.starterIds.first, orderedEquals(bytes32(0x41)));
+      expect(snapshot.starterKinds.first, equals('Pulse'));
+    });
+
+    test('fails closed when Core state and ledger versions differ', () {
+      final owner = bytes32(0xaa);
+      final service = LedgerViewService.withSources(
+        exportLedger:
+            () => jsonEncode(<String, dynamic>{
+              'owner': owner,
+              'events': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'kind': 'CapsuleCreated',
+                  'payload': <int>[1, 1],
+                  'timestamp': 1891000000000,
+                  'signer': owner,
+                },
+              ],
+              'last_hash': 'beef',
+            }),
+        exportCapsuleState:
+            () => jsonEncode(<String, dynamic>{
+              'public_key': owner,
+              'version': 2,
+              'ledger_hash': 'beef',
+              'slots': <Object?>[bytes32(0x21), null, null, null, null],
+            }),
+        readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
       );
 
-      expect(snapshot.hasLedgerHistory, isTrue);
-      expect(snapshot.starterCount, equals(summary.starterCount));
-      expect(snapshot.starterCount, equals(3));
-      expect(snapshot.starterIds.whereType<Uint8List>(), hasLength(3));
-      expect(snapshot.starterKinds.whereType<String>(), hasLength(3));
+      final snapshot = service.loadCapsuleSnapshot();
+
+      expect(snapshot.starterCount, equals(0));
+      expect(snapshot.starterIds.whereType<Uint8List>(), isEmpty);
     });
 
     test(
@@ -276,7 +303,7 @@ void main() {
           exportCapsuleState:
               () => jsonEncode(<String, dynamic>{
                 'public_key': owner,
-                'version': 2,
+                'version': 3,
                 'ledger_hash': 'face',
                 'slots': <Object?>[localStarter, null, null, null, null],
               }),

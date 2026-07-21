@@ -181,7 +181,18 @@ class CapsuleChatDeliveryService {
   Future<CapsuleChatDeliverySendResult> sendCanonicalEnvelope({
     required String peerHex,
     required String canonicalEnvelopeJson,
+    String? expectedCapsuleRootHex,
   }) async {
+    final expectedOwner = expectedCapsuleRootHex?.trim().toLowerCase();
+    if (expectedOwner != null && _localCapsuleRootHex() != expectedOwner) {
+      return const CapsuleChatDeliverySendResult(
+        isSuccess: false,
+        blockedByConsensus: false,
+        code: -2004,
+        errorMessage: 'Active capsule changed before chat delivery',
+        deliveryPeerHex: null,
+      );
+    }
     if (!await _isPeerAttestedSignable(peerHex)) {
       return const CapsuleChatDeliverySendResult(
         isSuccess: false,
@@ -222,6 +233,17 @@ class CapsuleChatDeliveryService {
         blockedByConsensus: false,
         code: -1004,
         errorMessage: 'Chat worker bootstrap unavailable',
+        deliveryPeerHex: null,
+      );
+    }
+    final bootstrapOwner =
+        bootstrap['activeCapsuleHex']?.toString().trim().toLowerCase();
+    if (expectedOwner != null && bootstrapOwner != expectedOwner) {
+      return const CapsuleChatDeliverySendResult(
+        isSuccess: false,
+        blockedByConsensus: false,
+        code: -2004,
+        errorMessage: 'Active capsule changed before chat delivery',
         deliveryPeerHex: null,
       );
     }

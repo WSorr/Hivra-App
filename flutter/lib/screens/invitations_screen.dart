@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import '../models/invitation.dart';
 import '../widgets/invitation_card.dart';
+import '../widgets/invitation_recipient_field.dart';
 import '../services/app_runtime_service.dart';
 import '../services/capsule_history_projection_service.dart';
 import '../services/invitation_intent_handler.dart';
@@ -809,8 +810,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     await _fetchInvitationDeliveries(silent: silent, quick: quick);
   }
 
-  void _showSendInvitationDialog() {
+  Future<void> _showSendInvitationDialog() async {
     final controller = TextEditingController();
+    final contacts = await _module.addressBook.listInvitationRecipients();
+    if (!mounted) return;
     widget.runtime.stateManager.refreshWithFullState();
     final state = widget.runtime.stateManager.state;
     final lockedSlots = state.lockedStarterSlots;
@@ -825,7 +828,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     String? formError;
     bool isSending = false;
 
-    showModalBottomSheet(
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder:
@@ -849,15 +852,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextField(
+                    InvitationRecipientField(
                       controller: controller,
-                      decoration: InputDecoration(
-                        labelText: 'Recipient Public Key',
-                        hintText: 'h... / npub / nostr hex / base64',
-                        border: OutlineInputBorder(),
-                        errorText: formError,
-                      ),
-                      maxLines: 2,
+                      contacts: contacts,
+                      errorText: formError,
                       onChanged: (_) {
                         if (formError != null) {
                           setModalState(() => formError = null);

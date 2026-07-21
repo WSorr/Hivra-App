@@ -28,11 +28,15 @@ bool shouldRemoveCapsuleContactCardEntry({
 
   final normalizedEntryKey = _normalizeHex32ForCleanup(entryKey);
   if (normalizedEntryKey == normalizedDeleteKey) return true;
-  final entryRootKeyHex =
-      _decodeBech32Hex32ForCleanup(entryKey, expectedHrp: 'h');
+  final entryRootKeyHex = _decodeBech32Hex32ForCleanup(
+    entryKey,
+    expectedHrp: 'h',
+  );
   if (entryRootKeyHex == normalizedDeleteKey) return true;
-  final entryNpubHex =
-      _decodeBech32Hex32ForCleanup(entryKey, expectedHrp: 'npub');
+  final entryNpubHex = _decodeBech32Hex32ForCleanup(
+    entryKey,
+    expectedHrp: 'npub',
+  );
   if (entryNpubHex == normalizedDeleteKey) return true;
 
   if (entryValue is! Map) return false;
@@ -59,6 +63,14 @@ bool shouldRemoveCapsuleContactCardEntry({
   );
   if (nostrNpubHex == normalizedDeleteKey) return true;
   return false;
+}
+
+@visibleForTesting
+bool requiresCapsuleIdentityReconciliation(CapsulesIndex index) {
+  if (index.capsules.length < 2) return false;
+  return index.capsules.values.any(
+    (entry) => entry.identityMode != 'root_owner',
+  );
 }
 
 String? _decodeBech32Hex32ForCleanup(
@@ -131,8 +143,10 @@ class CapsulePersistenceService {
   factory CapsulePersistenceService() => _instance;
 
   CapsulePersistenceService._internal() {
-    _runtimeBootstrapService =
-        CapsuleRuntimeBootstrapService(_fileStore, _seedStore);
+    _runtimeBootstrapService = CapsuleRuntimeBootstrapService(
+      _fileStore,
+      _seedStore,
+    );
   }
 
   final CapsuleFileStore _fileStore = const CapsuleFileStore();
@@ -172,7 +186,10 @@ class CapsulePersistenceService {
         identityMode: existingEntry?.identityMode ?? 'root_owner',
       );
       await _setActiveCapsule(duplicateSeedPubKeyHex);
-      await _syncLocalCapsuleContactCards(hivra);
+      await _syncLocalCapsuleContactCards(
+        hivra,
+        onlyPubKeyHex: duplicateSeedPubKeyHex,
+      );
       return;
     }
 
@@ -189,6 +206,7 @@ class CapsulePersistenceService {
     final ledger = hivra.exportLedger();
     if (ledger != null && ledger.isNotEmpty) {
       await _fileStore.writeLedger(dir, ledger);
+      await _fileStore.writeCoreProjection(dir, hivra.exportCapsuleStateJson());
 
       final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
         ledgerJson: ledger,
@@ -208,12 +226,13 @@ class CapsulePersistenceService {
         identityMode: identityMode,
       );
       await _setActiveCapsule(pubKeyHex);
-      await _syncLocalCapsuleContactCards(hivra);
+      await _syncLocalCapsuleContactCards(hivra, onlyPubKeyHex: pubKeyHex);
     }
   }
 
   Future<bool> bootstrapRuntimeFromDisk(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     final seed = hivra.loadSeed();
     if (seed == null) return false;
 
@@ -252,6 +271,7 @@ class CapsulePersistenceService {
       return false;
     }
     await _fileStore.writeLedger(dir, ledger);
+    await _fileStore.writeCoreProjection(dir, hivra.exportCapsuleStateJson());
     await _writeBackupEnvelopeForLedger(dir, ledger);
     await _touchRuntimeCapsuleMetadata(hivra);
     return true;
@@ -280,8 +300,9 @@ class CapsulePersistenceService {
 
   Future<bool> persistLedgerSnapshotForCapsuleHex(
     String pubKeyHex,
-    String ledgerJson,
-  ) async {
+    String ledgerJson, {
+    String? capsuleStateJson,
+  }) async {
     if (pubKeyHex.isEmpty || ledgerJson.trim().isEmpty) return false;
     final ownerHex = _extractOwnerHex(ledgerJson);
     final targetPubKeyHex = ownerHex ?? pubKeyHex;
@@ -294,6 +315,7 @@ class CapsulePersistenceService {
       return false;
     }
     await _fileStore.writeLedger(dir, ledgerJson);
+    await _fileStore.writeCoreProjection(dir, capsuleStateJson);
     await _writeBackupEnvelopeForLedger(dir, ledgerJson);
     // Keep index heartbeat fresh for the capsule that actually produced worker output,
     // but do not switch active capsule.
@@ -319,7 +341,8 @@ class CapsulePersistenceService {
   }
 
   Future<String?> exportBackupEnvelopeToUserDirectory(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     final ledger = hivra.exportLedger();
     if (ledger == null || ledger.isEmpty) return null;
 
@@ -358,7 +381,8 @@ class CapsulePersistenceService {
   }
 
   Future<bool> importBackupEnvelopeIfExists(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     final dir = await _currentCapsuleDir(hivra);
     final backupJson = await _fileStore.readBackup(dir);
     if (backupJson == null) return false;
@@ -384,14 +408,17 @@ class CapsulePersistenceService {
     await _fileStore.writeBackup(dir, backupJson);
   }
 
-  Future<void> clearPersistedData(CapsulePersistenceBindings hivra,
-      {bool includeBackup = false}) async {
+  Future<void> clearPersistedData(
+    CapsulePersistenceBindings hivra, {
+    bool includeBackup = false,
+  }) async {
     final dir = await _currentCapsuleDir(hivra);
     await _fileStore.clearPersisted(dir, includeBackup: includeBackup);
   }
 
   Future<String?> resolveActiveCapsuleHex(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     await _reconcileCapsuleIdentityIndex(hivra);
     final index = await _readIndex();
     final activeHex = index.activePubKeyHex;
@@ -404,8 +431,11 @@ class CapsulePersistenceService {
         return activeHex;
       }
 
-      final recovered = await _recoverActiveCapsuleHexFromIndex(index,
-          exclude: {activeHex}, hivra: hivra);
+      final recovered = await _recoverActiveCapsuleHexFromIndex(
+        index,
+        exclude: {activeHex},
+        hivra: hivra,
+      );
       if (recovered != null) {
         await _setActiveCapsule(recovered);
         return recovered;
@@ -420,23 +450,22 @@ class CapsulePersistenceService {
   }
 
   Future<bool> bootstrapActiveCapsuleRuntime(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     await _reconcileCapsuleIdentityIndex(hivra);
     final index = await _readIndex();
     final selectedActiveHex = index.activePubKeyHex?.trim().toLowerCase();
     final hasExplicitActive =
         selectedActiveHex != null && selectedActiveHex.isNotEmpty;
-    var activeHex = hasExplicitActive
-        ? selectedActiveHex
-        : await resolveActiveCapsuleHex(hivra);
+    var activeHex =
+        hasExplicitActive
+            ? selectedActiveHex
+            : await resolveActiveCapsuleHex(hivra);
     if (activeHex == null || activeHex.isEmpty) {
       return bootstrapRuntimeFromDisk(hivra);
     }
 
-    var bootstrap = await loadRuntimeBootstrap(
-      activeHex,
-      hivra: hivra,
-    );
+    var bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
     if (bootstrap == null) {
       if (hasExplicitActive) {
         return false;
@@ -451,10 +480,7 @@ class CapsulePersistenceService {
       }
       await _setActiveCapsule(recovered);
       activeHex = recovered;
-      bootstrap = await loadRuntimeBootstrap(
-        activeHex,
-        hivra: hivra,
-      );
+      bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
       if (bootstrap == null) {
         return bootstrapRuntimeFromDisk(hivra);
       }
@@ -476,32 +502,32 @@ class CapsulePersistenceService {
 
     final runtimeRoot = hivra.capsuleRootPublicKey();
     final runtimeOwner = hivra.capsuleRuntimeOwnerPublicKey();
-    final runtimeRootHex = runtimeRoot != null && runtimeRoot.length == 32
-        ? _bytesToHex(runtimeRoot)
-        : null;
-    final runtimeOwnerHex = runtimeOwner != null && runtimeOwner.length == 32
-        ? _bytesToHex(runtimeOwner)
-        : null;
+    final runtimeRootHex =
+        runtimeRoot != null && runtimeRoot.length == 32
+            ? _bytesToHex(runtimeRoot)
+            : null;
+    final runtimeOwnerHex =
+        runtimeOwner != null && runtimeOwner.length == 32
+            ? _bytesToHex(runtimeOwner)
+            : null;
     if (runtimeRootHex != activeHex && runtimeOwnerHex != activeHex) {
       return false;
     }
 
     await _setActiveCapsule(activeHex);
-    await _syncLocalCapsuleContactCards(hivra);
+    await _syncLocalCapsuleContactCards(hivra, onlyPubKeyHex: activeHex);
     return true;
   }
 
   Future<String?> diagnoseActiveCapsuleBootstrap(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     final activeHex = await resolveActiveCapsuleHex(hivra);
     if (activeHex == null || activeHex.isEmpty) {
       return 'No active capsule selected';
     }
 
-    final bootstrap = await loadRuntimeBootstrap(
-      activeHex,
-      hivra: hivra,
-    );
+    final bootstrap = await loadRuntimeBootstrap(activeHex, hivra: hivra);
     if (bootstrap == null) {
       return 'No bootstrap data for capsule $activeHex';
     }
@@ -520,9 +546,10 @@ class CapsulePersistenceService {
     }
 
     final runtimePubKey = hivra.capsuleRuntimeOwnerPublicKey();
-    final runtimeHex = runtimePubKey != null && runtimePubKey.length == 32
-        ? _bytesToHex(runtimePubKey)
-        : null;
+    final runtimeHex =
+        runtimePubKey != null && runtimePubKey.length == 32
+            ? _bytesToHex(runtimePubKey)
+            : null;
     if (runtimeHex != activeHex) {
       return 'Seed/pubkey mismatch: expected $activeHex, got ${runtimeHex ?? 'none'}';
     }
@@ -535,26 +562,31 @@ class CapsulePersistenceService {
   }
 
   Future<CapsuleBootstrapReport> diagnoseBootstrapReport(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     final index = await _readIndex();
     final activeHex = _activeCapsuleHexFromIndexOrRuntime(index, hivra);
     final runtimePubKey = hivra.capsuleRuntimeOwnerPublicKey();
-    final runtimeHex = runtimePubKey != null && runtimePubKey.length == 32
-        ? _bytesToHex(runtimePubKey)
-        : null;
+    final runtimeHex =
+        runtimePubKey != null && runtimePubKey.length == 32
+            ? _bytesToHex(runtimePubKey)
+            : null;
     final rootPubKey = hivra.capsuleRootPublicKey();
-    final rootHex = rootPubKey != null && rootPubKey.length == 32
-        ? _bytesToHex(rootPubKey)
-        : null;
+    final rootHex =
+        rootPubKey != null && rootPubKey.length == 32
+            ? _bytesToHex(rootPubKey)
+            : null;
     final nostrPubKey = hivra.capsuleNostrPublicKey();
-    final nostrHex = nostrPubKey != null && nostrPubKey.length == 32
-        ? _bytesToHex(nostrPubKey)
-        : null;
+    final nostrHex =
+        nostrPubKey != null && nostrPubKey.length == 32
+            ? _bytesToHex(nostrPubKey)
+            : null;
     final runtimeMatchesRoot = runtimeHex != null && runtimeHex == rootHex;
     final runtimeMatchesNostr = runtimeHex != null && runtimeHex == nostrHex;
-    final identityMode = runtimeMatchesRoot
-        ? 'root_owner'
-        : runtimeMatchesNostr
+    final identityMode =
+        runtimeMatchesRoot
+            ? 'root_owner'
+            : runtimeMatchesNostr
             ? 'legacy_nostr_owner'
             : 'mixed_or_unknown';
 
@@ -585,31 +617,35 @@ class CapsulePersistenceService {
     final stateFileExists = await _fileStore.stateFile(capsuleDir).exists();
     final ledgerFileExists = await _fileStore.ledgerFile(capsuleDir).exists();
     final backupFileExists = await _fileStore.backupFile(capsuleDir).exists();
-    final bootstrapSource = ledgerFileExists
-        ? 'ledger'
-        : backupFileExists
+    final bootstrapSource =
+        ledgerFileExists
+            ? 'ledger'
+            : backupFileExists
             ? 'backup'
             : 'none';
 
     final seed = await _loadSeedForCapsule(activeHex);
     final seedAvailable = seed != null;
-    final seedMatches = seed != null
-        ? await seedMatchesCapsule(
-            hivra,
-            seed,
-            activeHex,
-            identityMode: identityMode,
-          )
-        : false;
+    final seedMatches =
+        seed != null
+            ? await seedMatchesCapsule(
+              hivra,
+              seed,
+              activeHex,
+              identityMode: identityMode,
+            )
+            : false;
     final seedRootPubKey = seed != null ? hivra.seedRootPublicKey(seed) : null;
-    final seedRootHex = seedRootPubKey != null && seedRootPubKey.length == 32
-        ? _bytesToHex(seedRootPubKey)
-        : null;
+    final seedRootHex =
+        seedRootPubKey != null && seedRootPubKey.length == 32
+            ? _bytesToHex(seedRootPubKey)
+            : null;
     final seedNostrPubKey =
         seed != null ? hivra.seedNostrPublicKey(seed) : null;
-    final seedNostrHex = seedNostrPubKey != null && seedNostrPubKey.length == 32
-        ? _bytesToHex(seedNostrPubKey)
-        : null;
+    final seedNostrHex =
+        seedNostrPubKey != null && seedNostrPubKey.length == 32
+            ? _bytesToHex(seedNostrPubKey)
+            : null;
 
     final issue = _bootstrapIssue(
       activeHex: activeHex,
@@ -703,13 +739,15 @@ class CapsulePersistenceService {
   }
 
   Future<CapsuleTraceReport> diagnoseCapsuleTraces(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     final index = await _readIndex();
     final activeHex = _activeCapsuleHexFromIndexOrRuntime(index, hivra);
     final runtimePubKey = hivra.capsuleRuntimeOwnerPublicKey();
-    final runtimeHex = runtimePubKey != null && runtimePubKey.length == 32
-        ? _bytesToHex(runtimePubKey)
-        : null;
+    final runtimeHex =
+        runtimePubKey != null && runtimePubKey.length == 32
+            ? _bytesToHex(runtimePubKey)
+            : null;
     final docs = await _fileStore.docsDirectory();
 
     var capsuleDirPath = docs.path;
@@ -770,8 +808,9 @@ class CapsulePersistenceService {
     return _fileStore.ledgerPath(dir);
   }
 
-  Future<List<CapsuleIndexEntry>> listCapsules(
-      {CapsulePersistenceBindings? hivra}) async {
+  Future<List<CapsuleIndexEntry>> listCapsules({
+    CapsulePersistenceBindings? hivra,
+  }) async {
     final index = await _readIndex();
     final entries = <CapsuleIndexEntry>[];
     for (final entry in index.capsules.values) {
@@ -795,9 +834,11 @@ class CapsulePersistenceService {
         pubKeyHex,
         hivra: hivra,
       );
+      final state = await _fileStore.readState(capsuleDir);
       return _summaryParser.parse(
         raw,
         _bytesToHex,
+        coreProjection: state?['coreProjection'],
         runtimeTransportPublicKey: localTransportPublicKey,
       );
     } catch (_) {
@@ -810,8 +851,9 @@ class CapsulePersistenceService {
     CapsulePersistenceBindings? hivra,
   }) async {
     final index = await _readIndex();
-    final identityMode =
-        _identityModeForCapsule(indexEntry: index.capsules[pubKeyHex]);
+    final identityMode = _identityModeForCapsule(
+      indexEntry: index.capsules[pubKeyHex],
+    );
     if (identityMode == 'legacy_nostr_owner') {
       return _hexToBytes(pubKeyHex);
     }
@@ -865,8 +907,9 @@ class CapsulePersistenceService {
     final index = await _readIndex();
     return _runtimeBootstrapService.loadRuntimeBootstrap(
       pubKeyHex,
-      identityMode:
-          _identityModeForCapsule(indexEntry: index.capsules[pubKeyHex]),
+      identityMode: _identityModeForCapsule(
+        indexEntry: index.capsules[pubKeyHex],
+      ),
       runtime:
           hivra != null ? HivraCapsuleRuntimeBootstrapRuntime(hivra) : null,
       bytesToHex: _bytesToHex,
@@ -874,7 +917,8 @@ class CapsulePersistenceService {
   }
 
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrapForCurrent(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     return _runtimeBootstrapService.loadRuntimeBootstrapForCurrent(
       HivraCapsuleRuntimeBootstrapRuntime(hivra),
       bytesToHex: _bytesToHex,
@@ -886,11 +930,12 @@ class CapsulePersistenceService {
     String? capsuleHex,
   }) async {
     final requestedHex = capsuleHex?.trim();
-    final requestedCapsuleHex = requestedHex != null &&
-            requestedHex.isNotEmpty &&
-            RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(requestedHex)
-        ? requestedHex.toLowerCase()
-        : null;
+    final requestedCapsuleHex =
+        requestedHex != null &&
+                requestedHex.isNotEmpty &&
+                RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(requestedHex)
+            ? requestedHex.toLowerCase()
+            : null;
 
     final activeHex = await resolveActiveCapsuleHex(hivra);
     var bootstrapCapsuleHex = requestedCapsuleHex;
@@ -898,10 +943,12 @@ class CapsulePersistenceService {
 
     final currentBootstrap = await loadRuntimeBootstrapForCurrent(hivra);
     final currentRuntimeHex = currentBootstrap?.pubKeyHex;
-    final requestedCurrentRuntime = requestedCapsuleHex != null &&
+    final requestedCurrentRuntime =
+        requestedCapsuleHex != null &&
         currentRuntimeHex != null &&
         requestedCapsuleHex == currentRuntimeHex;
-    final activeCurrentRuntime = activeHex != null &&
+    final activeCurrentRuntime =
+        activeHex != null &&
         currentRuntimeHex != null &&
         activeHex == currentRuntimeHex;
 
@@ -935,7 +982,9 @@ class CapsulePersistenceService {
   }
 
   Future<String?> exportCapsuleBackupToPath(
-      String pubKeyHex, String targetPath) async {
+    String pubKeyHex,
+    String targetPath,
+  ) async {
     final capsuleDir = await _capsuleDirForHex(pubKeyHex);
     final ledgerJson = await _fileStore.readLedger(capsuleDir);
     if (ledgerJson == null) return null;
@@ -949,13 +998,16 @@ class CapsulePersistenceService {
   }
 
   Future<bool> refreshCapsuleSnapshot(
-      CapsulePersistenceBindings hivra, String pubKeyHex) async {
+    CapsulePersistenceBindings hivra,
+    String pubKeyHex,
+  ) async {
     final index = await _readIndex();
     return _runtimeBootstrapService.refreshCapsuleSnapshot(
       HivraCapsuleRuntimeBootstrapRuntime(hivra),
       pubKeyHex,
-      identityMode:
-          _identityModeForCapsule(indexEntry: index.capsules[pubKeyHex]),
+      identityMode: _identityModeForCapsule(
+        indexEntry: index.capsules[pubKeyHex],
+      ),
       bytesToHex: _bytesToHex,
     );
   }
@@ -995,9 +1047,10 @@ class CapsulePersistenceService {
 
     if (hivra != null) {
       final currentPubKey = hivra.capsuleRuntimeOwnerPublicKey();
-      final currentHex = currentPubKey != null && currentPubKey.length == 32
-          ? _bytesToHex(currentPubKey)
-          : null;
+      final currentHex =
+          currentPubKey != null && currentPubKey.length == 32
+              ? _bytesToHex(currentPubKey)
+              : null;
       if (currentHex != null && keysToDelete.contains(currentHex)) {
         hivra.resetCapsule();
       }
@@ -1076,7 +1129,9 @@ class CapsulePersistenceService {
   }
 
   Future<void> activateCapsule(
-      CapsulePersistenceBindings hivra, String pubKeyHex) async {
+    CapsulePersistenceBindings hivra,
+    String pubKeyHex,
+  ) async {
     await _reconcileCapsuleIdentityIndex(hivra);
     final index = await _readIndex();
     final targetEntry = index.capsules[pubKeyHex];
@@ -1096,9 +1151,10 @@ class CapsulePersistenceService {
           storedSeed,
           excludePubKeyHex: pubKeyHex,
         );
-        final ownerSuffix = seedOwner == null
-            ? ''
-            : ' Seed belongs to another capsule: $seedOwner.';
+        final ownerSuffix =
+            seedOwner == null
+                ? ''
+                : ' Seed belongs to another capsule: $seedOwner.';
         throw Exception(
           'Stored seed does not match selected capsule.$ownerSuffix Restore this capsule from its seed phrase.',
         );
@@ -1109,9 +1165,10 @@ class CapsulePersistenceService {
     } else {
       // Fallback: if current keychain seed matches target pubkey, keep it.
       final currentPubKey = hivra.capsuleRuntimeOwnerPublicKey();
-      final currentHex = currentPubKey != null && currentPubKey.length == 32
-          ? _bytesToHex(currentPubKey)
-          : null;
+      final currentHex =
+          currentPubKey != null && currentPubKey.length == 32
+              ? _bytesToHex(currentPubKey)
+              : null;
       if (currentHex != pubKeyHex) {
         throw Exception('Seed not found for capsule');
       }
@@ -1132,17 +1189,20 @@ class CapsulePersistenceService {
       }
     }
     await _setActiveCapsule(pubKeyHex);
-    await _syncLocalCapsuleContactCards(hivra);
+    await _syncLocalCapsuleContactCards(hivra, onlyPubKeyHex: pubKeyHex);
   }
 
   Future<Map<String, dynamic>?> _readStateForCurrentCapsule(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     final dir = await _currentCapsuleDir(hivra);
     return _fileStore.readState(dir);
   }
 
-  Future<Directory> _currentCapsuleDir(CapsulePersistenceBindings? hivra,
-      {bool create = false}) async {
+  Future<Directory> _currentCapsuleDir(
+    CapsulePersistenceBindings? hivra, {
+    bool create = false,
+  }) async {
     final docs = await _fileStore.docsDirectory();
     String? capsuleId;
     if (hivra != null) {
@@ -1162,8 +1222,10 @@ class CapsulePersistenceService {
     return dir;
   }
 
-  Future<Directory> _capsuleDirForHex(String pubKeyHex,
-      {bool create = false}) async {
+  Future<Directory> _capsuleDirForHex(
+    String pubKeyHex, {
+    bool create = false,
+  }) async {
     final docs = await _fileStore.docsDirectory();
     final dir = await _fileStore.capsuleDirForHex(pubKeyHex, create: false);
     final existed = await dir.exists();
@@ -1195,16 +1257,19 @@ class CapsulePersistenceService {
     }
 
     if (await legacyState.exists()) {
-      await legacyState
-          .rename('${target.path}/${CapsuleFileStore.stateFileName}');
+      await legacyState.rename(
+        '${target.path}/${CapsuleFileStore.stateFileName}',
+      );
     }
     if (await legacyLedger.exists()) {
-      await legacyLedger
-          .rename('${target.path}/${CapsuleFileStore.ledgerFileName}');
+      await legacyLedger.rename(
+        '${target.path}/${CapsuleFileStore.ledgerFileName}',
+      );
     }
     if (await legacyBackup.exists()) {
-      await legacyBackup
-          .rename('${target.path}/${CapsuleFileStore.backupFileName}');
+      await legacyBackup.rename(
+        '${target.path}/${CapsuleFileStore.backupFileName}',
+      );
     }
   }
 
@@ -1420,9 +1485,10 @@ class CapsulePersistenceService {
   }
 
   Future<void> _reconcileCapsuleIdentityIndex(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     final index = await _readIndex();
-    if (index.capsules.length < 2) return;
+    if (!requiresCapsuleIdentityReconciliation(index)) return;
 
     final bindingsByPubKey = <String, CapsuleIdentityBinding>{};
     for (final entry in index.capsules.values) {
@@ -1464,7 +1530,9 @@ class CapsulePersistenceService {
   }
 
   Future<void> _syncLocalCapsuleContactCards(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra, {
+    String? onlyPubKeyHex,
+  }) async {
     final index = await _readIndex();
     if (index.capsules.isEmpty) return;
 
@@ -1472,7 +1540,13 @@ class CapsulePersistenceService {
     final cards = await _readContactCards(cardsFile);
     var changed = false;
 
-    for (final entry in index.capsules.values) {
+    final entries =
+        onlyPubKeyHex == null
+            ? index.capsules.values
+            : index.capsules.values.where(
+              (entry) => entry.pubKeyHex == onlyPubKeyHex,
+            );
+    for (final entry in entries) {
       final seed = await _loadSeedForCapsule(entry.pubKeyHex);
       if (seed == null) continue;
 
@@ -1607,8 +1681,9 @@ class CapsulePersistenceService {
     Set<String> exclude = const <String>{},
     CapsulePersistenceBindings? hivra,
   }) async {
-    final candidates = index.capsules.values.toList()
-      ..sort((a, b) => b.lastActive.compareTo(a.lastActive));
+    final candidates =
+        index.capsules.values.toList()
+          ..sort((a, b) => b.lastActive.compareTo(a.lastActive));
 
     for (final entry in candidates) {
       final pubKeyHex = entry.pubKeyHex;
@@ -1617,10 +1692,7 @@ class CapsulePersistenceService {
       if (hivra == null) {
         return pubKeyHex;
       }
-      final bootstrap = await loadRuntimeBootstrap(
-        pubKeyHex,
-        hivra: hivra,
-      );
+      final bootstrap = await loadRuntimeBootstrap(pubKeyHex, hivra: hivra);
       if (bootstrap != null) {
         return pubKeyHex;
       }
@@ -1634,7 +1706,8 @@ class CapsulePersistenceService {
   }
 
   Future<void> _touchRuntimeCapsuleMetadata(
-      CapsulePersistenceBindings hivra) async {
+    CapsulePersistenceBindings hivra,
+  ) async {
     final runtimeHex = _hexFromKey(hivra.capsuleRuntimeOwnerPublicKey());
     if (runtimeHex == null || runtimeHex.isEmpty) return;
 
@@ -1687,19 +1760,23 @@ class CapsulePersistenceService {
   }
 
   String _detectIdentityMode(
-      CapsulePersistenceBindings hivra, String pubKeyHex) {
+    CapsulePersistenceBindings hivra,
+    String pubKeyHex,
+  ) {
     final rootPubKey = hivra.capsuleRootPublicKey();
-    final rootHex = rootPubKey != null && rootPubKey.length == 32
-        ? _bytesToHex(rootPubKey)
-        : null;
+    final rootHex =
+        rootPubKey != null && rootPubKey.length == 32
+            ? _bytesToHex(rootPubKey)
+            : null;
     if (rootHex != null && rootHex == pubKeyHex) {
       return 'root_owner';
     }
 
     final nostrPubKey = hivra.capsuleNostrPublicKey();
-    final nostrHex = nostrPubKey != null && nostrPubKey.length == 32
-        ? _bytesToHex(nostrPubKey)
-        : null;
+    final nostrHex =
+        nostrPubKey != null && nostrPubKey.length == 32
+            ? _bytesToHex(nostrPubKey)
+            : null;
     if (nostrHex != null && nostrHex == pubKeyHex) {
       return 'legacy_nostr_owner';
     }
@@ -1817,12 +1894,14 @@ class CapsulePersistenceService {
     if (metaRaw is! Map) return null;
     final meta = Map<String, dynamic>.from(metaRaw);
     return _BackupMeta(
-      isGenesis: meta['is_genesis'] == true
-          ? true
-          : (meta['is_genesis'] == false ? false : null),
-      isNeste: meta['is_neste'] == true
-          ? true
-          : (meta['is_neste'] == false ? false : null),
+      isGenesis:
+          meta['is_genesis'] == true
+              ? true
+              : (meta['is_genesis'] == false ? false : null),
+      isNeste:
+          meta['is_neste'] == true
+              ? true
+              : (meta['is_neste'] == false ? false : null),
     );
   }
 

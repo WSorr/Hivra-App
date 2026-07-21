@@ -22,6 +22,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   final UiEventLogService _uiLog = const UiEventLogService();
   List<CapsuleSelectorItem> _capsules = [];
   bool _isLoading = true;
+  String? _selectingCapsuleHex;
   String? _loadError;
   final TextEditingController _seedController = TextEditingController();
 
@@ -45,8 +46,9 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
 
     try {
       await _uiLog.log('capsule.selector.load', 'start');
-      _capsules =
-          await _service.loadCapsules().timeout(const Duration(seconds: 12));
+      _capsules = await _service.loadCapsules().timeout(
+        const Duration(seconds: 12),
+      );
       await _uiLog.log(
         'capsule.selector.load',
         'success count=${_capsules.length}',
@@ -89,12 +91,27 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   }
 
   Future<void> _selectCapsule(CapsuleSelectorItem capsule) async {
+    if (_selectingCapsuleHex != null) return;
+
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+    final capsuleHex = capsule.publicKeyHex;
+    setState(() {
+      _selectingCapsuleHex = capsuleHex;
+    });
+    await _uiLog.log('capsule.selector.select', 'start target=$capsuleHex');
     try {
-      await _service.activateCapsule(capsule.publicKeyHex);
+      await _service.activateCapsule(capsuleHex);
+      await _uiLog.log('capsule.selector.select', 'done target=$capsuleHex');
     } catch (e) {
+      await _uiLog.log(
+        'capsule.selector.select',
+        'error target=$capsuleHex error=$e',
+      );
       if (!mounted) return;
+      setState(() {
+        _selectingCapsuleHex = null;
+      });
       messenger.showSnackBar(
         SnackBar(content: Text('Failed to activate capsule: $e')),
       );
@@ -135,9 +152,9 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       await _loadCapsules();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Import failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
     }
   }
 
@@ -153,16 +170,13 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
         );
         if (path == null) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Export failed')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Export failed')));
           return;
         }
         await SharePlus.instance.share(
-          ShareParams(
-            files: [XFile(path)],
-            text: 'Hivra capsule backup',
-          ),
+          ShareParams(files: [XFile(path)], text: 'Hivra capsule backup'),
         );
         return;
       }
@@ -179,9 +193,9 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       );
       if (path == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Export failed')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Export failed')));
         return;
       }
       if (!mounted) return;
@@ -190,33 +204,34 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Export failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
     }
   }
 
   Future<void> _deleteCapsule(CapsuleSelectorItem capsule) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('PANIC: Irreversible Delete'),
-        content: const Text(
-          'This will PERMANENTLY DELETE the capsule, seed, and local ledger/backup files.\n\n'
-          'THIS ACTION IS IRREVERSIBLE.\n'
-          'If you do not have the seed phrase and backup, recovery is impossible.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('PANIC: Irreversible Delete'),
+            content: const Text(
+              'This will PERMANENTLY DELETE the capsule, seed, and local ledger/backup files.\n\n'
+              'THIS ACTION IS IRREVERSIBLE.\n'
+              'If you do not have the seed phrase and backup, recovery is impossible.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete Forever'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete Forever'),
-          ),
-        ],
-      ),
     );
     if (confirm != true) return;
     await _service.deleteCapsule(capsule.publicKeyHex);
@@ -256,9 +271,9 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     final phrase = _seedController.text.trim();
     if (!_service.validateMnemonic(phrase)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid seed phrase')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Invalid seed phrase')));
       return;
     }
 
@@ -282,9 +297,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_loadError != null) {
@@ -373,9 +386,10 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: capsule.network == 'NESTE'
-                      ? Colors.green.shade900
-                      : Colors.orange.shade900,
+                  color:
+                      capsule.network == 'NESTE'
+                          ? Colors.green.shade900
+                          : Colors.orange.shade900,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -388,21 +402,25 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
               title: Row(
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
-                      color: capsule.network == 'NESTE'
-                          ? Colors.green.shade900
-                          : Colors.orange.shade900,
+                      color:
+                          capsule.network == 'NESTE'
+                              ? Colors.green.shade900
+                              : Colors.orange.shade900,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
                       capsule.network,
                       style: TextStyle(
                         fontSize: 10,
-                        color: capsule.network == 'NESTE'
-                            ? Colors.green.shade300
-                            : Colors.orange.shade300,
+                        color:
+                            capsule.network == 'NESTE'
+                                ? Colors.green.shade300
+                                : Colors.orange.shade300,
                       ),
                     ),
                   ),
@@ -411,7 +429,9 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
                     child: Text(
                       _formatDisplayKey(capsule.displayKeyText),
                       style: const TextStyle(
-                          fontFamily: 'monospace', fontSize: 12),
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -426,9 +446,21 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
                 'hash ${capsule.ledgerHashHex}',
                 style: const TextStyle(fontSize: 12),
               ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async => _selectCapsule(capsule),
-              onLongPress: () => _showCapsuleMenu(capsule),
+              trailing:
+                  _selectingCapsuleHex == capsule.publicKeyHex
+                      ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : const Icon(Icons.chevron_right),
+              onTap:
+                  _selectingCapsuleHex == null
+                      ? () async => _selectCapsule(capsule)
+                      : null,
+              onLongPress:
+                  _selectingCapsuleHex == null
+                      ? () => _showCapsuleMenu(capsule)
+                      : null,
             ),
           );
         },

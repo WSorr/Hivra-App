@@ -71,8 +71,27 @@ class ConsensusAttestationExchangeService {
       );
     }
 
-    final received = await _sync.receiveAndStore();
     var verified = await _sync.loadVerifiedForPair(peerRootHex: normalizedPeer);
+    if (_hasTwoRootEvidence(verified)) {
+      final peerTransportHex = await _resolvePeerTransportHex(normalizedPeer);
+      if (peerTransportHex != null) {
+        _announceReadyEvidence(
+          peerRootHex: normalizedPeer,
+          peerTransportHex: peerTransportHex,
+        );
+      }
+      return ConsensusAttestationExchangeResult(
+        status: ConsensusAttestationExchangeStatus.ready,
+        message: null,
+        receiveCode: 0,
+        receivedCount: 0,
+        storedCount: 0,
+        localEvidenceSent: false,
+      );
+    }
+
+    final received = await _sync.receiveAndStore();
+    verified = await _sync.loadVerifiedForPair(peerRootHex: normalizedPeer);
     if (_hasTwoRootEvidence(verified)) {
       final peerTransportHex = await _resolvePeerTransportHex(normalizedPeer);
       if (peerTransportHex != null) {

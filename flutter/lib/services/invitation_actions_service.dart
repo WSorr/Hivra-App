@@ -81,20 +81,20 @@ class InvitationActionsService {
     InvitationActionsRuntime? runtime,
     CapsuleDeliveryLifecycleService? deliveryLifecycle,
     CapsuleWorkerQueue? workerQueue,
-  })  : _runtime = runtime ?? HivraInvitationActionsRuntime(),
-        _deliveryLifecycle = deliveryLifecycle ??
-            CapsuleDeliveryLifecycleService(
-              retryRunner: _unconfiguredRetryRunner,
-            ),
-        _workerQueue = workerQueue ?? _sharedWorkerQueue;
+  }) : _runtime = runtime ?? HivraInvitationActionsRuntime(),
+       _deliveryLifecycle =
+           deliveryLifecycle ??
+           CapsuleDeliveryLifecycleService(
+             retryRunner: _unconfiguredRetryRunner,
+           ),
+       _workerQueue = workerQueue ?? _sharedWorkerQueue;
 
   static Future<CapsuleDeliveryCycleResult> _unconfiguredRetryRunner(
     String _,
-  ) async =>
-      const CapsuleDeliveryCycleResult(
-        code: -1004,
-        lastError: 'Delivery lifecycle retry runner is not configured',
-      );
+  ) async => const CapsuleDeliveryCycleResult(
+    code: -1004,
+    lastError: 'Delivery lifecycle retry runner is not configured',
+  );
 
   Future<T> _serialize<T>(Future<T> Function() operation) {
     final completer = Completer<T>();
@@ -111,6 +111,7 @@ class InvitationActionsService {
   Future<void> _persistWorkerLedgerForBootstrapCapsule({
     required String? bootstrapActiveHex,
     required String? ledgerJson,
+    required String? capsuleStateJson,
   }) async {
     if (bootstrapActiveHex == null ||
         bootstrapActiveHex.isEmpty ||
@@ -121,12 +122,14 @@ class InvitationActionsService {
     await _runtime.persistLedgerSnapshotForCapsuleHex(
       bootstrapActiveHex,
       ledgerJson,
+      capsuleStateJson: capsuleStateJson,
     );
   }
 
   Future<void> _applyWorkerLedgerResult({
     required String? bootstrapActiveHex,
     required String? ledgerJson,
+    required String? capsuleStateJson,
   }) async {
     final workerCapsuleHex = bootstrapActiveHex?.trim().toLowerCase();
     final activeNow =
@@ -138,6 +141,7 @@ class InvitationActionsService {
         await _persistWorkerLedgerForBootstrapCapsule(
           bootstrapActiveHex: workerCapsuleHex,
           ledgerJson: ledgerJson,
+          capsuleStateJson: capsuleStateJson,
         );
       }
       final restored = await _runtime.bootstrapActiveCapsuleRuntime();
@@ -158,10 +162,12 @@ class InvitationActionsService {
   Future<void> applyWorkerLedgerResultForTest({
     required String? bootstrapActiveHex,
     required String? ledgerJson,
+    String? capsuleStateJson,
   }) {
     return _applyWorkerLedgerResult(
       bootstrapActiveHex: bootstrapActiveHex,
       ledgerJson: ledgerJson,
+      capsuleStateJson: capsuleStateJson,
     );
   }
 
@@ -169,17 +175,19 @@ class InvitationActionsService {
     required Map<String, Object?> initialBootstrap,
     required Future<Map<String, Object?>> Function(
       Map<String, Object?> bootstrap,
-    ) startWorker,
+    )
+    startWorker,
     bool Function(Map<String, Object?> result)? shouldApplyLedger,
   }) {
-    final initialCapsuleHex = (initialBootstrap['activeCapsuleHex'] as String?)
+    final initialCapsuleHex =
+        (initialBootstrap['activeCapsuleHex'] as String?)
             ?.trim()
             .toLowerCase() ??
         '';
     if (initialCapsuleHex.isEmpty) {
-      return Future<Map<String, Object?>>.value(
-        <String, Object?>{'result': -1004},
-      );
+      return Future<Map<String, Object?>>.value(<String, Object?>{
+        'result': -1004,
+      });
     }
 
     return _workerQueue.run(initialCapsuleHex, () async {
@@ -189,7 +197,7 @@ class InvitationActionsService {
       final bootstrap = refreshed ?? initialBootstrap;
       final actualCapsuleHex =
           (bootstrap['activeCapsuleHex'] as String?)?.trim().toLowerCase() ??
-              '';
+          '';
       if (actualCapsuleHex != initialCapsuleHex) {
         return <String, Object?>{'result': -1004};
       }
@@ -200,6 +208,7 @@ class InvitationActionsService {
         await _applyWorkerLedgerResult(
           bootstrapActiveHex: actualCapsuleHex,
           ledgerJson: result['ledgerJson'] as String?,
+          capsuleStateJson: result['capsuleStateJson'] as String?,
         );
       }
       return result;
@@ -227,11 +236,12 @@ class InvitationActionsService {
     }
     final workerResult = await _runCapsuleWorker(
       initialBootstrap: bootstrap,
-      startWorker: (currentBootstrap) =>
-          compute<Map<String, Object?>, Map<String, Object?>>(
-        retryPendingOutgoingInvitationsInWorker,
-        currentBootstrap,
-      ),
+      startWorker:
+          (currentBootstrap) =>
+              compute<Map<String, Object?>, Map<String, Object?>>(
+                retryPendingOutgoingInvitationsInWorker,
+                currentBootstrap,
+              ),
     ).timeout(
       _sendWorkerTimeout,
       onTimeout: () => <String, Object?>{'result': -1003},
@@ -244,11 +254,14 @@ class InvitationActionsService {
   }
 
   Future<InvitationWorkerResult> sendInvitation(
-      Uint8List toPubkey, int starterSlot,
-      {String? capsuleHex}) async {
+    Uint8List toPubkey,
+    int starterSlot, {
+    String? capsuleHex,
+  }) async {
     return _serialize(() async {
-      final bootstrap =
-          await _runtime.loadWorkerBootstrapArgs(capsuleHex: capsuleHex);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs(
+        capsuleHex: capsuleHex,
+      );
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -256,15 +269,16 @@ class InvitationActionsService {
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
       final workerFuture = _runCapsuleWorker(
         initialBootstrap: bootstrap,
-        startWorker: (currentBootstrap) =>
-            compute<Map<String, Object?>, Map<String, Object?>>(
-          sendInvitationInWorker,
-          <String, Object?>{
-            ...currentBootstrap,
-            'toPubkey': toPubkey,
-            'starterSlot': starterSlot,
-          },
-        ),
+        startWorker:
+            (currentBootstrap) =>
+                compute<Map<String, Object?>, Map<String, Object?>>(
+                  sendInvitationInWorker,
+                  <String, Object?>{
+                    ...currentBootstrap,
+                    'toPubkey': toPubkey,
+                    'starterSlot': starterSlot,
+                  },
+                ),
       );
       final workerResult = await workerFuture.timeout(
         _sendWorkerTimeout,
@@ -306,8 +320,9 @@ class InvitationActionsService {
 
   Future<InvitationWorkerResult> fetchInvitations({String? capsuleHex}) async {
     return _serialize(() async {
-      final bootstrap =
-          await _runtime.loadWorkerBootstrapArgs(capsuleHex: capsuleHex);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs(
+        capsuleHex: capsuleHex,
+      );
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -316,13 +331,14 @@ class InvitationActionsService {
       _deliveryLifecycle.scheduleDuePump(capsuleHex: bootstrapActiveHex);
       final workerFuture = _runCapsuleWorker(
         initialBootstrap: bootstrap,
-        startWorker: (currentBootstrap) =>
-            compute<Map<String, Object?>, Map<String, Object?>>(
-          receiveInvitationsInWorker,
-          currentBootstrap,
-        ),
-        shouldApplyLedger: (result) =>
-            ((result['result'] as int?) ?? -1003) >= 0,
+        startWorker:
+            (currentBootstrap) =>
+                compute<Map<String, Object?>, Map<String, Object?>>(
+                  receiveInvitationsInWorker,
+                  currentBootstrap,
+                ),
+        shouldApplyLedger:
+            (result) => ((result['result'] as int?) ?? -1003) >= 0,
       );
       final workerResult = await workerFuture.timeout(
         _receiveWorkerTimeout,
@@ -355,11 +371,13 @@ class InvitationActionsService {
     });
   }
 
-  Future<InvitationWorkerResult> fetchInvitationsQuick(
-      {String? capsuleHex}) async {
+  Future<InvitationWorkerResult> fetchInvitationsQuick({
+    String? capsuleHex,
+  }) async {
     return _serialize(() async {
-      final bootstrap =
-          await _runtime.loadWorkerBootstrapArgs(capsuleHex: capsuleHex);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs(
+        capsuleHex: capsuleHex,
+      );
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -368,13 +386,14 @@ class InvitationActionsService {
       _deliveryLifecycle.scheduleDuePump(capsuleHex: bootstrapActiveHex);
       final workerFuture = _runCapsuleWorker(
         initialBootstrap: bootstrap,
-        startWorker: (currentBootstrap) =>
-            compute<Map<String, Object?>, Map<String, Object?>>(
-          receiveInvitationsQuickInWorker,
-          currentBootstrap,
-        ),
-        shouldApplyLedger: (result) =>
-            ((result['result'] as int?) ?? -1003) >= 0,
+        startWorker:
+            (currentBootstrap) =>
+                compute<Map<String, Object?>, Map<String, Object?>>(
+                  receiveInvitationsQuickInWorker,
+                  currentBootstrap,
+                ),
+        shouldApplyLedger:
+            (result) => ((result['result'] as int?) ?? -1003) >= 0,
       );
       final workerResult = await workerFuture.timeout(
         _receiveQuickWorkerTimeout,
@@ -408,11 +427,14 @@ class InvitationActionsService {
   }
 
   Future<InvitationWorkerResult> acceptInvitation(
-      Uint8List invitationId, Uint8List fromPubkey,
-      {String? capsuleHex}) async {
+    Uint8List invitationId,
+    Uint8List fromPubkey, {
+    String? capsuleHex,
+  }) async {
     return _serialize(() async {
-      final bootstrap =
-          await _runtime.loadWorkerBootstrapArgs(capsuleHex: capsuleHex);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs(
+        capsuleHex: capsuleHex,
+      );
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -420,15 +442,16 @@ class InvitationActionsService {
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
       final workerFuture = _runCapsuleWorker(
         initialBootstrap: bootstrap,
-        startWorker: (currentBootstrap) =>
-            compute<Map<String, Object?>, Map<String, Object?>>(
-          acceptInvitationInWorker,
-          <String, Object?>{
-            ...currentBootstrap,
-            'invitationId': invitationId,
-            'fromPubkey': fromPubkey,
-          },
-        ),
+        startWorker:
+            (currentBootstrap) =>
+                compute<Map<String, Object?>, Map<String, Object?>>(
+                  acceptInvitationInWorker,
+                  <String, Object?>{
+                    ...currentBootstrap,
+                    'invitationId': invitationId,
+                    'fromPubkey': fromPubkey,
+                  },
+                ),
       );
       final workerResult = await workerFuture.timeout(
         _acceptWorkerTimeout,
@@ -462,11 +485,14 @@ class InvitationActionsService {
   }
 
   Future<InvitationWorkerResult> rejectInvitation(
-      Uint8List invitationId, int reason,
-      {String? capsuleHex}) async {
+    Uint8List invitationId,
+    int reason, {
+    String? capsuleHex,
+  }) async {
     return _serialize(() async {
-      final bootstrap =
-          await _runtime.loadWorkerBootstrapArgs(capsuleHex: capsuleHex);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs(
+        capsuleHex: capsuleHex,
+      );
       if (bootstrap == null) {
         return const InvitationWorkerResult(code: -1004);
       }
@@ -474,15 +500,16 @@ class InvitationActionsService {
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
       final workerFuture = _runCapsuleWorker(
         initialBootstrap: bootstrap,
-        startWorker: (currentBootstrap) =>
-            compute<Map<String, Object?>, Map<String, Object?>>(
-          rejectInvitationInWorker,
-          <String, Object?>{
-            ...currentBootstrap,
-            'invitationId': invitationId,
-            'reason': reason,
-          },
-        ),
+        startWorker:
+            (currentBootstrap) =>
+                compute<Map<String, Object?>, Map<String, Object?>>(
+                  rejectInvitationInWorker,
+                  <String, Object?>{
+                    ...currentBootstrap,
+                    'invitationId': invitationId,
+                    'reason': reason,
+                  },
+                ),
       );
       final workerResult = await workerFuture.timeout(
         _rejectWorkerTimeout,
@@ -520,20 +547,22 @@ class InvitationActionsService {
     String? capsuleHex,
   }) async {
     return _serialize(() async {
-      final bootstrap =
-          await _runtime.loadWorkerBootstrapArgs(capsuleHex: capsuleHex);
+      final bootstrap = await _runtime.loadWorkerBootstrapArgs(
+        capsuleHex: capsuleHex,
+      );
       if (bootstrap == null) return false;
 
       final workerResult = await _runCapsuleWorker(
         initialBootstrap: bootstrap,
-        startWorker: (currentBootstrap) =>
-            compute<Map<String, Object?>, Map<String, Object?>>(
-          cancelInvitationInWorker,
-          <String, Object?>{
-            ...currentBootstrap,
-            'invitationId': invitationId,
-          },
-        ),
+        startWorker:
+            (currentBootstrap) =>
+                compute<Map<String, Object?>, Map<String, Object?>>(
+                  cancelInvitationInWorker,
+                  <String, Object?>{
+                    ...currentBootstrap,
+                    'invitationId': invitationId,
+                  },
+                ),
         shouldApplyLedger: (result) => result['ledgerJson'] is String,
       );
 

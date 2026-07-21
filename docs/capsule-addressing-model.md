@@ -167,6 +167,11 @@ Before first contact, the sender still needs some bootstrap route:
 
 So the public card remains necessary for first contact.
 
+The card is a complete invitation bootstrap input. Invitation UI MUST resolve
+the transport endpoint from the validated card (or from a previously imported
+trusted peer record); users MUST NOT have to exchange a separate Nostr or
+transport public key alongside the card.
+
 ## 6. Secret Material Rules
 
 Transport private keys should not be exported inside the capsule card.
@@ -201,6 +206,7 @@ Near-term Hivra can use:
 - root `h...` as the only user-facing capsule identifier
 - a local trusted peer card store
 - Nostr endpoint resolution from imported peer cards
+- direct card or QR-payload selection in invitation flows
 
 This is a valid bootstrap bridge while broader addressing/discovery evolves.
 

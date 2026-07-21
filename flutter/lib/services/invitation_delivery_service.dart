@@ -19,9 +19,7 @@ class InvitationRecipientResolution {
         errorMessage: null,
       );
 
-  factory InvitationRecipientResolution.failure(
-    String message,
-  ) =>
+  factory InvitationRecipientResolution.failure(String message) =>
       InvitationRecipientResolution._(
         transportRecipient: null,
         errorMessage: message,
@@ -49,15 +47,32 @@ class InvitationDeliveryService {
       );
     }
 
-    if (_isSelfAddress(value,
-        selfRootKey: selfRootKey, selfNostrKey: selfNostrKey)) {
+    var recipientIdentity = value;
+    if (_looksLikeContactCard(value)) {
+      try {
+        final card = await _contactCards.importAndReadCardPayload(value);
+        recipientIdentity = card.rootKey;
+      } on FormatException catch (error) {
+        return InvitationRecipientResolution.failure(error.message);
+      } catch (_) {
+        return InvitationRecipientResolution.failure(
+          'Could not import capsule contact card',
+        );
+      }
+    }
+
+    if (_isSelfAddress(
+      recipientIdentity,
+      selfRootKey: selfRootKey,
+      selfNostrKey: selfNostrKey,
+    )) {
       return InvitationRecipientResolution.failure(
         "You can't invite this capsule to itself.",
       );
     }
 
     final recipient = await _contactCards.resolveTransportEndpoint(
-      value,
+      recipientIdentity,
       transport: DeliveryTransportId.nostr,
     );
     if (recipient != null) {
@@ -71,8 +86,9 @@ class InvitationDeliveryService {
       return InvitationRecipientResolution.success(recipient);
     }
 
-    final missingEndpoint = value.startsWith('h1') &&
-        !await _contactCards.hasKnownNostrEndpoint(value);
+    final missingEndpoint =
+        recipientIdentity.startsWith('h1') &&
+        !await _contactCards.hasKnownNostrEndpoint(recipientIdentity);
     if (missingEndpoint) {
       return InvitationRecipientResolution.failure(
         'No known delivery endpoint for this capsule. Import its contact card first.',
@@ -83,6 +99,10 @@ class InvitationDeliveryService {
       'Use a capsule key (h...) with an imported capsule card, or a direct delivery address (npub, 64-hex, or base64).',
     );
   }
+
+  bool _looksLikeContactCard(String value) =>
+      value.startsWith('{') ||
+      value.startsWith(CapsuleAddressCard.qrPayloadPrefix);
 
   String sendFailureMessage(int code) {
     switch (code) {
@@ -218,9 +238,10 @@ class InvitationDeliveryService {
     }
   }
 
-  String fetchSuccessMessage(int count) => count == 0
-      ? 'No new invitation deliveries'
-      : 'Fetched invitation deliveries: $count new event(s)';
+  String fetchSuccessMessage(int count) =>
+      count == 0
+          ? 'No new invitation deliveries'
+          : 'Fetched invitation deliveries: $count new event(s)';
 
   String invitationSentMessage() => 'Invitation sent';
 

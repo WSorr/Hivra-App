@@ -473,16 +473,25 @@ class ConsensusProcessor {
       final finalizedInvitations = (inviteFactsByPeer[peerRootHex] ??
           <_PairwiseInviteFact>[])
         ..sort((a, b) => a.invitationId.compareTo(b.invitationId));
-      final relationships = (relationshipFactsByPeer[peerRootHex] ??
-              <_PairwiseRelationshipFact>[])
-          .where((relationship) {
+      final projectedRelationships =
+          (relationshipFactsByPeer[peerRootHex] ??
+                  <_PairwiseRelationshipFact>[])
+              .where((relationship) {
         final terminalStatus =
             inviteFactsById[relationship.invitationId]?.status;
         return terminalStatus != 'rejected' && terminalStatus != 'expired';
-      }).toList()
+      });
+      final relationshipsByStateKey = <String, _PairwiseRelationshipFact>{};
+      for (final relationship in projectedRelationships) {
+        final stateKey =
+            '${relationship.relationshipKind}:${relationship.starterPair.join(':')}';
+        final existing = relationshipsByStateKey[stateKey];
+        if (existing == null || relationship.eventIndex > existing.eventIndex) {
+          relationshipsByStateKey[stateKey] = relationship;
+        }
+      }
+      final relationships = relationshipsByStateKey.values.toList()
         ..sort((a, b) {
-          final inviteCmp = a.invitationId.compareTo(b.invitationId);
-          if (inviteCmp != 0) return inviteCmp;
           final kindCmp = a.relationshipKind.compareTo(b.relationshipKind);
           if (kindCmp != 0) return kindCmp;
           return a.starterPair.join(':').compareTo(b.starterPair.join(':'));
@@ -534,11 +543,10 @@ class ConsensusProcessor {
         // independently reconstruct. Terminal invitation history is useful for
         // diagnostics, but delivery can be asymmetric after a relationship is
         // already established. Pending invitations still block signing above.
-        'schema_version': 2,
+        'schema_version': 3,
         'pair_roots_sorted': pairRoots,
         'active_relationships': relationships
             .map((rel) => <String, dynamic>{
-                  'invitation_id': rel.invitationId,
                   'relationship_kind': rel.relationshipKind,
                   'starter_pair': rel.starterPair,
                 })

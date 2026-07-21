@@ -7,6 +7,7 @@ CapsuleSelectorItem _item({
   required String network,
   required int ledgerVersion,
   required DateTime lastActive,
+  DateTime? createdAt,
 }) {
   return CapsuleSelectorItem(
     id: pubKeyHex,
@@ -19,7 +20,7 @@ CapsuleSelectorItem _item({
     ledgerVersion: ledgerVersion,
     ledgerHashHex: '0',
     lastActive: lastActive,
-    createdAt: lastActive,
+    createdAt: createdAt ?? lastActive,
   );
 }
 
@@ -64,10 +65,7 @@ void main() {
           lastActive: now.subtract(const Duration(minutes: 5)),
         ),
       ],
-      hasSeedByPubKey: <String, bool>{
-        rootHex: true,
-        legacyHex: true,
-      },
+      hasSeedByPubKey: <String, bool>{rootHex: true, legacyHex: true},
       identityModeByPubKey: <String, String>{
         rootHex: 'root_owner',
         legacyHex: 'legacy_nostr_owner',
@@ -100,10 +98,7 @@ void main() {
           lastActive: now.subtract(const Duration(minutes: 1)),
         ),
       ],
-      hasSeedByPubKey: <String, bool>{
-        nesteHex: true,
-        hoodHex: true,
-      },
+      hasSeedByPubKey: <String, bool>{nesteHex: true, hoodHex: true},
       identityModeByPubKey: <String, String>{
         nesteHex: 'root_owner',
         hoodHex: 'root_owner',
@@ -139,10 +134,7 @@ void main() {
           lastActive: now.subtract(const Duration(hours: 1)),
         ),
       ],
-      hasSeedByPubKey: <String, bool>{
-        oldHex: true,
-        newHex: true,
-      },
+      hasSeedByPubKey: <String, bool>{oldHex: true, newHex: true},
       identityModeByPubKey: <String, String>{
         oldHex: 'root_owner',
         newHex: 'root_owner',
@@ -151,5 +143,46 @@ void main() {
 
     expect(collapsed, hasLength(1));
     expect(collapsed.single.publicKeyHex, equals(newHex));
+  });
+
+  test('keeps selector order stable when last active timestamps change', () {
+    final createdA = DateTime.utc(2026, 3, 31, 10);
+    final createdB = createdA.add(const Duration(minutes: 1));
+    final capsuleA = List.filled(32, '11').join();
+    final capsuleB = List.filled(32, '22').join();
+
+    List<String> orderedKeys({required bool activateB}) {
+      final items = CapsuleSelectorService.collapseDisplayDuplicates(
+        <CapsuleSelectorItem>[
+          _item(
+            pubKeyHex: capsuleA,
+            displayKeyText: 'h1capsule-a',
+            network: 'NESTE',
+            ledgerVersion: 1,
+            createdAt: createdA,
+            lastActive:
+                activateB ? createdA : createdB.add(const Duration(hours: 1)),
+          ),
+          _item(
+            pubKeyHex: capsuleB,
+            displayKeyText: 'h1capsule-b',
+            network: 'NESTE',
+            ledgerVersion: 1,
+            createdAt: createdB,
+            lastActive:
+                activateB ? createdB.add(const Duration(hours: 1)) : createdB,
+          ),
+        ],
+        hasSeedByPubKey: <String, bool>{capsuleA: true, capsuleB: true},
+        identityModeByPubKey: <String, String>{
+          capsuleA: 'root_owner',
+          capsuleB: 'root_owner',
+        },
+      );
+      return items.map((item) => item.publicKeyHex).toList();
+    }
+
+    expect(orderedKeys(activateB: false), equals(<String>[capsuleA, capsuleB]));
+    expect(orderedKeys(activateB: true), equals(<String>[capsuleA, capsuleB]));
   });
 }

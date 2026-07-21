@@ -11,18 +11,16 @@ import 'package:hivra_app/services/capsule_runtime_bootstrap_service.dart';
 import 'package:hivra_app/services/capsule_seed_store.dart';
 
 class _FakeCapsuleFileStore extends CapsuleFileStore {
-  _FakeCapsuleFileStore({
-    this.state,
-    this.ledgerJson,
-    this.backupJson,
-  });
+  _FakeCapsuleFileStore({this.state, this.ledgerJson, this.backupJson});
 
   final Map<String, dynamic>? state;
   final String? ledgerJson;
   final String? backupJson;
   String? writtenLedgerJson;
-  final Directory _dir =
-      Directory('${Directory.systemTemp.path}/hivra_bootstrap_test');
+  String? writtenCoreProjectionJson;
+  final Directory _dir = Directory(
+    '${Directory.systemTemp.path}/hivra_bootstrap_test',
+  );
 
   @override
   Future<Directory> capsuleDirForHex(
@@ -44,6 +42,15 @@ class _FakeCapsuleFileStore extends CapsuleFileStore {
   @override
   Future<void> writeLedger(Directory dir, String ledgerJson) async {
     writtenLedgerJson = ledgerJson;
+  }
+
+  @override
+  Future<bool> writeCoreProjection(
+    Directory dir,
+    String? projectionJson,
+  ) async {
+    writtenCoreProjectionJson = projectionJson;
+    return projectionJson != null;
   }
 }
 
@@ -84,6 +91,7 @@ class _FakeBootstrapRuntime implements CapsuleRuntimeBootstrapRuntime {
     this.runtimeOwnerSequence,
     this.loadedSeed,
     this.exportedLedger = '{"owner":[],"events":[]}',
+    this.exportedCapsuleStateJson,
     Map<String, bool>? importResultsByLedger,
   }) : _importResultsByLedger = importResultsByLedger ?? <String, bool>{};
 
@@ -93,6 +101,7 @@ class _FakeBootstrapRuntime implements CapsuleRuntimeBootstrapRuntime {
   final List<Uint8List>? runtimeOwnerSequence;
   final Uint8List? loadedSeed;
   final String? exportedLedger;
+  final String? exportedCapsuleStateJson;
   final Map<String, bool> _importResultsByLedger;
 
   final List<String> importAttempts = <String>[];
@@ -131,6 +140,9 @@ class _FakeBootstrapRuntime implements CapsuleRuntimeBootstrapRuntime {
 
   @override
   String? exportLedger() => exportedLedger;
+
+  @override
+  String? exportCapsuleStateJson() => exportedCapsuleStateJson;
 
   @override
   bool saveSeed(Uint8List seed) {
@@ -174,10 +186,7 @@ void main() {
     String bytesToHex(Uint8List bytes) =>
         bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
-    String ledgerWithOwnerByte(
-      int ownerByte, {
-      required String kind,
-    }) {
+    String ledgerWithOwnerByte(int ownerByte, {required String kind}) {
       return jsonEncode(<String, dynamic>{
         'owner': List<int>.filled(32, ownerByte),
         'events': <Map<String, dynamic>>[
@@ -186,10 +195,7 @@ void main() {
       });
     }
 
-    String ledgerWithEvents(
-      int ownerByte,
-      List<Map<String, dynamic>> events,
-    ) {
+    String ledgerWithEvents(int ownerByte, List<Map<String, dynamic>> events) {
       return jsonEncode(<String, dynamic>{
         'owner': List<int>.filled(32, ownerByte),
         'events': events,
@@ -227,8 +233,10 @@ void main() {
 
     test('prefers ledger.json when both ledger and backup exist', () async {
       final ledger = ledgerWithOwnerByte(0xaa, kind: 'InvitationSent');
-      final backupLedger =
-          ledgerWithOwnerByte(0xaa, kind: 'InvitationRejected');
+      final backupLedger = ledgerWithOwnerByte(
+        0xaa,
+        kind: 'InvitationRejected',
+      );
       final backup = CapsuleBackupCodec.encodeBackupEnvelope(
         ledgerJson: backupLedger,
         isGenesis: false,
@@ -236,10 +244,7 @@ void main() {
       );
       final service = CapsuleRuntimeBootstrapService(
         _FakeCapsuleFileStore(
-          state: <String, dynamic>{
-            'isGenesis': true,
-            'isNeste': false,
-          },
+          state: <String, dynamic>{'isGenesis': true, 'isNeste': false},
           ledgerJson: ledger,
           backupJson: backup,
         ),
@@ -283,10 +288,7 @@ void main() {
       );
       final service = CapsuleRuntimeBootstrapService(
         _FakeCapsuleFileStore(
-          state: <String, dynamic>{
-            'isGenesis': true,
-            'isNeste': false,
-          },
+          state: <String, dynamic>{'isGenesis': true, 'isNeste': false},
           ledgerJson: shortLedger,
           backupJson: backup,
         ),
@@ -307,89 +309,88 @@ void main() {
     });
 
     test(
-        'prefers newer tail timestamp when event counts are equal across ledger and backup',
-        () async {
-      final olderLedger = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
-        <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
-        <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
-      ]);
-      final newerBackupLedger = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
-        <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
-        <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 400},
-      ]);
-      final backup = CapsuleBackupCodec.encodeBackupEnvelope(
-        ledgerJson: newerBackupLedger,
-        isGenesis: false,
-        isNeste: true,
-      );
-      final service = CapsuleRuntimeBootstrapService(
-        _FakeCapsuleFileStore(
-          state: <String, dynamic>{
-            'isGenesis': true,
-            'isNeste': false,
-          },
-          ledgerJson: olderLedger,
-          backupJson: backup,
-        ),
-        _FakeCapsuleSeedStore(seed),
-      );
+      'prefers newer tail timestamp when event counts are equal across ledger and backup',
+      () async {
+        final olderLedger = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+          <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
+        ]);
+        final newerBackupLedger = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+          <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 400},
+        ]);
+        final backup = CapsuleBackupCodec.encodeBackupEnvelope(
+          ledgerJson: newerBackupLedger,
+          isGenesis: false,
+          isNeste: true,
+        );
+        final service = CapsuleRuntimeBootstrapService(
+          _FakeCapsuleFileStore(
+            state: <String, dynamic>{'isGenesis': true, 'isNeste': false},
+            ledgerJson: olderLedger,
+            backupJson: backup,
+          ),
+          _FakeCapsuleSeedStore(seed),
+        );
 
-      final bootstrap = await service.loadRuntimeBootstrap(
-        pubKeyHex,
-        bytesToHex: bytesToHex,
-      );
+        final bootstrap = await service.loadRuntimeBootstrap(
+          pubKeyHex,
+          bytesToHex: bytesToHex,
+        );
 
-      expect(bootstrap, isNotNull);
-      expect(bootstrap!.ledgerJson, equals(newerBackupLedger));
-      expect(
-        bootstrap.ledgerImportCandidates,
-        equals(<String>[newerBackupLedger, olderLedger]),
-      );
-    });
+        expect(bootstrap, isNotNull);
+        expect(bootstrap!.ledgerJson, equals(newerBackupLedger));
+        expect(
+          bootstrap.ledgerImportCandidates,
+          equals(<String>[newerBackupLedger, olderLedger]),
+        );
+      },
+    );
 
-    test('prefers ledger.json when event counts and tail timestamps are equal',
-        () async {
-      final ledgerJson = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
-        <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
-        <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
-      ]);
-      final backupLedgerJson = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
-        <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
-        <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
-      ]);
-      final backup = CapsuleBackupCodec.encodeBackupEnvelope(
-        ledgerJson: backupLedgerJson,
-        isGenesis: false,
-        isNeste: true,
-      );
-      final service = CapsuleRuntimeBootstrapService(
-        _FakeCapsuleFileStore(
-          state: <String, dynamic>{
-            'isGenesis': true,
-            'isNeste': false,
-          },
-          ledgerJson: ledgerJson,
-          backupJson: backup,
-        ),
-        _FakeCapsuleSeedStore(seed),
-      );
+    test(
+      'prefers ledger.json when event counts and tail timestamps are equal',
+      () async {
+        final ledgerJson = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+          <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
+        ]);
+        final backupLedgerJson = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+          <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
+        ]);
+        final backup = CapsuleBackupCodec.encodeBackupEnvelope(
+          ledgerJson: backupLedgerJson,
+          isGenesis: false,
+          isNeste: true,
+        );
+        final service = CapsuleRuntimeBootstrapService(
+          _FakeCapsuleFileStore(
+            state: <String, dynamic>{'isGenesis': true, 'isNeste': false},
+            ledgerJson: ledgerJson,
+            backupJson: backup,
+          ),
+          _FakeCapsuleSeedStore(seed),
+        );
 
-      final bootstrap = await service.loadRuntimeBootstrap(
-        pubKeyHex,
-        bytesToHex: bytesToHex,
-      );
+        final bootstrap = await service.loadRuntimeBootstrap(
+          pubKeyHex,
+          bytesToHex: bytesToHex,
+        );
 
-      expect(bootstrap, isNotNull);
-      expect(bootstrap!.ledgerJson, equals(ledgerJson));
-      expect(
-        bootstrap.ledgerImportCandidates,
-        equals(<String>[ledgerJson, backupLedgerJson]),
-      );
-    });
+        expect(bootstrap, isNotNull);
+        expect(bootstrap!.ledgerJson, equals(ledgerJson));
+        expect(
+          bootstrap.ledgerImportCandidates,
+          equals(<String>[ledgerJson, backupLedgerJson]),
+        );
+      },
+    );
 
     test('falls back to backup envelope when ledger.json is missing', () async {
-      final ledgerFromBackup =
-          ledgerWithOwnerByte(0xaa, kind: 'RelationshipEstablished');
+      final ledgerFromBackup = ledgerWithOwnerByte(
+        0xaa,
+        kind: 'RelationshipEstablished',
+      );
       final backup = CapsuleBackupCodec.encodeBackupEnvelope(
         ledgerJson: ledgerFromBackup,
         isGenesis: false,
@@ -397,10 +398,7 @@ void main() {
       );
       final service = CapsuleRuntimeBootstrapService(
         _FakeCapsuleFileStore(
-          state: <String, dynamic>{
-            'isGenesis': false,
-            'isNeste': true,
-          },
+          state: <String, dynamic>{'isGenesis': false, 'isNeste': true},
           ledgerJson: null,
           backupJson: backup,
         ),
@@ -429,10 +427,7 @@ void main() {
       );
       final service = CapsuleRuntimeBootstrapService(
         _FakeCapsuleFileStore(
-          state: <String, dynamic>{
-            'isGenesis': false,
-            'isNeste': true,
-          },
+          state: <String, dynamic>{'isGenesis': false, 'isNeste': true},
           ledgerJson: ledger,
         ),
         _FakeCapsuleSeedStore(seed),
@@ -448,58 +443,59 @@ void main() {
       expect(bootstrap.ledgerImportCandidates, equals(<String>[ledger]));
     });
 
-    test('derives capsule flags from ledger when state flags are missing',
-        () async {
-      final ledger = ledgerWithCapsuleCreated(
-        ownerByte: 0xaa,
-        network: 1,
-        capsuleType: 1,
-      );
-      final service = CapsuleRuntimeBootstrapService(
-        _FakeCapsuleFileStore(
-          state: const <String, dynamic>{},
-          ledgerJson: ledger,
-        ),
-        _FakeCapsuleSeedStore(seed),
-      );
+    test(
+      'derives capsule flags from ledger when state flags are missing',
+      () async {
+        final ledger = ledgerWithCapsuleCreated(
+          ownerByte: 0xaa,
+          network: 1,
+          capsuleType: 1,
+        );
+        final service = CapsuleRuntimeBootstrapService(
+          _FakeCapsuleFileStore(
+            state: const <String, dynamic>{},
+            ledgerJson: ledger,
+          ),
+          _FakeCapsuleSeedStore(seed),
+        );
 
-      final bootstrap = await service.loadRuntimeBootstrap(
-        pubKeyHex,
-        bytesToHex: bytesToHex,
-      );
+        final bootstrap = await service.loadRuntimeBootstrap(
+          pubKeyHex,
+          bytesToHex: bytesToHex,
+        );
 
-      expect(bootstrap, isNotNull);
-      expect(bootstrap!.isGenesis, isTrue);
-      expect(bootstrap.isNeste, isTrue);
-    });
+        expect(bootstrap, isNotNull);
+        expect(bootstrap!.isGenesis, isTrue);
+        expect(bootstrap.isNeste, isTrue);
+      },
+    );
 
-    test('prefers ledger capsule-created flags over conflicting state',
-        () async {
-      final ledger = ledgerWithCapsuleCreated(
-        ownerByte: 0xaa,
-        network: 0,
-        capsuleType: 0,
-      );
-      final service = CapsuleRuntimeBootstrapService(
-        _FakeCapsuleFileStore(
-          state: <String, dynamic>{
-            'isGenesis': true,
-            'isNeste': true,
-          },
-          ledgerJson: ledger,
-        ),
-        _FakeCapsuleSeedStore(seed),
-      );
+    test(
+      'prefers ledger capsule-created flags over conflicting state',
+      () async {
+        final ledger = ledgerWithCapsuleCreated(
+          ownerByte: 0xaa,
+          network: 0,
+          capsuleType: 0,
+        );
+        final service = CapsuleRuntimeBootstrapService(
+          _FakeCapsuleFileStore(
+            state: <String, dynamic>{'isGenesis': true, 'isNeste': true},
+            ledgerJson: ledger,
+          ),
+          _FakeCapsuleSeedStore(seed),
+        );
 
-      final bootstrap = await service.loadRuntimeBootstrap(
-        pubKeyHex,
-        bytesToHex: bytesToHex,
-      );
+        final bootstrap = await service.loadRuntimeBootstrap(
+          pubKeyHex,
+          bytesToHex: bytesToHex,
+        );
 
-      expect(bootstrap, isNotNull);
-      expect(bootstrap!.isGenesis, isFalse);
-      expect(bootstrap.isNeste, isFalse);
-    });
+        expect(bootstrap, isNotNull);
+        expect(bootstrap!.isGenesis, isFalse);
+        expect(bootstrap.isNeste, isFalse);
+      },
+    );
 
     test('returns null when no seed is available', () async {
       final service = CapsuleRuntimeBootstrapService(
@@ -521,75 +517,77 @@ void main() {
       expect(bootstrap, isNull);
     });
 
-    test('falls back to backup when ledger owner mismatches active capsule',
-        () async {
-      final mismatchedLedger =
-          ledgerWithOwnerByte(0xbb, kind: 'InvitationSent');
-      final validBackupLedger =
-          ledgerWithOwnerByte(0xaa, kind: 'RelationshipBroken');
-      final backup = CapsuleBackupCodec.encodeBackupEnvelope(
-        ledgerJson: validBackupLedger,
-        isGenesis: false,
-        isNeste: true,
-      );
-      final service = CapsuleRuntimeBootstrapService(
-        _FakeCapsuleFileStore(
-          state: <String, dynamic>{
-            'isGenesis': false,
-            'isNeste': true,
-          },
-          ledgerJson: mismatchedLedger,
-          backupJson: backup,
-        ),
-        _FakeCapsuleSeedStore(seed),
-      );
+    test(
+      'falls back to backup when ledger owner mismatches active capsule',
+      () async {
+        final mismatchedLedger = ledgerWithOwnerByte(
+          0xbb,
+          kind: 'InvitationSent',
+        );
+        final validBackupLedger = ledgerWithOwnerByte(
+          0xaa,
+          kind: 'RelationshipBroken',
+        );
+        final backup = CapsuleBackupCodec.encodeBackupEnvelope(
+          ledgerJson: validBackupLedger,
+          isGenesis: false,
+          isNeste: true,
+        );
+        final service = CapsuleRuntimeBootstrapService(
+          _FakeCapsuleFileStore(
+            state: <String, dynamic>{'isGenesis': false, 'isNeste': true},
+            ledgerJson: mismatchedLedger,
+            backupJson: backup,
+          ),
+          _FakeCapsuleSeedStore(seed),
+        );
 
-      final bootstrap = await service.loadRuntimeBootstrap(
-        pubKeyHex,
-        bytesToHex: bytesToHex,
-      );
+        final bootstrap = await service.loadRuntimeBootstrap(
+          pubKeyHex,
+          bytesToHex: bytesToHex,
+        );
 
-      expect(bootstrap, isNotNull);
-      expect(bootstrap!.ledgerJson, isNotNull);
-      expect(bootstrap.ledgerImportCandidates, isNotEmpty);
-      final decoded = jsonDecode(bootstrap.ledgerJson!) as Map<String, dynamic>;
-      expect(decoded['owner'], equals(List<int>.filled(32, 0xaa)));
-      expect((decoded['events'] as List).first['kind'], 'RelationshipBroken');
-    });
+        expect(bootstrap, isNotNull);
+        expect(bootstrap!.ledgerJson, isNotNull);
+        expect(bootstrap.ledgerImportCandidates, isNotEmpty);
+        final decoded =
+            jsonDecode(bootstrap.ledgerJson!) as Map<String, dynamic>;
+        expect(decoded['owner'], equals(List<int>.filled(32, 0xaa)));
+        expect((decoded['events'] as List).first['kind'], 'RelationshipBroken');
+      },
+    );
 
     test(
-        'drops incompatible stored history when both ledger and backup invalid',
-        () async {
-      final malformedLedger = jsonEncode(<String, dynamic>{
-        'owner': <int>[170, 170],
-        'events': <Map<String, dynamic>>[
-          <String, dynamic>{'kind': 'InvitationSent'},
-        ],
-      });
-      final mismatchedBackup = CapsuleBackupCodec.encodeBackupEnvelope(
-        ledgerJson: ledgerWithOwnerByte(0xbb, kind: 'InvitationAccepted'),
-      );
-      final service = CapsuleRuntimeBootstrapService(
-        _FakeCapsuleFileStore(
-          state: <String, dynamic>{
-            'isGenesis': false,
-            'isNeste': true,
-          },
-          ledgerJson: malformedLedger,
-          backupJson: mismatchedBackup,
-        ),
-        _FakeCapsuleSeedStore(seed),
-      );
+      'drops incompatible stored history when both ledger and backup invalid',
+      () async {
+        final malformedLedger = jsonEncode(<String, dynamic>{
+          'owner': <int>[170, 170],
+          'events': <Map<String, dynamic>>[
+            <String, dynamic>{'kind': 'InvitationSent'},
+          ],
+        });
+        final mismatchedBackup = CapsuleBackupCodec.encodeBackupEnvelope(
+          ledgerJson: ledgerWithOwnerByte(0xbb, kind: 'InvitationAccepted'),
+        );
+        final service = CapsuleRuntimeBootstrapService(
+          _FakeCapsuleFileStore(
+            state: <String, dynamic>{'isGenesis': false, 'isNeste': true},
+            ledgerJson: malformedLedger,
+            backupJson: mismatchedBackup,
+          ),
+          _FakeCapsuleSeedStore(seed),
+        );
 
-      final bootstrap = await service.loadRuntimeBootstrap(
-        pubKeyHex,
-        bytesToHex: bytesToHex,
-      );
+        final bootstrap = await service.loadRuntimeBootstrap(
+          pubKeyHex,
+          bytesToHex: bytesToHex,
+        );
 
-      expect(bootstrap, isNotNull);
-      expect(bootstrap!.ledgerJson, isNull);
-      expect(bootstrap.ledgerImportCandidates, isEmpty);
-    });
+        expect(bootstrap, isNotNull);
+        expect(bootstrap!.ledgerJson, isNull);
+        expect(bootstrap.ledgerImportCandidates, isEmpty);
+      },
+    );
 
     test(
       'refreshCapsuleSnapshot falls back to next import candidate when primary import fails',
@@ -597,11 +595,13 @@ void main() {
         final shorterLedger = ledgerWithEvents(0xaa, <Map<String, dynamic>>[
           <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
         ]);
-        final longerBackupLedger =
-            ledgerWithEvents(0xaa, <Map<String, dynamic>>[
-          <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
-          <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
-        ]);
+        final longerBackupLedger = ledgerWithEvents(
+          0xaa,
+          <Map<String, dynamic>>[
+            <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
+            <String, dynamic>{'kind': 'InvitationAccepted', 'timestamp': 200},
+          ],
+        );
         final backupEnvelope = CapsuleBackupCodec.encodeBackupEnvelope(
           ledgerJson: longerBackupLedger,
           isGenesis: false,
@@ -618,6 +618,8 @@ void main() {
           seedNostrPubkey: Uint8List.fromList(List<int>.filled(32, 0xbb)),
           exportedLedger:
               '{"owner":[170],"events":[{"kind":"CapsuleCreated"}]}',
+          exportedCapsuleStateJson:
+              '{"version":1,"ledger_hash":"0","slots":[null,null,null,null,null]}',
           importResultsByLedger: <String, bool>{
             longerBackupLedger: false,
             shorterLedger: true,
@@ -635,12 +637,14 @@ void main() {
         expect(runtime.createCapsuleCalled, isTrue);
         expect(runtime.createCapsuleOwnerMode, equals(runtime.rootOwnerMode));
         expect(
-            runtime.importAttempts,
-            equals(<String>[
-              longerBackupLedger,
-              shorterLedger,
-            ]));
+          runtime.importAttempts,
+          equals(<String>[longerBackupLedger, shorterLedger]),
+        );
         expect(fileStore.writtenLedgerJson, equals(runtime.exportedLedger));
+        expect(
+          fileStore.writtenCoreProjectionJson,
+          equals(runtime.exportedCapsuleStateJson),
+        );
       },
     );
 
@@ -727,8 +731,9 @@ void main() {
     test(
       'refreshCapsuleSnapshot fails closed for legacy_nostr_owner',
       () async {
-        final legacyPubKeyHex =
-            bytesToHex(Uint8List.fromList(List<int>.filled(32, 0xbb)));
+        final legacyPubKeyHex = bytesToHex(
+          Uint8List.fromList(List<int>.filled(32, 0xbb)),
+        );
         final ledger = ledgerWithEvents(0xbb, <Map<String, dynamic>>[
           <String, dynamic>{'kind': 'InvitationSent', 'timestamp': 100},
         ]);
@@ -759,39 +764,41 @@ void main() {
       },
     );
 
-    test('loadRuntimeBootstrapForCurrent resolves root_owner identity mode',
-        () async {
-      final owner = Uint8List.fromList(List<int>.filled(32, 0xaa));
-      final runtime = _FakeBootstrapRuntime(
-        seedRootPubkey: owner,
-        seedNostrPubkey: Uint8List.fromList(List<int>.filled(32, 0xbb)),
-        runtimeOwnerPubkey: owner,
-        loadedSeed: seed,
-        exportedLedger: ledgerWithCapsuleCreated(
-          ownerByte: 0xaa,
-          network: 1,
-          capsuleType: 1,
-        ),
-      );
-      final service = CapsuleRuntimeBootstrapService(
-        _FakeCapsuleFileStore(
-          state: <String, dynamic>{'isGenesis': false, 'isNeste': false},
-        ),
-        _FakeCapsuleSeedStore(seed),
-      );
+    test(
+      'loadRuntimeBootstrapForCurrent resolves root_owner identity mode',
+      () async {
+        final owner = Uint8List.fromList(List<int>.filled(32, 0xaa));
+        final runtime = _FakeBootstrapRuntime(
+          seedRootPubkey: owner,
+          seedNostrPubkey: Uint8List.fromList(List<int>.filled(32, 0xbb)),
+          runtimeOwnerPubkey: owner,
+          loadedSeed: seed,
+          exportedLedger: ledgerWithCapsuleCreated(
+            ownerByte: 0xaa,
+            network: 1,
+            capsuleType: 1,
+          ),
+        );
+        final service = CapsuleRuntimeBootstrapService(
+          _FakeCapsuleFileStore(
+            state: <String, dynamic>{'isGenesis': false, 'isNeste': false},
+          ),
+          _FakeCapsuleSeedStore(seed),
+        );
 
-      final bootstrap = await service.loadRuntimeBootstrapForCurrent(
-        runtime,
-        bytesToHex: bytesToHex,
-      );
+        final bootstrap = await service.loadRuntimeBootstrapForCurrent(
+          runtime,
+          bytesToHex: bytesToHex,
+        );
 
-      expect(bootstrap, isNotNull);
-      expect(bootstrap!.identityMode, equals('root_owner'));
-      expect(bootstrap.pubKeyHex, equals(bytesToHex(owner)));
-      expect(bootstrap.isGenesis, isTrue);
-      expect(bootstrap.isNeste, isTrue);
-      expect(bootstrap.ledgerImportCandidates, hasLength(1));
-    });
+        expect(bootstrap, isNotNull);
+        expect(bootstrap!.identityMode, equals('root_owner'));
+        expect(bootstrap.pubKeyHex, equals(bytesToHex(owner)));
+        expect(bootstrap.isGenesis, isTrue);
+        expect(bootstrap.isNeste, isTrue);
+        expect(bootstrap.ledgerImportCandidates, hasLength(1));
+      },
+    );
 
     test(
       'loadRuntimeBootstrapForCurrent resolves legacy_nostr_owner when runtime owner differs from root',

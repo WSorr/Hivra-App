@@ -87,6 +87,14 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Startup order is `import ledger first`, `receive second`.
 - [ ] New code does not add hidden side effects to validation or lookup paths.
 - [ ] Application logic does not create a second truth beside ledger-derived projection.
+- [ ] Normative domain lifecycle semantics are interpreted once by the Core
+      projector; Flutter, consensus, and drones do not independently replay raw
+      events to derive current state.
+- [ ] The consumer uses the correct canonical read model: `CurrentView` for
+      effective UI state, `PairView` for pair consensus, or `HistoryView` for
+      explicit audit/history.
+- [ ] Persisted projection caches are disposable, version/hash-bound, and fail
+      closed; no cache is accepted as a domain fact or ledger mutation input.
 - [ ] Each async effect has one capsule binding, one queue/lifecycle owner, and
       one result-application route across timeout, retry, refresh, and screen
       switching.

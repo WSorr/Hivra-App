@@ -44,16 +44,13 @@ class CapsuleAddressCard {
   }
 
   Map<String, dynamic> _unsignedJson() => {
-        'version': version,
-        'rootKey': rootKey,
-        'rootHex': rootHex,
-        'transports': {
-          'nostr': {
-            'npub': nostrNpub,
-            'hex': nostrHex,
-          },
-        },
-      };
+    'version': version,
+    'rootKey': rootKey,
+    'rootHex': rootHex,
+    'transports': {
+      'nostr': {'npub': nostrNpub, 'hex': nostrHex},
+    },
+  };
 
   static CapsuleAddressCard? fromJsonMap(Map<String, dynamic> map) {
     final version = map['version'];
@@ -125,7 +122,11 @@ class CapsuleAddressCard {
   Uint8List signingDigest32() {
     return Uint8List.fromList(
       sha256
-          .convert(utf8.encode('$_signatureDomain\n${_canonicalJson(_unsignedJson())}'))
+          .convert(
+            utf8.encode(
+              '$_signatureDomain\n${_canonicalJson(_unsignedJson())}',
+            ),
+          )
           .bytes,
     );
   }
@@ -133,9 +134,11 @@ class CapsuleAddressCard {
   static String _canonicalJson(Object? value) {
     if (value is Map) {
       final keys = value.keys.map((key) => key.toString()).toList()..sort();
-      final entries = keys.map((key) {
-        return '${jsonEncode(key)}:${_canonicalJson(value[key])}';
-      }).join(',');
+      final entries = keys
+          .map((key) {
+            return '${jsonEncode(key)}:${_canonicalJson(value[key])}';
+          })
+          .join(',');
       return '{$entries}';
     }
     if (value is List) {
@@ -154,9 +157,9 @@ class CapsuleAddressService {
     UserVisibleDataDirectoryService? dirs,
     CapsuleAddressRuntime? runtime,
     AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
-  })  : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
-        _runtime = runtime,
-        _atomicWrites = atomicWrites;
+  }) : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+       _runtime = runtime,
+       _atomicWrites = atomicWrites;
 
   Future<CapsuleAddressCard?> buildOwnCard() async {
     final root = _runtime?.capsuleRootPublicKey();
@@ -177,7 +180,9 @@ class CapsuleAddressService {
       nostrNpub: _encodeBech32('npub', nostrBytes),
       nostrHex: _toHex(nostrBytes),
     );
-    final signature = _runtime?.signRootDigest32(unsignedCard.signingDigest32());
+    final signature = _runtime?.signRootDigest32(
+      unsignedCard.signingDigest32(),
+    );
     if (signature == null || signature.length != 64) {
       return CapsuleAddressCard(
         rootKey: unsignedCard.rootKey,
@@ -219,6 +224,17 @@ class CapsuleAddressService {
     }
     result.sort((a, b) => a.rootKey.compareTo(b.rootKey));
     return result;
+  }
+
+  Future<List<CapsuleAddressCard>> listInvitationRecipients() async {
+    final cards = await listTrustedCards();
+    final ownRoot = _runtime?.capsuleRootPublicKey();
+    if (ownRoot == null || ownRoot.length != 32) return cards;
+
+    final ownRootHex = _toHex(ownRoot);
+    return cards
+        .where((card) => card.rootHex.toLowerCase() != ownRootHex)
+        .toList(growable: false);
   }
 
   Future<void> importCardJson(String raw) async {
@@ -276,10 +292,31 @@ class CapsuleAddressService {
   /// envelope. Both paths converge on the same v1 JSON validator and store.
   Future<void> importCardPayload(String raw) {
     final payload = raw.trim();
-    final json = payload.startsWith(CapsuleAddressCard.qrPayloadPrefix)
-        ? CapsuleAddressCard.decodeQrPayload(payload)
-        : payload;
+    final json =
+        payload.startsWith(CapsuleAddressCard.qrPayloadPrefix)
+            ? CapsuleAddressCard.decodeQrPayload(payload)
+            : payload;
     return importCardJson(json);
+  }
+
+  /// Imports a shareable card and returns the validated identity that callers
+  /// should use. Invitation flows can therefore accept the card itself without
+  /// asking the user to copy its root key separately.
+  Future<CapsuleAddressCard> importAndReadCardPayload(String raw) async {
+    final payload = raw.trim();
+    final json =
+        payload.startsWith(CapsuleAddressCard.qrPayloadPrefix)
+            ? CapsuleAddressCard.decodeQrPayload(payload)
+            : payload;
+    await importCardJson(json);
+
+    final decoded = _parseJsonMap(json);
+    final card =
+        decoded == null ? null : CapsuleAddressCard.fromJsonMap(decoded);
+    if (card == null) {
+      throw const FormatException('Invalid contact card');
+    }
+    return card;
   }
 
   Future<bool> upsertTrustedCardFromKeys({
@@ -395,8 +432,10 @@ class CapsuleAddressService {
 
   Uint8List? _decodeHex32(String input) {
     try {
-      final clean =
-          input.replaceAll(':', '').replaceAll(' ', '').replaceAll('-', '');
+      final clean = input
+          .replaceAll(':', '')
+          .replaceAll(' ', '')
+          .replaceAll('-', '');
       if (clean.length != 64) return null;
       final bytes = <int>[];
       for (var i = 0; i < clean.length; i += 2) {
@@ -410,8 +449,10 @@ class CapsuleAddressService {
 
   Uint8List? _decodeHex64(String input) {
     try {
-      final clean =
-          input.replaceAll(':', '').replaceAll(' ', '').replaceAll('-', '');
+      final clean = input
+          .replaceAll(':', '')
+          .replaceAll(' ', '')
+          .replaceAll('-', '');
       if (clean.length != 128) return null;
       final bytes = <int>[];
       for (var i = 0; i < clean.length; i += 2) {

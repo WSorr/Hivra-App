@@ -9,7 +9,6 @@ import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import '../services/app_runtime_service.dart';
-import '../services/consensus_attestation_exchange_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../utils/runtime_capability_display.dart';
 import 'trading_drone_screen.dart';
@@ -391,8 +390,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
     final peerHex = _chatPeerController.text.trim().toLowerCase();
     final messageText = _chatMessageController.text;
-    final createdAtUtc = DateTime.now().toUtc().toIso8601String();
-    final clientMessageId = 'ui-${DateTime.now().microsecondsSinceEpoch}';
 
     setState(() {
       _runningChat = true;
@@ -401,116 +398,20 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     });
 
     try {
-      await _module.uiLog.log(
-        'chat.send.request',
-        'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} fullPeer=$peerHex textBytes=${messageText.length}',
+      final result = await _module.sendChatMessage(
+        peerHex: peerHex,
+        messageText: messageText,
       );
-      final attestation = await _module.attestationExchange.ensureForPeer(
-        peerHex,
-      );
-      await _module.uiLog.log(
-        'chat.attestation.ensure',
-        'peer=${peerHex.substring(0, 8)}.. status=${attestation.status.name} '
-            'receive=${attestation.receiveCode}/${attestation.receivedCount}/${attestation.storedCount} '
-            'mismatch=${attestation.mismatchedEvidenceCount} '
-            'sent=${attestation.localEvidenceSent} send=${attestation.sendCode ?? "-"}',
-      );
-      if (!attestation.isReady) {
-        setState(() {
-          _chatWorkspaceNotice =
-              attestation.message ??
-              (attestation.status == ConsensusAttestationExchangeStatus.syncing
-                  ? 'Pair consensus attestation syncing'
-                  : 'Pair consensus attestation blocked');
-          _chatWorkspaceNoticeIsError =
-              attestation.status != ConsensusAttestationExchangeStatus.syncing;
-        });
-        return;
-      }
-      final response = await _module.pluginHostApi.executeWithRuntimeHook(
-        PluginHostApiRequest(
-          schemaVersion: pluginHostApiSchemaVersion,
-          pluginId: capsuleChatPluginId,
-          method: postCapsuleChatMethod,
-          args: <String, dynamic>{
-            'peer_hex': peerHex,
-            'client_message_id': clientMessageId,
-            'message_text': messageText,
-            'created_at_utc': createdAtUtc,
-          },
-        ),
-      );
-
       if (!mounted) return;
       setState(() {
-        _lastChatResponse = response;
+        _lastChatResponse = result.hostResponse;
+        _chatWorkspaceNotice = result.message;
+        _chatWorkspaceNoticeIsError =
+            result.status != PluginChatSendStatus.sent &&
+            result.status != PluginChatSendStatus.syncing;
       });
-
-      switch (response.status) {
-        case PluginHostApiStatus.executed:
-          final envelopeHash =
-              response.result?['envelope_hash_hex']?.toString() ?? '';
-          final shortHash =
-              envelopeHash.length >= 12
-                  ? '${envelopeHash.substring(0, 12)}..'
-                  : envelopeHash;
-          final canonicalEnvelopeJson =
-              response.result?['canonical_envelope_json']?.toString() ?? '';
-          final sendResult = await _module.chatDelivery.sendCanonicalEnvelope(
-            peerHex: peerHex,
-            canonicalEnvelopeJson: canonicalEnvelopeJson,
-          );
-          if (!sendResult.isSuccess) {
-            await _module.uiLog.log(
-              'chat.send.transport.error',
-              'code=${sendResult.code} blocked=${sendResult.blockedByConsensus} deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} message=${sendResult.errorMessage ?? "unknown"}',
-            );
-            setState(() {
-              _chatWorkspaceNotice =
-                  sendResult.errorMessage ??
-                  'Chat transport failed (code ${sendResult.code})';
-              _chatWorkspaceNoticeIsError = true;
-            });
-            break;
-          }
-          await _module.uiLog.log(
-            'chat.send.success',
-            'peer=${peerHex.substring(0, 8)}.. deliveryPeer=${sendResult.deliveryPeerHex ?? "none"} receipts=${sendResult.deliveryReceiptCount} hash=${shortHash.isEmpty ? "none" : shortHash} source=${_executionSourceInfo(response)}',
-          );
-          setState(() {
-            _chatWorkspaceNotice = 'Message sent · $shortHash';
-            _chatWorkspaceNoticeIsError = false;
-          });
-          await _refreshCapsuleChatInbox(silentWhenEmpty: true);
-          break;
-        case PluginHostApiStatus.blocked:
-          final reason =
-              response.blockingFacts.isEmpty
-                  ? 'Consensus guard blocked execution.'
-                  : response.blockingFacts.first.label;
-          await _module.uiLog.log(
-            'chat.send.blocked',
-            '$reason source=${_executionSourceInfo(response)}',
-          );
-          setState(() {
-            _chatWorkspaceNotice = reason;
-            _chatWorkspaceNoticeIsError = true;
-          });
-          break;
-        case PluginHostApiStatus.rejected:
-          final rejectedMessage = _hostRejectedMessage(
-            response,
-            fallback: 'Chat request rejected',
-          );
-          await _module.uiLog.log(
-            'chat.send.rejected',
-            '$rejectedMessage code=${response.errorCode ?? "none"} source=${_executionSourceInfo(response)}',
-          );
-          setState(() {
-            _chatWorkspaceNotice = rejectedMessage;
-            _chatWorkspaceNoticeIsError = true;
-          });
-          break;
+      if (result.isSuccess) {
+        await _refreshCapsuleChatInbox(silentWhenEmpty: true);
       }
     } finally {
       if (mounted) {
@@ -611,6 +512,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                           deferredByConsensus: _chatDeferredByConsensus,
                           peerController: _chatPeerController,
                           messageController: _chatMessageController,
+                          onInputChanged: () => setDialogState(() {}),
                           onUsePeerPressed:
                               () => runAndRefresh(_fillPeerFromConsensus),
                           onRefreshInboxPressed:
@@ -1685,6 +1587,7 @@ class _CapsuleChatPanel extends StatelessWidget {
   final int deferredByConsensus;
   final TextEditingController peerController;
   final TextEditingController messageController;
+  final VoidCallback onInputChanged;
   final Future<void> Function() onUsePeerPressed;
   final Future<void> Function() onRefreshInboxPressed;
   final Future<void> Function() onRunPressed;
@@ -1700,6 +1603,7 @@ class _CapsuleChatPanel extends StatelessWidget {
     required this.deferredByConsensus,
     required this.peerController,
     required this.messageController,
+    required this.onInputChanged,
     required this.onUsePeerPressed,
     required this.onRefreshInboxPressed,
     required this.onRunPressed,
@@ -1833,6 +1737,7 @@ class _CapsuleChatPanel extends StatelessWidget {
           const SizedBox(height: 14),
           TextField(
             controller: peerController,
+            onChanged: (_) => onInputChanged(),
             autocorrect: false,
             enableSuggestions: false,
             decoration: InputDecoration(
@@ -1848,6 +1753,7 @@ class _CapsuleChatPanel extends StatelessWidget {
           const SizedBox(height: 10),
           TextField(
             controller: messageController,
+            onChanged: (_) => onInputChanged(),
             minLines: 2,
             maxLines: 4,
             maxLength: 1024,
@@ -1884,7 +1790,14 @@ class _CapsuleChatPanel extends StatelessWidget {
                 label: Text(refreshingInbox ? 'Fetching' : 'Fetch Inbox'),
               ),
               FilledButton.icon(
-                onPressed: running ? null : onRunPressed,
+                onPressed:
+                    running ||
+                            !RegExp(
+                              r'^[0-9a-f]{64}$',
+                            ).hasMatch(peerController.text.trim()) ||
+                            messageController.text.trim().isEmpty
+                        ? null
+                        : onRunPressed,
                 icon:
                     running
                         ? const SizedBox(

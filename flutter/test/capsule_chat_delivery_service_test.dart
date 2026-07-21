@@ -470,6 +470,62 @@ void main() {
     expect(sendCalls, 1);
   });
 
+  test('chat send rejects worker bootstrap from another capsule', () async {
+    const peerRootHex =
+        '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+    const peerTransportHex =
+        'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627';
+    const localRootHex =
+        '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+    const otherRootHex =
+        '365ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede699';
+    var sendCalls = 0;
+    final service = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': otherRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+        const ManualConsensusCheck(
+          peerHex: peerRootHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      ]),
+      listTrustedCards:
+          () async => const <CapsuleAddressCard>[
+            CapsuleAddressCard(
+              rootKey: 'h1peer',
+              rootHex: peerRootHex,
+              nostrNpub: 'npub1peer',
+              nostrHex: peerTransportHex,
+            ),
+          ],
+      sendWorkerRunner: (_) async {
+        sendCalls += 1;
+        return <String, Object?>{'result': 0, 'lastError': null};
+      },
+    );
+
+    final result = await service.sendCanonicalEnvelope(
+      peerHex: peerRootHex,
+      canonicalEnvelopeJson: '{"message_text":"hello"}',
+      expectedCapsuleRootHex: localRootHex,
+    );
+
+    expect(result.isSuccess, isFalse);
+    expect(result.code, -2004);
+    expect(sendCalls, 0);
+  });
+
   test('chat send requires pair attestation when guard is available', () async {
     const peerRootHex =
         '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
@@ -967,8 +1023,9 @@ class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
   @override
   Future<void> persistLedgerSnapshotForCapsuleHex(
     String pubKeyHex,
-    String ledgerJson,
-  ) async {}
+    String ledgerJson, {
+    String? capsuleStateJson,
+  }) async {}
 
   @override
   Future<String?> resolveActiveCapsuleHex() async => null;
