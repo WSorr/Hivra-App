@@ -167,6 +167,20 @@ Contains:
 It is a navigation layer only. It links to the specification, roadmap, and
 architecture blueprint rather than duplicating their rules.
 
+### 17) `plugins/moltbook_agent_drone_design_v1.md` (design-only future drone)
+
+Use this when evaluating an optional Capsule-operated Moltbook presence.
+
+Contains:
+- Capsule/Moltbook identity separation
+- remote-versus-local data authority and storage ownership
+- WASM, host adapter, external-effect, inference, and UI boundaries
+- Observe, Assisted, and Bounded Interactive operating modes
+- recovery, prompt-injection, credential, and publication safety contracts
+
+This document is a future design contract. It does not describe a currently
+available 1.x capability.
+
 ## Recommended Reading Order
 
 1. `product-axis.md`
@@ -185,6 +199,7 @@ architecture blueprint rather than duplicating their rules.
 14. `checklists/trading-drone-evidence-log.md` to capture build-tagged parity evidence
 15. `architecture-v2-blueprint.md` when designing 2.0 ownership, contracts, or migration units
 16. `development-control.md` before resuming, scoping, or closing any work item
+17. `plugins/moltbook_agent_drone_design_v1.md` when planning the Moltbook future track
 
 ## Update Rules
 

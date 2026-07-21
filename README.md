@@ -129,7 +129,9 @@ Users can own multiple independent capsules.
 - Each capsule has its own seed stored in platform secure storage.
 - On macOS, per-capsule seeds are persisted in Keychain, while the currently
   active runtime seed is process-local memory state. Capsule switching MUST NOT
-  rewrite a global "active seed" Keychain entry.
+  rewrite a global "active seed" Keychain entry. The Rust runtime MUST NOT
+  persist a second writable copy of a per-capsule seed; it may read the old
+  native Keychain layout only for legacy recovery.
 - Capsule metadata is stored under a separate key: `capsule_metadata`.
 
 ### Capsule Selection Screen

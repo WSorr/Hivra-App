@@ -107,13 +107,20 @@ The map is organized by ownership, not by a growing global `services/` or
 | Relationships | Core Trust | pair projection | ledger | none |
 | Pair Consensus | Core Consensus | pair snapshot/attestation | ledger + verified evidence | signing/delivery ports |
 | Delivery | Runtime Delivery | enqueue/status/receipt | durable operation journal | transport adapters |
+| External service effects | Runtime External Effects | provider-scoped operation/status/receipt | durable operation journal | allowlisted provider adapters |
 | Drone execution | WASM Host | capability-scoped host ABI | plugin registry/evidence | sandbox/runtime ports |
 | Application projection | App Shell | screen projections/intents | no independent truth | capability APIs only |
 | Trading/chat/AI/staking | External drones | declared WASM contracts | drone-owned state | granted host capabilities |
+| External agent presence | External provider drone | declared WASM contract | isolated drone state | Runtime External Effects capability |
 
 `Delivery` owns transport execution but not invitation, chat, or consensus
 meaning. The domain owner creates an effect request; Delivery executes and
 reports it. A transport adapter only moves authenticated bytes.
+
+`Runtime External Effects` is distinct from Capsule-to-Capsule Delivery. It
+owns durable execution and receipts for provider APIs such as exchanges or
+agent platforms, while each external drone owns provider-specific product
+policy. WASM never receives generic network or credential access.
 
 ## 5. Dependency Map
 
@@ -239,6 +246,21 @@ same ledger projection as all other Capsule state. Operational evidence such
 as transport attempts, delivery receipts, and diagnostic failures must be
 visually marked as operational evidence, not rendered as confirmed Capsule
 truth.
+
+Relationship, invitation, and starter detail views use one typed
+`CapsuleHistorySubject -> CapsuleHistoryProjection` contract. Cards pass only a
+subject and navigation intent to the App Shell; they do not depend on ledger
+decoders, AI providers, credentials, or network adapters.
+
+AI explanation is a sidecar advisory path:
+
+```text
+ledger -> scoped deterministic history -> redacted evidence -> inference port
+```
+
+It is explicit and user-triggered. The deterministic history remains useful
+without a provider, while provider output is visually labelled as advisory and
+never feeds back into Core truth or domain actions.
 
 ### Engineering boundary
 

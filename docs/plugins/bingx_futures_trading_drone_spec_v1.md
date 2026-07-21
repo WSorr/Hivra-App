@@ -74,6 +74,7 @@ Data source policy:
    - 1m, 5m, 15m, 1h, 4h, 1d, 1w timeframes,
    - only **closed candles** are used for indicators,
    - recommended depth: at least 300 closed candles (up to 1d) and at least 120 candles on 1w.
+   - the all-perpetual signal scan prefilter uses the three latest closed 5m candles and admits only strictly rising volume; the forming candle never participates.
 4. Recent trades
    - recent market trades (for taker-flow delta), recommended 200+ rows.
 5. Open interest

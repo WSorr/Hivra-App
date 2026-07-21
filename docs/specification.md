@@ -330,7 +330,9 @@ Storage:
 - Each capsule has its own seed in platform secure storage.
 - On macOS, per-capsule seeds are stored in Keychain. Runtime activation uses a
   process-local active seed cache; selecting or bootstrapping a capsule MUST NOT
-  rewrite a global active-seed Keychain pointer.
+  rewrite a global active-seed Keychain pointer or persist a second native copy
+  of the seed. The legacy native Keychain layout is read-only recovery input;
+  Flutter secure storage is the single per-capsule persistence authority.
 - Recovery seeds MUST NOT be persisted in plaintext files. If platform secure
   storage is unavailable, seed persistence fails closed.
 - Legacy plaintext seed files MAY be consumed only for one-time migration:
@@ -870,6 +872,29 @@ A later valid `RelationshipEstablished` starts a new lifecycle episode and
 supersedes older break-delivery retries for the same relationship key. A replay
 from an older episode MUST NOT break the new episode. Local-finalized break has
 precedence over a duplicate remote-pending notification from the same episode.
+
+### 8.3.1 Explainable Capsule History
+
+User-facing relationship, invitation, and starter cards MAY open a shared
+history detail surface. That surface MUST be a deterministic, read-only
+projection of the active Capsule ledger and MUST NOT maintain an independent
+history store.
+
+The projection subject is typed and scoped by immutable ledger identity:
+
+- relationship history by peer transport/root identity;
+- invitation history by `invitation_id`;
+- starter history by `starter_id`.
+
+The same ledger and subject MUST produce the same ordered event set and
+projection hash. Events concerning unrelated peers, invitations, or starters
+MUST NOT enter the selected history.
+
+An optional inference provider MAY explain this projection in human language.
+AI explanation is advisory only: the provider receives a user-approved,
+redacted event summary without raw payloads, signatures, seeds, private keys,
+or credentials. Provider output MUST NOT mutate ledger truth, authorize an
+action, affect consensus, or become a persisted domain fact.
 
 ### 8.4 Pairwise Consensus Computation Mode
 

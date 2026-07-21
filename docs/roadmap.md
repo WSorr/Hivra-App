@@ -1067,6 +1067,23 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       service.
   - Status: completed (2026-07-07).
 
+- `11.30 Explainable Capsule History`
+  - Goal:
+    - provide one ledger-backed history surface for relationships,
+      invitations, and starters without provider dependencies in cards.
+  - Contract:
+    - typed entity subjects select only relevant confirmed ledger events;
+    - projection order and hash are deterministic under replay;
+    - App Shell owns navigation and AI module assembly;
+    - optional AI explanation receives only explicit redacted evidence and has
+      no mutation, consensus, or authorization authority.
+  - Verification:
+    - projection scope and replay-hash tests;
+    - AI payload redaction/provider-boundary tests;
+    - relationship, invitation, and occupied-starter card navigation smoke;
+    - `tools/review/review_all.sh`, `flutter analyze`, and `flutter test`.
+  - Status: in progress (2026-07-21).
+
 - `12.3 Integrity and Reliability Remediation`
   - Goal:
     - close the July 2026 review findings in risk order without weakening the
@@ -1285,6 +1302,40 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - `Staking Drone v1` specification with read-only monitoring, redacted AI
       operator context, supported-source inventory, and a no-autosign safety
       contract.
+  - Status: planned.
+
+- `13.4 Moltbook Agent Drone`
+  - Goal:
+    - allow one user-owned Capsule to maintain an optional agent presence on
+      Moltbook while keeping Capsule identity, private state, and Core truth
+      local and independent.
+  - Boundary:
+    - Moltbook behavior belongs to an external WASM drone.
+    - WASM receives no direct network, credential, ledger-write, repository,
+      or unrestricted storage access.
+    - Moltbook HTTPS effects use one provider adapter behind a capability-
+      scoped host port and durable external-effect lifecycle.
+    - public Moltbook state remains Moltbook-owned remote truth; private policy,
+      drafts, cursors, and audit history remain isolated plugin state.
+    - solo account operation does not require Relationships or Pair Consensus.
+  - Required safety model:
+    - credentials are scoped by Capsule, plugin, provider, and external account
+      in platform secure storage.
+    - remote content and AI output are untrusted inputs and cannot invoke tools
+      or grant capabilities.
+    - the first releasable mode is Assisted: every post/reply requires exact
+      outbound preview and user approval.
+    - retries are idempotent and reconcile provider receipts before declaring
+      success.
+  - Architecture closure:
+    - current verdict is `NEEDS_CONTRACT`; provider-neutral external effects,
+      plugin state, credential binding, and bounded inference ports must be
+      specified before implementation.
+    - design authority:
+      `docs/plugins/moltbook_agent_drone_design_v1.md`.
+  - First deliverable:
+    - approve the design contract and define read-only Observe-mode host
+      fixtures without changing the 1.x Core protocol.
   - Status: planned.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
@@ -1672,6 +1723,24 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - manual release run showed capsule bootstrap around `23 ms` and no
       repeated `SecKeychainItemModifyAttributesAndData` during capsule switches.
   - Status: completed (2026-07-05).
+
+- `11.14.1 macOS Keychain Prompt Consolidation`
+  - Goal:
+    - remove repeated Keychain authorization loops during capsule activation.
+    - preserve one secure per-capsule seed authority and a process-local Rust
+      runtime seed without weakening secret storage.
+  - Implemented:
+    - macOS Rust seed activation no longer reads or writes a duplicate native
+      Keychain record during normal capsule selection and runtime bootstrap.
+    - legacy native Keychain records remain readable only for recovery, and a
+      successful existence check populates the runtime cache for the following
+      load.
+    - Release builds disable injected base entitlements so `get-task-allow`
+      cannot leak into the application signature through Xcode defaults.
+  - Distribution constraint:
+    - ad-hoc builds still have an unstable code-signing identity; persistent
+      Keychain trust across rebuilt binaries requires a stable signed release.
+  - Status: completed (2026-07-21).
 
 - `11.15 Unified Capsule Analyst Module`
   - Goal:
