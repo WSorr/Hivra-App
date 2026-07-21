@@ -133,8 +133,11 @@ class InvitationsScreen extends StatefulWidget {
 }
 
 class _InvitationsScreenState extends State<InvitationsScreen> {
+  static const _invitationPollInterval = Duration(seconds: 15);
+
   late final InvitationModule _module;
   List<Invitation> _invitations = [];
+  Timer? _invitationPollTimer;
   bool _isFetchingDeliveries = false;
   String? _processingId;
   String? _processingAction;
@@ -154,6 +157,17 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     _module = InvitationModuleService(runtime: widget.runtime).build();
     _loadInvitations();
     unawaited(_fetchInvitationDeliveries(silent: true, quick: true));
+    _invitationPollTimer = Timer.periodic(
+      _invitationPollInterval,
+      (_) => unawaited(_fetchInvitationDeliveries(silent: true)),
+    );
+  }
+
+  @override
+  void dispose() {
+    _invitationPollTimer?.cancel();
+    _invitationPollTimer = null;
+    super.dispose();
   }
 
   @override

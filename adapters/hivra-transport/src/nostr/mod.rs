@@ -14,7 +14,9 @@ use tokio::time;
 // Use standard DM kind for better relay compatibility.
 const APP_EVENT_KIND: Kind = Kind::Custom(4);
 const CONNECT_POLL_MS: u64 = 250;
-const RECEIVE_LIMIT: usize = 200;
+const RECEIVE_LIMIT: usize = 2048;
+const RECEIVE_LOOKBACK_SECS: u64 = 7 * 24 * 60 * 60;
+const RECEIVE_FUTURE_SKEW_SECS: u64 = 5 * 60;
 const RECEIVE_SEEN_CAPACITY: usize = 2048;
 const MIN_RELAY_SEND_TIMEOUT_SECS: u64 = 6;
 const SEND_CONNECT_TIMEOUT_SECS: u64 = 4;
@@ -24,6 +26,12 @@ static SEEN_EVENT_IDS: OnceLock<Mutex<HashMap<[u8; 32], HashSet<String>>>> = Onc
 
 fn seen_event_ids() -> &'static Mutex<HashMap<[u8; 32], HashSet<String>>> {
     SEEN_EVENT_IDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn next_receive_cursor(current: u64, query_now: u64, max_event_timestamp: u64) -> u64 {
+    // Relay data is untrusted. A future-dated event must not move the cursor
+    // beyond this query and hide later envelopes with valid timestamps.
+    current.max(max_event_timestamp.min(query_now).saturating_sub(1))
 }
 
 fn looks_like_nip04_content(content: &str) -> bool {
@@ -96,6 +104,7 @@ pub struct NostrTransport {
     keys: Keys,
     public_key: PublicKey,
     timeout_secs: u64,
+    receive_since: Mutex<u64>,
 }
 
 impl NostrTransport {
@@ -125,6 +134,11 @@ impl NostrTransport {
             keys,
             public_key,
             timeout_secs: config.timeout,
+            receive_since: Mutex::new(
+                Timestamp::now()
+                    .as_u64()
+                    .saturating_sub(RECEIVE_LOOKBACK_SECS),
+            ),
         })
     }
 
@@ -462,10 +476,26 @@ impl Transport for NostrTransport {
             return Ok(Vec::new());
         }
 
-        // Query only DMs where we're in the `p` tag; this avoids global kind=4 noise.
+        // Start from a bounded recovery window, then advance a per-transport
+        // cursor. Without `since`, a noisy inbox can fill the relay limit with
+        // old events and permanently hide the newest delivery.
+        let receive_since = self
+            .receive_since
+            .lock()
+            .map(|cursor| *cursor)
+            .unwrap_or_else(|_| {
+                Timestamp::now()
+                    .as_u64()
+                    .saturating_sub(RECEIVE_LOOKBACK_SECS)
+            });
+        let query_now = Timestamp::now().as_u64();
         let filter = Filter::new()
             .kind(APP_EVENT_KIND)
             .pubkey(self.public_key)
+            .since(Timestamp::from(receive_since))
+            .until(Timestamp::from(
+                query_now.saturating_add(RECEIVE_FUTURE_SKEW_SECS),
+            ))
             .limit(RECEIVE_LIMIT);
 
         let events = self
@@ -480,6 +510,14 @@ impl Transport for NostrTransport {
             })?;
 
         eprintln!("[Nostr] Received {} events", events.len());
+
+        if let Some(max_timestamp) = events.iter().map(|event| event.created_at.as_u64()).max() {
+            if let Ok(mut cursor) = self.receive_since.lock() {
+                // Keep one second of overlap because multiple envelopes may
+                // share a relay timestamp; event-id dedupe handles the replay.
+                *cursor = next_receive_cursor(*cursor, query_now, max_timestamp);
+            }
+        }
 
         let mut seen_guard = seen_event_ids().lock().expect("seen ids mutex poisoned");
         let seen_for_pubkey = seen_guard
@@ -516,6 +554,13 @@ impl Transport for NostrTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn receive_cursor_does_not_follow_future_dated_event() {
+        assert_eq!(next_receive_cursor(100, 200, 10_000), 199);
+        assert_eq!(next_receive_cursor(250, 200, 10_000), 250);
+        assert_eq!(next_receive_cursor(100, 200, 150), 149);
+    }
 
     #[test]
     fn rejects_decrypted_message_with_spoofed_sender() {

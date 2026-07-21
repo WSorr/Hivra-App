@@ -267,6 +267,11 @@ class CapsuleAddressService {
     if (_toHex(nostrBytes) != _toHex(nostrHexBytes)) {
       throw const FormatException('Contact card Nostr endpoint mismatch');
     }
+    if (_sameBytes(rootBytes, nostrBytes)) {
+      throw const FormatException(
+        'Contact card uses the capsule root as its delivery endpoint. Export and import a fresh card.',
+      );
+    }
     if (card.version >= 2) {
       final signatureBytes = _decodeHex64(card.signatureHex ?? '');
       if (signatureBytes == null) {
@@ -326,6 +331,9 @@ class CapsuleAddressService {
     if (rootPubkey.length != 32 || nostrPubkey.length != 32) {
       return false;
     }
+    if (_sameBytes(rootPubkey, nostrPubkey)) {
+      return false;
+    }
     final rootBytes = Uint8List.fromList(rootPubkey);
     final nostrBytes = Uint8List.fromList(nostrPubkey);
     final card = CapsuleAddressCard(
@@ -378,14 +386,13 @@ class CapsuleAddressService {
     if (cardMap == null) return null;
     final card = CapsuleAddressCard.fromJsonMap(cardMap);
     if (card == null) return null;
-    return _decodeHex32(card.nostrHex);
+    final endpoint = _decodeHex32(card.nostrHex);
+    if (endpoint == null || _sameBytes(rootBytes, endpoint)) return null;
+    return endpoint;
   }
 
   Future<bool> hasKnownNostrEndpoint(String rootKey) async {
-    final rootBytes = decodeRootKey(rootKey);
-    if (rootBytes == null) return false;
-    final cards = await _readCards();
-    return cards.containsKey(_toHex(rootBytes));
+    return await resolveNostrRecipient(rootKey) != null;
   }
 
   Uint8List? decodeDirectNostrRecipient(String input) {
@@ -428,6 +435,14 @@ class CapsuleAddressService {
     } catch (_) {
       return null;
     }
+  }
+
+  static bool _sameBytes(List<int> left, List<int> right) {
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      if (left[i] != right[i]) return false;
+    }
+    return true;
   }
 
   Uint8List? _decodeHex32(String input) {

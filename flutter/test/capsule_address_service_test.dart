@@ -351,6 +351,31 @@ $nbsp$nbsp}
     expect(await service.contactCount(), 0);
   });
 
+  test('rejects contact card that routes delivery to the root key', () async {
+    final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 11));
+    final rootHex = _toHex(rootBytes);
+    final rawCard = jsonEncode({
+      'version': 1,
+      'rootKey': HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
+      'rootHex': rootHex,
+      'transports': {
+        'nostr': {'npub': rootHex, 'hex': rootHex},
+      },
+    });
+
+    await expectLater(
+      service.importCardPayload(rawCard),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('root as its delivery endpoint'),
+        ),
+      ),
+    );
+    expect(await service.contactCount(), 0);
+  });
+
   test('rejects malformed or oversized QR envelopes', () async {
     expect(
       () => CapsuleAddressCard.decodeQrPayload('hivra:card:v1:not base64'),
@@ -397,6 +422,18 @@ $nbsp$nbsp}
     final saved = await service.upsertTrustedCardFromKeys(
       rootPubkey: Uint8List(31),
       nostrPubkey: Uint8List(32),
+    );
+
+    expect(saved, isFalse);
+    expect(await service.contactCount(), 0);
+  });
+
+  test('does not upsert a root key as its own transport endpoint', () async {
+    final rootBytes = Uint8List.fromList(List<int>.generate(32, (i) => i + 13));
+
+    final saved = await service.upsertTrustedCardFromKeys(
+      rootPubkey: rootBytes,
+      nostrPubkey: Uint8List.fromList(rootBytes),
     );
 
     expect(saved, isFalse);
