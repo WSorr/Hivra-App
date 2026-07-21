@@ -23,10 +23,7 @@ import '../services/trading_drone_module_service.dart';
 class TradingDroneScreen extends StatefulWidget {
   final AppRuntimeService? runtime;
 
-  const TradingDroneScreen({
-    super.key,
-    this.runtime,
-  });
+  const TradingDroneScreen({super.key, this.runtime});
 
   @override
   State<TradingDroneScreen> createState() => _TradingDroneScreenState();
@@ -60,24 +57,31 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     'BNB-USDT',
     'DOGE-USDT',
   ];
+  static const String _signalScanScopeCore = 'core_watchlist';
+  static const String _signalScanScopeAllPerps = 'all_perps';
+  static const int _signalTickerPrefilterLimit = 80;
+  static const int _signalVolumeGrowthKlineLimit = 10;
 
   late final TradingDroneModule _module;
 
   final TextEditingController _peerController = TextEditingController();
-  final TextEditingController _symbolController =
-      TextEditingController(text: 'BTC-USDT');
+  final TextEditingController _symbolController = TextEditingController(
+    text: 'BTC-USDT',
+  );
   final TextEditingController _maxNotionalUsdtController =
       TextEditingController(text: '100');
-  final TextEditingController _quantityController =
-      TextEditingController(text: '0.01');
+  final TextEditingController _quantityController = TextEditingController(
+    text: '0.01',
+  );
   final TextEditingController _limitPriceController = TextEditingController();
   final TextEditingController _zoneLowController = TextEditingController();
   final TextEditingController _zoneHighController = TextEditingController();
   final TextEditingController _triggerPriceController = TextEditingController();
   final TextEditingController _stopLossController = TextEditingController();
   final TextEditingController _takeProfitController = TextEditingController();
-  final TextEditingController _strategyTagController =
-      TextEditingController(text: 'demo');
+  final TextEditingController _strategyTagController = TextEditingController(
+    text: 'demo',
+  );
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _apiSecretController = TextEditingController();
   final TextEditingController _cancelOrderIdController =
@@ -106,6 +110,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   String _entryMode = 'direct';
   String _zoneSide = 'buyside';
   String _zonePriceRule = 'zone_mid';
+  String _signalScanScope = _signalScanScopeCore;
 
   PluginHostApiResponse? _lastIntentResponse;
   BingxFuturesOrderExecutionResult? _lastExecution;
@@ -117,7 +122,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   final Map<String, BingxManagedOrderProvenance> _managedOrderProvenance =
       <String, BingxManagedOrderProvenance>{};
   int _managedOrderLifecycleRevision = 0;
-  int _lastOpenOrdersTotalCount = 0;
   Timer? _openOrdersPollTimer;
   String? _trackedOrdersSymbol;
   String? _trackedOrderId;
@@ -132,19 +136,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   static const BingxFuturesRiskPolicy _executionRiskPolicy =
       BingxFuturesRiskPolicy(
-    maxRiskPerTradePercent: 2.0,
-    maxDailyLossPercent: 5.0,
-    maxConcurrentPositions: 3,
-    cooldownAfterLossStreak: 2,
-    cooldownMinutes: 60,
-  );
+        maxRiskPerTradePercent: 2.0,
+        maxDailyLossPercent: 5.0,
+        maxConcurrentPositions: 3,
+        cooldownAfterLossStreak: 2,
+        cooldownMinutes: 60,
+      );
 
   @override
   void initState() {
     super.initState();
-    _module = TradingDroneModuleService(
-      runtime: widget.runtime ?? AppRuntimeService(),
-    ).build();
+    _module =
+        TradingDroneModuleService(
+          runtime: widget.runtime ?? AppRuntimeService(),
+        ).build();
     unawaited(_restoreOpenOrdersTrackingState());
     _loadPerpetualSymbols(silent: true);
     _signalInbox = _module.chatDelivery.loadCachedTradeSignals();
@@ -172,6 +177,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   }
 
   bool get _isTrackingOpenOrders => _openOrdersPollTimer != null;
+
+  int get _managedOpenOrderCount =>
+      _openOrders
+          .where((order) => _managedOrderIds.contains(order.orderId))
+          .length;
 
   void _registerManagedOrderId(
     String? orderId, {
@@ -232,10 +242,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     );
   }
 
-  void _startOpenOrdersAutoTracking({
-    required String symbol,
-    String? orderId,
-  }) {
+  void _startOpenOrdersAutoTracking({required String symbol, String? orderId}) {
     final normalizedSymbol = symbol.trim().toUpperCase();
     if (normalizedSymbol.isEmpty) return;
     final normalizedOrderId = orderId?.trim();
@@ -260,12 +267,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     _openOrdersPollTimer = Timer.periodic(_openOrdersPollInterval, (_) {
       if (!mounted) return;
-      unawaited(
-        _fetchOpenOrders(
-          silent: true,
-          symbolOverride: _trackedOrdersSymbol,
-        ),
-      );
+      unawaited(_fetchOpenOrders(silent: true));
     });
     unawaited(
       _module.uiLog.log(
@@ -333,26 +335,22 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       'bingx.exchange.tracking.retarget',
       'source=$source symbol=$normalizedSymbol',
     );
-    await _fetchOpenOrders(
-      silent: true,
-      symbolOverride: normalizedSymbol,
-    );
+    await _fetchOpenOrders(silent: true);
   }
 
-  Future<void> _persistOpenOrdersTrackingState({
-    required String source,
-  }) async {
+  Future<void> _persistOpenOrdersTrackingState({required String source}) async {
     try {
       final state = BingxFuturesOrderTrackingState(
         trackedSymbol: _trackedOrdersSymbol,
         trackedOrderId: _trackedOrderId,
         managedOrderIds: _managedOrderIds.toList(growable: false),
-        managedOrderSymbols:
-            Map<String, String>.unmodifiable(_managedOrderSymbols),
+        managedOrderSymbols: Map<String, String>.unmodifiable(
+          _managedOrderSymbols,
+        ),
         managedOrderProvenance:
             Map<String, BingxManagedOrderProvenance>.unmodifiable(
-          _managedOrderProvenance,
-        ),
+              _managedOrderProvenance,
+            ),
         stopLossPercent: _stopLossPercent,
         takeProfitRiskReward: _takeProfitRiskReward,
       );
@@ -399,6 +397,19 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       final trackedSymbol = state.trackedSymbol?.trim().toUpperCase();
       final trackedOrderId = state.trackedOrderId?.trim();
       if (trackedSymbol == null || trackedSymbol.isEmpty) {
+        String? managedSymbol;
+        for (final value in _managedOrderSymbols.values) {
+          final normalized = value.trim().toUpperCase();
+          if (normalized.isNotEmpty) {
+            managedSymbol = normalized;
+            break;
+          }
+        }
+        final credentials = await _ensureCredentialsLoaded(silent: true);
+        if (managedSymbol != null && credentials != null) {
+          _startOpenOrdersAutoTracking(symbol: managedSymbol);
+          await _fetchOpenOrders(silent: true);
+        }
         if (mounted) {
           setState(() {});
         }
@@ -413,7 +424,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         return;
       }
       _symbolController.text = trackedSymbol;
-      if (_resolveCredentials() == null) {
+      if (await _ensureCredentialsLoaded(silent: true) == null) {
         if (mounted) {
           setState(() {});
         }
@@ -442,10 +453,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'slPct=${_stopLossPercent.toStringAsFixed(2)} '
             'rr=${_takeProfitRiskReward.toStringAsFixed(2)}',
       );
-      await _fetchOpenOrders(
-        silent: true,
-        symbolOverride: trackedSymbol,
-      );
+      await _fetchOpenOrders(silent: true);
     } catch (error) {
       await _module.uiLog.log(
         'bingx.exchange.tracking.restore.error',
@@ -459,10 +467,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: Duration(seconds: seconds),
-      ),
+      SnackBar(content: Text(message), duration: Duration(seconds: seconds)),
     );
   }
 
@@ -500,10 +505,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       );
       return credentials;
     } catch (error) {
-      await _module.uiLog.log(
-        'bingx.credentials.load.error',
-        '$error',
-      );
+      await _module.uiLog.log('bingx.credentials.load.error', '$error');
       if (showError) {
         await _showSnack(
           'Failed to load BingX credentials: $error',
@@ -514,15 +516,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
   }
 
-  Future<String?> _selectConsensusPeer({
-    required String hint,
-  }) async {
-    final checks = _module.manualChecks.loadChecks().toList()
-      ..sort(
-        (a, b) => a.peerLabel.toLowerCase().compareTo(
-              b.peerLabel.toLowerCase(),
-            ),
-      );
+  Future<String?> _selectConsensusPeer({required String hint}) async {
+    final checks =
+        _module.manualChecks.loadChecks().toList()..sort(
+          (a, b) =>
+              a.peerLabel.toLowerCase().compareTo(b.peerLabel.toLowerCase()),
+        );
     if (checks.isEmpty) return null;
     final selectedPeerHex = await showModalBottomSheet<String>(
       context: context,
@@ -549,15 +548,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     check.peerHex,
                     style: const TextStyle(fontFamily: 'monospace'),
                   ),
-                  trailing: check.isSignable
-                      ? const Text(
-                          'Signable',
-                          style: TextStyle(color: Colors.green),
-                        )
-                      : const Text(
-                          'Blocked',
-                          style: TextStyle(color: Colors.orange),
-                        ),
+                  trailing:
+                      check.isSignable
+                          ? const Text(
+                            'Signable',
+                            style: TextStyle(color: Colors.green),
+                          )
+                          : const Text(
+                            'Blocked',
+                            style: TextStyle(color: Colors.orange),
+                          ),
                   onTap: () => Navigator.of(sheetContext).pop(check.peerHex),
                 ),
             ],
@@ -642,10 +642,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         var query = '';
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            final filtered = _availablePerpSymbols.where((symbol) {
-              if (query.isEmpty) return true;
-              return symbol.toLowerCase().contains(query.toLowerCase());
-            }).toList(growable: false);
+            final filtered = _availablePerpSymbols
+                .where((symbol) {
+                  if (query.isEmpty) return true;
+                  return symbol.toLowerCase().contains(query.toLowerCase());
+                })
+                .toList(growable: false);
             return SafeArea(
               child: Padding(
                 padding: EdgeInsets.only(
@@ -678,24 +680,27 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     const SizedBox(height: 10),
                     SizedBox(
                       height: 420,
-                      child: filtered.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No symbols',
-                                style: TextStyle(color: Color(0xFF97A3B5)),
+                      child:
+                          filtered.isEmpty
+                              ? const Center(
+                                child: Text(
+                                  'No symbols',
+                                  style: TextStyle(color: Color(0xFF97A3B5)),
+                                ),
+                              )
+                              : ListView.builder(
+                                itemCount: filtered.length,
+                                itemBuilder: (context, index) {
+                                  final symbol = filtered[index];
+                                  return ListTile(
+                                    title: Text(symbol),
+                                    onTap:
+                                        () => Navigator.of(
+                                          sheetContext,
+                                        ).pop(symbol),
+                                  );
+                                },
                               ),
-                            )
-                          : ListView.builder(
-                              itemCount: filtered.length,
-                              itemBuilder: (context, index) {
-                                final symbol = filtered[index];
-                                return ListTile(
-                                  title: Text(symbol),
-                                  onTap: () =>
-                                      Navigator.of(sheetContext).pop(symbol),
-                                );
-                              },
-                            ),
                     ),
                   ],
                 ),
@@ -709,8 +714,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     setState(() {
       _symbolController.text = selected;
     });
-    await _module.uiLog
-        .log('bingx.symbols.select', 'symbol=$selected source=picker');
+    await _module.uiLog.log(
+      'bingx.symbols.select',
+      'symbol=$selected source=picker',
+    );
     await _maybeRetargetOpenOrdersTracking(
       symbol: selected,
       source: 'picker',
@@ -728,12 +735,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
     final currentSymbol = _symbolController.text.trim().toUpperCase();
     final peerHex = _peerController.text.trim().toLowerCase();
-    final symbols = <String>{
-      ..._shortBreakdownSymbols,
-      if (currentSymbol.isNotEmpty) currentSymbol,
-    }.toList()
-      ..sort();
-    if (symbols.isEmpty) {
+    if (_signalScanScope == _signalScanScopeAllPerps &&
+        _availablePerpSymbols.isEmpty) {
+      await _loadPerpetualSymbols(silent: false);
+      if (!mounted) return;
+    }
+    final rawSymbols = _signalScanSymbols(currentSymbol);
+    if (rawSymbols.isEmpty) {
       await _showSnack('No symbols to scan');
       return;
     }
@@ -745,6 +753,24 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _scanningSignals = true;
     }
     try {
+      await _module.uiLog.log(
+        'bingx.signal.scan.start',
+        'scope=$_signalScanScope symbols=${rawSymbols.length} '
+            'prefilter=5m_volume_growth',
+      );
+      final symbols = await _filterVolumeGrowthSymbols(rawSymbols);
+      if (symbols.isEmpty) {
+        await _module.uiLog.log(
+          'bingx.signal.scan.empty',
+          'scope=$_signalScanScope source_symbols=${rawSymbols.length} '
+              'prefilter=5m_volume_growth',
+        );
+        await _showSnack(
+          'Signal scan: no symbols with rising 5m volume',
+          seconds: 3,
+        );
+        return;
+      }
       final candidates = <BingxFuturesSignalRankCandidate>[];
       var skipped = 0;
       for (final symbol in symbols) {
@@ -766,10 +792,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         }
         if (decision == null) continue;
         candidates.add(
-          BingxFuturesSignalRankCandidate(
-            symbol: symbol,
-            decision: decision,
-          ),
+          BingxFuturesSignalRankCandidate(symbol: symbol, decision: decision),
         );
       }
       if (candidates.isEmpty) {
@@ -799,7 +822,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       final top = ranked.entries.isEmpty ? null : ranked.entries.first;
       await _module.uiLog.log(
         'bingx.signal.rank',
-        'symbols=${symbols.length} candidates=${candidates.length} '
+        'scope=$_signalScanScope source_symbols=${rawSymbols.length} '
+            'volume_growth_symbols=${symbols.length} '
+            'candidates=${candidates.length} '
             'skipped=$skipped '
             'entries=${ranked.entries.length} scan_hash=${_shortHash(ranked.scanHashHex)} '
             'top=${top == null ? "-" : "${top.symbol}:${top.bucket}:${top.score}"}',
@@ -808,8 +833,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         ranked.entries.any((entry) => entry.bucket == 'ready')
             ? 'Signal scan complete: ready found'
             : skipped > 0
-                ? 'Signal scan partial: no ready signals, skipped $skipped'
-                : 'Signal scan complete: no ready signals',
+            ? 'Signal scan partial: no ready signals, skipped $skipped'
+            : 'Signal scan complete: no ready signals',
         seconds: 2,
       );
     } catch (error) {
@@ -826,6 +851,155 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _scanningSignals = false;
       }
     }
+  }
+
+  List<String> _signalScanSymbols(String currentSymbol) {
+    final source =
+        _signalScanScope == _signalScanScopeAllPerps
+            ? _availablePerpSymbols
+            : _shortBreakdownSymbols;
+    final symbols =
+        <String>{
+              ...source.map((symbol) => symbol.trim().toUpperCase()),
+              if (currentSymbol.isNotEmpty) currentSymbol,
+            }
+            .where(
+              (symbol) =>
+                  symbol.isNotEmpty && _isNormalCryptoPerpSymbol(symbol),
+            )
+            .toList()
+          ..sort();
+    return symbols;
+  }
+
+  bool _isNormalCryptoPerpSymbol(String symbol) {
+    final parts = symbol.trim().toUpperCase().split('-');
+    if (parts.length != 2) return false;
+    final base = parts[0];
+    final quote = parts[1];
+    if (quote != 'USDT' && quote != 'USDC') return false;
+    if (!RegExp(r'^[A-Z][A-Z0-9]{1,14}$').hasMatch(base)) return false;
+    if (base.startsWith('NC')) return false;
+    if (RegExp(r'^\d').hasMatch(base)) return false;
+    return true;
+  }
+
+  Future<List<String>> _filterVolumeGrowthSymbols(List<String> symbols) async {
+    if (_signalScanScope == _signalScanScopeCore) {
+      await _module.uiLog.log(
+        'bingx.signal.volume_prefilter.skip',
+        'scope=$_signalScanScope source=${symbols.length} reason=core_watchlist',
+      );
+      return symbols;
+    }
+    final tickerFiltered = await _prefilterLiquidTickerSymbols(symbols);
+    final accepted = <String>[];
+    var insufficient = 0;
+    var flatOrFalling = 0;
+    var failed = 0;
+    for (final symbol in tickerFiltered) {
+      try {
+        final result = await _module.exchangeService.getPublicKlines(
+          symbol: symbol,
+          interval: '5m',
+          limit: _signalVolumeGrowthKlineLimit,
+        );
+        if (!result.isSuccess || result.klines.length < 3) {
+          insufficient += 1;
+          continue;
+        }
+        final lastThree = result.klines.sublist(result.klines.length - 3);
+        final volumes =
+            lastThree
+                .map(
+                  (kline) => num.tryParse(
+                    kline.volumeQuoteDecimal ?? kline.volumeBaseDecimal ?? '',
+                  ),
+                )
+                .toList();
+        if (volumes.any((volume) => volume == null)) {
+          insufficient += 1;
+          continue;
+        }
+        final grows =
+            volumes[0]! > 0 &&
+            volumes[0]! < volumes[1]! &&
+            volumes[1]! < volumes[2]!;
+        if (grows) {
+          accepted.add(symbol);
+        } else {
+          flatOrFalling += 1;
+        }
+      } catch (error) {
+        failed += 1;
+        await _module.uiLog.log(
+          'bingx.signal.volume_prefilter.error',
+          'symbol=$symbol error=$error',
+        );
+      }
+    }
+    await _module.uiLog.log(
+      'bingx.signal.volume_prefilter',
+      'scope=$_signalScanScope source=${symbols.length} '
+          'ticker_filtered=${tickerFiltered.length} accepted=${accepted.length} '
+          'flat_or_falling=$flatOrFalling insufficient=$insufficient failed=$failed',
+    );
+    return accepted;
+  }
+
+  Future<List<String>> _prefilterLiquidTickerSymbols(
+    List<String> symbols,
+  ) async {
+    if (_signalScanScope != _signalScanScopeAllPerps ||
+        symbols.length <= _signalTickerPrefilterLimit) {
+      return symbols;
+    }
+    try {
+      final tickers = await _module.exchangeService.getPublicTickers();
+      if (!tickers.isSuccess || tickers.tickers.isEmpty) {
+        await _module.uiLog.log(
+          'bingx.signal.ticker_prefilter.skip',
+          'reason=ticker_unavailable code=${tickers.exchangeCode} '
+              'message=${tickers.exchangeMessage}',
+        );
+        return symbols;
+      }
+      final allowed = symbols.toSet();
+      final currentSymbol = _symbolController.text.trim().toUpperCase();
+      final selected =
+          tickers.tickers
+              .where(
+                (ticker) =>
+                    allowed.contains(ticker.symbol) &&
+                    _isNormalCryptoPerpSymbol(ticker.symbol),
+              )
+              .take(_signalTickerPrefilterLimit)
+              .map((ticker) => ticker.symbol)
+              .toSet();
+      if (currentSymbol.isNotEmpty && allowed.contains(currentSymbol)) {
+        selected.add(currentSymbol);
+      }
+      final out = selected.toList()..sort();
+      await _module.uiLog.log(
+        'bingx.signal.ticker_prefilter',
+        'source=${symbols.length} selected=${out.length} '
+            'limit=$_signalTickerPrefilterLimit sort=quote_volume_desc',
+      );
+      return out;
+    } catch (error) {
+      await _module.uiLog.log('bingx.signal.ticker_prefilter.error', '$error');
+      return symbols;
+    }
+  }
+
+  String _signalScanScopeLabel() {
+    if (_signalScanScope == _signalScanScopeAllPerps) {
+      final count = _availablePerpSymbols.length;
+      return count > 0
+          ? 'All Perps ($count, top $_signalTickerPrefilterLimit volume)'
+          : 'All Perps';
+    }
+    return 'Core Watchlist (${_shortBreakdownSymbols.length})';
   }
 
   Future<void> _applySignalRankEntry(BingxFuturesSignalRankEntry entry) async {
@@ -868,9 +1042,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     };
   }
 
-  Future<void> _applyShortBreakdownPlaybook({
-    required String symbol,
-  }) async {
+  Future<void> _applyShortBreakdownPlaybook({required String symbol}) async {
     final normalizedSymbol = symbol.trim().toUpperCase();
     if (normalizedSymbol.isEmpty) return;
     if (mounted) {
@@ -918,10 +1090,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     });
     try {
       await _module.credentialStore.save(
-        BingxFuturesApiCredentials(
-          apiKey: apiKey,
-          apiSecret: apiSecret,
-        ),
+        BingxFuturesApiCredentials(apiKey: apiKey, apiSecret: apiSecret),
       );
       await _module.uiLog.log(
         'bingx.credentials.save',
@@ -929,10 +1098,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       );
       await _showSnack('BingX credentials saved for active capsule');
     } catch (error) {
-      await _module.uiLog.log(
-        'bingx.credentials.save.error',
-        '$error',
-      );
+      await _module.uiLog.log('bingx.credentials.save.error', '$error');
       await _showSnack('Failed to save BingX credentials: $error', seconds: 3);
     } finally {
       if (mounted) {
@@ -949,10 +1115,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (apiKey.isEmpty || apiSecret.isEmpty) {
       return null;
     }
-    return BingxFuturesApiCredentials(
-      apiKey: apiKey,
-      apiSecret: apiSecret,
-    );
+    return BingxFuturesApiCredentials(apiKey: apiKey, apiSecret: apiSecret);
   }
 
   Future<BingxFuturesApiCredentials?> _ensureCredentialsLoaded({
@@ -1023,9 +1186,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final stopLoss =
         buy ? entryPrice * (1 - slFactor) : entryPrice * (1 + slFactor);
     final risk = (stopLoss - entryPrice).abs();
-    final takeProfit = buy
-        ? entryPrice + (risk * riskReward)
-        : entryPrice - (risk * riskReward);
+    final takeProfit =
+        buy
+            ? entryPrice + (risk * riskReward)
+            : entryPrice - (risk * riskReward);
     return (
       stopLossDecimal: _formatDecimal(stopLoss, scale: 8),
       takeProfitDecimal: _formatDecimal(takeProfit, scale: 8),
@@ -1040,9 +1204,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   String _formatLiveDecisionBlockedMessage(
     BingxFuturesLiveDecisionResult live,
   ) {
-    final zone = live.zoneLowDecimal != null && live.zoneHighDecimal != null
-        ? ' zone ${live.zoneLowDecimal}-${live.zoneHighDecimal}'
-        : '';
+    final zone =
+        live.zoneLowDecimal != null && live.zoneHighDecimal != null
+            ? ' zone ${live.zoneLowDecimal}-${live.zoneHighDecimal}'
+            : '';
     if (live.trendGateBlocked) {
       return switch (live.trendGateCode) {
         'momentum_gate_short_missed_retest' =>
@@ -1058,11 +1223,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       };
     }
 
-    final failed = live.reasons
-        .where((reason) => !reason.passed)
-        .map((reason) => reason.code)
-        .where((code) => code.isNotEmpty)
-        .toList();
+    final failed =
+        live.reasons
+            .where((reason) => !reason.passed)
+            .map((reason) => reason.code)
+            .where((code) => code.isNotEmpty)
+            .toList();
     if (failed.isEmpty) {
       return 'No executable signal for current market state.';
     }
@@ -1139,13 +1305,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         fallbackEquityQuote: _fallbackRiskEquityQuote,
       );
       if (riskInput.usedBalanceFallback) {
+        final reason = riskInput.firstUnavailableReason;
         await _module.uiLog.log(
           'bingx.risk.autofit.blocked',
           'reason=balance_unavailable fallback_equity='
-              '${riskInput.accountEquityQuoteDecimal}',
+              '${riskInput.accountEquityQuoteDecimal} '
+              'exchange_reason=${reason ?? "-"}',
         );
         await _showSnack(
-          'Cannot auto-fit risk: BingX balance unavailable',
+          reason == null
+              ? 'Cannot auto-fit risk: BingX balance unavailable'
+              : 'Cannot auto-fit risk: BingX futures access unavailable ($reason)',
           seconds: 4,
         );
         return;
@@ -1173,8 +1343,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         );
         if (sizing.status == BingxFuturesOrderSizingStatus.blocked &&
             sizing.reasonCode == 'exchange_minimum_exceeds_risk_budget') {
-          final minimumNotional =
-              _toNum(sizing.minimumNotionalQuoteDecimal ?? '');
+          final minimumNotional = _toNum(
+            sizing.minimumNotionalQuoteDecimal ?? '',
+          );
           if (minimumNotional != null &&
               minimumNotional > fittedNotional &&
               minimumNotional <= safeNotional) {
@@ -1260,12 +1431,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (normalizedPeer.isNotEmpty) {
       for (final check in checks) {
         if (check.peerHex.trim().toLowerCase() == normalizedPeer) {
-          final codes = check.blockingFacts
-              .map((fact) => fact.code.trim())
-              .where((code) => code.isNotEmpty)
-              .toSet()
-              .toList()
-            ..sort();
+          final codes =
+              check.blockingFacts
+                  .map((fact) => fact.code.trim())
+                  .where((code) => code.isNotEmpty)
+                  .toSet()
+                  .toList()
+                ..sort();
           return (isSignable: check.isSignable, blockingCodes: codes);
         }
       }
@@ -1284,9 +1456,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     bool forceConsensusSignable = false,
     String? zoneEvaluationSide,
   }) async {
-    final consensus = forceConsensusSignable
-        ? (isSignable: true, blockingCodes: const <String>[])
-        : _consensusDecisionContext(peerHex);
+    final consensus =
+        forceConsensusSignable
+            ? (isSignable: true, blockingCodes: const <String>[])
+            : _consensusDecisionContext(peerHex);
     final result = await _module.liveStrategyUseCase.execute(
       BingxFuturesLiveStrategyCommand(
         symbol: symbol,
@@ -1450,9 +1623,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
     final zoneLowDecimal = _zoneLowController.text.trim();
     final zoneHighDecimal = _zoneHighController.text.trim();
-    String? limitPriceDecimal = _orderType == 'limit' && !isZonePending
-        ? _limitPriceController.text.trim()
-        : null;
+    String? limitPriceDecimal =
+        _orderType == 'limit' && !isZonePending
+            ? _limitPriceController.text.trim()
+            : null;
     if (_orderType == 'limit' &&
         !isZonePending &&
         (limitPriceDecimal == null || limitPriceDecimal.isEmpty)) {
@@ -1571,12 +1745,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             'source=${response.executionSource}',
       );
       if (response.status == PluginHostApiStatus.rejected) {
-        final code = response.errorCode?.trim().isNotEmpty == true
-            ? response.errorCode!.trim()
-            : 'none';
-        final msg = response.errorMessage?.trim().isNotEmpty == true
-            ? response.errorMessage!.trim()
-            : 'none';
+        final code =
+            response.errorCode?.trim().isNotEmpty == true
+                ? response.errorCode!.trim()
+                : 'none';
+        final msg =
+            response.errorMessage?.trim().isNotEmpty == true
+                ? response.errorMessage!.trim()
+                : 'none';
         await _module.uiLog.log(
           'bingx.intent.rejected.detail',
           'code=$code message=$msg source=${response.executionSource}',
@@ -1596,9 +1772,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           await _showSnack('BingX intent prepared: $shortHash');
           break;
         case PluginHostApiStatus.blocked:
-          final reason = response.blockingFacts.isEmpty
-              ? 'Consensus guard blocked execution.'
-              : response.blockingFacts.first.label;
+          final reason =
+              response.blockingFacts.isEmpty
+                  ? 'Consensus guard blocked execution.'
+                  : response.blockingFacts.first.label;
           await _showSnack(reason);
           break;
         case PluginHostApiStatus.rejected:
@@ -1643,13 +1820,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return;
     }
 
-    final peers = _module.manualChecks
-        .loadChecks()
-        .where((check) => check.isSignable)
-        .map((check) => check.peerHex)
-        .toSet()
-        .toList()
-      ..sort();
+    final peers =
+        _module.manualChecks
+            .loadChecks()
+            .where((check) => check.isSignable)
+            .map((check) => check.peerHex)
+            .toSet()
+            .toList()
+          ..sort();
     if (peers.isEmpty) {
       await _showSnack('No signable consensus peers available');
       return;
@@ -1719,6 +1897,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _refreshingSignals = true;
     try {
       final result = await _module.chatDelivery.receiveAndFilter();
+      _refreshAttestationsAfterTransportReceive('trading_signal_fetch');
       if (result.code < 0) {
         if (!silentWhenEmpty) {
           await _showSnack(
@@ -1738,10 +1917,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         for (final signal in result.tradeSignals) {
           byId[signal.id] = signal;
         }
-        final merged = byId.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-        _signalInbox =
-            List<CapsuleTradeSignalInboxMessage>.unmodifiable(merged);
+        final merged =
+            byId.values.toList()
+              ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+        _signalInbox = List<CapsuleTradeSignalInboxMessage>.unmodifiable(
+          merged,
+        );
       });
 
       if (result.tradeSignals.isEmpty && silentWhenEmpty) return;
@@ -1754,8 +1935,19 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
   }
 
+  void _refreshAttestationsAfterTransportReceive(String reason) {
+    unawaited(() async {
+      final result = await _module.attestationExchange.receiveAndAnswerStored();
+      await _module.uiLog.log(
+        'attestation.receive',
+        'reason=$reason code=${result.code} received=${result.receivedCount} stored=${result.storedCount} rejected=${result.rejectedCount}',
+      );
+    }());
+  }
+
   Future<void> _repeatSignalAsDraft(
-      CapsuleTradeSignalInboxMessage signal) async {
+    CapsuleTradeSignalInboxMessage signal,
+  ) async {
     final decoded = _tryDecodeJsonMap(signal.canonicalIntentJson);
     if (decoded == null) {
       await _module.uiLog.log(
@@ -1780,7 +1972,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _lastIntentResponse = null;
 
       if (_entryMode == 'zone_pending') {
-        _zoneSide = decoded['zone_side']?.toString() ??
+        _zoneSide =
+            decoded['zone_side']?.toString() ??
             (_side == 'buy' ? 'buyside' : 'sellside');
         _zoneLowController.text = decoded['zone_low_decimal']?.toString() ?? '';
         _zoneHighController.text =
@@ -1802,9 +1995,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
     });
 
-    final shortSignal = signal.signalId.length <= 12
-        ? signal.signalId
-        : '${signal.signalId.substring(0, 12)}..';
+    final shortSignal =
+        signal.signalId.length <= 12
+            ? signal.signalId
+            : '${signal.signalId.substring(0, 12)}..';
     await _module.uiLog.log(
       'bingx.signal.draft.loaded',
       'signal=${signal.signalId} from=${signal.fromHex} '
@@ -1967,25 +2161,21 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _registerManagedOrderId(
           orderId,
           symbol: payload.symbol,
-          provenance: orderId == null || orderId.isEmpty
-              ? null
-              : _buildManagedOrderProvenance(
-                  orderId: orderId,
-                  payload: payload,
-                  result: result,
-                  testOrder: _useTestOrderEndpoint,
-                ),
+          provenance:
+              orderId == null || orderId.isEmpty
+                  ? null
+                  : _buildManagedOrderProvenance(
+                    orderId: orderId,
+                    payload: payload,
+                    result: result,
+                    testOrder: _useTestOrderEndpoint,
+                  ),
         );
         _startOpenOrdersAutoTracking(
           symbol: payload.symbol,
           orderId: queued.execution.orderId,
         );
-        unawaited(
-          _fetchOpenOrders(
-            silent: true,
-            symbolOverride: payload.symbol,
-          ),
-        );
+        unawaited(_fetchOpenOrders(silent: true));
         await _showSnack(
           'Order sent${queued.execution.orderId == null ? '' : ' · id ${queued.execution.orderId}'}'
           '${queued.fromIdempotentCache ? ' · idempotent cache' : ''}',
@@ -2032,17 +2222,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.exchange.risk_error',
         evaluation.errorCode ?? 'risk_unavailable',
       );
-      await _showSnack(
-        evaluation.errorMessage ?? 'Risk check unavailable',
-      );
+      await _showSnack(evaluation.errorMessage ?? 'Risk check unavailable');
     }
     return evaluation.decision;
   }
 
-  Future<void> _fetchOpenOrders({
-    bool silent = false,
-    String? symbolOverride,
-  }) async {
+  Future<void> _fetchOpenOrders({bool silent = false}) async {
     if (_fetchingOpenOrders) return;
     final credentials = await _ensureCredentialsLoaded(silent: silent);
     if (credentials == null) {
@@ -2051,18 +2236,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
       return;
     }
-    final symbol = (symbolOverride ?? _symbolController.text).trim();
-
     setState(() {
       _fetchingOpenOrders = true;
     });
     try {
       final result = await _module.exchangeService.getOpenOrders(
         credentials: credentials,
-        symbol: symbol.isEmpty ? null : symbol,
       );
-      final message =
-          result.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
+      final message = result.exchangeMessage
+          .replaceAll('\n', ' ')
+          .replaceAll('\r', ' ');
       await _module.uiLog.log(
         'bingx.exchange.open_orders',
         'symbol=${result.symbol} success=${result.isSuccess} '
@@ -2071,25 +2254,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       );
       if (!mounted) return;
       final allOrders = result.orders;
-      final triggerOrders = allOrders
-          .where((order) => _isDroneTriggerOrder(order.orderType))
-          .toList(growable: false);
-      for (final order in triggerOrders) {
+      for (final order in allOrders) {
         if (_managedOrderIds.contains(order.orderId)) {
           _managedOrderSymbols[order.orderId] = order.symbol.toUpperCase();
         }
       }
-      final managedOrders = triggerOrders.where((order) {
-        if (!_managedOrderIds.contains(order.orderId)) {
-          return false;
-        }
-        final trackedSymbol =
-            _managedOrderSymbols[order.orderId]?.toUpperCase();
-        if (trackedSymbol == null || trackedSymbol.isEmpty) {
-          return true;
-        }
-        return trackedSymbol == result.symbol.toUpperCase();
-      }).toList(growable: false);
+      final managedOrders = allOrders
+          .where((order) => _managedOrderIds.contains(order.orderId))
+          .toList(growable: false);
       final lifecycleRevisionBeforeRevalidation =
           _managedOrderLifecycleRevision;
       if (result.isSuccess && managedOrders.isNotEmpty) {
@@ -2103,14 +2275,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           lifecycleRevisionBeforeRevalidation != _managedOrderLifecycleRevision;
       setState(() {
         _lastOpenOrdersRead = result;
-        _lastOpenOrdersTotalCount = triggerOrders.length;
         if (result.isSuccess) {
-          _openOrders = triggerOrders
-              .where((order) => _managedOrderIds.contains(order.orderId))
-              .toList(growable: false);
+          _openOrders = allOrders;
         }
-        if (result.isSuccess && _openOrders.isNotEmpty) {
-          _cancelOrderIdController.text = _openOrders.first.orderId;
+        if (result.isSuccess && managedOrders.isNotEmpty) {
+          _cancelOrderIdController.text = managedOrders.first.orderId;
         }
       });
       final trackedOrderId = _trackedOrderId;
@@ -2124,21 +2293,25 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             );
             return;
           }
-          final trackedStillOpen =
-              triggerOrders.any((order) => order.orderId == trackedOrderId);
+          final trackedStillOpen = allOrders.any(
+            (order) => order.orderId == trackedOrderId,
+          );
           await _module.uiLog.log(
             'bingx.exchange.tracking.check',
             'symbol=${result.symbol} orderId=$trackedOrderId '
                 'open=${trackedStillOpen ? "yes" : "no"} '
-                'managedCount=${managedOrders.length} totalCount=${triggerOrders.length}',
+                'managedCount=${managedOrders.length} totalCount=${allOrders.length}',
           );
           if (!trackedStillOpen) {
             _managedOrderIds.remove(trackedOrderId);
             _managedOrderSymbols.remove(trackedOrderId);
             _managedOrderProvenance.remove(trackedOrderId);
             _managedOrderLifecycleRevision += 1;
-            if (triggerOrders.isNotEmpty) {
-              final nextTrackedOrderId = triggerOrders.first.orderId;
+            final remainingManagedOrders = allOrders
+                .where((order) => _managedOrderIds.contains(order.orderId))
+                .toList(growable: false);
+            if (remainingManagedOrders.isNotEmpty) {
+              final nextTrackedOrderId = remainingManagedOrders.first.orderId;
               _trackedOrderId = nextTrackedOrderId;
               _cancelOrderIdController.text = nextTrackedOrderId;
               await _persistOpenOrdersTrackingState(
@@ -2147,7 +2320,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               await _module.uiLog.log(
                 'bingx.exchange.tracking.rotate',
                 'symbol=${result.symbol} previous=$trackedOrderId next=$nextTrackedOrderId '
-                    'managedCount=${triggerOrders.length}',
+                    'managedCount=${remainingManagedOrders.length}',
               );
             } else {
               _stopOpenOrdersAutoTracking(reason: 'order_closed');
@@ -2168,7 +2341,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       if (!silent) {
         await _showSnack(
           result.isSuccess
-              ? 'Drone trigger orders: ${triggerOrders.length}'
+              ? 'Open orders: ${allOrders.length} · drone: ${managedOrders.length}'
               : 'Open orders failed: ${result.exchangeCode}',
           seconds: result.isSuccess ? 2 : 4,
         );
@@ -2469,10 +2642,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         testOrder: provenance.testOrder,
       ),
     );
-    _startOpenOrdersAutoTracking(
-      symbol: payload.symbol,
-      orderId: newOrderId,
-    );
+    _startOpenOrdersAutoTracking(symbol: payload.symbol, orderId: newOrderId);
     await _module.uiLog.log(
       'bingx.exchange.replace.complete',
       'oldOrderId=${provenance.orderId} newOrderId=$newOrderId '
@@ -2486,19 +2656,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return normalized.length <= 12 ? normalized : normalized.substring(0, 12);
   }
 
-  Future<void> _cancelOrder() async {
+  Future<void> _cancelOrder({BingxFuturesOpenOrder? order}) async {
     if (_cancelingOrder) return;
     final credentials = await _ensureCredentialsLoaded();
     if (credentials == null) {
       await _showSnack('Save BingX API credentials first');
       return;
     }
-    final symbol = _symbolController.text.trim();
+    final symbol = order?.symbol.trim() ?? _symbolController.text.trim();
     if (symbol.isEmpty) {
       await _showSnack('Symbol is required');
       return;
     }
-    final orderId = _cancelOrderIdController.text.trim();
+    final orderId =
+        order?.orderId.trim() ?? _cancelOrderIdController.text.trim();
     if (orderId.isEmpty) {
       await _showSnack('Order ID is required');
       return;
@@ -2513,8 +2684,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         symbol: symbol,
         orderId: orderId,
       );
-      final message =
-          result.exchangeMessage.replaceAll('\n', ' ').replaceAll('\r', ' ');
+      final message = result.exchangeMessage
+          .replaceAll('\n', ' ')
+          .replaceAll('\r', ' ');
       await _module.uiLog.log(
         'bingx.exchange.cancel_order',
         'symbol=${result.symbol} requestOrderId=${result.requestedOrderId} '
@@ -2568,11 +2740,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
   }
 
-  bool _isDroneTriggerOrder(String orderType) {
-    final normalized = orderType.trim().toUpperCase();
-    return normalized.startsWith('TRIGGER');
-  }
-
   Map<String, dynamic>? _tryDecodeJsonMap(String raw) {
     try {
       final decoded = jsonDecode(raw);
@@ -2603,6 +2770,76 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
+  }
+
+  Widget _openOrderCard(BingxFuturesOpenOrder order) {
+    final isManaged = _managedOrderIds.contains(order.orderId);
+    final badgeColor =
+        isManaged ? const Color(0xFF75D98A) : const Color(0xFFFFC76A);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1322),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF2D3550), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${order.symbol} · ${order.side} · ${order.orderType}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFE6EBFF),
+                  ),
+                ),
+              ),
+              _statusChip(
+                isManaged ? 'Drone' : 'Exchange only',
+                accent: badgeColor,
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'id ${order.orderId}',
+            style: const TextStyle(
+              color: Color(0xFF9FAAC0),
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'status ${order.status.isEmpty ? "-" : order.status} · '
+            'price ${order.priceDecimal ?? "-"} · '
+            'trigger ${order.triggerPriceDecimal ?? "-"} · '
+            'qty ${order.quantityDecimal ?? "-"}',
+            style: const TextStyle(color: Color(0xFFC4CCE0)),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'created ${_formatOrderTime(order.createdAtMs)}',
+                  style: const TextStyle(color: Color(0xFF8D97AE)),
+                ),
+              ),
+              TextButton.icon(
+                onPressed:
+                    _cancelingOrder ? null : () => _cancelOrder(order: order),
+                icon: const Icon(Icons.close_rounded, size: 16),
+                label: const Text('Cancel'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2730,9 +2967,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: _signalBucketColor(entry.bucket).withValues(
-                        alpha: 0.15,
-                      ),
+                      color: _signalBucketColor(
+                        entry.bucket,
+                      ).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -2766,16 +3003,15 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _lastIntentResponse?.status == PluginHostApiStatus.executed;
     final shortIntentHash =
         _lastIntentResponse?.result?['intent_hash_hex']?.toString() ?? '';
-    final intentHashLabel = shortIntentHash.isEmpty
-        ? 'none'
-        : (shortIntentHash.length > 12
-            ? '${shortIntentHash.substring(0, 12)}..'
-            : shortIntentHash);
+    final intentHashLabel =
+        shortIntentHash.isEmpty
+            ? 'none'
+            : (shortIntentHash.length > 12
+                ? '${shortIntentHash.substring(0, 12)}..'
+                : shortIntentHash);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Trading Drone'),
-      ),
+      appBar: AppBar(title: const Text('Trading Drone')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -2799,9 +3035,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   for (final symbol in _shortBreakdownSymbols)
                     ActionChip(
                       label: Text(symbol),
-                      onPressed: _runningIntent
-                          ? null
-                          : () => _applyShortBreakdownPlaybook(symbol: symbol),
+                      onPressed:
+                          _runningIntent
+                              ? null
+                              : () =>
+                                  _applyShortBreakdownPlaybook(symbol: symbol),
                     ),
                 ],
               ),
@@ -2858,26 +3096,30 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         ),
                         const SizedBox(width: 8),
                         OutlinedButton.icon(
-                          onPressed: _runningIntent
-                              ? null
-                              : _loadingPerpSymbols
+                          onPressed:
+                              _runningIntent
+                                  ? null
+                                  : _loadingPerpSymbols
                                   ? null
                                   : _openPerpetualSymbolPicker,
-                          icon: _loadingPerpSymbols
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.tune_rounded),
+                          icon:
+                              _loadingPerpSymbols
+                                  ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                  : const Icon(Icons.tune_rounded),
                           label: const Text('Perp'),
                         ),
                         const SizedBox(width: 6),
                         IconButton(
-                          onPressed: _loadingPerpSymbols
-                              ? null
-                              : () => _loadPerpetualSymbols(silent: false),
+                          onPressed:
+                              _loadingPerpSymbols
+                                  ? null
+                                  : () => _loadPerpetualSymbols(silent: false),
                           tooltip: 'Refresh symbols',
                           icon: const Icon(Icons.refresh_rounded),
                         ),
@@ -2912,23 +3154,55 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  DropdownButton<String>(
+                    value: _signalScanScope,
+                    dropdownColor: const Color(0xFF121821),
+                    items: const [
+                      DropdownMenuItem<String>(
+                        value: _signalScanScopeCore,
+                        child: Text('Core Watchlist'),
+                      ),
+                      DropdownMenuItem<String>(
+                        value: _signalScanScopeAllPerps,
+                        child: Text('All Perps'),
+                      ),
+                    ],
+                    onChanged:
+                        _scanningSignals
+                            ? null
+                            : (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _signalScanScope = value;
+                                _signalRankEntries =
+                                    const <BingxFuturesSignalRankEntry>[];
+                                _signalRankExpanded = true;
+                              });
+                            },
+                  ),
                   FilledButton.icon(
-                    onPressed: _runningIntent || _scanningSignals
-                        ? null
-                        : _scanSignalWatchlist,
-                    icon: _scanningSignals
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            _signalRankEntries.isNotEmpty && _signalRankExpanded
-                                ? Icons.unfold_less_rounded
-                                : Icons.radar_rounded,
-                          ),
+                    onPressed:
+                        _runningIntent || _scanningSignals
+                            ? null
+                            : _scanSignalWatchlist,
+                    icon:
+                        _scanningSignals
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : Icon(
+                              _signalRankEntries.isNotEmpty &&
+                                      _signalRankExpanded
+                                  ? Icons.unfold_less_rounded
+                                  : Icons.radar_rounded,
+                            ),
                     label: Text(
                       _scanningSignals
                           ? 'Scanning'
@@ -2938,10 +3212,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                               : 'Scan Watchlist'),
                     ),
                   ),
-                  const SizedBox(width: 10),
                   Text(
                     _signalRankEntries.isEmpty
-                        ? 'Signals not ranked'
+                        ? '${_signalScanScopeLabel()} · not ranked'
                         : 'Ranked ${_signalRankEntries.length}',
                     style: const TextStyle(
                       color: Color(0xFF97A3B5),
@@ -2949,7 +3222,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     ),
                   ),
                   if (_signalRankEntries.isNotEmpty) ...[
-                    const SizedBox(width: 6),
                     TextButton.icon(
                       onPressed: () {
                         setState(() {
@@ -2976,13 +3248,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               ),
               SwitchListTile.adaptive(
                 value: _droneEnabled,
-                onChanged: _runningIntent
-                    ? null
-                    : (value) {
-                        setState(() {
-                          _droneEnabled = value;
-                        });
-                      },
+                onChanged:
+                    _runningIntent
+                        ? null
+                        : (value) {
+                          setState(() {
+                            _droneEnabled = value;
+                          });
+                        },
                 title: const Text('Drone enabled'),
                 subtitle: Text(
                   _droneEnabled
@@ -3016,19 +3289,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                           ),
                         )
                         .toList(growable: false),
-                    onChanged: _runningIntent
-                        ? null
-                        : (value) {
-                            if (value == null) return;
-                            setState(() {
-                              _stopLossPercent = value;
-                            });
-                            unawaited(
-                              _persistOpenOrdersTrackingState(
-                                source: 'risk_settings_sl_change',
-                              ),
-                            );
-                          },
+                    onChanged:
+                        _runningIntent
+                            ? null
+                            : (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _stopLossPercent = value;
+                              });
+                              unawaited(
+                                _persistOpenOrdersTrackingState(
+                                  source: 'risk_settings_sl_change',
+                                ),
+                              );
+                            },
                   ),
                   DropdownButton<double>(
                     value: _takeProfitRiskReward,
@@ -3043,31 +3317,34 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                           ),
                         )
                         .toList(growable: false),
-                    onChanged: _runningIntent
-                        ? null
-                        : (value) {
-                            if (value == null) return;
-                            setState(() {
-                              _takeProfitRiskReward = value;
-                            });
-                            unawaited(
-                              _persistOpenOrdersTrackingState(
-                                source: 'risk_settings_rr_change',
-                              ),
-                            );
-                          },
+                    onChanged:
+                        _runningIntent
+                            ? null
+                            : (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _takeProfitRiskReward = value;
+                              });
+                              unawaited(
+                                _persistOpenOrdersTrackingState(
+                                  source: 'risk_settings_rr_change',
+                                ),
+                              );
+                            },
                   ),
                   OutlinedButton.icon(
-                    onPressed: _runningIntent || _fittingMaxNotional
-                        ? null
-                        : _autoFitMaxNotionalToRisk,
-                    icon: _fittingMaxNotional
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.auto_fix_high_rounded),
+                    onPressed:
+                        _runningIntent || _fittingMaxNotional
+                            ? null
+                            : _autoFitMaxNotionalToRisk,
+                    icon:
+                        _fittingMaxNotional
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.auto_fix_high_rounded),
                     label: Text(
                       _fittingMaxNotional ? 'Fitting' : 'Auto-fit Notional',
                     ),
@@ -3123,23 +3400,25 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   ),
                   FilledButton.icon(
                     onPressed: _runningIntent ? null : _runIntent,
-                    icon: _runningIntent
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.bolt_rounded),
+                    icon:
+                        _runningIntent
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.bolt_rounded),
                     label: Text(_runningIntent ? 'Preparing' : 'Run Intent'),
                   ),
                   FilledButton.tonalIcon(
-                    onPressed: _runningIntent
-                        ? null
-                        : () {
-                            setState(() {
-                              _droneEnabled = !_droneEnabled;
-                            });
-                          },
+                    onPressed:
+                        _runningIntent
+                            ? null
+                            : () {
+                              setState(() {
+                                _droneEnabled = !_droneEnabled;
+                              });
+                            },
                     icon: Icon(
                       _droneEnabled
                           ? Icons.pause_circle_outline_rounded
@@ -3152,13 +3431,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         _runningIntent || _broadcastingSignal || !canBroadcast
                             ? null
                             : _broadcastLastIntent,
-                    icon: _broadcastingSignal
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.campaign_outlined),
+                    icon:
+                        _broadcastingSignal
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.campaign_outlined),
                     label: Text(
                       _broadcastingSignal ? 'Broadcasting' : 'Broadcast',
                     ),
@@ -3230,13 +3510,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               const SizedBox(height: 6),
               SwitchListTile.adaptive(
                 value: _useTestOrderEndpoint,
-                onChanged: _executing
-                    ? null
-                    : (value) {
-                        setState(() {
-                          _useTestOrderEndpoint = value;
-                        });
-                      },
+                onChanged:
+                    _executing
+                        ? null
+                        : (value) {
+                          setState(() {
+                            _useTestOrderEndpoint = value;
+                          });
+                        },
                 title: const Text('Use test order endpoint'),
                 subtitle: Text(
                   _useTestOrderEndpoint
@@ -3252,43 +3533,47 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 children: [
                   FilledButton.icon(
                     onPressed: _executing ? null : _executeLastIntent,
-                    icon: _executing
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_rounded),
+                    icon:
+                        _executing
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.send_rounded),
                     label: Text(
                       _executing
                           ? 'Sending to BingX'
                           : _useTestOrderEndpoint
-                              ? 'Send Test Order to BingX'
-                              : 'Send Live Order to BingX',
+                          ? 'Send Test Order to BingX'
+                          : 'Send Live Order to BingX',
                     ),
                   ),
                   OutlinedButton.icon(
                     onPressed: _savingCredentials ? null : _saveCredentials,
-                    icon: _savingCredentials
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.key_rounded),
+                    icon:
+                        _savingCredentials
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.key_rounded),
                     label: Text(
-                        _savingCredentials ? 'Saving' : 'Save Credentials'),
+                      _savingCredentials ? 'Saving' : 'Save Credentials',
+                    ),
                   ),
                   OutlinedButton.icon(
                     onPressed:
                         _fetchingOpenOrders ? null : () => _fetchOpenOrders(),
-                    icon: _fetchingOpenOrders
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.list_alt_rounded),
+                    icon:
+                        _fetchingOpenOrders
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.list_alt_rounded),
                     label: Text(
                       _fetchingOpenOrders ? 'Fetching Orders' : 'Open Orders',
                     ),
@@ -3328,16 +3613,15 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   ),
                   FilledButton.tonalIcon(
                     onPressed: _cancelingOrder ? null : _cancelOrder,
-                    icon: _cancelingOrder
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.cancel_presentation_rounded),
-                    label: Text(
-                      _cancelingOrder ? 'Canceling' : 'Cancel Order',
-                    ),
+                    icon:
+                        _cancelingOrder
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.cancel_presentation_rounded),
+                    label: Text(_cancelingOrder ? 'Canceling' : 'Cancel Order'),
                   ),
                 ],
               ),
@@ -3351,23 +3635,28 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       _lastExecution!.isSuccess
                           ? 'Order OK · ${_lastExecution!.exchangeCode}'
                           : 'Order FAIL · ${_lastExecution!.exchangeCode}',
-                      accent: _lastExecution!.isSuccess
-                          ? const Color(0xFF75D98A)
-                          : const Color(0xFFFF8A7A),
+                      accent:
+                          _lastExecution!.isSuccess
+                              ? const Color(0xFF75D98A)
+                              : const Color(0xFFFF8A7A),
                     ),
                   if (_lastExecution != null)
                     _statusChip('HTTP ${_lastExecution!.httpStatusCode}'),
                   if (_lastExecutionAttempts > 0)
                     _statusChip('Attempts $_lastExecutionAttempts'),
                   if (_lastExecutionFromCache)
-                    _statusChip('Idempotent cache',
-                        accent: const Color(0xFFFFC76A)),
+                    _statusChip(
+                      'Idempotent cache',
+                      accent: const Color(0xFFFFC76A),
+                    ),
                   if (_lastOpenOrdersRead != null)
                     _statusChip(
-                      'Drone Open: ${_openOrders.length}/$_lastOpenOrdersTotalCount (${_lastOpenOrdersRead!.exchangeCode})',
-                      accent: _lastOpenOrdersRead!.isSuccess
-                          ? const Color(0xFF75D98A)
-                          : const Color(0xFFFF8A7A),
+                      'Open: ${_openOrders.length} · Drone: $_managedOpenOrderCount '
+                      '(${_lastOpenOrdersRead!.exchangeCode})',
+                      accent:
+                          _lastOpenOrdersRead!.isSuccess
+                              ? const Color(0xFF75D98A)
+                              : const Color(0xFFFF8A7A),
                     ),
                   if (_isTrackingOpenOrders)
                     _statusChip(
@@ -3378,9 +3667,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   if (_lastCancelOrder != null)
                     _statusChip(
                       'Cancel: ${_lastCancelOrder!.exchangeCode}',
-                      accent: _lastCancelOrder!.isSuccess
-                          ? const Color(0xFF75D98A)
-                          : const Color(0xFFFF8A7A),
+                      accent:
+                          _lastCancelOrder!.isSuccess
+                              ? const Color(0xFF75D98A)
+                              : const Color(0xFFFF8A7A),
                     ),
                 ],
               ),
@@ -3389,7 +3679,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Managed Drone Orders',
+                    'Open Exchange Orders',
                     style: TextStyle(
                       color: Color(0xFF9FAAC0),
                       fontWeight: FontWeight.w700,
@@ -3397,52 +3687,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                for (final order in _openOrders.take(12))
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 6),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0D1322),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: const Color(0xFF2D3550),
-                        width: 1,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${order.symbol} · ${order.side} · ${order.orderType}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFFE6EBFF),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'id ${order.orderId}',
-                          style: const TextStyle(
-                            color: Color(0xFF9FAAC0),
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'status ${order.status.isEmpty ? "-" : order.status} · '
-                          'price ${order.priceDecimal ?? "-"} · '
-                          'trigger ${order.triggerPriceDecimal ?? "-"} · '
-                          'qty ${order.quantityDecimal ?? "-"}',
-                          style: const TextStyle(color: Color(0xFFC4CCE0)),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'updated ${_formatOrderTime(order.createdAtMs)}',
-                          style: const TextStyle(color: Color(0xFF8D97AE)),
-                        ),
-                      ],
-                    ),
-                  ),
+                for (final order in _openOrders.take(12)) _openOrderCard(order),
               ],
             ],
           ),
@@ -3456,16 +3701,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 runSpacing: 10,
                 children: [
                   OutlinedButton.icon(
-                    onPressed: _refreshingSignals
-                        ? null
-                        : () => _refreshSignalInbox(silentWhenEmpty: false),
-                    icon: _refreshingSignals
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh_rounded),
+                    onPressed:
+                        _refreshingSignals
+                            ? null
+                            : () => _refreshSignalInbox(silentWhenEmpty: false),
+                    icon:
+                        _refreshingSignals
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.refresh_rounded),
                     label: Text(
                       _refreshingSignals ? 'Refreshing' : 'Fetch Signals',
                     ),
@@ -3482,7 +3729,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   ),
                 )
               else
-                ..._signalInbox.reversed.take(10).map(
+                ..._signalInbox.reversed
+                    .take(10)
+                    .map(
                       (signal) => Container(
                         margin: const EdgeInsets.only(top: 10),
                         padding: const EdgeInsets.all(12),
@@ -3496,8 +3745,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                           children: [
                             Text(
                               '${signal.symbol} · ${signal.side.toUpperCase()} · ${signal.orderType.toUpperCase()}',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                             const SizedBox(height: 4),
                             Text(

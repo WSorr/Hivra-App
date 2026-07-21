@@ -8,6 +8,10 @@ class BingxFuturesExchangeRiskInput {
   final bool usedBalanceFallback;
   final bool usedPnlFallback;
   final bool usedPositionsFallback;
+  final String? balanceUnavailableCode;
+  final String? balanceUnavailableMessage;
+  final String? positionsUnavailableCode;
+  final String? positionsUnavailableMessage;
 
   const BingxFuturesExchangeRiskInput({
     required this.accountEquityQuoteDecimal,
@@ -16,7 +20,32 @@ class BingxFuturesExchangeRiskInput {
     required this.usedBalanceFallback,
     required this.usedPnlFallback,
     required this.usedPositionsFallback,
+    this.balanceUnavailableCode,
+    this.balanceUnavailableMessage,
+    this.positionsUnavailableCode,
+    this.positionsUnavailableMessage,
   });
+
+  String? get firstUnavailableReason {
+    final balanceReason = _formatUnavailableReason(
+      balanceUnavailableCode,
+      balanceUnavailableMessage,
+    );
+    if (balanceReason != null) return balanceReason;
+    return _formatUnavailableReason(
+      positionsUnavailableCode,
+      positionsUnavailableMessage,
+    );
+  }
+
+  static String? _formatUnavailableReason(String? code, String? message) {
+    final safeCode = code?.trim() ?? '';
+    final safeMessage = message?.trim() ?? '';
+    if (safeCode.isEmpty && safeMessage.isEmpty) return null;
+    if (safeCode.isEmpty) return safeMessage;
+    if (safeMessage.isEmpty) return safeCode;
+    return '$safeCode $safeMessage';
+  }
 }
 
 class BingxFuturesExchangeRiskInputService {
@@ -46,9 +75,10 @@ class BingxFuturesExchangeRiskInputService {
     final usedPositionsFallback = !positions.isSuccess;
 
     return BingxFuturesExchangeRiskInput(
-      accountEquityQuoteDecimal: usedBalanceFallback
-          ? safeFallbackEquity.toStringAsFixed(8)
-          : parsedEquity.toStringAsFixed(8),
+      accountEquityQuoteDecimal:
+          usedBalanceFallback
+              ? safeFallbackEquity.toStringAsFixed(8)
+              : parsedEquity.toStringAsFixed(8),
       realizedDailyPnlQuoteDecimal:
           usedPnlFallback ? '0.00000000' : parsedPnl.toStringAsFixed(8),
       concurrentPositions:
@@ -56,6 +86,13 @@ class BingxFuturesExchangeRiskInputService {
       usedBalanceFallback: usedBalanceFallback,
       usedPnlFallback: usedPnlFallback,
       usedPositionsFallback: usedPositionsFallback,
+      balanceUnavailableCode: usedBalanceFallback ? balance.exchangeCode : null,
+      balanceUnavailableMessage:
+          usedBalanceFallback ? balance.exchangeMessage : null,
+      positionsUnavailableCode:
+          usedPositionsFallback ? positions.exchangeCode : null,
+      positionsUnavailableMessage:
+          usedPositionsFallback ? positions.exchangeMessage : null,
     );
   }
 

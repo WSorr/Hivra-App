@@ -113,8 +113,9 @@ class BingxFuturesLiveSnapshotBuilderService {
       );
     }
 
-    final premium =
-        await exchange.getPublicPremiumIndex(symbol: normalizedSymbol);
+    final premium = await exchange.getPublicPremiumIndex(
+      symbol: normalizedSymbol,
+    );
     if (!premium.isSuccess ||
         premium.fundingRateDecimal == null ||
         premium.fundingRateDecimal!.isEmpty) {
@@ -255,25 +256,27 @@ class BingxFuturesLiveSnapshotBuilderService {
     List<BingxFuturesPublicKline> input,
   ) {
     final minutes = _timeframeMinutes(timeframe);
-    return input.map((kline) {
-      final openTime = DateTime.fromMillisecondsSinceEpoch(
-        kline.openTimeMs,
-        isUtc: true,
-      );
-      final closeTime = openTime.add(Duration(minutes: minutes));
-      return BingxFuturesCandle(
-        timeframe: timeframe,
-        openTimeUtc: openTime.toIso8601String(),
-        closeTimeUtc: closeTime.toIso8601String(),
-        openDecimal: kline.openDecimal,
-        highDecimal: kline.highDecimal,
-        lowDecimal: kline.lowDecimal,
-        closeDecimal: kline.closeDecimal,
-        volumeBaseDecimal: '0',
-        volumeQuoteDecimal: '0',
-        isClosed: true,
-      );
-    }).toList(growable: false);
+    return input
+        .map((kline) {
+          final openTime = DateTime.fromMillisecondsSinceEpoch(
+            kline.openTimeMs,
+            isUtc: true,
+          );
+          final closeTime = openTime.add(Duration(minutes: minutes));
+          return BingxFuturesCandle(
+            timeframe: timeframe,
+            openTimeUtc: openTime.toIso8601String(),
+            closeTimeUtc: closeTime.toIso8601String(),
+            openDecimal: kline.openDecimal,
+            highDecimal: kline.highDecimal,
+            lowDecimal: kline.lowDecimal,
+            closeDecimal: kline.closeDecimal,
+            volumeBaseDecimal: kline.volumeBaseDecimal ?? '0',
+            volumeQuoteDecimal: kline.volumeQuoteDecimal ?? '0',
+            isClosed: true,
+          );
+        })
+        .toList(growable: false);
   }
 
   int _timeframeMinutes(String timeframe) {
@@ -292,16 +295,18 @@ class BingxFuturesLiveSnapshotBuilderService {
   List<BingxFuturesTrade> _mapTrades(List<BingxFuturesPublicTrade> input) {
     return input
         .where((trade) => trade.side == 'buy' || trade.side == 'sell')
-        .map((trade) => BingxFuturesTrade(
-              tradeId: trade.tradeId ?? '-',
-              timestampUtc: _msToUtcIso(
-                trade.timestampMs ??
-                    DateTime.now().millisecondsSinceEpoch.toString(),
-              ),
-              side: trade.side,
-              priceDecimal: trade.priceDecimal,
-              quantityDecimal: trade.quantityDecimal,
-            ))
+        .map(
+          (trade) => BingxFuturesTrade(
+            tradeId: trade.tradeId ?? '-',
+            timestampUtc: _msToUtcIso(
+              trade.timestampMs ??
+                  DateTime.now().millisecondsSinceEpoch.toString(),
+            ),
+            side: trade.side,
+            priceDecimal: trade.priceDecimal,
+            quantityDecimal: trade.quantityDecimal,
+          ),
+        )
         .toList(growable: false);
   }
 
@@ -341,17 +346,20 @@ class BingxFuturesLiveSnapshotBuilderService {
         .where((v) => v > 0)
         .toList(growable: false);
 
-    final extHigh = highs1h.isEmpty
-        ? 0
-        : highs1h.reduce((a, b) => a > b ? a : b).toDouble();
+    final extHigh =
+        highs1h.isEmpty
+            ? 0
+            : highs1h.reduce((a, b) => a > b ? a : b).toDouble();
     final extLow =
         lows1h.isEmpty ? 0 : lows1h.reduce((a, b) => a < b ? a : b).toDouble();
-    final intHigh = highs5m.isEmpty
-        ? extHigh
-        : highs5m.reduce((a, b) => a > b ? a : b).toDouble();
-    final intLow = lows5m.isEmpty
-        ? extLow
-        : lows5m.reduce((a, b) => a < b ? a : b).toDouble();
+    final intHigh =
+        highs5m.isEmpty
+            ? extHigh
+            : highs5m.reduce((a, b) => a > b ? a : b).toDouble();
+    final intLow =
+        lows5m.isEmpty
+            ? extLow
+            : lows5m.reduce((a, b) => a < b ? a : b).toDouble();
 
     final baseLevels = <BingxFuturesLiquidityLevel>[
       BingxFuturesLiquidityLevel(
@@ -384,10 +392,7 @@ class BingxFuturesLiveSnapshotBuilderService {
       trades: trades,
       priceDecimal: priceDecimal,
     );
-    return <BingxFuturesLiquidityLevel>[
-      ...baseLevels,
-      ...liquidation,
-    ];
+    return <BingxFuturesLiquidityLevel>[...baseLevels, ...liquidation];
   }
 
   List<BingxFuturesSessionVolumePoint> _deriveSessions(
@@ -397,18 +402,15 @@ class BingxFuturesLiveSnapshotBuilderService {
       return side == 'buy' ? qty : -qty;
     }
 
-    final bySession = <String, num>{
-      'asia': 0,
-      'london': 0,
-      'newyork': 0,
-    };
+    final bySession = <String, num>{'asia': 0, 'london': 0, 'newyork': 0};
     for (final trade in trades) {
       final ts = DateTime.tryParse(trade.timestampUtc)?.toUtc();
       if (ts == null) continue;
       final qty = num.tryParse(trade.quantityDecimal) ?? 0;
-      final session = ts.hour < 8
-          ? 'asia'
-          : ts.hour < 16
+      final session =
+          ts.hour < 8
+              ? 'asia'
+              : ts.hour < 16
               ? 'london'
               : 'newyork';
       bySession[session] =
@@ -470,12 +472,7 @@ class BingxFuturesLiveSnapshotBuilderService {
       }
     }
     if (rows.isEmpty) {
-      rows.add(
-        _openInterestPoint(
-          oi.openInterestDecimal!,
-          oi.timestampMs,
-        ),
-      );
+      rows.add(_openInterestPoint(oi.openInterestDecimal!, oi.timestampMs));
     }
     return rows;
   }
@@ -509,18 +506,22 @@ class BingxFuturesLiveSnapshotBuilderService {
       }
     }
 
-    final buyAggression =
-        trades.where((trade) => trade.side == 'buy').map((trade) {
-      final qty = num.tryParse(trade.quantityDecimal) ?? 0;
-      final price = num.tryParse(trade.priceDecimal) ?? 0;
-      return qty > 0 && price > 0 ? qty * price : 0;
-    }).fold<num>(0, (acc, value) => acc + value);
-    final sellAggression =
-        trades.where((trade) => trade.side == 'sell').map((trade) {
-      final qty = num.tryParse(trade.quantityDecimal) ?? 0;
-      final price = num.tryParse(trade.priceDecimal) ?? 0;
-      return qty > 0 && price > 0 ? qty * price : 0;
-    }).fold<num>(0, (acc, value) => acc + value);
+    final buyAggression = trades
+        .where((trade) => trade.side == 'buy')
+        .map((trade) {
+          final qty = num.tryParse(trade.quantityDecimal) ?? 0;
+          final price = num.tryParse(trade.priceDecimal) ?? 0;
+          return qty > 0 && price > 0 ? qty * price : 0;
+        })
+        .fold<num>(0, (acc, value) => acc + value);
+    final sellAggression = trades
+        .where((trade) => trade.side == 'sell')
+        .map((trade) {
+          final qty = num.tryParse(trade.quantityDecimal) ?? 0;
+          final price = num.tryParse(trade.priceDecimal) ?? 0;
+          return qty > 0 && price > 0 ? qty * price : 0;
+        })
+        .fold<num>(0, (acc, value) => acc + value);
 
     final levels = <BingxFuturesLiquidityLevel>[];
     if (bestAsk != null &&
@@ -550,8 +551,10 @@ class BingxFuturesLiveSnapshotBuilderService {
 
   String _msToUtcIso(String rawMs) {
     final ms = int.tryParse(rawMs.trim()) ?? 0;
-    return DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true)
-        .toIso8601String();
+    return DateTime.fromMillisecondsSinceEpoch(
+      ms,
+      isUtc: true,
+    ).toIso8601String();
   }
 
   String _fmt(num value) {

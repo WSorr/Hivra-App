@@ -1,6 +1,7 @@
 class BingxFuturesApiCredentials {
   final String apiKey;
   final String apiSecret;
+  static final RegExp _visibleAsciiPattern = RegExp(r'^[\x21-\x7E]+$');
 
   const BingxFuturesApiCredentials({
     required this.apiKey,
@@ -15,6 +16,14 @@ class BingxFuturesApiCredentials {
     }
     if (normalizedSecret.isEmpty) {
       throw const FormatException('BingX API secret is required');
+    }
+    if (!_visibleAsciiPattern.hasMatch(normalizedKey)) {
+      throw const FormatException('BingX API key contains invalid characters');
+    }
+    if (!_visibleAsciiPattern.hasMatch(normalizedSecret)) {
+      throw const FormatException(
+        'BingX API secret contains invalid characters',
+      );
     }
     return BingxFuturesApiCredentials(
       apiKey: normalizedKey,
@@ -83,8 +92,10 @@ class BingxFuturesIntentPayload {
     final entryMode = switch (entryModeRaw) {
       null || '' || 'direct' => 'direct',
       'zone_pending' => 'zone_pending',
-      _ => throw const FormatException(
-          'Intent entry_mode must be direct or zone_pending'),
+      _ =>
+        throw const FormatException(
+          'Intent entry_mode must be direct or zone_pending',
+        ),
     };
     final triggerPrice = result['trigger_price_decimal']?.toString().trim();
     final stopLoss = result['stop_loss_decimal']?.toString().trim();
@@ -96,7 +107,8 @@ class BingxFuturesIntentPayload {
     if (entryMode == 'zone_pending' &&
         (triggerPrice == null || triggerPrice.isEmpty)) {
       throw const FormatException(
-          'zone_pending intent requires trigger_price_decimal');
+        'zone_pending intent requires trigger_price_decimal',
+      );
     }
     return BingxFuturesIntentPayload(
       clientOrderId: readRequiredString('client_order_id'),
@@ -152,15 +164,9 @@ class BingxFuturesOrderExecutionResult {
   });
 }
 
-enum BingxFuturesLeverageSide {
-  long,
-  short,
-}
+enum BingxFuturesLeverageSide { long, short }
 
-enum BingxFuturesMarginType {
-  isolated,
-  crossed,
-}
+enum BingxFuturesMarginType { isolated, crossed }
 
 class BingxFuturesControlActionResult {
   final bool isSuccess;
@@ -344,6 +350,8 @@ class BingxFuturesPublicKline {
   final String highDecimal;
   final String lowDecimal;
   final String closeDecimal;
+  final String? volumeBaseDecimal;
+  final String? volumeQuoteDecimal;
 
   const BingxFuturesPublicKline({
     required this.openTimeMs,
@@ -351,6 +359,8 @@ class BingxFuturesPublicKline {
     required this.highDecimal,
     required this.lowDecimal,
     required this.closeDecimal,
+    this.volumeBaseDecimal,
+    this.volumeQuoteDecimal,
   });
 }
 
@@ -664,6 +674,42 @@ class BingxFuturesPerpetualSymbolsResult {
   });
 }
 
+class BingxFuturesPublicTicker {
+  final String symbol;
+  final String? lastPriceDecimal;
+  final String? priceChangePercentDecimal;
+  final String? volumeBaseDecimal;
+  final String? volumeQuoteDecimal;
+
+  const BingxFuturesPublicTicker({
+    required this.symbol,
+    required this.lastPriceDecimal,
+    required this.priceChangePercentDecimal,
+    required this.volumeBaseDecimal,
+    required this.volumeQuoteDecimal,
+  });
+}
+
+class BingxFuturesPublicTickersResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String responseBody;
+  final List<BingxFuturesPublicTicker> tickers;
+
+  const BingxFuturesPublicTickersResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.responseBody,
+    required this.tickers,
+  });
+}
+
 class BingxFuturesContractRules {
   final String symbol;
   final String? minimumQuantityDecimal;
@@ -720,8 +766,5 @@ class BingxHttpResponse {
   final int statusCode;
   final String body;
 
-  const BingxHttpResponse({
-    required this.statusCode,
-    required this.body,
-  });
+  const BingxHttpResponse({required this.statusCode, required this.body});
 }

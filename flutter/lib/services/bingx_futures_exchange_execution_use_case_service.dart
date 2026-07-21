@@ -25,11 +25,11 @@ class BingxFuturesExchangeExecutionUseCaseService {
         const BingxFuturesRiskGovernorService(),
     BingxFuturesObservabilityEnvelopeService observability =
         const BingxFuturesObservabilityEnvelopeService(),
-  })  : _exchange = exchange,
-        _queue = queue,
-        _riskInput = riskInput,
-        _riskGovernor = riskGovernor,
-        _observability = observability;
+  }) : _exchange = exchange,
+       _queue = queue,
+       _riskInput = riskInput,
+       _riskGovernor = riskGovernor,
+       _observability = observability;
 
   Future<BingxFuturesExchangeExecutionUseCaseResult> execute({
     required String screen,
@@ -150,7 +150,8 @@ class BingxFuturesExchangeExecutionUseCaseService {
     bool allowExchangeRiskInputFallbacks = false,
   }) async {
     final diagnostics = <String>[];
-    var entryPriceDecimal = _nonEmpty(payload.limitPriceDecimal) ??
+    var entryPriceDecimal =
+        _nonEmpty(payload.limitPriceDecimal) ??
         _nonEmpty(payload.triggerPriceDecimal);
     if (entryPriceDecimal == null) {
       final quote = await _exchange.getPublicPrice(symbol: payload.symbol);
@@ -169,13 +170,15 @@ class BingxFuturesExchangeExecutionUseCaseService {
       );
     }
 
-    final contractRules =
-        await _exchange.getPerpetualContractRules(symbol: payload.symbol);
+    final contractRules = await _exchange.getPerpetualContractRules(
+      symbol: payload.symbol,
+    );
     final marketQuote = await _exchange.getPublicPrice(symbol: payload.symbol);
     final rules = contractRules.isSuccess ? contractRules.rules : null;
-    final referencePriceDecimal = marketQuote.isSuccess
-        ? _nonEmpty(marketQuote.priceDecimal) ?? entryPriceDecimal
-        : entryPriceDecimal;
+    final referencePriceDecimal =
+        marketQuote.isSuccess
+            ? _nonEmpty(marketQuote.priceDecimal) ?? entryPriceDecimal
+            : entryPriceDecimal;
     diagnostics.add(
       'contract_rules symbol=${payload.symbol} '
       'success=${contractRules.isSuccess} '
@@ -184,11 +187,13 @@ class BingxFuturesExchangeExecutionUseCaseService {
       'reference=$referencePriceDecimal',
     );
 
-    var stopLossDecimal =
-        _nonEmpty(rawIntentResult['stop_loss_decimal']?.toString());
+    var stopLossDecimal = _nonEmpty(
+      rawIntentResult['stop_loss_decimal']?.toString(),
+    );
     stopLossDecimal ??= _nonEmpty(
-      rawIntentResult[
-              payload.side == 'buy' ? 'zone_low_decimal' : 'zone_high_decimal']
+      rawIntentResult[payload.side == 'buy'
+              ? 'zone_low_decimal'
+              : 'zone_high_decimal']
           ?.toString(),
     );
     stopLossDecimal ??= entryPriceDecimal;
@@ -205,17 +210,21 @@ class BingxFuturesExchangeExecutionUseCaseService {
       'positions=${exchangeRiskInput.concurrentPositions} '
       'fallbacks=${exchangeRiskInput.usedBalanceFallback ? "balance" : "-"},'
       '${exchangeRiskInput.usedPnlFallback ? "pnl" : "-"},'
-      '${exchangeRiskInput.usedPositionsFallback ? "positions" : "-"}',
+      '${exchangeRiskInput.usedPositionsFallback ? "positions" : "-"} '
+      'exchange_reason=${exchangeRiskInput.firstUnavailableReason ?? "-"}',
     );
     if (!allowExchangeRiskInputFallbacks &&
         (exchangeRiskInput.usedBalanceFallback ||
             exchangeRiskInput.usedPnlFallback ||
             exchangeRiskInput.usedPositionsFallback)) {
+      final reason = exchangeRiskInput.firstUnavailableReason;
       return BingxFuturesRiskEvaluationResult(
         decision: null,
         errorCode: 'exchange_risk_inputs_unavailable',
         errorMessage:
-            'Risk check failed: exchange balance, pnl, or positions unavailable',
+            reason == null
+                ? 'Risk check failed: exchange balance, pnl, or positions unavailable'
+                : 'Risk check failed: BingX futures access unavailable ($reason)',
         diagnostics: diagnostics,
       );
     }

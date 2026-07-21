@@ -6,22 +6,51 @@ import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 
 void main() {
   group('BingxFuturesExchangeService', () {
+    test('rejects credentials with non-header-safe characters', () {
+      expect(
+        () =>
+            const BingxFuturesApiCredentials(
+              apiKey: 'api-key-н',
+              apiSecret: 'api-secret',
+            ).normalized(),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'BingX API key contains invalid characters',
+          ),
+        ),
+      );
+      expect(
+        () =>
+            const BingxFuturesApiCredentials(
+              apiKey: 'api-key',
+              apiSecret: 'api-secret-н',
+            ).normalized(),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'BingX API secret contains invalid characters',
+          ),
+        ),
+      );
+    });
+
     test('builds deterministic canonical param string and signature', () {
       final service = BingxFuturesExchangeService();
-      final canonical = service.buildCanonicalParamString(
-        <String, String>{
-          'symbol': 'BTC-USDT',
-          'type': 'LIMIT',
-          'side': 'BUY',
-          'positionSide': 'LONG',
-          'price': '63000',
-          'quantity': '0.01',
-          'timestamp': '1710000000000',
-          'recvWindow': '5000',
-          'clientOrderID': 'ord-1',
-          'timeInForce': 'GTC',
-        },
-      );
+      final canonical = service.buildCanonicalParamString(<String, String>{
+        'symbol': 'BTC-USDT',
+        'type': 'LIMIT',
+        'side': 'BUY',
+        'positionSide': 'LONG',
+        'price': '63000',
+        'quantity': '0.01',
+        'timestamp': '1710000000000',
+        'recvWindow': '5000',
+        'clientOrderID': 'ord-1',
+        'timeInForce': 'GTC',
+      });
       expect(
         canonical,
         'clientOrderID=ord-1&positionSide=LONG&price=63000&quantity=0.01&recvWindow=5000&side=BUY&symbol=BTC-USDT&timeInForce=GTC&timestamp=1710000000000&type=LIMIT',
@@ -82,79 +111,80 @@ void main() {
     });
 
     test('parses payload from plugin host intent result', () {
-      final payload = BingxFuturesIntentPayload.fromPluginResult(
-        <String, dynamic>{
-          'client_order_id': 'ord-22',
-          'symbol': 'btc-usdt',
-          'side': 'sell',
-          'order_type': 'market',
-          'quantity_decimal': '0.25',
-          'intent_hash_hex': 'fff',
-        },
-      );
+      final payload =
+          BingxFuturesIntentPayload.fromPluginResult(<String, dynamic>{
+            'client_order_id': 'ord-22',
+            'symbol': 'btc-usdt',
+            'side': 'sell',
+            'order_type': 'market',
+            'quantity_decimal': '0.25',
+            'intent_hash_hex': 'fff',
+          });
       expect(payload.symbol, 'BTC-USDT');
       expect(payload.exchangeSide, 'SELL');
       expect(payload.positionSide, 'SHORT');
       expect(payload.exchangeOrderType, 'MARKET');
     });
 
-    test('maps zone_pending limit intent to trigger-limit order payload',
-        () async {
-      late BingxHttpRequest capturedRequest;
-      final service = BingxFuturesExchangeService(
-        clockMs: () => 1710000000000,
-        requestSender: (request) async {
-          capturedRequest = request;
-          return const BingxHttpResponse(
-            statusCode: 200,
-            body: '{"code":0,"msg":"OK","data":{"order":{"orderId":"555"}}}',
-          );
-        },
-      );
+    test(
+      'maps zone_pending limit intent to trigger-limit order payload',
+      () async {
+        late BingxHttpRequest capturedRequest;
+        final service = BingxFuturesExchangeService(
+          clockMs: () => 1710000000000,
+          requestSender: (request) async {
+            capturedRequest = request;
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"OK","data":{"order":{"orderId":"555"}}}',
+            );
+          },
+        );
 
-      final result = await service.placeOrder(
-        credentials: const BingxFuturesApiCredentials(
-          apiKey: 'api-key',
-          apiSecret: 'api-secret',
-        ),
-        intent: const BingxFuturesIntentPayload(
-          clientOrderId: 'ord-zp-1',
-          symbol: 'BTC-USDT',
-          side: 'sell',
-          orderType: 'limit',
-          quantityDecimal: '0.01',
-          limitPriceDecimal: '63000',
-          timeInForce: 'GTC',
-          entryMode: 'zone_pending',
-          triggerPriceDecimal: '62950',
-          stopLossDecimal: '64000',
-          takeProfitDecimal: '62000',
-          intentHashHex: 'def',
-        ),
-        testOrder: true,
-      );
+        final result = await service.placeOrder(
+          credentials: const BingxFuturesApiCredentials(
+            apiKey: 'api-key',
+            apiSecret: 'api-secret',
+          ),
+          intent: const BingxFuturesIntentPayload(
+            clientOrderId: 'ord-zp-1',
+            symbol: 'BTC-USDT',
+            side: 'sell',
+            orderType: 'limit',
+            quantityDecimal: '0.01',
+            limitPriceDecimal: '63000',
+            timeInForce: 'GTC',
+            entryMode: 'zone_pending',
+            triggerPriceDecimal: '62950',
+            stopLossDecimal: '64000',
+            takeProfitDecimal: '62000',
+            intentHashHex: 'def',
+          ),
+          testOrder: true,
+        );
 
-      expect(capturedRequest.body, contains('type=TRIGGER_LIMIT'));
-      expect(capturedRequest.body, contains('stopPrice=62950'));
-      expect(capturedRequest.body, contains('price=63000'));
-      final params = Uri.splitQueryString(capturedRequest.body);
-      final stopLossRaw = params['stopLoss'];
-      final takeProfitRaw = params['takeProfit'];
-      expect(stopLossRaw, isNotNull);
-      expect(takeProfitRaw, isNotNull);
-      final stopLoss = jsonDecode(stopLossRaw!) as Map<String, dynamic>;
-      final takeProfit = jsonDecode(takeProfitRaw!) as Map<String, dynamic>;
-      expect(stopLoss['type'], 'STOP_MARKET');
-      expect(stopLoss['stopPrice'], 64000);
-      expect(stopLoss['price'], 64000);
-      expect(stopLoss['workingType'], 'MARK_PRICE');
-      expect(takeProfit['type'], 'TAKE_PROFIT_MARKET');
-      expect(takeProfit['stopPrice'], 62000);
-      expect(takeProfit['price'], 62000);
-      expect(takeProfit['workingType'], 'MARK_PRICE');
-      expect(result.isSuccess, isTrue);
-      expect(result.orderId, '555');
-    });
+        expect(capturedRequest.body, contains('type=TRIGGER_LIMIT'));
+        expect(capturedRequest.body, contains('stopPrice=62950'));
+        expect(capturedRequest.body, contains('price=63000'));
+        final params = Uri.splitQueryString(capturedRequest.body);
+        final stopLossRaw = params['stopLoss'];
+        final takeProfitRaw = params['takeProfit'];
+        expect(stopLossRaw, isNotNull);
+        expect(takeProfitRaw, isNotNull);
+        final stopLoss = jsonDecode(stopLossRaw!) as Map<String, dynamic>;
+        final takeProfit = jsonDecode(takeProfitRaw!) as Map<String, dynamic>;
+        expect(stopLoss['type'], 'STOP_MARKET');
+        expect(stopLoss['stopPrice'], 64000);
+        expect(stopLoss['price'], 64000);
+        expect(stopLoss['workingType'], 'MARK_PRICE');
+        expect(takeProfit['type'], 'TAKE_PROFIT_MARKET');
+        expect(takeProfit['stopPrice'], 62000);
+        expect(takeProfit['price'], 62000);
+        expect(takeProfit['workingType'], 'MARK_PRICE');
+        expect(result.isSuccess, isTrue);
+        expect(result.orderId, '555');
+      },
+    );
 
     test('switches leverage with signed v2 trade endpoint', () async {
       late BingxHttpRequest capturedRequest;
@@ -441,7 +471,7 @@ void main() {
           return const BingxHttpResponse(
             statusCode: 200,
             body:
-                '{"code":0,"msg":"","data":[[1710000000000,"60000","60100","59900","60050"],[1710000300000,"60050","60200","60020","60180"]]}',
+                '{"code":0,"msg":"","data":[[1710000000000,"60000","60100","59900","60050","12.5",1710000299999,"750000"],[1710000300000,"60050","60200","60020","60180","14.0",1710000599999,"840000"]]}',
           );
         },
       );
@@ -463,7 +493,11 @@ void main() {
       expect(result.klines, hasLength(2));
       expect(result.klines.first.openTimeMs, 1710000000000);
       expect(result.klines.first.highDecimal, '60100');
+      expect(result.klines.first.volumeBaseDecimal, '12.5');
+      expect(result.klines.first.volumeQuoteDecimal, '750000');
       expect(result.klines.last.closeDecimal, '60180');
+      expect(result.klines.last.volumeBaseDecimal, '14.0');
+      expect(result.klines.last.volumeQuoteDecimal, '840000');
     });
 
     test('reads perpetual symbols via unsigned contracts endpoint', () async {
@@ -485,10 +519,7 @@ void main() {
       expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/contracts');
       expect(capturedRequest.headers.isEmpty, isTrue);
       expect(result.isSuccess, isTrue);
-      expect(
-        result.symbols,
-        <String>['BTC-USDT', 'ETH-USDT', 'SOL-USDT'],
-      );
+      expect(result.symbols, <String>['BTC-USDT', 'ETH-USDT', 'SOL-USDT']);
     });
 
     test('reads perpetual symbols when data payload is list', () async {
@@ -505,10 +536,34 @@ void main() {
       final result = await service.getPerpetualSymbols();
 
       expect(result.isSuccess, isTrue);
-      expect(
-        result.symbols,
-        <String>['BNB-USDT', 'DOGE-USDT', 'XRP-USDT'],
+      expect(result.symbols, <String>['BNB-USDT', 'DOGE-USDT', 'XRP-USDT']);
+    });
+
+    test('reads public tickers sorted by quote volume', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"","data":[{"symbol":"LOW-USDT","lastPrice":"1","priceChangePercent":"5","volume":"10","quoteVolume":"100"},{"symbol":"HIGH-USDT","lastPrice":"2","priceChangePercent":"-3","volume":"20","quoteVolume":"900"}]}',
+          );
+        },
       );
+
+      final result = await service.getPublicTickers();
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/quote/ticker');
+      expect(capturedRequest.headers.isEmpty, isTrue);
+      expect(result.isSuccess, isTrue);
+      expect(result.tickers.map((ticker) => ticker.symbol), <String>[
+        'HIGH-USDT',
+        'LOW-USDT',
+      ]);
+      expect(result.tickers.first.volumeQuoteDecimal, '900');
+      expect(result.tickers.first.priceChangePercentDecimal, '-3');
     });
 
     test('reads deterministic contract order limits', () async {
@@ -601,14 +656,15 @@ void main() {
 
     test('maps BingX isBuyerMaker to public trade aggressor side', () async {
       final service = BingxFuturesExchangeService(
-        requestSender: (request) async => const BingxHttpResponse(
-          statusCode: 200,
-          body: '''
+        requestSender:
+            (request) async => const BingxHttpResponse(
+              statusCode: 200,
+              body: '''
 {"code":0,"msg":"","data":[
   {"time":1710000000002,"isBuyerMaker":true,"price":"63001","qty":"0.2","fillId":"2"},
   {"time":1710000000001,"isBuyerMaker":false,"price":"63000","qty":"0.1","fillId":"1"}
 ]}''',
-        ),
+            ),
       );
 
       final result = await service.getPublicTrades(
@@ -623,11 +679,12 @@ void main() {
 
     test('drops public trades with no deterministic aggressor side', () async {
       final service = BingxFuturesExchangeService(
-        requestSender: (request) async => const BingxHttpResponse(
-          statusCode: 200,
-          body:
-              '{"code":0,"msg":"","data":[{"time":1710000000000,"price":"63000","qty":"0.1"}]}',
-        ),
+        requestSender:
+            (request) async => const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"","data":[{"time":1710000000000,"price":"63000","qty":"0.1"}]}',
+            ),
       );
 
       final result = await service.getPublicTrades(

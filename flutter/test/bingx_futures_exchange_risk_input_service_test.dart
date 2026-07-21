@@ -80,6 +80,11 @@ void main() {
       expect(result.usedBalanceFallback, isTrue);
       expect(result.usedPnlFallback, isTrue);
       expect(result.usedPositionsFallback, isTrue);
+      expect(result.balanceUnavailableCode, '100001');
+      expect(result.balanceUnavailableMessage, 'signature invalid');
+      expect(result.positionsUnavailableCode, '500');
+      expect(result.positionsUnavailableMessage, 'internal error');
+      expect(result.firstUnavailableReason, '100001 signature invalid');
     });
   });
 }

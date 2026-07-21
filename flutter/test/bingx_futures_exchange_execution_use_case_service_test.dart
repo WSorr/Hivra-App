@@ -46,10 +46,11 @@ void main() {
     test('blocks execution when entry price is unavailable', () async {
       var placeOrderCalled = false;
       final exchange = BingxFuturesExchangeService(
-        requestSender: (_) async => const BingxHttpResponse(
-          statusCode: 503,
-          body: '{"code":503,"msg":"unavailable"}',
-        ),
+        requestSender:
+            (_) async => const BingxHttpResponse(
+              statusCode: 503,
+              body: '{"code":503,"msg":"unavailable"}',
+            ),
       );
       final service = BingxFuturesExchangeExecutionUseCaseService(
         exchange: exchange,
@@ -149,8 +150,7 @@ void main() {
       expect(placeOrderCalled, isFalse);
     });
 
-    test('blocks live execution when exchange risk inputs use fallback',
-        () async {
+    test('blocks live execution when exchange risk inputs use fallback', () async {
       var placeOrderCalled = false;
       final exchange = BingxFuturesExchangeService(
         requestSender: (request) async {
@@ -169,8 +169,8 @@ void main() {
           }
           if (request.uri.path.endsWith('/user/balance')) {
             return const BingxHttpResponse(
-              statusCode: 503,
-              body: '{"code":503,"msg":"balance unavailable"}',
+              statusCode: 200,
+              body: '{"code":100001,"msg":"signature invalid","data":{}}',
             );
           }
           if (request.uri.path.endsWith('/user/positions')) {
@@ -215,8 +215,13 @@ void main() {
       );
       expect(result.errorCode, 'exchange_risk_inputs_unavailable');
       expect(
+        result.errorMessage,
+        'Risk check failed: BingX futures access unavailable (100001 signature invalid)',
+      );
+      expect(result.diagnostics, contains(contains('fallbacks=balance,pnl')));
+      expect(
         result.diagnostics,
-        contains(contains('fallbacks=balance,pnl')),
+        contains(contains('exchange_reason=100001 signature invalid')),
       );
       expect(placeOrderCalled, isFalse);
     });

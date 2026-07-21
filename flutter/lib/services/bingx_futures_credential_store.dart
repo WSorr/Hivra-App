@@ -28,13 +28,12 @@ class BingxFuturesCredentialStore {
     FlutterSecureStorage? secureStorage,
     UserVisibleDataDirectoryService? dirs,
     AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
-  })  : _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
-        _secureStorage = secureStorage ??
-            const FlutterSecureStorage(
-              mOptions: hivraMacOsSecureStorageOptions,
-            ),
-        _dirs = dirs ?? const UserVisibleDataDirectoryService(),
-        _atomicWrites = atomicWrites;
+  }) : _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
+       _secureStorage =
+           secureStorage ??
+           const FlutterSecureStorage(mOptions: hivraMacOsSecureStorageOptions),
+       _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+       _atomicWrites = atomicWrites;
 
   Future<void> save(BingxFuturesApiCredentials credentials) async {
     await _migrateLegacyFallbackFile();
@@ -78,30 +77,21 @@ class BingxFuturesCredentialStore {
 
   Future<void> clear() async {
     final primaryScope = _scopeKey();
-    final scopes = <String>{
-      primaryScope,
-      _globalScope,
-    };
+    final scopes = <String>{primaryScope, _globalScope};
     for (final scope in scopes) {
       _sessionCache.remove(scope);
       try {
-        await _secureStorage.delete(
-          key: _credentialsForScope(scope),
-        );
+        await _secureStorage.delete(key: _credentialsForScope(scope));
       } catch (_) {
         // Ignore secure storage cleanup errors.
       }
       try {
-        await _secureStorage.delete(
-          key: _apiKeyForScope(scope),
-        );
+        await _secureStorage.delete(key: _apiKeyForScope(scope));
       } catch (_) {
         // Ignore secure storage cleanup errors.
       }
       try {
-        await _secureStorage.delete(
-          key: _apiSecretForScope(scope),
-        );
+        await _secureStorage.delete(key: _apiSecretForScope(scope));
       } catch (_) {
         // Ignore secure storage cleanup errors.
       }
@@ -150,9 +140,7 @@ class BingxFuturesCredentialStore {
 
   Future<BingxFuturesApiCredentials?> _readScope(String scope) async {
     try {
-      final raw = await _secureStorage.read(
-        key: _credentialsForScope(scope),
-      );
+      final raw = await _secureStorage.read(key: _credentialsForScope(scope));
       if (raw != null && raw.trim().isNotEmpty) {
         final decoded = jsonDecode(raw);
         if (decoded is Map) {
@@ -163,7 +151,7 @@ class BingxFuturesCredentialStore {
             return BingxFuturesApiCredentials(
               apiKey: apiKey,
               apiSecret: apiSecret,
-            );
+            ).normalized();
           }
         }
       }
@@ -172,9 +160,7 @@ class BingxFuturesCredentialStore {
     }
 
     try {
-      final apiKey = await _secureStorage.read(
-        key: _apiKeyForScope(scope),
-      );
+      final apiKey = await _secureStorage.read(key: _apiKeyForScope(scope));
       final apiSecret = await _secureStorage.read(
         key: _apiSecretForScope(scope),
       );
@@ -185,7 +171,7 @@ class BingxFuturesCredentialStore {
         return BingxFuturesApiCredentials(
           apiKey: apiKey.trim(),
           apiSecret: apiSecret.trim(),
-        );
+        ).normalized();
       }
     } catch (_) {
       // Continue into one-time migration of legacy plaintext storage.
@@ -196,7 +182,7 @@ class BingxFuturesCredentialStore {
     return BingxFuturesApiCredentials(
       apiKey: fallback.$1,
       apiSecret: fallback.$2,
-    );
+    ).normalized();
   }
 
   Future<File> _fallbackFile() async {
@@ -275,10 +261,15 @@ class BingxFuturesCredentialStore {
       final apiKey = scoped[_apiKeySuffix]?.toString().trim() ?? '';
       final apiSecret = scoped[_apiSecretSuffix]?.toString().trim() ?? '';
       if (apiKey.isEmpty || apiSecret.isEmpty) continue;
-      credentialsByScope[scope] = BingxFuturesApiCredentials(
-        apiKey: apiKey,
-        apiSecret: apiSecret,
-      );
+      try {
+        credentialsByScope[scope] =
+            BingxFuturesApiCredentials(
+              apiKey: apiKey,
+              apiSecret: apiSecret,
+            ).normalized();
+      } on FormatException {
+        continue;
+      }
     }
 
     try {
