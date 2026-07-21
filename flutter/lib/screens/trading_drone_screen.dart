@@ -88,6 +88,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       TextEditingController();
 
   bool _runningIntent = false;
+  String _intentProgressLabel = 'Starting';
   bool _broadcastingSignal = false;
   bool _savingCredentials = false;
   bool _executing = false;
@@ -758,12 +759,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'scope=$_signalScanScope symbols=${rawSymbols.length} '
             'prefilter=5m_volume_growth',
       );
-      final symbols = await _filterVolumeGrowthSymbols(rawSymbols);
+      final scanObservedAtMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+      final symbols = await _filterVolumeGrowthSymbols(
+        rawSymbols,
+        observedAtMs: scanObservedAtMs,
+      );
       if (symbols.isEmpty) {
         await _module.uiLog.log(
           'bingx.signal.scan.empty',
           'scope=$_signalScanScope source_symbols=${rawSymbols.length} '
-              'prefilter=5m_volume_growth',
+              'prefilter=5m_volume_growth observed_at_ms=$scanObservedAtMs',
         );
         await _showSnack(
           'Signal scan: no symbols with rising 5m volume',
@@ -884,7 +889,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     return true;
   }
 
-  Future<List<String>> _filterVolumeGrowthSymbols(List<String> symbols) async {
+  Future<List<String>> _filterVolumeGrowthSymbols(
+    List<String> symbols, {
+    required int observedAtMs,
+  }) async {
     if (_signalScanScope == _signalScanScopeCore) {
       await _module.uiLog.log(
         'bingx.signal.volume_prefilter.skip',
@@ -908,23 +916,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           insufficient += 1;
           continue;
         }
-        final lastThree = result.klines.sublist(result.klines.length - 3);
-        final volumes =
-            lastThree
-                .map(
-                  (kline) => num.tryParse(
-                    kline.volumeQuoteDecimal ?? kline.volumeBaseDecimal ?? '',
-                  ),
-                )
-                .toList();
-        if (volumes.any((volume) => volume == null)) {
-          insufficient += 1;
-          continue;
-        }
-        final grows =
-            volumes[0]! > 0 &&
-            volumes[0]! < volumes[1]! &&
-            volumes[1]! < volumes[2]!;
+        final grows = _module.volumeGrowthFilter.hasStrictlyRisingClosedVolume(
+          klines: result.klines,
+          observedAtMs: observedAtMs,
+        );
         if (grows) {
           accepted.add(symbol);
         } else {
@@ -942,7 +937,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       'bingx.signal.volume_prefilter',
       'scope=$_signalScanScope source=${symbols.length} '
           'ticker_filtered=${tickerFiltered.length} accepted=${accepted.length} '
-          'flat_or_falling=$flatOrFalling insufficient=$insufficient failed=$failed',
+          'flat_or_falling=$flatOrFalling insufficient=$insufficient failed=$failed '
+          'observed_at_ms=$observedAtMs candles=closed',
     );
     return accepted;
   }
@@ -1492,6 +1488,34 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   Future<void> _runIntent() async {
     if (_runningIntent) return;
+    if (mounted) {
+      setState(() {
+        _runningIntent = true;
+        _intentProgressLabel = 'Starting';
+        _lastIntentResponse = null;
+      });
+    }
+    await _module.uiLog.log('bingx.intent.tap', 'accepted=true');
+    try {
+      await _runIntentPipeline();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _runningIntent = false;
+          _intentProgressLabel = 'Starting';
+        });
+      }
+    }
+  }
+
+  void _setIntentProgress(String label) {
+    if (!mounted || !_runningIntent || _intentProgressLabel == label) return;
+    setState(() {
+      _intentProgressLabel = label;
+    });
+  }
+
+  Future<void> _runIntentPipeline() async {
     if (!_droneEnabled) {
       await _showSnack('Drone is paused. Resume before running strategy.');
       return;
@@ -1507,13 +1531,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (symbol.isEmpty) {
       await _showSnack('Symbol is required');
       return;
-    }
-    if (mounted) {
-      setState(() {
-        _lastIntentResponse = null;
-      });
-    } else {
-      _lastIntentResponse = null;
     }
     final forceAutoZonePending = _orderType == 'limit';
     if (forceAutoZonePending &&
@@ -1541,6 +1558,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     BingxFuturesLiveDecisionResult? liveDecision;
 
     if (_orderType == 'limit') {
+      _setIntentProgress('Analyzing market');
       liveDecision = await _computeLiveDecision(
         symbol: symbol,
         peerHex: peerHex,
@@ -1615,6 +1633,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
     // Market analysis is independent from exchange sizing. A valid setup must
     // remain observable even when the account cannot safely meet minQty.
+    _setIntentProgress('Sizing risk');
     final riskReady = await _applyRiskBudgetQuantity(symbol: symbol);
     if (!riskReady) {
       return;
@@ -1670,9 +1689,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
     }
 
-    setState(() {
-      _runningIntent = true;
-    });
     final stopwatch = Stopwatch()..start();
     PluginHostApiStatus? finalStatus;
     try {
@@ -1681,6 +1697,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'peer=${peerHex.isEmpty ? "empty" : "${peerHex.substring(0, 8)}.."} symbol=$symbol side=$_side type=$_orderType entry=$_entryMode qty=$quantityDecimal',
       );
       if (peerHex.isNotEmpty) {
+        _setIntentProgress('Checking consensus');
         final attestation = await _module.attestationExchange.ensureForPeer(
           peerHex,
         );
@@ -1704,6 +1721,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         }
       }
 
+      _setIntentProgress('Preparing intent');
       final useCaseResult = await _module.intentUseCase
           .execute(
             BingxFuturesIntentCommand(
@@ -1803,11 +1821,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.intent.finally',
         'elapsedMs=${stopwatch.elapsedMilliseconds} status=${finalStatus?.name ?? "none"}',
       );
-      if (mounted) {
-        setState(() {
-          _runningIntent = false;
-        });
-      }
     }
   }
 
@@ -3408,7 +3421,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                             : const Icon(Icons.bolt_rounded),
-                    label: Text(_runningIntent ? 'Preparing' : 'Run Intent'),
+                    label: Text(
+                      _runningIntent ? _intentProgressLabel : 'Run Intent',
+                    ),
                   ),
                   FilledButton.tonalIcon(
                     onPressed:
@@ -3444,6 +3459,45 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     ),
                   ),
                 ],
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child:
+                    _runningIntent
+                        ? Container(
+                          key: const ValueKey<String>('intent-progress'),
+                          margin: const EdgeInsets.only(top: 10),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF172033),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(
+                                0xFF8DC2FF,
+                              ).withValues(alpha: 0.45),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                _intentProgressLabel,
+                                style: const TextStyle(
+                                  color: Color(0xFFC9DEFF),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const LinearProgressIndicator(minHeight: 3),
+                            ],
+                          ),
+                        )
+                        : const SizedBox.shrink(
+                          key: ValueKey<String>('intent-idle'),
+                        ),
               ),
               const SizedBox(height: 10),
               Wrap(

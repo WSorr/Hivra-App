@@ -14,6 +14,7 @@ import 'bingx_futures_order_tracking_store.dart';
 import 'bingx_futures_risk_governor_service.dart';
 import 'bingx_futures_signal_rank_use_case_service.dart';
 import 'bingx_futures_strategy_naming_service.dart';
+import 'bingx_futures_volume_growth_filter_service.dart';
 import 'capsule_chat_delivery_service.dart';
 import 'consensus_attestation_exchange_service.dart';
 import 'manual_consensus_check_service.dart';
@@ -37,6 +38,7 @@ class TradingDroneModule {
   final BingxFuturesOrderReplacementService orderReplacement;
   final BingxFuturesLiveStrategyUseCaseService liveStrategyUseCase;
   final BingxFuturesStrategyNamingService strategyNaming;
+  final BingxFuturesVolumeGrowthFilterService volumeGrowthFilter;
   final CapsuleChatDeliveryService chatDelivery;
   final ConsensusAttestationExchangeService attestationExchange;
   final UiEventLogService uiLog;
@@ -59,6 +61,7 @@ class TradingDroneModule {
     required this.orderReplacement,
     required this.liveStrategyUseCase,
     required this.strategyNaming,
+    required this.volumeGrowthFilter,
     required this.chatDelivery,
     required this.attestationExchange,
     required this.uiLog,
@@ -69,9 +72,7 @@ class TradingDroneModule {
 class TradingDroneModuleService {
   final AppRuntimeService runtime;
 
-  const TradingDroneModuleService({
-    required this.runtime,
-  });
+  const TradingDroneModuleService({required this.runtime});
 
   TradingDroneModule build() {
     final pluginHostApi = runtime.buildPluginHostApiService();
@@ -112,6 +113,7 @@ class TradingDroneModuleService {
         exchange: exchangeService,
       ),
       strategyNaming: const BingxFuturesStrategyNamingService(),
+      volumeGrowthFilter: const BingxFuturesVolumeGrowthFilterService(),
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
       attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       uiLog: const UiEventLogService(),
