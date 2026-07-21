@@ -41,6 +41,47 @@ require_cmd() {
   command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
 }
 
+metadata_value() {
+  local file="$1"
+  local key="$2"
+  awk -F'=' -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }' "$file"
+}
+
+require_clean_tracked_worktree() {
+  git diff --quiet || die "GitHub publication requires a clean tracked worktree"
+  git diff --cached --quiet || die "GitHub publication requires a clean index"
+}
+
+require_tag_points_to_head() {
+  local tag_commit
+  local head_commit
+  tag_commit="$(git rev-list -n 1 "$VERSION")"
+  head_commit="$(git rev-parse HEAD)"
+  [ "$tag_commit" = "$head_commit" ] ||
+    die "Git tag $VERSION points to $tag_commit, but HEAD is $head_commit"
+}
+
+verify_release_metadata() {
+  local file="$1"
+  local platform="$2"
+  local version
+  local source_commit
+  local source_tree_dirty
+  local head_commit
+
+  version="$(metadata_value "$file" version)"
+  source_commit="$(metadata_value "$file" source_commit)"
+  source_tree_dirty="$(metadata_value "$file" source_tree_dirty)"
+  head_commit="$(git rev-parse HEAD)"
+
+  [ "$version" = "$VERSION" ] ||
+    die "$platform metadata version is ${version:-missing}, expected $VERSION"
+  [ "$source_commit" = "$head_commit" ] ||
+    die "$platform metadata source_commit is ${source_commit:-missing}, expected $head_commit"
+  [ "$source_tree_dirty" = "no" ] ||
+    die "$platform metadata source_tree_dirty must be no"
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --version)
@@ -76,6 +117,7 @@ done
 require_cmd gh
 require_cmd git
 require_cmd shasum
+require_clean_tracked_worktree
 
 "$ROOT/tools/release/release_version_guard.sh" \
   --version "$VERSION" \
@@ -94,6 +136,7 @@ info "Manual signoff gate"
 git rev-parse --verify "$VERSION^{tag}" >/dev/null 2>&1 ||
   git rev-parse --verify "$VERSION^{commit}" >/dev/null 2>&1 ||
   die "Git tag not found locally: $VERSION"
+require_tag_points_to_head
 
 if gh release view "$VERSION" --repo "$REPO" >/dev/null 2>&1; then
   die "GitHub Release already exists for $VERSION"
@@ -110,6 +153,8 @@ ANDROID_META="$ANDROID_DIR/RELEASE-METADATA.txt"
 [ -f "$ANDROID_ASSET" ] || die "Missing Android artifact: $ANDROID_ASSET"
 [ -f "$MAC_META" ] || die "Missing macOS metadata: $MAC_META"
 [ -f "$ANDROID_META" ] || die "Missing Android metadata: $ANDROID_META"
+verify_release_metadata "$MAC_META" "macOS"
+verify_release_metadata "$ANDROID_META" "Android"
 
 PUBLISH_DIR="$ROOT/dist/${VERSION}-${CHANNEL}-publish"
 mkdir -p "$PUBLISH_DIR"

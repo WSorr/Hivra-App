@@ -31,6 +31,12 @@ die() {
   exit 1
 }
 
+require_clean_tracked_worktree() {
+  command -v git >/dev/null 2>&1 || die "Required command not found: git"
+  git diff --quiet || die "release packaging requires a clean tracked worktree"
+  git diff --cached --quiet || die "release packaging requires a clean index"
+}
+
 info() {
   echo "== $* =="
 }
@@ -67,11 +73,13 @@ done
 [ -n "$VERSION" ] || die "--version is required"
 [ -n "$CHANNEL" ] || die "--channel is required"
 [[ "$CHANNEL" == "test" || "$CHANNEL" == "public" ]] || die "--channel must be test or public"
+require_clean_tracked_worktree
 
 FLUTTER_BUILD_NAME="$("$ROOT/tools/release/derive_flutter_version.sh" \
   --version "$VERSION" --field name)"
 FLUTTER_BUILD_NUMBER="$("$ROOT/tools/release/derive_flutter_version.sh" \
   --version "$VERSION" --field number)"
+SOURCE_COMMIT="$(git rev-parse HEAD)"
 
 "$ROOT/tools/release/release_version_guard.sh" \
   --version "$VERSION" \
@@ -122,6 +130,8 @@ printf '%s  %s\n' "$APK_SHA" "$ASSET_NAME" > "$SHA_PATH"
 
 cat > "$META_PATH" <<EOF
 version=$VERSION
+source_commit=$SOURCE_COMMIT
+source_tree_dirty=no
 flutter_build_name=$FLUTTER_BUILD_NAME
 flutter_build_number=$FLUTTER_BUILD_NUMBER
 channel=$CHANNEL

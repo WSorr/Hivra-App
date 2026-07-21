@@ -12,6 +12,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 ## Build
 
 - [ ] `tools/release/preflight.sh` passes before packaging.
+- [ ] Tracked worktree and index are clean before packaging.
 - [ ] `tools/release/android_release.sh --version <version> --channel <test|public>` is used for packaging.
 - [ ] `--channel` was chosen explicitly (`test` for internal/pre-release, `public` for stable release).
 - [ ] Android build includes Rust FFI artifacts from the current source state.
@@ -49,5 +50,6 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Release asset name clearly indicates version and target.
 - [ ] Checksums were generated for published APK assets.
 - [ ] `RELEASE-METADATA.txt` was generated and kept with release artifacts.
+- [ ] `RELEASE-METADATA.txt` records the source commit and `source_tree_dirty=no`.
 - [ ] Release notes mention testing scope and known Android limitations, if any.
 - [ ] GitHub Release `Pre-release` flag matches channel (`test` => pre-release, `public` => stable release).

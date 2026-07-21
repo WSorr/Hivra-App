@@ -13,6 +13,8 @@ This directory contains deterministic release helpers for Hivra.
   - Channel-aware macOS packaging (`test` / `public`).
   - Produces ZIP + `SHA256SUMS.txt` + `RELEASE-METADATA.txt`.
   - Always runs preflight and a fresh versioned build.
+  - Requires a clean tracked worktree and records the source commit in release
+    metadata.
   - Derives the embedded Flutter build name/number from `--version`.
     - `tools/release/macos_release.sh --version <v> --channel <test|public>`
 
@@ -20,6 +22,8 @@ This directory contains deterministic release helpers for Hivra.
   - Channel-aware Android packaging (`test` / `public`).
   - Produces APK + `SHA256SUMS.txt` + `RELEASE-METADATA.txt`.
   - Always runs preflight and a fresh versioned build.
+  - Requires a clean tracked worktree and records the source commit in release
+    metadata.
   - Derives the embedded Flutter build name/number from `--version`.
     - `tools/release/android_release.sh --version <v> --channel <test|public>`
 
@@ -43,6 +47,8 @@ This directory contains deterministic release helpers for Hivra.
   - The only approved GitHub Release publication path.
   - Runs preflight, validates manual signoff, verifies artifacts, and creates the
     GitHub Release.
+  - Requires the release tag to point at the current clean checkout and refuses
+    artifacts whose metadata was not built from that commit.
     - `tools/release/publish_github_release.sh --version <v> --channel <test|public>`
 
 ## Typical Flow
@@ -72,9 +78,10 @@ This directory contains deterministic release helpers for Hivra.
 8. Publish through the guarded GitHub release script:
    - `tools/release/publish_github_release.sh --version <v> --channel <test|public>`
 
-Both packaging scripts reject a version that belongs to another major release
-line, already exists on GitHub, conflicts with a remote tag, or does not match
-the selected channel. They do not expose preflight/build bypass flags.
+Both packaging scripts reject a dirty tracked worktree, a version that belongs to
+another major release line, already exists on GitHub, conflicts with a remote
+tag, or does not match the selected channel. They do not expose
+preflight/build bypass flags.
 
 Packaging is not publication. Publishing to GitHub is blocked until the manual
 signoff checker passes for both macOS and Android. Deterministic fixture rows in

@@ -40,6 +40,7 @@ MAC_RELEASE_SCRIPT="$ROOT/tools/release/macos_release.sh"
 ANDROID_RELEASE_SCRIPT="$ROOT/tools/release/android_release.sh"
 RELEASE_VERSION_GUARD="$ROOT/tools/release/release_version_guard.sh"
 REVIEW_ALL="$ROOT/tools/review/review_all.sh"
+CI_RELEASE_GATES="$ROOT/.github/workflows/release-gates.yml"
 CHECKLIST_MAC="$ROOT/docs/checklists/release-macos.md"
 CHECKLIST_ANDROID="$ROOT/docs/checklists/release-android.md"
 CHECKLIST_ANDROID_RUNTIME="$ROOT/docs/checklists/android-runtime-hardening.md"
@@ -75,6 +76,7 @@ require_file "$DRONE_EVIDENCE_CHECK" "trading drone evidence-check script exists
 require_file "$MANUAL_SIGNOFF_CHECK" "manual release signoff-check script exists"
 require_file "$GITHUB_RELEASE_PUBLISH" "guarded GitHub release publish script exists"
 require_file "$FLUTTER_VERSION_DERIVER" "Flutter artifact version derivation exists"
+require_file "$CI_RELEASE_GATES" "root GitHub release-gates workflow exists"
 
 require_present "$ROADMAP" '^### 6\. Release Preflight as a Gate' \
   "roadmap tracks release preflight gate"
@@ -87,6 +89,8 @@ require_present "$ROADMAP" '^### 8\.1 Android Runtime Hardening' \
 
 require_present "$CHECKLIST_MAC" 'tools/release/preflight\.sh' \
   "macOS checklist requires preflight run"
+require_present "$CHECKLIST_MAC" 'Tracked worktree and index are clean before packaging' \
+  "macOS checklist requires clean tracked worktree"
 require_present "$MAC_RELEASE_SCRIPT" 'release_version_guard\.sh' \
   "macOS release packaging enforces the published version line"
 require_present "$ANDROID_RELEASE_SCRIPT" 'release_version_guard\.sh' \
@@ -141,6 +145,8 @@ require_present "$CHECKLIST_MAC" 'signed/notarized or test-only' \
   "macOS checklist requires signed/notarized disclosure in release notes"
 require_present "$CHECKLIST_MAC" 'RELEASE-METADATA\.txt' \
   "macOS checklist requires release metadata traceability"
+require_present "$CHECKLIST_MAC" 'source_tree_dirty=no' \
+  "macOS checklist requires clean-source metadata"
 require_present "$CHECKLIST_MAC" 'Release asset name clearly indicates version and target' \
   "macOS checklist requires packaging asset naming check"
 require_present "$CHECKLIST_MAC" 'ZIP or DMG was rebuilt from the latest `.app`' \
@@ -189,6 +195,8 @@ require_present "$CHECKLIST_ANDROID" 'execution envelope receipt hash captured' 
   "Android checklist requires execution receipt hash capture"
 require_present "$CHECKLIST_ANDROID" 'tools/release/android_release\.sh' \
   "Android checklist requires scripted release packaging"
+require_present "$CHECKLIST_ANDROID" 'Tracked worktree and index are clean before packaging' \
+  "Android checklist requires clean tracked worktree"
 require_present "$CHECKLIST_ANDROID" 'explicitly \(`test` for internal/pre-release, `public` for stable release\)' \
   "Android checklist requires explicit channel selection"
 require_present "$CHECKLIST_ANDROID" 'packaged release artifact' \
@@ -209,6 +217,8 @@ require_present "$CHECKLIST_ANDROID" 'tools/release/publish_github_release\.sh' 
   "Android checklist requires guarded GitHub publication"
 require_present "$CHECKLIST_ANDROID" 'RELEASE-METADATA\.txt' \
   "Android checklist requires release metadata traceability"
+require_present "$CHECKLIST_ANDROID" 'source_tree_dirty=no' \
+  "Android checklist requires clean-source metadata"
 require_present "$CHECKLIST_ANDROID" 'Release notes mention testing scope and known Android limitations' \
   "Android checklist requires publish release-notes scope check"
 require_present "$CHECKLIST_ANDROID" '`test` => pre-release, `public` => stable release' \
@@ -359,8 +369,26 @@ require_present "$GITHUB_RELEASE_PUBLISH" 'preflight\.sh' \
   "GitHub publish script enforces automated preflight"
 require_present "$GITHUB_RELEASE_PUBLISH" 'gh release create' \
   "GitHub publish script owns release creation"
+require_present "$GITHUB_RELEASE_PUBLISH" 'require_clean_tracked_worktree' \
+  "GitHub publish script requires clean tracked worktree"
+require_present "$GITHUB_RELEASE_PUBLISH" 'require_tag_points_to_head' \
+  "GitHub publish script requires release tag to point at HEAD"
+require_present "$GITHUB_RELEASE_PUBLISH" 'verify_release_metadata' \
+  "GitHub publish script verifies packaged artifact metadata"
 require_present "$GITHUB_RELEASE_PUBLISH" '--allow-existing-remote-tag' \
   "GitHub publish script allows already-pushed release tags only at publication"
+require_present "$MAC_RELEASE_SCRIPT" 'require_clean_tracked_worktree' \
+  "macOS release packaging requires clean tracked worktree"
+require_present "$ANDROID_RELEASE_SCRIPT" 'require_clean_tracked_worktree' \
+  "Android release packaging requires clean tracked worktree"
+require_present "$MAC_RELEASE_SCRIPT" 'source_commit=\$SOURCE_COMMIT' \
+  "macOS release metadata records source commit"
+require_present "$ANDROID_RELEASE_SCRIPT" 'source_commit=\$SOURCE_COMMIT' \
+  "Android release metadata records source commit"
+require_present "$MAC_RELEASE_SCRIPT" 'source_tree_dirty=no' \
+  "macOS release metadata records clean source tree"
+require_present "$ANDROID_RELEASE_SCRIPT" 'source_tree_dirty=no' \
+  "Android release metadata records clean source tree"
 require_present "$MAC_RELEASE_SCRIPT" 'trading-evidence-build-tag "\$VERSION"' \
   "macOS release binds evidence coverage to release version"
 require_present "$ANDROID_RELEASE_SCRIPT" 'trading-evidence-build-tag "\$VERSION"' \
@@ -389,5 +417,9 @@ require_present "$REVIEW_ALL" 'release_discipline_gate\.sh' \
   "review_all includes release discipline gate"
 require_present "$REVIEW_ALL" 'user_lifetime_safety_gate\.sh' \
   "review_all includes user lifetime safety gate"
+require_present "$CI_RELEASE_GATES" 'tools/review/review_all\.sh' \
+  "GitHub release-gates workflow runs review gates"
+require_present "$CI_RELEASE_GATES" 'tools/release/check_manual_release_signoff\.sh --self-test' \
+  "GitHub release-gates workflow runs manual signoff self-test"
 
 exit "$STATUS"

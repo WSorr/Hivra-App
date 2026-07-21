@@ -1,0 +1,25 @@
+name: Hivra Release Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  review-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shell gate dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
+      - name: Review gates
+        run: bash tools/review/review_all.sh
+
+      - name: Manual signoff checker self-test
+        run: bash tools/release/check_manual_release_signoff.sh --self-test

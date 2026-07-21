@@ -12,6 +12,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 ## Build
 
 - [ ] `main` contains the intended release commits.
+- [ ] Tracked worktree and index are clean before packaging.
 - [ ] `tools/release/preflight.sh` passes before packaging.
 - [ ] `flutter build macos --release` succeeds.
 - [ ] Release packaging used `tools/release/macos_release.sh` with explicit `--channel` (`test` or `public`).
@@ -56,6 +57,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] `SHA256SUMS.txt` was regenerated.
 - [ ] Release notes mention whether the build is signed/notarized or test-only.
 - [ ] `RELEASE-METADATA.txt` was attached or copied into release notes for traceability.
+- [ ] `RELEASE-METADATA.txt` records the source commit and `source_tree_dirty=no`.
 
 ## Publish
 
