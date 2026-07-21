@@ -1190,14 +1190,24 @@ CryptoProvider | Cryptography interface in Engine (transport-specific)
 
 ## 15. Status and Readiness
 
-Hivra Protocol in this revision is:
+Hivra Protocol v1.0 is the normative protocol contract for the maintained 1.x
+runtime. The implementation exists and is released as a test line, but this
+document is not a claim that the product is security-audit certified or that
+every target architecture migration is complete.
 
-- Architecturally clean (strict downward dependencies)
-- Logically consistent
-- Deterministic (Core has no external dependencies)
-- Transport-agnostic (Core is crypto-agnostic)
-- Ready for formal audit
-- Ready for implementation: Rust Core + Flutter UI
+The current status is:
+
+- Core/Engine dependency isolation is enforced by automated review gates.
+- Ledger-first state, signed Core events, deterministic slot projection, and
+  pair-attestation guard rules are normative v1 behavior.
+- Canonical invitation and relationship projection convergence remains an
+  active implementation debt tracked in `docs/roadmap.md`; until it is closed,
+  Flutter projection services are compatibility implementations and MUST NOT
+  become additional truth owners.
+- Cryptographic history continuity, event-scoped delivery records, and other
+  listed hardening items remain roadmap work.
+- Release readiness is determined by the guarded release workflow and the
+  platform signoff checklists, not by this status section alone.
 
 ---
 

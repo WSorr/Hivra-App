@@ -188,8 +188,12 @@ What it stores:
 Event types:
 
 - InvitationSent — invitation sent
+- InvitationReceived — incoming invitation materialized in the local ledger
 - InvitationAccepted — invitation accepted
 - InvitationRejected — invitation rejected
+- InvitationExpired — sender cancellation/revocation or terminal expiry record
+- StarterCreated — local starter lifecycle created
+- StarterBurned — local starter lifecycle permanently burned
 - RelationshipEstablished — relationship created
 - RelationshipBroken — relationship broken
 

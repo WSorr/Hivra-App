@@ -1181,19 +1181,19 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - queue ordering, cross-capsule independence, and recovery after worker
         failure have focused regression coverage; the architecture gate
         prevents reintroducing the late-worker bypass.
-    - pass 2 (two-party signed Pair Consensus) is next.
-      - 2a completed on 2026-07-10: signature-set verification now fails
+    - pass 2 (two-party signed Pair Consensus) completed on 2026-07-10:
+      - 2a: signature-set verification now fails
         closed without a cryptographic verifier, and production runtime wires
         the existing root Ed25519 verification adapter.
-      - 2b completed on 2026-07-10: canonical domain-separated pair
+      - 2b: canonical domain-separated pair
         attestation commitments are symmetric and validated, and the FFI
         exposes fixed-size root signing without exposing seed/private key
         material to Flutter.
-      - 2c completed on 2026-07-10: pair attestations now have a dedicated
+      - 2c: pair attestations now have a dedicated
         host transport kind, Flutter worker bindings, a capsule-scoped
         `pair_consensus_attestations.json` store, and receive orchestration
         that recomputes commitments and verifies root signatures before merge.
-      - 2d completed on 2026-07-10: pair-scoped plugin host runtime-hook
+      - 2d: pair-scoped plugin host runtime-hook
         preflight now uses exact two-root verified attestation evidence instead
         of local signability alone; solo futures and signal-ranking paths remain
         consensus-free by design.
@@ -1245,7 +1245,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - MainScreen pins one capsule selection for its lifetime and ignores a
         transient foreign runtime projection while a worker restores the
         selected runtime.
-  - Status: active.
+    - Next ordered 12.3 item is the cryptographically continuous ledger
+      protocol. Event-scoped delivery records, transport-health UI, plugin
+      transactionality, encrypted backup envelopes, and deprecated-envelope
+      migration remain subsequent items.
+  - Status: active; pass 1 and pass 2 are completed.
 
 ## Planned Product Tracks
 
