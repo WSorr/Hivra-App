@@ -96,6 +96,14 @@ Projection order is v5 entry sequence. `issued_at_ms` remains signed evidence,
 not an ordering authority. This prevents a clock change or a delivered peer
 event from reordering local history.
 
+A self-contained chain detects field mutation, insertion, reordering, and
+deletion of any non-tail entry. It cannot prove that the newest valid entries
+were not truncated from the end of the only local copy: the remaining prefix is
+still a valid history. Tail-loss detection requires a separately trusted
+checkpoint (for example an explicitly versioned backup or a peer-attested head)
+and is not silently claimed by v5. Such checkpointing is a later capability,
+not a reason to make transport or backup state another ledger truth.
+
 ## 5. v4 Compatibility and Migration
 
 Existing v4 ledgers remain importable only through an explicit legacy reader:

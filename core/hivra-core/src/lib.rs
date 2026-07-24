@@ -8,6 +8,7 @@ pub mod event;
 pub mod event_payloads;
 pub mod invitation;
 pub mod ledger;
+pub mod ledger_v5;
 pub mod primitives;
 pub mod relationship;
 pub mod slot;
@@ -26,5 +27,9 @@ pub use invitation::{
     PlannedStarterCreation,
 };
 pub use ledger::Ledger;
+pub use ledger_v5::{
+    Commitment, DomainEventV5, LedgerAnchorV5, LedgerEntryV5, LedgerV5, LedgerV5Error,
+    COMMITMENT_LENGTH, LEDGER_PROTOCOL_VERSION_V5, ZERO_COMMITMENT,
+};
 pub use primitives::{Network, PubKey, Signature, StarterId, StarterKind, Timestamp};
 pub use starter::Starter;
