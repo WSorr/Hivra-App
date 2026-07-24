@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 
 import '../ffi/invitation_actions_runtime.dart';
@@ -75,19 +74,22 @@ class InvitationActionsService {
   final InvitationActionsRuntime _runtime;
   final CapsuleDeliveryLifecycleService _deliveryLifecycle;
   final CapsuleWorkerQueue _workerQueue;
+  final Future<Uint8List?> Function()? _readOwnCardSignature;
   Future<void> _operationChain = Future<void>.value();
 
   InvitationActionsService({
     InvitationActionsRuntime? runtime,
     CapsuleDeliveryLifecycleService? deliveryLifecycle,
     CapsuleWorkerQueue? workerQueue,
+    Future<Uint8List?> Function()? readOwnCardSignature,
   }) : _runtime = runtime ?? HivraInvitationActionsRuntime(),
        _deliveryLifecycle =
            deliveryLifecycle ??
            CapsuleDeliveryLifecycleService(
              retryRunner: _unconfiguredRetryRunner,
            ),
-       _workerQueue = workerQueue ?? _sharedWorkerQueue;
+       _workerQueue = workerQueue ?? _sharedWorkerQueue,
+       _readOwnCardSignature = readOwnCardSignature;
 
   static Future<CapsuleDeliveryCycleResult> _unconfiguredRetryRunner(
     String _,
@@ -267,6 +269,7 @@ class InvitationActionsService {
       }
 
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
+      final senderCardSignature = await _readOwnCardSignature?.call();
       final workerFuture = _runCapsuleWorker(
         initialBootstrap: bootstrap,
         startWorker:
@@ -277,6 +280,8 @@ class InvitationActionsService {
                     ...currentBootstrap,
                     'toPubkey': toPubkey,
                     'starterSlot': starterSlot,
+                    if (senderCardSignature != null)
+                      'senderCardSignature': senderCardSignature,
                   },
                 ),
       );

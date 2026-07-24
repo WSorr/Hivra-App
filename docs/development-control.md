@@ -1,7 +1,7 @@
 # Hivra Development Control
 
-Status date: 2026-07-22
-Current baseline: `main` at `f18a490` (`v1.0.3-test13`, Android manual signoff recorded)
+Status date: 2026-07-24
+Current released baseline: `main` at `f18a490` (`v1.0.3-test13`, Android manual signoff recorded)
 
 This is the short operational map for deciding what Hivra work is happening
 now. It is not a second specification, backlog, or release record. It points
@@ -15,8 +15,8 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the active repair? | `5.1 Canonical Core Projection Convergence`; invitation and relationship lifecycle interpretation must move behind the Core projection boundary. | `roadmap.md`, `specification.md` |
-| Is 2.0 implementation work allowed? | No. `V2-0` is design and proof only; it may not create a second production path. | `architecture-v2-blueprint.md` |
+| What is the next 1.x remediation pass? | `12.3 / pass 3`: cryptographically continuous ledger protocol. `5.1` remains the mandatory projection boundary before any new lifecycle UI or consensus semantics. | `roadmap.md`, `specification.md` |
+| Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
 table, then open only the linked authority for the selected work item.
@@ -25,9 +25,9 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `5.1 Canonical Core Projection Convergence`; the remaining 12.3 delivery/reliability items stay ordered behind the projection boundary. | Current release baseline is `f18a490`; automated gates and packaged macOS/Android smoke passed for `v1.0.3-test13`. | Resume the next explicitly scoped projection pass. Do not blend it with feature work or redesign. |
+| **1.x maintained runtime** | Active | `12.3 / pass 3`: cryptographically continuous ledger. `5.1` is a cross-cutting projection blocker, not a reason to add another Flutter reducer. | Current release baseline is `f18a490`; automated gates and packaged macOS/Android smoke passed for `v1.0.3-test13`. The current delivery/identity commit is not a release candidate until fresh platform smoke is recorded. | Close pass 3, then move lifecycle readers to the canonical Core projection before event-scoped delivery records. Do not blend these with feature work or redesign. |
 | **1.x release** | Released | `v1.0.3-test13` is the current test release on macOS and Android. | Tag, guarded GitHub release, clean worktree, platform signoff, and artifact evidence are recorded. | A commit is not automatically a release; the next release requires a new candidate and fresh signoff. |
-| **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, and forbidden dependency edges after the 1.x documentation baseline is reconciled. | A reviewed ownership/dependency baseline and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence. |
+| **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Future product tracks** | Parked | AI trading advice, distributed backup drone, staking drone, Moltbook agent drone. | Their own approved contract and capability-closure result. | They do not preempt active 1.x integrity work. |
 
 `12.3` is deliberately an ordered remediation program, not a grab bag. Its
@@ -108,6 +108,7 @@ For a normal 1.x repair, read only:
 
 For 2.0 design, replace item 2 with `architecture-v2-blueprint.md` and use the
 current code only to inventory reality. This keeps the context small without
-forgetting the product's hard rules. Do not start `V2-0` until the current
-baseline and active 1.x debt are reflected consistently in this document and
-the roadmap.
+forgetting the product's hard rules. `V2-0` may start once the current baseline
+and ordered 1.x debt are reflected consistently in this document and the
+roadmap; it remains design evidence only until the blueprint exit criteria are
+satisfied.

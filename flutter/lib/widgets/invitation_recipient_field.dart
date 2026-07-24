@@ -35,7 +35,7 @@ class InvitationRecipientField extends StatelessWidget {
               for (final card in contacts)
                 DropdownMenuItem(
                   value: card.rootKey,
-                  child: Text(HivraIdFormat.short(card.rootKey)),
+                  child: Text('Capsule ${HivraIdFormat.short(card.rootKey)}'),
                 ),
             ],
             onChanged: (value) {

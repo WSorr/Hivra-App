@@ -74,6 +74,32 @@ Current 2.0 program:
 The first active item is `V2-0`. No 2.0 runtime implementation starts before
 the blueprint design exit criteria are satisfied.
 
+## 1.x / 2.0 Sequencing Contract
+
+The two lines share one product axis but cannot share a second runtime path.
+The ordering below is deliberate:
+
+1. **1.x integrity before new lifecycle behavior.** The next remediation pass
+   is `12.3 / pass 3`, the cryptographically continuous ledger protocol.
+   `5.1 Canonical Core Projection Convergence` remains a hard boundary: new
+   invitation, relationship, consensus, or Capsule Map behavior must consume a
+   canonical projection rather than add another Flutter event reducer.
+2. **One operational lifecycle.** After the ledger and projection boundary,
+   `12.3 / pass 4` replaces aggregate recovery markers with event-scoped
+   delivery records. Transport health, plugin transactions, and backup work
+   remain behind that lifecycle rather than creating their own queues.
+3. **2.0 proves the map before it migrates code.** `V2-0` may inventory owners,
+   contracts, entrypoints, and dependency edges in parallel. It may not add a
+   v2 event, DTO, storage format, facade, or executable runtime path to 1.x.
+4. **Migration is capability-sized.** A V2 migration begins only with frozen
+   1.x fixtures, a named public contract, an explicit removal target, and
+   platform parity evidence. The replacement and deletion/sealing of the old
+   path land in the same migration unit.
+
+This contract prevents two common failures: delaying current integrity work in
+the name of a redesign, and embedding speculative 2.0 structure into the
+maintained 1.x runtime.
+
 ## Current Priorities
 
 ### 1. Replay Safety
@@ -1245,6 +1271,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - MainScreen pins one capsule selection for its lifetime and ignores a
         transient foreign runtime projection while a worker restores the
         selected runtime.
+    - Current unreleaseable integration work (2026-07-24) uses one generic
+      `DeliveryEnvelope v1`/`DeliveryReceipt` boundary for transport routing,
+      preserves domain semantics at the receiving capability, and keeps local
+      user-assigned peer names as per-capsule operational metadata rather than
+      ledger facts or contact-card mutations. It does not close pass 3 or pass
+      4 and must pass fresh platform smoke before becoming a release candidate.
     - Next ordered 12.3 item is the cryptographically continuous ledger
       protocol. Event-scoped delivery records, transport-health UI, plugin
       transactionality, encrypted backup envelopes, and deprecated-envelope

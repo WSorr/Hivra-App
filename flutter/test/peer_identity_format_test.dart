@@ -17,29 +17,30 @@ void main() {
         transportPubkeyB64: transportB64,
         rootCapsuleKey: rootKey,
       );
-      expect(display, equals(HivraIdFormat.short(rootKey)));
+      expect(display, equals('Capsule ${HivraIdFormat.short(rootKey)}'));
     });
 
-    test('falls back to transport display when root key is unknown', () {
+    test('does not expose the transport key when root key is unknown', () {
       final display = PeerIdentityFormat.displayName(
         transportPubkeyB64: transportB64,
       );
-      expect(
-        display,
-        equals(
-          HivraIdFormat.short(
-              HivraIdFormat.formatNostrKeyFromBase64(transportB64)),
-        ),
-      );
+      expect(display, equals('Unverified capsule'));
     });
 
-    test('identity hint includes both root and transport when available', () {
+    test('identity hint keeps transport details out of the normal UI', () {
       final hint = PeerIdentityFormat.identityHint(
         transportPubkeyB64: transportB64,
         rootCapsuleKey: rootKey,
       );
-      expect(hint, contains('Root '));
-      expect(hint, contains('transport '));
+      expect(hint, equals('Verified capsule identity'));
+    });
+
+    test('formats a root hex key only for internal selection state', () {
+      final rootHex = List<String>.filled(32, '09').join();
+      expect(
+        PeerIdentityFormat.capsuleLabelFromRootHex(rootHex),
+        equals('Capsule ${HivraIdFormat.short(rootKey)}'),
+      );
     });
   });
 }

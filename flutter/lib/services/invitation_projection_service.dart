@@ -5,6 +5,9 @@ import '../models/invitation.dart';
 import '../models/starter.dart';
 import 'ledger_view_support.dart';
 
+String _hex(List<int> bytes) =>
+    bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+
 class InvitationProjectionService {
   final Uint8List? Function() _runtimeOwnerPublicKey;
   final Uint8List? Function()? _runtimeTransportPublicKey;
@@ -58,7 +61,8 @@ class InvitationProjectionService {
               payload.length == 97 ||
               payload.length == 128 ||
               payload.length == 129 ||
-              payload.length == 161)) {
+              payload.length == 161 ||
+              payload.length == 225)) {
         final signerBytes = _support.payloadBytes(e['signer']);
         if (signerBytes.length != 32) {
           continue;
@@ -71,7 +75,7 @@ class InvitationProjectionService {
 
         final kindByteOffset = switch (payload.length) {
           97 => 96,
-          129 || 161 => 128,
+          129 || 161 || 225 => 128,
           _ => null,
         };
         final kindFromPayload =
@@ -86,6 +90,8 @@ class InvitationProjectionService {
             payload.length >= 161
                 ? Uint8List.fromList(payload.sublist(129, 161))
                 : signer;
+        final senderCardSignatureHex =
+            payload.length == 225 ? _hex(payload.sublist(161, 225)) : null;
 
         final id = base64.encode(invitationId);
         final current = offersById[id];
@@ -142,6 +148,7 @@ class InvitationProjectionService {
               isIncoming && senderRoot != null
                   ? base64.encode(senderRoot)
                   : null,
+          fromCardSignatureHex: isIncoming ? senderCardSignatureHex : null,
           toPubkey: isIncoming ? null : base64.encode(toPubkey),
           kind:
               kindFromPayload ??
@@ -225,6 +232,7 @@ class InvitationProjectionService {
             id: offer.id,
             fromPubkey: offer.fromPubkey,
             fromRootPubkey: offer.fromRootPubkey,
+            fromCardSignatureHex: offer.fromCardSignatureHex,
             toPubkey: offer.toPubkey,
             kind: offer.kind,
             starterSlot: offer.starterSlot,
@@ -285,6 +293,7 @@ class _ProjectedInvitationOffer {
   final String id;
   final String fromPubkey;
   final String? fromRootPubkey;
+  final String? fromCardSignatureHex;
   final String? toPubkey;
   final StarterKind kind;
   final int? starterSlot;
@@ -295,6 +304,7 @@ class _ProjectedInvitationOffer {
     required this.id,
     required this.fromPubkey,
     required this.fromRootPubkey,
+    required this.fromCardSignatureHex,
     required this.toPubkey,
     required this.kind,
     required this.starterSlot,

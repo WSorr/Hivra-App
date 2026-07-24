@@ -23,25 +23,23 @@ class Relationship {
     this.hasPendingRemoteBreak = false,
   });
 
-  /// Get display name for peer (safe short preview)
-  String get peerDisplayName {
-    if (peerPubkey.isEmpty) return 'Unknown';
-    return HivraIdFormat.short(
-      HivraIdFormat.formatNostrKeyFromBase64(peerPubkey),
-    );
-  }
+  String get peerDisplayName => 'Unverified capsule';
 
   String get ownStarterDisplayId => HivraIdFormat.short(
-      HivraIdFormat.formatStarterIdFromBase64(ownStarterId));
+    HivraIdFormat.formatStarterIdFromBase64(ownStarterId),
+  );
 
   String get peerStarterDisplayId => HivraIdFormat.short(
-      HivraIdFormat.formatStarterIdFromBase64(peerStarterId));
+    HivraIdFormat.formatStarterIdFromBase64(peerStarterId),
+  );
 
   /// For mock data
   static Relationship mock(int index) {
     final kinds = StarterKind.values;
     return Relationship(
-      peerPubkey: '0x$index' '234567890123456789012345678901234567890123456789',
+      peerPubkey:
+          '0x$index'
+          '234567890123456789012345678901234567890123456789',
       kind: kinds[index % kinds.length],
       ownStarterId: 'starter_$index',
       peerStarterId: 'peer_starter_$index',

@@ -20,6 +20,7 @@ fn invitation_payload_has_known_shape(payload: &[u8]) -> bool {
         || payload.len() == 128
         || payload.len() == 129
         || payload.len() == 161
+        || payload.len() == 225
 }
 
 fn invitation_payload_sender_root(payload: &[u8]) -> Option<PubKey> {
@@ -36,14 +37,14 @@ fn invitation_payload_starter_kind(payload: &[u8]) -> Option<StarterKind> {
     if payload.len() == 97 {
         return starter_kind_from_slot(payload[96]);
     }
-    if payload.len() == 129 || payload.len() == 161 {
+    if payload.len() == 129 || payload.len() == 161 || payload.len() == 225 {
         return starter_kind_from_slot(payload[128]);
     }
     None
 }
 
 fn invitation_payload_sender_transport(payload: &[u8]) -> Option<PubKey> {
-    if payload.len() != 161 {
+    if payload.len() != 161 && payload.len() != 225 {
         return None;
     }
     let mut transport = [0u8; 32];

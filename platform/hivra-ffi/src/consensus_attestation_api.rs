@@ -91,7 +91,7 @@ fn load_attestation_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32])
 }
 
 pub(crate) fn queue_incoming_attestation_if_match(
-    message: &Message,
+    message: &DeliveryEnvelope,
     local_pubkey: [u8; 32],
 ) -> bool {
     if message.kind != PAIR_CONSENSUS_ATTESTATION_KIND {
@@ -200,13 +200,14 @@ pub unsafe extern "C" fn hivra_send_pair_consensus_attestation(
         }
     };
 
-    let message = Message {
+    let message = DeliveryEnvelope {
+        schema_version: 1,
         from: sender_pubkey,
         to: to_pubkey,
         kind: PAIR_CONSENSUS_ATTESTATION_KIND,
         payload: payload_json.as_bytes().to_vec(),
         timestamp: now_ms(),
-        invitation_id: None,
+        correlation_id: None,
         domain_event: None,
     };
 

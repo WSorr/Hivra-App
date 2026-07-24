@@ -10,6 +10,7 @@ import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
 import 'capsule_address_service.dart';
+import 'capsule_contact_label_store.dart';
 import 'capsule_diagnostics_service.dart';
 import 'capsule_delivery_lifecycle_service.dart';
 import 'capsule_state_manager.dart';
@@ -44,6 +45,9 @@ class AppRuntimeService {
     : _runtime = runtime ?? HivraAppRuntimeRuntime() {
     _ledgerView = LedgerViewService(runtime: _runtime.ledgerViewRuntime);
     _stateManager = CapsuleStateManager(_ledgerView);
+    final addressBook = CapsuleAddressService(
+      runtime: _runtime.capsuleAddressRuntime,
+    );
     _deliveryLifecycle = CapsuleDeliveryLifecycleService(
       retryRunner:
           (capsuleHex) =>
@@ -52,6 +56,20 @@ class AppRuntimeService {
     _invitationActions = InvitationActionsService(
       runtime: _runtime.invitationActionsRuntime,
       deliveryLifecycle: _deliveryLifecycle,
+      readOwnCardSignature: () async {
+        final card = await addressBook.buildOwnCard();
+        final signatureHex = card?.signatureHex;
+        if (signatureHex == null || signatureHex.length != 128) return null;
+        try {
+          final bytes = <int>[];
+          for (var i = 0; i < signatureHex.length; i += 2) {
+            bytes.add(int.parse(signatureHex.substring(i, i + 2), radix: 16));
+          }
+          return Uint8List.fromList(bytes);
+        } catch (_) {
+          return null;
+        }
+      },
     );
     _invitationIntents = InvitationIntentHandler(
       actions: _invitationActions,
@@ -162,6 +180,12 @@ class AppRuntimeService {
 
   CapsuleAddressService buildCapsuleAddressService() {
     return CapsuleAddressService(runtime: _runtime.capsuleAddressRuntime);
+  }
+
+  CapsuleContactLabelStore buildCapsuleContactLabelStore() {
+    return CapsuleContactLabelStore(
+      readActiveCapsuleRootHex: activeCapsuleRootHex,
+    );
   }
 
   PluginHostApiService buildPluginHostApiService() {
@@ -291,6 +315,7 @@ class AppRuntimeService {
       buildOwnCard: contactCards.buildOwnCard,
       exportOwnCardJson: contactCards.exportOwnCardJson,
       contactCards: contactCards,
+      contactLabels: buildCapsuleContactLabelStore(),
     );
   }
 }

@@ -156,7 +156,8 @@ pub unsafe extern "C" fn hivra_nostr_send_prepared_self_check() -> i32 {
     };
     let keys = Keys::new(signing_secret);
 
-    let message = Message {
+    let message = DeliveryEnvelope {
+        schema_version: 1,
         from: transport.public_key_bytes(),
         to: transport.public_key_bytes(),
         kind: 1,
@@ -165,7 +166,7 @@ pub unsafe extern "C" fn hivra_nostr_send_prepared_self_check() -> i32 {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0),
-        invitation_id: None,
+        correlation_id: None,
         domain_event: None,
     };
 

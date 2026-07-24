@@ -5,6 +5,7 @@ import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import 'app_runtime_service.dart';
 import 'capsule_chat_delivery_service.dart';
+import 'capsule_contact_label_store.dart';
 import 'consensus_attestation_exchange_service.dart';
 import 'manual_consensus_check_service.dart';
 import 'plugin_host_api_service.dart';
@@ -44,6 +45,7 @@ class PluginRuntimeModule {
   final PluginHostApiService pluginHostApi;
   final ConsensusAttestationExchangeService attestationExchange;
   final CapsuleChatDeliveryService chatDelivery;
+  final CapsuleContactLabelStore contactLabels;
   final UiEventLogService uiLog;
   final String? Function() _readActiveCapsuleRootHex;
 
@@ -54,6 +56,7 @@ class PluginRuntimeModule {
     required this.pluginHostApi,
     required this.attestationExchange,
     required this.chatDelivery,
+    required this.contactLabels,
     required this.uiLog,
     required String? Function() readActiveCapsuleRootHex,
   }) : _readActiveCapsuleRootHex = readActiveCapsuleRootHex;
@@ -238,6 +241,7 @@ class PluginRuntimeModuleService {
       pluginHostApi: runtime.buildPluginHostApiService(),
       attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
+      contactLabels: runtime.buildCapsuleContactLabelStore(),
       uiLog: const UiEventLogService(),
       readActiveCapsuleRootHex: runtime.activeCapsuleRootHex,
     );

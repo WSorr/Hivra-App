@@ -100,6 +100,16 @@ typedef HivraSendInvitationDart = int Function(
   Pointer<Uint8> toPubkey,
   int starterSlot,
 );
+typedef HivraSendInvitationWithCardC = Int32 Function(
+  Pointer<Uint8> toPubkey,
+  Uint8 starterSlot,
+  Pointer<Uint8> cardSignature64,
+);
+typedef HivraSendInvitationWithCardDart = int Function(
+  Pointer<Uint8> toPubkey,
+  int starterSlot,
+  Pointer<Uint8> cardSignature64,
+);
 
 typedef HivraTransportReceiveC = Int32 Function();
 typedef HivraTransportReceiveDart = int Function();
@@ -291,6 +301,7 @@ class HivraBindings {
   late final HivraCapsuleNostrPublicKeyDart _capsuleNostrPublicKey;
   late final HivraCapsuleResetDart _capsuleReset;
   HivraSendInvitationDart? _sendInvitation;
+  HivraSendInvitationWithCardDart? _sendInvitationWithCard;
   HivraTransportReceiveDart? _transportReceive;
   HivraTransportReceiveQuickDart? _transportReceiveQuick;
   HivraRetryPendingOutgoingInvitationsDart? _retryPendingOutgoingInvitations;
@@ -399,6 +410,15 @@ class HivraBindings {
           .asFunction();
     } catch (_) {
       _sendInvitation = null;
+    }
+
+    try {
+      _sendInvitationWithCard = _lib
+          .lookup<NativeFunction<HivraSendInvitationWithCardC>>(
+              'hivra_send_invitation_with_card')
+          .asFunction();
+    } catch (_) {
+      _sendInvitationWithCard = null;
     }
 
     try {
@@ -722,10 +742,26 @@ class HivraBindings {
 
   bool resetCapsule() => _capsuleReset() == 0;
 
-  int deliverInvitationCode(Uint8List toPubkey, int starterSlot) {
+  int deliverInvitationCode(
+    Uint8List toPubkey,
+    int starterSlot, {
+    Uint8List? cardSignature64,
+  }) {
     if (toPubkey.length != 32 || starterSlot < 0 || starterSlot > 4) return -1;
     final toPtr = calloc<Uint8>(32);
     try {
+      final sendInvitationWithCardFn = _sendInvitationWithCard;
+      if (cardSignature64 != null && cardSignature64.length == 64 &&
+          sendInvitationWithCardFn != null) {
+        final signaturePtr = calloc<Uint8>(64);
+        try {
+          signaturePtr.asTypedList(64).setAll(0, cardSignature64);
+          toPtr.asTypedList(32).setAll(0, toPubkey);
+          return sendInvitationWithCardFn(toPtr, starterSlot, signaturePtr);
+        } finally {
+          calloc.free(signaturePtr);
+        }
+      }
       final sendInvitationFn = _sendInvitation;
       if (sendInvitationFn == null) {
         return -1002;

@@ -19,6 +19,7 @@ import '../models/plugin_host_api_models.dart';
 import '../services/app_runtime_service.dart';
 import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
+import '../utils/peer_identity_format.dart';
 
 class TradingDroneScreen extends StatefulWidget {
   final AppRuntimeService? runtime;
@@ -519,6 +520,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   }
 
   Future<String?> _selectConsensusPeer({required String hint}) async {
+    final labels = await _module.contactLabels.load();
+    if (!mounted) return null;
     final checks =
         _module.manualChecks.loadChecks().toList()..sort(
           (a, b) =>
@@ -545,10 +548,19 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     check.isSignable ? Icons.verified_rounded : Icons.warning,
                     color: check.isSignable ? Colors.green : Colors.orange,
                   ),
-                  title: Text(check.peerLabel),
+                  title: Text(
+                    PeerIdentityFormat.capsuleLabelFromRootHex(
+                      check.peerHex,
+                      localLabel:
+                          labels[PeerIdentityFormat.capsuleKeyFromRootHex(
+                            check.peerHex,
+                          )],
+                    ),
+                  ),
                   subtitle: Text(
-                    check.peerHex,
-                    style: const TextStyle(fontFamily: 'monospace'),
+                    check.isSignable
+                        ? 'Pair consensus verified'
+                        : 'Pair consensus needs attention',
                   ),
                   trailing:
                       check.isSignable
@@ -3071,19 +3083,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _peerController,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: InputDecoration(
-                  labelText: 'Peer hex (optional, 64 lowercase chars)',
-                  hintText: 'Leave empty for solo trading',
-                  filled: true,
-                  fillColor: const Color(0xFF0F141C),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+              _TradingPeerScopeCard(
+                peerHex: _peerController.text,
+                onClear:
+                    _peerController.text.trim().isEmpty
+                        ? null
+                        : () {
+                          setState(_peerController.clear);
+                        },
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -3423,7 +3430,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   OutlinedButton.icon(
                     onPressed: _runningIntent ? null : _choosePeer,
                     icon: const Icon(Icons.group_outlined),
-                    label: const Text('Choose Consensus Peer'),
+                    label: const Text('Choose Trusted Capsule'),
                   ),
                   FilledButton.icon(
                     onPressed: _runningIntent ? null : _runIntent,
@@ -3840,7 +3847,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Qty ${signal.quantityDecimal} · mode ${signal.entryMode} · from ${signal.fromHex.substring(0, 8)}..',
+                              'Qty ${signal.quantityDecimal} · mode ${signal.entryMode} · from ${PeerIdentityFormat.capsuleLabelFromRootHex(signal.fromHex)}',
                               style: const TextStyle(
                                 color: Color(0xFF9AA7BA),
                                 fontSize: 12,
@@ -3862,6 +3869,45 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TradingPeerScopeCard extends StatelessWidget {
+  final String peerHex;
+  final VoidCallback? onClear;
+
+  const _TradingPeerScopeCard({required this.peerHex, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPeer = peerHex.trim().isNotEmpty;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F141C),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF3B4657)),
+      ),
+      child: ListTile(
+        leading: Icon(
+          hasPeer ? Icons.group_outlined : Icons.person_outline_rounded,
+          color: hasPeer ? const Color(0xFFC9B2FF) : const Color(0xFF9FAABA),
+        ),
+        title: const Text('Intent scope'),
+        subtitle: Text(
+          hasPeer
+              ? 'Shared with ${PeerIdentityFormat.capsuleLabelFromRootHex(peerHex)}'
+              : 'Solo trading. No trusted capsule is selected.',
+        ),
+        trailing:
+            onClear == null
+                ? null
+                : IconButton(
+                  tooltip: 'Use solo trading',
+                  onPressed: onClear,
+                  icon: const Icon(Icons.close_rounded),
+                ),
       ),
     );
   }

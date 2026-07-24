@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'capsule_address_service.dart';
+import 'capsule_contact_label_store.dart';
 
 class SettingsService {
   final bool Function() _loadIsNeste;
@@ -11,6 +12,7 @@ class SettingsService {
   final Future<String?> Function() _exportOwnCardJson;
   final Future<String> Function() _loadAppVersionLabel;
   final CapsuleAddressService _contactCards;
+  final CapsuleContactLabelStore _contactLabels;
 
   SettingsService({
     required bool Function() loadIsNeste,
@@ -19,12 +21,16 @@ class SettingsService {
     required Future<String?> Function() exportOwnCardJson,
     Future<String> Function() loadAppVersionLabel = _defaultAppVersionLabel,
     CapsuleAddressService contactCards = const CapsuleAddressService(),
-  })  : _loadIsNeste = loadIsNeste,
-        _loadSeed = loadSeed,
-        _buildOwnCard = buildOwnCard,
-        _exportOwnCardJson = exportOwnCardJson,
-        _loadAppVersionLabel = loadAppVersionLabel,
-        _contactCards = contactCards;
+    CapsuleContactLabelStore? contactLabels,
+  }) : _loadIsNeste = loadIsNeste,
+       _loadSeed = loadSeed,
+       _buildOwnCard = buildOwnCard,
+       _exportOwnCardJson = exportOwnCardJson,
+       _loadAppVersionLabel = loadAppVersionLabel,
+       _contactCards = contactCards,
+       _contactLabels =
+           contactLabels ??
+           CapsuleContactLabelStore(readActiveCapsuleRootHex: () => null);
 
   static Future<String> _defaultAppVersionLabel() async {
     final info = await PackageInfo.fromPlatform();
@@ -57,4 +63,11 @@ class SettingsService {
 
   Future<bool> removeTrustedCard(String rootKey) =>
       _contactCards.removeTrustedCard(rootKey);
+
+  Future<Map<String, String>> loadContactLabels() => _contactLabels.load();
+
+  Future<void> saveContactLabel({
+    required String peerRootKey,
+    required String label,
+  }) => _contactLabels.save(peerRootKey: peerRootKey, label: label);
 }

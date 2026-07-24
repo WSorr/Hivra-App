@@ -327,6 +327,7 @@ class CapsuleAddressService {
   Future<bool> upsertTrustedCardFromKeys({
     required Uint8List rootPubkey,
     required Uint8List nostrPubkey,
+    String? signatureHex,
   }) async {
     if (rootPubkey.length != 32 || nostrPubkey.length != 32) {
       return false;
@@ -336,11 +337,41 @@ class CapsuleAddressService {
     }
     final rootBytes = Uint8List.fromList(rootPubkey);
     final nostrBytes = Uint8List.fromList(nostrPubkey);
-    final card = CapsuleAddressCard(
+    final normalizedSignature = signatureHex?.trim().toLowerCase();
+    final signed =
+        normalizedSignature != null && normalizedSignature.isNotEmpty;
+    if (signed &&
+        (normalizedSignature.length != 128 ||
+            !RegExp(r'^[0-9a-f]+$').hasMatch(normalizedSignature))) {
+      return false;
+    }
+    final unsignedCard = CapsuleAddressCard(
+      version: signed ? 2 : 1,
       rootKey: HivraIdFormat.formatCapsuleKeyBytes(rootBytes),
       rootHex: _toHex(rootBytes),
       nostrNpub: _encodeBech32('npub', nostrBytes),
       nostrHex: _toHex(nostrBytes),
+    );
+    if (signed) {
+      final signature = _decodeHex64(normalizedSignature);
+      final verifier = _runtime;
+      if (signature == null ||
+          verifier == null ||
+          !verifier.verifyRootDigest32(
+            message32: unsignedCard.signingDigest32(),
+            pubkey32: rootBytes,
+            signature64: signature,
+          )) {
+        return false;
+      }
+    }
+    final card = CapsuleAddressCard(
+      version: unsignedCard.version,
+      rootKey: unsignedCard.rootKey,
+      rootHex: unsignedCard.rootHex,
+      nostrNpub: unsignedCard.nostrNpub,
+      nostrHex: unsignedCard.nostrHex,
+      signatureHex: normalizedSignature,
     );
 
     final cards = await _readCards();

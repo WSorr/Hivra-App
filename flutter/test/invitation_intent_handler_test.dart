@@ -252,6 +252,63 @@ void main() {
       expect(calls, 2);
       expect(secondCapsule.code, -1003);
     });
+
+    test(
+      'does not let a backward clock hold quick fetch cooldown forever',
+      () async {
+        var calls = 0;
+        var now = DateTime.utc(2026, 7, 23, 12);
+        final handler = InvitationIntentHandler(
+          delivery: const InvitationDeliveryService(),
+          activeCapsuleHexResolver: () => 'capsule-clock',
+          now: () => now,
+          fetchInvitationsQuickAction: () async {
+            calls += 1;
+            return const InvitationWorkerResult(code: 0);
+          },
+        );
+
+        await handler.fetchInvitationsQuick();
+        now = now.subtract(const Duration(minutes: 1));
+        final second = await handler.fetchInvitationsQuick();
+
+        expect(calls, 2);
+        expect(second.message, 'No new invitation deliveries');
+      },
+    );
+
+    test(
+      'replaces an expired in-flight quick fetch without losing newer work',
+      () async {
+        var calls = 0;
+        var now = DateTime.utc(2026, 7, 23, 12);
+        final firstCompleter = Completer<InvitationWorkerResult>();
+        final secondCompleter = Completer<InvitationWorkerResult>();
+        final handler = InvitationIntentHandler(
+          delivery: const InvitationDeliveryService(),
+          activeCapsuleHexResolver: () => 'capsule-stale-in-flight',
+          now: () => now,
+          fetchInvitationsQuickAction: () {
+            calls += 1;
+            return calls == 1 ? firstCompleter.future : secondCompleter.future;
+          },
+        );
+
+        final first = handler.fetchInvitationsQuick();
+        now = now.add(const Duration(seconds: 25));
+        final second = handler.fetchInvitationsQuick();
+        expect(calls, 2);
+
+        firstCompleter.complete(const InvitationWorkerResult(code: 1));
+        final third = handler.fetchInvitationsQuick();
+        expect(calls, 2);
+
+        secondCompleter.complete(const InvitationWorkerResult(code: 2));
+        expect((await first).code, 1);
+        expect((await second).code, 2);
+        expect((await third).code, 2);
+      },
+    );
   });
 
   group('InvitationIntentHandler pending timeout policy', () {

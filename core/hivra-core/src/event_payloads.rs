@@ -98,6 +98,7 @@ impl EventPayload for InvitationSentPayload {
             && bytes.len() != 128
             && bytes.len() != 129
             && bytes.len() != 161
+            && bytes.len() != 225
         {
             return Err("invalid invitation_sent payload length");
         }
@@ -430,6 +431,12 @@ mod tests {
         bytes_129.push(2);
         let parsed_129 = InvitationSentPayload::from_bytes(&bytes_129).unwrap();
         assert_eq!(parsed_129, base);
+
+        let mut bytes_225 = bytes_129.clone();
+        bytes_225.extend_from_slice(&[14u8; 32]);
+        bytes_225.extend_from_slice(&[15u8; 64]);
+        let parsed_225 = InvitationSentPayload::from_bytes(&bytes_225).unwrap();
+        assert_eq!(parsed_225, base);
     }
 
     #[test]

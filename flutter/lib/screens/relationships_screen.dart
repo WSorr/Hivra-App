@@ -49,6 +49,7 @@ class RelationshipsScreen extends StatefulWidget {
   final Future<void> Function()? onLedgerChanged;
   final Future<void> Function()? onSyncTransport;
   final Future<void> Function(CapsuleHistorySubject subject)? onOpenHistory;
+  final Future<Map<String, String>> Function()? loadContactLabels;
 
   const RelationshipsScreen({
     super.key,
@@ -56,6 +57,7 @@ class RelationshipsScreen extends StatefulWidget {
     this.onLedgerChanged,
     this.onSyncTransport,
     this.onOpenHistory,
+    this.loadContactLabels,
   });
 
   @override
@@ -78,6 +80,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
   String? _filterKind;
   String? _breakingPeerPubkey;
   Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
+  Map<String, String> _contactLabels = const <String, String>{};
 
   Future<void> _showBreakProgressDialog({required bool remoteBreakPending}) {
     final message =
@@ -153,9 +156,12 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
 
     final lookupGeneration = ++_peerRootLookupGeneration;
     final peerRootKeys = await widget.service.loadPeerRootKeysForGroups(groups);
+    final labels =
+        await widget.loadContactLabels?.call() ?? const <String, String>{};
     if (!mounted || lookupGeneration != _peerRootLookupGeneration) return;
     setState(() {
       _peerRootKeyByTransportB64 = peerRootKeys;
+      _contactLabels = labels;
     });
   }
 
@@ -596,6 +602,7 @@ class _RelationshipsScreenState extends State<RelationshipsScreen> {
     return PeerIdentityFormat.displayName(
       transportPubkeyB64: group.peerPubkey,
       rootCapsuleKey: _resolvedRootKey(group),
+      localLabel: _contactLabels[_resolvedRootKey(group)?.toLowerCase()],
     );
   }
 

@@ -36,7 +36,12 @@ Map<String, Object?> sendInvitationInWorker(Map<String, Object?> args) {
 
   final toPubkey = args['toPubkey'] as Uint8List;
   final starterSlot = args['starterSlot'] as int;
-  final result = hivra.deliverInvitationCode(toPubkey, starterSlot);
+  final signature = args['senderCardSignature'] as Uint8List?;
+  final result = hivra.deliverInvitationCode(
+    toPubkey,
+    starterSlot,
+    cardSignature64: signature,
+  );
   final lastError = hivra.lastErrorMessage();
   return <String, Object?>{
     'result': result,

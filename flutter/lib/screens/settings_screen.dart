@@ -9,8 +9,11 @@ class SettingsScreen extends StatefulWidget {
   final SettingsService service;
   final Future<void> Function()? onLedgerChanged;
 
-  const SettingsScreen(
-      {super.key, required this.service, this.onLedgerChanged});
+  const SettingsScreen({
+    super.key,
+    required this.service,
+    this.onLedgerChanged,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -49,19 +52,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _showSeedPhrase() async {
     final seed = widget.service.loadSeed();
     if (seed == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No seed found')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No seed found')));
       return;
     }
 
     await Navigator.pushNamed(
       context,
       '/backup',
-      arguments: {
-        'seed': seed,
-        'isNewWallet': false,
-      },
+      arguments: {'seed': seed, 'isNewWallet': false},
     );
     await _notifyLedgerChanged();
   }
@@ -79,62 +79,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Share capsule card'),
-        content: SizedBox(
-          width: 360,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'The other person scans this code in Hivra to add your capsule address.',
-                textAlign: TextAlign.center,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Share capsule card'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'The other person scans this code in Hivra to add your capsule address.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.all(12),
+                    child: QrImageView(
+                      data: card.toQrPayload(),
+                      size: 248,
+                      backgroundColor: Colors.white,
+                      eyeStyle: const QrEyeStyle(color: Colors.black),
+                      dataModuleStyle: const QrDataModuleStyle(
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SelectableText(
+                    'Capsule ${HivraIdFormat.short(card.rootKey)}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'This card contains public routing information only.',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-              const SizedBox(height: 20),
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.all(12),
-                child: QrImageView(
-                  data: card.toQrPayload(),
-                  size: 248,
-                  backgroundColor: Colors.white,
-                  eyeStyle: const QrEyeStyle(color: Colors.black),
-                  dataModuleStyle: const QrDataModuleStyle(color: Colors.black),
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
               ),
-              const SizedBox(height: 16),
-              SelectableText(
-                HivraIdFormat.short(card.rootKey),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'This card contains public routing information only.',
-                textAlign: TextAlign.center,
+              FilledButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(
+                    ClipboardData(text: card.toPrettyJson()),
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Capsule card JSON copied')),
+                  );
+                },
+                icon: const Icon(Icons.copy),
+                label: const Text('Copy'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-          FilledButton.icon(
-            onPressed: () async {
-              await Clipboard.setData(
-                ClipboardData(text: card.toPrettyJson()),
-              );
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Capsule card JSON copied')),
-              );
-            },
-            icon: const Icon(Icons.copy),
-            label: const Text('Copy'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -146,139 +149,263 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Import peer capsule card'),
-          content: SizedBox(
-            width: 560,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Scan the other capsule QR code or paste its shared card.',
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  minLines: 8,
-                  maxLines: 16,
-                  decoration: InputDecoration(
-                    border: const OutlineInputBorder(),
-                    hintText: '{ "version": 1, ... }',
-                    errorText: errorText,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Import peer capsule card'),
+                  content: SizedBox(
+                    width: 560,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Scan the other capsule QR code or paste its shared card.',
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: controller,
+                          minLines: 8,
+                          maxLines: 16,
+                          decoration: InputDecoration(
+                            border: const OutlineInputBorder(),
+                            hintText: '{ "version": 1, ... }',
+                            errorText: errorText,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        final clipboard = await Clipboard.getData('text/plain');
+                        controller.text = clipboard?.text?.trim() ?? '';
+                        setDialogState(() => errorText = null);
+                      },
+                      child: const Text('Paste'),
+                    ),
+                    TextButton.icon(
+                      onPressed: () async {
+                        final scanned = await Navigator.of(
+                          dialogContext,
+                        ).push<String>(
+                          MaterialPageRoute(
+                            builder: (_) => const _CapsuleCardScannerScreen(),
+                          ),
+                        );
+                        if (scanned == null || !dialogContext.mounted) return;
+                        controller.text = scanned;
+                        setDialogState(() => errorText = null);
+                      },
+                      icon: const Icon(Icons.qr_code_scanner),
+                      label: const Text('Scan QR'),
+                    ),
+                    FilledButton(
+                      onPressed: () async {
+                        final raw = controller.text.trim();
+                        if (raw.isEmpty) {
+                          setDialogState(
+                            () => errorText = 'Card JSON is empty',
+                          );
+                          return;
+                        }
+                        try {
+                          await widget.service.importCardPayload(raw);
+                          await _loadContactCount();
+                          if (!dialogContext.mounted) return;
+                          Navigator.of(dialogContext).pop();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Peer capsule card imported'),
+                            ),
+                          );
+                        } catch (e) {
+                          setDialogState(() => errorText = '$e');
+                        }
+                      },
+                      child: const Text('Import'),
+                    ),
+                  ],
                 ),
-              ],
-            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                final clipboard = await Clipboard.getData('text/plain');
-                controller.text = clipboard?.text?.trim() ?? '';
-                setDialogState(() => errorText = null);
-              },
-              child: const Text('Paste'),
-            ),
-            TextButton.icon(
-              onPressed: () async {
-                final scanned = await Navigator.of(dialogContext).push<String>(
-                  MaterialPageRoute(
-                    builder: (_) => const _CapsuleCardScannerScreen(),
-                  ),
-                );
-                if (scanned == null || !dialogContext.mounted) return;
-                controller.text = scanned;
-                setDialogState(() => errorText = null);
-              },
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Scan QR'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final raw = controller.text.trim();
-                if (raw.isEmpty) {
-                  setDialogState(() => errorText = 'Card JSON is empty');
-                  return;
-                }
-                try {
-                  await widget.service.importCardPayload(raw);
-                  await _loadContactCount();
-                  if (!dialogContext.mounted) return;
-                  Navigator.of(dialogContext).pop();
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Peer capsule card imported')),
-                  );
-                } catch (e) {
-                  setDialogState(() => errorText = '$e');
-                }
-              },
-              child: const Text('Import'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
   Future<void> _showTrustedPeerCards() async {
     final cards = await widget.service.listTrustedCards();
+    final labels = await widget.service.loadContactLabels();
     if (!mounted) return;
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Trusted peer cards'),
-          content: SizedBox(
-            width: 620,
-            child: cards.isEmpty
-                ? const Text('No trusted peer cards imported yet.')
-                : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: cards.length,
-                    separatorBuilder: (_, _) => const Divider(height: 16),
-                    itemBuilder: (context, index) {
-                      final card = cards[index];
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.person_outline),
-                        title: Text(HivraIdFormat.short(card.rootKey)),
-                        subtitle: Text(
-                          'Nostr ${HivraIdFormat.short(card.nostrNpub)}',
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Trusted peer cards'),
+                  content: SizedBox(
+                    width: 620,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Names are local to the currently selected capsule.',
+                          style: TextStyle(color: Color(0xFF9FAABA)),
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: 'Remove',
-                          onPressed: () async {
-                            final removed = await widget.service
-                                .removeTrustedCard(card.rootKey);
-                            if (!removed) return;
-                            cards.removeAt(index);
-                            await _loadContactCount();
-                            if (!dialogContext.mounted) return;
-                            setDialogState(() {});
-                          },
+                        const SizedBox(height: 12),
+                        Flexible(
+                          child:
+                              cards.isEmpty
+                                  ? const Text(
+                                    'No trusted peer cards imported yet.',
+                                  )
+                                  : ListView.separated(
+                                    shrinkWrap: true,
+                                    itemCount: cards.length,
+                                    separatorBuilder:
+                                        (_, _) => const Divider(height: 16),
+                                    itemBuilder: (context, index) {
+                                      final card = cards[index];
+                                      final label =
+                                          labels[card.rootKey.toLowerCase()];
+                                      return ListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        leading: const Icon(
+                                          Icons.person_outline,
+                                        ),
+                                        title: Text(
+                                          label ??
+                                              'Capsule ${HivraIdFormat.short(card.rootKey)}',
+                                        ),
+                                        subtitle: Text(
+                                          label == null
+                                              ? 'Verified delivery card'
+                                              : 'Capsule ${HivraIdFormat.short(card.rootKey)}',
+                                        ),
+                                        trailing: Wrap(
+                                          spacing: 2,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.edit_outlined,
+                                              ),
+                                              tooltip: 'Name capsule',
+                                              onPressed: () async {
+                                                final name =
+                                                    await _editContactLabel(
+                                                      card.rootKey,
+                                                      label,
+                                                    );
+                                                if (name == null) {
+                                                  return;
+                                                }
+                                                labels[card.rootKey
+                                                        .toLowerCase()] =
+                                                    name;
+                                                if (name.isEmpty) {
+                                                  labels.remove(
+                                                    card.rootKey.toLowerCase(),
+                                                  );
+                                                }
+                                                if (!dialogContext.mounted) {
+                                                  return;
+                                                }
+                                                setDialogState(() {});
+                                              },
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.delete_outline,
+                                              ),
+                                              tooltip: 'Remove',
+                                              onPressed: () async {
+                                                final removed = await widget
+                                                    .service
+                                                    .removeTrustedCard(
+                                                      card.rootKey,
+                                                    );
+                                                if (!removed) {
+                                                  return;
+                                                }
+                                                await widget.service
+                                                    .saveContactLabel(
+                                                      peerRootKey: card.rootKey,
+                                                      label: '',
+                                                    );
+                                                cards.removeAt(index);
+                                                labels.remove(
+                                                  card.rootKey.toLowerCase(),
+                                                );
+                                                await _loadContactCount();
+                                                if (!dialogContext.mounted) {
+                                                  return;
+                                                }
+                                                setDialogState(() {});
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
                         ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      ),
     );
+  }
+
+  Future<String?> _editContactLabel(String rootKey, String? current) async {
+    final controller = TextEditingController(text: current ?? '');
+    final saved = await showDialog<String>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Name capsule'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              maxLength: 64,
+              decoration: InputDecoration(
+                labelText: 'Local name',
+                hintText: 'For example, Alex or Work Android',
+                helperText: 'Stored only by this capsule.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed:
+                    () =>
+                        Navigator.of(dialogContext).pop(controller.text.trim()),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+    controller.dispose();
+    if (saved == null) return null;
+    await widget.service.saveContactLabel(peerRootKey: rootKey, label: saved);
+    return saved;
   }
 
   @override
@@ -311,8 +438,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 leading: const Icon(Icons.storage),
                 title: const Text('Ledger inspector'),
-                subtitle:
-                    const Text('View owner, hash and recent ledger events'),
+                subtitle: const Text(
+                  'View owner, hash and recent ledger events',
+                ),
                 onTap: () async {
                   await Navigator.pushNamed(context, '/ledger_inspector');
                   await _notifyLedgerChanged();
@@ -379,9 +507,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.sensors),
                   title: const Text('Relay mode'),
-                  subtitle: Text(_isRelay
-                      ? 'Active (stores messages for trusted peers)'
-                      : 'Inactive (leaf node only)'),
+                  subtitle: Text(
+                    _isRelay
+                        ? 'Active (stores messages for trusted peers)'
+                        : 'Inactive (leaf node only)',
+                  ),
                   trailing: Switch(
                     value: _isRelay,
                     onChanged: (value) {
@@ -434,8 +564,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSection(
-      {required String title, required List<Widget> children}) {
+  Widget _buildSection({
+    required String title,
+    required List<Widget> children,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -478,10 +610,11 @@ class _CapsuleCardScannerScreenState extends State<_CapsuleCardScannerScreen> {
 
   void _onDetect(BarcodeCapture capture) {
     if (_handled) return;
-    final value = capture.barcodes
-        .map((barcode) => barcode.rawValue?.trim())
-        .whereType<String>()
-        .firstOrNull;
+    final value =
+        capture.barcodes
+            .map((barcode) => barcode.rawValue?.trim())
+            .whereType<String>()
+            .firstOrNull;
     if (value == null || value.isEmpty) return;
     _handled = true;
     Navigator.of(context).pop(value);
@@ -497,15 +630,16 @@ class _CapsuleCardScannerScreenState extends State<_CapsuleCardScannerScreen> {
           MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
-            errorBuilder: (_, error) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Camera unavailable: ${error.errorCode.name}',
-                  textAlign: TextAlign.center,
+            errorBuilder:
+                (_, error) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Camera unavailable: ${error.errorCode.name}',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
-              ),
-            ),
           ),
           const SafeArea(
             child: Align(

@@ -57,6 +57,30 @@ Rules:
 - Runtime/FFI boundary performs effects only.
 - Projection services rebuild state from ledger events.
 
+## 2.1 Novelty Before Pattern
+
+Existing code patterns are compatibility constraints and verification tools,
+not default designs for new behavior. Before implementing a change, the
+author MUST define the user-visible invariant and the complete cross-module
+scenario it must close. The implementation review MUST then proceed in this
+order:
+
+1. State the invariant and the externally observable success condition.
+2. Map every existing mechanism that participates in the scenario, including
+   storage, ledger, transport, identity, projection, and UI paths.
+3. Identify seams where individually working mechanisms fail when composed.
+4. Design the smallest new contract that closes the seam without duplicating
+   an owner or introducing a DTO/protocol shadow.
+5. Run an adversarial pass covering legacy versions, retries, duplicates,
+   offline delivery, platform differences, restoration, and forged input.
+6. Run the regression pass against existing tests, review gates, and the
+   original invariant.
+
+Every meaningful change MUST document its invariant, touched cross-module
+seams, compatibility behavior, and adversarial cases. A solution is not
+complete merely because it matches an existing local pattern or passes an
+isolated unit test.
+
 ## 3. Effect Discipline
 
 Effects are explicit and isolated:

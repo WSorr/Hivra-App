@@ -1,6 +1,6 @@
 use super::*;
 use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy)]
 pub(crate) enum TransportProfile {
@@ -10,7 +10,7 @@ pub(crate) enum TransportProfile {
 
 struct CachedNostrTransport {
     sender_secret: [u8; 32],
-    transport: NostrTransport,
+    transport: Arc<NostrTransport>,
 }
 
 static DEFAULT_NOSTR_TRANSPORT: Lazy<Mutex<Option<CachedNostrTransport>>> =
@@ -32,14 +32,15 @@ fn config_for_profile(profile: TransportProfile) -> NostrConfig {
     }
 }
 
-fn should_retry_with_fresh_transport(code: i32) -> bool {
-    // Retry only when transport/session state itself is likely stale.
-    // Do not retry delivery-level timeout/reject codes immediately, because
-    // this doubles latency and often turns a concrete transport error into
-    // UI worker timeout.
-    //
-    // Exception: a single retry on -12 (relay timeout) helps recover from
-    // stale or half-open relay sessions observed in quick profile.
+fn should_retry_with_fresh_transport(profile: TransportProfile, code: i32) -> bool {
+    // A quick operation backs a user action. Repeating a failed relay
+    // handshake here turns a three-second publish budget into six seconds;
+    // durable Core effects are instead retried by the delivery outbox.
+    if matches!(profile, TransportProfile::Quick) {
+        return false;
+    }
+
+    // Background/default operations may rebuild a stale session once.
     matches!(code, -5 | -11 | -12 | -14)
 }
 
@@ -55,7 +56,7 @@ fn rebuild_transport_for_profile(
     };
     Ok(CachedNostrTransport {
         sender_secret,
-        transport,
+        transport: Arc::new(transport),
     })
 }
 
@@ -82,23 +83,30 @@ where
         }
     }
 
-    let first_attempt = {
+    // The cache lock protects replacement of the active transport only. A
+    // relay fetch may wait for seconds, so holding it while publishing would
+    // unnecessarily serialize UI sends behind background receives.
+    let transport = {
         let cached = cache.lock().unwrap();
         let entry = cached.as_ref().ok_or(init_failure_code)?;
-        operation(&entry.transport)
+        Arc::clone(&entry.transport)
     };
+    let first_attempt = operation(transport.as_ref());
     match first_attempt {
         Ok(value) => Ok(value),
-        Err(code) if should_retry_with_fresh_transport(code) => {
+        Err(code) if should_retry_with_fresh_transport(profile, code) => {
             {
                 let mut cached = cache.lock().unwrap();
                 let rebuilt =
                     rebuild_transport_for_profile(sender_secret, profile, init_failure_code)?;
                 *cached = Some(rebuilt);
             }
-            let cached = cache.lock().unwrap();
-            let entry = cached.as_ref().ok_or(init_failure_code)?;
-            operation(&entry.transport)
+            let transport = {
+                let cached = cache.lock().unwrap();
+                let entry = cached.as_ref().ok_or(init_failure_code)?;
+                Arc::clone(&entry.transport)
+            };
+            operation(transport.as_ref())
         }
         Err(code) => Err(code),
     }
@@ -111,19 +119,35 @@ pub(crate) fn clear_cached_nostr_transports() {
 
 #[cfg(test)]
 mod tests {
-    use super::should_retry_with_fresh_transport;
+    use super::{should_retry_with_fresh_transport, TransportProfile};
 
     #[test]
-    fn retryable_transport_codes_match_runtime_delivery_domain() {
+    fn default_profile_retries_stale_transport_codes() {
         for code in [-5, -11, -12, -14] {
-            assert!(should_retry_with_fresh_transport(code));
+            assert!(should_retry_with_fresh_transport(
+                TransportProfile::Default,
+                code
+            ));
         }
     }
 
     #[test]
-    fn non_transport_codes_do_not_trigger_retry_rebuild() {
+    fn quick_profile_never_repeats_interactive_publish() {
+        for code in [-14, -12, -11, -5, -4, -3, -2, -1, 0, 1] {
+            assert!(!should_retry_with_fresh_transport(
+                TransportProfile::Quick,
+                code
+            ));
+        }
+    }
+
+    #[test]
+    fn default_profile_does_not_retry_non_transport_codes() {
         for code in [-13, -7, -6, -4, -3, -2, -1, 0, 1] {
-            assert!(!should_retry_with_fresh_transport(code));
+            assert!(!should_retry_with_fresh_transport(
+                TransportProfile::Default,
+                code
+            ));
         }
     }
 }

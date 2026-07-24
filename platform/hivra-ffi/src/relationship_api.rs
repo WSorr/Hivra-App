@@ -95,13 +95,14 @@ pub unsafe extern "C" fn hivra_break_relationship(
         Err(_) => return -4,
     };
 
-    let message = Message {
+    let message = DeliveryEnvelope {
+        schema_version: 1,
         from: *sender_pubkey.as_bytes(),
         to: *peer_pubkey.as_bytes(),
         kind: EventKind::RelationshipBroken as u32,
         payload: remote_prepared.event.payload().to_vec(),
         timestamp: remote_prepared.event.timestamp().as_u64(),
-        invitation_id: None,
+        correlation_id: None,
         domain_event: Some(domain_event_proof(&remote_prepared.event)),
     };
 

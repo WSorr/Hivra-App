@@ -22,6 +22,16 @@ class HivraIdFormat {
   static String formatStarterIdFromBase64(String raw) =>
       _formatFromBase64(raw, hrp: 'hs');
 
+  static String? tryFormatCapsuleKeyFromHex(String raw) {
+    final normalized = raw.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized)) return null;
+    final bytes = <int>[];
+    for (var index = 0; index < normalized.length; index += 2) {
+      bytes.add(int.parse(normalized.substring(index, index + 2), radix: 16));
+    }
+    return formatCapsuleKeyBytes(Uint8List.fromList(bytes));
+  }
+
   static String short(String value, {int head = 12, int tail = 6}) {
     if (value.isEmpty) return 'unknown';
     if (value.length <= head + tail + 3) return value;

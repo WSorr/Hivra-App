@@ -89,7 +89,10 @@ fn load_chat_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32]), i32> 
     Ok((sender_secret, sender_pubkey))
 }
 
-pub(crate) fn queue_incoming_chat_if_match(message: &Message, local_pubkey: [u8; 32]) -> bool {
+pub(crate) fn queue_incoming_chat_if_match(
+    message: &DeliveryEnvelope,
+    local_pubkey: [u8; 32],
+) -> bool {
     if message.kind != CAPSULE_CHAT_KIND {
         return false;
     }
@@ -194,13 +197,14 @@ pub unsafe extern "C" fn hivra_send_capsule_chat(
         }
     };
 
-    let message = Message {
+    let message = DeliveryEnvelope {
+        schema_version: 1,
         from: sender_pubkey,
         to: to_pubkey,
         kind: CAPSULE_CHAT_KIND,
         payload: payload_json.as_bytes().to_vec(),
         timestamp: now_ms(),
-        invitation_id: None,
+        correlation_id: None,
         domain_event: None,
     };
 

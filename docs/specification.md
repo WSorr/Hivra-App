@@ -33,6 +33,12 @@ exchange, and provider work follows the effect lane. A production workflow MUST
 NOT create a third path, a second capability owner, a second projection truth,
 or a parallel effect lifecycle.
 
+Implementation work MUST also follow the novelty-before-pattern protocol in
+`docs/architecture-execution-discipline.md`: define the cross-module invariant
+first, inspect existing seams, design the smallest new contract, then run
+adversarial and regression passes. Existing patterns are compatibility
+constraints, not default architecture for new behavior.
+
 ---
 
 ## 1. Philosophy and Fundamental Principles
@@ -605,19 +611,34 @@ They MUST NOT redefine or replace the canonical capsule root identity.
 
 The existence of a Nostr public key, Matrix public key, or any other transport key does not change the fact that capsule identity is rooted in the canonical `ed25519` identity layer.
 
-### 5.3 Unified Message Format
+### 5.3 Unified Delivery Envelope
+
+Transport moves one stable `DeliveryEnvelope v1` and returns one
+`DeliveryReceipt`. It is not a chat model and it contains no
+invitation-, relationship-, consensus- or drone-specific fields.
+
+`kind` selects the receiving domain protocol. `payload` is opaque to the
+transport adapter. `correlation_id` is a generic request/reply key; an
+invitation may use its invitation id there, but that does not make it a
+transport concept. Domain validation, replay policy and ledger projection
+remain owned by the receiving Core module or WASM drone.
 
 ```rust
-struct Message {
+struct DeliveryEnvelope {
+    schema_version: u16,
     from: PubKey,
     to: PubKey,
-    kind: u32,              // event type (Invitation, Relationship...)
-    payload: Vec<u8>,       // serialized event
+    kind: u32,              // receiving domain protocol
+    payload: Vec<u8>,       // opaque domain bytes
     timestamp: u64,
-    invitation_id: Option<[u8; 32]>,
-    transport_hints: Vec<Hint>,
+    correlation_id: Option<[u8; 32]>,
+    domain_event: Option<DomainEventProof>, // only for signed Core facts
 }
 ```
+
+The only shared delivery DTOs are `DeliveryEnvelope` and `DeliveryReceipt`.
+No pass-through DTO may be added merely to mirror a domain payload across
+Core, adapters, host and drone layers.
 
 ### 5.4 Nostr Adapter (Example)
 
@@ -733,7 +754,7 @@ To preserve deterministic replay across upgrades, payload parsers MUST accept le
 
 Event | Allowed payload lengths | Notes
 --- | --- | ---
-InvitationSent / InvitationReceived | 96, 97, 128, 129, 161 bytes | `97/129` include starter-kind hint byte; `128/129` include `sender_root_pubkey` at bytes `[96..128]`; `161` carries root provenance, starter-kind hint at byte `128`, and sender Nostr transport key at bytes `[129..161]`
+InvitationSent / InvitationReceived | 96, 97, 128, 129, 161, 225 bytes | `97/129` include starter-kind hint byte; `128/129` include `sender_root_pubkey` at bytes `[96..128]`; `161` carries root provenance, starter-kind hint at byte `128`, and sender Nostr transport key at bytes `[129..161]`; `225` additionally carries the 64-byte Ed25519 signature of the canonical public contact card at bytes `[161..225]`. Receivers MUST verify this signature against the sender root before storing the reconstructed v2 card. Legacy payloads remain valid but can only produce an unsigned v1 card.
 InvitationAccepted | 96, 128 bytes | `128` includes `accepter_root_pubkey` at bytes `[96..128]`
 RelationshipEstablished | 194, 226, 258 bytes | `226` adds `peer_root_pubkey`; `258` adds both `peer_root_pubkey` and `sender_root_pubkey`
 RelationshipBroken | 64, 96 bytes | `96` adds `peer_root_pubkey`

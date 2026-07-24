@@ -1,6 +1,6 @@
 //! Nostr transport adapter
 
-use crate::{DeliveryReceipt, Message, Transport, TransportError};
+use crate::{DeliveryEnvelope, DeliveryReceipt, Transport, TransportError};
 use futures::stream::{FuturesUnordered, StreamExt};
 use nostr_sdk::nips::nip04;
 use nostr_sdk::prelude::*;
@@ -18,9 +18,7 @@ const RECEIVE_LIMIT: usize = 2048;
 const RECEIVE_LOOKBACK_SECS: u64 = 7 * 24 * 60 * 60;
 const RECEIVE_FUTURE_SKEW_SECS: u64 = 5 * 60;
 const RECEIVE_SEEN_CAPACITY: usize = 2048;
-const MIN_RELAY_SEND_TIMEOUT_SECS: u64 = 6;
-const SEND_CONNECT_TIMEOUT_SECS: u64 = 4;
-const INIT_CONNECT_TIMEOUT_SECS: u64 = 4;
+const MIN_PUBLISH_TIMEOUT_SECS: u64 = 2;
 
 static SEEN_EVENT_IDS: OnceLock<Mutex<HashMap<[u8; 32], HashSet<String>>>> = OnceLock::new();
 
@@ -58,7 +56,10 @@ fn extract_auth_challenge(reason: &str) -> Option<String> {
 pub struct NostrConfig {
     pub relays: Vec<String>,
     pub ephemeral: bool,
+    /// Budget for fetching stored relay events.
     pub timeout: u64,
+    /// Budget for an interactive publish to receive the first relay `OK`.
+    pub publish_timeout: u64,
 }
 
 impl Default for NostrConfig {
@@ -75,6 +76,8 @@ impl Default for NostrConfig {
             ephemeral: true,
             // Keep receive reliable across slower relay handshakes.
             timeout: 12,
+            // Durable/default callers may wait longer for a relay receipt.
+            publish_timeout: 6,
         }
     }
 }
@@ -94,6 +97,9 @@ impl NostrConfig {
             // Quick profile is still user-facing fast path, but must be long
             // enough for real relay handshakes on mobile networks.
             timeout: 8,
+            // A local ledger/outbox can recover Core effects after this
+            // budget. Interactive UI must not wait behind a slow relay.
+            publish_timeout: 3,
         }
     }
 }
@@ -104,6 +110,7 @@ pub struct NostrTransport {
     keys: Keys,
     public_key: PublicKey,
     timeout_secs: u64,
+    publish_timeout_secs: u64,
     receive_since: Mutex<u64>,
 }
 
@@ -134,6 +141,7 @@ impl NostrTransport {
             keys,
             public_key,
             timeout_secs: config.timeout,
+            publish_timeout_secs: config.publish_timeout,
             receive_since: Mutex::new(
                 Timestamp::now()
                     .as_u64()
@@ -176,20 +184,18 @@ impl NostrTransport {
         eprintln!("[Nostr] Connecting to relays...");
         runtime.block_on(client.connect());
 
-        if !Self::wait_for_connected_relays(
-            runtime,
-            &client,
-            Duration::from_secs(config.timeout.min(INIT_CONNECT_TIMEOUT_SECS).max(2)),
-        ) {
-            eprintln!("[Nostr] Warning: no relay reached Connected state during init");
-        }
+        // Connection establishment continues in the client runtime. Send and
+        // receive each apply their own operation budget, so merely creating a
+        // cached transport never blocks a user action on a relay handshake.
 
         Ok(client)
     }
 
-    fn wait_for_connected_relays(runtime: &Runtime, client: &Client, timeout: Duration) -> bool {
-        let deadline = Instant::now() + timeout;
-
+    fn wait_for_connected_relays_until(
+        runtime: &Runtime,
+        client: &Client,
+        deadline: Instant,
+    ) -> bool {
         loop {
             let relays = runtime.block_on(client.relays());
             let connected = relays
@@ -214,10 +220,10 @@ impl NostrTransport {
     }
 
     fn ensure_connected_relays_with_timeout(&self, timeout_secs: u64) -> bool {
-        Self::wait_for_connected_relays(
+        Self::wait_for_connected_relays_until(
             &self.runtime,
             &self.client,
-            Duration::from_secs(timeout_secs.max(2)),
+            Instant::now() + Duration::from_secs(timeout_secs.max(2)),
         )
     }
 
@@ -233,13 +239,13 @@ impl NostrTransport {
     /// Serializes a transport message into Nostr event content.
     ///
     /// For kind=4 we publish a NIP-04 encrypted DM content.
-    pub fn serialize_message(&self, message: &Message) -> Result<String, TransportError> {
+    pub fn serialize_message(&self, envelope: &DeliveryEnvelope) -> Result<String, TransportError> {
         let plaintext =
-            serde_json::to_string(message).map_err(|_| TransportError::EncodingFailed)?;
+            serde_json::to_string(envelope).map_err(|_| TransportError::EncodingFailed)?;
 
         if APP_EVENT_KIND == Kind::Custom(4) {
             let recipient =
-                PublicKey::from_slice(&message.to).map_err(|_| TransportError::InvalidKey)?;
+                PublicKey::from_slice(&envelope.to).map_err(|_| TransportError::InvalidKey)?;
             let secret = self.keys.secret_key();
             nip04::encrypt(secret, &recipient, plaintext.as_str())
                 .map_err(|_| TransportError::EncodingFailed)
@@ -249,8 +255,8 @@ impl NostrTransport {
     }
 
     /// Builds Nostr tags for a transport message.
-    pub fn message_tags(&self, message: &Message) -> Result<Vec<Tag>, TransportError> {
-        let recipient_pubkey = PublicKey::from_slice(&message.to).map_err(|e| {
+    pub fn message_tags(&self, envelope: &DeliveryEnvelope) -> Result<Vec<Tag>, TransportError> {
+        let recipient_pubkey = PublicKey::from_slice(&envelope.to).map_err(|e| {
             eprintln!("[Nostr] Invalid recipient pubkey: {:?}", e);
             TransportError::InvalidKey
         })?;
@@ -264,10 +270,10 @@ impl NostrTransport {
     /// then submit the fully signed event via `send_event`.
     pub fn event_builder_for_message(
         &self,
-        message: &Message,
+        envelope: &DeliveryEnvelope,
     ) -> Result<EventBuilder, TransportError> {
-        let content = self.serialize_message(message)?;
-        let tags = self.message_tags(message)?;
+        let content = self.serialize_message(envelope)?;
+        let tags = self.message_tags(envelope)?;
         Ok(EventBuilder::new(APP_EVENT_KIND, content, tags))
     }
 
@@ -285,13 +291,13 @@ impl NostrTransport {
             })
     }
 
-    fn encode_message(&self, message: Message) -> Result<Event, TransportError> {
-        eprintln!("[Nostr] Encoding message to: {:?}", &message.to[..4]);
+    fn encode_message(&self, envelope: DeliveryEnvelope) -> Result<Event, TransportError> {
+        eprintln!("[Nostr] Encoding envelope to: {:?}", &envelope.to[..4]);
 
-        let content = self.serialize_message(&message)?;
+        let content = self.serialize_message(&envelope)?;
         eprintln!("[Nostr] Message content: {}", content);
 
-        let tags = self.message_tags(&message)?;
+        let tags = self.message_tags(&envelope)?;
         let event = self.build_signed_event(content, tags)?;
 
         eprintln!("[Nostr] Event ID: {}", event.id.to_hex());
@@ -301,20 +307,28 @@ impl NostrTransport {
     /// Prepares a signed Nostr event using an external signer.
     ///
     /// This is the migration path toward keeping signing in upper layers.
-    pub fn prepare_event<S>(&self, message: &Message, signer: S) -> Result<Event, TransportError>
+    pub fn prepare_event<S>(
+        &self,
+        envelope: &DeliveryEnvelope,
+        signer: S,
+    ) -> Result<Event, TransportError>
     where
         S: FnOnce(EventBuilder) -> Result<Event, TransportError>,
     {
-        let builder = self.event_builder_for_message(message)?;
+        let builder = self.event_builder_for_message(envelope)?;
         signer(builder)
     }
 
     /// Sends a message using an externally signed Nostr event.
-    pub fn send_prepared<S>(&self, message: &Message, signer: S) -> Result<(), TransportError>
+    pub fn send_prepared<S>(
+        &self,
+        envelope: &DeliveryEnvelope,
+        signer: S,
+    ) -> Result<(), TransportError>
     where
         S: FnOnce(EventBuilder) -> Result<Event, TransportError>,
     {
-        let event = self.prepare_event(message, signer)?;
+        let event = self.prepare_event(envelope, signer)?;
         self.send_event(event)
     }
 
@@ -323,24 +337,17 @@ impl NostrTransport {
     }
 
     fn publish_event(&self, event: Event) -> Result<(String, String, u32), TransportError> {
-        let connect_timeout_secs = self.timeout_secs.min(SEND_CONNECT_TIMEOUT_SECS).max(2);
-        if !self.ensure_connected_relays_with_timeout(connect_timeout_secs) {
-            // Mobile networks may need longer TLS/relay handshake than the fast
-            // send path budget. Keep quick attempt first, then allow one
-            // extended fallback before declaring transport unavailable.
-            let fallback_timeout_secs = self.timeout_secs.max(connect_timeout_secs);
-            if fallback_timeout_secs > connect_timeout_secs {
-                eprintln!(
-                    "[Nostr] No connected relays in fast window ({}s), retrying connect with fallback budget {}s",
-                    connect_timeout_secs, fallback_timeout_secs
-                );
-            }
-            if fallback_timeout_secs <= connect_timeout_secs
-                || !self.ensure_connected_relays_with_timeout(fallback_timeout_secs)
-            {
-                eprintln!("[Nostr] No connected relays available before publish");
-                return Err(TransportError::ConnectionFailed);
-            }
+        let publish_timeout_secs = self.publish_timeout_secs.max(MIN_PUBLISH_TIMEOUT_SECS);
+        // Connection and relay acknowledgement share one interactive budget.
+        // Giving each phase the full duration made a nominal 3s publish wait
+        // for up to 6s before its caller could hand durable work to the outbox.
+        let publish_deadline = Instant::now() + Duration::from_secs(publish_timeout_secs);
+        if !Self::wait_for_connected_relays_until(&self.runtime, &self.client, publish_deadline) {
+            eprintln!(
+                "[Nostr] No connected relays available within publish budget {}s",
+                publish_timeout_secs
+            );
+            return Err(TransportError::ConnectionFailed);
         }
         let relays = self.runtime.block_on(self.client.relays());
         let connected_relays: Vec<_> = relays
@@ -354,8 +361,10 @@ impl NostrTransport {
             return Err(TransportError::Other(reason));
         }
 
-        let per_relay_timeout =
-            Duration::from_secs(self.timeout_secs.max(MIN_RELAY_SEND_TIMEOUT_SECS));
+        let per_relay_timeout = publish_deadline.saturating_duration_since(Instant::now());
+        if per_relay_timeout.is_zero() {
+            return Err(TransportError::Timeout);
+        }
         let publish_result = self.runtime.block_on(async {
             let mut pending = FuturesUnordered::new();
             for relay in connected_relays {
@@ -414,7 +423,7 @@ impl NostrTransport {
         Err(TransportError::Other(reason))
     }
 
-    fn decode_event(&self, event: Event) -> Result<Message, TransportError> {
+    fn decode_event(&self, event: Event) -> Result<DeliveryEnvelope, TransportError> {
         if event.kind != APP_EVENT_KIND {
             return Err(TransportError::InvalidMessage);
         }
@@ -438,25 +447,28 @@ impl NostrTransport {
             event.content
         };
 
-        let message: Message =
+        let envelope: DeliveryEnvelope =
             serde_json::from_str(&content).map_err(|_| TransportError::InvalidMessage)?;
-        if message.from != event.pubkey.to_bytes() {
+        if envelope.from != event.pubkey.to_bytes() {
             return Err(TransportError::SenderMismatch);
         }
-        Ok(message)
+        Ok(envelope)
     }
 }
 
 impl Transport for NostrTransport {
-    fn send(&self, message: Message) -> Result<(), TransportError> {
-        self.send_with_receipt(message).map(|_| ())
+    fn send(&self, envelope: DeliveryEnvelope) -> Result<(), TransportError> {
+        self.send_with_receipt(envelope).map(|_| ())
     }
 
-    fn send_with_receipt(&self, message: Message) -> Result<DeliveryReceipt, TransportError> {
+    fn send_with_receipt(
+        &self,
+        envelope: DeliveryEnvelope,
+    ) -> Result<DeliveryReceipt, TransportError> {
         eprintln!("[Nostr] Sending message...");
-        let message_kind = message.kind;
-        let recipient = message.to.to_vec();
-        let event = self.encode_message(message)?;
+        let message_kind = envelope.kind;
+        let recipient = envelope.to.to_vec();
+        let event = self.encode_message(envelope)?;
         let (accepted_by, envelope_id, failed_before_accept) = self.publish_event(event)?;
         Ok(DeliveryReceipt {
             transport: self.name().to_string(),
@@ -468,7 +480,7 @@ impl Transport for NostrTransport {
         })
     }
 
-    fn receive(&self) -> Result<Vec<Message>, TransportError> {
+    fn receive(&self) -> Result<Vec<DeliveryEnvelope>, TransportError> {
         eprintln!("[Nostr] Receiving messages...");
 
         if !self.ensure_connected_relays() {
@@ -572,19 +584,21 @@ mod tests {
                 relays: Vec::new(),
                 ephemeral: true,
                 timeout: 2,
+                publish_timeout: 2,
             },
             &receiver_secret,
         )
         .expect("receiver transport");
         let attacker_keys =
             Keys::new(SecretKey::from_slice(&attacker_secret).expect("attacker key"));
-        let message = Message {
+        let message = DeliveryEnvelope {
+            schema_version: 1,
             from: claimed_sender,
             to: receiver.public_key_bytes(),
             kind: 1,
             payload: vec![1, 2, 3],
             timestamp: 1,
-            invitation_id: None,
+            correlation_id: None,
             domain_event: None,
         };
         let plaintext = serde_json::to_string(&message).expect("message json");

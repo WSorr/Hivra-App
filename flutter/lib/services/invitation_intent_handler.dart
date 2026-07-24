@@ -12,28 +12,16 @@ class InvitationIntentResult {
   final int code;
   final String message;
 
-  const InvitationIntentResult({
-    required this.code,
-    required this.message,
-  });
+  const InvitationIntentResult({required this.code, required this.message});
 
   bool get isSuccess => code == 0;
 }
 
-class InvitationSendPreflightResult {
-  final bool relayHealthy;
-  final int code;
-  final String message;
-
-  const InvitationSendPreflightResult({
-    required this.relayHealthy,
-    required this.code,
-    required this.message,
-  });
-}
-
 class InvitationIntentHandler {
   static const Duration _quickFetchCooldown = Duration(seconds: 8);
+  // The native quick receive worker is bounded. A longer lease prevents a
+  // cancelled Flutter future from suppressing delivery checks indefinitely.
+  static const Duration _quickFetchInFlightLease = Duration(seconds: 24);
   static const Duration _sendPendingRecencyWindow = Duration(seconds: 10);
   static const Duration _sendPostFailureProbeTimeout = Duration(seconds: 2);
   static const Set<int> _softSendDeliveryCodes = <int>{
@@ -65,11 +53,15 @@ class InvitationIntentHandler {
     -14,
   };
   static final Map<String, Future<InvitationIntentResult>>
-      _quickFetchInFlightByCapsule = <String, Future<InvitationIntentResult>>{};
+  _quickFetchInFlightByCapsule = <String, Future<InvitationIntentResult>>{};
+  static final Map<String, DateTime> _quickFetchStartedAtByCapsule =
+      <String, DateTime>{};
+  static final Map<String, Object> _quickFetchTokenByCapsule =
+      <String, Object>{};
   static final Map<String, DateTime> _lastQuickFetchAtByCapsule =
       <String, DateTime>{};
   static final Map<String, Future<InvitationIntentResult>>
-      _sendInFlightByIntentKey = <String, Future<InvitationIntentResult>>{};
+  _sendInFlightByIntentKey = <String, Future<InvitationIntentResult>>{};
 
   final InvitationActionsService? _actions;
   final InvitationDeliveryService _delivery;
@@ -80,6 +72,7 @@ class InvitationIntentHandler {
   final Future<InvitationWorkerResult> Function()? _fetchInvitationsQuickAction;
   final String Function()? _activeCapsuleHexResolver;
   final TransportHealthPolicyService _transportHealth;
+  final DateTime Function() _now;
 
   InvitationIntentHandler({
     InvitationActionsService? actions,
@@ -91,16 +84,18 @@ class InvitationIntentHandler {
     Future<InvitationWorkerResult> Function()? fetchInvitationsQuickAction,
     String Function()? activeCapsuleHexResolver,
     TransportHealthPolicyService? transportHealth,
-  })  : _actions = actions,
-        _delivery = delivery,
-        _stateManager = stateManager,
-        _ledgerView = ledgerView,
-        _invitationsLoader = invitationsLoader,
-        _fetchInvitationsAction = fetchInvitationsAction,
-        _fetchInvitationsQuickAction = fetchInvitationsQuickAction,
-        _activeCapsuleHexResolver = activeCapsuleHexResolver,
-        _transportHealth =
-            transportHealth ?? TransportHealthPolicyService.shared;
+    DateTime Function()? now,
+  }) : _actions = actions,
+       _delivery = delivery,
+       _stateManager = stateManager,
+       _ledgerView = ledgerView,
+       _invitationsLoader = invitationsLoader,
+       _fetchInvitationsAction = fetchInvitationsAction,
+       _fetchInvitationsQuickAction = fetchInvitationsQuickAction,
+       _activeCapsuleHexResolver = activeCapsuleHexResolver,
+       _transportHealth =
+           transportHealth ?? TransportHealthPolicyService.shared,
+       _now = now ?? DateTime.now;
 
   List<Invitation> loadInvitations({String? capsuleHex}) {
     final expectedCapsuleHex = _normalizeExplicitCapsuleHex(capsuleHex);
@@ -116,8 +111,10 @@ class InvitationIntentHandler {
   }
 
   Future<InvitationIntentResult> sendInvitation(
-      Uint8List toPubkey, int starterSlot,
-      {String? capsuleHex}) async {
+    Uint8List toPubkey,
+    int starterSlot, {
+    String? capsuleHex,
+  }) async {
     final effectiveCapsuleHex = _capsuleHex(explicitCapsuleHex: capsuleHex);
     final operationCapsuleHex =
         _isUnknownCapsuleKey(effectiveCapsuleHex) ? null : effectiveCapsuleHex;
@@ -152,8 +149,10 @@ class InvitationIntentHandler {
   }
 
   Future<InvitationIntentResult> _sendInvitationUncached(
-      Uint8List toPubkey, int starterSlot,
-      {String? capsuleHex}) async {
+    Uint8List toPubkey,
+    int starterSlot, {
+    String? capsuleHex,
+  }) async {
     final sendStartedAt = DateTime.now();
     final minPendingSentAt = sendStartedAt.subtract(_sendPendingRecencyWindow);
     final recipientPubkeyB64 = base64.encode(toPubkey);
@@ -169,7 +168,8 @@ class InvitationIntentHandler {
     );
     final code = workerResult.code;
     final hasWorkerLedger = (workerResult.ledgerJson?.isNotEmpty ?? false);
-    final localPendingRecorded = hasWorkerLedger &&
+    final localPendingRecorded =
+        hasWorkerLedger &&
         _softSendDeliveryCodes.contains(code) &&
         _hasNewPendingOutgoingInvitation(
           toPubkeyB64: recipientPubkeyB64,
@@ -178,7 +178,8 @@ class InvitationIntentHandler {
           minSentAt: minPendingSentAt,
           capsuleHex: capsuleHex,
         );
-    final localPendingProjectedAfterFailure = !localPendingRecorded &&
+    final localPendingProjectedAfterFailure =
+        !localPendingRecorded &&
         code != 0 &&
         _hasNewPendingOutgoingInvitation(
           toPubkeyB64: recipientPubkeyB64,
@@ -187,7 +188,8 @@ class InvitationIntentHandler {
           minSentAt: minPendingSentAt,
           capsuleHex: capsuleHex,
         );
-    final localPendingConfirmedAfterFetch = !localPendingRecorded &&
+    final localPendingConfirmedAfterFetch =
+        !localPendingRecorded &&
         code != 0 &&
         _sendDeliveryProbeCodes.contains(code) &&
         await _confirmPendingOutgoingByQuickFetchBounded(
@@ -197,15 +199,17 @@ class InvitationIntentHandler {
           previousPendingIds: pendingIdsBeforeSend,
           minSentAt: minPendingSentAt,
         );
-    final localPendingSource = localPendingRecorded
-        ? 'worker'
-        : localPendingConfirmedAfterFetch
+    final localPendingSource =
+        localPendingRecorded
+            ? 'worker'
+            : localPendingConfirmedAfterFetch
             ? 'quick_fetch'
             : null;
     final lastError = workerResult.lastError?.trim();
-    final diagnostics = lastError != null && lastError.isNotEmpty
-        ? ' [code: $code; ffi: $lastError]'
-        : ' [code: $code]';
+    final diagnostics =
+        lastError != null && lastError.isNotEmpty
+            ? ' [code: $code; ffi: $lastError]'
+            : ' [code: $code]';
     if (code == 0) {
       return InvitationIntentResult(
         code: 0,
@@ -240,55 +244,35 @@ class InvitationIntentHandler {
     return '$capsuleHex|$starterSlot|${base64.encode(toPubkey)}';
   }
 
-  Future<InvitationSendPreflightResult> preflightSend({
-    String? capsuleHex,
-  }) async {
-    final quick = await _fetchInvitationsQuickUncached(capsuleHex: capsuleHex);
-    final relayHealthy = quick.code >= 0;
-    return InvitationSendPreflightResult(
-      relayHealthy: relayHealthy,
-      code: quick.code,
-      message: relayHealthy
-          ? 'Relay preflight is healthy'
-          : 'Relay preflight is degraded: ${quick.message}',
-    );
-  }
-
   Future<InvitationIntentResult> fetchInvitations({String? capsuleHex}) async {
     final operationCapsuleHex = _capsuleHexOrNull(
       explicitCapsuleHex: capsuleHex,
     );
-    final health = _transportHealth.canRun(
-      capsuleHex: operationCapsuleHex,
-    );
+    final health = _transportHealth.canRun(capsuleHex: operationCapsuleHex);
     if (!health.isAllowed) {
-      return InvitationIntentResult(
-        code: health.code,
-        message: health.message,
-      );
+      return InvitationIntentResult(code: health.code, message: health.message);
     }
-    final workerResult = await (_fetchInvitationsAction?.call() ??
-        _requireActions().fetchInvitations(capsuleHex: operationCapsuleHex));
+    final workerResult =
+        await (_fetchInvitationsAction?.call() ??
+            _requireActions().fetchInvitations(
+              capsuleHex: operationCapsuleHex,
+            ));
     final code = workerResult.code;
-    _transportHealth.recordResult(
-      capsuleHex: operationCapsuleHex,
-      code: code,
-    );
+    _transportHealth.recordResult(capsuleHex: operationCapsuleHex, code: code);
     final diagnostics = _receiveDiagnostics(workerResult);
     return InvitationIntentResult(
       code: code,
-      message: code >= 0
-          ? _delivery.fetchSuccessMessage(code)
-          : '${_delivery.receiveFailureMessage(code)}$diagnostics',
+      message:
+          code >= 0
+              ? _delivery.fetchSuccessMessage(code)
+              : '${_delivery.receiveFailureMessage(code)}$diagnostics',
     );
   }
 
   Future<InvitationIntentResult> fetchInvitationsQuick({
     String? capsuleHex,
   }) async {
-    final operationCapsuleHex = _capsuleHex(
-      explicitCapsuleHex: capsuleHex,
-    );
+    final operationCapsuleHex = _capsuleHex(explicitCapsuleHex: capsuleHex);
     final isUnknownCapsule = _isUnknownCapsuleKey(operationCapsuleHex);
     if (isUnknownCapsule) {
       // Do not dedupe/cooldown unknown capsule identity: at startup or during
@@ -296,33 +280,65 @@ class InvitationIntentHandler {
       return _fetchInvitationsQuickUncached();
     }
 
+    final now = _now();
     final inFlight = _quickFetchInFlightByCapsule[operationCapsuleHex];
     if (inFlight != null) {
-      return inFlight;
+      final startedAt = _quickFetchStartedAtByCapsule[operationCapsuleHex];
+      final elapsed = startedAt == null ? null : now.difference(startedAt);
+      if (elapsed != null &&
+          !elapsed.isNegative &&
+          elapsed <= _quickFetchInFlightLease) {
+        return inFlight;
+      }
+      _clearQuickFetchInFlight(operationCapsuleHex);
     }
 
     final lastQuickFetchAt = _lastQuickFetchAtByCapsule[operationCapsuleHex];
-    if (lastQuickFetchAt != null &&
-        DateTime.now().difference(lastQuickFetchAt) < _quickFetchCooldown) {
+    final cooldownElapsed =
+        lastQuickFetchAt == null ? null : now.difference(lastQuickFetchAt);
+    if (cooldownElapsed != null &&
+        !cooldownElapsed.isNegative &&
+        cooldownElapsed < _quickFetchCooldown) {
       return const InvitationIntentResult(
         code: 0,
         message: 'Skipped duplicate quick fetch',
       );
     }
 
-    final operation = _fetchInvitationsQuickUncached(
+    final token = Object();
+    final operation = _runQuickFetchOperation(
       capsuleHex: operationCapsuleHex,
+      token: token,
     );
     _quickFetchInFlightByCapsule[operationCapsuleHex] = operation;
+    _quickFetchStartedAtByCapsule[operationCapsuleHex] = now;
+    _quickFetchTokenByCapsule[operationCapsuleHex] = token;
+    return operation;
+  }
+
+  Future<InvitationIntentResult> _runQuickFetchOperation({
+    required String capsuleHex,
+    required Object token,
+  }) async {
     try {
-      final result = await operation;
+      final result = await _fetchInvitationsQuickUncached(
+        capsuleHex: capsuleHex,
+      );
       if (result.code >= 0) {
-        _lastQuickFetchAtByCapsule[operationCapsuleHex] = DateTime.now();
+        _lastQuickFetchAtByCapsule[capsuleHex] = _now();
       }
       return result;
     } finally {
-      _quickFetchInFlightByCapsule.remove(operationCapsuleHex);
+      if (identical(_quickFetchTokenByCapsule[capsuleHex], token)) {
+        _clearQuickFetchInFlight(capsuleHex);
+      }
     }
+  }
+
+  static void _clearQuickFetchInFlight(String capsuleHex) {
+    _quickFetchInFlightByCapsule.remove(capsuleHex);
+    _quickFetchStartedAtByCapsule.remove(capsuleHex);
+    _quickFetchTokenByCapsule.remove(capsuleHex);
   }
 
   Future<InvitationIntentResult> _fetchInvitationsQuickUncached({
@@ -331,29 +347,24 @@ class InvitationIntentHandler {
     final operationCapsuleHex = _capsuleHexOrNull(
       explicitCapsuleHex: capsuleHex,
     );
-    final health = _transportHealth.canRun(
-      capsuleHex: operationCapsuleHex,
-    );
+    final health = _transportHealth.canRun(capsuleHex: operationCapsuleHex);
     if (!health.isAllowed) {
-      return InvitationIntentResult(
-        code: health.code,
-        message: health.message,
-      );
+      return InvitationIntentResult(code: health.code, message: health.message);
     }
-    final workerResult = await (_fetchInvitationsQuickAction?.call() ??
-        _requireActions()
-            .fetchInvitationsQuick(capsuleHex: operationCapsuleHex));
+    final workerResult =
+        await (_fetchInvitationsQuickAction?.call() ??
+            _requireActions().fetchInvitationsQuick(
+              capsuleHex: operationCapsuleHex,
+            ));
     final code = workerResult.code;
-    _transportHealth.recordResult(
-      capsuleHex: operationCapsuleHex,
-      code: code,
-    );
+    _transportHealth.recordResult(capsuleHex: operationCapsuleHex, code: code);
     final diagnostics = _receiveDiagnostics(workerResult);
     return InvitationIntentResult(
       code: code,
-      message: code >= 0
-          ? _delivery.fetchSuccessMessage(code)
-          : '${_delivery.receiveFailureMessage(code)}$diagnostics',
+      message:
+          code >= 0
+              ? _delivery.fetchSuccessMessage(code)
+              : '${_delivery.receiveFailureMessage(code)}$diagnostics',
     );
   }
 
@@ -367,18 +378,22 @@ class InvitationIntentHandler {
   }
 
   Future<InvitationIntentResult> acceptInvitation(
-      Uint8List invitationId, Uint8List fromPubkey,
-      {String? capsuleHex}) async {
+    Uint8List invitationId,
+    Uint8List fromPubkey, {
+    String? capsuleHex,
+  }) async {
     final invitationIdB64 = base64.encode(invitationId);
-    final operationCapsuleHex =
-        _capsuleHexOrNull(explicitCapsuleHex: capsuleHex);
+    final operationCapsuleHex = _capsuleHexOrNull(
+      explicitCapsuleHex: capsuleHex,
+    );
     var localInvitation = _findInvitationById(
       invitationIdB64,
       capsuleHex: operationCapsuleHex,
     );
     if (localInvitation == null) {
-      final syncCode =
-          await _syncInvitationsForAccept(capsuleHex: operationCapsuleHex);
+      final syncCode = await _syncInvitationsForAccept(
+        capsuleHex: operationCapsuleHex,
+      );
       if (syncCode >= 0) {
         localInvitation = _findInvitationById(
           invitationIdB64,
@@ -426,7 +441,8 @@ class InvitationIntentHandler {
           invitationIdB64,
           capsuleHex: operationCapsuleHex,
         );
-        final canRetry = refreshedInvitation != null &&
+        final canRetry =
+            refreshedInvitation != null &&
             refreshedInvitation.isIncoming &&
             refreshedInvitation.status == InvitationStatus.pending;
         if (canRetry) {
@@ -442,16 +458,18 @@ class InvitationIntentHandler {
     final hasWorkerLedger = (workerResult.ledgerJson?.isNotEmpty ?? false);
     final localAcceptanceRecorded =
         hasWorkerLedger && _softAcceptDeliveryCodes.contains(code);
-    final localAcceptedAfterFailure = !localAcceptanceRecorded &&
+    final localAcceptedAfterFailure =
+        !localAcceptanceRecorded &&
         code != 0 &&
         _isInvitationLocallyAccepted(
           invitationIdB64,
           capsuleHex: operationCapsuleHex,
         );
     final lastError = workerResult.lastError?.trim();
-    final diagnostics = lastError != null && lastError.isNotEmpty
-        ? ' [code: $code; ffi: $lastError]'
-        : ' [code: $code]';
+    final diagnostics =
+        lastError != null && lastError.isNotEmpty
+            ? ' [code: $code; ffi: $lastError]'
+            : ' [code: $code]';
     if (code == 0) {
       return const InvitationIntentResult(
         code: 0,
@@ -472,12 +490,14 @@ class InvitationIntentHandler {
   }
 
   Future<int> _syncInvitationsForAccept({String? capsuleHex}) async {
-    final quickResult = await (_fetchInvitationsQuickAction?.call() ??
-        _requireActions().fetchInvitationsQuick(capsuleHex: capsuleHex));
+    final quickResult =
+        await (_fetchInvitationsQuickAction?.call() ??
+            _requireActions().fetchInvitationsQuick(capsuleHex: capsuleHex));
     var code = quickResult.code;
     if (code == -1003) {
-      final fullResult = await (_fetchInvitationsAction?.call() ??
-          _requireActions().fetchInvitations(capsuleHex: capsuleHex));
+      final fullResult =
+          await (_fetchInvitationsAction?.call() ??
+              _requireActions().fetchInvitations(capsuleHex: capsuleHex));
       code = fullResult.code;
     }
     return code;
@@ -487,8 +507,9 @@ class InvitationIntentHandler {
     Invitation invitation, {
     String? capsuleHex,
   }) async {
-    final operationCapsuleHex =
-        _capsuleHexOrNull(explicitCapsuleHex: capsuleHex);
+    final operationCapsuleHex = _capsuleHexOrNull(
+      explicitCapsuleHex: capsuleHex,
+    );
     final localInvitation = _findInvitationById(
       invitation.id,
       capsuleHex: operationCapsuleHex,
@@ -526,23 +547,27 @@ class InvitationIntentHandler {
     final hasWorkerLedger = (workerResult.ledgerJson?.isNotEmpty ?? false);
     final localRejectionRecorded =
         hasWorkerLedger && _softRejectDeliveryCodes.contains(code);
-    final localTerminalAfterFailure = !localRejectionRecorded &&
+    final localTerminalAfterFailure =
+        !localRejectionRecorded &&
         code != 0 &&
         _isInvitationLocallyTerminal(
           invitation.id,
           capsuleHex: operationCapsuleHex,
         );
     final lastError = workerResult.lastError?.trim();
-    final diagnostics = lastError != null && lastError.isNotEmpty
-        ? ' [code: $code; ffi: $lastError]'
-        : ' [code: $code]';
+    final diagnostics =
+        lastError != null && lastError.isNotEmpty
+            ? ' [code: $code; ffi: $lastError]'
+            : ' [code: $code]';
     return InvitationIntentResult(
-      code: (code == 0 || localRejectionRecorded || localTerminalAfterFailure)
-          ? 0
-          : -1,
-      message: code == 0
-          ? 'Invitation rejected'
-          : (localRejectionRecorded || localTerminalAfterFailure)
+      code:
+          (code == 0 || localRejectionRecorded || localTerminalAfterFailure)
+              ? 0
+              : -1,
+      message:
+          code == 0
+              ? 'Invitation rejected'
+              : (localRejectionRecorded || localTerminalAfterFailure)
               ? '${_delivery.rejectFailureMessage(code)} Local rejection is recorded.$diagnostics'
               : '${_delivery.rejectFailureMessage(code)}$diagnostics',
     );
@@ -645,28 +670,16 @@ class InvitationIntentHandler {
     return normalized;
   }
 
-  bool _isInvitationLocallyTerminal(
-    String invitationId, {
-    String? capsuleHex,
-  }) {
-    final local = _findInvitationById(
-      invitationId,
-      capsuleHex: capsuleHex,
-    );
+  bool _isInvitationLocallyTerminal(String invitationId, {String? capsuleHex}) {
+    final local = _findInvitationById(invitationId, capsuleHex: capsuleHex);
     if (local == null) {
       return false;
     }
     return local.status != InvitationStatus.pending;
   }
 
-  bool _isInvitationLocallyAccepted(
-    String invitationId, {
-    String? capsuleHex,
-  }) {
-    final local = _findInvitationById(
-      invitationId,
-      capsuleHex: capsuleHex,
-    );
+  bool _isInvitationLocallyAccepted(String invitationId, {String? capsuleHex}) {
+    final local = _findInvitationById(invitationId, capsuleHex: capsuleHex);
     if (local == null) {
       return false;
     }
@@ -729,8 +742,9 @@ class InvitationIntentHandler {
     required Set<String> previousPendingIds,
     DateTime? minSentAt,
   }) async {
-    final workerResult = await (_fetchInvitationsQuickAction?.call() ??
-        _requireActions().fetchInvitationsQuick(capsuleHex: capsuleHex));
+    final workerResult =
+        await (_fetchInvitationsQuickAction?.call() ??
+            _requireActions().fetchInvitationsQuick(capsuleHex: capsuleHex));
     if (workerResult.code < 0) {
       return false;
     }
@@ -757,16 +771,10 @@ class InvitationIntentHandler {
       previousPendingIds: previousPendingIds,
       minSentAt: minSentAt,
     );
-    return probe.timeout(
-      _sendPostFailureProbeTimeout,
-      onTimeout: () => false,
-    );
+    return probe.timeout(_sendPostFailureProbeTimeout, onTimeout: () => false);
   }
 
-  Invitation? _findInvitationById(
-    String invitationId, {
-    String? capsuleHex,
-  }) {
+  Invitation? _findInvitationById(String invitationId, {String? capsuleHex}) {
     for (final invitation in loadInvitations(capsuleHex: capsuleHex)) {
       if (invitation.id == invitationId) {
         return invitation;

@@ -16,6 +16,7 @@ import 'bingx_futures_signal_rank_use_case_service.dart';
 import 'bingx_futures_strategy_naming_service.dart';
 import 'bingx_futures_volume_growth_filter_service.dart';
 import 'capsule_chat_delivery_service.dart';
+import 'capsule_contact_label_store.dart';
 import 'consensus_attestation_exchange_service.dart';
 import 'manual_consensus_check_service.dart';
 import 'plugin_host_api_service.dart';
@@ -40,6 +41,7 @@ class TradingDroneModule {
   final BingxFuturesStrategyNamingService strategyNaming;
   final BingxFuturesVolumeGrowthFilterService volumeGrowthFilter;
   final CapsuleChatDeliveryService chatDelivery;
+  final CapsuleContactLabelStore contactLabels;
   final ConsensusAttestationExchangeService attestationExchange;
   final UiEventLogService uiLog;
   final BingxFuturesExecutionQueueService executionQueue;
@@ -63,6 +65,7 @@ class TradingDroneModule {
     required this.strategyNaming,
     required this.volumeGrowthFilter,
     required this.chatDelivery,
+    required this.contactLabels,
     required this.attestationExchange,
     required this.uiLog,
     required this.executionQueue,
@@ -115,6 +118,7 @@ class TradingDroneModuleService {
       strategyNaming: const BingxFuturesStrategyNamingService(),
       volumeGrowthFilter: const BingxFuturesVolumeGrowthFilterService(),
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
+      contactLabels: runtime.buildCapsuleContactLabelStore(),
       attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       uiLog: const UiEventLogService(),
       executionQueue: executionQueue,

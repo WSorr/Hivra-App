@@ -146,6 +146,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   bool _queuedFetchQuick = true;
   final Set<String> _locallyResolvedIncomingIds = <String>{};
   Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
+  Map<String, String> _contactLabels = const <String, String>{};
   int _invitationLoadGeneration = 0;
 
   bool _isOperationForActiveCapsule(String capturedCapsuleHex) =>
@@ -194,6 +195,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       capsuleHex: capturedCapsuleHex,
     );
     final peerRoots = await _loadPeerRootKeys(invitations);
+    final labels = await widget.runtime.buildCapsuleContactLabelStore().load();
     final nextResolved = pruneLocallyResolvedIncomingIds(
       resolvedIds: _locallyResolvedIncomingIds,
       projectedInvitations: invitations,
@@ -206,6 +208,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     setState(() {
       _invitations = invitations;
       _peerRootKeyByTransportB64 = peerRoots;
+      _contactLabels = labels;
       _locallyResolvedIncomingIds
         ..clear()
         ..addAll(nextResolved);
@@ -225,6 +228,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       _queuedFetchQuick = true;
       _locallyResolvedIncomingIds.clear();
       _peerRootKeyByTransportB64 = const <String, String>{};
+      _contactLabels = const <String, String>{};
     });
   }
 
@@ -251,6 +255,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     return PeerIdentityFormat.displayName(
       transportPubkeyB64: _peerTransportB64(invitation),
       rootCapsuleKey: _peerRootKey(invitation),
+      localLabel: _contactLabels[_peerRootKey(invitation)?.toLowerCase()],
     );
   }
 
@@ -281,21 +286,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           'slot=$slot peer=${HivraIdFormat.short(HivraIdFormat.formatCapsuleKeyBytes(pubkey))}',
         ),
       );
-      final preflight = await _module.intents.preflightSend(
-        capsuleHex: operationCapsuleHex,
-      );
-      unawaited(
-        _module.uiLog.log(
-          'invitations.send.preflight',
-          'slot=$slot relayHealthy=${preflight.relayHealthy} code=${preflight.code} message=${preflight.message}',
-        ),
-      );
-      if (!preflight.relayHealthy && mounted) {
-        await _showUserMessage(
-          'Relay seems offline/unstable right now. We will still record send locally and retry in background.',
-          source: 'invitations.send.preflight',
-        );
-      }
       final result = await _module.intents.sendInvitation(
         pubkey,
         slot,
@@ -537,6 +527,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       final saved = await _module.addressBook.upsertTrustedCardFromKeys(
         rootPubkey: rootPubkey,
         nostrPubkey: nostrPubkey,
+        signatureHex: invitation.fromCardSignatureHex,
       );
       if (saved) {
         unawaited(

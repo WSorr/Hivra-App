@@ -81,7 +81,7 @@ fn load_invitation_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32]),
 
 fn send_delivery_message(
     transport: &NostrTransport,
-    message: &Message,
+    message: &DeliveryEnvelope,
     failure_code: i32,
     debug_label: &str,
 ) -> Result<DeliveryReceipt, (i32, Option<String>)> {
@@ -111,7 +111,7 @@ fn send_delivery_message(
 }
 
 fn verified_event_from_message(
-    message: &Message,
+    message: &DeliveryEnvelope,
     expected_kind: EventKind,
 ) -> Result<Event, &'static str> {
     let proof = message
@@ -186,13 +186,14 @@ fn retry_pending_outgoing_relationship_breaks_over_transport(
                 continue;
             }
         };
-        let message = Message {
+        let message = DeliveryEnvelope {
+            schema_version: 1,
             from: sender_pubkey,
             to: pending_delivery.to_pubkey,
             kind: EventKind::RelationshipBroken as u32,
             payload,
             timestamp: pending_delivery.timestamp,
-            invitation_id: None,
+            correlation_id: None,
             domain_event: Some(domain_event_proof(&remote_prepared.event)),
         };
 
@@ -249,13 +250,14 @@ fn retry_pending_outgoing_invitations_over_transport(
                 continue;
             }
         };
-        let message = Message {
+        let message = DeliveryEnvelope {
+            schema_version: 1,
             from: sender_pubkey,
             to: pending_delivery.to_pubkey,
             kind: EventKind::InvitationSent as u32,
             payload: pending_delivery.payload,
             timestamp: pending_delivery.timestamp,
-            invitation_id: Some(pending_delivery.invitation_id),
+            correlation_id: Some(pending_delivery.invitation_id),
             domain_event: Some(domain_event_proof(&remote_prepared.event)),
         };
 
@@ -288,13 +290,14 @@ fn retry_pending_outgoing_invitations_over_transport(
             EventKind::InvitationExpired => "InvitationExpiredRetry",
             _ => "InvitationTerminalRetry",
         };
-        let message = Message {
+        let message = DeliveryEnvelope {
+            schema_version: 1,
             from: sender_pubkey,
             to: pending_delivery.to_pubkey,
             kind: pending_delivery.kind as u32,
             payload: pending_delivery.payload,
             timestamp: pending_delivery.timestamp,
-            invitation_id: Some(pending_delivery.invitation_id),
+            correlation_id: Some(pending_delivery.invitation_id),
             domain_event: Some(domain_event_proof(&remote_prepared.event)),
         };
 
@@ -386,6 +389,31 @@ pub unsafe extern "C" fn hivra_retry_pending_outgoing_invitations() -> i32 {
 /// Exported symbol remains stable for existing bindings.
 #[no_mangle]
 pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter_slot: u8) -> i32 {
+    send_invitation_with_card_signature(to_pubkey_ptr, starter_slot, None)
+}
+
+/// Deliver an invitation with the sender's signed public contact-card proof.
+/// The proof contains no private material and lets the receiver reconstruct
+/// and validate the canonical v2 card after acceptance.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_send_invitation_with_card(
+    to_pubkey_ptr: *const u8,
+    starter_slot: u8,
+    card_signature_ptr: *const u8,
+) -> i32 {
+    if card_signature_ptr.is_null() {
+        return send_invitation_with_card_signature(to_pubkey_ptr, starter_slot, None);
+    }
+    let mut signature = [0u8; 64];
+    signature.copy_from_slice(std::slice::from_raw_parts(card_signature_ptr, 64));
+    send_invitation_with_card_signature(to_pubkey_ptr, starter_slot, Some(signature))
+}
+
+unsafe fn send_invitation_with_card_signature(
+    to_pubkey_ptr: *const u8,
+    starter_slot: u8,
+    card_signature: Option<[u8; 64]>,
+) -> i32 {
     clear_last_error();
     clear_delivery_receipts();
     if to_pubkey_ptr.is_null() || starter_slot >= 5 {
@@ -462,6 +490,9 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
     payload_bytes.push(starter_kind.to_byte());
     // Core signer is the root key; retain Nostr routing identity explicitly.
     payload_bytes.extend_from_slice(&sender_pubkey);
+    if let Some(signature) = card_signature {
+        payload_bytes.extend_from_slice(&signature);
+    }
 
     let local_prepared = match engine.prepare_domain_event(
         EventKind::InvitationSent,
@@ -486,13 +517,14 @@ pub unsafe extern "C" fn hivra_send_invitation(to_pubkey_ptr: *const u8, starter
         }
     };
 
-    let message = Message {
+    let message = DeliveryEnvelope {
+        schema_version: 1,
         from: sender_pubkey,
         to: to_pubkey,
         kind: EventKind::InvitationSent as u32,
         payload: payload_bytes.clone(),
         timestamp: local_prepared.event.timestamp().as_u64(),
-        invitation_id: Some(invitation_id),
+        correlation_id: Some(invitation_id),
         domain_event: Some(domain_event_proof(&remote_prepared.event)),
     };
 
@@ -902,13 +934,14 @@ pub unsafe extern "C" fn hivra_accept_invitation(
     );
 
     let delivery_to_pubkey = *acceptance_plan.sender_pubkey.as_bytes();
-    let message = Message {
+    let message = DeliveryEnvelope {
+        schema_version: 1,
         from: sender_pubkey,
         to: delivery_to_pubkey,
         kind: EventKind::InvitationAccepted as u32,
         payload: delivery_payload,
         timestamp: delivery_timestamp,
-        invitation_id: Some(invitation_id),
+        correlation_id: Some(invitation_id),
         domain_event: Some(delivery_proof),
     };
 
@@ -1004,13 +1037,14 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
             // delivery stays best-effort and must not roll back local reject.
             match load_invitation_delivery_context(&seed) {
                 Ok((sender_secret, sender_pubkey)) => {
-                    let message = Message {
+                    let message = DeliveryEnvelope {
+                        schema_version: 1,
                         from: sender_pubkey,
                         to: delivery_to,
                         kind: EventKind::InvitationRejected as u32,
                         payload: delivery_payload,
                         timestamp: delivery_timestamp,
-                        invitation_id: Some(invitation_id),
+                        correlation_id: Some(invitation_id),
                         domain_event: Some(delivery_proof),
                     };
                     set_last_delivery_reason(None);
@@ -1095,13 +1129,14 @@ pub unsafe extern "C" fn hivra_expire_invitation(invitation_id_ptr: *const u8) -
         Ok(_) => {
             match load_invitation_delivery_context(&seed) {
                 Ok((sender_secret, sender_pubkey)) => {
-                    let message = Message {
+                    let message = DeliveryEnvelope {
+                        schema_version: 1,
                         from: sender_pubkey,
                         to: delivery_to,
                         kind: EventKind::InvitationExpired as u32,
                         payload: delivery_payload,
                         timestamp: delivery_timestamp,
-                        invitation_id: Some(invitation_id),
+                        correlation_id: Some(invitation_id),
                         domain_event: Some(delivery_proof),
                     };
                     set_last_delivery_reason(None);

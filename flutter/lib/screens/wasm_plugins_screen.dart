@@ -10,6 +10,7 @@ import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import '../services/app_runtime_service.dart';
 import '../services/plugin_runtime_module_service.dart';
+import '../utils/peer_identity_format.dart';
 import '../utils/runtime_capability_display.dart';
 import 'trading_drone_screen.dart';
 
@@ -41,6 +42,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   PluginHostApiResponse? _lastChatResponse;
   String? _chatWorkspaceNotice;
   bool _chatWorkspaceNoticeIsError = false;
+  String? _chatSelectedPeerLabel;
+  Map<String, String> _chatContactLabels = const <String, String>{};
   List<CapsuleChatInboxMessage> _chatInbox = const <CapsuleChatInboxMessage>[];
 
   int _chatDroppedByConsensus = 0;
@@ -306,6 +309,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
   Future<String?> _selectConsensusPeer({required String hint}) async {
     final checks = _module.manualChecks.loadChecks();
+    final labels = await _module.contactLabels.load();
+    if (!mounted) return null;
     if (checks.isEmpty) {
       if (!mounted) return null;
       final messenger = ScaffoldMessenger.of(context);
@@ -348,10 +353,19 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                     check.isSignable ? Icons.verified_rounded : Icons.warning,
                     color: check.isSignable ? Colors.green : Colors.orange,
                   ),
-                  title: Text(check.peerLabel),
+                  title: Text(
+                    PeerIdentityFormat.capsuleLabelFromRootHex(
+                      check.peerHex,
+                      localLabel:
+                          labels[PeerIdentityFormat.capsuleKeyFromRootHex(
+                            check.peerHex,
+                          )],
+                    ),
+                  ),
                   subtitle: Text(
-                    check.peerHex,
-                    style: const TextStyle(fontFamily: 'monospace'),
+                    check.isSignable
+                        ? 'Pair consensus verified'
+                        : 'Pair consensus needs attention',
                   ),
                   trailing:
                       check.isSignable
@@ -379,8 +393,13 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       hint: 'Choose exact capsule target for chat delivery.',
     );
     if (!mounted || selectedPeerHex == null || selectedPeerHex.isEmpty) return;
+    final peerKey = PeerIdentityFormat.capsuleKeyFromRootHex(selectedPeerHex);
+    final labels = await _module.contactLabels.load();
+    if (!mounted) return;
     setState(() {
       _chatPeerController.text = selectedPeerHex;
+      _chatContactLabels = labels;
+      _chatSelectedPeerLabel = labels[peerKey];
     });
   }
 
@@ -424,6 +443,15 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
   Future<void> _openCapsuleChatWorkspace() async {
     if (!mounted) return;
+    final labels = await _module.contactLabels.load();
+    if (!mounted) return;
+    setState(() {
+      _chatContactLabels = labels;
+      _chatSelectedPeerLabel =
+          labels[PeerIdentityFormat.capsuleKeyFromRootHex(
+            _chatPeerController.text,
+          )];
+    });
     var initialInboxRefreshStarted = false;
     await showDialog<void>(
       context: context,
@@ -511,6 +539,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                           droppedByConsensus: _chatDroppedByConsensus,
                           deferredByConsensus: _chatDeferredByConsensus,
                           peerController: _chatPeerController,
+                          selectedPeerLabel: _chatSelectedPeerLabel,
+                          contactLabels: _chatContactLabels,
                           messageController: _chatMessageController,
                           onInputChanged: () => setDialogState(() {}),
                           onUsePeerPressed:
@@ -1586,6 +1616,8 @@ class _CapsuleChatPanel extends StatelessWidget {
   final int droppedByConsensus;
   final int deferredByConsensus;
   final TextEditingController peerController;
+  final String? selectedPeerLabel;
+  final Map<String, String> contactLabels;
   final TextEditingController messageController;
   final VoidCallback onInputChanged;
   final Future<void> Function() onUsePeerPressed;
@@ -1602,6 +1634,8 @@ class _CapsuleChatPanel extends StatelessWidget {
     required this.droppedByConsensus,
     required this.deferredByConsensus,
     required this.peerController,
+    required this.selectedPeerLabel,
+    required this.contactLabels,
     required this.messageController,
     required this.onInputChanged,
     required this.onUsePeerPressed,
@@ -1735,20 +1769,17 @@ class _CapsuleChatPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          TextField(
-            controller: peerController,
-            onChanged: (_) => onInputChanged(),
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: InputDecoration(
-              labelText: 'Peer hex (64 lowercase chars)',
-              hintText: 'bbbb...bbbb',
-              filled: true,
-              fillColor: const Color(0xFF0F141C),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
+          _SelectedCapsuleCard(
+            label: 'Chat recipient',
+            peerHex: peerController.text,
+            localLabel: selectedPeerLabel,
+            onClear:
+                peerController.text.trim().isEmpty
+                    ? null
+                    : () {
+                      peerController.clear();
+                      onInputChanged();
+                    },
           ),
           const SizedBox(height: 10),
           TextField(
@@ -1935,7 +1966,15 @@ class _CapsuleChatPanel extends StatelessWidget {
             const SizedBox(height: 8),
             ...inbox.reversed
                 .take(8)
-                .map((message) => _ChatInboxRow(message: message)),
+                .map(
+                  (message) => _ChatInboxRow(
+                    message: message,
+                    localLabel:
+                        contactLabels[PeerIdentityFormat.capsuleKeyFromRootHex(
+                          message.fromHex,
+                        )],
+                  ),
+                ),
           ],
         ],
       ),
@@ -1943,22 +1982,67 @@ class _CapsuleChatPanel extends StatelessWidget {
   }
 }
 
-class _ChatInboxRow extends StatelessWidget {
-  final CapsuleChatInboxMessage message;
+class _SelectedCapsuleCard extends StatelessWidget {
+  final String label;
+  final String peerHex;
+  final String? localLabel;
+  final VoidCallback? onClear;
 
-  const _ChatInboxRow({required this.message});
+  const _SelectedCapsuleCard({
+    required this.label,
+    required this.peerHex,
+    required this.localLabel,
+    required this.onClear,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final shortPeer =
-        message.fromHex.length >= 12
-            ? '${message.fromHex.substring(0, 6)}...${message.fromHex.substring(message.fromHex.length - 4)}'
-            : message.fromHex;
-    final shortHash =
-        message.envelopeHashHex.length >= 12
-            ? '${message.envelopeHashHex.substring(0, 12)}..'
-            : message.envelopeHashHex;
+    final hasPeer = peerHex.trim().isNotEmpty;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F141C),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF3B4657)),
+      ),
+      child: ListTile(
+        leading: Icon(
+          hasPeer ? Icons.account_circle_outlined : Icons.person_off_outlined,
+          color: hasPeer ? const Color(0xFFC9B2FF) : const Color(0xFF7F92A8),
+        ),
+        title: Text(label),
+        subtitle: Text(
+          hasPeer
+              ? PeerIdentityFormat.capsuleLabelFromRootHex(
+                peerHex,
+                localLabel: localLabel,
+              )
+              : 'Choose a trusted capsule to start a chat.',
+        ),
+        trailing:
+            onClear == null
+                ? null
+                : IconButton(
+                  tooltip: 'Clear recipient',
+                  onPressed: onClear,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+      ),
+    );
+  }
+}
 
+class _ChatInboxRow extends StatelessWidget {
+  final CapsuleChatInboxMessage message;
+  final String? localLabel;
+
+  const _ChatInboxRow({required this.message, required this.localLabel});
+
+  @override
+  Widget build(BuildContext context) {
+    final peerLabel = PeerIdentityFormat.capsuleLabelFromRootHex(
+      message.fromHex,
+      localLabel: localLabel,
+    );
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1980,7 +2064,7 @@ class _ChatInboxRow extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'from $shortPeer · ${message.createdAtUtc}${shortHash.isEmpty ? '' : ' · $shortHash'}',
+            'from $peerLabel · ${message.createdAtUtc}',
             style: const TextStyle(fontSize: 11, color: Color(0xFF95A5B7)),
           ),
         ],

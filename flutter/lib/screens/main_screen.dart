@@ -656,6 +656,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           onLedgerChanged: _handleLedgerChanged,
           onSyncTransport: _syncRelationshipsTransport,
           onOpenHistory: _openCapsuleHistory,
+          loadContactLabels: _runtime.buildCapsuleContactLabelStore().load,
         );
       case 3:
         return WasmPluginsScreen(

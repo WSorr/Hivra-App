@@ -29,9 +29,17 @@ pub enum TransportError {
     Other(String),
 }
 
-/// Message format for transport layer
+/// Stable, transport-neutral delivery envelope.
+///
+/// The transport layer owns only routing, ordering metadata and optional proof
+/// of a Core fact. Domain payloads remain opaque here: an invitation, chat
+/// message or drone signal must not gain a transport-specific DTO field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Message {
+pub struct DeliveryEnvelope {
+    /// Wire schema version. Absent on pre-v1 envelopes for decode compatibility.
+    #[serde(default = "default_delivery_envelope_schema_version")]
+    pub schema_version: u16,
+
     /// Sender public key
     pub from: [u8; 32],
 
@@ -47,14 +55,21 @@ pub struct Message {
     /// Timestamp
     pub timestamp: u64,
 
-    /// Optional invitation ID
-    pub invitation_id: Option<[u8; 32]>,
+    /// Optional domain-neutral correlation key for a request/reply lifecycle.
+    ///
+    /// The receiving domain interprets this only as its own protocol allows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<[u8; 32]>,
 
     /// Signed Core event carried by this transport message.
     ///
     /// Non-Core channels such as chat leave this empty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain_event: Option<DomainEventProof>,
+}
+
+const fn default_delivery_envelope_schema_version() -> u16 {
+    1
 }
 
 /// Transport-level delivery receipt.
@@ -99,24 +114,27 @@ pub struct DomainEventProof {
 /// Transport trait - all transport implementations must implement this
 pub trait Transport: Send + Sync {
     /// Send a message
-    fn send(&self, message: Message) -> Result<(), TransportError>;
+    fn send(&self, envelope: DeliveryEnvelope) -> Result<(), TransportError>;
 
     /// Send a message and return adapter-level delivery evidence.
-    fn send_with_receipt(&self, message: Message) -> Result<DeliveryReceipt, TransportError> {
+    fn send_with_receipt(
+        &self,
+        envelope: DeliveryEnvelope,
+    ) -> Result<DeliveryReceipt, TransportError> {
         let receipt = DeliveryReceipt {
             transport: self.name().to_string(),
             accepted_by: self.name().to_string(),
             envelope_id: String::new(),
-            message_kind: message.kind,
-            recipient: message.to.to_vec(),
+            message_kind: envelope.kind,
+            recipient: envelope.to.to_vec(),
             failed_before_accept: 0,
         };
-        self.send(message)?;
+        self.send(envelope)?;
         Ok(receipt)
     }
 
     /// Receive messages
-    fn receive(&self) -> Result<Vec<Message>, TransportError>;
+    fn receive(&self) -> Result<Vec<DeliveryEnvelope>, TransportError>;
 
     /// Check if transport is connected
     fn is_connected(&self) -> bool;
@@ -144,16 +162,19 @@ impl TransportManager {
     }
 
     /// Send message via all transports
-    pub fn send(&self, message: Message) -> Result<(), TransportError> {
-        self.send_with_receipt(message).map(|_| ())
+    pub fn send(&self, envelope: DeliveryEnvelope) -> Result<(), TransportError> {
+        self.send_with_receipt(envelope).map(|_| ())
     }
 
     /// Send message via all transports and return the adapter receipt.
-    pub fn send_with_receipt(&self, message: Message) -> Result<DeliveryReceipt, TransportError> {
+    pub fn send_with_receipt(
+        &self,
+        envelope: DeliveryEnvelope,
+    ) -> Result<DeliveryReceipt, TransportError> {
         let mut last_error = None;
 
         for transport in &self.transports {
-            match transport.send_with_receipt(message.clone()) {
+            match transport.send_with_receipt(envelope.clone()) {
                 Ok(receipt) => return Ok(receipt),
                 Err(e) => last_error = Some(e),
             }
@@ -163,7 +184,7 @@ impl TransportManager {
     }
 
     /// Receive messages from all transports
-    pub fn receive(&self) -> Result<Vec<Message>, TransportError> {
+    pub fn receive(&self) -> Result<Vec<DeliveryEnvelope>, TransportError> {
         let mut all_messages = Vec::new();
 
         for transport in &self.transports {
@@ -195,11 +216,11 @@ mod tests {
     }
 
     impl Transport for MockTransport {
-        fn send(&self, _message: Message) -> Result<(), TransportError> {
+        fn send(&self, _envelope: DeliveryEnvelope) -> Result<(), TransportError> {
             Ok(())
         }
 
-        fn receive(&self) -> Result<Vec<Message>, TransportError> {
+        fn receive(&self) -> Result<Vec<DeliveryEnvelope>, TransportError> {
             Ok(Vec::new())
         }
 
@@ -225,18 +246,38 @@ mod tests {
         assert_eq!(manager.connected_transports(), vec!["mock"]);
 
         let receipt = manager
-            .send_with_receipt(Message {
+            .send_with_receipt(DeliveryEnvelope {
+                schema_version: 1,
                 from: [1u8; 32],
                 to: [2u8; 32],
                 kind: 42,
                 payload: Vec::new(),
                 timestamp: 7,
-                invitation_id: None,
+                correlation_id: None,
                 domain_event: None,
             })
             .expect("transport receipt");
         assert_eq!(receipt.transport, "mock");
         assert_eq!(receipt.message_kind, 42);
         assert_eq!(receipt.recipient, vec![2u8; 32]);
+    }
+
+    #[test]
+    fn legacy_envelope_without_v1_metadata_decodes_safely() {
+        let legacy = serde_json::json!({
+            "from": vec![1u8; 32],
+            "to": vec![2u8; 32],
+            "kind": 42,
+            "payload": [7, 8],
+            "timestamp": 9,
+            "invitation_id": vec![3u8; 32],
+            "domain_event": null,
+        });
+
+        let envelope: DeliveryEnvelope =
+            serde_json::from_value(legacy).expect("legacy envelope decodes");
+        assert_eq!(envelope.schema_version, 1);
+        assert_eq!(envelope.correlation_id, None);
+        assert_eq!(envelope.payload, vec![7, 8]);
     }
 }
