@@ -100,6 +100,18 @@ This contract prevents two common failures: delaying current integrity work in
 the name of a redesign, and embedding speculative 2.0 structure into the
 maintained 1.x runtime.
 
+## Platform Toolchain Evolution
+
+The Flutter/Dart, Rust, Android, and macOS build stack is a controlled
+release-engineering axis, not an incidental local-machine detail and not a
+bridge migration. Its current matrix, invariants, dedicated update units, and
+required evidence are defined in `docs/platform-toolchain-evolution.md`.
+
+The active toolchain item is `T0`: make the verified baseline executable and
+reproducible. It must not be bundled with the current continuous-ledger pass.
+Future Flutter/Dart or Android build-stack updates are separate units and
+require fresh macOS and Android artifact smoke before publication.
+
 ## Current Priorities
 
 ### 1. Replay Safety

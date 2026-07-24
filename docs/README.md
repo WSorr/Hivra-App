@@ -181,6 +181,19 @@ Contains:
 This document is a future design contract. It does not describe a currently
 available 1.x capability.
 
+### 18) `docs/platform-toolchain-evolution.md` (platform evolution contract)
+
+Use this when changing or evaluating Flutter/Dart, Rust/Cargo, Android SDK,
+AGP/Gradle/Kotlin/JDK/NDK, Xcode, or CocoaPods.
+
+Contains:
+- the verified macOS and Android toolchain matrix
+- stable C-ABI boundary rules
+- dedicated upgrade units and their required evidence
+- Android signing and macOS packaging constraints
+
+It explicitly forbids hiding an SDK migration inside product or protocol work.
+
 ## Recommended Reading Order
 
 1. `product-axis.md`
@@ -200,6 +213,7 @@ available 1.x capability.
 15. `architecture-v2-blueprint.md` when designing 2.0 ownership, contracts, or migration units
 16. `development-control.md` before resuming, scoping, or closing any work item
 17. `plugins/moltbook_agent_drone_design_v1.md` when planning the Moltbook future track
+18. `docs/platform-toolchain-evolution.md` before changing the native build stack
 
 ## Update Rules
 

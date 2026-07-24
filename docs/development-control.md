@@ -28,6 +28,7 @@ table, then open only the linked authority for the selected work item.
 | **1.x maintained runtime** | Active | `12.3 / pass 3`: cryptographically continuous ledger. `5.1` is a cross-cutting projection blocker, not a reason to add another Flutter reducer. | Current release baseline is `f18a490`; automated gates and packaged macOS/Android smoke passed for `v1.0.3-test13`. The current delivery/identity commit is not a release candidate until fresh platform smoke is recorded. | Close pass 3, then move lifecycle readers to the canonical Core projection before event-scoped delivery records. Do not blend these with feature work or redesign. |
 | **1.x release** | Released | `v1.0.3-test13` is the current test release on macOS and Android. | Tag, guarded GitHub release, clean worktree, platform signoff, and artifact evidence are recorded. | A commit is not automatically a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
+| **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |
 | **Future product tracks** | Parked | AI trading advice, distributed backup drone, staking drone, Moltbook agent drone. | Their own approved contract and capability-closure result. | They do not preempt active 1.x integrity work. |
 
 `12.3` is deliberately an ordered remediation program, not a grab bag. Its
@@ -78,6 +79,7 @@ At the end of a meaningful pass, update only the source that owns its status:
 | Current behavior, protocol, invariant | `specification.md` and, if user-visible, `hivra-conceptual-model.md` |
 | Engineering item state / next pass | `roadmap.md` and the board in this file |
 | 2.0 ownership / contract / migration proof | `architecture-v2-blueprint.md` and the board in this file |
+| Flutter/Rust/Android/macOS toolchain update | `docs/platform-toolchain-evolution.md`, the roadmap, and release evidence |
 | Release readiness | the applicable release checklist and release evidence |
 
 No status update means the work is not ready to be called complete.

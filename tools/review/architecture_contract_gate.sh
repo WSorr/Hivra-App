@@ -46,6 +46,7 @@ CHECKLIST="$ROOT/docs/checklists/architecture-review.md"
 ROADMAP="$ROOT/docs/roadmap.md"
 EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
 V2_BLUEPRINT="$ROOT/docs/architecture-v2-blueprint.md"
+PLATFORM_TOOLCHAIN="$ROOT/docs/platform-toolchain-evolution.md"
 DELIVERY_LIFECYCLE_DOC="$ROOT/docs/architecture/transport-delivery-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
@@ -202,6 +203,22 @@ require_present "$EXEC_DISCIPLINE" '^## 7\. Plugin Repository Boundary' \
   "execution discipline defines plugin repository boundary"
 require_present "$V2_BLUEPRINT" '^Status: design-only draft\.' \
   "v2 blueprint cannot silently change normative v1 behavior"
+require_present "$PLATFORM_TOOLCHAIN" '^# Hivra Platform Toolchain Evolution' \
+  "platform toolchain evolution contract exists"
+require_present "$PLATFORM_TOOLCHAIN" 'Hivra does not plan a bridge-framework' \
+  "platform contract keeps the explicit C ABI boundary"
+require_present "$PLATFORM_TOOLCHAIN" '^### T0: Baseline and reproducibility' \
+  "platform contract defines reproducible baseline work"
+require_present "$PLATFORM_TOOLCHAIN" '^### T1: Flutter/Dart stable update' \
+  "platform contract isolates Flutter/Dart upgrades"
+require_present "$PLATFORM_TOOLCHAIN" '^### T2: Android build-stack update' \
+  "platform contract treats Android tooling as a compatibility set"
+require_present "$PLATFORM_TOOLCHAIN" '^### T3: macOS/Xcode update' \
+  "platform contract defines macOS/Xcode evidence"
+require_present "$ROADMAP" '^## Platform Toolchain Evolution' \
+  "roadmap tracks platform toolchain evolution separately"
+require_present "$DOCS_README" 'platform-toolchain-evolution\.md' \
+  "docs index references platform toolchain evolution"
 require_present "$V2_BLUEPRINT" '^## 4\. Capability Map' \
   "v2 blueprint defines capability ownership map"
 require_present "$V2_BLUEPRINT" '^## 7\. Anti-Entropy Budget' \

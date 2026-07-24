@@ -160,8 +160,9 @@ Shown on app launch when at least one capsule exists.
 - Android SDK (API 36) for Android builds
 - Xcode 15+ for macOS builds
 
-The manifests and platform tooling are the version authority; this README does
-not pin a second, easily stale SDK matrix.
+The checked-in platform evolution contract defines the verified SDK matrix and
+the only permitted upgrade process. Local manifests and IDE defaults are not
+independent release authority; see `docs/platform-toolchain-evolution.md`.
 
 ### Development Verification
 
