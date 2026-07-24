@@ -15,7 +15,7 @@ pub mod slot;
 pub mod starter;
 
 // Re-export commonly used types
-pub use event::{Event, EventKind, PROTOCOL_VERSION};
+pub use event::{Event, EventKind, CONTINUOUS_LEDGER_PROTOCOL_VERSION, PROTOCOL_VERSION};
 pub use event_payloads::{
     CapsuleCreatedPayload, EventPayload, InvitationAcceptedPayload, InvitationExpiredPayload,
     InvitationRejectedPayload, InvitationSentPayload, RejectReason, RelationshipBrokenPayload,
@@ -28,8 +28,8 @@ pub use invitation::{
 };
 pub use ledger::Ledger;
 pub use ledger_v5::{
-    Commitment, DomainEventV5, LedgerAnchorV5, LedgerEntryV5, LedgerV5, LedgerV5Error,
-    COMMITMENT_LENGTH, LEDGER_PROTOCOL_VERSION_V5, ZERO_COMMITMENT,
+    Commitment, LedgerAnchorV5, LedgerEntryV5, LedgerV5, LedgerV5Error, COMMITMENT_LENGTH,
+    LEDGER_PROTOCOL_VERSION_V5, ZERO_COMMITMENT,
 };
 pub use primitives::{Network, PubKey, Signature, StarterId, StarterKind, Timestamp};
 pub use starter::Starter;

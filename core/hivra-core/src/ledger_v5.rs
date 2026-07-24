@@ -3,7 +3,7 @@
 //! These types are intentionally isolated from the protocol-v4 runtime until
 //! Engine/FFI can switch append, import, and persistence as one migration.
 
-use crate::{EventKind, PubKey, Signature, Timestamp};
+use crate::{Event, PubKey, Signature};
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -12,84 +12,12 @@ pub const LEDGER_PROTOCOL_VERSION_V5: u8 = 5;
 pub const COMMITMENT_LENGTH: usize = 32;
 pub const ZERO_COMMITMENT: [u8; COMMITMENT_LENGTH] = [0; COMMITMENT_LENGTH];
 
-const DOMAIN_EVENT_TAG: &[u8] = b"hivra/domain-event/v5";
 const FRESH_ANCHOR_TAG: &[u8] = b"hivra/ledger-anchor/v5";
 const LEGACY_ANCHOR_TAG: &[u8] = b"hivra/legacy-v4-anchor/v5";
 const LEGACY_SNAPSHOT_TAG: &[u8] = b"hivra/legacy-v4-snapshot/v1";
 const LEDGER_ENTRY_TAG: &[u8] = b"hivra/ledger-entry/v5";
 
 pub type Commitment = [u8; COMMITMENT_LENGTH];
-
-/// A signed, immutable domain statement. Its timestamp and signer are part of
-/// the v5 signature message and must never be changed by a recipient.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DomainEventV5 {
-    version: u8,
-    kind: EventKind,
-    payload: Vec<u8>,
-    issued_at: Timestamp,
-    signer: PubKey,
-    signature: Signature,
-}
-
-impl DomainEventV5 {
-    pub fn unsigned(
-        kind: EventKind,
-        payload: Vec<u8>,
-        issued_at: Timestamp,
-        signer: PubKey,
-    ) -> Self {
-        Self {
-            version: LEDGER_PROTOCOL_VERSION_V5,
-            kind,
-            payload,
-            issued_at,
-            signer,
-            signature: Signature::from([0; 64]),
-        }
-    }
-
-    pub fn with_signature(mut self, signature: Signature) -> Self {
-        self.signature = signature;
-        self
-    }
-
-    pub fn version(&self) -> u8 {
-        self.version
-    }
-
-    pub fn kind(&self) -> EventKind {
-        self.kind
-    }
-
-    pub fn payload(&self) -> &[u8] {
-        &self.payload
-    }
-
-    pub fn issued_at(&self) -> Timestamp {
-        self.issued_at
-    }
-
-    pub fn signer(&self) -> &PubKey {
-        &self.signer
-    }
-
-    pub fn signature(&self) -> &Signature {
-        &self.signature
-    }
-
-    pub fn commitment(&self) -> Commitment {
-        let mut hasher = Sha256::new();
-        hasher.update(DOMAIN_EVENT_TAG);
-        hasher.update([self.version]);
-        hasher.update([self.kind as u8]);
-        hasher.update((self.payload.len() as u64).to_be_bytes());
-        hasher.update(&self.payload);
-        hasher.update(self.issued_at.as_u64().to_be_bytes());
-        hasher.update(self.signer.as_bytes());
-        digest_into_array(hasher)
-    }
-}
 
 /// The commitment before the first v5 entry. A legacy anchor binds future v5
 /// history to one exact v4 snapshot without pretending that v4 was continuous.
@@ -165,7 +93,7 @@ pub struct LedgerEntryV5 {
     owner: PubKey,
     sequence: u64,
     previous_commitment: Commitment,
-    event: DomainEventV5,
+    event: Event,
     signature: Signature,
 }
 
@@ -174,7 +102,7 @@ impl LedgerEntryV5 {
         owner: PubKey,
         sequence: u64,
         previous_commitment: Commitment,
-        event: DomainEventV5,
+        event: Event,
     ) -> Self {
         Self {
             owner,
@@ -202,7 +130,7 @@ impl LedgerEntryV5 {
         &self.previous_commitment
     }
 
-    pub fn event(&self) -> &DomainEventV5 {
+    pub fn event(&self) -> &Event {
         &self.event
     }
 
@@ -216,7 +144,7 @@ impl LedgerEntryV5 {
         hasher.update(self.owner.as_bytes());
         hasher.update(self.sequence.to_be_bytes());
         hasher.update(self.previous_commitment);
-        hasher.update(self.event.commitment());
+        hasher.update(self.event.event_id());
         digest_into_array(hasher)
     }
 }
@@ -299,7 +227,7 @@ impl LedgerV5 {
         if self
             .entries
             .iter()
-            .any(|existing| existing.event().commitment() == entry.event().commitment())
+            .any(|existing| existing.event().event_id() == entry.event().event_id())
         {
             return Err(LedgerV5Error::DuplicateDomainEvent);
         }
@@ -327,7 +255,7 @@ impl LedgerV5 {
             }
             if self.entries[..index]
                 .iter()
-                .any(|existing| existing.event().commitment() == entry.event().commitment())
+                .any(|existing| existing.event().event_id() == entry.event().event_id())
             {
                 return Err(LedgerV5Error::DuplicateDomainEvent);
             }
@@ -347,17 +275,19 @@ fn digest_into_array(hasher: Sha256) -> Commitment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{EventKind, Timestamp};
     use alloc::vec;
 
     fn owner() -> PubKey {
         PubKey::from([7; 32])
     }
 
-    fn event(payload: Vec<u8>) -> DomainEventV5 {
-        DomainEventV5::unsigned(
+    fn event(payload: Vec<u8>) -> Event {
+        Event::new_v5(
             EventKind::InvitationSent,
             payload,
             Timestamp::from(123),
+            Signature::from([9; 64]),
             PubKey::from([9; 32]),
         )
     }
@@ -365,21 +295,23 @@ mod tests {
     #[test]
     fn domain_event_commitment_binds_all_order_critical_fields() {
         let base = event(vec![1, 2, 3]);
-        let different_time = DomainEventV5::unsigned(
+        let different_time = Event::new_v5(
             EventKind::InvitationSent,
             vec![1, 2, 3],
             Timestamp::from(124),
+            Signature::from([9; 64]),
             PubKey::from([9; 32]),
         );
-        let different_signer = DomainEventV5::unsigned(
+        let different_signer = Event::new_v5(
             EventKind::InvitationSent,
             vec![1, 2, 3],
             Timestamp::from(123),
+            Signature::from([9; 64]),
             PubKey::from([10; 32]),
         );
 
-        assert_ne!(base.commitment(), different_time.commitment());
-        assert_ne!(base.commitment(), different_signer.commitment());
+        assert_ne!(base.event_id(), different_time.event_id());
+        assert_ne!(base.event_id(), different_signer.event_id());
     }
 
     #[test]
@@ -431,7 +363,7 @@ mod tests {
         let entry = LedgerEntryV5::unsigned(owner(), 0, anchor.commitment(), domain.clone());
 
         assert_eq!(
-            hex::encode(domain.commitment()),
+            hex::encode(domain.event_id()),
             "bf20db840e7c899af034f53fca87e9a322250f1dacdbfdb899842faa42c33bb7"
         );
         assert_eq!(

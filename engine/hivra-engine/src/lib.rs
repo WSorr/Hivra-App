@@ -115,8 +115,8 @@ pub use hivra_core::event_payloads::{
 };
 pub use hivra_core::primitives::SlotIndex;
 pub use hivra_core::{
-    Commitment, DomainEventV5, Event, EventKind, Ledger, LedgerAnchorV5, LedgerEntryV5, LedgerV5,
-    LedgerV5Error, Network, PubKey, Signature, Starter, StarterId, StarterKind, Timestamp,
+    Commitment, Event, EventKind, Ledger, LedgerAnchorV5, LedgerEntryV5, LedgerV5, LedgerV5Error,
+    Network, PubKey, Signature, Starter, StarterId, StarterKind, Timestamp,
 };
 
 /// Engine configuration.
@@ -265,11 +265,18 @@ where
         &self,
         kind: EventKind,
         payload: Vec<u8>,
-    ) -> Result<DomainEventV5, K::Error> {
+    ) -> Result<Event, K::Error> {
         let signer = self.public_key()?;
-        let unsigned = DomainEventV5::unsigned(kind, payload, self.now(), signer);
-        let signature = self.keystore.sign(&unsigned.commitment())?;
-        Ok(unsigned.with_signature(Signature::from(signature)))
+        let timestamp = self.now();
+        let unsigned = Event::new_v5(kind, payload, timestamp, Signature::from([0; 64]), signer);
+        let signature = self.keystore.sign(&unsigned.event_id())?;
+        Ok(Event::new_v5(
+            kind,
+            unsigned.payload().to_vec(),
+            timestamp,
+            Signature::from(signature),
+            signer,
+        ))
     }
 
     /// Prepares the local owner attestation for one v5 domain event.
@@ -277,7 +284,7 @@ where
         &self,
         sequence: u64,
         previous_commitment: Commitment,
-        event: DomainEventV5,
+        event: Event,
     ) -> Result<LedgerEntryV5, K::Error> {
         let owner = self.public_key()?;
         let unsigned = LedgerEntryV5::unsigned(owner, sequence, previous_commitment, event);
@@ -300,9 +307,9 @@ where
         ))
     }
 
-    pub fn verify_domain_event_v5(&self, event: &DomainEventV5) -> Result<(), C::Error> {
+    pub fn verify_domain_event_v5(&self, event: &Event) -> Result<(), C::Error> {
         self.crypto.verify(
-            &event.commitment(),
+            &event.event_id(),
             event.signer().as_bytes(),
             event.signature().as_bytes(),
         )
@@ -777,7 +784,7 @@ mod tests {
         let domain = engine
             .prepare_domain_event_v5(EventKind::InvitationSent, vec![1, 2, 3])
             .expect("domain event");
-        assert_eq!(&domain.signature().as_bytes()[..32], &domain.commitment());
+        assert_eq!(&domain.signature().as_bytes()[..32], &domain.event_id());
 
         let mut ledger = LedgerV5::fresh(owner);
         let entry = engine
@@ -801,13 +808,13 @@ mod tests {
         let valid = engine
             .prepare_domain_event_v5(EventKind::InvitationSent, vec![1, 2, 3])
             .expect("domain event");
-        let tampered = DomainEventV5::unsigned(
+        let tampered = Event::new_v5(
             EventKind::InvitationSent,
             vec![1, 2, 4],
-            valid.issued_at(),
+            valid.timestamp(),
+            *valid.signature(),
             *valid.signer(),
-        )
-        .with_signature(*valid.signature());
+        );
 
         let mut ledger = LedgerV5::fresh(owner);
         let entry = engine
