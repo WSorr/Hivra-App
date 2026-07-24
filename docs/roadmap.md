@@ -1297,6 +1297,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         as cryptographically continuous history;
       - implementation now proceeds only through P3-A Core vectors, P3-B
         Engine/FFI append-import, and P3-C persistence/release evidence.
+    - P3-A completed on 2026-07-24:
+      - Core now has isolated v5 domain-event, anchor, entry, and structural
+        chain primitives with fixed golden vectors and adversarial link/order
+        tests;
+      - no v4 runtime path or persisted user ledger changed in this unit.
+    - P3-B Engine signing boundary completed on 2026-07-24:
+      - Engine is the only new path that prepares and verifies signed v5 domain
+        provenance, local ledger entries, and legacy migration anchors;
+      - FFI append/import and persistence remain unmodified until they can
+        switch together in the next P3-B subpass.
     - Next ordered 12.3 item is the cryptographically continuous ledger
       implementation. Event-scoped delivery records, transport-health UI,
       plugin transactionality, encrypted backup envelopes, and

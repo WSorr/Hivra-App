@@ -115,8 +115,8 @@ pub use hivra_core::event_payloads::{
 };
 pub use hivra_core::primitives::SlotIndex;
 pub use hivra_core::{
-    Event, EventKind, Ledger, Network, PubKey, Signature, Starter, StarterId, StarterKind,
-    Timestamp,
+    Commitment, DomainEventV5, Event, EventKind, Ledger, LedgerAnchorV5, LedgerEntryV5, LedgerV5,
+    LedgerV5Error, Network, PubKey, Signature, Starter, StarterId, StarterKind, Timestamp,
 };
 
 /// Engine configuration.
@@ -189,6 +189,16 @@ pub enum OutgoingRejectionEffect {
     UnlockOnly,
 }
 
+/// Verification failures for the v5 ledger are kept separate from domain
+/// policy. Core owns structure; Engine owns cryptographic proof validation.
+#[derive(Debug)]
+pub enum LedgerV5VerificationError<E> {
+    Structure(LedgerV5Error),
+    AnchorSignature(E),
+    DomainSignature(E),
+    EntrySignature(E),
+}
+
 impl<T, R, C, K> Engine<T, R, C, K>
 where
     T: TimeSource,
@@ -247,6 +257,90 @@ where
         let msg = event.event_id();
         self.crypto
             .verify(&msg, pubkey.as_bytes(), event.signature().as_bytes())
+    }
+
+    /// Prepares a v5 domain event whose timestamp and signer are part of the
+    /// signed commitment.
+    pub fn prepare_domain_event_v5(
+        &self,
+        kind: EventKind,
+        payload: Vec<u8>,
+    ) -> Result<DomainEventV5, K::Error> {
+        let signer = self.public_key()?;
+        let unsigned = DomainEventV5::unsigned(kind, payload, self.now(), signer);
+        let signature = self.keystore.sign(&unsigned.commitment())?;
+        Ok(unsigned.with_signature(Signature::from(signature)))
+    }
+
+    /// Prepares the local owner attestation for one v5 domain event.
+    pub fn prepare_ledger_entry_v5(
+        &self,
+        sequence: u64,
+        previous_commitment: Commitment,
+        event: DomainEventV5,
+    ) -> Result<LedgerEntryV5, K::Error> {
+        let owner = self.public_key()?;
+        let unsigned = LedgerEntryV5::unsigned(owner, sequence, previous_commitment, event);
+        let signature = self.keystore.sign(&unsigned.commitment())?;
+        Ok(unsigned.with_signature(Signature::from(signature)))
+    }
+
+    /// Prepares a root-signed anchor for a migrated v4 ledger snapshot.
+    pub fn prepare_legacy_anchor_v5(
+        &self,
+        snapshot: Commitment,
+    ) -> Result<LedgerAnchorV5, K::Error> {
+        let owner = self.public_key()?;
+        let unsigned = LedgerAnchorV5::legacy(owner, snapshot, Signature::from([0; 64]));
+        let signature = self.keystore.sign(&unsigned.commitment())?;
+        Ok(LedgerAnchorV5::legacy(
+            owner,
+            snapshot,
+            Signature::from(signature),
+        ))
+    }
+
+    pub fn verify_domain_event_v5(&self, event: &DomainEventV5) -> Result<(), C::Error> {
+        self.crypto.verify(
+            &event.commitment(),
+            event.signer().as_bytes(),
+            event.signature().as_bytes(),
+        )
+    }
+
+    pub fn verify_ledger_entry_v5(&self, entry: &LedgerEntryV5) -> Result<(), C::Error> {
+        self.crypto.verify(
+            &entry.commitment(),
+            entry.owner().as_bytes(),
+            entry.signature().as_bytes(),
+        )
+    }
+
+    pub fn verify_ledger_v5(
+        &self,
+        ledger: &LedgerV5,
+    ) -> Result<(), LedgerV5VerificationError<C::Error>> {
+        ledger
+            .verify_structure()
+            .map_err(LedgerV5VerificationError::Structure)?;
+
+        if let Some(signature) = ledger.anchor().signature() {
+            self.crypto
+                .verify(
+                    &ledger.anchor().commitment(),
+                    ledger.anchor().owner().as_bytes(),
+                    signature.as_bytes(),
+                )
+                .map_err(LedgerV5VerificationError::AnchorSignature)?;
+        }
+
+        for entry in ledger.entries() {
+            self.verify_domain_event_v5(entry.event())
+                .map_err(LedgerV5VerificationError::DomainSignature)?;
+            self.verify_ledger_entry_v5(entry)
+                .map_err(LedgerV5VerificationError::EntrySignature)?;
+        }
+        Ok(())
     }
 
     pub fn prepare_invitation_sent(
@@ -569,6 +663,55 @@ mod tests {
         }
     }
 
+    struct CommitmentKeyStore {
+        pubkey: [u8; 32],
+    }
+
+    impl SecureKeyStore for CommitmentKeyStore {
+        type Error = ();
+
+        fn generate(&self) -> Result<[u8; 32], Self::Error> {
+            Ok(self.pubkey)
+        }
+
+        fn public_key(&self) -> Result<[u8; 32], Self::Error> {
+            Ok(self.pubkey)
+        }
+
+        fn sign(&self, msg: &[u8]) -> Result<[u8; 64], Self::Error> {
+            let mut signature = [0; 64];
+            signature[..32].copy_from_slice(msg);
+            Ok(signature)
+        }
+    }
+
+    struct CommitmentCrypto;
+
+    impl CryptoProvider for CommitmentCrypto {
+        type Error = ();
+
+        fn verify(
+            &self,
+            msg: &[u8],
+            _pubkey: &[u8; 32],
+            sig: &[u8; 64],
+        ) -> Result<(), Self::Error> {
+            if sig[..32] == msg[..] {
+                Ok(())
+            } else {
+                Err(())
+            }
+        }
+
+        fn sign(&self, _msg: &[u8], _privkey: &[u8; 32]) -> Result<[u8; 64], Self::Error> {
+            Err(())
+        }
+
+        fn ecdh(&self, _privkey: &[u8; 32], _pubkey: &[u8; 32]) -> Result<[u8; 32], Self::Error> {
+            Err(())
+        }
+    }
+
     #[test]
     fn test_engine_creation() {
         let time = MockTime { now: 1234567890 };
@@ -619,6 +762,63 @@ mod tests {
         assert_eq!(payload.starter_id, StarterId::from([9; 32]));
         assert_eq!(payload.to_pubkey, PubKey::from([2; 32]));
         assert_eq!(payload.sender_root_pubkey, Some(PubKey::from([1; 32])));
+    }
+
+    #[test]
+    fn v5_engine_signs_and_verifies_both_provenance_layers() {
+        let engine = Engine::new(
+            MockTime { now: 77 },
+            MockRng { fixed: [0; 32] },
+            CommitmentCrypto,
+            CommitmentKeyStore { pubkey: [4; 32] },
+            EngineConfig::default(),
+        );
+        let owner = PubKey::from([4; 32]);
+        let domain = engine
+            .prepare_domain_event_v5(EventKind::InvitationSent, vec![1, 2, 3])
+            .expect("domain event");
+        assert_eq!(&domain.signature().as_bytes()[..32], &domain.commitment());
+
+        let mut ledger = LedgerV5::fresh(owner);
+        let entry = engine
+            .prepare_ledger_entry_v5(0, ledger.tail_commitment(), domain)
+            .expect("ledger entry");
+        assert_eq!(&entry.signature().as_bytes()[..32], &entry.commitment());
+        ledger.append(entry).expect("append entry");
+        assert!(engine.verify_ledger_v5(&ledger).is_ok());
+    }
+
+    #[test]
+    fn v5_engine_rejects_tampered_domain_inside_valid_local_entry() {
+        let engine = Engine::new(
+            MockTime { now: 77 },
+            MockRng { fixed: [0; 32] },
+            CommitmentCrypto,
+            CommitmentKeyStore { pubkey: [4; 32] },
+            EngineConfig::default(),
+        );
+        let owner = PubKey::from([4; 32]);
+        let valid = engine
+            .prepare_domain_event_v5(EventKind::InvitationSent, vec![1, 2, 3])
+            .expect("domain event");
+        let tampered = DomainEventV5::unsigned(
+            EventKind::InvitationSent,
+            vec![1, 2, 4],
+            valid.issued_at(),
+            *valid.signer(),
+        )
+        .with_signature(*valid.signature());
+
+        let mut ledger = LedgerV5::fresh(owner);
+        let entry = engine
+            .prepare_ledger_entry_v5(0, ledger.tail_commitment(), tampered)
+            .expect("entry with local signature");
+        ledger.append(entry).expect("structural append");
+
+        assert!(matches!(
+            engine.verify_ledger_v5(&ledger),
+            Err(LedgerV5VerificationError::DomainSignature(()))
+        ));
     }
 
     #[test]
