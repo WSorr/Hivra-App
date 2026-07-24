@@ -115,8 +115,8 @@ pub use hivra_core::event_payloads::{
 };
 pub use hivra_core::primitives::SlotIndex;
 pub use hivra_core::{
-    Commitment, Event, EventKind, Ledger, LedgerAnchorV5, LedgerEntryV5, LedgerV5, LedgerV5Error,
-    Network, PubKey, Signature, Starter, StarterId, StarterKind, Timestamp,
+    Commitment, Event, EventKind, Ledger, LedgerAnchorV5, LedgerEntryV5, LedgerV5Error, Network,
+    PubKey, Signature, Starter, StarterId, StarterKind, Timestamp,
 };
 
 /// Engine configuration.
@@ -325,26 +325,34 @@ where
 
     pub fn verify_ledger_v5(
         &self,
-        ledger: &LedgerV5,
+        ledger: &Ledger,
     ) -> Result<(), LedgerV5VerificationError<C::Error>> {
         ledger
-            .verify_structure()
+            .verify_v5_structure()
             .map_err(LedgerV5VerificationError::Structure)?;
 
-        if let Some(signature) = ledger.anchor().signature() {
+        let anchor = ledger
+            .anchor_v5()
+            .ok_or(LedgerV5VerificationError::Structure(
+                LedgerV5Error::NotContinuousLedger,
+            ))?;
+        if let Some(signature) = anchor.signature() {
             self.crypto
                 .verify(
-                    &ledger.anchor().commitment(),
-                    ledger.anchor().owner().as_bytes(),
+                    &anchor.commitment(),
+                    anchor.owner().as_bytes(),
                     signature.as_bytes(),
                 )
                 .map_err(LedgerV5VerificationError::AnchorSignature)?;
         }
 
-        for entry in ledger.entries() {
+        for entry in ledger
+            .v5_entries()
+            .expect("continuous ledger checked above")
+        {
             self.verify_domain_event_v5(entry.event())
                 .map_err(LedgerV5VerificationError::DomainSignature)?;
-            self.verify_ledger_entry_v5(entry)
+            self.verify_ledger_entry_v5(&entry)
                 .map_err(LedgerV5VerificationError::EntrySignature)?;
         }
         Ok(())
@@ -786,12 +794,12 @@ mod tests {
             .expect("domain event");
         assert_eq!(&domain.signature().as_bytes()[..32], &domain.event_id());
 
-        let mut ledger = LedgerV5::fresh(owner);
+        let mut ledger = Ledger::fresh_v5(owner);
         let entry = engine
-            .prepare_ledger_entry_v5(0, ledger.tail_commitment(), domain)
+            .prepare_ledger_entry_v5(0, ledger.tail_commitment_v5().unwrap(), domain)
             .expect("ledger entry");
         assert_eq!(&entry.signature().as_bytes()[..32], &entry.commitment());
-        ledger.append(entry).expect("append entry");
+        ledger.append_v5(entry).expect("append entry");
         assert!(engine.verify_ledger_v5(&ledger).is_ok());
     }
 
@@ -816,11 +824,11 @@ mod tests {
             *valid.signer(),
         );
 
-        let mut ledger = LedgerV5::fresh(owner);
+        let mut ledger = Ledger::fresh_v5(owner);
         let entry = engine
-            .prepare_ledger_entry_v5(0, ledger.tail_commitment(), tampered)
+            .prepare_ledger_entry_v5(0, ledger.tail_commitment_v5().unwrap(), tampered)
             .expect("entry with local signature");
-        ledger.append(entry).expect("structural append");
+        ledger.append_v5(entry).expect("structural append");
 
         assert!(matches!(
             engine.verify_ledger_v5(&ledger),

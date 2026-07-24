@@ -1,6 +1,9 @@
 //! Ledger — append-only journal of signed events.
 
-use crate::{Event, EventKind, PubKey, Timestamp, PROTOCOL_VERSION};
+use crate::{
+    Commitment, Event, EventKind, LedgerAnchorV5, LedgerEntryV5, LedgerV5Error, PubKey, Signature,
+    Timestamp, CONTINUOUS_LEDGER_PROTOCOL_VERSION, PROTOCOL_VERSION,
+};
 use alloc::vec::Vec;
 use core::hash::{Hash, Hasher};
 use serde::{Deserialize, Serialize};
@@ -11,6 +14,20 @@ pub enum LedgerError {
     InvalidOrder,
     WrongVersion,
     DuplicateEvent,
+    Continuous(LedgerV5Error),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct LedgerV5Receipt {
+    sequence: u64,
+    previous_commitment: Commitment,
+    signature: Signature,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ContinuousLedgerV5 {
+    anchor: LedgerAnchorV5,
+    receipts: Vec<LedgerV5Receipt>,
 }
 
 /// Simple hasher for no_std compatibility
@@ -44,6 +61,10 @@ pub struct Ledger {
     events: Vec<Event>,
     owner: PubKey,
     last_hash: u64,
+    /// Present only for v5. Events remain the one canonical domain-fact
+    /// sequence; receipts attest to their local history acceptance.
+    #[serde(default)]
+    continuity_v5: Option<ContinuousLedgerV5>,
 }
 
 impl Ledger {
@@ -52,6 +73,22 @@ impl Ledger {
             events: Vec::new(),
             owner,
             last_hash: 0,
+            continuity_v5: None,
+        }
+    }
+
+    /// Creates a protocol-v5 ledger. It intentionally starts empty: a v4
+    /// history must be migrated through a signed legacy anchor, never silently
+    /// relabelled as continuous history.
+    pub fn fresh_v5(owner: PubKey) -> Self {
+        Self {
+            events: Vec::new(),
+            owner,
+            last_hash: 0,
+            continuity_v5: Some(ContinuousLedgerV5 {
+                anchor: LedgerAnchorV5::fresh(owner),
+                receipts: Vec::new(),
+            }),
         }
     }
 
@@ -65,7 +102,65 @@ impl Ledger {
         self.last_hash
     }
 
+    pub fn is_continuous_v5(&self) -> bool {
+        self.continuity_v5.is_some()
+    }
+
+    pub fn anchor_v5(&self) -> Option<&LedgerAnchorV5> {
+        self.continuity_v5
+            .as_ref()
+            .map(|continuity| &continuity.anchor)
+    }
+
+    pub fn next_sequence_v5(&self) -> Result<u64, LedgerV5Error> {
+        self.continuity_v5
+            .as_ref()
+            .map(|continuity| continuity.receipts.len() as u64)
+            .ok_or(LedgerV5Error::NotContinuousLedger)
+    }
+
+    pub fn tail_commitment_v5(&self) -> Result<Commitment, LedgerV5Error> {
+        let continuity = self
+            .continuity_v5
+            .as_ref()
+            .ok_or(LedgerV5Error::NotContinuousLedger)?;
+        Ok(match continuity.receipts.last().zip(self.events.last()) {
+            Some((receipt, event)) => LedgerEntryV5::unsigned(
+                self.owner,
+                receipt.sequence,
+                receipt.previous_commitment,
+                event.clone(),
+            )
+            .with_signature(receipt.signature)
+            .commitment(),
+            None => continuity.anchor.commitment(),
+        })
+    }
+
+    /// Reconstructs v5 entries from the canonical events and their local
+    /// receipts. It never stores a second copy of a domain event.
+    pub fn v5_entries(&self) -> Option<impl Iterator<Item = LedgerEntryV5> + '_> {
+        self.continuity_v5.as_ref().map(|continuity| {
+            continuity
+                .receipts
+                .iter()
+                .zip(self.events.iter())
+                .map(move |(receipt, event)| {
+                    LedgerEntryV5::unsigned(
+                        self.owner,
+                        receipt.sequence,
+                        receipt.previous_commitment,
+                        event.clone(),
+                    )
+                    .with_signature(receipt.signature)
+                })
+        })
+    }
+
     pub fn append(&mut self, event: Event) -> Result<(), LedgerError> {
+        if self.continuity_v5.is_some() {
+            return Err(LedgerError::Continuous(LedgerV5Error::WrongEventVersion));
+        }
         if event.version() != PROTOCOL_VERSION {
             return Err(LedgerError::WrongVersion);
         }
@@ -89,6 +184,52 @@ impl Ledger {
         Ok(())
     }
 
+    /// Appends one root-attested v5 history entry. The entry embeds a domain
+    /// event only at the API boundary; `Ledger` stores that event once.
+    pub fn append_v5(&mut self, entry: LedgerEntryV5) -> Result<(), LedgerError> {
+        let Some(continuity) = self.continuity_v5.as_ref() else {
+            return Err(LedgerError::Continuous(LedgerV5Error::NotContinuousLedger));
+        };
+        if continuity.anchor.owner() != &self.owner {
+            return Err(LedgerError::Continuous(LedgerV5Error::AnchorOwnerMismatch));
+        }
+        if entry.owner() != &self.owner {
+            return Err(LedgerError::Continuous(LedgerV5Error::EntryOwnerMismatch));
+        }
+        if entry.event().version() != CONTINUOUS_LEDGER_PROTOCOL_VERSION {
+            return Err(LedgerError::Continuous(LedgerV5Error::WrongEventVersion));
+        }
+        if entry.sequence() != continuity.receipts.len() as u64 {
+            return Err(LedgerError::Continuous(LedgerV5Error::InvalidSequence));
+        }
+        if entry.previous_commitment()
+            != &self.tail_commitment_v5().map_err(LedgerError::Continuous)?
+        {
+            return Err(LedgerError::Continuous(
+                LedgerV5Error::InvalidPreviousCommitment,
+            ));
+        }
+        if self
+            .events
+            .iter()
+            .any(|existing| existing.event_id() == entry.event().event_id())
+        {
+            return Err(LedgerError::DuplicateEvent);
+        }
+
+        self.events.push(entry.event().clone());
+        self.continuity_v5
+            .as_mut()
+            .expect("continuity checked above")
+            .receipts
+            .push(LedgerV5Receipt {
+                sequence: entry.sequence(),
+                previous_commitment: *entry.previous_commitment(),
+                signature: *entry.signature(),
+            });
+        Ok(())
+    }
+
     pub fn events_in_range(&self, from: Timestamp, to: Timestamp) -> Vec<&Event> {
         self.events
             .iter()
@@ -101,6 +242,9 @@ impl Ledger {
     }
 
     pub fn verify(&self) -> bool {
+        if self.continuity_v5.is_some() {
+            return self.verify_v5_structure().is_ok();
+        }
         let mut hash = 0u64;
         let mut last_ts = None;
 
@@ -130,6 +274,51 @@ impl Ledger {
         }
 
         hash == self.last_hash
+    }
+
+    pub fn verify_v5_structure(&self) -> Result<(), LedgerV5Error> {
+        let continuity = self
+            .continuity_v5
+            .as_ref()
+            .ok_or(LedgerV5Error::NotContinuousLedger)?;
+        if continuity.anchor.owner() != &self.owner {
+            return Err(LedgerV5Error::AnchorOwnerMismatch);
+        }
+        if continuity.receipts.len() != self.events.len() {
+            return Err(LedgerV5Error::InvalidSequence);
+        }
+        let mut previous = continuity.anchor.commitment();
+        for (index, (receipt, event)) in continuity
+            .receipts
+            .iter()
+            .zip(self.events.iter())
+            .enumerate()
+        {
+            if event.version() != CONTINUOUS_LEDGER_PROTOCOL_VERSION {
+                return Err(LedgerV5Error::WrongEventVersion);
+            }
+            if receipt.sequence != index as u64 {
+                return Err(LedgerV5Error::InvalidSequence);
+            }
+            if receipt.previous_commitment != previous {
+                return Err(LedgerV5Error::InvalidPreviousCommitment);
+            }
+            if self.events[..index]
+                .iter()
+                .any(|existing| existing.event_id() == event.event_id())
+            {
+                return Err(LedgerV5Error::DuplicateDomainEvent);
+            }
+            previous = LedgerEntryV5::unsigned(
+                self.owner,
+                receipt.sequence,
+                receipt.previous_commitment,
+                event.clone(),
+            )
+            .with_signature(receipt.signature)
+            .commitment();
+        }
+        Ok(())
     }
 }
 
@@ -216,5 +405,59 @@ mod tests {
 
         assert!(ledger.append(event).is_ok());
         assert!(ledger.verify());
+    }
+
+    #[test]
+    fn v5_ledger_keeps_events_as_the_only_domain_fact_source() {
+        let owner = PubKey::from([7u8; 32]);
+        let mut ledger = Ledger::fresh_v5(owner);
+        let event = Event::new_v5(
+            EventKind::InvitationSent,
+            vec![1, 2, 3],
+            Timestamp::from(1000),
+            Signature::from([3u8; 64]),
+            PubKey::from([4u8; 32]),
+        );
+        let entry = LedgerEntryV5::unsigned(owner, 0, ledger.tail_commitment_v5().unwrap(), event)
+            .with_signature(Signature::from([5u8; 64]));
+
+        ledger.append_v5(entry).expect("v5 append");
+        assert_eq!(ledger.events().len(), 1);
+        assert_eq!(ledger.v5_entries().unwrap().count(), 1);
+        assert!(ledger.verify_v5_structure().is_ok());
+    }
+
+    #[test]
+    fn v5_ledger_rejects_reordered_or_missing_receipts() {
+        let owner = PubKey::from([7u8; 32]);
+        let mut ledger = Ledger::fresh_v5(owner);
+        let first = Event::new_v5(
+            EventKind::InvitationSent,
+            vec![1],
+            Timestamp::from(1000),
+            Signature::from([3u8; 64]),
+            PubKey::from([4u8; 32]),
+        );
+        let first_entry =
+            LedgerEntryV5::unsigned(owner, 0, ledger.tail_commitment_v5().unwrap(), first)
+                .with_signature(Signature::from([5u8; 64]));
+        ledger.append_v5(first_entry).unwrap();
+
+        let bad = LedgerEntryV5::unsigned(
+            owner,
+            0,
+            ledger.tail_commitment_v5().unwrap(),
+            Event::new_v5(
+                EventKind::InvitationAccepted,
+                vec![2],
+                Timestamp::from(1001),
+                Signature::from([3u8; 64]),
+                PubKey::from([4u8; 32]),
+            ),
+        );
+        assert_eq!(
+            ledger.append_v5(bad),
+            Err(LedgerError::Continuous(LedgerV5Error::InvalidSequence))
+        );
     }
 }

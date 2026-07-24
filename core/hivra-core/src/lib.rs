@@ -28,7 +28,7 @@ pub use invitation::{
 };
 pub use ledger::Ledger;
 pub use ledger_v5::{
-    Commitment, LedgerAnchorV5, LedgerEntryV5, LedgerV5, LedgerV5Error, COMMITMENT_LENGTH,
+    Commitment, LedgerAnchorV5, LedgerEntryV5, LedgerV5Error, COMMITMENT_LENGTH,
     LEDGER_PROTOCOL_VERSION_V5, ZERO_COMMITMENT,
 };
 pub use primitives::{Network, PubKey, Signature, StarterId, StarterKind, Timestamp};

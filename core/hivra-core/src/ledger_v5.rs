@@ -1,10 +1,9 @@
 //! Cryptographically continuous ledger primitives for protocol v5.
 //!
-//! These types are intentionally isolated from the protocol-v4 runtime until
-//! Engine/FFI can switch append, import, and persistence as one migration.
+//! `Event` remains the single domain-fact representation. These types contain
+//! only the v5 local-history commitments that attest to those events.
 
 use crate::{Event, PubKey, Signature};
-use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -151,118 +150,13 @@ impl LedgerEntryV5 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LedgerV5Error {
+    NotContinuousLedger,
     AnchorOwnerMismatch,
     EntryOwnerMismatch,
     InvalidSequence,
     InvalidPreviousCommitment,
     DuplicateDomainEvent,
     WrongEventVersion,
-}
-
-/// Structural ledger model. Cryptographic verification remains an Engine/FFI
-/// operation because Core deliberately has no crypto dependency.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LedgerV5 {
-    owner: PubKey,
-    anchor: LedgerAnchorV5,
-    entries: Vec<LedgerEntryV5>,
-}
-
-impl LedgerV5 {
-    pub fn fresh(owner: PubKey) -> Self {
-        Self {
-            owner,
-            anchor: LedgerAnchorV5::fresh(owner),
-            entries: Vec::new(),
-        }
-    }
-
-    pub fn from_anchor(owner: PubKey, anchor: LedgerAnchorV5) -> Result<Self, LedgerV5Error> {
-        if anchor.owner() != &owner {
-            return Err(LedgerV5Error::AnchorOwnerMismatch);
-        }
-        Ok(Self {
-            owner,
-            anchor,
-            entries: Vec::new(),
-        })
-    }
-
-    pub fn owner(&self) -> &PubKey {
-        &self.owner
-    }
-
-    pub fn anchor(&self) -> &LedgerAnchorV5 {
-        &self.anchor
-    }
-
-    pub fn entries(&self) -> &[LedgerEntryV5] {
-        &self.entries
-    }
-
-    pub fn next_sequence(&self) -> u64 {
-        self.entries.len() as u64
-    }
-
-    pub fn tail_commitment(&self) -> Commitment {
-        self.entries
-            .last()
-            .map(LedgerEntryV5::commitment)
-            .unwrap_or_else(|| self.anchor.commitment())
-    }
-
-    pub fn append(&mut self, entry: LedgerEntryV5) -> Result<(), LedgerV5Error> {
-        if entry.owner() != &self.owner {
-            return Err(LedgerV5Error::EntryOwnerMismatch);
-        }
-        if entry.event().version() != LEDGER_PROTOCOL_VERSION_V5 {
-            return Err(LedgerV5Error::WrongEventVersion);
-        }
-        if entry.sequence() != self.next_sequence() {
-            return Err(LedgerV5Error::InvalidSequence);
-        }
-        if entry.previous_commitment() != &self.tail_commitment() {
-            return Err(LedgerV5Error::InvalidPreviousCommitment);
-        }
-        if self
-            .entries
-            .iter()
-            .any(|existing| existing.event().event_id() == entry.event().event_id())
-        {
-            return Err(LedgerV5Error::DuplicateDomainEvent);
-        }
-        self.entries.push(entry);
-        Ok(())
-    }
-
-    pub fn verify_structure(&self) -> Result<(), LedgerV5Error> {
-        if self.anchor.owner() != &self.owner {
-            return Err(LedgerV5Error::AnchorOwnerMismatch);
-        }
-        let mut previous = self.anchor.commitment();
-        for (index, entry) in self.entries.iter().enumerate() {
-            if entry.owner() != &self.owner {
-                return Err(LedgerV5Error::EntryOwnerMismatch);
-            }
-            if entry.event().version() != LEDGER_PROTOCOL_VERSION_V5 {
-                return Err(LedgerV5Error::WrongEventVersion);
-            }
-            if entry.sequence() != index as u64 {
-                return Err(LedgerV5Error::InvalidSequence);
-            }
-            if entry.previous_commitment() != &previous {
-                return Err(LedgerV5Error::InvalidPreviousCommitment);
-            }
-            if self.entries[..index]
-                .iter()
-                .any(|existing| existing.event().event_id() == entry.event().event_id())
-            {
-                return Err(LedgerV5Error::DuplicateDomainEvent);
-            }
-            previous = entry.commitment();
-        }
-        Ok(())
-    }
 }
 
 fn digest_into_array(hasher: Sha256) -> Commitment {
@@ -276,7 +170,7 @@ fn digest_into_array(hasher: Sha256) -> Commitment {
 mod tests {
     use super::*;
     use crate::{EventKind, Timestamp};
-    use alloc::vec;
+    use alloc::{vec, vec::Vec};
 
     fn owner() -> PubKey {
         PubKey::from([7; 32])
@@ -315,45 +209,13 @@ mod tests {
     }
 
     #[test]
-    fn v5_entry_chain_rejects_reorder_and_previous_link_substitution() {
-        let mut ledger = LedgerV5::fresh(owner());
-        let first = LedgerEntryV5::unsigned(owner(), 0, ledger.tail_commitment(), event(vec![1]));
-        ledger.append(first.clone()).expect("first entry");
-
-        let second = LedgerEntryV5::unsigned(owner(), 1, ledger.tail_commitment(), event(vec![2]));
-        ledger.append(second).expect("second entry");
-
-        let reordered =
-            LedgerEntryV5::unsigned(owner(), 0, ledger.anchor().commitment(), event(vec![2]));
-        assert_eq!(
-            ledger.append(reordered),
-            Err(LedgerV5Error::InvalidSequence)
-        );
-
-        let wrong_previous = LedgerEntryV5::unsigned(owner(), 2, ZERO_COMMITMENT, event(vec![3]));
-        assert_eq!(
-            ledger.append(wrong_previous),
-            Err(LedgerV5Error::InvalidPreviousCommitment)
-        );
-        assert!(ledger.verify_structure().is_ok());
-
-        // Removing an interior entry makes the remaining sequence/link invalid.
-        ledger.entries.remove(0);
-        assert_eq!(
-            ledger.verify_structure(),
-            Err(LedgerV5Error::InvalidSequence)
-        );
-    }
-
-    #[test]
     fn v5_legacy_anchor_binds_exact_v4_snapshot() {
         let first = LedgerAnchorV5::legacy_snapshot_commitment(b"legacy-v4-a");
         let second = LedgerAnchorV5::legacy_snapshot_commitment(b"legacy-v4-b");
         assert_ne!(first, second);
 
         let anchor = LedgerAnchorV5::legacy(owner(), first, Signature::from([3; 64]));
-        let ledger = LedgerV5::from_anchor(owner(), anchor).expect("matching owner");
-        assert_eq!(ledger.tail_commitment(), ledger.anchor().commitment());
+        assert_eq!(anchor.owner(), &owner());
     }
 
     #[test]

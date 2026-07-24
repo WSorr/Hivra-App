@@ -1,7 +1,8 @@
 # Cryptographically Continuous Ledger Protocol v5
 
-Status: normative design contract for `12.3 / pass 3`; implementation has not
-yet replaced the v4 ledger format.
+Status: normative design contract for `12.3 / pass 3`. Core and Engine now
+have the v5 commitment path; the production FFI/persistence format remains v4
+until P3-B/P3-C switch append, import, and storage together.
 
 ## 1. Problem and Goal
 
@@ -71,6 +72,11 @@ domain_event: signed v5 domain event
 entry_signature: [u8; 64]
 ```
 
+`Event` is stored once as the canonical domain-fact sequence in `Ledger`.
+The v5 receipt contains only `sequence`, `previous_entry_commitment`, and the
+local signature; `LedgerEntryV5` is reconstructed for verification. A second
+event collection or a parallel `LedgerV5` owner is forbidden.
+
 For the first v5 entry, `previous_entry_commitment` is the documented genesis
 anchor. The entry owner is always the local ledger owner, including when the
 embedded domain event was authored by a peer. Thus a recipient confirms only
@@ -138,6 +144,11 @@ tests until a separately approved major-version retirement decision.
   second entry, and migration anchor;
 - test field mutation, sequence swap, insertion, deletion, and previous-link
   substitution failures.
+
+**Current evidence:** Core owns the sole `Ledger` event collection and derives
+v5 entries from its local receipts; Engine signs and verifies both commitment
+layers. The runtime has not switched new capsule creation or persistence to
+v5 yet.
 
 ### P3-B: Engine and FFI append/import
 
