@@ -1289,10 +1289,18 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       user-assigned peer names as per-capsule operational metadata rather than
       ledger facts or contact-card mutations. It does not close pass 3 or pass
       4 and must pass fresh platform smoke before becoming a release candidate.
+    - pass 3 protocol contract completed on 2026-07-24:
+      - `docs/architecture/continuous-ledger-protocol-v5.md` defines distinct
+        signed domain provenance and locally signed sequential ledger-entry
+        acceptance;
+      - v4 import remains explicit legacy compatibility and cannot be claimed
+        as cryptographically continuous history;
+      - implementation now proceeds only through P3-A Core vectors, P3-B
+        Engine/FFI append-import, and P3-C persistence/release evidence.
     - Next ordered 12.3 item is the cryptographically continuous ledger
-      protocol. Event-scoped delivery records, transport-health UI, plugin
-      transactionality, encrypted backup envelopes, and deprecated-envelope
-      migration remain subsequent items.
+      implementation. Event-scoped delivery records, transport-health UI,
+      plugin transactionality, encrypted backup envelopes, and
+      deprecated-envelope migration remain subsequent items.
   - Status: active; pass 1 and pass 2 are completed.
 
 ## Planned Product Tracks

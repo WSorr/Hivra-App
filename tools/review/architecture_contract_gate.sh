@@ -47,6 +47,7 @@ ROADMAP="$ROOT/docs/roadmap.md"
 EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
 V2_BLUEPRINT="$ROOT/docs/architecture-v2-blueprint.md"
 PLATFORM_TOOLCHAIN="$ROOT/docs/platform-toolchain-evolution.md"
+CONTINUOUS_LEDGER_PROTOCOL="$ROOT/docs/architecture/continuous-ledger-protocol-v5.md"
 DELIVERY_LIFECYCLE_DOC="$ROOT/docs/architecture/transport-delivery-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
@@ -183,6 +184,20 @@ require_present "$EXEC_DISCIPLINE" '^# Hivra Architecture Execution Discipline v
   "execution discipline doc exists"
 require_present "$DELIVERY_LIFECYCLE_DOC" '^# Transport Delivery Lifecycle v1' \
   "delivery lifecycle architecture doc exists"
+require_present "$CONTINUOUS_LEDGER_PROTOCOL" '^# Cryptographically Continuous Ledger Protocol v5' \
+  "continuous-ledger v5 protocol contract exists"
+require_present "$CONTINUOUS_LEDGER_PROTOCOL" 'Local history acceptance' \
+  "continuous-ledger contract separates domain and local history signatures"
+require_present "$CONTINUOUS_LEDGER_PROTOCOL" 'legacy_snapshot_commitment' \
+  "continuous-ledger contract defines explicit v4 migration anchor"
+require_present "$CONTINUOUS_LEDGER_PROTOCOL" '^### P3-A: Core commitments and vectors' \
+  "continuous-ledger contract defines Core vector implementation unit"
+require_present "$CONTINUOUS_LEDGER_PROTOCOL" '^### P3-B: Engine and FFI append/import' \
+  "continuous-ledger contract defines Engine/FFI implementation unit"
+require_present "$CONTINUOUS_LEDGER_PROTOCOL" '^### P3-C: Persistence and release evidence' \
+  "continuous-ledger contract defines persistence implementation unit"
+require_present "$DOCS_README" 'continuous-ledger-protocol-v5\.md' \
+  "docs index references continuous-ledger protocol"
 require_present "$DELIVERY_LIFECYCLE_DOC" 'delivery recovery index' \
   "delivery lifecycle doc distinguishes recovery index from reliable queue"
 require_present "$EXEC_DISCIPLINE" '^## 1\. Three Non-Negotiable Laws' \

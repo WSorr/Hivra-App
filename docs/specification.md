@@ -313,6 +313,10 @@ journals, or credentials.
 - `last_hash` is a deterministic 64-bit replay checksum, not a cryptographic
   history commitment. Cryptographic sequence/metadata commitment is an active
   protocol-hardening debt and MUST NOT be claimed by UI or release material.
+- The approved v5 replacement contract is
+  `docs/architecture/continuous-ledger-protocol-v5.md`. Until that protocol is
+  implemented, v4 remains the normative runtime format and legacy imports MUST
+  retain their stated security limitations.
 
 ### 3.1.1 Canonical Domain Projection Contract
 

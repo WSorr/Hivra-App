@@ -194,6 +194,19 @@ Contains:
 
 It explicitly forbids hiding an SDK migration inside product or protocol work.
 
+### 19) `architecture/continuous-ledger-protocol-v5.md` (active protocol hardening)
+
+Use this for `12.3 / pass 3` only.
+
+Contains:
+- the v5 split between signed domain provenance and locally signed history
+- the exact ordering and verification commitments
+- v4 compatibility, migration-anchor, and read-only safety rules
+- implementation units and adversarial evidence required before release
+
+It is the approved replacement design for the current v4 replay checksum; it
+does not claim that v5 is implemented yet.
+
 ## Recommended Reading Order
 
 1. `product-axis.md`
@@ -214,6 +227,7 @@ It explicitly forbids hiding an SDK migration inside product or protocol work.
 16. `development-control.md` before resuming, scoping, or closing any work item
 17. `plugins/moltbook_agent_drone_design_v1.md` when planning the Moltbook future track
 18. `docs/platform-toolchain-evolution.md` before changing the native build stack
+19. `architecture/continuous-ledger-protocol-v5.md` before changing ledger signing, import, or persistence
 
 ## Update Rules
 
