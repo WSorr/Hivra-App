@@ -106,6 +106,7 @@ pub(crate) fn build_engine(seed: &Seed) -> FfiEngine {
 
 pub(crate) fn domain_event_proof(event: &Event) -> DomainEventProof {
     DomainEventProof {
+        version: event.version(),
         kind: event.kind() as u8,
         signer: *event.signer().as_bytes(),
         signature: event.signature().as_bytes().to_vec(),

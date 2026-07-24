@@ -127,13 +127,25 @@ fn verified_event_from_message(
         .try_into()
         .map_err(|_| "invalid domain event signature length")?;
 
-    Ok(Event::new(
-        expected_kind,
-        message.payload.clone(),
-        Timestamp::from(message.timestamp),
-        Signature::from(signature_bytes),
-        PubKey::from(proof.signer),
-    ))
+    let timestamp = Timestamp::from(message.timestamp);
+    let signer = PubKey::from(proof.signer);
+    match proof.version {
+        hivra_core::PROTOCOL_VERSION => Ok(Event::new(
+            expected_kind,
+            message.payload.clone(),
+            timestamp,
+            Signature::from(signature_bytes),
+            signer,
+        )),
+        hivra_core::CONTINUOUS_LEDGER_PROTOCOL_VERSION => Ok(Event::new_v5(
+            expected_kind,
+            message.payload.clone(),
+            timestamp,
+            Signature::from(signature_bytes),
+            signer,
+        )),
+        _ => Err("unsupported domain event version"),
+    }
 }
 
 fn proof_signer_matches_payload(kind: EventKind, payload: &[u8], signer: PubKey) -> bool {

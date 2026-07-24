@@ -101,6 +101,11 @@ pub struct DeliveryReceipt {
 /// Cryptographic proof for a Core event transported between capsules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DomainEventProof {
+    /// Version of the signed Core event. Missing on legacy envelopes means
+    /// protocol v4 so old delivery records remain readable.
+    #[serde(default = "default_domain_event_version")]
+    pub version: u8,
+
     /// Core EventKind encoded as u8.
     pub kind: u8,
 
@@ -109,6 +114,10 @@ pub struct DomainEventProof {
 
     /// Ed25519 signature over the canonical Core event ID.
     pub signature: Vec<u8>,
+}
+
+const fn default_domain_event_version() -> u8 {
+    4
 }
 
 /// Transport trait - all transport implementations must implement this
@@ -279,5 +288,17 @@ mod tests {
         assert_eq!(envelope.schema_version, 1);
         assert_eq!(envelope.correlation_id, None);
         assert_eq!(envelope.payload, vec![7, 8]);
+    }
+
+    #[test]
+    fn legacy_domain_event_proof_defaults_to_v4() {
+        let proof: DomainEventProof = serde_json::from_value(serde_json::json!({
+            "kind": 1,
+            "signer": vec![1u8; 32],
+            "signature": vec![2u8; 64],
+        }))
+        .expect("legacy proof decodes");
+
+        assert_eq!(proof.version, 4);
     }
 }
