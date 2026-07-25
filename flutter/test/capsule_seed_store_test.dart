@@ -132,6 +132,17 @@ void main() {
     );
   });
 
+  test('does not leak an asynchronous keychain read failure', () async {
+    final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
+    addTearDown(() => tempHome.delete(recursive: true));
+    final store = CapsuleSeedStore(
+      secureStorage: _ThrowingSecureStorage(),
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+
+    expect(await store.loadSeed(capsuleHex), isNull);
+  });
+
   test('migrates legacy plaintext seed into secure storage', () async {
     final tempHome = await Directory.systemTemp.createTemp('hivra-seed-test-');
     addTearDown(() => tempHome.delete(recursive: true));

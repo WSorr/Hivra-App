@@ -267,13 +267,13 @@ pub unsafe extern "C" fn hivra_receive_capsule_chat_json(out_json: *mut *mut c_c
         }
     };
 
-    let (sender_secret, local_pubkey) = match load_chat_delivery_context(&seed) {
-        Ok(context) => context,
-        Err(code) => {
+    let local_pubkey = match derive_nostr_public_key(&seed) {
+        Ok(key) => key,
+        Err(_) => {
             set_last_error(format!(
-                "Capsule chat receive failed: delivery context init failed (code {code})"
+                "Capsule chat receive failed: delivery context initialization failed"
             ));
-            return code;
+            return -3;
         }
     };
 
@@ -285,27 +285,15 @@ pub unsafe extern "C" fn hivra_receive_capsule_chat_json(out_json: *mut *mut c_c
         }
     }
 
-    let fetched =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
-            transport
-                .receive()
-                .map_err(|err| map_delivery_error(err, -6))
-        });
-    if let Ok(messages) = fetched {
-        for message in messages {
-            if crate::consensus_attestation_api::queue_incoming_attestation_if_match(
-                &message,
-                local_pubkey,
-            ) {
-                continue;
-            }
-            let _ = queue_incoming_chat_if_match(&message, local_pubkey);
-        }
-    } else if let Err(code) = fetched {
+    // Transport polling has one owner. It routes every envelope before this
+    // channel drains its own queue, so a chat fetch cannot consume a Core
+    // invitation or consensus attestation.
+    let receive_code = unsafe { crate::invitation_api::hivra_transport_receive_quick() };
+    if receive_code < 0 {
         set_last_error(format!(
-            "Capsule chat receive failed: transport receive error (code {code})"
+            "Capsule chat receive failed: transport receive error (code {receive_code})"
         ));
-        return code;
+        return receive_code;
     }
 
     let queued = drain_queued_chat(local_pubkey);

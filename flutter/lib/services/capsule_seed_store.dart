@@ -58,7 +58,10 @@ class CapsuleSeedStore {
   Future<String?> readSecureEncoded(String pubKeyHex) async {
     final key = '$_seedKeyPrefix$pubKeyHex';
     try {
-      return _secureStorage.read(key: key);
+      // Await inside the guarded scope. Returning the Future directly lets a
+      // macOS Keychain rejection escape the catch and abort capsule activation
+      // before the user can recover the selected capsule.
+      return await _secureStorage.read(key: key);
     } catch (_) {
       return null;
     }

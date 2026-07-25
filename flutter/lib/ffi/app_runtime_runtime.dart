@@ -40,6 +40,12 @@ abstract class AppRuntimeRuntime {
     Uint8List peerStarterId,
   );
 
+  String? breakRelationshipWithDeliveryReference(
+    Uint8List peerPubkey,
+    Uint8List ownStarterId,
+    Uint8List peerStarterId,
+  );
+
   Future<CapsuleTraceReport> diagnoseCapsuleTraces();
 
   Future<CapsuleBootstrapReport> diagnoseBootstrapReport();
@@ -125,6 +131,19 @@ class HivraAppRuntimeRuntime implements AppRuntimeRuntime {
     Uint8List peerStarterId,
   ) {
     return _hivra.breakRelationship(peerPubkey, ownStarterId, peerStarterId);
+  }
+
+  @override
+  String? breakRelationshipWithDeliveryReference(
+    Uint8List peerPubkey,
+    Uint8List ownStarterId,
+    Uint8List peerStarterId,
+  ) {
+    return _hivra.breakRelationshipWithDeliveryReference(
+      peerPubkey,
+      ownStarterId,
+      peerStarterId,
+    );
   }
 
   @override

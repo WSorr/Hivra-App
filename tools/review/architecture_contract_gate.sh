@@ -55,6 +55,7 @@ PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
 RUNTIME="$ROOT/flutter/lib/services/app_runtime_service.dart"
 INV_INTENT="$ROOT/flutter/lib/services/invitation_intent_handler.dart"
 INV_ACTIONS="$ROOT/flutter/lib/services/invitation_actions_service.dart"
+CAPSULE_FFI_WORKER_QUEUE="$ROOT/flutter/lib/services/capsule_ffi_worker_queue.dart"
 DELIVERY_LIFECYCLE="$ROOT/flutter/lib/services/capsule_delivery_lifecycle_service.dart"
 FFI_INVITATION_API="$ROOT/platform/hivra-ffi/src/invitation_api.rs"
 FFI_CHAT_API="$ROOT/platform/hivra-ffi/src/chat_api.rs"
@@ -332,14 +333,20 @@ require_present "$RUNTIME" 'buildConsensusAttestationSyncService' \
   "runtime exposes pair-consensus attestation sync module"
 require_present "$FFI_INVITATION_API" 'queue_incoming_attestation_if_match' \
   "invitation receive routes pair-consensus attestations before core event parsing"
-require_present "$FFI_CHAT_API" 'queue_incoming_attestation_if_match' \
-  "chat receive preserves pair-consensus attestations sharing the transport receive cache"
+require_present "$FFI_INVITATION_API" 'queue_incoming_chat_if_match' \
+  "single transport receive owner routes chat before core event parsing"
+require_present "$FFI_CHAT_API" 'hivra_transport_receive_quick' \
+  "chat receive delegates polling to the single transport receive owner"
+require_absent "$FFI_CHAT_API" '\.receive\(' \
+  "chat receive does not own a parallel relay poll path"
 require_absent "$SCREENS" "import '../services/invitation_actions_service.dart';" \
   "screens do not import invitation_actions_service directly"
 require_absent "$SCREENS" "import '../services/consensus_runtime_service.dart';" \
   "screens do not import consensus_runtime_service directly"
-require_present "$INV_ACTIONS" 'class CapsuleWorkerQueue' \
-  "invitation transport workers have a capsule-scoped queue"
+require_present "$CAPSULE_FFI_WORKER_QUEUE" 'class CapsuleFfiWorkerQueue' \
+  "transport workers share a process-global FFI queue"
+require_present "$INV_ACTIONS" 'CapsuleFfiWorkerQueue\.shared' \
+  "invitation transport workers use the shared FFI queue"
 require_present "$INV_ACTIONS" 'capsuleHex: initialCapsuleHex' \
   "queued invitation workers refresh bootstrap inside the capsule queue"
 require_present "$DELIVERY_LIFECYCLE" 'class CapsuleDeliveryLifecycleService' \

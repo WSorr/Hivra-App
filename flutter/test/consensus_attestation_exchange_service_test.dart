@@ -436,6 +436,13 @@ class _FakeRuntime implements AppRuntimeRuntime {
   ) => throw UnimplementedError();
 
   @override
+  String? breakRelationshipWithDeliveryReference(
+    Uint8List peerPubkey,
+    Uint8List ownStarterId,
+    Uint8List peerStarterId,
+  ) => throw UnimplementedError();
+
+  @override
   Future<CapsuleTraceReport> diagnoseCapsuleTraces() =>
       throw UnimplementedError();
 

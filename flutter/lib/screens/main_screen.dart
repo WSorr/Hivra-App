@@ -8,6 +8,7 @@ import '../services/capsule_history_projection_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/invitation_intent_handler.dart';
 import '../services/main_screen_module_service.dart';
+import '../services/ui_feedback_service.dart';
 import '../services/ui_event_log_service.dart';
 import '../models/consensus_models.dart';
 import '../models/invitation.dart';
@@ -205,6 +206,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           'opCapsule=$operationCapsuleHex activeCapsule=$_activeCapsuleHex',
         );
         return false;
+      }
+      // Activation has one user-visible transport diagnostic. Background polls
+      // remain silent; otherwise a capsule with no traffic spams the user.
+      if (mounted) {
+        UiFeedbackService.showSnackBar(
+          context,
+          result.message,
+          source: 'transport.launch',
+          enableCopy: false,
+        );
       }
       unawaited(
         _runDelayedQuickTransportSync(

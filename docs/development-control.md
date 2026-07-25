@@ -1,6 +1,6 @@
 # Hivra Development Control
 
-Status date: 2026-07-24
+Status date: 2026-07-25
 Current released baseline: `main` at `f18a490` (`v1.0.3-test13`, Android manual signoff recorded)
 
 This is the short operational map for deciding what Hivra work is happening
@@ -25,7 +25,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `12.3 / pass 3`: cryptographically continuous ledger. `5.1` is a cross-cutting projection blocker, not a reason to add another Flutter reducer. | Current release baseline is `f18a490`; automated gates and packaged macOS/Android smoke passed for `v1.0.3-test13`. The current delivery/identity commit is not a release candidate until fresh platform smoke is recorded. | Close pass 3, then move lifecycle readers to the canonical Core projection before event-scoped delivery records. Do not blend these with feature work or redesign. |
+| **1.x maintained runtime** | Active | `12.3 / pass 3`: cryptographically continuous ledger. `5.1` is a cross-cutting projection blocker, not a reason to add another Flutter reducer. | Current release baseline is `f18a490`; automated gates and packaged macOS/Android smoke passed for `v1.0.3-test13`. Current delivery/identity integration includes the transport-neutral schema/recipient/payload ingress guard, but the combined worktree is not a release candidate until fresh platform smoke is recorded. | Close pass 3 evidence, then move lifecycle readers to the canonical Core projection before event-scoped delivery records. Durable sender-rate quarantine remains `NEEDS_CONTRACT`; do not hide it in an adapter. |
 | **1.x release** | Released | `v1.0.3-test13` is the current test release on macOS and Android. | Tag, guarded GitHub release, clean worktree, platform signoff, and artifact evidence are recorded. | A commit is not automatically a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |

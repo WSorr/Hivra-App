@@ -427,17 +427,26 @@ How it works:
 - Capsule can use one or multiple transports
 - Message is broadcast to all recipient transports
 - Recipient accepts the first delivered
+- Transport is a neutral message rail, closer to a banking message network than
+  to a social protocol client
+- Adapter-specific details such as Nostr NIPs, relay cursors, relay `OK`
+  messages, Matrix rooms, or BLE sessions stay inside the adapter
+- Core receives only Hivra delivery envelopes and verified domain facts
 
 Boundary:
 
 - transport adapters are not WASM drones
 - transport adapters perform effectful delivery work: network, relay, retry, and transport-specific routing
 - WASM drones may ask the host to deliver deterministic envelopes, but never receive direct network or keychain access
+- transport adapters do not decide relationship state, consensus, or UI truth
 
 Guarantees:
 
 - Ledger does not know which transport delivered the event
 - Determinism is preserved
+- spam protection happens before ledger materialization and remains
+  transport-neutral: authenticate, deduplicate, rate-limit unknown senders, cap
+  payloads, and quarantine suspicious envelopes
 
 ---
 

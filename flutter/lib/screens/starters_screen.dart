@@ -300,8 +300,8 @@ class _StartersScreenState extends State<StartersScreen> {
                                           ? 'Invitation recorded locally for $peerPreview. '
                                               'Relay delivery is retrying in background; receiver may see it after refresh.'
                                           : ledgerProjected
-                                          ? 'Invitation sent to $peerPreview. '
-                                              'Receiver should pull to refresh Invitations.'
+                                          ? 'Invitation recorded locally for $peerPreview. '
+                                              'Relay publication is queued; the receiver will see it after its next fetch.'
                                           : 'Invitation send returned success, but pending is not projected yet. '
                                               'Refresh Invitations to verify ledger projection.';
                                   if (mounted) {

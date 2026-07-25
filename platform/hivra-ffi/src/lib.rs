@@ -13,7 +13,7 @@ use hivra_core::{
         CapsuleCreatedPayload, EventPayload, InvitationAcceptedPayload, InvitationRejectedPayload,
         InvitationSentPayload, RejectReason, StarterCreatedPayload,
     },
-    Ledger, Network, PubKey, Signature, StarterId, StarterKind, Timestamp,
+    Ledger, LedgerAnchorV5, Network, PubKey, Signature, StarterId, StarterKind, Timestamp,
 };
 use hivra_ed25519_crypto::Ed25519CryptoProvider;
 use hivra_engine::{
@@ -59,7 +59,9 @@ mod seed_api;
 mod selfcheck_api;
 mod transport_cache;
 
-pub(crate) use delivery_receipts_api::{clear_delivery_receipts, record_delivery_receipt};
+pub(crate) use delivery_receipts_api::{
+    clear_delivery_receipts, record_delivery_receipt, record_delivery_receipt_with_correlation,
+};
 pub use ffi_support::FfiBytes;
 #[cfg(test)]
 pub(crate) use invitation_support::invitation_offer_exists_in_runtime;

@@ -3,10 +3,47 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
+import 'package:hivra_app/services/delivery_outbox_store.dart';
 import 'package:hivra_app/services/invitation_actions_service.dart';
 
 void main() {
   group('InvitationActionsService worker ledger application', () {
+    test(
+      'rejects a retry whose worker bootstrap belongs to another capsule',
+      () async {
+        const requestedCapsule =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        const wrongCapsule =
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        final runtime = _FakeInvitationActionsRuntime(
+          activeCapsuleHex: requestedCapsule,
+          workerBootstrap: <String, Object?>{
+            'activeCapsuleHex': wrongCapsule,
+            'seed': Uint8List(32),
+          },
+        );
+        final service = InvitationActionsService(runtime: runtime);
+
+        final result = await service.retryPendingDelivery(
+          capsuleHex: requestedCapsule,
+          item: DeliveryOutboxItem(
+            id: 'test',
+            capsuleHex: requestedCapsule,
+            transport: 'nostr',
+            kind: 'InvitationSent',
+            reason: 'test',
+            createdAt: DateTime.utc(2026),
+            nextAttemptAt: DateTime.utc(2026),
+            attempts: 0,
+            status: DeliveryOutboxStatus.pending,
+          ),
+        );
+
+        expect(result.code, -1004);
+        expect(runtime.workerBootstrapRequests, <String?>[requestedCapsule]);
+      },
+    );
+
     test(
       'restores selected runtime after persisting non-active worker ledger',
       () async {
@@ -99,23 +136,28 @@ void main() {
       ]);
     });
 
-    test('does not serialize independent capsules behind each other', () async {
-      final queue = CapsuleWorkerQueue();
-      final firstMayFinish = Completer<void>();
-      var secondStarted = false;
+    test(
+      'serializes different capsules because the FFI runtime is global',
+      () async {
+        final queue = CapsuleWorkerQueue();
+        final firstMayFinish = Completer<void>();
+        var secondStarted = false;
 
-      final first = queue.run('aa', () async {
-        await firstMayFinish.future;
-      });
-      final second = queue.run('bb', () async {
-        secondStarted = true;
-      });
+        final first = queue.run('aa', () async {
+          await firstMayFinish.future;
+        });
+        final second = queue.run('bb', () async {
+          secondStarted = true;
+        });
 
-      await second;
-      expect(secondStarted, isTrue);
-      firstMayFinish.complete();
-      await first;
-    });
+        await Future<void>.delayed(Duration.zero);
+        expect(secondStarted, isFalse);
+        firstMayFinish.complete();
+        await first;
+        await second;
+        expect(secondStarted, isTrue);
+      },
+    );
 
     test('continues a capsule queue after an operation fails', () async {
       final queue = CapsuleWorkerQueue();
@@ -132,12 +174,17 @@ void main() {
 }
 
 class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
-  _FakeInvitationActionsRuntime({required this.activeCapsuleHex});
+  _FakeInvitationActionsRuntime({
+    required this.activeCapsuleHex,
+    this.workerBootstrap,
+  });
 
   final String? activeCapsuleHex;
+  final Map<String, Object?>? workerBootstrap;
   final Map<String, String> persistedLedgers = <String, String>{};
   final Map<String, String> persistedStates = <String, String>{};
   final List<String> appliedLedgers = <String>[];
+  final List<String?> workerBootstrapRequests = <String?>[];
   int bootstrapActiveCalls = 0;
 
   @override
@@ -159,7 +206,8 @@ class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {
   Future<Map<String, Object?>?> loadWorkerBootstrapArgs({
     String? capsuleHex,
   }) async {
-    return null;
+    workerBootstrapRequests.add(capsuleHex);
+    return workerBootstrap;
   }
 
   @override

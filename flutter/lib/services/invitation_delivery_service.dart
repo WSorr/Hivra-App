@@ -243,7 +243,8 @@ class InvitationDeliveryService {
           ? 'No new invitation deliveries'
           : 'Fetched invitation deliveries: $count new event(s)';
 
-  String invitationSentMessage() => 'Invitation sent';
+  String invitationSentMessage() =>
+      'Invitation recorded locally. Relay publication is queued.';
 
   bool _isSelfAddress(
     String input, {

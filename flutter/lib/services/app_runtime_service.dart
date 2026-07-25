@@ -50,8 +50,10 @@ class AppRuntimeService {
     );
     _deliveryLifecycle = CapsuleDeliveryLifecycleService(
       retryRunner:
-          (capsuleHex) =>
-              _invitationActions.retryPendingDelivery(capsuleHex: capsuleHex),
+          (capsuleHex, item) => _invitationActions.retryPendingDelivery(
+            capsuleHex: capsuleHex,
+            item: item,
+          ),
     );
     _invitationActions = InvitationActionsService(
       runtime: _runtime.invitationActionsRuntime,
@@ -122,8 +124,16 @@ class AppRuntimeService {
   }
 
   ManualConsensusCheckService buildManualConsensusCheckService() {
+    final consensus = buildConsensusRuntimeService();
     return ManualConsensusCheckService(
-      consensus: buildConsensusRuntimeService(),
+      consensus: consensus,
+      attestedGuard: ConsensusAttestedGuardService(
+        consensus: consensus,
+        attestations: ConsensusAttestationSyncService(
+          runtime: _runtime,
+          consensus: consensus,
+        ),
+      ),
     );
   }
 
@@ -299,6 +309,8 @@ class AppRuntimeService {
     return RelationshipService(
       loadRelationshipGroups: _ledgerView.loadRelationshipGroups,
       breakRelationship: _runtime.breakRelationship,
+      breakRelationshipWithReference:
+          _runtime.breakRelationshipWithDeliveryReference,
       persistLedgerSnapshot: _runtime.persistLedgerSnapshot,
       deliveryLifecycle: _deliveryLifecycle,
       activeCapsuleHex: activeCapsuleHex,

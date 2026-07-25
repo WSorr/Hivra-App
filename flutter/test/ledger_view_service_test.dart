@@ -139,6 +139,48 @@ void main() {
       expect(snapshot.starterKinds.first, equals('Pulse'));
     });
 
+    test('uses the v5 head commitment rather than legacy last_hash', () {
+      final owner = bytes32(0xaa);
+      final head = bytes32(0xcd);
+      final service = LedgerViewService.withSources(
+        exportLedger:
+            () => jsonEncode(<String, dynamic>{
+              'owner': owner,
+              'events': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'kind': 'CapsuleCreated',
+                  'payload': <int>[1, 1],
+                  'timestamp': 1891000000000,
+                  'signer': owner,
+                },
+              ],
+              'last_hash': '0',
+              'head_commitment_v5':
+                  head
+                      .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+                      .join(),
+            }),
+        exportCapsuleState:
+            () => jsonEncode(<String, dynamic>{
+              'public_key': owner,
+              'version': 1,
+              'ledger_hash': 0,
+              'ledger_head_commitment': head,
+              'slots': <Object?>[null, null, null, null, null],
+            }),
+        readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
+      );
+
+      final snapshot = service.loadCapsuleSnapshot();
+
+      expect(
+        snapshot.ledgerHashHex,
+        equals(
+          head.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(),
+        ),
+      );
+    });
+
     test('fails closed when Core state and ledger versions differ', () {
       final owner = bytes32(0xaa);
       final service = LedgerViewService.withSources(

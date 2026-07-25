@@ -12,6 +12,7 @@ import 'screens/transports_screen.dart';
 import 'screens/wasm_plugins_screen.dart';
 import 'services/app_runtime_service.dart';
 import 'services/recovery_service.dart';
+import 'services/ui_feedback_service.dart';
 
 void main() {
   runApp(const MyApp());
@@ -25,6 +26,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Hivra',
       theme: ThemeData.dark(),
+      scaffoldMessengerKey: UiFeedbackService.messengerKey,
       initialRoute: '/',
       onGenerateRoute: (settings) {
         switch (settings.name) {
@@ -32,25 +34,24 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             final autoSelect = args?['autoSelectSingle'] as bool? ?? true;
             return MaterialPageRoute(
-              builder: (_) =>
-                  CapsuleSelectorScreen(autoSelectSingle: autoSelect),
+              builder:
+                  (_) => CapsuleSelectorScreen(autoSelectSingle: autoSelect),
             );
           case '/first_launch':
             return MaterialPageRoute(builder: (_) => const FirstLaunchScreen());
           case '/recovery':
             return MaterialPageRoute(
-              builder: (_) => RecoveryScreen(
-                service: RecoveryService(),
-              ),
+              builder: (_) => RecoveryScreen(service: RecoveryService()),
             );
           case '/backup':
             final args = settings.arguments as Map<String, dynamic>?;
             return MaterialPageRoute(
-              builder: (_) => BackupScreen(
-                seed: args?['seed'] ?? Uint8List(0),
-                isNewWallet: args?['isNewWallet'] ?? false,
-                isGenesis: args?['isGenesis'] ?? false,
-              ),
+              builder:
+                  (_) => BackupScreen(
+                    seed: args?['seed'] ?? Uint8List(0),
+                    isNewWallet: args?['isNewWallet'] ?? false,
+                    isGenesis: args?['isGenesis'] ?? false,
+                  ),
             );
           case '/main':
             return MaterialPageRoute(builder: (_) => const MainScreen());
@@ -58,24 +59,22 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(builder: (_) => LedgerInspectorScreen());
           case '/capsule_doctor':
             return MaterialPageRoute(
-              builder: (_) => CapsuleDoctorScreen(
-                runtime: AppRuntimeService(),
-              ),
+              builder: (_) => CapsuleDoctorScreen(runtime: AppRuntimeService()),
             );
           case '/wasm_plugins':
             return MaterialPageRoute(builder: (_) => const WasmPluginsScreen());
           case '/transports':
             return MaterialPageRoute(
-              builder: (_) => TransportsScreen(
-                runtime: AppRuntimeService(),
-              ),
+              builder: (_) => TransportsScreen(runtime: AppRuntimeService()),
             );
           case '/trading_drone':
             return MaterialPageRoute(
-                builder: (_) => const TradingDroneScreen());
+              builder: (_) => const TradingDroneScreen(),
+            );
           default:
             return MaterialPageRoute(
-                builder: (_) => const CapsuleSelectorScreen());
+              builder: (_) => const CapsuleSelectorScreen(),
+            );
         }
       },
     );

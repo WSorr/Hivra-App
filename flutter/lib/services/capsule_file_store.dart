@@ -154,6 +154,23 @@ class CapsuleFileStore {
     await _atomicWrites.writeString(backupFile(dir), backupJson);
   }
 
+  /// Persists one recoverable ledger generation in safe order. The ledger is
+  /// authoritative, backup is the recovery copy, and Core projection is a
+  /// derived cache that may safely lag after an interrupted write.
+  Future<void> writeLedgerSnapshot(
+    Directory dir, {
+    required String ledgerJson,
+    required String backupJson,
+    String? coreProjectionJson,
+  }) async {
+    if (ledgerJson.trim().isEmpty || backupJson.trim().isEmpty) {
+      throw ArgumentError('ledger and backup must not be empty');
+    }
+    await writeLedger(dir, ledgerJson);
+    await writeBackup(dir, backupJson);
+    await writeCoreProjection(dir, coreProjectionJson);
+  }
+
   Future<String?> readDeliveryOutbox(Directory dir) async {
     final file = deliveryOutboxFile(dir);
     if (!await file.exists()) return null;

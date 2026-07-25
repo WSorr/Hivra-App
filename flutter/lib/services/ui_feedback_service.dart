@@ -7,11 +7,16 @@ import 'ui_event_log_service.dart';
 
 class UiFeedbackService {
   static const UiEventLogService _log = UiEventLogService();
+  static final GlobalKey<ScaffoldMessengerState> messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
   static int _snackGeneration = 0;
   static Timer? _dismissTimer;
 
+  static ScaffoldMessengerState? _messengerFor(BuildContext context) =>
+      messengerKey.currentState ?? ScaffoldMessenger.maybeOf(context);
+
   static void dismissCurrent(BuildContext context) {
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final messenger = _messengerFor(context);
     if (messenger == null) return;
     _snackGeneration += 1;
     _dismissTimer?.cancel();
@@ -32,7 +37,7 @@ class UiFeedbackService {
     if (text.isEmpty) return;
 
     unawaited(_log.log(source, text));
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final messenger = _messengerFor(context);
     if (messenger == null) return;
     final effectiveDuration =
         duration > Duration.zero ? duration : const Duration(seconds: 3);
@@ -46,17 +51,20 @@ class UiFeedbackService {
     final controller = messenger.showSnackBar(
       SnackBar(
         duration: effectiveDuration,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
         content: Text(text),
-        action: enableCopy
-            ? SnackBarAction(
-                label: 'COPY',
-                onPressed: () {
-                  unawaited(Clipboard.setData(ClipboardData(text: text)));
-                  unawaited(_log.log('$source.copy', text));
-                  dismissCurrent(context);
-                },
-              )
-            : null,
+        action:
+            enableCopy
+                ? SnackBarAction(
+                  label: 'COPY',
+                  onPressed: () {
+                    unawaited(Clipboard.setData(ClipboardData(text: text)));
+                    unawaited(_log.log('$source.copy', text));
+                    dismissCurrent(context);
+                  },
+                )
+                : null,
       ),
     );
 

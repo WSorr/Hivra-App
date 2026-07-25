@@ -27,14 +27,10 @@ class AtomicFileWriteService {
 
     try {
       await writeTemp(temp);
-      try {
-        await temp.rename(target.path);
-      } on FileSystemException {
-        if (await target.exists()) {
-          await target.delete();
-        }
-        await temp.rename(target.path);
-      }
+      // `rename` replaces a same-directory target atomically on the supported
+      // macOS, Linux, and Android filesystems. Do not delete the target as a
+      // fallback: a failed replacement must retain the previous durable file.
+      await temp.rename(target.path);
     } catch (_) {
       if (await temp.exists()) {
         await temp.delete();

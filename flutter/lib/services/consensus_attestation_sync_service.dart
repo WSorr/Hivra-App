@@ -6,6 +6,7 @@ import '../ffi/app_runtime_runtime.dart';
 import '../ffi/consensus_attestation_runtime.dart';
 import '../models/consensus_models.dart';
 import 'consensus_attestation_store.dart';
+import 'capsule_ffi_worker_queue.dart';
 import 'consensus_processor.dart';
 import 'consensus_runtime_service.dart';
 import 'transport_health_policy_service.dart';
@@ -78,6 +79,7 @@ class ConsensusAttestationSyncService {
   final ConsensusProcessor _processor;
   final ConsensusAttestationWorkerRunner _sendWorkerRunner;
   final ConsensusAttestationWorkerRunner _receiveWorkerRunner;
+  final CapsuleFfiWorkerQueue _workerQueue;
   final ConsensusAttestationNowUtc _nowUtc;
   final TransportHealthPolicyService _transportHealth;
 
@@ -90,6 +92,7 @@ class ConsensusAttestationSyncService {
         _defaultSendWorkerRunner,
     ConsensusAttestationWorkerRunner receiveWorkerRunner =
         _defaultReceiveWorkerRunner,
+    CapsuleFfiWorkerQueue? workerQueue,
     ConsensusAttestationNowUtc nowUtc = _defaultNowUtc,
     TransportHealthPolicyService? transportHealth,
   }) : _runtime = runtime,
@@ -98,6 +101,7 @@ class ConsensusAttestationSyncService {
        _processor = processor,
        _sendWorkerRunner = sendWorkerRunner,
        _receiveWorkerRunner = receiveWorkerRunner,
+       _workerQueue = workerQueue ?? CapsuleFfiWorkerQueue.shared,
        _nowUtc = nowUtc,
        _transportHealth =
            transportHealth ?? TransportHealthPolicyService.shared;
@@ -166,19 +170,23 @@ class ConsensusAttestationSyncService {
       );
     }
 
-    final workerResult = await _sendWorkerRunner(<String, Object?>{
-      ...bootstrap,
-      'toPubkey': peerBytes,
-      'payloadJson': jsonEncode(evidence.toJson()),
-    }).timeout(
-      _attestationSendWorkerTimeout,
-      onTimeout:
-          () => <String, Object?>{
-            'result': -1003,
-            'lastError':
-                'Pair consensus attestation send timed out locally; relay delivery may still complete',
-          },
-    );
+    final bootstrapOwner =
+        bootstrap['activeCapsuleHex']?.toString().trim().toLowerCase() ?? '';
+    final workerResult = await _workerQueue.run(_ffiQueueKey(bootstrapOwner), () {
+      return _sendWorkerRunner(<String, Object?>{
+        ...bootstrap,
+        'toPubkey': peerBytes,
+        'payloadJson': jsonEncode(evidence.toJson()),
+      }).timeout(
+        _attestationSendWorkerTimeout,
+        onTimeout:
+            () => <String, Object?>{
+              'result': -1003,
+              'lastError':
+                  'Pair consensus attestation send timed out locally; relay delivery may still complete',
+            },
+      );
+    });
     final code = (workerResult['result'] as int?) ?? -1003;
     final error = workerResult['lastError'] as String?;
     final receipts = workerResult['deliveryReceiptsJson'] as String?;
@@ -223,15 +231,19 @@ class ConsensusAttestationSyncService {
       );
     }
 
-    final transport = await _receiveWorkerRunner(bootstrap).timeout(
-      _attestationReceiveWorkerTimeout,
-      onTimeout:
-          () => <String, Object?>{
-            'result': -1003,
-            'json': null,
-            'lastError': 'Pair consensus attestation fetch timed out',
-          },
-    );
+    final bootstrapOwner =
+        bootstrap['activeCapsuleHex']?.toString().trim().toLowerCase() ?? '';
+    final transport = await _workerQueue.run(_ffiQueueKey(bootstrapOwner), () {
+      return _receiveWorkerRunner(bootstrap).timeout(
+        _attestationReceiveWorkerTimeout,
+        onTimeout:
+            () => <String, Object?>{
+              'result': -1003,
+              'json': null,
+              'lastError': 'Pair consensus attestation fetch timed out',
+            },
+      );
+    });
     final code = (transport['result'] as int?) ?? -1003;
     _transportHealth.recordResult(capsuleHex: localRootHex, code: code);
     final rawJson = transport['json'] as String?;
@@ -419,6 +431,11 @@ class ConsensusAttestationSyncService {
 
   String _hex(Uint8List bytes) =>
       bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+
+  String _ffiQueueKey(String? capsuleHex) {
+    final normalized = capsuleHex?.trim().toLowerCase() ?? '';
+    return normalized.isEmpty ? 'ffi-global' : normalized;
+  }
 
   bool _isHex(String value, int length) =>
       value.length == length && RegExp(r'^[0-9a-f]+$').hasMatch(value);

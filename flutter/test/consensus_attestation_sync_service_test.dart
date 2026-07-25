@@ -38,12 +38,10 @@ class _FakeRuntime implements AppRuntimeRuntime {
     required String messageHashHex,
     required String participantIdHex,
     required String signatureHex,
-  }) verifier;
+  })
+  verifier;
 
-  _FakeRuntime({
-    required this.localRootHex,
-    this.verifier = _alwaysVerify,
-  });
+  _FakeRuntime({required this.localRootHex, this.verifier = _alwaysVerify});
 
   @override
   Uint8List? capsuleRootPublicKey() => _hexToBytes(localRootHex);
@@ -106,16 +104,21 @@ class _FakeRuntime implements AppRuntimeRuntime {
     required Uint8List moduleBytes,
     required String entryExport,
     required Uint8List inputJsonBytes,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   bool breakRelationship(
     Uint8List peerPubkey,
     Uint8List ownStarterId,
     Uint8List peerStarterId,
-  ) =>
-      throw UnimplementedError();
+  ) => throw UnimplementedError();
+
+  @override
+  String? breakRelationshipWithDeliveryReference(
+    Uint8List peerPubkey,
+    Uint8List ownStarterId,
+    Uint8List peerStarterId,
+  ) => throw UnimplementedError();
 
   @override
   Future<CapsuleTraceReport> diagnoseCapsuleTraces() =>
@@ -133,10 +136,7 @@ class _FakeConsensusRuntimeService extends ConsensusRuntimeService {
   _FakeConsensusRuntimeService({
     required this.peerHex,
     required this.snapshotHashHex,
-  }) : super(
-          exportLedger: () => null,
-          readLocalTransportKey: () => null,
-        );
+  }) : super(exportLedger: () => null, readLocalTransportKey: () => null);
 
   @override
   ConsensusSignableResult signable(String requestedPeerHex) {
@@ -167,8 +167,7 @@ bool _alwaysVerify({
   required String messageHashHex,
   required String participantIdHex,
   required String signatureHex,
-}) =>
-    true;
+}) => true;
 
 Uint8List _hexToBytes(String hex) {
   final out = Uint8List(hex.length ~/ 2);
@@ -192,8 +191,9 @@ void main() {
     final snapshotHash = '1' * 64;
 
     setUp(() async {
-      tempDocsDir =
-          await Directory.systemTemp.createTemp('hivra_attestation_test_');
+      tempDocsDir = await Directory.systemTemp.createTemp(
+        'hivra_attestation_test_',
+      );
       final fileStore = CapsuleFileStore(
         dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
       );
@@ -271,8 +271,9 @@ void main() {
         store: store,
         nowUtc: () => DateTime.utc(2026, 7, 10, 12),
       );
-      final localEvidence =
-          await goodService.createLocalEvidence(peerRootHex: peerRoot);
+      final localEvidence = await goodService.createLocalEvidence(
+        peerRootHex: peerRoot,
+      );
       expect(localEvidence, isNotNull);
       final peerEvidence = ConsensusAttestationEvidence(
         schemaVersion: 1,
@@ -295,12 +296,12 @@ void main() {
       final service = ConsensusAttestationSyncService(
         runtime: _FakeRuntime(
           localRootHex: localRoot,
-          verifier: ({
-            required messageHashHex,
-            required participantIdHex,
-            required signatureHex,
-          }) =>
-              signatureHex == 'e' * 128,
+          verifier:
+              ({
+                required messageHashHex,
+                required participantIdHex,
+                required signatureHex,
+              }) => signatureHex == 'e' * 128,
         ),
         consensus: _FakeConsensusRuntimeService(
           peerHex: peerRoot,
@@ -329,10 +330,7 @@ void main() {
         stored.map((item) => item.signerRootHex),
         containsAll(<String>[localRoot, peerRoot]),
       );
-      expect(
-        stored.any((item) => item.snapshotHashHex == '2' * 64),
-        isFalse,
-      );
+      expect(stored.any((item) => item.snapshotHashHex == '2' * 64), isFalse);
     });
 
     test('receive honors shared transport timeout cooldown', () async {
@@ -367,52 +365,54 @@ void main() {
       expect(second.errorMessage, contains('cooling down'));
     });
 
-    test('attested guard requires both pair roots to sign same snapshot',
-        () async {
-      final attestationService = ConsensusAttestationSyncService(
-        runtime: _FakeRuntime(localRootHex: localRoot),
-        consensus: _FakeConsensusRuntimeService(
-          peerHex: peerRoot,
-          snapshotHashHex: snapshotHash,
-        ),
-        store: store,
-        nowUtc: () => DateTime.utc(2026, 7, 10, 12),
-      );
-      final localEvidence = await attestationService.createLocalEvidence(
-        peerRootHex: peerRoot,
-      );
-      expect(localEvidence, isNotNull);
+    test(
+      'attested guard requires both pair roots to sign same snapshot',
+      () async {
+        final attestationService = ConsensusAttestationSyncService(
+          runtime: _FakeRuntime(localRootHex: localRoot),
+          consensus: _FakeConsensusRuntimeService(
+            peerHex: peerRoot,
+            snapshotHashHex: snapshotHash,
+          ),
+          store: store,
+          nowUtc: () => DateTime.utc(2026, 7, 10, 12),
+        );
+        final localEvidence = await attestationService.createLocalEvidence(
+          peerRootHex: peerRoot,
+        );
+        expect(localEvidence, isNotNull);
 
-      final guard = ConsensusAttestedGuardService(
-        consensus: _FakeConsensusRuntimeService(
-          peerHex: peerRoot,
-          snapshotHashHex: snapshotHash,
-        ),
-        attestations: attestationService,
-      );
+        final guard = ConsensusAttestedGuardService(
+          consensus: _FakeConsensusRuntimeService(
+            peerHex: peerRoot,
+            snapshotHashHex: snapshotHash,
+          ),
+          attestations: attestationService,
+        );
 
-      final localOnly = await guard.signable(peerRoot);
-      expect(localOnly.isSignable, isFalse);
-      expect(
-        localOnly.blockingFacts.map((fact) => fact.code),
-        contains('pair_attestation_incomplete'),
-      );
+        final localOnly = await guard.signable(peerRoot);
+        expect(localOnly.isSignable, isFalse);
+        expect(
+          localOnly.blockingFacts.map((fact) => fact.code),
+          contains('pair_attestation_incomplete'),
+        );
 
-      await store.merge(localRoot, <ConsensusAttestationEvidence>[
-        ConsensusAttestationEvidence(
-          schemaVersion: 1,
-          pairRootsSorted: localEvidence!.pairRootsSorted,
-          snapshotHashHex: localEvidence.snapshotHashHex,
-          commitmentHashHex: localEvidence.commitmentHashHex,
-          signerRootHex: peerRoot,
-          signatureHex: 'e' * 128,
-          createdAtUtc: DateTime.utc(2026, 7, 10, 12, 1).toIso8601String(),
-        ),
-      ]);
+        await store.merge(localRoot, <ConsensusAttestationEvidence>[
+          ConsensusAttestationEvidence(
+            schemaVersion: 1,
+            pairRootsSorted: localEvidence!.pairRootsSorted,
+            snapshotHashHex: localEvidence.snapshotHashHex,
+            commitmentHashHex: localEvidence.commitmentHashHex,
+            signerRootHex: peerRoot,
+            signatureHex: 'e' * 128,
+            createdAtUtc: DateTime.utc(2026, 7, 10, 12, 1).toIso8601String(),
+          ),
+        ]);
 
-      final bothSigned = await guard.signable(peerRoot);
-      expect(bothSigned.isSignable, isTrue);
-      expect(bothSigned.blockingFacts, isEmpty);
-    });
+        final bothSigned = await guard.signable(peerRoot);
+        expect(bothSigned.isSignable, isTrue);
+        expect(bothSigned.blockingFacts, isEmpty);
+      },
+    );
   });
 }

@@ -644,6 +644,24 @@ The only shared delivery DTOs are `DeliveryEnvelope` and `DeliveryReceipt`.
 No pass-through DTO may be added merely to mirror a domain payload across
 Core, adapters, host and drone layers.
 
+Before a decoded envelope reaches any receiving domain, one transport-neutral
+ingress guard MUST enforce:
+
+- `schema_version == 1`;
+- `to` equals the active transport endpoint that authenticated/decrypted the
+  envelope;
+- opaque `payload` length is at most 262144 bytes.
+
+The mounted adapter MUST authenticate its wire signer against envelope `from`
+before this common guard runs. A deterministic malformed or rejected wire
+event MUST participate in adapter event-id deduplication so an overlapping
+receive cursor cannot make the same hostile event consume work forever.
+
+Rate limiting MUST NOT silently discard a valid authenticated envelope after a
+relay cursor has advanced past it. A future sender-class rate limit therefore
+requires a bounded durable quarantine/deferred-inbox contract before it can be
+enabled in production.
+
 ### 5.4 Nostr Adapter (Example)
 
 ```

@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 
 pub mod nostr;
 
+pub const DELIVERY_ENVELOPE_SCHEMA_VERSION: u16 = 1;
+pub const MAX_DELIVERY_ENVELOPE_PAYLOAD_BYTES: usize = 256 * 1024;
+
 /// Transport errors
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportError {
@@ -27,6 +30,57 @@ pub enum TransportError {
     SenderMismatch,
     Timeout,
     Other(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InboundEnvelopeRejection {
+    UnsupportedSchemaVersion,
+    WrongRecipient,
+    PayloadTooLarge,
+}
+
+impl InboundEnvelopeRejection {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::UnsupportedSchemaVersion => "unsupported schema version",
+            Self::WrongRecipient => "wrong recipient",
+            Self::PayloadTooLarge => "payload too large",
+        }
+    }
+}
+
+/// Transport-neutral resource and routing gate applied after an adapter has
+/// authenticated its wire sender and before any domain handler sees payload.
+pub struct InboundEnvelopeGuard {
+    expected_recipient: [u8; 32],
+    max_payload_bytes: usize,
+}
+
+impl InboundEnvelopeGuard {
+    pub const fn for_recipient(expected_recipient: [u8; 32]) -> Self {
+        Self {
+            expected_recipient,
+            max_payload_bytes: MAX_DELIVERY_ENVELOPE_PAYLOAD_BYTES,
+        }
+    }
+
+    pub const fn with_max_payload_bytes(mut self, max_payload_bytes: usize) -> Self {
+        self.max_payload_bytes = max_payload_bytes;
+        self
+    }
+
+    pub fn validate(&self, envelope: &DeliveryEnvelope) -> Result<(), InboundEnvelopeRejection> {
+        if envelope.schema_version != DELIVERY_ENVELOPE_SCHEMA_VERSION {
+            return Err(InboundEnvelopeRejection::UnsupportedSchemaVersion);
+        }
+        if envelope.to != self.expected_recipient {
+            return Err(InboundEnvelopeRejection::WrongRecipient);
+        }
+        if envelope.payload.len() > self.max_payload_bytes {
+            return Err(InboundEnvelopeRejection::PayloadTooLarge);
+        }
+        Ok(())
+    }
 }
 
 /// Stable, transport-neutral delivery envelope.
@@ -69,7 +123,7 @@ pub struct DeliveryEnvelope {
 }
 
 const fn default_delivery_envelope_schema_version() -> u16 {
-    1
+    DELIVERY_ENVELOPE_SCHEMA_VERSION
 }
 
 /// Transport-level delivery receipt.
@@ -94,7 +148,8 @@ pub struct DeliveryReceipt {
     /// Transport recipient endpoint.
     pub recipient: Vec<u8>,
 
-    /// Number of adapter endpoints that failed before the first acceptance.
+    /// Number of adapter endpoints that failed during the bounded publish fan-out.
+    /// Kept under its original field name for transport receipt compatibility.
     pub failed_before_accept: u32,
 }
 
@@ -300,5 +355,86 @@ mod tests {
         .expect("legacy proof decodes");
 
         assert_eq!(proof.version, 4);
+    }
+
+    #[test]
+    fn inbound_guard_accepts_supported_addressed_envelope() {
+        let recipient = [2u8; 32];
+        let envelope = DeliveryEnvelope {
+            schema_version: DELIVERY_ENVELOPE_SCHEMA_VERSION,
+            from: [1u8; 32],
+            to: recipient,
+            kind: 42,
+            payload: vec![7, 8],
+            timestamp: 9,
+            correlation_id: None,
+            domain_event: None,
+        };
+
+        assert_eq!(
+            InboundEnvelopeGuard::for_recipient(recipient).validate(&envelope),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn inbound_guard_rejects_unsupported_schema() {
+        let recipient = [2u8; 32];
+        let envelope = DeliveryEnvelope {
+            schema_version: DELIVERY_ENVELOPE_SCHEMA_VERSION + 1,
+            from: [1u8; 32],
+            to: recipient,
+            kind: 42,
+            payload: vec![7],
+            timestamp: 9,
+            correlation_id: None,
+            domain_event: None,
+        };
+
+        assert_eq!(
+            InboundEnvelopeGuard::for_recipient(recipient).validate(&envelope),
+            Err(InboundEnvelopeRejection::UnsupportedSchemaVersion)
+        );
+    }
+
+    #[test]
+    fn inbound_guard_rejects_wrong_recipient() {
+        let envelope = DeliveryEnvelope {
+            schema_version: DELIVERY_ENVELOPE_SCHEMA_VERSION,
+            from: [1u8; 32],
+            to: [3u8; 32],
+            kind: 42,
+            payload: vec![7],
+            timestamp: 9,
+            correlation_id: None,
+            domain_event: None,
+        };
+
+        assert_eq!(
+            InboundEnvelopeGuard::for_recipient([2u8; 32]).validate(&envelope),
+            Err(InboundEnvelopeRejection::WrongRecipient)
+        );
+    }
+
+    #[test]
+    fn inbound_guard_rejects_oversized_payload() {
+        let recipient = [2u8; 32];
+        let envelope = DeliveryEnvelope {
+            schema_version: DELIVERY_ENVELOPE_SCHEMA_VERSION,
+            from: [1u8; 32],
+            to: recipient,
+            kind: 42,
+            payload: vec![7, 8, 9],
+            timestamp: 9,
+            correlation_id: None,
+            domain_event: None,
+        };
+
+        assert_eq!(
+            InboundEnvelopeGuard::for_recipient(recipient)
+                .with_max_payload_bytes(2)
+                .validate(&envelope),
+            Err(InboundEnvelopeRejection::PayloadTooLarge)
+        );
     }
 }

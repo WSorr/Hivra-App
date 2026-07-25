@@ -272,13 +272,13 @@ pub unsafe extern "C" fn hivra_receive_pair_consensus_attestations_json(
         }
     };
 
-    let (sender_secret, local_pubkey) = match load_attestation_delivery_context(&seed) {
-        Ok(context) => context,
-        Err(code) => {
+    let local_pubkey = match derive_nostr_public_key(&seed) {
+        Ok(key) => key,
+        Err(_) => {
             set_last_error(format!(
-                "Pair consensus attestation receive failed: delivery context init failed (code {code})"
+                "Pair consensus attestation receive failed: delivery context initialization failed"
             ));
-            return code;
+            return -3;
         }
     };
 
@@ -292,24 +292,15 @@ pub unsafe extern "C" fn hivra_receive_pair_consensus_attestations_json(
         }
     }
 
-    let fetched =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
-            transport
-                .receive()
-                .map_err(|err| map_delivery_error(err, -6))
-        });
-    if let Ok(messages) = fetched {
-        for message in messages {
-            if crate::chat_api::queue_incoming_chat_if_match(&message, local_pubkey) {
-                continue;
-            }
-            let _ = queue_incoming_attestation_if_match(&message, local_pubkey);
-        }
-    } else if let Err(code) = fetched {
+    // The shared transport dispatcher owns receive and routes all message
+    // kinds. A consensus poll must not advance transport state ahead of
+    // invitations or chat.
+    let receive_code = unsafe { crate::invitation_api::hivra_transport_receive_quick() };
+    if receive_code < 0 {
         set_last_error(format!(
-            "Pair consensus attestation receive failed: transport receive error (code {code})"
+            "Pair consensus attestation receive failed: transport receive error (code {receive_code})"
         ));
-        return code;
+        return receive_code;
     }
 
     let queued = drain_queued_attestations(local_pubkey);

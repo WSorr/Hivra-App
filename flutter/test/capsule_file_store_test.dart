@@ -21,6 +21,16 @@ class _TestUserVisibleDataDirectoryService
   }
 }
 
+class _FailingBackupAtomicFileWriteService extends AtomicFileWriteService {
+  @override
+  Future<void> writeString(File target, String contents) {
+    if (target.path.endsWith(CapsuleFileStore.backupFileName)) {
+      throw const FileSystemException('simulated backup failure');
+    }
+    return super.writeString(target, contents);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory tempDocsDir;
@@ -90,6 +100,30 @@ void main() {
     }
     expect(tempFiles, isEmpty);
   });
+
+  test(
+    'keeps the authoritative ledger when backup persistence fails',
+    () async {
+      final safeStore = CapsuleFileStore(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+        atomicWrites: _FailingBackupAtomicFileWriteService(),
+      );
+      final dir = await safeStore.capsuleDirForHex(capsuleHex, create: true);
+      await safeStore.writeLedger(dir, '{"generation":1}');
+
+      await expectLater(
+        safeStore.writeLedgerSnapshot(
+          dir,
+          ledgerJson: '{"generation":2}',
+          backupJson: '{"generation":2}',
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(await safeStore.readLedger(dir), '{"generation":2}');
+      expect(await safeStore.readBackup(dir), isNull);
+    },
+  );
 
   test(
     'Core projection is merged without replacing capsule metadata',

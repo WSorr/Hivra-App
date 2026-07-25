@@ -148,6 +148,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   Map<String, String> _peerRootKeyByTransportB64 = const <String, String>{};
   Map<String, String> _contactLabels = const <String, String>{};
   int _invitationLoadGeneration = 0;
+  bool _projectionRetryScheduled = false;
 
   bool _isOperationForActiveCapsule(String capturedCapsuleHex) =>
       capturedCapsuleHex == widget.activeCapsuleHex;
@@ -191,6 +192,18 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
   Future<void> _loadInvitations() async {
     final capturedCapsuleHex = widget.activeCapsuleHex;
     final loadGeneration = ++_invitationLoadGeneration;
+    final runtimeCapsuleHex = widget.runtime.activeCapsuleRootHex();
+    if (runtimeCapsuleHex != null &&
+        runtimeCapsuleHex.toLowerCase() != capturedCapsuleHex.toLowerCase()) {
+      unawaited(
+        _module.uiLog.log(
+          'invitations.projection.waiting_for_runtime',
+          'selected=$capturedCapsuleHex runtime=$runtimeCapsuleHex',
+        ),
+      );
+      _scheduleProjectionRetry(capturedCapsuleHex);
+      return;
+    }
     final invitations = _module.intents.loadInvitations(
       capsuleHex: capturedCapsuleHex,
     );
@@ -215,6 +228,18 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     });
   }
 
+  void _scheduleProjectionRetry(String capsuleHex) {
+    if (_projectionRetryScheduled) return;
+    _projectionRetryScheduled = true;
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 300), () async {
+        _projectionRetryScheduled = false;
+        if (!mounted || widget.activeCapsuleHex != capsuleHex) return;
+        await _loadInvitations();
+      }),
+    );
+  }
+
   void _resetTransientStateForCapsuleSwitch() {
     if (!mounted) return;
     setState(() {
@@ -229,6 +254,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       _locallyResolvedIncomingIds.clear();
       _peerRootKeyByTransportB64 = const <String, String>{};
       _contactLabels = const <String, String>{};
+      _projectionRetryScheduled = false;
     });
   }
 
@@ -359,15 +385,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
             locallyRecordedOnly
                 ? 'Invitation recorded locally. Relay delivery is retrying in background.'
                 : ledgerProjected
-                ? 'Invitation sent. Receiver should see it after refresh.'
+                ? 'Invitation recorded locally. Relay publication is queued; the receiver will see it after its next fetch.'
                 : 'Send returned success, but pending is not projected yet. Refresh Invitations to verify ledger projection.';
-        if (mounted) {
-          await _showUserMessage(message, source: 'invitations.send');
-        }
-        return result;
-      }
-      if (mounted) {
-        await _showUserMessage(result.message, source: 'invitations.send');
+        return InvitationIntentResult(code: result.code, message: message);
       }
       return result;
     } catch (error, stackTrace) {
@@ -375,9 +395,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       unawaited(
         _module.uiLog.log('invitations.send.error', '$message\n$stackTrace'),
       );
-      if (mounted) {
-        await _showUserMessage(message, source: 'invitations.send');
-      }
       return InvitationIntentResult(code: -1, message: message);
     } finally {
       final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
@@ -1010,6 +1027,12 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
                                   }
                                   FocusScope.of(sheetContext).unfocus();
                                   Navigator.of(sheetContext).pop();
+                                  if (mounted) {
+                                    await _showUserMessage(
+                                      result.message,
+                                      source: 'invitations.send',
+                                    );
+                                  }
                                 },
                         icon: const Icon(Icons.send),
                         label:

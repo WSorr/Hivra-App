@@ -389,7 +389,10 @@ class CapsuleRuntimeBootstrapService {
   }
 
   String? _parseLedgerLastHash(String ledgerJson) {
-    return _parseLedgerRoot(ledgerJson)?['last_hash']?.toString();
+    final root = _parseLedgerRoot(ledgerJson);
+    final v5Head = root?['head_commitment_v5']?.toString().trim();
+    if (v5Head != null && v5Head.isNotEmpty) return v5Head;
+    return root?['last_hash']?.toString();
   }
 
   bool? _stateGenesis(Map<String, dynamic>? state) {

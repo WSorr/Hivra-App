@@ -4,11 +4,23 @@ import 'package:crypto/crypto.dart';
 
 import 'capsule_file_store.dart';
 
-const int deliveryOutboxSchemaVersion = 1;
+const int deliveryOutboxSchemaVersion = 3;
 
 enum DeliveryOutboxStatus {
   pending,
-  delivered,
+
+  /// At least one relay accepted the envelope. This is not confirmation that
+  /// the receiving capsule has fetched or acted on it. A published Nostr
+  /// event is durable at the relay layer, so it is not retransmitted here.
+  published,
+
+  /// The referenced domain effect was resolved or superseded before it was
+  /// published. Keeping the audit record prevents a legacy retry from
+  /// resurrecting it.
+  superseded,
+
+  /// Legacy retry-exhausted state. New builds never write this state: core
+  /// facts must remain recoverable across temporary transport failures.
   dead,
 }
 
@@ -18,6 +30,11 @@ class DeliveryOutboxItem {
   final String transport;
   final String kind;
   final String reason;
+
+  /// Immutable ledger fact identity, when the transport envelope has one.
+  /// Invitation delivery uses its invitation_id; it prevents unrelated
+  /// pending facts from sharing a retry record.
+  final String? deliveryReference;
   final DateTime createdAt;
   final DateTime nextAttemptAt;
   final int attempts;
@@ -30,6 +47,7 @@ class DeliveryOutboxItem {
     required this.transport,
     required this.kind,
     required this.reason,
+    this.deliveryReference,
     required this.createdAt,
     required this.nextAttemptAt,
     required this.attempts,
@@ -50,6 +68,7 @@ class DeliveryOutboxItem {
       transport: transport,
       kind: kind,
       reason: reason,
+      deliveryReference: deliveryReference,
       createdAt: createdAt,
       nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
       attempts: attempts ?? this.attempts,
@@ -65,6 +84,7 @@ class DeliveryOutboxItem {
       'transport': transport,
       'kind': kind,
       'reason': reason,
+      'delivery_reference': deliveryReference,
       'created_at': createdAt.toUtc().toIso8601String(),
       'next_attempt_at': nextAttemptAt.toUtc().toIso8601String(),
       'attempts': attempts,
@@ -82,13 +102,29 @@ class DeliveryOutboxItem {
     final transport = map['transport']?.toString().trim() ?? '';
     final kind = map['kind']?.toString().trim() ?? '';
     final reason = map['reason']?.toString().trim() ?? '';
+    final deliveryReference = DeliveryOutboxStore._normalizeDeliveryReference(
+      map['delivery_reference']?.toString(),
+    );
     final createdAt = DateTime.tryParse(map['created_at']?.toString() ?? '');
-    final nextAttemptAt =
-        DateTime.tryParse(map['next_attempt_at']?.toString() ?? '');
+    final nextAttemptAt = DateTime.tryParse(
+      map['next_attempt_at']?.toString() ?? '',
+    );
     final attempts = map['attempts'];
-    final status = DeliveryOutboxStatus.values
-        .where((value) => value.name == map['status']?.toString())
-        .firstOrNull;
+    final persistedStatus = map['status']?.toString();
+    // Schema v1 used `delivered` for a single relay acknowledgement. Keep
+    // those records recoverable, but do not misrepresent them as receiver
+    // delivery in newer builds.
+    final status =
+        persistedStatus == 'delivered'
+            ? DeliveryOutboxStatus.published
+            // v2 incorrectly made a locally committed core fact terminal
+            // after a fixed number of relay retries. Recover it on the next
+            // delivery pump instead of losing the fact forever.
+            : persistedStatus == 'dead'
+            ? DeliveryOutboxStatus.pending
+            : DeliveryOutboxStatus.values
+                .where((value) => value.name == persistedStatus)
+                .firstOrNull;
     if (id.isEmpty ||
         capsuleHex.isEmpty ||
         transport.isEmpty ||
@@ -107,6 +143,7 @@ class DeliveryOutboxItem {
       transport: transport,
       kind: kind,
       reason: reason,
+      deliveryReference: deliveryReference,
       createdAt: createdAt.toUtc(),
       nextAttemptAt: nextAttemptAt.toUtc(),
       attempts: attempts,
@@ -146,6 +183,7 @@ class DeliveryOutboxStore {
     required String transport,
     required String kind,
     required String reason,
+    String? deliveryReference,
     required DateTime now,
   }) async {
     final normalizedCapsuleHex = capsuleHex.trim().toLowerCase();
@@ -155,33 +193,41 @@ class DeliveryOutboxStore {
       transport: transport,
       kind: kind,
       reason: reason,
+      deliveryReference: deliveryReference,
     );
     final items = await load(normalizedCapsuleHex);
     final next = <DeliveryOutboxItem>[];
     var inserted = false;
     for (final item in items) {
       if (item.id == id) {
-        next.add(item.copyWith(
-          status: DeliveryOutboxStatus.pending,
-          nextAttemptAt: now.toUtc(),
-        ));
+        next.add(
+          item.copyWith(
+            status: DeliveryOutboxStatus.pending,
+            nextAttemptAt: now.toUtc(),
+            attempts: 0,
+            clearLastError: true,
+          ),
+        );
         inserted = true;
       } else {
         next.add(item);
       }
     }
     if (!inserted) {
-      next.add(DeliveryOutboxItem(
-        id: id,
-        capsuleHex: normalizedCapsuleHex,
-        transport: transport,
-        kind: kind,
-        reason: reason,
-        createdAt: now.toUtc(),
-        nextAttemptAt: now.toUtc(),
-        attempts: 0,
-        status: DeliveryOutboxStatus.pending,
-      ));
+      next.add(
+        DeliveryOutboxItem(
+          id: id,
+          capsuleHex: normalizedCapsuleHex,
+          transport: transport,
+          kind: kind,
+          reason: reason,
+          deliveryReference: _normalizeDeliveryReference(deliveryReference),
+          createdAt: now.toUtc(),
+          nextAttemptAt: now.toUtc(),
+          attempts: 0,
+          status: DeliveryOutboxStatus.pending,
+        ),
+      );
     }
     await _write(normalizedCapsuleHex, next);
   }
@@ -192,11 +238,10 @@ class DeliveryOutboxStore {
   }) async {
     final items = await load(capsuleHex);
     return items
-        .where(
-          (item) =>
-              item.status == DeliveryOutboxStatus.pending &&
-              !item.nextAttemptAt.isAfter(now.toUtc()),
-        )
+        .where((item) {
+          return item.status == DeliveryOutboxStatus.pending &&
+              !item.nextAttemptAt.isAfter(now.toUtc());
+        })
         .toList(growable: false);
   }
 
@@ -207,38 +252,55 @@ class DeliveryOutboxStore {
     String? lastError,
   }) async {
     final items = await load(capsuleHex);
-    final next = items.map((item) {
-      if (item.id != itemId) return item;
-      return item.copyWith(
-        attempts: item.attempts + 1,
-        nextAttemptAt: nextAttemptAt.toUtc(),
-        lastError: lastError,
-        clearLastError: lastError == null,
-      );
-    }).toList(growable: false);
+    final next = items
+        .map((item) {
+          if (item.id != itemId) return item;
+          return item.copyWith(
+            attempts: item.attempts + 1,
+            nextAttemptAt: nextAttemptAt.toUtc(),
+            lastError: lastError,
+            clearLastError: lastError == null,
+          );
+        })
+        .toList(growable: false);
     await _write(capsuleHex, next);
   }
 
-  Future<void> markDelivered({
+  Future<void> markPublished({
+    required String capsuleHex,
+    required String itemId,
+    required DateTime nextAttemptAt,
+  }) async {
+    final items = await load(capsuleHex);
+    final next = items
+        .map((item) {
+          if (item.id != itemId) return item;
+          return item.copyWith(
+            status: DeliveryOutboxStatus.published,
+            attempts: item.attempts + 1,
+            nextAttemptAt: nextAttemptAt.toUtc(),
+            clearLastError: true,
+          );
+        })
+        .toList(growable: false);
+    await _write(capsuleHex, next);
+  }
+
+  Future<void> markSuperseded({
     required String capsuleHex,
     required String itemId,
   }) async {
     final items = await load(capsuleHex);
-    final next = items.map((item) {
-      if (item.id != itemId) return item;
-      return item.copyWith(status: DeliveryOutboxStatus.delivered);
-    }).toList(growable: false);
+    final next = items
+        .map((item) {
+          if (item.id != itemId) return item;
+          return item.copyWith(
+            status: DeliveryOutboxStatus.superseded,
+            clearLastError: true,
+          );
+        })
+        .toList(growable: false);
     await _write(capsuleHex, next);
-  }
-
-  Future<void> pruneDelivered(String capsuleHex) async {
-    final items = await load(capsuleHex);
-    await _write(
-      capsuleHex,
-      items
-          .where((item) => item.status != DeliveryOutboxStatus.delivered)
-          .toList(growable: false),
-    );
   }
 
   Future<void> _write(String capsuleHex, List<DeliveryOutboxItem> items) async {
@@ -256,13 +318,21 @@ class DeliveryOutboxStore {
     required String transport,
     required String kind,
     required String reason,
+    String? deliveryReference,
   }) {
     final canonical = [
       capsuleHex.trim().toLowerCase(),
       transport.trim(),
       kind.trim(),
       reason.trim(),
+      _normalizeDeliveryReference(deliveryReference) ?? '',
     ].join('|');
     return sha256.convert(utf8.encode(canonical)).toString();
+  }
+
+  static String? _normalizeDeliveryReference(String? value) {
+    final normalized = value?.trim().toLowerCase();
+    if (normalized == null || normalized.isEmpty) return null;
+    return RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized) ? normalized : null;
   }
 }

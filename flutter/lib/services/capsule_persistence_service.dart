@@ -205,15 +205,17 @@ class CapsulePersistenceService {
 
     final ledger = hivra.exportLedger();
     if (ledger != null && ledger.isNotEmpty) {
-      await _fileStore.writeLedger(dir, ledger);
-      await _fileStore.writeCoreProjection(dir, hivra.exportCapsuleStateJson());
-
       final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
         ledgerJson: ledger,
         isGenesis: isGenesis,
         isNeste: isNeste,
       );
-      await _fileStore.writeBackup(dir, backupJson);
+      await _fileStore.writeLedgerSnapshot(
+        dir,
+        ledgerJson: ledger,
+        backupJson: backupJson,
+        coreProjectionJson: hivra.exportCapsuleStateJson(),
+      );
     }
 
     if (pubKeyHex != null) {
@@ -270,9 +272,7 @@ class CapsulePersistenceService {
     )) {
       return false;
     }
-    await _fileStore.writeLedger(dir, ledger);
-    await _fileStore.writeCoreProjection(dir, hivra.exportCapsuleStateJson());
-    await _writeBackupEnvelopeForLedger(dir, ledger);
+    await _persistLedgerGeneration(dir, ledger, hivra.exportCapsuleStateJson());
     await _touchRuntimeCapsuleMetadata(hivra);
     return true;
   }
@@ -314,9 +314,7 @@ class CapsulePersistenceService {
     )) {
       return false;
     }
-    await _fileStore.writeLedger(dir, ledgerJson);
-    await _fileStore.writeCoreProjection(dir, capsuleStateJson);
-    await _writeBackupEnvelopeForLedger(dir, ledgerJson);
+    await _persistLedgerGeneration(dir, ledgerJson, capsuleStateJson);
     // Keep index heartbeat fresh for the capsule that actually produced worker output,
     // but do not switch active capsule.
     await _upsertCapsuleIndex(targetPubKeyHex);
@@ -395,9 +393,10 @@ class CapsulePersistenceService {
     return imported;
   }
 
-  Future<void> _writeBackupEnvelopeForLedger(
+  Future<void> _persistLedgerGeneration(
     Directory dir,
     String ledgerJson,
+    String? coreProjectionJson,
   ) async {
     final state = await _fileStore.readState(dir);
     final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
@@ -405,7 +404,12 @@ class CapsulePersistenceService {
       isGenesis: state?['isGenesis'] == true,
       isNeste: state?['isNeste'] != false,
     );
-    await _fileStore.writeBackup(dir, backupJson);
+    await _fileStore.writeLedgerSnapshot(
+      dir,
+      ledgerJson: ledgerJson,
+      backupJson: backupJson,
+      coreProjectionJson: coreProjectionJson,
+    );
   }
 
   Future<void> clearPersistedData(
@@ -937,25 +941,39 @@ class CapsulePersistenceService {
             ? requestedHex.toLowerCase()
             : null;
 
+    // Background workers are scoped to a persisted capsule, not to whichever
+    // capsule currently owns the in-memory FFI runtime. Reusing that runtime
+    // here can replay one capsule's outbox with another capsule's identity.
+    if (requestedCapsuleHex != null) {
+      final requestedBootstrap = await loadRuntimeBootstrap(
+        requestedCapsuleHex,
+      );
+      if (requestedBootstrap == null ||
+          requestedBootstrap.pubKeyHex != requestedCapsuleHex) {
+        return null;
+      }
+      return <String, Object?>{
+        'activeCapsuleHex': requestedCapsuleHex,
+        'seed': requestedBootstrap.seed,
+        'isGenesis': requestedBootstrap.isGenesis,
+        'isNeste': requestedBootstrap.isNeste,
+        'identityMode': requestedBootstrap.identityMode,
+        'ledgerJson': requestedBootstrap.ledgerJson,
+      };
+    }
+
     final activeHex = await resolveActiveCapsuleHex(hivra);
-    var bootstrapCapsuleHex = requestedCapsuleHex;
+    String? bootstrapCapsuleHex;
     CapsuleRuntimeBootstrap? bootstrap;
 
     final currentBootstrap = await loadRuntimeBootstrapForCurrent(hivra);
     final currentRuntimeHex = currentBootstrap?.pubKeyHex;
-    final requestedCurrentRuntime =
-        requestedCapsuleHex != null &&
-        currentRuntimeHex != null &&
-        requestedCapsuleHex == currentRuntimeHex;
     final activeCurrentRuntime =
         activeHex != null &&
         currentRuntimeHex != null &&
         activeHex == currentRuntimeHex;
 
-    if (currentBootstrap != null &&
-        (requestedCapsuleHex == null ||
-            requestedCurrentRuntime ||
-            (activeCurrentRuntime && requestedCapsuleHex == activeHex))) {
+    if (currentBootstrap != null && activeCurrentRuntime) {
       bootstrapCapsuleHex = currentRuntimeHex;
       bootstrap = currentBootstrap;
     }
@@ -1020,8 +1038,11 @@ class CapsulePersistenceService {
     if (ownerHex == null) return null;
 
     final capsuleDir = await _capsuleDirForHex(ownerHex, create: true);
-    await _fileStore.writeLedger(capsuleDir, ledgerJson);
-    await _fileStore.writeBackup(capsuleDir, rawJson);
+    await _fileStore.writeLedgerSnapshot(
+      capsuleDir,
+      ledgerJson: ledgerJson,
+      backupJson: rawJson,
+    );
 
     final meta = _extractBackupMeta(rawJson);
     await _upsertCapsuleIndex(
@@ -1854,6 +1875,8 @@ class CapsulePersistenceService {
   String? _extractLedgerHash(String? ledgerJson) {
     final root = _parseLedgerRoot(ledgerJson);
     if (root == null) return null;
+    final v5Head = root['head_commitment_v5']?.toString().trim();
+    if (v5Head != null && v5Head.isNotEmpty) return v5Head;
     return root['last_hash']?.toString();
   }
 

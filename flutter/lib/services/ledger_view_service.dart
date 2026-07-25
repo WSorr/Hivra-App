@@ -126,8 +126,12 @@ class LedgerViewService {
     final starterCount = starterIds.whereType<Uint8List>().length;
 
     final version = stateVersion ?? events.length;
-    final rawHash = capsuleState?['ledger_hash'] ?? root['last_hash'];
-    final hashHex = rawHash == null ? '0' : rawHash.toString();
+    final rawHash =
+        capsuleState?['ledger_head_commitment'] ??
+        root['head_commitment_v5'] ??
+        capsuleState?['ledger_hash'] ??
+        root['last_hash'];
+    final hashHex = _ledgerHashHex(rawHash);
 
     final invitations = loadInvitations(root: root, starterIds: starterIds);
     final sharedCounters = _summaryParser.projectSharedCountersFromLedgerRoot(
@@ -158,6 +162,19 @@ class LedgerViewService {
       starterKinds: starterKinds,
       lockedStarterSlots: lockedStarterSlots,
     );
+  }
+
+  String _ledgerHashHex(dynamic raw) {
+    if (raw is String && raw.trim().isNotEmpty) return raw.trim();
+    if (raw is List) {
+      final bytes = _support.payloadBytes(raw);
+      if (bytes.isNotEmpty || raw.isEmpty) {
+        return bytes
+            .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+            .join();
+      }
+    }
+    return raw == null ? '0' : raw.toString();
   }
 
   List<Invitation> loadInvitations({

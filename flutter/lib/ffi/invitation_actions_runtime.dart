@@ -86,14 +86,60 @@ Map<String, Object?> receiveInvitationsQuickInWorker(
   };
 }
 
-Map<String, Object?> retryPendingOutgoingInvitationsInWorker(
+Map<String, Object?> retryOutgoingInvitationOfferByIdInWorker(
   Map<String, Object?> args,
 ) {
   final hivra = HivraBindings();
   if (!_bootstrapWorkerRuntime(hivra, args)) {
     return <String, Object?>{'result': -1004};
   }
-  final result = hivra.retryPendingOutgoingInvitations();
+  final invitationId = args['invitationId'] as Uint8List?;
+  if (invitationId == null || invitationId.length != 32) {
+    return <String, Object?>{'result': -1};
+  }
+  final result = hivra.retryOutgoingInvitationOfferById(invitationId);
+  return <String, Object?>{
+    'result': result,
+    'ledgerJson': hivra.exportLedger(),
+    'capsuleStateJson': hivra.exportCapsuleStateJson(),
+    'lastError': hivra.lastErrorMessage(),
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
+  };
+}
+
+Map<String, Object?> retryOutgoingInvitationTerminalByIdInWorker(
+  Map<String, Object?> args,
+) {
+  final hivra = HivraBindings();
+  if (!_bootstrapWorkerRuntime(hivra, args)) {
+    return <String, Object?>{'result': -1004};
+  }
+  final invitationId = args['invitationId'] as Uint8List?;
+  if (invitationId == null || invitationId.length != 32) {
+    return <String, Object?>{'result': -1};
+  }
+  final result = hivra.retryOutgoingInvitationTerminalById(invitationId);
+  return <String, Object?>{
+    'result': result,
+    'ledgerJson': hivra.exportLedger(),
+    'capsuleStateJson': hivra.exportCapsuleStateJson(),
+    'lastError': hivra.lastErrorMessage(),
+    'deliveryReceiptsJson': hivra.lastDeliveryReceiptsJson(),
+  };
+}
+
+Map<String, Object?> retryOutgoingRelationshipBreakByEventIdInWorker(
+  Map<String, Object?> args,
+) {
+  final hivra = HivraBindings();
+  if (!_bootstrapWorkerRuntime(hivra, args)) {
+    return <String, Object?>{'result': -1004};
+  }
+  final eventId = args['eventId'] as Uint8List?;
+  if (eventId == null || eventId.length != 32) {
+    return <String, Object?>{'result': -1};
+  }
+  final result = hivra.retryOutgoingRelationshipBreakByEventId(eventId);
   final lastError = hivra.lastErrorMessage();
   return <String, Object?>{
     'result': result,

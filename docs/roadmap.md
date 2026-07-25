@@ -1289,6 +1289,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       user-assigned peer names as per-capsule operational metadata rather than
       ledger facts or contact-card mutations. It does not close pass 3 or pass
       4 and must pass fresh platform smoke before becoming a release candidate.
+    - Transport ingress hardening slice completed on 2026-07-25:
+      - one transport-neutral guard now rejects unsupported envelope schemas,
+        wrong transport recipients, and opaque payloads above 256 KiB before
+        invitation, chat, attestation, or drone-signal routing;
+      - the Nostr adapter authenticates the outer signer first and records
+        deterministically rejected event ids in its overlap dedup set, so one
+        malformed retained event cannot be reprocessed on every fetch;
+      - sender-class rate limiting remains `NEEDS_CONTRACT`: cursor-safe spam
+        control requires a bounded durable quarantine/deferred inbox rather
+        than silently dropping valid envelopes after relay cursor advancement.
     - pass 3 protocol contract completed on 2026-07-24:
       - `docs/architecture/continuous-ledger-protocol-v5.md` defines distinct
         signed domain provenance and locally signed sequential ledger-entry
@@ -1298,15 +1308,24 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - implementation now proceeds only through P3-A Core vectors, P3-B
         Engine/FFI append-import, and P3-C persistence/release evidence.
     - P3-A completed on 2026-07-24:
-      - Core now has isolated v5 domain-event, anchor, entry, and structural
-        chain primitives with fixed golden vectors and adversarial link/order
-        tests;
-      - no v4 runtime path or persisted user ledger changed in this unit.
+      - Core keeps one canonical `Ledger` event sequence; v5 receipts attest
+        to those facts without a parallel event container;
+      - the signed v4 migration anchor keeps legacy history auditable before
+        subsequent v5 entries.
     - P3-B Engine signing boundary completed on 2026-07-24:
       - Engine is the only new path that prepares and verifies signed v5 domain
         provenance, local ledger entries, and legacy migration anchors;
-      - FFI append/import and persistence remain unmodified until they can
-        switch together in the next P3-B subpass.
+      - fresh FFI runtime creation and append now select v5; a valid v4 import
+        is anchored before new mutation, and a transport proof carries the
+        exact signed event version;
+      - P3-C now writes a ledger generation through the single authoritative
+        order `ledger -> backup -> derived Core projection`; each file uses
+        temp/flush/rename and never deletes an existing target after a failed
+        replacement. v5 exports carry `head_commitment_v5` separately from
+        the retained v4 `last_hash` checksum, so UI and backup selection use
+        the real continuous-history head;
+      - focused restart/restore and cross-platform recovery evidence remains
+        the release blocker.
     - Next ordered 12.3 item is the cryptographically continuous ledger
       implementation. Event-scoped delivery records, transport-health UI,
       plugin transactionality, encrypted backup envelopes, and

@@ -165,6 +165,13 @@ impl Ledger {
         })
     }
 
+    /// Returns the canonical v5 history head when this ledger uses continuous
+    /// commitments. The legacy v4 checksum remains available through
+    /// `last_hash()` solely to validate an anchored legacy prefix.
+    pub fn head_commitment_v5(&self) -> Option<Commitment> {
+        self.tail_commitment_v5().ok()
+    }
+
     /// Reconstructs v5 entries from the canonical events and their local
     /// receipts. It never stores a second copy of a domain event.
     pub fn v5_entries(&self) -> Option<impl Iterator<Item = LedgerEntryV5> + '_> {

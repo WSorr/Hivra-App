@@ -28,6 +28,8 @@
 	<string>MainMenu</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Hivra uses the camera only when you choose to scan a public capsule card QR code.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Hivra stores your local capsule ledgers, backups, and public contact cards in Documents/Hivra. This data remains on this device.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

@@ -116,12 +116,12 @@ class AiCapsuleInspectionService {
     DeliveryOutboxStore outbox = const DeliveryOutboxStore(),
     WasmPluginRegistryService plugins = const WasmPluginRegistryService(),
     required String? Function() readActiveCapsuleHex,
-  })  : _ledgerView = ledgerView,
-        _consensus = consensus,
-        _diagnostics = diagnostics,
-        _outbox = outbox,
-        _plugins = plugins,
-        _readActiveCapsuleHex = readActiveCapsuleHex;
+  }) : _ledgerView = ledgerView,
+       _consensus = consensus,
+       _diagnostics = diagnostics,
+       _outbox = outbox,
+       _plugins = plugins,
+       _readActiveCapsuleHex = readActiveCapsuleHex;
 
   Future<AiCapsuleInspectionReport> inspect() async {
     final capsuleHex = _readActiveCapsuleHex()?.trim().toLowerCase();
@@ -132,9 +132,10 @@ class AiCapsuleInspectionService {
     final diagnosticsReport = await _tryDiagnosticsReport();
     final bootstrapReport = diagnosticsReport.bootstrap;
     final traceReport = diagnosticsReport.trace;
-    final outboxItems = capsuleHex == null || capsuleHex.isEmpty
-        ? const <DeliveryOutboxItem>[]
-        : await _outbox.load(capsuleHex);
+    final outboxItems =
+        capsuleHex == null || capsuleHex.isEmpty
+            ? const <DeliveryOutboxItem>[]
+            : await _outbox.load(capsuleHex);
     final plugins = await _plugins.loadPlugins();
 
     final capsule = <String, dynamic>{
@@ -150,8 +151,8 @@ class AiCapsuleInspectionService {
       'starter_count': capsuleSnapshot.starterCount,
       'relationship_count': capsuleSnapshot.relationshipCount,
       'pending_invitation_count': capsuleSnapshot.pendingInvitations,
-      'locked_starter_slots': capsuleSnapshot.lockedStarterSlots.toList()
-        ..sort(),
+      'locked_starter_slots':
+          capsuleSnapshot.lockedStarterSlots.toList()..sort(),
       'starter_kinds': capsuleSnapshot.starterKinds,
     };
     final invitationSummary = _invitationSummary(invitations);
@@ -178,11 +179,12 @@ class AiCapsuleInspectionService {
     final traceSummary = _traceSummary(traceReport);
     final pluginSummary = <String, dynamic>{
       'installed_count': plugins.length,
-      'plugin_ids': plugins
-          .map((plugin) => plugin.pluginId ?? plugin.displayName)
-          .toSet()
-          .toList()
-        ..sort(),
+      'plugin_ids':
+          plugins
+              .map((plugin) => plugin.pluginId ?? plugin.displayName)
+              .toSet()
+              .toList()
+            ..sort(),
       'capabilities':
           plugins.expand((plugin) => plugin.capabilities).toSet().toList()
             ..sort(),
@@ -309,16 +311,22 @@ class AiCapsuleInspectionService {
     return <String, dynamic>{
       'total': invitations.length,
       'pending_total': count(InvitationStatus.pending),
-      'pending_incoming': invitations
-          .where((invitation) =>
-              invitation.status == InvitationStatus.pending &&
-              invitation.isIncoming)
-          .length,
-      'pending_outgoing': invitations
-          .where((invitation) =>
-              invitation.status == InvitationStatus.pending &&
-              invitation.isOutgoing)
-          .length,
+      'pending_incoming':
+          invitations
+              .where(
+                (invitation) =>
+                    invitation.status == InvitationStatus.pending &&
+                    invitation.isIncoming,
+              )
+              .length,
+      'pending_outgoing':
+          invitations
+              .where(
+                (invitation) =>
+                    invitation.status == InvitationStatus.pending &&
+                    invitation.isOutgoing,
+              )
+              .length,
       'accepted': count(InvitationStatus.accepted),
       'rejected': count(InvitationStatus.rejected),
       'expired': count(InvitationStatus.expired),
@@ -329,18 +337,21 @@ class AiCapsuleInspectionService {
     int count(DeliveryOutboxStatus status) =>
         items.where((item) => item.status == status).length;
     final kinds = items.map((item) => item.kind).toSet().toList()..sort();
-    final lastErrors = items
-        .map((item) => item.lastError)
-        .whereType<String>()
-        .where((value) => value.trim().isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    final lastErrors =
+        items
+            .map((item) => item.lastError)
+            .whereType<String>()
+            .where((value) => value.trim().isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
 
     return <String, dynamic>{
       'outbox_count': items.length,
       'pending_count': count(DeliveryOutboxStatus.pending),
-      'delivered_count': count(DeliveryOutboxStatus.delivered),
+      // A relay publication is not peer delivery. Keep diagnostics aligned
+      // with the transport contract rather than presenting a false success.
+      'published_count': count(DeliveryOutboxStatus.published),
       'dead_count': count(DeliveryOutboxStatus.dead),
       'max_attempts': items.fold<int>(
         0,
@@ -353,10 +364,7 @@ class AiCapsuleInspectionService {
 
   Map<String, dynamic> _bootstrapSummary(CapsuleBootstrapReport? report) {
     if (report == null) {
-      return <String, dynamic>{
-        'available': false,
-        'issue': null,
-      };
+      return <String, dynamic>{'available': false, 'issue': null};
     }
     return <String, dynamic>{
       'available': true,
@@ -383,22 +391,20 @@ class AiCapsuleInspectionService {
 
   Map<String, dynamic> _traceSummary(CapsuleTraceReport? report) {
     if (report == null) {
-      return <String, dynamic>{
-        'available': false,
-        'issue_count': 0,
-      };
+      return <String, dynamic>{'available': false, 'issue_count': 0};
     }
-    final issueCount = <bool>[
-      !report.runtimeSeedExists,
-      !report.indexHasEntry,
-      !report.secureSeedExists,
-      report.fallbackSeedExists,
-      !report.capsuleDirExists,
-      !report.ledgerFileExists,
-      report.legacyLedgerExists,
-      report.legacyStateExists,
-      report.legacyBackupExists,
-    ].where((issue) => issue).length;
+    final issueCount =
+        <bool>[
+          !report.runtimeSeedExists,
+          !report.indexHasEntry,
+          !report.secureSeedExists,
+          report.fallbackSeedExists,
+          !report.capsuleDirExists,
+          !report.ledgerFileExists,
+          report.legacyLedgerExists,
+          report.legacyStateExists,
+          report.legacyBackupExists,
+        ].where((issue) => issue).length;
     return <String, dynamic>{
       'available': true,
       'active_root_preview': _short(report.activePubKeyHex),
@@ -422,23 +428,26 @@ class AiCapsuleInspectionService {
 
   Map<String, dynamic> _consensusSummary(List<ConsensusCheck> checks) {
     final blocked = checks.where((check) => !check.isSignable).toList();
-    final blockingCodes = blocked
-        .expand((check) => check.blockingFacts)
-        .map((fact) => fact.code)
-        .toSet()
-        .toList()
-      ..sort();
+    final blockingCodes =
+        blocked
+            .expand((check) => check.blockingFacts)
+            .map((fact) => fact.code)
+            .toSet()
+            .toList()
+          ..sort();
     return <String, dynamic>{
       'peer_count': checks.length,
       'signable_count': checks.where((check) => check.isSignable).length,
       'blocked_count': blocked.length,
       'blocking_codes': blockingCodes,
       'hashes': checks
-          .map((check) => <String, dynamic>{
-                'peer': check.peerLabel,
-                'hash_hex': check.hashHex,
-                'is_signable': check.isSignable,
-              })
+          .map(
+            (check) => <String, dynamic>{
+              'peer': check.peerLabel,
+              'hash_hex': check.hashHex,
+              'is_signable': check.isSignable,
+            },
+          )
           .toList(growable: false),
     };
   }
@@ -454,47 +463,57 @@ class AiCapsuleInspectionService {
   }) {
     final findings = <AiCapsuleInspectionFinding>[];
     if (snapshot.ledgerSummary['has_history'] != true) {
-      findings.add(const AiCapsuleInspectionFinding(
-        severity: 'warning',
-        area: 'ledger',
-        title: 'Capsule has no ledger history',
-        detail: 'The UI is in awaiting-history mode. Domain truth cannot be '
-            'projected until ledger events are present.',
-        recommendedAction:
-            'Create/recover a capsule with history, import a ledger, or receive trusted events.',
-      ));
+      findings.add(
+        const AiCapsuleInspectionFinding(
+          severity: 'warning',
+          area: 'ledger',
+          title: 'Capsule has no ledger history',
+          detail:
+              'The UI is in awaiting-history mode. Domain truth cannot be '
+              'projected until ledger events are present.',
+          recommendedAction:
+              'Create/recover a capsule with history, import a ledger, or receive trusted events.',
+        ),
+      );
     }
     if (pendingInvitations > 0) {
-      findings.add(AiCapsuleInspectionFinding(
-        severity: 'info',
-        area: 'invitations',
-        title: 'Pending invitations present',
-        detail: '$pendingInvitations invitation(s) are still pending in '
-            'ledger projection.',
-        recommendedAction:
-            'Open Invitations and accept, reject, cancel, or wait for transport retry.',
-      ));
+      findings.add(
+        AiCapsuleInspectionFinding(
+          severity: 'info',
+          area: 'invitations',
+          title: 'Pending invitations present',
+          detail:
+              '$pendingInvitations invitation(s) are still pending in '
+              'ledger projection.',
+          recommendedAction:
+              'Open Invitations and accept, reject, cancel, or wait for transport retry.',
+        ),
+      );
     }
     if (pendingOutbox > 0) {
-      findings.add(AiCapsuleInspectionFinding(
-        severity: 'warning',
-        area: 'transport',
-        title: 'Delivery outbox has pending work',
-        detail:
-            '$pendingOutbox delivery item(s) are waiting for retry or peer confirmation.',
-        recommendedAction:
-            'Check internet/VPN and use refresh/sync paths; local ledger state is preserved.',
-      ));
+      findings.add(
+        AiCapsuleInspectionFinding(
+          severity: 'warning',
+          area: 'transport',
+          title: 'Delivery outbox has pending work',
+          detail:
+              '$pendingOutbox delivery item(s) are waiting for retry or peer confirmation.',
+          recommendedAction:
+              'Check internet/VPN and use refresh/sync paths; local ledger state is preserved.',
+        ),
+      );
     }
     if (blockedConsensus > 0) {
-      findings.add(AiCapsuleInspectionFinding(
-        severity: 'warning',
-        area: 'consensus',
-        title: 'Some peers are not signable',
-        detail: '$blockedConsensus pair consensus snapshot(s) are blocked.',
-        recommendedAction:
-            'Inspect Relationships/Plugins consensus details before running pair-scoped drones.',
-      ));
+      findings.add(
+        AiCapsuleInspectionFinding(
+          severity: 'warning',
+          area: 'consensus',
+          title: 'Some peers are not signable',
+          detail: '$blockedConsensus pair consensus snapshot(s) are blocked.',
+          recommendedAction:
+              'Inspect Relationships/Plugins consensus details before running pair-scoped drones.',
+        ),
+      );
     }
     if (bootstrapIssue != null && bootstrapIssue != 'none') {
       findings.add(
@@ -521,26 +540,30 @@ class AiCapsuleInspectionService {
       );
     }
     if (pluginCount == 0) {
-      findings.add(const AiCapsuleInspectionFinding(
-        severity: 'info',
-        area: 'plugins',
-        title: 'No plugins installed',
-        detail:
-            'The capsule can operate without drones, but no WASM plugin package is installed.',
-        recommendedAction:
-            'Install plugins only when you need drone capabilities.',
-      ));
+      findings.add(
+        const AiCapsuleInspectionFinding(
+          severity: 'info',
+          area: 'plugins',
+          title: 'No plugins installed',
+          detail:
+              'The capsule can operate without drones, but no WASM plugin package is installed.',
+          recommendedAction:
+              'Install plugins only when you need drone capabilities.',
+        ),
+      );
     }
     if (findings.isEmpty) {
-      findings.add(const AiCapsuleInspectionFinding(
-        severity: 'info',
-        area: 'capsule',
-        title: 'No local issues detected',
-        detail:
-            'Ledger projection, transport outbox, consensus and plugin summaries have no local blockers.',
-        recommendedAction:
-            'Continue normal use. This is a local deterministic diagnosis, not remote proof.',
-      ));
+      findings.add(
+        const AiCapsuleInspectionFinding(
+          severity: 'info',
+          area: 'capsule',
+          title: 'No local issues detected',
+          detail:
+              'Ledger projection, transport outbox, consensus and plugin summaries have no local blockers.',
+          recommendedAction:
+              'Continue normal use. This is a local deterministic diagnosis, not remote proof.',
+        ),
+      );
     }
     return findings;
   }

@@ -1,6 +1,10 @@
 //! Nostr transport adapter
 
-use crate::{DeliveryEnvelope, DeliveryReceipt, Transport, TransportError};
+use crate::{
+    DeliveryEnvelope, DeliveryReceipt, InboundEnvelopeGuard, Transport, TransportError,
+    MAX_DELIVERY_ENVELOPE_PAYLOAD_BYTES,
+};
+use futures::future::join_all;
 use futures::stream::{FuturesUnordered, StreamExt};
 use nostr_sdk::nips::nip04;
 use nostr_sdk::prelude::*;
@@ -18,7 +22,15 @@ const RECEIVE_LIMIT: usize = 2048;
 const RECEIVE_LOOKBACK_SECS: u64 = 7 * 24 * 60 * 60;
 const RECEIVE_FUTURE_SKEW_SECS: u64 = 5 * 60;
 const RECEIVE_SEEN_CAPACITY: usize = 2048;
+// JSON byte arrays plus NIP-04 base64 framing are substantially larger than
+// the opaque Hivra payload. Reject pathological wire content before decrypt.
+const MAX_NOSTR_EVENT_CONTENT_BYTES: usize = MAX_DELIVERY_ENVELOPE_PAYLOAD_BYTES * 8;
 const MIN_PUBLISH_TIMEOUT_SECS: u64 = 2;
+const MIN_RECEIVE_CONNECTED_RELAYS: usize = 2;
+const RECEIVE_RELAY_SETTLE_SECS: u64 = 2;
+// These relays retain NIP-04 history reliably in the current public pool.
+// Reads still fall back to every connected configured relay.
+const PREFERRED_READ_RELAYS: [&str; 2] = ["wss://relay.damus.io", "wss://relay.primal.net"];
 
 static SEEN_EVENT_IDS: OnceLock<Mutex<HashMap<[u8; 32], HashSet<String>>>> = OnceLock::new();
 
@@ -30,6 +42,16 @@ fn next_receive_cursor(current: u64, query_now: u64, max_event_timestamp: u64) -
     // Relay data is untrusted. A future-dated event must not move the cursor
     // beyond this query and hide later envelopes with valid timestamps.
     current.max(max_event_timestamp.min(query_now).saturating_sub(1))
+}
+
+fn prioritize_read_relay_urls(mut relay_urls: Vec<String>) -> Vec<String> {
+    relay_urls.sort_by_key(|url| {
+        PREFERRED_READ_RELAYS
+            .iter()
+            .position(|preferred| url == preferred)
+            .unwrap_or(PREFERRED_READ_RELAYS.len())
+    });
+    relay_urls
 }
 
 fn looks_like_nip04_content(content: &str) -> bool {
@@ -111,7 +133,9 @@ pub struct NostrTransport {
     public_key: PublicKey,
     timeout_secs: u64,
     publish_timeout_secs: u64,
-    receive_since: Mutex<u64>,
+    // Relay histories replicate asynchronously. A cursor shared by every
+    // relay can skip a valid event that arrives late on a second relay.
+    receive_since_by_relay: Mutex<HashMap<String, u64>>,
 }
 
 impl NostrTransport {
@@ -142,11 +166,7 @@ impl NostrTransport {
             public_key,
             timeout_secs: config.timeout,
             publish_timeout_secs: config.publish_timeout,
-            receive_since: Mutex::new(
-                Timestamp::now()
-                    .as_u64()
-                    .saturating_sub(RECEIVE_LOOKBACK_SECS),
-            ),
+            receive_since_by_relay: Mutex::new(HashMap::new()),
         })
     }
 
@@ -215,16 +235,42 @@ impl NostrTransport {
         }
     }
 
-    fn ensure_connected_relays(&self) -> bool {
-        self.ensure_connected_relays_with_timeout(self.timeout_secs.max(2))
+    fn connected_relay_count(runtime: &Runtime, client: &Client) -> usize {
+        runtime
+            .block_on(client.relays())
+            .values()
+            .filter(|relay| matches!(relay.status(), RelayStatus::Connected))
+            .count()
     }
 
-    fn ensure_connected_relays_with_timeout(&self, timeout_secs: u64) -> bool {
-        Self::wait_for_connected_relays_until(
-            &self.runtime,
-            &self.client,
-            Instant::now() + Duration::from_secs(timeout_secs.max(2)),
-        )
+    fn configured_relay_urls(&self) -> Vec<String> {
+        let relay_urls = self
+            .runtime
+            .block_on(self.client.relays())
+            .into_values()
+            .map(|relay| relay.url().to_string())
+            .collect();
+        prioritize_read_relay_urls(relay_urls)
+    }
+
+    fn ensure_connected_relays(&self) -> bool {
+        // A fetch launched as soon as the first relay connects can complete
+        // against an empty relay before the relays that retained the event
+        // finish their handshakes. Wait briefly for a second reader, but keep
+        // degraded one-relay operation available after the settle window.
+        let settle_secs = self.timeout_secs.min(RECEIVE_RELAY_SETTLE_SECS).max(1);
+        let deadline = Instant::now() + Duration::from_secs(settle_secs);
+        loop {
+            let connected = Self::connected_relay_count(&self.runtime, &self.client);
+            if connected >= MIN_RECEIVE_CONNECTED_RELAYS {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return connected > 0;
+            }
+            self.runtime.block_on(self.client.connect());
+            thread::sleep(Duration::from_millis(CONNECT_POLL_MS));
+        }
     }
 
     pub fn public_key_bytes(&self) -> [u8; 32] {
@@ -376,11 +422,16 @@ impl NostrTransport {
                 });
             }
 
+            let mut first_accept: Option<(String, String)> = None;
+            let mut accepted_relays = 0u32;
             let mut failure_details: Vec<String> = Vec::new();
             while let Some((relay_url, result)) = pending.next().await {
                 match result {
                     Ok(Ok(event_id)) => {
-                        return Ok((relay_url, event_id.to_hex(), failure_details));
+                        accepted_relays += 1;
+                        if first_accept.is_none() {
+                            first_accept = Some((relay_url, event_id.to_hex()));
+                        }
                     }
                     Err(_) => {
                         failure_details.push(format!(
@@ -402,15 +453,26 @@ impl NostrTransport {
                 }
             }
 
-            Err(failure_details)
+            match first_accept {
+                Some((relay_url, event_id)) => {
+                    Ok((relay_url, event_id, accepted_relays, failure_details))
+                }
+                None => Err(failure_details),
+            }
         });
 
-        if let Ok((relay_url, event_id, failure_details)) = publish_result {
-            eprintln!("[Nostr] Relay {} accepted event: {}", relay_url, event_id);
+        if let Ok((relay_url, event_id, accepted_relays, failure_details)) = publish_result {
+            eprintln!(
+                "[Nostr] Published event {} to {}/{} connected relay(s); first acceptance: {}",
+                event_id,
+                accepted_relays,
+                accepted_relays + failure_details.len() as u32,
+                relay_url,
+            );
             let failed_before_accept = failure_details.len() as u32;
             if !failure_details.is_empty() {
                 eprintln!(
-                    "[Nostr] Message published with {} relay(s) failing before first success",
+                    "[Nostr] Message published with {} relay(s) failing during fan-out",
                     failure_details.len()
                 );
             }
@@ -425,6 +487,9 @@ impl NostrTransport {
 
     fn decode_event(&self, event: Event) -> Result<DeliveryEnvelope, TransportError> {
         if event.kind != APP_EVENT_KIND {
+            return Err(TransportError::InvalidMessage);
+        }
+        if event.content.len() > MAX_NOSTR_EVENT_CONTENT_BYTES {
             return Err(TransportError::InvalidMessage);
         }
 
@@ -452,7 +517,104 @@ impl NostrTransport {
         if envelope.from != event.pubkey.to_bytes() {
             return Err(TransportError::SenderMismatch);
         }
+        InboundEnvelopeGuard::for_recipient(self.public_key_bytes())
+            .validate(&envelope)
+            .map_err(|reason| {
+                eprintln!(
+                    "[Nostr] Inbound envelope rejected by neutral guard: {}",
+                    reason.as_str()
+                );
+                TransportError::InvalidMessage
+            })?;
         Ok(envelope)
+    }
+
+    fn receive_since_for_relay(&self, relay_url: &str) -> u64 {
+        let initial = Timestamp::now()
+            .as_u64()
+            .saturating_sub(RECEIVE_LOOKBACK_SECS);
+        self.receive_since_by_relay
+            .lock()
+            .map(|mut cursors| *cursors.entry(relay_url.to_string()).or_insert(initial))
+            .unwrap_or(initial)
+    }
+
+    fn advance_receive_cursor_for_relay(&self, relay_url: &str, query_now: u64, events: &[Event]) {
+        let Some(max_timestamp) = events.iter().map(|event| event.created_at.as_u64()).max() else {
+            return;
+        };
+
+        if let Ok(mut cursors) = self.receive_since_by_relay.lock() {
+            let current = cursors.get(relay_url).copied().unwrap_or_else(|| {
+                Timestamp::now()
+                    .as_u64()
+                    .saturating_sub(RECEIVE_LOOKBACK_SECS)
+            });
+            // Keep one second of overlap because multiple envelopes may share
+            // a relay timestamp; event-id dedupe handles the replay.
+            cursors.insert(
+                relay_url.to_string(),
+                next_receive_cursor(current, query_now, max_timestamp),
+            );
+        }
+    }
+
+    fn fetch_events_from_relays(
+        &self,
+        relay_urls: Vec<String>,
+        query_now: u64,
+        timeout: Duration,
+    ) -> (Vec<Event>, usize) {
+        let requests: Vec<_> = relay_urls
+            .into_iter()
+            .map(|relay_url| {
+                let receive_since = self.receive_since_for_relay(&relay_url);
+                let filter = Filter::new()
+                    .kind(APP_EVENT_KIND)
+                    .pubkey(self.public_key)
+                    .since(Timestamp::from(receive_since))
+                    .until(Timestamp::from(
+                        query_now.saturating_add(RECEIVE_FUTURE_SKEW_SECS),
+                    ))
+                    .limit(RECEIVE_LIMIT);
+                (relay_url, filter)
+            })
+            .collect();
+
+        // `fetch_events_from` stops at the first EOSE within its relay set.
+        // Run one request per replica concurrently so a busy relay cannot hide
+        // an invitation retained by another relay, without multiplying the UI
+        // wait budget by the number of relays.
+        let client = self.client.clone();
+        let results = self.runtime.block_on(async move {
+            join_all(requests.into_iter().map(|(relay_url, filter)| {
+                let client = client.clone();
+                async move {
+                    let result = client
+                        .fetch_events_from(vec![relay_url.clone()], vec![filter], Some(timeout))
+                        .await;
+                    (relay_url, result)
+                }
+            }))
+            .await
+        });
+
+        let mut events = Vec::new();
+        let mut successful_reads = 0usize;
+        for (relay_url, result) in results {
+            match result {
+                Ok(relay_events) => {
+                    let relay_events = relay_events.to_vec();
+                    self.advance_receive_cursor_for_relay(&relay_url, query_now, &relay_events);
+                    successful_reads += 1;
+                    events.extend(relay_events);
+                }
+                Err(err) => {
+                    eprintln!("[Nostr] Receive failed for {relay_url}: {err:?}");
+                }
+            }
+        }
+        (events, successful_reads)
     }
 }
 
@@ -488,48 +650,20 @@ impl Transport for NostrTransport {
             return Ok(Vec::new());
         }
 
-        // Start from a bounded recovery window, then advance a per-transport
-        // cursor. Without `since`, a noisy inbox can fill the relay limit with
-        // old events and permanently hide the newest delivery.
-        let receive_since = self
-            .receive_since
-            .lock()
-            .map(|cursor| *cursor)
-            .unwrap_or_else(|_| {
-                Timestamp::now()
-                    .as_u64()
-                    .saturating_sub(RECEIVE_LOOKBACK_SECS)
-            });
         let query_now = Timestamp::now().as_u64();
-        let filter = Filter::new()
-            .kind(APP_EVENT_KIND)
-            .pubkey(self.public_key)
-            .since(Timestamp::from(receive_since))
-            .until(Timestamp::from(
-                query_now.saturating_add(RECEIVE_FUTURE_SKEW_SECS),
-            ))
-            .limit(RECEIVE_LIMIT);
+        let relay_urls = self.configured_relay_urls();
+        if relay_urls.is_empty() {
+            return Err(TransportError::ReceiveFailed);
+        }
+        let fetch_timeout = Duration::from_secs(self.timeout_secs);
+        let (events, successful_reads) =
+            self.fetch_events_from_relays(relay_urls, query_now, fetch_timeout);
 
-        let events = self
-            .runtime
-            .block_on(
-                self.client
-                    .fetch_events(vec![filter], Some(Duration::from_secs(self.timeout_secs))),
-            )
-            .map_err(|e| {
-                eprintln!("[Nostr] Receive failed: {:?}", e);
-                TransportError::ReceiveFailed
-            })?;
+        if successful_reads == 0 {
+            return Err(TransportError::ReceiveFailed);
+        }
 
         eprintln!("[Nostr] Received {} events", events.len());
-
-        if let Some(max_timestamp) = events.iter().map(|event| event.created_at.as_u64()).max() {
-            if let Ok(mut cursor) = self.receive_since.lock() {
-                // Keep one second of overlap because multiple envelopes may
-                // share a relay timestamp; event-id dedupe handles the replay.
-                *cursor = next_receive_cursor(*cursor, query_now, max_timestamp);
-            }
-        }
 
         let mut seen_guard = seen_event_ids().lock().expect("seen ids mutex poisoned");
         let seen_for_pubkey = seen_guard
@@ -543,12 +677,20 @@ impl Transport for NostrTransport {
                 continue;
             }
 
-            if let Ok(msg) = self.decode_event(event) {
-                if seen_for_pubkey.len() >= RECEIVE_SEEN_CAPACITY {
-                    seen_for_pubkey.clear();
+            // Decoding and ingress validation are deterministic for a signed
+            // wire event. Remember rejected event ids too, otherwise one
+            // malformed relay event is reprocessed on every overlapping poll.
+            let decoded = self.decode_event(event);
+            if seen_for_pubkey.len() >= RECEIVE_SEEN_CAPACITY {
+                seen_for_pubkey.clear();
+            }
+            seen_for_pubkey.insert(event_id);
+
+            match decoded {
+                Ok(message) => messages.push(message),
+                Err(err) => {
+                    eprintln!("[Nostr] Dropped invalid inbound event: {err:?}");
                 }
-                seen_for_pubkey.insert(event_id);
-                messages.push(msg);
             }
         }
         Ok(messages)
@@ -572,6 +714,17 @@ mod tests {
         assert_eq!(next_receive_cursor(100, 200, 10_000), 199);
         assert_eq!(next_receive_cursor(250, 200, 10_000), 250);
         assert_eq!(next_receive_cursor(100, 200, 150), 149);
+    }
+
+    #[test]
+    fn read_relays_are_prioritized_before_empty_pool_members() {
+        let relays = prioritize_read_relay_urls(vec![
+            "wss://nos.lol".to_string(),
+            "wss://relay.primal.net".to_string(),
+            "wss://relay.damus.io".to_string(),
+        ]);
+        assert_eq!(relays[0], "wss://relay.damus.io");
+        assert_eq!(relays[1], "wss://relay.primal.net");
     }
 
     #[test]
@@ -619,6 +772,98 @@ mod tests {
         assert_eq!(
             receiver.decode_event(event),
             Err(TransportError::SenderMismatch),
+        );
+    }
+
+    #[test]
+    fn rejects_authenticated_envelope_for_another_recipient() {
+        let receiver_secret = [17u8; 32];
+        let sender_secret = [18u8; 32];
+        let receiver = NostrTransport::new(
+            NostrConfig {
+                relays: Vec::new(),
+                ephemeral: true,
+                timeout: 2,
+                publish_timeout: 2,
+            },
+            &receiver_secret,
+        )
+        .expect("receiver transport");
+        let sender_keys = Keys::new(SecretKey::from_slice(&sender_secret).expect("sender key"));
+        let message = DeliveryEnvelope {
+            schema_version: 1,
+            from: sender_keys.public_key().to_bytes(),
+            to: [19u8; 32],
+            kind: 1,
+            payload: vec![1, 2, 3],
+            timestamp: 1,
+            correlation_id: None,
+            domain_event: None,
+        };
+        let plaintext = serde_json::to_string(&message).expect("message json");
+        let content = nip04::encrypt(sender_keys.secret_key(), &receiver.public_key, plaintext)
+            .expect("encrypt");
+        let event = receiver
+            .runtime
+            .block_on(
+                EventBuilder::new(
+                    APP_EVENT_KIND,
+                    content,
+                    [Tag::public_key(receiver.public_key)],
+                )
+                .sign(&sender_keys),
+            )
+            .expect("signed event");
+
+        assert_eq!(
+            receiver.decode_event(event),
+            Err(TransportError::InvalidMessage),
+        );
+    }
+
+    #[test]
+    fn rejects_authenticated_envelope_with_unsupported_schema() {
+        let receiver_secret = [27u8; 32];
+        let sender_secret = [28u8; 32];
+        let receiver = NostrTransport::new(
+            NostrConfig {
+                relays: Vec::new(),
+                ephemeral: true,
+                timeout: 2,
+                publish_timeout: 2,
+            },
+            &receiver_secret,
+        )
+        .expect("receiver transport");
+        let sender_keys = Keys::new(SecretKey::from_slice(&sender_secret).expect("sender key"));
+        let message = DeliveryEnvelope {
+            schema_version: 2,
+            from: sender_keys.public_key().to_bytes(),
+            to: receiver.public_key_bytes(),
+            kind: 1,
+            payload: vec![1, 2, 3],
+            timestamp: 1,
+            correlation_id: None,
+            domain_event: None,
+        };
+        let plaintext = serde_json::to_string(&message).expect("message json");
+        let content = nip04::encrypt(sender_keys.secret_key(), &receiver.public_key, plaintext)
+            .expect("encrypt");
+        let event = receiver
+            .runtime
+            .block_on(
+                EventBuilder::new(
+                    APP_EVENT_KIND,
+                    content,
+                    [Tag::public_key(receiver.public_key)],
+                )
+                .sign(&sender_keys),
+            )
+            .expect("signed event");
+
+        assert_eq!(
+            receiver.decode_event(event),
+            Err(TransportError::InvalidMessage),
         );
     }
 }

@@ -185,6 +185,7 @@ struct RelationshipKey {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PendingOutgoingRelationshipBreakDelivery {
+    pub(crate) event_id: [u8; 32],
     pub(crate) to_pubkey: [u8; 32],
     pub(crate) peer_starter_id: StarterId,
     pub(crate) local_root_pubkey: PubKey,
@@ -365,6 +366,7 @@ pub(crate) fn pending_outgoing_relationship_break_deliveries_in_runtime(
                     pending.insert(
                         key,
                         PendingOutgoingRelationshipBreakDelivery {
+                            event_id: event.event_id(),
                             to_pubkey: *payload.peer_pubkey.as_bytes(),
                             peer_starter_id: anchor.peer_starter_id,
                             local_root_pubkey,
@@ -389,6 +391,7 @@ pub(crate) fn pending_outgoing_relationship_break_deliveries_in_runtime(
         a.timestamp
             .cmp(&b.timestamp)
             .then_with(|| a.to_pubkey.cmp(&b.to_pubkey))
+            .then_with(|| a.event_id.cmp(&b.event_id))
             .then_with(|| {
                 a.peer_starter_id
                     .as_bytes()

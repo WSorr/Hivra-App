@@ -11,6 +11,7 @@ import '../models/relationship.dart';
 import 'bingx_futures_execution_command_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_chat_deferred_inbox_store.dart';
+import 'capsule_ffi_worker_queue.dart';
 import 'manual_consensus_check_service.dart';
 import 'ledger_view_support.dart';
 import 'transport_health_policy_service.dart';
@@ -123,6 +124,7 @@ class CapsuleChatDeliveryService {
   final ChatTrustedCardsLoader _listTrustedCards;
   final ChatWorkerRunner _sendWorkerRunner;
   final ChatWorkerRunner _receiveWorkerRunner;
+  final CapsuleFfiWorkerQueue _workerQueue;
   final CapsuleChatDeferredInboxStore _deferredInboxStore;
   final CapsuleTradeSignalInboxStore _tradeSignalInboxStore;
   final BingxFuturesExecutionCommandService _executionCommandService;
@@ -140,6 +142,7 @@ class CapsuleChatDeliveryService {
     ChatTrustedCardsLoader? listTrustedCards,
     ChatWorkerRunner sendWorkerRunner = _defaultSendWorkerRunner,
     ChatWorkerRunner receiveWorkerRunner = _defaultReceiveWorkerRunner,
+    CapsuleFfiWorkerQueue? workerQueue,
     CapsuleChatDeferredInboxStore? deferredInboxStore,
     CapsuleTradeSignalInboxStore? tradeSignalInboxStore,
     BingxFuturesExecutionCommandService? executionCommandService,
@@ -154,6 +157,7 @@ class CapsuleChatDeliveryService {
        _listTrustedCards = listTrustedCards ?? _emptyTrustedCards,
        _sendWorkerRunner = sendWorkerRunner,
        _receiveWorkerRunner = receiveWorkerRunner,
+       _workerQueue = workerQueue ?? CapsuleFfiWorkerQueue.shared,
        _deferredInboxStore =
            deferredInboxStore ?? const CapsuleChatDeferredInboxStore(),
        _tradeSignalInboxStore =
@@ -264,7 +268,10 @@ class CapsuleChatDeliveryService {
       );
     }
 
-    final workerResult = await runWorker();
+    final workerResult = await _workerQueue.run(
+      _ffiQueueKey(bootstrapOwner),
+      runWorker,
+    );
     final code = (workerResult['result'] as int?) ?? -1003;
     final lastError = workerResult['lastError'] as String?;
     final deliveryReceiptsJson =
@@ -319,15 +326,19 @@ class CapsuleChatDeliveryService {
       );
     }
 
-    final transport = await _receiveWorkerRunner(bootstrap).timeout(
-      _chatReceiveWorkerTimeout,
-      onTimeout:
-          () => <String, Object?>{
-            'result': -1003,
-            'json': null,
-            'lastError': 'Chat fetch timed out',
-          },
-    );
+    final bootstrapOwner =
+        bootstrap['activeCapsuleHex']?.toString().trim().toLowerCase() ?? '';
+    final transport = await _workerQueue.run(_ffiQueueKey(bootstrapOwner), () {
+      return _receiveWorkerRunner(bootstrap).timeout(
+        _chatReceiveWorkerTimeout,
+        onTimeout:
+            () => <String, Object?>{
+              'result': -1003,
+              'json': null,
+              'lastError': 'Chat fetch timed out',
+            },
+      );
+    });
     final code = (transport['result'] as int?) ?? -1003;
     _transportHealth.recordResult(capsuleHex: localRootHex, code: code);
     final rawJson = transport['json'] as String?;
@@ -844,6 +855,11 @@ class CapsuleChatDeliveryService {
 
   String _hex(Uint8List bytes) =>
       bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+  String _ffiQueueKey(String? capsuleHex) {
+    final normalized = capsuleHex?.trim().toLowerCase() ?? '';
+    return normalized.isEmpty ? 'ffi-global' : normalized;
+  }
 
   Map<String, String>? _parseEnvelope(String payloadJson) {
     try {

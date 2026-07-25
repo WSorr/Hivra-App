@@ -1,8 +1,10 @@
 # Cryptographically Continuous Ledger Protocol v5
 
-Status: normative design contract for `12.3 / pass 3`. Core and Engine now
-have the v5 commitment path; the production FFI/persistence format remains v4
-until P3-B/P3-C switch append, import, and storage together.
+Status: normative design contract for `12.3 / pass 3`. Fresh FFI runtimes now
+create v5 histories and a validated v4 import receives a signed migration
+anchor. Flutter persists each ledger generation as atomic ledger -> backup ->
+derived-projection writes; cross-platform recovery evidence remains a P3-C
+release blocker.
 
 ## 1. Problem and Goal
 
@@ -147,8 +149,8 @@ tests until a separately approved major-version retirement decision.
 
 **Current evidence:** Core owns the sole `Ledger` event collection and derives
 v5 entries from its local receipts; Engine signs and verifies both commitment
-layers. The runtime has not switched new capsule creation or persistence to
-v5 yet.
+layers. Fresh runtime creation, local append, transport event-version carriage,
+and v4-to-v5 import anchoring use that path.
 
 ### P3-B: Engine and FFI append/import
 
@@ -158,9 +160,20 @@ v5 yet.
 - reject invalid v5 chains and v5 signature failures before runtime replacement;
 - retain an explicit read-only v4 import/migration route.
 
+**Current evidence:** Engine selects the event version from the active ledger;
+fresh runtime append uses only v5 domain events and owner-signed local entries.
+Transport proofs carry the signed event version (legacy omission defaults to
+v4), and receive reconstructs that exact version. A v4 import validates before
+one owner-signed anchor begins subsequent v5 history.
+
 ### P3-C: Persistence and release evidence
 
-- evolve JSON/backups atomically with a declared v5 format;
+- persist the v5 head separately from the legacy `last_hash` checksum, so UI,
+  stale-candidate selection, and Core projection compare the real v5 history
+  head without weakening v4-anchor validation;
+- write one ledger generation atomically per file in the order ledger ->
+  backup -> derived Core projection; a failure MUST retain a valid ledger and
+  MUST NOT delete an existing target as a replacement fallback;
 - prove restart, export/import, restore, and cross-platform projection parity;
 - run adversarial import vectors and focused macOS/Android smoke before a
   release candidate.

@@ -1,19 +1,6 @@
 use super::*;
 use hivra_core::event_payloads::{EventPayload, RelationshipEstablishedPayload};
 
-fn load_relationship_delivery_context(seed: &Seed) -> Result<([u8; 32], PubKey), i32> {
-    let sender_secret = match derive_nostr_keypair(seed) {
-        Ok(key) => key,
-        Err(_) => return Err(-3),
-    };
-    let sender_pubkey = match derive_nostr_public_key(seed) {
-        Ok(key) => PubKey::from(key),
-        Err(_) => return Err(-3),
-    };
-
-    Ok((sender_secret, sender_pubkey))
-}
-
 fn peer_root_for_relationship(
     peer_pubkey: PubKey,
     own_starter_id: StarterId,
@@ -44,6 +31,41 @@ pub unsafe extern "C" fn hivra_break_relationship(
     own_starter_id_ptr: *const u8,
     peer_starter_id_ptr: *const u8,
 ) -> i32 {
+    break_relationship_with_delivery_reference(
+        peer_pubkey_ptr,
+        own_starter_id_ptr,
+        peer_starter_id_ptr,
+        None,
+    )
+}
+
+/// Append the local break fact and return its immutable signed event ID.
+/// The host outbox owns publication; this function deliberately performs no
+/// transport I/O so a local state transition cannot trigger hidden retries.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_break_relationship_with_delivery_reference(
+    peer_pubkey_ptr: *const u8,
+    own_starter_id_ptr: *const u8,
+    peer_starter_id_ptr: *const u8,
+    delivery_reference_out: *mut u8,
+) -> i32 {
+    if delivery_reference_out.is_null() {
+        return -1;
+    }
+    break_relationship_with_delivery_reference(
+        peer_pubkey_ptr,
+        own_starter_id_ptr,
+        peer_starter_id_ptr,
+        Some(delivery_reference_out),
+    )
+}
+
+unsafe fn break_relationship_with_delivery_reference(
+    peer_pubkey_ptr: *const u8,
+    own_starter_id_ptr: *const u8,
+    peer_starter_id_ptr: *const u8,
+    delivery_reference_out: Option<*mut u8>,
+) -> i32 {
     if peer_pubkey_ptr.is_null() || own_starter_id_ptr.is_null() || peer_starter_id_ptr.is_null() {
         return -1;
     }
@@ -69,16 +91,7 @@ pub unsafe extern "C" fn hivra_break_relationship(
         Err(_) => return -2,
     };
 
-    let (sender_secret, sender_pubkey) = match load_relationship_delivery_context(&seed) {
-        Ok(context) => context,
-        Err(code) => return code,
-    };
-
     let engine = build_engine(&seed);
-    let local_root_pubkey = match engine.public_key() {
-        Ok(pubkey) => pubkey,
-        Err(_) => return -4,
-    };
     let peer_root_pubkey = peer_root_for_relationship(peer_pubkey, own_starter_id, peer_starter_id);
 
     let local_prepared =
@@ -86,56 +99,17 @@ pub unsafe extern "C" fn hivra_break_relationship(
             Ok(prepared) => prepared,
             Err(_) => return -4,
         };
-    let remote_prepared = match engine.prepare_relationship_broken(
-        sender_pubkey,
-        peer_starter_id,
-        Some(local_root_pubkey),
-    ) {
-        Ok(prepared) => prepared,
-        Err(_) => return -4,
-    };
-
-    let message = DeliveryEnvelope {
-        schema_version: 1,
-        from: *sender_pubkey.as_bytes(),
-        to: *peer_pubkey.as_bytes(),
-        kind: EventKind::RelationshipBroken as u32,
-        payload: remote_prepared.event.payload().to_vec(),
-        timestamp: remote_prepared.event.timestamp().as_u64(),
-        correlation_id: None,
-        domain_event: Some(domain_event_proof(&remote_prepared.event)),
-    };
+    // The locally appended event is the outbox reference. The remote envelope
+    // is reconstructed only when that exact reference is pumped.
+    let delivery_reference = local_prepared.event.event_id();
 
     if append_prepared_event(local_prepared).is_err() {
         return -7;
     }
 
-    // Local sovereignty is ledger-first: once local break is appended, pairwise
-    // local truth must not depend on remote transport availability. Delivery is
-    // best-effort for peer convergence and must not block UI-facing FFI callers.
-    let delivery_secret = sender_secret;
-    let delivery_message = message.clone();
-    std::thread::spawn(move || {
-        if let Err(code) = with_cached_nostr_transport(
-            delivery_secret,
-            TransportProfile::Quick,
-            -5,
-            |transport| {
-                transport.send(delivery_message.clone()).map_err(|err| {
-                    eprintln!(
-                        "[Delivery/Nostr] RelationshipBroken local append ok; delivery failed: {:?}",
-                        err
-                    );
-                    -6
-                })
-            },
-        ) {
-            eprintln!(
-                "[Delivery/Nostr] RelationshipBroken local append ok; delivery unavailable ({})",
-                code
-            );
-        }
-    });
+    if let Some(out) = delivery_reference_out {
+        std::ptr::copy_nonoverlapping(delivery_reference.as_ptr(), out, 32);
+    }
 
     0
 }

@@ -127,6 +127,10 @@ pub struct EngineConfig {
 
     /// Invitation timeout in seconds (default: 24 hours = 86400)
     pub invitation_timeout: u64,
+
+    /// Domain-event version prepared for the active local ledger. Version
+    /// selection belongs to the runtime boundary, never to callers.
+    pub domain_event_version: u8,
 }
 
 impl Default for EngineConfig {
@@ -134,6 +138,16 @@ impl Default for EngineConfig {
         Self {
             network: Network::Neste,
             invitation_timeout: 86400, // 24 hours
+            domain_event_version: hivra_core::PROTOCOL_VERSION,
+        }
+    }
+}
+
+impl EngineConfig {
+    pub fn for_continuous_ledger() -> Self {
+        Self {
+            domain_event_version: hivra_core::CONTINUOUS_LEDGER_PROTOCOL_VERSION,
+            ..Self::default()
         }
     }
 }
@@ -573,15 +587,33 @@ where
     ) -> Result<PreparedEvent, EngineError<K::Error>> {
         let signer = self.public_key().map_err(EngineError::Keystore)?;
         let timestamp = self.now();
-        let unsigned = Event::new(kind, payload, timestamp, Signature::from([0u8; 64]), signer);
+        let unsigned = match self.config.domain_event_version {
+            hivra_core::PROTOCOL_VERSION => {
+                Event::new(kind, payload, timestamp, Signature::from([0u8; 64]), signer)
+            }
+            hivra_core::CONTINUOUS_LEDGER_PROTOCOL_VERSION => {
+                Event::new_v5(kind, payload, timestamp, Signature::from([0u8; 64]), signer)
+            }
+            _ => return Err(EngineError::InvalidAcceptPlan),
+        };
         let signature = self.sign_event(&unsigned).map_err(EngineError::Keystore)?;
-        let event = Event::new(
-            kind,
-            unsigned.payload().to_vec(),
-            timestamp,
-            signature,
-            signer,
-        );
+        let event = match self.config.domain_event_version {
+            hivra_core::PROTOCOL_VERSION => Event::new(
+                kind,
+                unsigned.payload().to_vec(),
+                timestamp,
+                signature,
+                signer,
+            ),
+            hivra_core::CONTINUOUS_LEDGER_PROTOCOL_VERSION => Event::new_v5(
+                kind,
+                unsigned.payload().to_vec(),
+                timestamp,
+                signature,
+                signer,
+            ),
+            _ => return Err(EngineError::InvalidAcceptPlan),
+        };
 
         Ok(PreparedEvent { event, recipient })
     }

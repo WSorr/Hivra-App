@@ -15,11 +15,17 @@ typedef RelationshipBreaker = bool Function(
   Uint8List ownStarterId,
   Uint8List peerStarterId,
 );
+typedef RelationshipBreakReferenceWriter = String? Function(
+  Uint8List peerPubkey,
+  Uint8List ownStarterId,
+  Uint8List peerStarterId,
+);
 typedef LedgerSnapshotPersister = Future<void> Function();
 
 class RelationshipService {
   final RelationshipGroupsLoader _loadRelationshipGroups;
   final RelationshipBreaker _breakRelationship;
+  final RelationshipBreakReferenceWriter? _breakRelationshipWithReference;
   final LedgerSnapshotPersister _persistLedgerSnapshot;
   final CapsuleAddressService _addressService;
   final CapsuleDeliveryLifecycleService? _deliveryLifecycle;
@@ -28,12 +34,14 @@ class RelationshipService {
   RelationshipService({
     required RelationshipGroupsLoader loadRelationshipGroups,
     required RelationshipBreaker breakRelationship,
+    RelationshipBreakReferenceWriter? breakRelationshipWithReference,
     required LedgerSnapshotPersister persistLedgerSnapshot,
     CapsuleAddressService? addressService,
     CapsuleDeliveryLifecycleService? deliveryLifecycle,
     String? activeCapsuleHex,
   })  : _loadRelationshipGroups = loadRelationshipGroups,
         _breakRelationship = breakRelationship,
+        _breakRelationshipWithReference = breakRelationshipWithReference,
         _persistLedgerSnapshot = persistLedgerSnapshot,
         _addressService = addressService ?? const CapsuleAddressService(),
         _deliveryLifecycle = deliveryLifecycle,
@@ -185,8 +193,18 @@ class RelationshipService {
       return false;
     }
 
-    final ok = _breakRelationship(peer, own, peerStarter);
-    if (!ok) return false;
+    final deliveryReference = _breakRelationshipWithReference?.call(
+      peer,
+      own,
+      peerStarter,
+    );
+    if (_breakRelationshipWithReference == null &&
+        !_breakRelationship(peer, own, peerStarter)) {
+      return false;
+    }
+    if (_breakRelationshipWithReference != null && deliveryReference == null) {
+      return false;
+    }
     await _persistLedgerSnapshot();
     final capsuleHex = _activeCapsuleHex?.trim().toLowerCase();
     final lifecycle = _deliveryLifecycle;
@@ -195,6 +213,7 @@ class RelationshipService {
         capsuleHex: capsuleHex,
         kind: DeliveryOutboxKind.relationshipBroken,
         reason: DeliveryOutboxReason.localRelationshipBreak,
+        deliveryReference: deliveryReference,
       );
     }
     return true;

@@ -1,26 +1,6 @@
 use super::*;
 use crate::invitation_support::incoming_invitation_expired_matches_runtime;
 use hivra_core::event_payloads::RelationshipBrokenPayload;
-use std::sync::{Mutex, OnceLock};
-
-static LAST_DELIVERY_REASON: OnceLock<Mutex<Option<String>>> = OnceLock::new();
-
-fn delivery_reason_cell() -> &'static Mutex<Option<String>> {
-    LAST_DELIVERY_REASON.get_or_init(|| Mutex::new(None))
-}
-
-fn set_last_delivery_reason(reason: Option<String>) {
-    if let Ok(mut guard) = delivery_reason_cell().lock() {
-        *guard = reason;
-    }
-}
-
-fn take_last_delivery_reason() -> Option<String> {
-    match delivery_reason_cell().lock() {
-        Ok(mut guard) => guard.take(),
-        Err(_) => None,
-    }
-}
 
 fn map_delivery_error(err: TransportError, default_code: i32) -> i32 {
     match err {
@@ -106,7 +86,7 @@ fn send_delivery_message(
         "[Delivery/Nostr] {} accepted envelope={} by={}",
         debug_label, receipt.envelope_id, receipt.accepted_by
     );
-    record_delivery_receipt(debug_label, receipt.clone());
+    record_delivery_receipt_with_correlation(debug_label, receipt.clone(), message.correlation_id);
     Ok(receipt)
 }
 
@@ -165,85 +145,89 @@ fn proof_signer_matches_payload(kind: EventKind, payload: &[u8], signer: PubKey)
     }
 }
 
-fn retry_pending_outgoing_relationship_breaks_over_transport(
+fn retry_outgoing_relationship_break_by_event_id_over_transport(
     transport: &NostrTransport,
     engine: &FfiEngine,
     sender_pubkey: [u8; 32],
+    event_id: [u8; 32],
 ) -> Result<i32, i32> {
-    let pending =
+    let Some(pending_delivery) =
         crate::invitation_support::pending_outgoing_relationship_break_deliveries_in_runtime(
             PubKey::from(sender_pubkey),
-        );
-    if pending.is_empty() {
+        )
+        .into_iter()
+        .find(|delivery| delivery.event_id == event_id)
+    else {
+        // The exact ledger fact was superseded or already acknowledged. This
+        // is a successful no-op, not a reason to scan and publish other facts.
         return Ok(0);
-    }
+    };
 
-    let mut delivered_count: i32 = 0;
-    let mut first_delivery_error: Option<(i32, Option<String>)> = None;
-    for pending_delivery in pending {
-        let payload = RelationshipBrokenPayload {
-            peer_pubkey: PubKey::from(sender_pubkey),
-            own_starter_id: pending_delivery.peer_starter_id,
-            peer_root_pubkey: Some(pending_delivery.local_root_pubkey),
-        }
-        .to_bytes();
-        let remote_prepared = match engine.prepare_domain_event(
+    let payload = RelationshipBrokenPayload {
+        peer_pubkey: PubKey::from(sender_pubkey),
+        own_starter_id: pending_delivery.peer_starter_id,
+        peer_root_pubkey: Some(pending_delivery.local_root_pubkey),
+    }
+    .to_bytes();
+    let remote_prepared = engine
+        .prepare_domain_event(
             EventKind::RelationshipBroken,
             payload.clone(),
             Some(PubKey::from(pending_delivery.to_pubkey)),
-        ) {
-            Ok(prepared) => prepared,
-            Err(_) => {
-                first_delivery_error.get_or_insert((-7, Some("event signing failed".to_string())));
-                continue;
-            }
-        };
-        let message = DeliveryEnvelope {
-            schema_version: 1,
-            from: sender_pubkey,
-            to: pending_delivery.to_pubkey,
-            kind: EventKind::RelationshipBroken as u32,
-            payload,
-            timestamp: pending_delivery.timestamp,
-            correlation_id: None,
-            domain_event: Some(domain_event_proof(&remote_prepared.event)),
-        };
+        )
+        .map_err(|_| -7)?;
+    let message = DeliveryEnvelope {
+        schema_version: 1,
+        from: sender_pubkey,
+        to: pending_delivery.to_pubkey,
+        kind: EventKind::RelationshipBroken as u32,
+        payload,
+        timestamp: remote_prepared.event.timestamp().as_u64(),
+        correlation_id: Some(event_id),
+        domain_event: Some(domain_event_proof(&remote_prepared.event)),
+    };
+    send_delivery_message(transport, &message, -7, "RelationshipBrokenRetry")
+        .map_err(|(code, _reason)| code)?;
+    Ok(1)
+}
 
-        match send_delivery_message(transport, &message, -7, "RelationshipBrokenRetry") {
-            Ok(_) => {
-                delivered_count += 1;
-            }
-            Err(delivery_error) => {
-                if first_delivery_error.is_none() {
-                    first_delivery_error = Some(delivery_error);
-                }
-            }
-        }
-    }
-
-    if delivered_count > 0 {
-        eprintln!(
-            "[Delivery/Nostr] RelationshipBrokenRetry delivered count={}",
-            delivered_count
-        );
-        return Ok(delivered_count);
-    }
-
-    if let Some((code, _reason)) = first_delivery_error {
-        return Err(code);
-    }
-
-    Ok(0)
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InvitationDeliveryMode {
+    Offer,
+    Terminal,
 }
 
 fn retry_pending_outgoing_invitations_over_transport(
     transport: &NostrTransport,
     engine: &FfiEngine,
     sender_pubkey: [u8; 32],
+    only_invitation_id: Option<[u8; 32]>,
+    mode: InvitationDeliveryMode,
 ) -> Result<i32, i32> {
-    let pending = crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime();
-    let pending_terminals =
-        crate::invitation_support::pending_outgoing_invitation_terminal_deliveries_in_runtime();
+    let pending = if mode == InvitationDeliveryMode::Terminal {
+        Vec::new()
+    } else {
+        crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime()
+            .into_iter()
+            .filter(|delivery| {
+                only_invitation_id
+                    .map(|id| delivery.invitation_id == id)
+                    .unwrap_or(true)
+            })
+            .collect::<Vec<_>>()
+    };
+    let pending_terminals = if mode == InvitationDeliveryMode::Offer {
+        Vec::new()
+    } else {
+        crate::invitation_support::pending_outgoing_invitation_terminal_deliveries_in_runtime()
+            .into_iter()
+            .filter(|delivery| {
+                only_invitation_id
+                    .map(|id| delivery.invitation_id == id)
+                    .unwrap_or(true)
+            })
+            .collect::<Vec<_>>()
+    };
     if pending.is_empty() && pending_terminals.is_empty() {
         return Ok(0);
     }
@@ -268,7 +252,7 @@ fn retry_pending_outgoing_invitations_over_transport(
             to: pending_delivery.to_pubkey,
             kind: EventKind::InvitationSent as u32,
             payload: pending_delivery.payload,
-            timestamp: pending_delivery.timestamp,
+            timestamp: remote_prepared.event.timestamp().as_u64(),
             correlation_id: Some(pending_delivery.invitation_id),
             domain_event: Some(domain_event_proof(&remote_prepared.event)),
         };
@@ -308,7 +292,7 @@ fn retry_pending_outgoing_invitations_over_transport(
             to: pending_delivery.to_pubkey,
             kind: pending_delivery.kind as u32,
             payload: pending_delivery.payload,
-            timestamp: pending_delivery.timestamp,
+            timestamp: remote_prepared.event.timestamp().as_u64(),
             correlation_id: Some(pending_delivery.invitation_id),
             domain_event: Some(domain_event_proof(&remote_prepared.event)),
         };
@@ -340,60 +324,108 @@ fn retry_pending_outgoing_invitations_over_transport(
     Ok(0)
 }
 
+/// Retry one immutable relationship-break fact. The caller must supply the
+/// signed local ledger event ID returned when the break was appended.
 #[no_mangle]
-pub unsafe extern "C" fn hivra_retry_pending_outgoing_invitations() -> i32 {
+pub unsafe extern "C" fn hivra_retry_outgoing_relationship_break_by_event_id(
+    event_id_ptr: *const u8,
+) -> i32 {
     clear_last_error();
     clear_delivery_receipts();
+    if event_id_ptr.is_null() {
+        return -1;
+    }
+    let mut event_id = [0u8; 32];
+    event_id.copy_from_slice(std::slice::from_raw_parts(event_id_ptr, 32));
+    let seed = match load_seed() {
+        Ok(seed) => seed,
+        Err(_) => return -2,
+    };
+    let (sender_secret, sender_pubkey) = match load_invitation_delivery_context(&seed) {
+        Ok(context) => context,
+        Err(code) => return code,
+    };
+    let engine = build_engine(&seed);
+    match with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
+        retry_outgoing_relationship_break_by_event_id_over_transport(
+            transport,
+            &engine,
+            sender_pubkey,
+            event_id,
+        )
+    }) {
+        Ok(delivered) => delivered,
+        Err(code) => {
+            set_last_error(format!("Retry relationship break failed (code {code})"));
+            code
+        }
+    }
+}
+
+/// Retry one exact invitation effect. The host outbox owns scheduling; this
+/// function only derives and publishes the referenced domain effect.
+unsafe fn retry_outgoing_invitation_by_id(
+    invitation_id_ptr: *const u8,
+    mode: InvitationDeliveryMode,
+) -> i32 {
+    clear_last_error();
+    clear_delivery_receipts();
+    if invitation_id_ptr.is_null() {
+        return -1;
+    }
+    let mut invitation_id = [0u8; 32];
+    invitation_id.copy_from_slice(std::slice::from_raw_parts(invitation_id_ptr, 32));
 
     let seed = match load_seed() {
         Ok(seed) => seed,
         Err(_) => {
-            set_last_error("Retry pending invitations failed: seed not found");
+            set_last_error("Retry invitation failed: seed not found");
             return -2;
         }
     };
-
     {
         let runtime = RUNTIME.lock().unwrap();
         if runtime.capsule.is_none() {
-            set_last_error("Retry pending invitations failed: capsule runtime is not initialized");
+            set_last_error("Retry invitation failed: capsule runtime is not initialized");
             return -4;
         }
     }
-
     let (sender_secret, sender_pubkey) = match load_invitation_delivery_context(&seed) {
         Ok(context) => context,
-        Err(code) => {
-            set_last_error(format!(
-                "Retry pending invitations failed: delivery context initialization failed (code {code})"
-            ));
-            return code;
-        }
+        Err(code) => return code,
     };
     let engine = build_engine(&seed);
-
-    set_last_delivery_reason(None);
     match with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
-        match retry_pending_outgoing_invitations_over_transport(transport, &engine, sender_pubkey) {
-            Ok(delivered) => Ok(delivered),
-            Err(code) => {
-                set_last_delivery_reason(Some(format!("delivery retry failed with code {code}")));
-                Err(code)
-            }
-        }
+        retry_pending_outgoing_invitations_over_transport(
+            transport,
+            &engine,
+            sender_pubkey,
+            Some(invitation_id),
+            mode,
+        )
     }) {
         Ok(delivered) => delivered,
         Err(code) => {
-            let reason_suffix = take_last_delivery_reason()
-                .as_deref()
-                .map(|value| format!("; reason: {value}"))
-                .unwrap_or_default();
             set_last_error(format!(
-                "Retry pending invitations failed: delivery transport rejected message (code {code}{reason_suffix})"
+                "Retry invitation failed: delivery transport rejected message (code {code})"
             ));
             code
         }
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn hivra_retry_outgoing_invitation_offer_by_id(
+    invitation_id_ptr: *const u8,
+) -> i32 {
+    retry_outgoing_invitation_by_id(invitation_id_ptr, InvitationDeliveryMode::Offer)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn hivra_retry_outgoing_invitation_terminal_by_id(
+    invitation_id_ptr: *const u8,
+) -> i32 {
+    retry_outgoing_invitation_by_id(invitation_id_ptr, InvitationDeliveryMode::Terminal)
 }
 
 /// Deliver an invitation and append `InvitationSent` to the local ledger.
@@ -453,13 +485,11 @@ unsafe fn send_invitation_with_card_signature(
         }
     }
 
-    let (sender_secret, sender_pubkey) = match load_invitation_delivery_context(&seed) {
-        Ok(context) => context,
-        Err(code) => {
-            set_last_error(format!(
-                "Send invitation failed: delivery context initialization failed (code {code})"
-            ));
-            return code;
+    let sender_pubkey = match derive_nostr_public_key(&seed) {
+        Ok(key) => key,
+        Err(_) => {
+            set_last_error("Send invitation failed: transport key derivation failed");
+            return -3;
         }
     };
     let engine = build_engine(&seed);
@@ -484,14 +514,6 @@ unsafe fn send_invitation_with_card_signature(
             return -6;
         }
     };
-    let payload = match InvitationSentPayload::from_bytes(invitation.event.payload()) {
-        Ok(payload) => payload,
-        Err(_) => {
-            set_last_error("Send invitation failed: InvitationSent payload encoding failed");
-            return -6;
-        }
-    };
-    let invitation_id = payload.invitation_id;
     let mut payload_bytes = invitation.event.payload().to_vec();
     if payload_bytes.len() == 96 {
         if let Ok(sender_root_pubkey) = derive_root_public_key(&seed) {
@@ -517,29 +539,6 @@ unsafe fn send_invitation_with_card_signature(
             return -6;
         }
     };
-    let remote_prepared = match engine.prepare_domain_event(
-        EventKind::InvitationReceived,
-        payload_bytes.clone(),
-        Some(PubKey::from(to_pubkey)),
-    ) {
-        Ok(prepared) => prepared,
-        Err(_) => {
-            set_last_error("Send invitation failed: remote event signing failed");
-            return -6;
-        }
-    };
-
-    let message = DeliveryEnvelope {
-        schema_version: 1,
-        from: sender_pubkey,
-        to: to_pubkey,
-        kind: EventKind::InvitationSent as u32,
-        payload: payload_bytes.clone(),
-        timestamp: local_prepared.event.timestamp().as_u64(),
-        correlation_id: Some(invitation_id),
-        domain_event: Some(domain_event_proof(&remote_prepared.event)),
-    };
-
     match append_prepared_event(local_prepared) {
         Ok(_) => {}
         Err(_) => {
@@ -548,28 +547,8 @@ unsafe fn send_invitation_with_card_signature(
         }
     };
 
-    set_last_delivery_reason(None);
-    if let Err(code) =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
-            match send_delivery_message(transport, &message, -7, "InvitationSent") {
-                Ok(_) => Ok(()),
-                Err((code, reason)) => {
-                    set_last_delivery_reason(reason);
-                    Err(code)
-                }
-            }
-        })
-    {
-        let reason_suffix = take_last_delivery_reason()
-            .as_deref()
-            .map(|value| format!("; reason: {value}"))
-            .unwrap_or_default();
-        set_last_error(format!(
-            "Send invitation failed: delivery transport rejected message (code {code}{reason_suffix})"
-        ));
-        return code;
-    }
-
+    // The ledger fact is now durable. Delivery is performed only by the
+    // capsule-scoped outbox using this invitation_id, never by this use-case.
     0
 }
 
@@ -613,17 +592,10 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
     }
 
     let received = match with_cached_nostr_transport(sender_secret, profile, -4, |transport| {
-        let engine = build_engine(&seed);
-        if let Err(code) = retry_pending_outgoing_relationship_breaks_over_transport(
-            transport,
-            &engine,
-            local_pubkey,
-        ) {
-            eprintln!(
-                "[Delivery/Nostr] RelationshipBrokenRetry pre-receive failed (code {})",
-                code
-            );
-        }
+        // Receiving must never publish unrelated local facts. Outbound retry is
+        // owned by the capsule-scoped delivery coordinator, which selects one
+        // immutable outbox item at a time. Mixing it into receive() caused a
+        // read operation to replay every unresolved relationship break.
         transport.receive().map_err(|_| -5)
     }) {
         Ok(messages) => messages,
@@ -828,15 +800,11 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         }
     }
 
-    let (sender_secret, sender_pubkey) = match load_invitation_delivery_context(&seed) {
-        Ok(context) => context,
-        Err(-3) => {
+    let sender_pubkey = match derive_nostr_public_key(&seed) {
+        Ok(key) => key,
+        Err(_) => {
             set_last_error("Accept invitation failed: sender key derivation failed");
             return -4;
-        }
-        Err(_) => {
-            set_last_error("Accept invitation failed: delivery context initialization failed");
-            return -6;
         }
     };
     if from_pubkey == sender_pubkey {
@@ -911,10 +879,6 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         return 0;
     }
 
-    let delivery_payload = payload_bytes.clone();
-    let delivery_timestamp = prepared.event.timestamp().as_u64();
-    let delivery_proof = domain_event_proof(&prepared.event);
-
     if append_prepared_event(prepared).is_err() {
         eprintln!(
             "[Accept] local InvitationAccepted append failed invitation={:02x?}",
@@ -945,50 +909,7 @@ pub unsafe extern "C" fn hivra_accept_invitation(
         &invitation_id[..4]
     );
 
-    let delivery_to_pubkey = *acceptance_plan.sender_pubkey.as_bytes();
-    let message = DeliveryEnvelope {
-        schema_version: 1,
-        from: sender_pubkey,
-        to: delivery_to_pubkey,
-        kind: EventKind::InvitationAccepted as u32,
-        payload: delivery_payload,
-        timestamp: delivery_timestamp,
-        correlation_id: Some(invitation_id),
-        domain_event: Some(delivery_proof),
-    };
-
-    eprintln!(
-        "[Delivery/Nostr] Sending InvitationAccepted to_prefix={:02x?} invitation_prefix={:02x?}",
-        &delivery_to_pubkey[..4],
-        &invitation_id[..4]
-    );
-
-    set_last_delivery_reason(None);
-    if let Err(code) =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -6, |transport| {
-            match send_delivery_message(transport, &message, -7, "InvitationAccepted") {
-                Ok(_) => Ok(()),
-                Err((code, reason)) => {
-                    set_last_delivery_reason(reason);
-                    Err(code)
-                }
-            }
-        })
-    {
-        let reason_suffix = take_last_delivery_reason()
-            .as_deref()
-            .map(|value| format!("; reason: {value}"))
-            .unwrap_or_default();
-        eprintln!(
-            "[Delivery/Nostr] InvitationAccepted local append/finalize ok; delivery failed ({})",
-            code
-        );
-        set_last_error(format!(
-            "Accept invitation delivery failed but local acceptance is recorded (code {code}{reason_suffix})"
-        ));
-        return code;
-    }
-
+    // Outbound acceptance is a separate, exact terminal-delivery item.
     0
 }
 
@@ -1037,66 +958,10 @@ pub unsafe extern "C" fn hivra_reject_invitation(invitation_id_ptr: *const u8, r
         return 0;
     }
 
-    let delivery_payload = payload_bytes.clone();
-    let delivery_timestamp = prepared.event.timestamp().as_u64();
-    let delivery_to = *peer_pubkey.as_bytes();
-    let delivery_proof = domain_event_proof(&prepared.event);
-
     match append_prepared_event(prepared) {
         Ok(_) => {
-            // Local truth is ledger-first: once rejected is appended, UI projection
-            // must not return invitation to actionable pending queues. Transport
-            // delivery stays best-effort and must not roll back local reject.
-            match load_invitation_delivery_context(&seed) {
-                Ok((sender_secret, sender_pubkey)) => {
-                    let message = DeliveryEnvelope {
-                        schema_version: 1,
-                        from: sender_pubkey,
-                        to: delivery_to,
-                        kind: EventKind::InvitationRejected as u32,
-                        payload: delivery_payload,
-                        timestamp: delivery_timestamp,
-                        correlation_id: Some(invitation_id),
-                        domain_event: Some(delivery_proof),
-                    };
-                    set_last_delivery_reason(None);
-                    if let Err(code) = with_cached_nostr_transport(
-                        sender_secret,
-                        TransportProfile::Quick,
-                        -5,
-                        |transport| match send_delivery_message(
-                            transport,
-                            &message,
-                            -6,
-                            "InvitationRejected",
-                        ) {
-                            Ok(_) => Ok(()),
-                            Err((code, reason)) => {
-                                set_last_delivery_reason(reason);
-                                Err(code)
-                            }
-                        },
-                    ) {
-                        let reason_suffix = take_last_delivery_reason()
-                            .as_deref()
-                            .map(|value| format!("; reason: {value}"))
-                            .unwrap_or_default();
-                        eprintln!(
-                            "[Delivery/Nostr] InvitationRejected local append ok; delivery failed ({}){}",
-                            code,
-                            reason_suffix
-                        );
-                        return code;
-                    }
-                }
-                Err(code) => {
-                    eprintln!(
-                        "[Delivery/Nostr] InvitationRejected local append ok; delivery context unavailable ({})",
-                        code
-                    );
-                    return code;
-                }
-            }
+            // The terminal fact is durable; its exact transport effect is
+            // queued by the host lifecycle after this call returns.
             0
         }
         Err(_) => -4,
@@ -1119,10 +984,10 @@ pub unsafe extern "C" fn hivra_expire_invitation(invitation_id_ptr: *const u8) -
         return 0;
     }
 
-    let peer_pubkey = match find_invitation_sent_in_runtime(&invitation_id) {
-        Some(record) if !record.is_incoming => record.peer_pubkey,
-        _ => return -4,
-    };
+    if !matches!(find_invitation_sent_in_runtime(&invitation_id), Some(record) if !record.is_incoming)
+    {
+        return -4;
+    }
 
     let seed = match load_seed() {
         Ok(seed) => seed,
@@ -1133,64 +998,8 @@ pub unsafe extern "C" fn hivra_expire_invitation(invitation_id_ptr: *const u8) -
         Ok(prepared) => prepared,
         Err(_) => return -3,
     };
-    let delivery_payload = prepared.event.payload().to_vec();
-    let delivery_timestamp = prepared.event.timestamp().as_u64();
-    let delivery_to = *peer_pubkey.as_bytes();
-    let delivery_proof = domain_event_proof(&prepared.event);
     match append_prepared_event(prepared) {
-        Ok(_) => {
-            match load_invitation_delivery_context(&seed) {
-                Ok((sender_secret, sender_pubkey)) => {
-                    let message = DeliveryEnvelope {
-                        schema_version: 1,
-                        from: sender_pubkey,
-                        to: delivery_to,
-                        kind: EventKind::InvitationExpired as u32,
-                        payload: delivery_payload,
-                        timestamp: delivery_timestamp,
-                        correlation_id: Some(invitation_id),
-                        domain_event: Some(delivery_proof),
-                    };
-                    set_last_delivery_reason(None);
-                    if let Err(code) = with_cached_nostr_transport(
-                        sender_secret,
-                        TransportProfile::Quick,
-                        -5,
-                        |transport| match send_delivery_message(
-                            transport,
-                            &message,
-                            -6,
-                            "InvitationExpired",
-                        ) {
-                            Ok(_) => Ok(()),
-                            Err((code, reason)) => {
-                                set_last_delivery_reason(reason);
-                                Err(code)
-                            }
-                        },
-                    ) {
-                        let reason_suffix = take_last_delivery_reason()
-                            .as_deref()
-                            .map(|value| format!("; reason: {value}"))
-                            .unwrap_or_default();
-                        eprintln!(
-                            "[Delivery/Nostr] InvitationExpired local append ok; delivery failed ({}){}",
-                            code,
-                            reason_suffix
-                        );
-                        return code;
-                    }
-                }
-                Err(code) => {
-                    eprintln!(
-                        "[Delivery/Nostr] InvitationExpired local append ok; delivery context unavailable ({})",
-                        code
-                    );
-                    return code;
-                }
-            }
-            0
-        }
+        Ok(_) => 0,
         Err(_) => -3,
     }
 }

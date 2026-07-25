@@ -523,10 +523,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final labels = await _module.contactLabels.load();
     if (!mounted) return null;
     final checks =
-        _module.manualChecks.loadChecks().toList()..sort(
+        (await _module.manualChecks.loadAttestedChecks()).toList()..sort(
           (a, b) =>
               a.peerLabel.toLowerCase().compareTo(b.peerLabel.toLowerCase()),
         );
+    if (!mounted) return null;
     if (checks.isEmpty) return null;
     final selectedPeerHex = await showModalBottomSheet<String>(
       context: context,

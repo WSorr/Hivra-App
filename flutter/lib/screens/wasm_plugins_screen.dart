@@ -308,7 +308,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   }
 
   Future<String?> _selectConsensusPeer({required String hint}) async {
-    final checks = _module.manualChecks.loadChecks();
+    final checks = await _module.manualChecks.loadAttestedChecks();
     final labels = await _module.contactLabels.load();
     if (!mounted) return null;
     if (checks.isEmpty) {

@@ -253,6 +253,31 @@ fn pending_invitation_retry_candidates_clear_after_terminal_event() {
 }
 
 #[test]
+fn pending_invitation_retry_candidates_survive_ledger_import() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(241);
+    let local_root = derived_pubkey(&local_seed);
+    let peer_transport = [242u8; 32];
+    let invitation_id = [243u8; 32];
+    let starter_id = [244u8; 32];
+
+    set_runtime_capsule(local_root, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, starter_id, peer_transport, Some(1), None);
+    let exported = export_runtime_ledger().unwrap();
+
+    clear_runtime_state();
+    set_runtime_capsule(local_root, Network::Neste);
+    import_runtime_ledger(&exported).unwrap();
+
+    let pending = crate::invitation_support::pending_outgoing_invitation_deliveries_in_runtime();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].to_pubkey, peer_transport);
+    assert_eq!(pending[0].invitation_id, invitation_id);
+}
+
+#[test]
 fn pending_invitation_terminal_retry_candidates_use_sender_transport() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
@@ -1310,6 +1335,33 @@ fn ledger_signature_validation_rejects_tampered_event() {
 }
 
 #[test]
+fn transported_v5_proof_requires_the_proof_timestamp() {
+    let seed = test_seed(242);
+    let engine = build_engine(&seed);
+    let prepared = engine
+        .prepare_domain_event(EventKind::InvitationExpired, vec![7u8; 32], None)
+        .unwrap();
+
+    // The receiving side rebuilds the signed Core event from the transport
+    // envelope. Replacing this timestamp with the local outbox timestamp
+    // invalidates the v5 signature even though payload and signer match.
+    let wrong_timestamp = Timestamp::from(prepared.event.timestamp().as_u64().saturating_sub(1));
+    let mismatched = Event::new_v5(
+        prepared.event.kind(),
+        prepared.event.payload().to_vec(),
+        wrong_timestamp,
+        *prepared.event.signature(),
+        *prepared.event.signer(),
+    );
+    assert!(engine
+        .verify_event(&mismatched, mismatched.signer())
+        .is_err());
+    assert!(engine
+        .verify_event(&prepared.event, prepared.event.signer())
+        .is_ok());
+}
+
+#[test]
 fn import_validation_rejects_tampered_event_when_signature_policy_enabled() {
     let seed = test_seed(241);
     let engine = build_engine(&seed);
@@ -1417,6 +1469,68 @@ fn ffi_identity_boundary_keeps_root_and_transport_split() {
     );
     assert_eq!(legacy_result, Err("legacy owner mode unsupported"));
     assert!(current_capsule_state().is_none());
+}
+
+#[test]
+fn fresh_v5_runtime_exports_and_reimports_one_signed_history() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(93);
+    init_runtime_state(
+        &seed,
+        Network::Neste,
+        CapsuleType::Leaf,
+        CapsuleOwnerMode::Root,
+    )
+    .expect("fresh v5 runtime");
+    let engine = build_engine(&seed);
+    {
+        let runtime = RUNTIME.lock().unwrap();
+        let ledger = &runtime.capsule.as_ref().expect("capsule").ledger;
+        assert!(ledger.is_continuous_v5());
+        assert!(engine.verify_ledger_v5(ledger).is_ok());
+    }
+
+    let prepared = engine
+        .prepare_domain_event(EventKind::InvitationExpired, vec![7u8; 32], None)
+        .expect("v5 event");
+    assert_eq!(
+        prepared.event.version(),
+        hivra_core::CONTINUOUS_LEDGER_PROTOCOL_VERSION
+    );
+    {
+        let mut runtime = RUNTIME.lock().unwrap();
+        crate::runtime_support::append_v5_event(
+            &engine,
+            &mut runtime.capsule.as_mut().expect("capsule").ledger,
+            prepared.event,
+        )
+        .expect("v5 append");
+    }
+
+    let exported = export_runtime_ledger().expect("export v5 ledger");
+    let exported_value: serde_json::Value = serde_json::from_str(&exported).expect("v5 JSON");
+    let exported_head = exported_value
+        .get("head_commitment_v5")
+        .and_then(serde_json::Value::as_str)
+        .expect("v5 head commitment");
+    assert_eq!(exported_head.len(), 64);
+    assert_ne!(exported_head, "0");
+    assert_eq!(
+        exported_value
+            .get("last_hash")
+            .and_then(serde_json::Value::as_str),
+        Some("0"),
+        "v5 must not overwrite the legacy checksum field"
+    );
+    import_runtime_ledger(&exported).expect("reimport v5 ledger");
+    let runtime = RUNTIME.lock().unwrap();
+    assert!(engine
+        .verify_ledger_v5(&runtime.capsule.as_ref().expect("capsule").ledger)
+        .is_ok());
+    drop(runtime);
+    clear_runtime_state();
 }
 
 #[test]

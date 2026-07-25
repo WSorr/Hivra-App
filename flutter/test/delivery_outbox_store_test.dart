@@ -28,8 +28,7 @@ void main() {
       }
     });
 
-    test('enqueue is idempotent and writes capsule-scoped outbox file',
-        () async {
+    test('enqueue is idempotent and writes capsule-scoped outbox file', () async {
       final now = DateTime.utc(2026, 7, 5, 10);
 
       await store.enqueue(
@@ -52,10 +51,7 @@ void main() {
       expect(items.single.id, hasLength(64));
       expect(items.single.transport, DeliveryTransportId.nostr);
       expect(items.single.kind, DeliveryOutboxKind.relationshipBroken);
-      expect(
-        items.single.reason,
-        DeliveryOutboxReason.localRelationshipBreak,
-      );
+      expect(items.single.reason, DeliveryOutboxReason.localRelationshipBreak);
       expect(items.single.status, DeliveryOutboxStatus.pending);
       expect(items.single.nextAttemptAt, now.add(const Duration(seconds: 5)));
 
@@ -65,8 +61,7 @@ void main() {
       expect(await file.exists(), isTrue);
     });
 
-    test('due, markAttempt, markDelivered and prune are deterministic',
-        () async {
+    test('due, markAttempt, and markPublished are deterministic', () async {
       final now = DateTime.utc(2026, 7, 5, 10);
       await store.enqueue(
         capsuleHex: capsuleHex,
@@ -76,10 +71,7 @@ void main() {
         now: now,
       );
 
-      final due = await store.due(
-        capsuleHex: capsuleHex,
-        now: now,
-      );
+      final due = await store.due(capsuleHex: capsuleHex, now: now);
       expect(due, hasLength(1));
 
       await store.markAttempt(
@@ -91,10 +83,7 @@ void main() {
       final afterAttempt = await store.load(capsuleHex);
       expect(afterAttempt.single.attempts, 1);
       expect(afterAttempt.single.lastError, 'relay timeout');
-      expect(
-        await store.due(capsuleHex: capsuleHex, now: now),
-        isEmpty,
-      );
+      expect(await store.due(capsuleHex: capsuleHex, now: now), isEmpty);
 
       await store.markAttempt(
         capsuleHex: capsuleHex,
@@ -105,17 +94,84 @@ void main() {
       expect(afterSuccessAttempt.single.attempts, 2);
       expect(afterSuccessAttempt.single.lastError, isNull);
 
-      await store.markDelivered(
+      await store.markPublished(
         capsuleHex: capsuleHex,
         itemId: due.single.id,
+        nextAttemptAt: now.add(const Duration(minutes: 1)),
       );
       expect(
         (await store.load(capsuleHex)).single.status,
-        DeliveryOutboxStatus.delivered,
+        DeliveryOutboxStatus.published,
       );
-
-      await store.pruneDelivered(capsuleHex);
-      expect(await store.load(capsuleHex), isEmpty);
     });
+
+    test('migrates legacy delivered state to relay publication', () {
+      final item = DeliveryOutboxItem.fromJson(<String, Object?>{
+        'id': 'legacy',
+        'capsule_hex': capsuleHex,
+        'transport': DeliveryTransportId.nostr,
+        'kind': DeliveryOutboxKind.invitationSent,
+        'reason': DeliveryOutboxReason.sendInvitationRetry,
+        'created_at': '2026-07-05T10:00:00Z',
+        'next_attempt_at': '2026-07-05T10:00:00Z',
+        'attempts': 0,
+        'status': 'delivered',
+        'last_error': null,
+      });
+
+      expect(item?.status, DeliveryOutboxStatus.published);
+    });
+
+    test('revives legacy retry-exhausted core delivery', () {
+      final item = DeliveryOutboxItem.fromJson(<String, Object?>{
+        'id': 'legacy-dead',
+        'capsule_hex': capsuleHex,
+        'transport': DeliveryTransportId.nostr,
+        'kind': DeliveryOutboxKind.invitationSent,
+        'reason': DeliveryOutboxReason.sendInvitationRetry,
+        'created_at': '2026-07-05T10:00:00Z',
+        'next_attempt_at': '2026-07-05T10:00:00Z',
+        'attempts': 7,
+        'status': 'dead',
+      });
+
+      expect(item?.status, DeliveryOutboxStatus.pending);
+      expect(item?.attempts, 7);
+    });
+
+    test(
+      'keeps distinct immutable invitation facts as distinct outbox items',
+      () async {
+        final now = DateTime.utc(2026, 7, 5, 10);
+        const invitationA =
+            '1111111111111111111111111111111111111111111111111111111111111111';
+        const invitationB =
+            '2222222222222222222222222222222222222222222222222222222222222222';
+
+        await store.enqueue(
+          capsuleHex: capsuleHex,
+          transport: DeliveryTransportId.nostr,
+          kind: DeliveryOutboxKind.invitationSent,
+          reason: DeliveryOutboxReason.sendInvitationRetry,
+          deliveryReference: invitationA,
+          now: now,
+        );
+        await store.enqueue(
+          capsuleHex: capsuleHex,
+          transport: DeliveryTransportId.nostr,
+          kind: DeliveryOutboxKind.invitationSent,
+          reason: DeliveryOutboxReason.sendInvitationRetry,
+          deliveryReference: invitationB,
+          now: now,
+        );
+
+        final items = await store.load(capsuleHex);
+        expect(items, hasLength(2));
+        expect(
+          items.map((item) => item.deliveryReference),
+          containsAll(<String>[invitationA, invitationB]),
+        );
+      },
+    );
   });
 }

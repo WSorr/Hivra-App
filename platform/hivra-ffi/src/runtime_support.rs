@@ -95,13 +95,52 @@ pub(crate) type FfiEngine =
     Engine<FfiTimeSource, FfiRandomSource, Ed25519CryptoProvider, SeedBackedKeyStore>;
 
 pub(crate) fn build_engine(seed: &Seed) -> FfiEngine {
+    let config = RUNTIME
+        .lock()
+        .ok()
+        .and_then(|runtime| {
+            runtime
+                .capsule
+                .as_ref()
+                .map(|capsule| capsule.ledger.is_continuous_v5())
+        })
+        .map(|continuous| {
+            if continuous {
+                EngineConfig::for_continuous_ledger()
+            } else {
+                EngineConfig::default()
+            }
+        })
+        .unwrap_or_default();
+    build_engine_with_config(seed, config)
+}
+
+fn build_engine_with_config(seed: &Seed, config: EngineConfig) -> FfiEngine {
     Engine::new(
         FfiTimeSource,
         FfiRandomSource,
         Ed25519CryptoProvider::new(),
         SeedBackedKeyStore { seed: seed.clone() },
-        EngineConfig::default(),
+        config,
     )
+}
+
+pub(crate) fn build_engine_for_active_ledger(seed: &Seed) -> Result<FfiEngine, &'static str> {
+    let runtime = RUNTIME.lock().unwrap();
+    let ledger = &runtime.capsule.as_ref().ok_or("no capsule")?.ledger;
+    Ok(build_engine_for_ledger(seed, ledger))
+}
+
+/// Selects protocol behavior from the explicit ledger value. Callers that
+/// already own a runtime lock MUST use this function instead of consulting the
+/// global runtime again.
+pub(crate) fn build_engine_for_ledger(seed: &Seed, ledger: &Ledger) -> FfiEngine {
+    let config = if ledger.is_continuous_v5() {
+        EngineConfig::for_continuous_ledger()
+    } else {
+        EngineConfig::default()
+    };
+    build_engine_with_config(seed, config)
 }
 
 pub(crate) fn domain_event_proof(event: &Event) -> DomainEventProof {
@@ -206,28 +245,14 @@ pub(crate) fn init_runtime_state(
         }
     };
     let owner = PubKey::from(owner_bytes);
-    let mut ledger = Ledger::new(owner);
-    let engine = build_engine(seed);
+    let mut ledger = Ledger::fresh_v5(owner);
+    let engine = build_engine_with_config(seed, EngineConfig::for_continuous_ledger());
 
     let payload = CapsuleCreatedPayload::new(network.to_byte(), capsule_type as u8, [0u8; 32]);
-    let unsigned = Event::new(
-        EventKind::CapsuleCreated,
-        payload.to_bytes(),
-        Timestamp::from(0),
-        Signature::from([0u8; 64]),
-        owner,
-    );
-    let signature = engine
-        .sign_event(&unsigned)
+    let event = engine
+        .prepare_domain_event(EventKind::CapsuleCreated, payload.to_bytes(), None)
         .map_err(|_| "failed to sign capsule birth")?;
-    let event = Event::new(
-        EventKind::CapsuleCreated,
-        unsigned.payload().to_vec(),
-        unsigned.timestamp(),
-        signature,
-        owner,
-    );
-    let _ = ledger.append(event);
+    append_v5_event(&engine, &mut ledger, event.event)?;
 
     if capsule_type == CapsuleType::Relay {
         let starter_kinds = [
@@ -248,24 +273,10 @@ pub(crate) fn init_runtime_state(
                 kind: *kind,
                 network: network.to_byte(),
             };
-            let unsigned = Event::new(
-                EventKind::StarterCreated,
-                payload.to_bytes(),
-                Timestamp::from(slot as u64 + 1),
-                Signature::from([0u8; 64]),
-                owner,
-            );
-            let signature = engine
-                .sign_event(&unsigned)
+            let event = engine
+                .prepare_domain_event(EventKind::StarterCreated, payload.to_bytes(), None)
                 .map_err(|_| "failed to sign starter birth")?;
-            let starter_event = Event::new(
-                EventKind::StarterCreated,
-                unsigned.payload().to_vec(),
-                unsigned.timestamp(),
-                signature,
-                owner,
-            );
-            let _ = ledger.append(starter_event);
+            append_v5_event(&engine, &mut ledger, event.event)?;
         }
     }
 
@@ -281,6 +292,28 @@ pub(crate) fn init_runtime_state(
     let mut runtime = RUNTIME.lock().unwrap();
     runtime.capsule = Some(capsule);
     Ok(())
+}
+
+pub(crate) fn append_v5_event(
+    engine: &FfiEngine,
+    ledger: &mut Ledger,
+    event: Event,
+) -> Result<(), &'static str> {
+    if !ledger.is_continuous_v5()
+        || event.version() != hivra_core::CONTINUOUS_LEDGER_PROTOCOL_VERSION
+    {
+        return Err("v5 ledger event mismatch");
+    }
+    let sequence = ledger
+        .next_sequence_v5()
+        .map_err(|_| "v5 sequence failed")?;
+    let previous = ledger
+        .tail_commitment_v5()
+        .map_err(|_| "v5 tail commitment failed")?;
+    let entry = engine
+        .prepare_ledger_entry_v5(sequence, previous, event)
+        .map_err(|_| "failed to sign ledger entry")?;
+    ledger.append_v5(entry).map_err(|_| "v5 append failed")
 }
 
 pub(crate) fn clear_runtime_state() {
@@ -303,6 +336,12 @@ pub(crate) fn export_runtime_ledger() -> Result<String, &'static str> {
             "last_hash".to_string(),
             serde_json::Value::String(capsule.ledger.last_hash().to_string()),
         );
+        if let Some(head) = capsule.ledger.head_commitment_v5() {
+            map.insert(
+                "head_commitment_v5".to_string(),
+                serde_json::Value::String(head.iter().map(|byte| format!("{byte:02x}")).collect()),
+            );
+        }
     }
     serde_json::to_string(&value).map_err(|_| "serialization failed")
 }
@@ -434,6 +473,27 @@ pub(crate) fn import_runtime_ledger(json: &str) -> Result<(), &'static str> {
     };
 
     validate_imported_ledger(&parsed, &capsule.pubkey, cfg!(not(test)))?;
+    let parsed = if parsed.is_continuous_v5() || cfg!(test) {
+        if parsed.is_continuous_v5() && cfg!(not(test)) {
+            let seed = load_seed().map_err(|_| "seed not found")?;
+            let engine = build_engine_for_ledger(&seed, &parsed);
+            engine
+                .verify_ledger_v5(&parsed)
+                .map_err(|_| "v5 ledger signature invalid")?;
+        }
+        parsed
+    } else {
+        let seed = load_seed().map_err(|_| "seed not found")?;
+        let engine = build_engine_for_ledger(&seed, &parsed);
+        let canonical_v4 = serde_json::to_vec(&parsed).map_err(|_| "serialization failed")?;
+        let snapshot = LedgerAnchorV5::legacy_snapshot_commitment(&canonical_v4);
+        let anchor = engine
+            .prepare_legacy_anchor_v5(snapshot)
+            .map_err(|_| "failed to sign v4 migration anchor")?;
+        parsed
+            .migrate_v4(anchor)
+            .map_err(|_| "v4 migration failed")?
+    };
     observe_ledger_tail_ts(&parsed);
     capsule.ledger = parsed;
     Ok(())
@@ -475,27 +535,58 @@ pub(crate) fn append_runtime_event_with_signer(
         .unwrap_or(next_ts);
     let next_ts = core::cmp::max(now_ms, next_ts);
     observe_engine_ts(next_ts);
-    capsule
-        .ledger
-        .append(Event::new(
+    if capsule.ledger.is_continuous_v5() {
+        let event = Event::new_v5(
             kind,
             payload.to_vec(),
             Timestamp::from(next_ts),
             Signature::from([0u8; 64]),
             signer,
-        ))
-        .map_err(|_| "append failed")
+        );
+        let entry = hivra_core::LedgerEntryV5::unsigned(
+            *capsule.ledger.owner(),
+            capsule
+                .ledger
+                .next_sequence_v5()
+                .map_err(|_| "append failed")?,
+            capsule
+                .ledger
+                .tail_commitment_v5()
+                .map_err(|_| "append failed")?,
+            event,
+        )
+        .with_signature(Signature::from([0u8; 64]));
+        capsule.ledger.append_v5(entry).map_err(|_| "append failed")
+    } else {
+        capsule
+            .ledger
+            .append(Event::new(
+                kind,
+                payload.to_vec(),
+                Timestamp::from(next_ts),
+                Signature::from([0u8; 64]),
+                signer,
+            ))
+            .map_err(|_| "append failed")
+    }
 }
 
 pub(crate) fn append_verified_runtime_event(event: Event) -> Result<(), &'static str> {
     let seed = load_seed().map_err(|_| "seed not found")?;
-    let engine = build_engine(&seed);
+    let engine = build_engine_for_active_ledger(&seed)?;
     engine
         .verify_event(&event, event.signer())
         .map_err(|_| "event signature invalid")?;
 
     let mut runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_mut().ok_or("no capsule")?;
+
+    if capsule.ledger.is_continuous_v5() {
+        // Preserve the remote event exactly. The local signature covers only
+        // its acceptance into this capsule's history.
+        append_v5_event(&engine, &mut capsule.ledger, event)?;
+        return Ok(());
+    }
 
     let last_plus_one = capsule
         .ledger
@@ -543,12 +634,31 @@ pub(crate) fn append_runtime_event(kind: EventKind, payload: &[u8]) -> Result<()
 
 pub(crate) fn append_prepared_event(prepared: PreparedEvent) -> Result<(), &'static str> {
     let event_ts = prepared.event.timestamp().as_u64();
+    let use_v5 = {
+        let runtime = RUNTIME.lock().unwrap();
+        runtime
+            .capsule
+            .as_ref()
+            .ok_or("no capsule")?
+            .ledger
+            .is_continuous_v5()
+    };
+    let engine = if use_v5 {
+        let seed = load_seed().map_err(|_| "seed not found")?;
+        Some(build_engine_for_active_ledger(&seed)?)
+    } else {
+        None
+    };
     let mut runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_mut().ok_or("no capsule")?;
-    capsule
-        .ledger
-        .append(prepared.event)
-        .map_err(|_| "append failed")?;
+    if let Some(engine) = engine.as_ref() {
+        append_v5_event(engine, &mut capsule.ledger, prepared.event)?;
+    } else {
+        capsule
+            .ledger
+            .append(prepared.event)
+            .map_err(|_| "append failed")?;
+    }
     observe_engine_ts(event_ts);
     Ok(())
 }

@@ -30,8 +30,13 @@ pub struct CapsuleState {
     /// Exactly 5 slots as per protocol invariant
     pub slots: [Option<[u8; 32]>; 5],
 
-    /// Current ledger state hash (using last_hash from ledger)
+    /// Legacy v4 replay checksum. For continuous histories use
+    /// `ledger_head_commitment` as the current ledger identity.
     pub ledger_hash: u64,
+
+    /// Current v5 ledger head, when the capsule has a continuous history.
+    #[serde(default)]
+    pub ledger_head_commitment: Option<[u8; 32]>,
 
     /// Number of active relationships (needs to be computed)
     pub relationships_count: u32,
@@ -53,6 +58,7 @@ impl CapsuleState {
                 .starter_ids()
                 .map(|starter_id| starter_id.map(|id| *id.as_bytes())),
             ledger_hash: capsule.ledger.last_hash(),
+            ledger_head_commitment: capsule.ledger.head_commitment_v5(),
             relationships_count: count_relationships(&capsule.ledger),
             version: capsule.ledger.events().len() as u32,
         }
@@ -101,6 +107,7 @@ mod tests {
             network: 0,
             slots: [None, None, None, None, None],
             ledger_hash: 42,
+            ledger_head_commitment: None,
             relationships_count: 0,
             version: 1,
         };

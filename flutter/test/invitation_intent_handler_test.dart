@@ -607,8 +607,14 @@ void main() {
 
         expect(results[0].code, 0);
         expect(results[1].code, 0);
-        expect(results[0].message, 'Invitation sent');
-        expect(results[1].message, 'Invitation sent');
+        expect(
+          results[0].message,
+          'Invitation recorded locally. Relay publication is queued.',
+        );
+        expect(
+          results[1].message,
+          'Invitation recorded locally. Relay publication is queued.',
+        );
       },
     );
 

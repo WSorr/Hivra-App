@@ -27,7 +27,7 @@ class CapsuleLedgerSummaryParser {
       final events = _support.events(ledger);
 
       final ledgerVersion = events.length;
-      final ledgerHashHex = _parseLedgerHashHex(ledger['last_hash']);
+      final ledgerHashHex = _ledgerHeadIdentity(ledger);
       final starterCount = _starterCountFromCoreProjection(
         coreProjection,
         ledgerVersion: ledgerVersion,
@@ -125,7 +125,11 @@ class CapsuleLedgerSummaryParser {
     final projection = Map<String, dynamic>.from(raw);
     final version = projection['version'];
     if (version is! num || version.toInt() != ledgerVersion) return 0;
-    if (_parseLedgerHashHex(projection['ledger_hash']) != ledgerHashHex) {
+    final projectionHash =
+        projection['ledger_head_commitment'] != null
+            ? _parseLedgerHashHex(projection['ledger_head_commitment'])
+            : _parseLedgerHashHex(projection['ledger_hash']);
+    if (projectionHash != ledgerHashHex) {
       return 0;
     }
     final slots = projection['slots'];
@@ -157,5 +161,13 @@ class CapsuleLedgerSummaryParser {
       }
     }
     return '0';
+  }
+
+  String _ledgerHeadIdentity(Map<String, dynamic> ledger) {
+    final v5Head = _parseLedgerHashHex(ledger['head_commitment_v5']);
+    if (v5Head != '0') {
+      return v5Head;
+    }
+    return _parseLedgerHashHex(ledger['last_hash']);
   }
 }
