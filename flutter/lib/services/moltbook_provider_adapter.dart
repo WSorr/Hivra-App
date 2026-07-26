@@ -8,6 +8,12 @@ import '../models/moltbook_provider_models.dart';
 typedef MoltbookHttpSender =
     Future<MoltbookHttpResponse> Function(MoltbookHttpRequest request);
 
+abstract interface class MoltbookObservePort {
+  Future<MoltbookAccountObservation> observeAccount(String apiKey);
+
+  Future<MoltbookHomeObservation> observeHome(String apiKey);
+}
+
 class MoltbookHttpRequest {
   final String method;
   final Uri uri;
@@ -49,7 +55,7 @@ class MoltbookProviderException implements Exception {
   String toString() => 'MoltbookProviderException($code): $message';
 }
 
-class MoltbookProviderAdapter {
+class MoltbookProviderAdapter implements MoltbookObservePort {
   static final Uri apiBaseUri = Uri.parse('https://www.moltbook.com/api/v1/');
   static const int maxResponseBytes = 256 * 1024;
   static const Duration defaultRequestTimeout = Duration(seconds: 12);
@@ -63,6 +69,7 @@ class MoltbookProviderAdapter {
   }) : _send = send ?? _sendStrict,
        _requestTimeout = requestTimeout;
 
+  @override
   Future<MoltbookAccountObservation> observeAccount(String apiKey) async {
     final response = await _get('agents/me', apiKey);
     final json = _decodeObject(response);
@@ -89,6 +96,7 @@ class MoltbookProviderAdapter {
     return observation;
   }
 
+  @override
   Future<MoltbookHomeObservation> observeHome(String apiKey) async {
     final response = await _get('home', apiKey);
     final json = _decodeObject(response);

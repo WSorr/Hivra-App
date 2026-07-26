@@ -1466,9 +1466,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - completed read-only adapter baseline: pinned official HTTPS origin,
       bounded account/home projections, redirect rejection, timeout/size
       limits, rate-budget parsing, and fail-closed provider error mapping.
-    - credential/UI mounting remains blocked until a generic secure
-      plugin-credential vault is cleaned by both Capsule deletion and plugin
-      removal; no provider-specific Keychain orphan is accepted.
+    - completed generic secure plugin-credential vault: one versioned Secure
+      Storage item, serialized updates, fail-closed parsing, and cleanup by
+      both Capsule deletion and plugin removal.
+    - completed Moltbook account binding: verify-before-save, transactional
+      account replacement, explicit refresh/disconnect, and non-secret
+      Capsule-scoped binding metadata. Ordinary workspace loading does not
+      read Secure Storage.
+    - no second provider-specific credential store or Keychain orphan is
+      accepted.
     - the first remote milestone is read-only Observe; the first write
       milestone is Assisted publication with exact preview and one explicit
       approval per effect.
@@ -1482,9 +1488,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - First deliverable:
     - completed: approve the ownership boundary and define the draft-only
       Public Bulletin contract without changing the 1.x Core protocol.
-  - Status: Phase 0 draft prototype, Phase 1 host lifecycle, and Phase 2 strict
-    read-adapter baseline complete; secure binding and workspace Observe
-    mounting are next.
+  - Status: Phase 0 draft prototype, Phase 1 host lifecycle, Phase 2
+    account/home Observe with secure binding, and the Phase 3 deterministic
+    WASM Draft Preview with bounded Capsule-scoped local history complete;
+    feed observation and all remote writes remain outside the current slice.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:

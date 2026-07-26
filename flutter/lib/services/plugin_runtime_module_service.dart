@@ -2,17 +2,22 @@ import 'dart:async';
 
 import '../models/capsule_chat_models.dart';
 import '../models/moltbook_ambassador_models.dart';
+import '../models/moltbook_provider_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import 'app_runtime_service.dart';
 import 'capsule_file_store.dart';
+import 'capsule_scoped_secret_vault.dart';
 import 'capsule_chat_delivery_service.dart';
 import 'capsule_contact_label_store.dart';
 import 'consensus_attestation_exchange_service.dart';
 import 'external_effect_service.dart';
 import 'manual_consensus_check_service.dart';
 import 'moltbook_ambassador_configuration_store.dart';
+import 'moltbook_connection_service.dart';
+import 'moltbook_draft_store.dart';
+import 'moltbook_provider_adapter.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
 import 'wasm_plugin_registry_service.dart';
@@ -53,8 +58,11 @@ class PluginRuntimeModule {
   final CapsuleContactLabelStore contactLabels;
   final UiEventLogService uiLog;
   final ExternalEffectService externalEffects;
+  final MoltbookConnectionService moltbookConnection;
+  final MoltbookDraftStore moltbookDrafts;
   final MoltbookAmbassadorConfigurationStore _ambassadorConfiguration;
   final CapsuleFileStore _fileStore;
+  final CapsuleScopedSecretVault _secretVault;
   final String? Function() _readActiveCapsuleRootHex;
 
   const PluginRuntimeModule({
@@ -67,11 +75,15 @@ class PluginRuntimeModule {
     required this.contactLabels,
     required this.uiLog,
     required this.externalEffects,
+    required this.moltbookConnection,
+    required this.moltbookDrafts,
     required MoltbookAmbassadorConfigurationStore ambassadorConfiguration,
     required CapsuleFileStore fileStore,
+    required CapsuleScopedSecretVault secretVault,
     required String? Function() readActiveCapsuleRootHex,
   }) : _ambassadorConfiguration = ambassadorConfiguration,
        _fileStore = fileStore,
+       _secretVault = secretVault,
        _readActiveCapsuleRootHex = readActiveCapsuleRootHex;
 
   Future<MoltbookAmbassadorConfiguration> loadAmbassadorConfiguration() =>
@@ -81,9 +93,166 @@ class PluginRuntimeModule {
     MoltbookAmbassadorConfiguration configuration,
   ) => _ambassadorConfiguration.save(configuration);
 
+  Future<MoltbookConnectionBinding?> loadMoltbookBinding() =>
+      moltbookConnection.loadBinding();
+
+  Future<MoltbookConnectionBinding> connectMoltbook(String apiKey) async {
+    await uiLog.log('moltbook.connect', 'start');
+    try {
+      final binding = await moltbookConnection.connect(apiKey);
+      await uiLog.log(
+        'moltbook.connect',
+        'success account=${binding.accountId} claimed=${binding.isClaimed} '
+            'active=${binding.isActive}',
+      );
+      return binding;
+    } catch (error) {
+      await uiLog.log('moltbook.connect', 'error ${_safeError(error)}');
+      rethrow;
+    }
+  }
+
+  Future<MoltbookConnectionBinding> refreshMoltbookBinding() async {
+    await uiLog.log('moltbook.account.refresh', 'start');
+    try {
+      final binding = await moltbookConnection.refresh();
+      await uiLog.log(
+        'moltbook.account.refresh',
+        'success account=${binding.accountId} claimed=${binding.isClaimed} '
+            'active=${binding.isActive}',
+      );
+      return binding;
+    } catch (error) {
+      await uiLog.log('moltbook.account.refresh', 'error ${_safeError(error)}');
+      rethrow;
+    }
+  }
+
+  Future<MoltbookHomeObservation> observeMoltbookHome() async {
+    await uiLog.log('moltbook.home.observe', 'start');
+    try {
+      final observation = await moltbookConnection.observeHome();
+      await uiLog.log(
+        'moltbook.home.observe',
+        'success karma=${observation.karma} '
+            'unread=${observation.unreadNotificationCount} '
+            'actions=${observation.suggestedActions.length} '
+            'rateRemaining=${observation.rateLimit.remaining ?? "unknown"}',
+      );
+      return observation;
+    } catch (error) {
+      await uiLog.log('moltbook.home.observe', 'error ${_safeError(error)}');
+      rethrow;
+    }
+  }
+
+  Future<void> disconnectMoltbook() async {
+    await uiLog.log('moltbook.disconnect', 'start');
+    try {
+      await moltbookConnection.disconnect();
+      await uiLog.log('moltbook.disconnect', 'success');
+    } catch (error) {
+      await uiLog.log('moltbook.disconnect', 'error ${_safeError(error)}');
+      rethrow;
+    }
+  }
+
+  Future<List<MoltbookStoredDraft>> loadMoltbookDrafts() =>
+      moltbookDrafts.load();
+
+  Future<void> deleteMoltbookDraft(String draftHashHex) async {
+    final normalizedHash = draftHashHex.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedHash)) {
+      throw ArgumentError('Invalid Moltbook draft hash');
+    }
+    await moltbookDrafts.delete(normalizedHash);
+    await uiLog.log(
+      'moltbook.draft.delete',
+      'success hash=${normalizedHash.substring(0, 12)}..',
+    );
+  }
+
+  Future<MoltbookDraftPreview> prepareMoltbookDraft({
+    required String bulletinId,
+    required String releaseTag,
+    required String category,
+    required List<String> facts,
+    required String titleHint,
+    required String audience,
+  }) async {
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled) {
+      throw StateError('Moltbook Ambassador is disabled');
+    }
+    final normalizedCategory = category.trim();
+    if (!configuration.allowedTopics.contains(normalizedCategory)) {
+      throw StateError('Draft category must match one of the allowed topics');
+    }
+    final operationCapsuleHex =
+        _readActiveCapsuleRootHex()?.trim().toLowerCase();
+    if (operationCapsuleHex == null || operationCapsuleHex.length != 64) {
+      throw StateError('Active capsule identity is unavailable');
+    }
+    await uiLog.log(
+      'moltbook.draft.prepare',
+      'start owner=$operationCapsuleHex bulletin=${_safeLogValue(bulletinId)}',
+    );
+    final response = await pluginHostApi.executeWithRuntimeHook(
+      PluginHostApiRequest(
+        schemaVersion: pluginHostApiSchemaVersion,
+        pluginId: moltbookAmbassadorPluginId,
+        method: prepareMoltbookDraftMethod,
+        args: <String, dynamic>{
+          'schema_version': 1,
+          'plugin_id': moltbookAmbassadorPluginId,
+          'bulletin_id': bulletinId.trim(),
+          'release_tag': releaseTag.trim(),
+          'category': normalizedCategory,
+          'facts': facts.map((fact) => fact.trim()).toList(),
+          'title_hint': titleHint.trim(),
+          'audience': audience.trim(),
+        },
+      ),
+    );
+    if (!_isStillOwnedBy(operationCapsuleHex)) {
+      await uiLog.log(
+        'moltbook.draft.prepare',
+        'aborted reason=capsule_changed owner=$operationCapsuleHex',
+      );
+      throw StateError('Draft discarded because the active capsule changed');
+    }
+    if (response.status != PluginHostApiStatus.executed) {
+      final message =
+          response.errorMessage ??
+          (response.blockingFacts.isEmpty
+              ? 'Moltbook draft preparation was rejected'
+              : response.blockingFacts.first.label);
+      await uiLog.log(
+        'moltbook.draft.prepare',
+        'rejected code=${response.errorCode ?? response.status.name} '
+            'message=${_safeError(message)}',
+      );
+      throw StateError(message);
+    }
+    final result = response.result;
+    if (result == null) {
+      throw StateError('Moltbook draft result is missing');
+    }
+    final preview = MoltbookDraftPreview.fromHostResult(result);
+    await moltbookDrafts.save(preview);
+    await uiLog.log(
+      'moltbook.draft.prepare',
+      'success bulletin=${_safeLogValue(preview.bulletinId)} '
+          'hash=${preview.draftHashHex.substring(0, 12)}.. '
+          'source=${response.executionSource}',
+    );
+    return preview;
+  }
+
   Future<void> removePlugin(WasmPluginRecord record) async {
     final pluginId = record.pluginId?.trim();
     if (pluginId != null && pluginId.isNotEmpty) {
+      await _secretVault.deletePlugin(pluginId);
       await _fileStore.deletePluginStateFromAllCapsules(pluginId);
     }
     await registry.removePlugin(record.id);
@@ -237,6 +406,16 @@ class PluginRuntimeModule {
   bool _isStillOwnedBy(String operationCapsuleHex) =>
       _readActiveCapsuleRootHex()?.trim().toLowerCase() == operationCapsuleHex;
 
+  String _safeError(Object error) {
+    final compact = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return compact.length <= 240 ? compact : compact.substring(0, 240);
+  }
+
+  String _safeLogValue(String value) {
+    final compact = value.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    return compact.length <= 80 ? compact : compact.substring(0, 80);
+  }
+
   PluginChatSendResult _capsuleChanged(
     String operationCapsuleHex, {
     PluginHostApiResponse? hostResponse,
@@ -269,6 +448,7 @@ class PluginRuntimeModuleService {
 
   PluginRuntimeModule build() {
     final activeCapsuleRootHex = runtime.activeCapsuleRootHex;
+    final secretVault = CapsuleScopedSecretVault();
     return PluginRuntimeModule(
       registry: const WasmPluginRegistryService(),
       sourceCatalog: const WasmPluginSourceCatalogService(),
@@ -283,10 +463,21 @@ class PluginRuntimeModuleService {
         resolveAdapter: externalEffectAdapterResolver ?? (providerId) => null,
         fileStore: fileStore,
       ),
+      moltbookConnection: MoltbookConnectionService(
+        fileStore: fileStore,
+        secretVault: secretVault,
+        observer: MoltbookProviderAdapter(),
+        readActiveCapsuleRootHex: activeCapsuleRootHex,
+      ),
+      moltbookDrafts: MoltbookDraftStore(
+        fileStore: fileStore,
+        readActiveCapsuleRootHex: activeCapsuleRootHex,
+      ),
       ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(
         fileStore: fileStore,
         readActiveCapsuleRootHex: activeCapsuleRootHex,
       ),
+      secretVault: secretVault,
       fileStore: fileStore,
       readActiveCapsuleRootHex: activeCapsuleRootHex,
     );

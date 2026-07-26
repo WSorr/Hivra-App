@@ -50,6 +50,7 @@ PLATFORM_TOOLCHAIN="$ROOT/docs/platform-toolchain-evolution.md"
 CONTINUOUS_LEDGER_PROTOCOL="$ROOT/docs/architecture/continuous-ledger-protocol-v5.md"
 DELIVERY_LIFECYCLE_DOC="$ROOT/docs/architecture/transport-delivery-lifecycle.md"
 EXTERNAL_EFFECT_LIFECYCLE_DOC="$ROOT/docs/architecture/external-effect-lifecycle.md"
+CAPSULE_SECRET_LIFECYCLE_DOC="$ROOT/docs/architecture/capsule-scoped-secret-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
 
@@ -70,6 +71,8 @@ TRADING_SCREEN="$SCREENS/trading_drone_screen.dart"
 WASM_PLUGINS_SCREEN="$SCREENS/wasm_plugins_screen.dart"
 MOLTBOOK_AMBASSADOR_SCREEN="$SCREENS/moltbook_ambassador_screen.dart"
 MOLTBOOK_PROVIDER_ADAPTER="$ROOT/flutter/lib/services/moltbook_provider_adapter.dart"
+MOLTBOOK_CONNECTION="$ROOT/flutter/lib/services/moltbook_connection_service.dart"
+MOLTBOOK_DRAFT_STORE="$ROOT/flutter/lib/services/moltbook_draft_store.dart"
 CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
 INVITATIONS_SCREEN="$SCREENS/invitations_screen.dart"
 LEDGER_INSPECTOR_SCREEN="$SCREENS/ledger_inspector_screen.dart"
@@ -86,6 +89,8 @@ CONSENSUS_ATTESTATION_STORE="$ROOT/flutter/lib/services/consensus_attestation_st
 CAPSULE_FILE_STORE="$ROOT/flutter/lib/services/capsule_file_store.dart"
 CAPSULE_INDEX_STORE="$ROOT/flutter/lib/services/capsule_index_store.dart"
 CAPSULE_PERSISTENCE="$ROOT/flutter/lib/services/capsule_persistence_service.dart"
+CAPSULE_SECRET_VAULT="$ROOT/flutter/lib/services/capsule_scoped_secret_vault.dart"
+PLUGIN_RUNTIME_MODULE="$ROOT/flutter/lib/services/plugin_runtime_module_service.dart"
 BINDINGS="$ROOT/flutter/lib/ffi/hivra_bindings.dart"
 WASM_RUNTIME="$ROOT/platform/hivra-wasm-runtime/src/lib.rs"
 WASM_RUNTIME_SERVICE="$ROOT/flutter/lib/services/wasm_plugin_runtime_service.dart"
@@ -434,8 +439,40 @@ require_present "$MOLTBOOK_PROVIDER_ADAPTER" "maxResponseBytes = 256 \\* 1024" \
   "Moltbook adapter bounds provider responses"
 require_present "$MOLTBOOK_PROVIDER_ADAPTER" "Observe transport only permits GET" \
   "Moltbook Observe adapter grants no write method"
+require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "moltbook_provider_adapter|CapsuleScopedSecretVault" \
+  "Moltbook screen cannot call provider or secure storage directly"
+require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "PluginHostApiService|executeWithRuntimeHook" \
+  "Moltbook screen cannot call the plugin host directly"
+require_present "$PLUGIN_RUNTIME_MODULE" "Future<MoltbookDraftPreview> prepareMoltbookDraft" \
+  "Moltbook draft preview is mounted through the plugin runtime module"
+require_present "$PLUGIN_RUNTIME_MODULE" "method: prepareMoltbookDraftMethod" \
+  "Moltbook draft preview executes the canonical WASM contract method"
+require_present "$PLUGIN_RUNTIME_MODULE" "moltbookDrafts\\.save\\(preview\\)" \
+  "validated Moltbook drafts enter one local store"
+require_present "$MOLTBOOK_DRAFT_STORE" "writePluginState" \
+  "Moltbook draft history uses Capsule-scoped plugin state"
+require_absent "$MOLTBOOK_DRAFT_STORE" "ledger|ExternalEffect|MoltbookProviderAdapter" \
+  "Moltbook local drafts do not become ledger, remote effects, or provider calls"
+require_present "$MOLTBOOK_AMBASSADOR_SCREEN" "Remote publication is intentionally unavailable" \
+  "Moltbook draft workspace cannot imply remote publication"
+require_present "$MOLTBOOK_CONNECTION" "_observer\\.observeAccount\\(normalizedKey\\)" \
+  "Moltbook connection verifies a credential before storage"
+require_present "$MOLTBOOK_CONNECTION" "_secretVault\\.replaceAccountSecret" \
+  "Moltbook account rotation uses the generic secret vault"
+require_absent "$MOLTBOOK_CONNECTION" "FlutterSecureStorage|dart:io" \
+  "Moltbook connection owns no second credential store"
+require_present "$MOLTBOOK_CONNECTION" "_secretVault\\.deleteAccount" \
+  "Moltbook disconnect removes the account secret"
 require_absent "$EXTERNAL_EFFECT_LIFECYCLE_DOC" "MoltbookHttp|MoltbookProvider" \
   "generic external-effect lifecycle contains no Moltbook DTO"
+require_present "$CAPSULE_SECRET_LIFECYCLE_DOC" "single application owner" \
+  "capsule-scoped secret lifecycle has one application owner"
+require_absent "$CAPSULE_SECRET_VAULT" "dart:io|File\\(|Directory\\(" \
+  "capsule-scoped secret vault has no plaintext filesystem fallback"
+require_present "$CAPSULE_PERSISTENCE" "_secretVault\\.deleteCapsules\\(keysToDelete\\)" \
+  "Capsule deletion cleans every Capsule-scoped plugin secret"
+require_present "$PLUGIN_RUNTIME_MODULE" "_secretVault\\.deletePlugin\\(pluginId\\)" \
+  "plugin removal cleans its secrets across Capsules"
 require_absent "$WASM_PLUGINS_SCREEN" "services/wasm_plugin_(registry|source_catalog)_service\\.dart" \
   "wasm plugins screen imports plugin DTOs from model boundary"
 require_absent "$TRADING_SCREEN" "services/bingx_futures_order_tracking_store\\.dart" \

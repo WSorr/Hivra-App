@@ -1,4 +1,150 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 import 'plugin_contract_ids.dart';
+
+class MoltbookDraftPreview {
+  final String bulletinId;
+  final String releaseTag;
+  final String category;
+  final String title;
+  final String body;
+  final String audience;
+  final bool approvalRequired;
+  final List<String> safetyFlags;
+  final String draftHashHex;
+  final String canonicalDraftJson;
+
+  const MoltbookDraftPreview({
+    required this.bulletinId,
+    required this.releaseTag,
+    required this.category,
+    required this.title,
+    required this.body,
+    required this.audience,
+    required this.approvalRequired,
+    required this.safetyFlags,
+    required this.draftHashHex,
+    required this.canonicalDraftJson,
+  });
+
+  factory MoltbookDraftPreview.fromHostResult(Map<String, dynamic> result) {
+    if (result['schema_version'] != 1 ||
+        result['plugin_id'] != moltbookAmbassadorPluginId ||
+        result['contract_kind'] != 'moltbook_ambassador_draft' ||
+        result['approval_required'] != true) {
+      throw const FormatException('Invalid Moltbook draft contract result');
+    }
+    final rawFlags = result['safety_flags'];
+    if (rawFlags is! List || rawFlags.any((value) => value is! String)) {
+      throw const FormatException('Invalid Moltbook draft safety flags');
+    }
+    final preview = MoltbookDraftPreview(
+      bulletinId: _requiredString(result, 'bulletin_id'),
+      releaseTag: _requiredString(result, 'release_tag'),
+      category: _requiredString(result, 'category'),
+      title: _requiredString(result, 'title'),
+      body: _requiredString(result, 'body'),
+      audience: _requiredString(result, 'audience'),
+      approvalRequired: true,
+      safetyFlags: rawFlags.cast<String>(),
+      draftHashHex: _requiredString(result, 'draft_hash_hex'),
+      canonicalDraftJson: _requiredString(result, 'canonical_draft_json'),
+    );
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(preview.draftHashHex)) {
+      throw const FormatException('Invalid Moltbook draft hash');
+    }
+    if (sha256.convert(utf8.encode(preview.canonicalDraftJson)).toString() !=
+        preview.draftHashHex) {
+      throw const FormatException('Moltbook canonical draft hash mismatch');
+    }
+    final canonical = jsonDecode(preview.canonicalDraftJson);
+    if (canonical is! Map ||
+        canonical['bulletin_id'] != preview.bulletinId ||
+        canonical['release_tag'] != preview.releaseTag ||
+        canonical['category'] != preview.category ||
+        canonical['title'] != preview.title ||
+        canonical['body'] != preview.body ||
+        canonical['audience'] != preview.audience ||
+        canonical['approval_required'] != true ||
+        jsonEncode(canonical['safety_flags']) !=
+            jsonEncode(preview.safetyFlags)) {
+      throw const FormatException(
+        'Moltbook canonical draft projection mismatch',
+      );
+    }
+    return preview;
+  }
+
+  Map<String, dynamic> toHostResult() => <String, dynamic>{
+    'schema_version': 1,
+    'plugin_id': moltbookAmbassadorPluginId,
+    'contract_kind': 'moltbook_ambassador_draft',
+    'bulletin_id': bulletinId,
+    'release_tag': releaseTag,
+    'category': category,
+    'title': title,
+    'body': body,
+    'audience': audience,
+    'approval_required': approvalRequired,
+    'safety_flags': safetyFlags,
+    'draft_hash_hex': draftHashHex,
+    'canonical_draft_json': canonicalDraftJson,
+  };
+
+  static String _requiredString(Map<String, dynamic> value, String field) {
+    final result = value[field];
+    if (result is! String || result.trim().isEmpty) {
+      throw FormatException('Invalid Moltbook draft field: $field');
+    }
+    return result;
+  }
+}
+
+class MoltbookStoredDraft {
+  static const String awaitingApproval = 'awaiting_approval';
+
+  final MoltbookDraftPreview preview;
+  final DateTime createdAtUtc;
+  final String status;
+
+  const MoltbookStoredDraft({
+    required this.preview,
+    required this.createdAtUtc,
+    this.status = awaitingApproval,
+  });
+
+  factory MoltbookStoredDraft.fromJson(Map<String, dynamic> json) {
+    final rawPreview = json['preview'];
+    if (json['schema_version'] != 1 ||
+        rawPreview is! Map ||
+        json['status'] != awaitingApproval) {
+      throw const FormatException('Invalid stored Moltbook draft');
+    }
+    final createdAt = DateTime.tryParse(
+      json['created_at_utc']?.toString() ?? '',
+    );
+    if (createdAt == null ||
+        !createdAt.isUtc ||
+        createdAt.toIso8601String() != json['created_at_utc']) {
+      throw const FormatException('Invalid stored Moltbook draft timestamp');
+    }
+    return MoltbookStoredDraft(
+      preview: MoltbookDraftPreview.fromHostResult(
+        Map<String, dynamic>.from(rawPreview),
+      ),
+      createdAtUtc: createdAt,
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'schema_version': 1,
+    'status': status,
+    'created_at_utc': createdAtUtc.toIso8601String(),
+    'preview': preview.toHostResult(),
+  };
+}
 
 class MoltbookAmbassadorConfiguration {
   static const int schemaVersion = 1;

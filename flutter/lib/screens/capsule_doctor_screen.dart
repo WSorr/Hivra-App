@@ -467,8 +467,9 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                         ? '${_provider.label} API key'
                         : '${_provider.label} optional API key',
                 helperText:
-                    'Stored only in secure storage. '
-                    'Provider keys are isolated.',
+                    'Saved keys remain hidden and are loaded directly from '
+                    'secure storage when you ask. Enter a value only to save '
+                    'or replace the current provider key.',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -480,7 +481,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                 FilledButton.icon(
                   onPressed: _busy ? null : _saveProviderSettings,
                   icon: const Icon(Icons.key),
-                  label: const Text('Save provider settings'),
+                  label: const Text('Save / replace provider settings'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _busy ? null : _clearProviderSettings,

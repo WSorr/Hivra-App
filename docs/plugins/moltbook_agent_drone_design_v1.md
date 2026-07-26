@@ -1,6 +1,7 @@
 # Moltbook Agent Drone - Design Contract v1
 
-Status: Draft-only prototype implemented; remote effects remain future work
+Status: Draft prototype plus read-only account connection implemented; remote
+write effects remain future work
 Runtime impact: bounded WASM draft contract only
 Primary owner: External Moltbook Drone
 
@@ -16,7 +17,7 @@ drone is absent, offline, revoked, or when Moltbook no longer exists.
 
 ## 2. Capability-Closure Verdict
 
-Current verdict: `DRAFT_ONLY`; remote effects remain `NEEDS_CONTRACT`.
+Current verdict: `OBSERVE_ACCOUNT_ONLY`; remote writes remain `NEEDS_CONTRACT`.
 
 The existing bounded WASM runtime intentionally has no direct network imports,
 secret access, or unrestricted storage. A Moltbook package therefore cannot be
@@ -97,9 +98,10 @@ The initial registration flow is explicit:
 4. User completes the external human-owner verification.
 5. Host verifies the resulting account identity before activating publishing.
 6. Credential and binding metadata are stored under the selected Capsule and
-   plugin scope. The current draft profile is scoped by `(capsule_root,
-   plugin_id)`; a future external-account binding may extend that scope with
-   `provider_id` and `provider_account_id` without changing the Core ledger.
+   plugin scope. The credential uses `(capsule_root, plugin_id, provider_id,
+   provider_account_id, secret_name)` in the generic secure vault. The
+   non-secret account binding uses isolated plugin state and does not change
+   the Core ledger.
 
 ## 5. Data Authority and Storage
 
@@ -361,21 +363,27 @@ Exit gate:
 
 ### Phase 2 - Moltbook Adapter and Observe Mode
 
-Status: strict read-only adapter baseline implemented; credential binding and
-workspace mounting remain.
+Status: account connection and strict read-only Account/Home Observe mounted;
+feed observation remains.
 
 - Completed: implement one strict Moltbook adapter for normalized Observe
   projections.
 - Completed: pin allowed HTTPS host, paths, methods, request timeout, response
   size, redirects, and provider error mapping.
-- Bind credentials in platform secure storage by Capsule, plugin, provider,
-  and external account.
-- Before mounting credentials, add one generic secure plugin-credential vault
-  whose Capsule deletion and plugin removal paths delete the corresponding
-  secret scope. No provider-specific orphaned Keychain item is allowed.
-- Implement account connection, verification, rotation, revocation, and
-  bounded home observation. Feed reads and cursors remain outside the first
-  Observe slice.
+- Completed: bind credentials in platform secure storage by Capsule, plugin,
+  provider, and external account only after the adapter verifies the key.
+- Completed: one generic secure plugin-credential vault is scoped by Capsule,
+  plugin, provider, external account, and secret name; Capsule deletion and
+  plugin removal delete the corresponding scopes before destructive cleanup.
+- Completed: mount account connection, verification, rotation, and local
+  disconnect on that vault without adding a second provider-specific
+  credential store.
+- Completed: ordinary workspace loading reads only non-secret binding metadata
+  and does not access Secure Storage. Explicit Connect and Refresh own the
+  credential access.
+- Completed: mount bounded Home observation as an explicit in-memory read. It
+  does not create ledger events, plugin cache, or a second retry lifecycle.
+- Feed reads and cursors remain outside the first Observe slice.
 - Treat every remote field as untrusted data.
 
 Exit gate:
@@ -386,21 +394,30 @@ Exit gate:
 
 ### Phase 3 - Ambassador Workspace
 
-Status: local profile/policy shell implemented; remote surfaces remain blocked
-by Phase 2.
+Status: local profile/policy, read-only Connection, and deterministic WASM
+Draft Preview surfaces implemented; remote write surfaces remain blocked.
 
 The plugin card opens a dedicated workspace. The generic Plugins screen shows
 installation and health only; it must not become a provider dashboard.
 
-The current draft-only workspace contains local `Profile` and `Stop` controls.
-It does not connect to Moltbook, hold provider credentials, or imply remote
-execution.
+The current workspace contains local `Profile`, `Stop`, read-only `Connection`,
+and exact `Draft Preview` controls. Connection verifies the API key through the
+host adapter, then moves it into the generic secure vault and clears the input.
+Draft Preview accepts only an explicit bounded Public Bulletin, invokes the
+installed WASM package through the plugin host, and projects the validated
+title, body, audience, safety flags, approval gate, and canonical draft hash.
+The validated result is stored in one bounded Capsule/plugin-scoped local draft
+history, deduplicated by canonical hash, with status `awaiting_approval`.
+Deleting it removes only the local draft. It neither reads the credential nor
+creates a remote effect. The screen retains only non-secret account metadata
+and does not imply remote write execution.
 
 The complete workspace will contain:
 
 1. `Connection`: provider account, verification state, reconnect, revoke.
 2. `Profile`: agent name, description, persona, allowed topics, enabled state.
-3. `Drafts`: local drafts and exact preview.
+3. `Drafts`: exact deterministic preview and bounded durable local draft
+   history are implemented.
 4. `Approval Queue`: operations awaiting explicit approval.
 5. `Activity`: delivery state, attempts, receipts, and actionable errors.
 6. `Stop`: immediate local disable without pretending to delete remote state.

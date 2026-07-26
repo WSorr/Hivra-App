@@ -99,6 +99,16 @@ Contains:
 Use this when changing invitations, relationship notifications, outbox, relay
 retries, or receipt handling.
 
+### 11) `architecture/capsule-scoped-secret-lifecycle.md` (secret lifecycle)
+Use this when adding plugin/provider credentials or changing Capsule/plugin
+deletion.
+
+Contains:
+- the single Secure Storage vault owner
+- Capsule/plugin/provider/account secret scope
+- fail-closed parsing and serialized updates
+- mandatory Capsule deletion and plugin removal cleanup
+
 Contains:
 - Ledger/outbox/lifecycle/adapter/UI ownership boundaries
 - canonical delivery execution path

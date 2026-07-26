@@ -132,6 +132,89 @@ class MoltbookClaimObservation {
   }
 }
 
+class MoltbookConnectionBinding {
+  static const int schemaVersion = 1;
+
+  final String accountId;
+  final String accountName;
+  final bool isClaimed;
+  final bool isActive;
+  final String verifiedAtUtc;
+
+  const MoltbookConnectionBinding({
+    required this.accountId,
+    required this.accountName,
+    required this.isClaimed,
+    required this.isActive,
+    required this.verifiedAtUtc,
+  });
+
+  factory MoltbookConnectionBinding.fromJson(Map<String, dynamic> json) {
+    if (json['schema_version'] != schemaVersion) {
+      throw const FormatException('Unsupported Moltbook binding schema');
+    }
+    if (json['provider_id'] != 'moltbook') {
+      throw const FormatException('Moltbook binding has another provider');
+    }
+    if (json['is_claimed'] is! bool || json['is_active'] is! bool) {
+      throw const FormatException('Moltbook binding flags are invalid');
+    }
+    final binding = MoltbookConnectionBinding(
+      accountId:
+          json['account_id'] is String ? json['account_id'] as String : '',
+      accountName:
+          json['account_name'] is String ? json['account_name'] as String : '',
+      isClaimed: json['is_claimed'] as bool,
+      isActive: json['is_active'] as bool,
+      verifiedAtUtc:
+          json['verified_at_utc'] is String
+              ? json['verified_at_utc'] as String
+              : '',
+    );
+    binding.validate();
+    return binding;
+  }
+
+  factory MoltbookConnectionBinding.fromObservation(
+    MoltbookAccountObservation observation, {
+    required DateTime verifiedAt,
+  }) {
+    observation.validate();
+    final binding = MoltbookConnectionBinding(
+      accountId: observation.accountId.trim(),
+      accountName: observation.name.trim(),
+      isClaimed: observation.isClaimed,
+      isActive: observation.isActive,
+      verifiedAtUtc: verifiedAt.toUtc().toIso8601String(),
+    );
+    binding.validate();
+    return binding;
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'schema_version': schemaVersion,
+    'provider_id': 'moltbook',
+    'account_id': accountId,
+    'account_name': accountName,
+    'is_claimed': isClaimed,
+    'is_active': isActive,
+    'verified_at_utc': verifiedAtUtc,
+  };
+
+  void validate() {
+    _bounded('account_id', accountId, 1, 256);
+    _bounded('account_name', accountName, 1, 128);
+    final parsed = DateTime.tryParse(verifiedAtUtc);
+    if (parsed == null ||
+        !parsed.isUtc ||
+        parsed.toIso8601String() != verifiedAtUtc) {
+      throw const FormatException(
+        'Moltbook binding verification time must be canonical UTC',
+      );
+    }
+  }
+}
+
 void _bounded(String field, String value, int min, int max) {
   final length = value.trim().length;
   if (length < min || length > max) {

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/models/moltbook_ambassador_models.dart';
@@ -86,6 +87,26 @@ void main() {
     );
   });
 
+  test('projects a validated host draft result without changing semantics', () {
+    final preview = MoltbookDraftPreview.fromHostResult(_validDraftResult());
+
+    expect(preview.title, 'Hivra development update');
+    expect(preview.approvalRequired, isTrue);
+    expect(preview.safetyFlags, isEmpty);
+  });
+
+  test('rejects a host draft without the manual approval gate', () {
+    expect(
+      () => MoltbookDraftPreview.fromHostResult(<String, dynamic>{
+        'schema_version': 1,
+        'plugin_id': moltbookAmbassadorPluginId,
+        'contract_kind': 'moltbook_ambassador_draft',
+        'approval_required': false,
+      }),
+      throwsFormatException,
+    );
+  });
+
   test(
     'does not replace a malformed persisted configuration with defaults',
     () async {
@@ -110,6 +131,36 @@ void main() {
       MoltbookAmbassadorConfiguration.defaults().agentName,
     );
   });
+}
+
+Map<String, dynamic> _validDraftResult() {
+  const canonical =
+      '{"schema_version":1,'
+      '"plugin_id":"hivra.contract.moltbook-ambassador.v1",'
+      '"contract_kind":"moltbook_ambassador_draft",'
+      '"bulletin_id":"release-v1.0.3-test14",'
+      '"release_tag":"v1.0.3-test14",'
+      '"category":"hivra-development",'
+      '"title":"Hivra development update",'
+      '"body":"A public Hivra development fact.",'
+      '"audience":"agent-developers",'
+      '"approval_required":true,'
+      '"safety_flags":[]}';
+  return <String, dynamic>{
+    'schema_version': 1,
+    'plugin_id': moltbookAmbassadorPluginId,
+    'contract_kind': 'moltbook_ambassador_draft',
+    'bulletin_id': 'release-v1.0.3-test14',
+    'release_tag': 'v1.0.3-test14',
+    'category': 'hivra-development',
+    'title': 'Hivra development update',
+    'body': 'A public Hivra development fact.',
+    'audience': 'agent-developers',
+    'approval_required': true,
+    'safety_flags': <String>[],
+    'draft_hash_hex': sha256.convert(canonical.codeUnits).toString(),
+    'canonical_draft_json': canonical,
+  };
 }
 
 const String _rootA =

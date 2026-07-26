@@ -14,6 +14,7 @@ import 'capsule_ledger_summary_parser.dart';
 import 'capsule_persistence_models.dart';
 import 'capsule_runtime_bootstrap_service.dart';
 import 'capsule_seed_store.dart';
+import 'capsule_scoped_secret_vault.dart';
 import 'ledger_view_support.dart';
 import 'user_visible_data_directory_service.dart';
 
@@ -157,6 +158,7 @@ class CapsulePersistenceService {
       const CapsuleIdentityReconcilerService();
   final LedgerViewSupport _support = const LedgerViewSupport();
   final CapsuleSeedStore _seedStore = CapsuleSeedStore();
+  final CapsuleScopedSecretVault _secretVault = CapsuleScopedSecretVault();
   final UserVisibleDataDirectoryService _userVisibleDirs =
       const UserVisibleDataDirectoryService();
   final AtomicFileWriteService _atomicWrites = const AtomicFileWriteService();
@@ -1065,6 +1067,7 @@ class CapsulePersistenceService {
       index: index,
       hivra: hivra,
     );
+    await _secretVault.deleteCapsules(keysToDelete);
 
     if (hivra != null) {
       final currentPubKey = hivra.capsuleRuntimeOwnerPublicKey();
