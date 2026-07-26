@@ -221,6 +221,86 @@ class CapsuleFileStore {
     await _atomicWrites.writeString(contactLabelsFile(dir), rawJson);
   }
 
+  Future<Directory> pluginStateDirectory(
+    Directory capsuleDir,
+    String pluginId, {
+    bool create = false,
+  }) async {
+    final normalized = pluginId.trim();
+    if (!RegExp(r'^[a-z0-9.-]+$').hasMatch(normalized)) {
+      throw ArgumentError('Plugin id is not a safe state directory name');
+    }
+    final dir = Directory('${capsuleDir.path}/plugin_state/$normalized');
+    if (create && !await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
+  }
+
+  File pluginStateFile(Directory pluginStateDir, String fileName) {
+    final normalized = fileName.trim();
+    if (!RegExp(r'^[a-z0-9._-]+$').hasMatch(normalized)) {
+      throw ArgumentError('Plugin state file name is not safe');
+    }
+    return File('${pluginStateDir.path}/$normalized');
+  }
+
+  Future<String?> readPluginState(
+    Directory capsuleDir,
+    String pluginId,
+    String fileName,
+  ) async {
+    final stateDir = await pluginStateDirectory(capsuleDir, pluginId);
+    final file = pluginStateFile(stateDir, fileName);
+    if (!await file.exists()) return null;
+    final raw = await file.readAsString();
+    return raw.trim().isEmpty ? null : raw;
+  }
+
+  Future<void> writePluginState(
+    Directory capsuleDir,
+    String pluginId,
+    String fileName,
+    String rawJson,
+  ) async {
+    final stateDir = await pluginStateDirectory(
+      capsuleDir,
+      pluginId,
+      create: true,
+    );
+    await _atomicWrites.writeString(
+      pluginStateFile(stateDir, fileName),
+      rawJson,
+    );
+  }
+
+  Future<void> deletePluginState(
+    Directory capsuleDir,
+    String pluginId,
+    String fileName,
+  ) async {
+    final stateDir = await pluginStateDirectory(capsuleDir, pluginId);
+    final file = pluginStateFile(stateDir, fileName);
+    if (await file.exists()) await file.delete();
+  }
+
+  Future<void> deletePluginStateFromAllCapsules(String pluginId) async {
+    final root = await capsulesRoot();
+    if (!await root.exists()) return;
+    final capsuleDirs =
+        await root
+            .list(followLinks: false)
+            .where((entry) => entry is Directory)
+            .cast<Directory>()
+            .toList();
+    for (final capsuleDir in capsuleDirs) {
+      final stateDir = await pluginStateDirectory(capsuleDir, pluginId);
+      if (await stateDir.exists()) {
+        await stateDir.delete(recursive: true);
+      }
+    }
+  }
+
   Future<void> clearPersisted(
     Directory dir, {
     bool includeBackup = false,

@@ -49,6 +49,7 @@ V2_BLUEPRINT="$ROOT/docs/architecture-v2-blueprint.md"
 PLATFORM_TOOLCHAIN="$ROOT/docs/platform-toolchain-evolution.md"
 CONTINUOUS_LEDGER_PROTOCOL="$ROOT/docs/architecture/continuous-ledger-protocol-v5.md"
 DELIVERY_LIFECYCLE_DOC="$ROOT/docs/architecture/transport-delivery-lifecycle.md"
+EXTERNAL_EFFECT_LIFECYCLE_DOC="$ROOT/docs/architecture/external-effect-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
 
@@ -67,6 +68,8 @@ SCREENS="$ROOT/flutter/lib/screens"
 MAIN_SCREEN="$SCREENS/main_screen.dart"
 TRADING_SCREEN="$SCREENS/trading_drone_screen.dart"
 WASM_PLUGINS_SCREEN="$SCREENS/wasm_plugins_screen.dart"
+MOLTBOOK_AMBASSADOR_SCREEN="$SCREENS/moltbook_ambassador_screen.dart"
+MOLTBOOK_PROVIDER_ADAPTER="$ROOT/flutter/lib/services/moltbook_provider_adapter.dart"
 CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
 INVITATIONS_SCREEN="$SCREENS/invitations_screen.dart"
 LEDGER_INSPECTOR_SCREEN="$SCREENS/ledger_inspector_screen.dart"
@@ -185,6 +188,14 @@ require_present "$EXEC_DISCIPLINE" '^# Hivra Architecture Execution Discipline v
   "execution discipline doc exists"
 require_present "$DELIVERY_LIFECYCLE_DOC" '^# Transport Delivery Lifecycle v1' \
   "delivery lifecycle architecture doc exists"
+require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" '^# External Effect Lifecycle v1' \
+  "external effect lifecycle architecture doc exists"
+require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" 'ExternalEffectService.*sole lifecycle owner' \
+  "external effect lifecycle has one application owner"
+require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" 'late adapter result cannot overwrite a newer reconciliation' \
+  "external effect lifecycle rejects stale adapter completion"
+require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" 'must not share journals, DTOs' \
+  "external effects remain separate from transport delivery"
 require_present "$CONTINUOUS_LEDGER_PROTOCOL" '^# Cryptographically Continuous Ledger Protocol v5' \
   "continuous-ledger v5 protocol contract exists"
 require_present "$CONTINUOUS_LEDGER_PROTOCOL" 'Local history acceptance' \
@@ -411,6 +422,20 @@ require_absent "$TRADING_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
   "trading drone screen does not keep individual service fields"
 require_absent "$WASM_PLUGINS_SCREEN" 'late final [A-Za-z0-9_]+Service ' \
   "wasm plugins screen does not keep individual service fields"
+require_absent "$WASM_PLUGINS_SCREEN" 'MoltbookAmbassadorConfiguration' \
+  "generic plugins screen does not own Moltbook profile configuration"
+require_present "$MOLTBOOK_AMBASSADOR_SCREEN" '^class MoltbookAmbassadorScreen ' \
+  "Moltbook profile uses a dedicated workspace"
+require_present "$MOLTBOOK_PROVIDER_ADAPTER" "https://www\\.moltbook\\.com/api/v1/" \
+  "Moltbook adapter pins the official HTTPS API origin"
+require_present "$MOLTBOOK_PROVIDER_ADAPTER" "followRedirects = false" \
+  "Moltbook adapter rejects redirects before credential forwarding"
+require_present "$MOLTBOOK_PROVIDER_ADAPTER" "maxResponseBytes = 256 \\* 1024" \
+  "Moltbook adapter bounds provider responses"
+require_present "$MOLTBOOK_PROVIDER_ADAPTER" "Observe transport only permits GET" \
+  "Moltbook Observe adapter grants no write method"
+require_absent "$EXTERNAL_EFFECT_LIFECYCLE_DOC" "MoltbookHttp|MoltbookProvider" \
+  "generic external-effect lifecycle contains no Moltbook DTO"
 require_absent "$WASM_PLUGINS_SCREEN" "services/wasm_plugin_(registry|source_catalog)_service\\.dart" \
   "wasm plugins screen imports plugin DTOs from model boundary"
 require_absent "$TRADING_SCREEN" "services/bingx_futures_order_tracking_store\\.dart" \

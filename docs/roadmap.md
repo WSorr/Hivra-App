@@ -1445,6 +1445,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Required safety model:
     - credentials are scoped by Capsule, plugin, provider, and external account
       in platform secure storage.
+    - agent name, description, persona, topic allowlist, approval mode, and
+      enabled state live in one host-owned plugin-state configuration; they do
+      not become manifest fields, ledger events, or Capsule identity.
     - remote content and AI output are untrusted inputs and cannot invoke tools
       or grant capabilities.
     - the first releasable mode is Assisted: every post/reply requires exact
@@ -1452,15 +1455,36 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - retries are idempotent and reconcile provider receipts before declaring
       success.
   - Architecture closure:
-    - current verdict is `NEEDS_CONTRACT`; provider-neutral external effects,
-      plugin state, credential binding, and bounded inference ports must be
-      specified before implementation.
+    - current implementation is draft-only: `hivra.contract.moltbook-ambassador.v1`
+      accepts an explicit Public Bulletin and produces a deterministic,
+      approval-gated draft without network access.
+    - completed host baseline: the provider-neutral external-effect lifecycle:
+      `prepare -> approve -> enqueue -> deliver -> reconcile -> terminal
+      receipt`.
+    - the normative lifecycle owner and review gate are documented in
+      `docs/architecture/external-effect-lifecycle.md`.
+    - completed read-only adapter baseline: pinned official HTTPS origin,
+      bounded account/home projections, redirect rejection, timeout/size
+      limits, rate-budget parsing, and fail-closed provider error mapping.
+    - credential/UI mounting remains blocked until a generic secure
+      plugin-credential vault is cleaned by both Capsule deletion and plugin
+      removal; no provider-specific Keychain orphan is accepted.
+    - the first remote milestone is read-only Observe; the first write
+      milestone is Assisted publication with exact preview and one explicit
+      approval per effect.
+    - the dedicated Ambassador workspace owns Connection, Profile, Drafts,
+      Approval Queue, Activity, and Stop surfaces; the generic Plugins screen
+      remains installation/health UI.
+    - Discover publication is blocked until macOS and Android effect/restart/
+      retry smoke passes against a disposable Moltbook agent.
     - design authority:
       `docs/plugins/moltbook_agent_drone_design_v1.md`.
   - First deliverable:
-    - approve the design contract and define read-only Observe-mode host
-      fixtures without changing the 1.x Core protocol.
-  - Status: planned.
+    - completed: approve the ownership boundary and define the draft-only
+      Public Bulletin contract without changing the 1.x Core protocol.
+  - Status: Phase 0 draft prototype, Phase 1 host lifecycle, and Phase 2 strict
+    read-adapter baseline complete; secure binding and workspace Observe
+    mounting are next.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:

@@ -7,11 +7,10 @@ import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import 'plugin_host_contract_handler.dart';
 
-typedef PluginConsensusSignableReader = ConsensusSignableResult Function(
-  String peerHex,
-);
-typedef PluginConsensusAsyncSignableReader = Future<ConsensusSignableResult>
-    Function(String peerHex);
+typedef PluginConsensusSignableReader =
+    ConsensusSignableResult Function(String peerHex);
+typedef PluginConsensusAsyncSignableReader =
+    Future<ConsensusSignableResult> Function(String peerHex);
 typedef BingxConsensusSignableReader = PluginConsensusSignableReader;
 typedef BingxConsensusAsyncSignableReader = PluginConsensusAsyncSignableReader;
 
@@ -22,8 +21,8 @@ class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
   const CapsuleChatPluginContractHandler({
     required PluginConsensusSignableReader readSignable,
     PluginConsensusAsyncSignableReader? readAttestedSignable,
-  })  : _readSignable = readSignable,
-        _readAttestedSignable = readAttestedSignable;
+  }) : _readSignable = readSignable,
+       _readAttestedSignable = readAttestedSignable;
 
   @override
   String get pluginId => capsuleChatPluginId;
@@ -38,15 +37,13 @@ class CapsuleChatPluginContractHandler implements PluginHostContractHandler {
   bool get requiresExternalRuntime => true;
 
   @override
-  Set<String> requiredCapabilities(String method) =>
-      const <String>{'consensus_guard.read'};
+  Set<String> requiredCapabilities(String method) => const <String>{
+    'consensus_guard.read',
+  };
 
   @override
   PluginHostContractResult? preflight(PluginHostApiRequest request) {
-    return _consensusPreflight(
-      request: request,
-      readSignable: _readSignable,
-    );
+    return _consensusPreflight(request: request, readSignable: _readSignable);
   }
 
   @override
@@ -116,8 +113,8 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
   const BingxFuturesPluginContractHandler({
     required BingxConsensusSignableReader readSignable,
     BingxConsensusAsyncSignableReader? readAttestedSignable,
-  })  : _readSignable = readSignable,
-        _readAttestedSignable = readAttestedSignable;
+  }) : _readSignable = readSignable,
+       _readAttestedSignable = readAttestedSignable;
 
   @override
   String get pluginId => bingxFuturesTradingPluginId;
@@ -127,9 +124,9 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
 
   @override
   Set<String> get methods => const <String>{
-        placeBingxFuturesOrderIntentMethod,
-        rankBingxFuturesSignalsMethod,
-      };
+    placeBingxFuturesOrderIntentMethod,
+    rankBingxFuturesSignalsMethod,
+  };
 
   @override
   bool get requiresExternalRuntime => true;
@@ -137,9 +134,7 @@ class BingxFuturesPluginContractHandler implements PluginHostContractHandler {
   @override
   Set<String> requiredCapabilities(String method) {
     if (method == rankBingxFuturesSignalsMethod) {
-      return const <String>{
-        'exchange.read.bingx.market',
-      };
+      return const <String>{'exchange.read.bingx.market'};
     }
     return const <String>{
       'consensus_guard.read',
@@ -298,6 +293,77 @@ PluginHostContractResult? _consensusPreflight({
   return null;
 }
 
+class MoltbookAmbassadorPluginContractHandler
+    implements PluginHostContractHandler {
+  const MoltbookAmbassadorPluginContractHandler();
+
+  @override
+  String get pluginId => moltbookAmbassadorPluginId;
+
+  @override
+  String get contractKind => 'moltbook_ambassador_draft';
+
+  @override
+  Set<String> get methods => const <String>{prepareMoltbookDraftMethod};
+
+  @override
+  bool get requiresExternalRuntime => true;
+
+  @override
+  Set<String> requiredCapabilities(String method) => const <String>{
+    'content.draft.prepare',
+  };
+
+  @override
+  PluginHostContractResult? preflight(PluginHostApiRequest request) => null;
+
+  @override
+  Future<PluginHostContractResult?> preflightAsync(
+    PluginHostApiRequest request,
+  ) async => null;
+
+  @override
+  PluginHostContractResult execute(
+    PluginHostApiRequest request, {
+    PluginRuntimeInvokeEvidence? runtimeInvoke,
+  }) {
+    if (runtimeInvoke == null) {
+      return const PluginHostContractResult.rejected(
+        code: 'runtime_invoke_unavailable',
+        message: 'WASM semantic result is required',
+      );
+    }
+    if (runtimeInvoke.semanticStatus == PluginHostApiStatus.rejected) {
+      return PluginHostContractResult.rejected(
+        code: runtimeInvoke.semanticErrorCode ?? 'plugin_rejected',
+        message:
+            runtimeInvoke.semanticErrorMessage ?? 'Plugin rejected the draft',
+      );
+    }
+    final semantic = runtimeInvoke.semanticResult;
+    final canonicalJson = semantic?['canonical_json']?.toString() ?? '';
+    final draftHashHex = semantic?['draft_hash_hex']?.toString() ?? '';
+    final draft = _validatedCanonicalObject(
+      canonicalJson: canonicalJson,
+      expectedHashHex: draftHashHex,
+      expectedPluginId: pluginId,
+      expectedContractKind: contractKind,
+      expectedPeerHex: null,
+    );
+    if (draft == null || draft['approval_required'] != true) {
+      return const PluginHostContractResult.rejected(
+        code: 'runtime_result_invalid',
+        message: 'WASM ambassador draft integrity or approval gate failed',
+      );
+    }
+    return PluginHostContractResult.executed(<String, dynamic>{
+      ...draft,
+      'draft_hash_hex': draftHashHex,
+      'canonical_draft_json': canonicalJson,
+    });
+  }
+}
+
 Future<PluginHostContractResult?> _consensusPreflightAsync({
   required PluginHostApiRequest request,
   required PluginConsensusAsyncSignableReader? readSignable,
@@ -315,9 +381,10 @@ Future<PluginHostContractResult?> _consensusPreflightAsync({
       message: 'peer_hex must be a 64-char lowercase hex',
     );
   }
-  final signable = readSignable == null
-      ? fallbackReadSignable(peerHex)
-      : await readSignable(peerHex);
+  final signable =
+      readSignable == null
+          ? fallbackReadSignable(peerHex)
+          : await readSignable(peerHex);
   if (!signable.isSignable) {
     return PluginHostContractResult.blocked(signable.blockingFacts);
   }

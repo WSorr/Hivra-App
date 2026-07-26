@@ -1,13 +1,18 @@
 import 'dart:async';
 
 import '../models/capsule_chat_models.dart';
+import '../models/moltbook_ambassador_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
+import '../models/wasm_plugin_models.dart';
 import 'app_runtime_service.dart';
+import 'capsule_file_store.dart';
 import 'capsule_chat_delivery_service.dart';
 import 'capsule_contact_label_store.dart';
 import 'consensus_attestation_exchange_service.dart';
+import 'external_effect_service.dart';
 import 'manual_consensus_check_service.dart';
+import 'moltbook_ambassador_configuration_store.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
 import 'wasm_plugin_registry_service.dart';
@@ -47,6 +52,9 @@ class PluginRuntimeModule {
   final CapsuleChatDeliveryService chatDelivery;
   final CapsuleContactLabelStore contactLabels;
   final UiEventLogService uiLog;
+  final ExternalEffectService externalEffects;
+  final MoltbookAmbassadorConfigurationStore _ambassadorConfiguration;
+  final CapsuleFileStore _fileStore;
   final String? Function() _readActiveCapsuleRootHex;
 
   const PluginRuntimeModule({
@@ -58,8 +66,28 @@ class PluginRuntimeModule {
     required this.chatDelivery,
     required this.contactLabels,
     required this.uiLog,
+    required this.externalEffects,
+    required MoltbookAmbassadorConfigurationStore ambassadorConfiguration,
+    required CapsuleFileStore fileStore,
     required String? Function() readActiveCapsuleRootHex,
-  }) : _readActiveCapsuleRootHex = readActiveCapsuleRootHex;
+  }) : _ambassadorConfiguration = ambassadorConfiguration,
+       _fileStore = fileStore,
+       _readActiveCapsuleRootHex = readActiveCapsuleRootHex;
+
+  Future<MoltbookAmbassadorConfiguration> loadAmbassadorConfiguration() =>
+      _ambassadorConfiguration.load();
+
+  Future<void> saveAmbassadorConfiguration(
+    MoltbookAmbassadorConfiguration configuration,
+  ) => _ambassadorConfiguration.save(configuration);
+
+  Future<void> removePlugin(WasmPluginRecord record) async {
+    final pluginId = record.pluginId?.trim();
+    if (pluginId != null && pluginId.isNotEmpty) {
+      await _fileStore.deletePluginStateFromAllCapsules(pluginId);
+    }
+    await registry.removePlugin(record.id);
+  }
 
   Future<PluginChatSendResult> sendChatMessage({
     required String peerHex,
@@ -230,10 +258,17 @@ class PluginRuntimeModule {
 
 class PluginRuntimeModuleService {
   final AppRuntimeService runtime;
+  final ExternalEffectAdapterResolver? externalEffectAdapterResolver;
+  final CapsuleFileStore fileStore;
 
-  const PluginRuntimeModuleService({required this.runtime});
+  const PluginRuntimeModuleService({
+    required this.runtime,
+    this.externalEffectAdapterResolver,
+    this.fileStore = const CapsuleFileStore(),
+  });
 
   PluginRuntimeModule build() {
+    final activeCapsuleRootHex = runtime.activeCapsuleRootHex;
     return PluginRuntimeModule(
       registry: const WasmPluginRegistryService(),
       sourceCatalog: const WasmPluginSourceCatalogService(),
@@ -243,7 +278,17 @@ class PluginRuntimeModuleService {
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
       contactLabels: runtime.buildCapsuleContactLabelStore(),
       uiLog: const UiEventLogService(),
-      readActiveCapsuleRootHex: runtime.activeCapsuleRootHex,
+      externalEffects: ExternalEffectService(
+        readActiveCapsuleRootHex: activeCapsuleRootHex,
+        resolveAdapter: externalEffectAdapterResolver ?? (providerId) => null,
+        fileStore: fileStore,
+      ),
+      ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(
+        fileStore: fileStore,
+        readActiveCapsuleRootHex: activeCapsuleRootHex,
+      ),
+      fileStore: fileStore,
+      readActiveCapsuleRootHex: activeCapsuleRootHex,
     );
   }
 }

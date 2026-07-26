@@ -8,19 +8,18 @@ void main() {
   test('normalizes known capabilities and removes duplicates', () {
     final normalized = service.normalizeAndValidate(<String>[
       'consensus_guard.read',
+      'content.draft.prepare',
       'exchange.read.bingx.market',
       'exchange.trade.bingx.futures',
       'exchange.trade.bingx.futures',
     ]);
 
-    expect(
-      normalized,
-      <String>[
-        'consensus_guard.read',
-        'exchange.read.bingx.market',
-        'exchange.trade.bingx.futures',
-      ],
-    );
+    expect(normalized, <String>[
+      'consensus_guard.read',
+      'content.draft.prepare',
+      'exchange.read.bingx.market',
+      'exchange.trade.bingx.futures',
+    ]);
   });
 
   test('rejects unsupported capability', () {

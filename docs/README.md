@@ -105,6 +105,16 @@ Contains:
 - migration rules for durable and ephemeral transport channels
 - delivery lifecycle review exit criteria
 
+### 10.1) `architecture/external-effect-lifecycle.md` (provider effect architecture)
+Use this when adding a durable non-Core action against an exchange, content
+provider, wallet, or another external system.
+
+Contains:
+- the single External Effects ownership boundary
+- canonical operation states, persistence scope, and receipts
+- timeout, restart, reconciliation, cancellation, and stale-result rules
+- the strict separation from Core truth and transport delivery
+
 ### 11) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
 Use this when implementing TVH/signal logic for the BingX futures plugin.
 
@@ -167,7 +177,7 @@ Contains:
 It is a navigation layer only. It links to the specification, roadmap, and
 architecture blueprint rather than duplicating their rules.
 
-### 17) `plugins/moltbook_agent_drone_design_v1.md` (design-only future drone)
+### 17) `plugins/moltbook_agent_drone_design_v1.md` (draft-only prototype and future drone)
 
 Use this when evaluating an optional Capsule-operated Moltbook presence.
 
@@ -178,8 +188,10 @@ Contains:
 - Observe, Assisted, and Bounded Interactive operating modes
 - recovery, prompt-injection, credential, and publication safety contracts
 
-This document is a future design contract. It does not describe a currently
-available 1.x capability.
+This document describes the current draft-only 1.x capability and the future
+remote-publication track. The available contract prepares a draft from an
+explicit Public Bulletin; it does not publish to Moltbook or read Capsule
+state.
 
 ### 18) `docs/platform-toolchain-evolution.md` (platform evolution contract)
 

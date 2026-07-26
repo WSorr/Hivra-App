@@ -40,42 +40,41 @@ void main() {
       expect(response.result?['plugin_id'], bingxFuturesTradingPluginId);
       expect(response.result?['symbol'], 'BTC-USDT');
       expect(response.result?['intent_hash_hex'], _intentHash);
-      expect(
-        response.result?['market_snapshot_hash_hex'],
-        _hex('1'),
-      );
+      expect(response.result?['market_snapshot_hash_hex'], _hex('1'));
     });
 
-    test('executes solo futures intent without consensus peer preflight',
-        () async {
-      var runtimeInvokeCount = 0;
-      var consensusReadCount = 0;
-      final response = await _service(
-        readSignable: (_) {
-          consensusReadCount += 1;
-          return const ConsensusSignableResult(
-            preview: null,
-            blockingFacts: <ConsensusBlockingFact>[
-              ConsensusBlockingFact(code: 'must_not_be_checked_for_solo'),
-            ],
-          );
-        },
-        runtimeInvoke: _soloRuntimeEvidence(),
-        onRuntimeInvoke: () => runtimeInvokeCount += 1,
-      ).executeWithRuntimeHook(
-        PluginHostApiRequest(
-          schemaVersion: 1,
-          pluginId: bingxFuturesTradingPluginId,
-          method: placeBingxFuturesOrderIntentMethod,
-          args: _validSoloBingxArgs(),
-        ),
-      );
+    test(
+      'executes solo futures intent without consensus peer preflight',
+      () async {
+        var runtimeInvokeCount = 0;
+        var consensusReadCount = 0;
+        final response = await _service(
+          readSignable: (_) {
+            consensusReadCount += 1;
+            return const ConsensusSignableResult(
+              preview: null,
+              blockingFacts: <ConsensusBlockingFact>[
+                ConsensusBlockingFact(code: 'must_not_be_checked_for_solo'),
+              ],
+            );
+          },
+          runtimeInvoke: _soloRuntimeEvidence(),
+          onRuntimeInvoke: () => runtimeInvokeCount += 1,
+        ).executeWithRuntimeHook(
+          PluginHostApiRequest(
+            schemaVersion: 1,
+            pluginId: bingxFuturesTradingPluginId,
+            method: placeBingxFuturesOrderIntentMethod,
+            args: _validSoloBingxArgs(),
+          ),
+        );
 
-      expect(response.status, PluginHostApiStatus.executed);
-      expect(response.result?['intent_hash_hex'], _soloIntentHash);
-      expect(runtimeInvokeCount, 1);
-      expect(consensusReadCount, 0);
-    });
+        expect(response.status, PluginHostApiStatus.executed);
+        expect(response.result?['intent_hash_hex'], _soloIntentHash);
+        expect(runtimeInvokeCount, 1);
+        expect(consensusReadCount, 0);
+      },
+    );
 
     test('returns plugin semantic rejection unchanged', () async {
       final response = await _service(
@@ -101,12 +100,13 @@ void main() {
     test('blocks futures execution before accepting semantic result', () async {
       var runtimeInvokeCount = 0;
       final response = await _service(
-        readSignable: (_) => const ConsensusSignableResult(
-          preview: null,
-          blockingFacts: <ConsensusBlockingFact>[
-            ConsensusBlockingFact(code: 'pending_remote_break'),
-          ],
-        ),
+        readSignable:
+            (_) => const ConsensusSignableResult(
+              preview: null,
+              blockingFacts: <ConsensusBlockingFact>[
+                ConsensusBlockingFact(code: 'pending_remote_break'),
+              ],
+            ),
         onRuntimeInvoke: () => runtimeInvokeCount += 1,
       ).executeWithRuntimeHook(
         PluginHostApiRequest(
@@ -122,67 +122,73 @@ void main() {
       expect(runtimeInvokeCount, 0);
     });
 
-    test('blocks pair futures execution without two-root attestation evidence',
-        () async {
-      var runtimeInvokeCount = 0;
-      final response = await _service(
-        readAttestedSignable: (_) async => ConsensusSignableResult(
-          preview: _signable(_peerHex).preview,
-          blockingFacts: const <ConsensusBlockingFact>[
-            ConsensusBlockingFact(code: 'pair_attestation_missing'),
-          ],
-        ),
-        onRuntimeInvoke: () => runtimeInvokeCount += 1,
-      ).executeWithRuntimeHook(
-        PluginHostApiRequest(
-          schemaVersion: 1,
-          pluginId: bingxFuturesTradingPluginId,
-          method: placeBingxFuturesOrderIntentMethod,
-          args: _validBingxArgs(),
-        ),
-      );
+    test(
+      'blocks pair futures execution without two-root attestation evidence',
+      () async {
+        var runtimeInvokeCount = 0;
+        final response = await _service(
+          readAttestedSignable:
+              (_) async => ConsensusSignableResult(
+                preview: _signable(_peerHex).preview,
+                blockingFacts: const <ConsensusBlockingFact>[
+                  ConsensusBlockingFact(code: 'pair_attestation_missing'),
+                ],
+              ),
+          onRuntimeInvoke: () => runtimeInvokeCount += 1,
+        ).executeWithRuntimeHook(
+          PluginHostApiRequest(
+            schemaVersion: 1,
+            pluginId: bingxFuturesTradingPluginId,
+            method: placeBingxFuturesOrderIntentMethod,
+            args: _validBingxArgs(),
+          ),
+        );
 
-      expect(response.status, PluginHostApiStatus.blocked);
-      expect(response.blockingFacts.first.code, 'pair_attestation_missing');
-      expect(runtimeInvokeCount, 0);
-    });
+        expect(response.status, PluginHostApiStatus.blocked);
+        expect(response.blockingFacts.first.code, 'pair_attestation_missing');
+        expect(runtimeInvokeCount, 0);
+      },
+    );
 
-    test('executes plugin-owned futures signal ranking without peer preflight',
-        () async {
-      var runtimeInvokeCount = 0;
-      final response = await _service(
-        readSignable: (_) => const ConsensusSignableResult(
-          preview: null,
-          blockingFacts: <ConsensusBlockingFact>[
-            ConsensusBlockingFact(code: 'must_not_be_checked'),
-          ],
-        ),
-        runtimeInvoke: _rankRuntimeEvidence(),
-        onRuntimeInvoke: () => runtimeInvokeCount += 1,
-      ).executeWithRuntimeHook(
-        const PluginHostApiRequest(
-          schemaVersion: 1,
-          pluginId: bingxFuturesTradingPluginId,
-          method: rankBingxFuturesSignalsMethod,
-          args: <String, dynamic>{
-            'candidates': <Map<String, dynamic>>[
-              <String, dynamic>{
-                'symbol': 'SOL-USDT',
-                'can_prepare_intent': true,
-                'decision': 'short',
-              },
-            ],
-          },
-        ),
-      );
+    test(
+      'executes plugin-owned futures signal ranking without peer preflight',
+      () async {
+        var runtimeInvokeCount = 0;
+        final response = await _service(
+          readSignable:
+              (_) => const ConsensusSignableResult(
+                preview: null,
+                blockingFacts: <ConsensusBlockingFact>[
+                  ConsensusBlockingFact(code: 'must_not_be_checked'),
+                ],
+              ),
+          runtimeInvoke: _rankRuntimeEvidence(),
+          onRuntimeInvoke: () => runtimeInvokeCount += 1,
+        ).executeWithRuntimeHook(
+          const PluginHostApiRequest(
+            schemaVersion: 1,
+            pluginId: bingxFuturesTradingPluginId,
+            method: rankBingxFuturesSignalsMethod,
+            args: <String, dynamic>{
+              'candidates': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'symbol': 'SOL-USDT',
+                  'can_prepare_intent': true,
+                  'decision': 'short',
+                },
+              ],
+            },
+          ),
+        );
 
-      expect(response.status, PluginHostApiStatus.executed);
-      expect(runtimeInvokeCount, 1);
-      expect(response.result?['scan_hash_hex'], _scanHash);
-      expect(response.result?['entries'], isA<List>());
-      final entries = response.result?['entries'] as List;
-      expect((entries.first as Map)['symbol'], 'SOL-USDT');
-    });
+        expect(response.status, PluginHostApiStatus.executed);
+        expect(runtimeInvokeCount, 1);
+        expect(response.result?['scan_hash_hex'], _scanHash);
+        expect(response.result?['entries'], isA<List>());
+        final entries = response.result?['entries'] as List;
+        expect((entries.first as Map)['symbol'], 'SOL-USDT');
+      },
+    );
 
     test('executes plugin-owned chat envelope with runtime hook', () async {
       final response = await _service().executeWithRuntimeHook(
@@ -196,6 +202,25 @@ void main() {
 
       expect(response.status, PluginHostApiStatus.executed);
       expect(response.result?['message_text'], 'hello');
+    });
+
+    test('executes plugin-owned Moltbook draft with approval gate', () async {
+      final response = await _service().executeWithRuntimeHook(
+        const PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: moltbookAmbassadorPluginId,
+          method: prepareMoltbookDraftMethod,
+          args: <String, dynamic>{
+            'bulletin_id': 'release-v1.0.3-test14',
+            'facts': <String>['A public Hivra development fact.'],
+          },
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.executed);
+      expect(response.result?['plugin_id'], moltbookAmbassadorPluginId);
+      expect(response.result?['approval_required'], isTrue);
+      expect(response.result?['draft_hash_hex'], _moltbookDraftHash);
     });
 
     test('rejects external trading runtime without contract kind', () async {
@@ -263,38 +288,64 @@ PluginHostApiService _service({
         readSignable: readSignable,
         readAttestedSignable: readAttestedSignable,
       ),
+      const MoltbookAmbassadorPluginContractHandler(),
     ],
-    resolveRuntimeBinding: (pluginId) => Future<PluginRuntimeBinding>.value(
-      runtimeBinding ??
-          PluginRuntimeBinding.externalPackage(
-            packageId: 'pkg-futures-1',
-            packageVersion: '0.2.0',
-            packageKind: 'zip',
-            packageDigestHex:
-                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            runtimeAbi: 'hivra_host_abi_v2',
-            runtimeEntryExport: 'hivra_evaluate_v1',
-            runtimeModulePath: 'plugin/module.wasm',
-            contractKind: pluginId == capsuleChatPluginId
-                ? 'capsule_chat'
-                : bingxFuturesContractKind,
-            capabilities: <String>[
-              'consensus_guard.read',
-              if (pluginId != capsuleChatPluginId) ...<String>[
-                'exchange.read.bingx.market',
-                'exchange.trade.bingx.futures',
-              ],
-            ],
-          ),
-    ),
-    resolveRuntimeInvoke: (request, _) =>
-        Future<PluginRuntimeInvokeEvidence>.sync(() {
-      onRuntimeInvoke?.call();
-      return runtimeInvoke ??
-          (request.pluginId == capsuleChatPluginId
-              ? _chatRuntimeEvidence()
-              : _runtimeEvidence());
-    }),
+    resolveRuntimeBinding:
+        (pluginId) => Future<PluginRuntimeBinding>.value(
+          runtimeBinding ??
+              PluginRuntimeBinding.externalPackage(
+                packageId: 'pkg-futures-1',
+                packageVersion: '0.2.0',
+                packageKind: 'zip',
+                packageDigestHex:
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                runtimeAbi: 'hivra_host_abi_v2',
+                runtimeEntryExport: 'hivra_evaluate_v1',
+                runtimeModulePath: 'plugin/module.wasm',
+                contractKind: switch (pluginId) {
+                  capsuleChatPluginId => 'capsule_chat',
+                  moltbookAmbassadorPluginId => 'moltbook_ambassador_draft',
+                  _ => bingxFuturesContractKind,
+                },
+                capabilities: <String>[
+                  if (pluginId == capsuleChatPluginId) 'consensus_guard.read',
+                  if (pluginId == moltbookAmbassadorPluginId)
+                    'content.draft.prepare',
+                  if (pluginId == bingxFuturesTradingPluginId) ...<String>[
+                    'consensus_guard.read',
+                    'exchange.read.bingx.market',
+                    'exchange.trade.bingx.futures',
+                  ],
+                ],
+              ),
+        ),
+    resolveRuntimeInvoke:
+        (request, _) => Future<PluginRuntimeInvokeEvidence>.sync(() {
+          onRuntimeInvoke?.call();
+          return runtimeInvoke ??
+              switch (request.pluginId) {
+                capsuleChatPluginId => _chatRuntimeEvidence(),
+                moltbookAmbassadorPluginId => _moltbookRuntimeEvidence(),
+                _ => _runtimeEvidence(),
+              };
+        }),
+  );
+}
+
+PluginRuntimeInvokeEvidence _moltbookRuntimeEvidence() {
+  return PluginRuntimeInvokeEvidence(
+    mode: 'wasmi_v1',
+    modulePath: 'plugin/module.wasm',
+    moduleSelection: 'manifest_module_path',
+    moduleDigestHex: _hex('7'),
+    invokeDigestHex: _hex('8'),
+    semanticStatus: PluginHostApiStatus.executed,
+    semanticResult: <String, dynamic>{
+      'canonical_json': _canonicalMoltbookDraft,
+      'draft_hash_hex': _moltbookDraftHash,
+    },
+    semanticErrorCode: null,
+    semanticErrorMessage: null,
   );
 }
 
@@ -353,7 +404,8 @@ PluginRuntimeInvokeEvidence _runtimeEvidence({
     moduleDigestHex: _hex('b'),
     invokeDigestHex: _hex('c'),
     semanticStatus: status,
-    semanticResult: result ??
+    semanticResult:
+        result ??
         <String, dynamic>{
           'canonical_json': _canonicalIntent,
           'intent_hash_hex': _intentHash,
@@ -381,46 +433,45 @@ PluginRuntimeInvokeEvidence _soloRuntimeEvidence() {
 }
 
 ConsensusSignableResult _signable(String _) => const ConsensusSignableResult(
-      preview: ConsensusPreview(
-        peerHex: _peerHex,
-        peerLabel: 'peer',
-        invitationCount: 1,
-        relationshipCount: 1,
-        hashHex:
-            'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
-        canonicalJson: '{}',
-        blockingFacts: <ConsensusBlockingFact>[],
-      ),
-      blockingFacts: <ConsensusBlockingFact>[],
-    );
+  preview: ConsensusPreview(
+    peerHex: _peerHex,
+    peerLabel: 'peer',
+    invitationCount: 1,
+    relationshipCount: 1,
+    hashHex: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+    canonicalJson: '{}',
+    blockingFacts: <ConsensusBlockingFact>[],
+  ),
+  blockingFacts: <ConsensusBlockingFact>[],
+);
 
 Map<String, dynamic> _validBingxArgs() => <String, dynamic>{
-      'peer_hex': _peerHex,
-      'client_order_id': 'ord-1',
-      'symbol': 'BTC-USDT',
-      'side': 'buy',
-      'order_type': 'limit',
-      'quantity_decimal': '0.01',
-      'limit_price_decimal': '60000',
-      'time_in_force': 'GTC',
-      'created_at_utc': '2026-01-01T00:00:00Z',
-      'market_snapshot_hash_hex': _hex('1'),
-      'feature_hash_hex': _hex('2'),
-      'tvh_decision_hash_hex': _hex('3'),
-      'live_decision_hash_hex': _hex('4'),
-    };
+  'peer_hex': _peerHex,
+  'client_order_id': 'ord-1',
+  'symbol': 'BTC-USDT',
+  'side': 'buy',
+  'order_type': 'limit',
+  'quantity_decimal': '0.01',
+  'limit_price_decimal': '60000',
+  'time_in_force': 'GTC',
+  'created_at_utc': '2026-01-01T00:00:00Z',
+  'market_snapshot_hash_hex': _hex('1'),
+  'feature_hash_hex': _hex('2'),
+  'tvh_decision_hash_hex': _hex('3'),
+  'live_decision_hash_hex': _hex('4'),
+};
 
 Map<String, dynamic> _validSoloBingxArgs() => <String, dynamic>{
-      ..._validBingxArgs(),
-      'peer_hex': '',
-    };
+  ..._validBingxArgs(),
+  'peer_hex': '',
+};
 
 Map<String, dynamic> _validChatArgs() => <String, dynamic>{
-      'peer_hex': _peerHex,
-      'client_message_id': 'msg-1',
-      'message_text': 'hello',
-      'created_at_utc': '2026-01-01T00:00:00Z',
-    };
+  'peer_hex': _peerHex,
+  'client_message_id': 'msg-1',
+  'message_text': 'hello',
+  'created_at_utc': '2026-01-01T00:00:00Z',
+};
 
 const String _peerHex =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -454,6 +505,15 @@ const String _canonicalChat =
     '"peer_hex":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",'
     '"client_message_id":"msg-1","message_text":"hello",'
     '"created_at_utc":"2026-01-01T00:00:00Z"}';
+const String _canonicalMoltbookDraft =
+    '{"schema_version":1,'
+    '"plugin_id":"hivra.contract.moltbook-ambassador.v1",'
+    '"contract_kind":"moltbook_ambassador_draft",'
+    '"bulletin_id":"release-v1.0.3-test14",'
+    '"release_tag":"v1.0.3-test14","category":"release",'
+    '"title":"Hivra development","body":"A public Hivra development fact.",'
+    '"audience":"agent-developers","approval_required":true,'
+    '"safety_flags":[]}';
 final String _intentHash =
     sha256.convert(utf8.encode(_canonicalIntent)).toString();
 final String _soloIntentHash =
@@ -468,5 +528,7 @@ const String _canonicalScan =
     '"live_decision_hash_hex":"2222222222222222222222222222222222222222222222222222222222222222",'
     '"failed_reason_codes":[]}]}';
 final String _scanHash = sha256.convert(utf8.encode(_canonicalScan)).toString();
+final String _moltbookDraftHash =
+    sha256.convert(utf8.encode(_canonicalMoltbookDraft)).toString();
 
 String _hex(String character) => List<String>.filled(64, character).join();

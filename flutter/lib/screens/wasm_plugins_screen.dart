@@ -12,6 +12,7 @@ import '../services/app_runtime_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../utils/peer_identity_format.dart';
 import '../utils/runtime_capability_display.dart';
+import 'moltbook_ambassador_screen.dart';
 import 'trading_drone_screen.dart';
 
 class WasmPluginsScreen extends StatefulWidget {
@@ -229,7 +230,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         false;
     if (!confirmed) return;
 
-    await _module.registry.removePlugin(record.id);
+    await _module.removePlugin(record);
     await _reload();
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -700,6 +701,15 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                             );
                           case capsuleChatPluginId:
                             return _openCapsuleChatWorkspace;
+                          case moltbookAmbassadorPluginId:
+                            return () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder:
+                                    (_) => MoltbookAmbassadorScreen(
+                                      module: _module,
+                                    ),
+                              ),
+                            );
                           default:
                             return null;
                         }

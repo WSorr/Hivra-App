@@ -1,7 +1,7 @@
 # Moltbook Agent Drone - Design Contract v1
 
-Status: Design-only future track
-Runtime impact: None
+Status: Draft-only prototype implemented; remote effects remain future work
+Runtime impact: bounded WASM draft contract only
 Primary owner: External Moltbook Drone
 
 ## 1. Purpose
@@ -16,7 +16,7 @@ drone is absent, offline, revoked, or when Moltbook no longer exists.
 
 ## 2. Capability-Closure Verdict
 
-Current verdict: `NEEDS_CONTRACT`.
+Current verdict: `DRAFT_ONLY`; remote effects remain `NEEDS_CONTRACT`.
 
 The existing bounded WASM runtime intentionally has no direct network imports,
 secret access, or unrestricted storage. A Moltbook package therefore cannot be
@@ -34,7 +34,8 @@ Missing host capabilities:
 - foreground scheduling with an explicit online/offline lifecycle.
 
 No temporary direct HTTP call from a screen or WASM import may close these
-gaps.
+gaps. The currently implemented draft contract does not close them: it only
+turns an explicit Public Bulletin into a deterministic, approval-gated draft.
 
 ## 3. Ownership and Dependency Stack
 
@@ -96,7 +97,9 @@ The initial registration flow is explicit:
 4. User completes the external human-owner verification.
 5. Host verifies the resulting account identity before activating publishing.
 6. Credential and binding metadata are stored under the selected Capsule and
-   plugin scope.
+   plugin scope. The current draft profile is scoped by `(capsule_root,
+   plugin_id)`; a future external-account binding may extend that scope with
+   `provider_id` and `provider_account_id` without changing the Core ledger.
 
 ## 5. Data Authority and Storage
 
@@ -118,6 +121,16 @@ Secure credential lookup is scoped by at least:
 (capsule_root, plugin_id, provider_id, provider_account_id)
 ```
 
+The user-facing Ambassador configuration is one host-owned plugin-state
+document, not a manifest extension or a Core record. It contains only the
+Moltbook profile and local policy: `agent_name`, `agent_description`,
+`persona_summary`, `allowed_topics`, `approval_mode`, and `enabled`.
+`agent_name` and `agent_description` customize the external agent only; they
+never rename the Capsule or plugin. Credentials, claim tokens, seeds, transport
+keys, ledger data, and contact data are excluded. The draft-only WASM method
+does not consume this configuration until the host registration, preview, and
+publication ports exist.
+
 Rules:
 
 - Public Moltbook state is projected locally; it is not copied into the Core
@@ -133,17 +146,20 @@ Rules:
 ## 6. Processing Pipeline
 
 ```text
-remote feed
-  -> Moltbook Adapter
-  -> normalized untrusted content
+explicit Public Bulletin
+  -> Moltbook Drone draft contract
+  -> normalized public facts
   -> deterministic eligibility/policy gate
   -> optional minimized AI inference
   -> canonical draft
-  -> approval/autonomy gate
-  -> durable publish operation
-  -> Moltbook Adapter
-  -> remote receipt
-  -> local plugin projection
+  -> explicit approval
+
+Future remote mode:
+
+remote feed -> Moltbook Adapter -> normalized untrusted content
+  -> deterministic eligibility/policy gate -> canonical draft
+  -> approval/autonomy gate -> durable publish operation
+  -> Moltbook Adapter -> remote receipt -> local plugin projection
 ```
 
 All Moltbook content, including apparent instructions to the agent, is
@@ -184,7 +200,14 @@ new reads and decisions. Moltbook retains already-published remote state.
 
 ## 8. Method Scopes
 
-Proposed contract: `hivra.contract.moltbook-agent.v1`.
+Current draft contract: `hivra.contract.moltbook-ambassador.v1`.
+
+Current method:
+
+- `prepare_moltbook_draft`: `solo`, deterministic draft preparation from an
+  explicit Public Bulletin; no network effect.
+
+Future remote contract methods are not implemented yet:
 
 Proposed methods:
 
@@ -221,8 +244,31 @@ peer requirement to these solo methods.
 External references are informative, not Hivra protocol authorities:
 
 - `https://www.moltbook.com/`
+- `https://www.moltbook.com/skill.md`
 - `https://www.moltbook.com/privacy`
 - `https://www.moltbook.com/terms`
+
+The Phase 2 adapter baseline was checked against official Moltbook skill
+contract `1.12.0` on 2026-07-26. Provider documentation remains informative:
+the local allowlist and tests are the executable Hivra boundary.
+
+Observe v1 permits only:
+
+- origin `https://www.moltbook.com`;
+- path prefix `/api/v1/`;
+- `GET /api/v1/agents/me`;
+- `GET /api/v1/agents/status`;
+- `GET /api/v1/home`.
+
+The adapter rejects redirects, non-HTTPS origins, malformed JSON, missing
+required fields, invalid rate-limit headers, and responses over 256 KiB. Its
+default request timeout is 12 seconds. It reads `X-RateLimit-Limit`,
+`X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After`; the documented
+provider read budget is 60 requests per 60 seconds per API key.
+
+Observe does not use the External Effects journal because a bounded read is not
+an external write effect. Future publication uses the provider-neutral
+External Effects lifecycle and must not add a second retry journal.
 
 ## 10. Recovery and Failure Semantics
 
@@ -264,16 +310,140 @@ must never be enabled implicitly.
 - Concrete adapter DTOs do not cross their port.
 - Moltbook, AI, UI, and plugin state never become dependencies of Core.
 
-## 12. Evolution Plan
+## 12. Approved Implementation Plan
 
-1. Approve this ownership and data-authority contract.
-2. Define provider-neutral external-effect and plugin-state host contracts.
-3. Define the Moltbook adapter port, threat model, and canonical fixtures.
-4. Implement read-only Observe mode.
-5. Add Assisted drafting with optional bounded inference.
-6. Add explicit publish with durable receipt reconciliation.
-7. Run macOS and Android manual smoke with a disposable Moltbook agent.
-8. Consider Bounded Interactive mode only after replay, injection, rate-limit,
-   revocation, and restart tests pass.
+This order is normative. A later phase cannot begin by bypassing an
+unimplemented contract from an earlier phase.
+
+### Phase 0 - Draft Baseline
+
+Status: implemented locally; plugin source published outside Discover.
+
+- Keep Public Bulletin production explicit, bounded, and reviewable.
+- Keep `prepare_moltbook_draft` deterministic and approval-required.
+- Keep Ambassador profile and policy isolated by `(capsule_root, plugin_id)`.
+- Do not grant network, credential, ledger, or generic filesystem access to
+  WASM.
+
+Exit gate:
+
+- plugin tests, manifest validation, host contract tests, and profile isolation
+  tests pass;
+- the package remains absent from Discover.
+
+### Phase 1 - Provider-Neutral External Effects
+
+Status: `HOST_BASELINE_IMPLEMENTED`.
+
+The normative provider-neutral lifecycle is
+`docs/architecture/external-effect-lifecycle.md`. Moltbook does not define a
+second state machine, journal, retry owner, or receipt type.
+
+The implemented generic host path is:
+
+```text
+prepare -> approve -> enqueue -> deliver -> reconcile -> terminal receipt
+```
+
+It is Capsule/plugin isolated, contains no credential, reconciles before retry,
+and rejects stale adapter completions by state/revision. No Moltbook adapter is
+mounted yet.
+
+Exit gate:
+
+- completed: transition, idempotency, persistence, restart, cancellation, and
+  stale-completion rules are owned by the generic architecture contract;
+- completed: fake-adapter tests prove timeout/retry/restart and concurrent
+  calls without duplicate effects;
+- completed: Core, ledger, generic transport, and WASM contain no provider DTO;
+- completed: Moltbook endpoint, timeout, response-size, redirect, error, and
+  rate-limit policy is isolated in one provider adapter.
+
+### Phase 2 - Moltbook Adapter and Observe Mode
+
+Status: strict read-only adapter baseline implemented; credential binding and
+workspace mounting remain.
+
+- Completed: implement one strict Moltbook adapter for normalized Observe
+  projections.
+- Completed: pin allowed HTTPS host, paths, methods, request timeout, response
+  size, redirects, and provider error mapping.
+- Bind credentials in platform secure storage by Capsule, plugin, provider,
+  and external account.
+- Before mounting credentials, add one generic secure plugin-credential vault
+  whose Capsule deletion and plugin removal paths delete the corresponding
+  secret scope. No provider-specific orphaned Keychain item is allowed.
+- Implement account connection, verification, rotation, revocation, and
+  bounded home observation. Feed reads and cursors remain outside the first
+  Observe slice.
+- Treat every remote field as untrusted data.
+
+Exit gate:
+
+- read-only Observe mode survives offline, timeout, malformed response,
+  credential revocation, restart, and rate-limit tests;
+- no remote write capability is granted.
+
+### Phase 3 - Ambassador Workspace
+
+Status: local profile/policy shell implemented; remote surfaces remain blocked
+by Phase 2.
+
+The plugin card opens a dedicated workspace. The generic Plugins screen shows
+installation and health only; it must not become a provider dashboard.
+
+The current draft-only workspace contains local `Profile` and `Stop` controls.
+It does not connect to Moltbook, hold provider credentials, or imply remote
+execution.
+
+The complete workspace will contain:
+
+1. `Connection`: provider account, verification state, reconnect, revoke.
+2. `Profile`: agent name, description, persona, allowed topics, enabled state.
+3. `Drafts`: local drafts and exact preview.
+4. `Approval Queue`: operations awaiting explicit approval.
+5. `Activity`: delivery state, attempts, receipts, and actionable errors.
+6. `Stop`: immediate local disable without pretending to delete remote state.
+
+The UI reads host projections. It does not call the adapter directly, store
+credentials in widget state, or translate provider responses into domain
+truth.
+
+Exit gate:
+
+- switching Capsules cannot display or mutate another Capsule's binding,
+  drafts, operations, or profile;
+- removing the plugin clears local non-secret plugin state after confirmation,
+  while external account deletion remains a separate provider action.
+
+### Phase 4 - Assisted Publication
+
+Status: blocked by Phases 2 and 3.
+
+- Convert an approved canonical draft into one durable external operation.
+- Show exact destination, account, title/body, reason, and public permanence
+  warning before approval.
+- Require explicit approval for every post or reply.
+- Reconcile a provider receipt before showing success.
+- Expose retry, cancel-before-delivery, and revoke controls without inventing
+  remote success.
+
+Exit gate:
+
+- duplicate-click, timeout-after-provider-acceptance, restart, retry,
+  cancellation, and revoked-credential cases produce at most one semantic
+  publication;
+- macOS and Android manual smoke passes with a disposable Moltbook agent.
+
+### Phase 5 - Discover and Later Autonomy
+
+Discover publication is allowed only after Phases 1-4 pass automated and
+manual release evidence. The signed catalog entry must pin the reviewed package
+hash and minimum host ABI/capabilities.
+
+Bounded Interactive mode remains a separate future decision. It requires a new
+threat review and replay, prompt-injection, rate-limit, revocation, kill-switch,
+and unattended-restart tests. It must not be enabled by changing a profile
+field in the Assisted release.
 
 No phase may add direct network or secure-storage access to WASM.
