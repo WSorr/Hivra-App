@@ -149,6 +149,33 @@ void main() {
       };
     }
 
+    test('starter count accepts byte-list Core head commitment', () {
+      final self = rep(0xaa);
+      final head = List<int>.generate(32, (index) => index + 1);
+      final headHex =
+          head.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      final ledger = jsonEncode(<String, dynamic>{
+        'owner': self,
+        'head_commitment_v5': headHex,
+        'events': <Map<String, dynamic>>[
+          event(
+            kind: 'CapsuleCreated',
+            payload: const <int>[],
+            timestamp: 1800000000000,
+            signer: self,
+          ),
+        ],
+      });
+      final projection = coreProjection(
+        version: 1,
+        occupiedSlotBytes: <int>[0x21, 0x22, 0x23],
+      )..['ledger_head_commitment'] = head;
+
+      final summary = parser.parse(ledger, toHex, coreProjection: projection);
+
+      expect(summary.starterCount, equals(3));
+    });
+
     test('pending count follows first-terminal invitation semantics', () {
       final self = rep(0xaa);
       final peer = rep(0xbb);

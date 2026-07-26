@@ -160,6 +160,14 @@ class CapsuleLedgerSummaryParser {
         return hex.toLowerCase();
       }
     }
+    if (raw is List) {
+      final bytes = _support.payloadBytes(raw);
+      if (bytes.isNotEmpty || raw.isEmpty) {
+        return bytes
+            .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+            .join();
+      }
+    }
     return '0';
   }
 
