@@ -161,6 +161,57 @@ void main() {
     },
   );
 
+  test('required provider action survives restart and resolves once', () async {
+    const action = ExternalEffectRequiredAction(
+      kind: 'numeric_challenge',
+      providerReferenceId: 'post-1',
+      actionToken: 'verify-1',
+      prompt: 'two plus two',
+      expiresAtUtc: '2026-07-26T12:10:00.000Z',
+    );
+    final firstAdapter = _FakeExternalEffectAdapter(
+      deliverResults: const <Object>[
+        ExternalEffectAdapterResult(
+          status: ExternalEffectAdapterStatus.unresolved,
+          errorCode: 'verification_required',
+          errorMessage: 'Verification required',
+          requiredAction: action,
+        ),
+      ],
+    );
+    final firstService = build(firstAdapter);
+    await prepareApprovedQueued(firstService);
+
+    final unresolved = await firstService.process(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: 'post-1',
+    );
+    expect(unresolved.requiredAction?.actionToken, 'verify-1');
+
+    final restartedAdapter = _FakeExternalEffectAdapter(
+      resolveResults: <Object>[_success('post-1')],
+    );
+    final restarted = build(restartedAdapter);
+    final restored = await restarted.list(pluginId: moltbookAmbassadorPluginId);
+    expect(restored.single.requiredAction?.prompt, 'two plus two');
+
+    final unchanged = await restarted.process(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: 'post-1',
+    );
+    expect(unchanged.state, ExternalEffectState.unresolved);
+    expect(restartedAdapter.reconcileCount, 0);
+
+    final completed = await restarted.resolveRequiredAction(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: 'post-1',
+      response: '4',
+    );
+    expect(completed.state, ExternalEffectState.succeeded);
+    expect(completed.requiredAction, isNull);
+    expect(restartedAdapter.resolveCount, 1);
+  });
+
   test('not-found reconciliation retries the same semantic operation', () async {
     final firstAdapter = _FakeExternalEffectAdapter(
       deliverResults: const <Object>[
@@ -480,16 +531,20 @@ void main() {
 class _FakeExternalEffectAdapter implements ExternalEffectAdapter {
   final List<Object> deliverResults;
   final List<Object> reconcileResults;
+  final List<Object> resolveResults;
   final List<String> deliveredOperationIds = <String>[];
   final Completer<void> deliverCalled = Completer<void>();
   int deliverCount = 0;
   int reconcileCount = 0;
+  int resolveCount = 0;
 
   _FakeExternalEffectAdapter({
     List<Object>? deliverResults,
     List<Object>? reconcileResults,
+    List<Object>? resolveResults,
   }) : deliverResults = List<Object>.of(deliverResults ?? const <Object>[]),
-       reconcileResults = List<Object>.of(reconcileResults ?? const <Object>[]);
+       reconcileResults = List<Object>.of(reconcileResults ?? const <Object>[]),
+       resolveResults = List<Object>.of(resolveResults ?? const <Object>[]);
 
   @override
   Future<ExternalEffectAdapterResult> deliver(
@@ -507,6 +562,16 @@ class _FakeExternalEffectAdapter implements ExternalEffectAdapter {
   ) async {
     reconcileCount += 1;
     return _take(reconcileResults, 'reconcile');
+  }
+
+  @override
+  Future<ExternalEffectAdapterResult> resolveRequiredAction(
+    ExternalEffectAdapterRequest request,
+    ExternalEffectRequiredAction action,
+    String response,
+  ) async {
+    resolveCount += 1;
+    return _take(resolveResults, 'resolveRequiredAction');
   }
 
   Future<ExternalEffectAdapterResult> _take(

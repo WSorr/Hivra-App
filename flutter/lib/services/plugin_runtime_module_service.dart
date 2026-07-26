@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../models/capsule_chat_models.dart';
+import '../models/external_effect_models.dart';
 import '../models/moltbook_ambassador_models.dart';
 import '../models/moltbook_provider_models.dart';
 import '../models/plugin_contract_ids.dart';
@@ -17,6 +18,8 @@ import 'manual_consensus_check_service.dart';
 import 'moltbook_ambassador_configuration_store.dart';
 import 'moltbook_connection_service.dart';
 import 'moltbook_draft_store.dart';
+import 'moltbook_external_effect_adapter.dart';
+import 'moltbook_publication_service.dart';
 import 'moltbook_provider_adapter.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
@@ -60,6 +63,7 @@ class PluginRuntimeModule {
   final ExternalEffectService externalEffects;
   final MoltbookConnectionService moltbookConnection;
   final MoltbookDraftStore moltbookDrafts;
+  final MoltbookPublicationService moltbookPublications;
   final MoltbookAmbassadorConfigurationStore _ambassadorConfiguration;
   final CapsuleFileStore _fileStore;
   final CapsuleScopedSecretVault _secretVault;
@@ -77,6 +81,7 @@ class PluginRuntimeModule {
     required this.externalEffects,
     required this.moltbookConnection,
     required this.moltbookDrafts,
+    required this.moltbookPublications,
     required MoltbookAmbassadorConfigurationStore ambassadorConfiguration,
     required CapsuleFileStore fileStore,
     required CapsuleScopedSecretVault secretVault,
@@ -159,6 +164,74 @@ class PluginRuntimeModule {
 
   Future<List<MoltbookStoredDraft>> loadMoltbookDrafts() =>
       moltbookDrafts.load();
+
+  Future<List<ExternalEffectOperation>> loadMoltbookPublications() =>
+      moltbookPublications.list();
+
+  Future<ExternalEffectOperation> prepareMoltbookPublication({
+    required MoltbookDraftPreview draft,
+    required String submoltName,
+  }) async {
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled ||
+        configuration.approvalMode !=
+            MoltbookAmbassadorConfiguration.approvalAssisted) {
+      throw StateError('Assisted Moltbook publication is not enabled');
+    }
+    final operation = await moltbookPublications.prepare(
+      draft: draft,
+      submoltName: submoltName,
+    );
+    await uiLog.log(
+      'moltbook.publication.prepare',
+      'operation=${operation.operationId} '
+          'payload=${operation.payloadHashHex.substring(0, 12)}..',
+    );
+    return operation;
+  }
+
+  Future<ExternalEffectOperation> approveMoltbookPublication(
+    ExternalEffectOperation operation,
+  ) async {
+    final queued = await moltbookPublications.approveAndQueue(operation);
+    await uiLog.log(
+      'moltbook.publication.approve',
+      'operation=${queued.operationId} state=${queued.state.wireName}',
+    );
+    return queued;
+  }
+
+  Future<ExternalEffectOperation> processMoltbookPublication(
+    String operationId,
+  ) async {
+    final result = await moltbookPublications.process(operationId);
+    await uiLog.log(
+      'moltbook.publication.process',
+      'operation=$operationId state=${result.state.wireName} '
+          'error=${result.lastErrorCode ?? "none"}',
+    );
+    return result;
+  }
+
+  Future<ExternalEffectOperation> resolveMoltbookPublicationVerification({
+    required String operationId,
+    required String answer,
+  }) async {
+    final result = await moltbookPublications.resolveVerification(
+      operationId: operationId,
+      answer: answer,
+    );
+    await uiLog.log(
+      'moltbook.publication.verify',
+      'operation=$operationId state=${result.state.wireName} '
+          'error=${result.lastErrorCode ?? "none"}',
+    );
+    return result;
+  }
+
+  Future<ExternalEffectOperation> cancelMoltbookPublication(
+    String operationId,
+  ) => moltbookPublications.cancel(operationId);
 
   Future<void> deleteMoltbookDraft(String draftHashHex) async {
     final normalizedHash = draftHashHex.trim().toLowerCase();
@@ -449,6 +522,27 @@ class PluginRuntimeModuleService {
   PluginRuntimeModule build() {
     final activeCapsuleRootHex = runtime.activeCapsuleRootHex;
     final secretVault = CapsuleScopedSecretVault();
+    final provider = MoltbookProviderAdapter();
+    final connection = MoltbookConnectionService(
+      fileStore: fileStore,
+      secretVault: secretVault,
+      observer: provider,
+      readActiveCapsuleRootHex: activeCapsuleRootHex,
+    );
+    final moltbookAdapter = MoltbookExternalEffectAdapter(
+      secretVault: secretVault,
+      provider: provider,
+    );
+    final effects = ExternalEffectService(
+      readActiveCapsuleRootHex: activeCapsuleRootHex,
+      resolveAdapter:
+          externalEffectAdapterResolver ??
+          (providerId) =>
+              providerId == MoltbookConnectionService.providerId
+                  ? moltbookAdapter
+                  : null,
+      fileStore: fileStore,
+    );
     return PluginRuntimeModule(
       registry: const WasmPluginRegistryService(),
       sourceCatalog: const WasmPluginSourceCatalogService(),
@@ -458,20 +552,15 @@ class PluginRuntimeModuleService {
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
       contactLabels: runtime.buildCapsuleContactLabelStore(),
       uiLog: const UiEventLogService(),
-      externalEffects: ExternalEffectService(
-        readActiveCapsuleRootHex: activeCapsuleRootHex,
-        resolveAdapter: externalEffectAdapterResolver ?? (providerId) => null,
-        fileStore: fileStore,
-      ),
-      moltbookConnection: MoltbookConnectionService(
-        fileStore: fileStore,
-        secretVault: secretVault,
-        observer: MoltbookProviderAdapter(),
-        readActiveCapsuleRootHex: activeCapsuleRootHex,
-      ),
+      externalEffects: effects,
+      moltbookConnection: connection,
       moltbookDrafts: MoltbookDraftStore(
         fileStore: fileStore,
         readActiveCapsuleRootHex: activeCapsuleRootHex,
+      ),
+      moltbookPublications: MoltbookPublicationService(
+        connection: connection,
+        effects: effects,
       ),
       ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(
         fileStore: fileStore,

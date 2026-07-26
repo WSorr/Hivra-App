@@ -265,3 +265,37 @@ class MoltbookAmbassadorConfiguration {
     }
   }
 }
+
+class MoltbookPublicationContract {
+  static const String repositoryUrl = 'https://github.com/WSorr/Hivra-App';
+
+  const MoltbookPublicationContract._();
+
+  static String operationMarker(String operationId) {
+    return 'hivra-effect:$operationId';
+  }
+
+  static String attribution(String operationId) {
+    final marker = operationMarker(operationId);
+    return '[Hivra on GitHub]($repositoryUrl#$marker)';
+  }
+
+  static String legacyMarker(String operationId) {
+    return '[${operationMarker(operationId)}]';
+  }
+
+  static bool matchesApprovedContent({
+    required String operationId,
+    required String operationMarker,
+    required String content,
+  }) {
+    final currentMarker = MoltbookPublicationContract.operationMarker(
+      operationId,
+    );
+    if (operationMarker == currentMarker) {
+      return content.endsWith(attribution(operationId));
+    }
+    final legacy = legacyMarker(operationId);
+    return operationMarker == legacy && content.endsWith(legacy);
+  }
+}

@@ -1455,9 +1455,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - retries are idempotent and reconcile provider receipts before declaring
       success.
   - Architecture closure:
-    - current implementation is draft-only: `hivra.contract.moltbook-ambassador.v1`
-      accepts an explicit Public Bulletin and produces a deterministic,
-      approval-gated draft without network access.
+    - the installed `hivra.contract.moltbook-ambassador.v1` WASM package owns
+      deterministic Public Bulletin draft construction without network access;
+      the host-owned Assisted path separately reviews, approves, delivers, and
+      verifies each explicit remote publication.
     - completed host baseline: the provider-neutral external-effect lifecycle:
       `prepare -> approve -> enqueue -> deliver -> reconcile -> terminal
       receipt`.
@@ -1475,9 +1476,13 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       read Secure Storage.
     - no second provider-specific credential store or Keychain orphan is
       accepted.
-    - the first remote milestone is read-only Observe; the first write
-      milestone is Assisted publication with exact preview and one explicit
-      approval per effect.
+    - completed first write milestone: Assisted publication with exact preview,
+      one explicit approval per effect, durable provider challenge, explicit
+      verification response, and matching visible-post evidence before success.
+    - completed macOS Release evidence on 2026-07-27: Moltbook post
+      `32a3006b-94e3-4087-82f6-58e3666cef4e` remained unresolved while hidden
+      and became succeeded only after explicit challenge resolution and a
+      matching public `verified` post observation.
     - the dedicated Ambassador workspace owns Connection, Profile, Drafts,
       Approval Queue, Activity, and Stop surfaces; the generic Plugins screen
       remains installation/health UI.
@@ -1489,9 +1494,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - completed: approve the ownership boundary and define the draft-only
       Public Bulletin contract without changing the 1.x Core protocol.
   - Status: Phase 0 draft prototype, Phase 1 host lifecycle, Phase 2
-    account/home Observe with secure binding, and the Phase 3 deterministic
-    WASM Draft Preview with bounded Capsule-scoped local history complete;
-    feed observation and all remote writes remain outside the current slice.
+    account/home Observe with secure binding, Phase 3 deterministic WASM Draft
+    Preview, and the Phase 4 Assisted publication host path are implemented;
+    macOS verification smoke passes and Android smoke remains before Discover
+    publication.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:

@@ -62,10 +62,13 @@ One operation contains:
 - approval evidence hash;
 - attempt count and monotonic revision;
 - lifecycle state and bounded diagnostic error;
+- optional bounded provider-required action while unresolved;
 - terminal provider receipt when successful.
 
-An operation never contains a credential. Credential material remains in the
-provider adapter's platform secure-storage boundary.
+An operation never contains a credential. Adapter requests carry the immutable
+owner Capsule and plugin scope so credential lookup remains bound to the
+operation after Capsule switching or restart. Credential material remains in
+the provider adapter's platform secure-storage boundary.
 
 The journal uses the Capsule atomic file writer. Its top-level Capsule/plugin
 scope and every operation scope must match exactly. Duplicate operation ids,
@@ -90,6 +93,7 @@ prepared
 delivering -> unresolved
 unresolved -> reconcile -> succeeded | terminal_failure | unresolved
 unresolved -> reconcile(not_found) -> queued
+unresolved(required_action) -> explicit response -> succeeded | terminal_failure | unresolved
 prepared | approved | queued -> cancelled
 ```
 
@@ -118,6 +122,12 @@ provider, account binding, effect kind, or payload hash also fails closed.
 8. Cancellation is allowed only before delivery starts. Remote cancellation,
    when supported, is a separate explicit effect rather than a local state
    rewrite.
+9. A provider challenge is stored as one bounded provider-neutral required
+   action. It blocks reconciliation and redelivery until the user responds or
+   the action expires.
+10. Required-action tokens are never logged or exposed as UI state. The
+    adapter consumes the persisted action, and success still requires matching
+    remote evidence rather than a successful challenge response alone.
 
 Adapter receipts prove only the external provider outcome represented by the
 adapter. They are not Core truth and do not imply transport delivery or peer
@@ -154,9 +164,17 @@ Implemented host baseline:
   concurrent processing, stale completion, cancellation, collision, Capsule
   switching, and cleanup.
 
-Not implemented in this phase:
+Provider integrations implemented above this generic phase:
 
-- Moltbook HTTP or credentials;
+- Moltbook Account/Home observation and assisted post publication;
+- Capsule/plugin/account-scoped Moltbook credential resolution;
+- exact post receipt and bounded recent-profile reconciliation;
+- durable verification challenge, explicit numeric response, and post
+  visibility confirmation;
+- fail-closed handling for expired challenges and ambiguous delivery.
+
+Not implemented in this generic phase:
+
 - remote read/observe mode;
 - provider-specific DTOs;
 - generic background scheduling;

@@ -1,7 +1,7 @@
 # Moltbook Agent Drone - Design Contract v1
 
-Status: Draft prototype plus read-only account connection implemented; remote
-write effects remain future work
+Status: deterministic drafts, read-only account observation, and assisted
+publication lifecycle implemented; live provider smoke remains gated
 Runtime impact: bounded WASM draft contract only
 Primary owner: External Moltbook Drone
 
@@ -348,8 +348,8 @@ prepare -> approve -> enqueue -> deliver -> reconcile -> terminal receipt
 ```
 
 It is Capsule/plugin isolated, contains no credential, reconciles before retry,
-and rejects stale adapter completions by state/revision. No Moltbook adapter is
-mounted yet.
+and rejects stale adapter completions by state/revision. The Moltbook adapter
+is mounted only at the application composition boundary.
 
 Exit gate:
 
@@ -394,8 +394,8 @@ Exit gate:
 
 ### Phase 3 - Ambassador Workspace
 
-Status: local profile/policy, read-only Connection, and deterministic WASM
-Draft Preview surfaces implemented; remote write surfaces remain blocked.
+Status: local profile/policy, read-only Connection, deterministic WASM Draft
+Preview, and durable assisted-publication surfaces implemented.
 
 The plugin card opens a dedicated workspace. The generic Plugins screen shows
 installation and health only; it must not become a provider dashboard.
@@ -435,15 +435,41 @@ Exit gate:
 
 ### Phase 4 - Assisted Publication
 
-Status: blocked by Phases 2 and 3.
+Status: host implementation and fake-provider tests complete. The macOS
+Release smoke completed the real nested-provider challenge flow through a
+publicly visible verified post. Android manual smoke remains.
 
-- Convert an approved canonical draft into one durable external operation.
-- Show exact destination, account, title/body, reason, and public permanence
-  warning before approval.
-- Require explicit approval for every post or reply.
-- Reconcile a provider receipt before showing success.
-- Expose retry, cancel-before-delivery, and revoke controls without inventing
-  remote success.
+- Completed: convert one canonical draft into one stable durable external
+  operation.
+- Completed: show exact destination, account, title/body, public repository
+  attribution, and permanence warning before approval. The operation marker is
+  embedded in the attribution URL for machine reconciliation instead of being
+  exposed as an unreadable public suffix.
+- Completed: require explicit approval and a separate explicit publish action
+  for every post.
+- Completed: bind credential lookup to the originating Capsule, plugin,
+  provider, and external account rather than the currently selected Capsule.
+- Completed: reconcile a provider receipt before showing success.
+- Completed: treat verification challenges, missing receipts, timeouts, and
+  absent reconciliation markers as unresolved instead of inventing success or
+  blindly resubmitting.
+- Completed: expose cancel-before-delivery and reconciliation controls through
+  the one generic external-effect journal.
+- Completed: persist nested `post.verification` as a provider-neutral required
+  action, show the exact challenge and expiry, submit an explicit numeric
+  answer through the adapter, and require matching visible-post evidence before
+  recording success.
+- Completed: legacy or expired challenges remain fail-closed without blind
+  resubmission.
+- Completed manual macOS evidence on 2026-07-27: one approved operation created
+  hidden post `32a3006b-94e3-4087-82f6-58e3666cef4e`, persisted the provider
+  challenge as unresolved, accepted one explicit answer, then recorded success
+  only after the exact post id, approved text, operation marker, and
+  `verification_status=verified` were observed.
+- Completed: the Ambassador surface presents one prominent next action for the
+  Draft, Review, Approve, Publish, and Verify sequence; provider-neutral
+  operation details remain available as diagnostics rather than primary
+  navigation.
 
 Exit gate:
 

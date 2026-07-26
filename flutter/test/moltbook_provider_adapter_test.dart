@@ -90,6 +90,35 @@ void main() {
     expect(result.status, 'claimed');
   });
 
+  test('submits verification only to the pinned verify endpoint', () async {
+    late MoltbookHttpRequest captured;
+    final adapter = MoltbookProviderAdapter(
+      send: (request) async {
+        captured = request;
+        return _jsonResponse(<String, dynamic>{
+          'success': true,
+          'content_type': 'post',
+          'content_id': 'post-123',
+        });
+      },
+    );
+
+    final result = await adapter.verifyContent(
+      apiKey: 'moltbook_secret',
+      verificationCode: 'verify-123',
+      answer: '4.00',
+    );
+
+    expect(captured.method, 'POST');
+    expect(captured.uri.toString(), 'https://www.moltbook.com/api/v1/verify');
+    expect(captured.headers['authorization'], 'Bearer moltbook_secret');
+    expect(jsonDecode(utf8.decode(captured.bodyBytes!)), <String, dynamic>{
+      'verification_code': 'verify-123',
+      'answer': '4.00',
+    });
+    expect(result['content_id'], 'post-123');
+  });
+
   test('rejects credentials before making a request', () async {
     var calls = 0;
     final adapter = MoltbookProviderAdapter(

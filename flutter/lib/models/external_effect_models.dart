@@ -82,6 +82,63 @@ class ExternalEffectReceipt {
   }
 }
 
+class ExternalEffectRequiredAction {
+  static const int schemaVersion = 1;
+
+  final String kind;
+  final String providerReferenceId;
+  final String actionToken;
+  final String prompt;
+  final String expiresAtUtc;
+
+  const ExternalEffectRequiredAction({
+    required this.kind,
+    required this.providerReferenceId,
+    required this.actionToken,
+    required this.prompt,
+    required this.expiresAtUtc,
+  });
+
+  factory ExternalEffectRequiredAction.fromJson(Map<String, dynamic> json) {
+    if (json['schema_version'] != schemaVersion) {
+      throw const FormatException(
+        'Unsupported external effect required-action schema',
+      );
+    }
+    final action = ExternalEffectRequiredAction(
+      kind: json['kind']?.toString() ?? '',
+      providerReferenceId: json['provider_reference_id']?.toString() ?? '',
+      actionToken: json['action_token']?.toString() ?? '',
+      prompt: json['prompt']?.toString() ?? '',
+      expiresAtUtc: json['expires_at_utc']?.toString() ?? '',
+    );
+    action.validate();
+    return action;
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'schema_version': schemaVersion,
+    'kind': kind,
+    'provider_reference_id': providerReferenceId,
+    'action_token': actionToken,
+    'prompt': prompt,
+    'expires_at_utc': expiresAtUtc,
+  };
+
+  void validate() {
+    _validateIdentifier('required_action.kind', kind);
+    _validateBounded(
+      'required_action.provider_reference_id',
+      providerReferenceId,
+      1,
+      256,
+    );
+    _validateBounded('required_action.action_token', actionToken, 1, 1024);
+    _validateBounded('required_action.prompt', prompt, 1, 4000);
+    _validateUtc('required_action.expires_at_utc', expiresAtUtc);
+  }
+}
+
 class ExternalEffectOperation {
   static const int schemaVersion = 1;
 
@@ -101,6 +158,7 @@ class ExternalEffectOperation {
   final String updatedAtUtc;
   final String? lastErrorCode;
   final String? lastErrorMessage;
+  final ExternalEffectRequiredAction? requiredAction;
   final ExternalEffectReceipt? receipt;
 
   const ExternalEffectOperation({
@@ -120,6 +178,7 @@ class ExternalEffectOperation {
     required this.updatedAtUtc,
     required this.lastErrorCode,
     required this.lastErrorMessage,
+    required this.requiredAction,
     required this.receipt,
   });
 
@@ -127,6 +186,7 @@ class ExternalEffectOperation {
     if (json['schema_version'] != schemaVersion) {
       throw const FormatException('Unsupported external effect schema');
     }
+    final rawRequiredAction = json['required_action'];
     final rawReceipt = json['receipt'];
     final operation = ExternalEffectOperation(
       ownerCapsuleHex: json['owner_capsule_hex']?.toString() ?? '',
@@ -146,6 +206,12 @@ class ExternalEffectOperation {
       updatedAtUtc: json['updated_at_utc']?.toString() ?? '',
       lastErrorCode: json['last_error_code']?.toString(),
       lastErrorMessage: json['last_error_message']?.toString(),
+      requiredAction:
+          rawRequiredAction is Map
+              ? ExternalEffectRequiredAction.fromJson(
+                Map<String, dynamic>.from(rawRequiredAction),
+              )
+              : null,
       receipt:
           rawReceipt is Map
               ? ExternalEffectReceipt.fromJson(
@@ -175,6 +241,7 @@ class ExternalEffectOperation {
     'updated_at_utc': updatedAtUtc,
     'last_error_code': lastErrorCode,
     'last_error_message': lastErrorMessage,
+    'required_action': requiredAction?.toJson(),
     'receipt': receipt?.toJson(),
   };
 
@@ -204,6 +271,12 @@ class ExternalEffectOperation {
       _validateBounded('last_error_message', lastErrorMessage!, 1, 1000);
     }
     receipt?.validate();
+    requiredAction?.validate();
+    if (requiredAction != null && state != ExternalEffectState.unresolved) {
+      throw const FormatException(
+        'Only an unresolved external effect may require provider action',
+      );
+    }
     if (receipt != null &&
         (receipt!.operationId != operationId ||
             receipt!.providerId != providerId)) {
@@ -223,7 +296,9 @@ class ExternalEffectOperation {
 }
 
 class ExternalEffectAdapterRequest {
+  final String ownerCapsuleHex;
   final String operationId;
+  final String pluginId;
   final String providerId;
   final String accountBindingId;
   final String effectKind;
@@ -231,24 +306,39 @@ class ExternalEffectAdapterRequest {
   final String payloadHashHex;
 
   const ExternalEffectAdapterRequest({
+    required this.ownerCapsuleHex,
     required this.operationId,
+    required this.pluginId,
     required this.providerId,
     required this.accountBindingId,
     required this.effectKind,
     required this.canonicalPayloadJson,
     required this.payloadHashHex,
   });
+
+  void validate() {
+    _validateCapsuleHex(ownerCapsuleHex);
+    _validateIdentifier('operation_id', operationId);
+    _validatePluginId(pluginId);
+    _validateIdentifier('provider_id', providerId);
+    _validateIdentifier('account_binding_id', accountBindingId);
+    _validateIdentifier('effect_kind', effectKind);
+    _validateBounded('canonical_payload_json', canonicalPayloadJson, 2, 65536);
+    _validateHash('payload_hash_hex', payloadHashHex);
+  }
 }
 
 class ExternalEffectAdapterResult {
   final ExternalEffectAdapterStatus status;
   final ExternalEffectReceipt? receipt;
+  final ExternalEffectRequiredAction? requiredAction;
   final String? errorCode;
   final String? errorMessage;
 
   const ExternalEffectAdapterResult({
     required this.status,
     this.receipt,
+    this.requiredAction,
     this.errorCode,
     this.errorMessage,
   });
@@ -260,6 +350,13 @@ class ExternalEffectAdapterResult {
     if (status != ExternalEffectAdapterStatus.succeeded && receipt != null) {
       throw const FormatException(
         'Non-success adapter result cannot contain receipt',
+      );
+    }
+    requiredAction?.validate();
+    if (requiredAction != null &&
+        status != ExternalEffectAdapterStatus.unresolved) {
+      throw const FormatException(
+        'Only an unresolved adapter result may require provider action',
       );
     }
     if (errorCode != null) {
@@ -278,6 +375,12 @@ abstract interface class ExternalEffectAdapter {
 
   Future<ExternalEffectAdapterResult> reconcile(
     ExternalEffectAdapterRequest request,
+  );
+
+  Future<ExternalEffectAdapterResult> resolveRequiredAction(
+    ExternalEffectAdapterRequest request,
+    ExternalEffectRequiredAction action,
+    String response,
   );
 }
 

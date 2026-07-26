@@ -18,11 +18,13 @@ class MoltbookHttpRequest {
   final String method;
   final Uri uri;
   final Map<String, String> headers;
+  final Uint8List? bodyBytes;
 
   const MoltbookHttpRequest({
     required this.method,
     required this.uri,
     required this.headers,
+    this.bodyBytes,
   });
 }
 
@@ -144,7 +146,93 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     return observation;
   }
 
+  Future<Map<String, dynamic>> createPost({
+    required String apiKey,
+    required String submoltName,
+    required String title,
+    required String content,
+  }) async {
+    final response = await _request(
+      method: 'POST',
+      relativePath: 'posts',
+      apiKey: apiKey,
+      body: <String, dynamic>{
+        'submolt_name': submoltName,
+        'title': title,
+        'content': content,
+      },
+    );
+    final json = _decodeObject(response);
+    _rejectProviderFailure(json, response);
+    return json;
+  }
+
+  Future<Map<String, dynamic>> observeProfile({
+    required String apiKey,
+    required String accountName,
+  }) async {
+    final response = await _request(
+      method: 'GET',
+      relativePath:
+          'agents/profile?name=${Uri.encodeQueryComponent(accountName)}',
+      apiKey: apiKey,
+    );
+    final json = _decodeObject(response);
+    _rejectProviderFailure(json, response);
+    return json;
+  }
+
+  Future<Map<String, dynamic>> verifyContent({
+    required String apiKey,
+    required String verificationCode,
+    required String answer,
+  }) async {
+    final response = await _request(
+      method: 'POST',
+      relativePath: 'verify',
+      apiKey: apiKey,
+      body: <String, dynamic>{
+        'verification_code': verificationCode,
+        'answer': answer,
+      },
+    );
+    final json = _decodeObject(response);
+    _rejectProviderFailure(json, response);
+    return json;
+  }
+
+  Future<Map<String, dynamic>> observePost({
+    required String apiKey,
+    required String postId,
+  }) async {
+    final normalizedId = postId.trim();
+    if (!RegExp(r'^[A-Za-z0-9-]{1,256}$').hasMatch(normalizedId)) {
+      throw const MoltbookProviderException(
+        code: 'invalid_post_id',
+        message: 'Moltbook post id is invalid',
+        retryable: false,
+      );
+    }
+    final response = await _request(
+      method: 'GET',
+      relativePath: 'posts/${Uri.encodeComponent(normalizedId)}',
+      apiKey: apiKey,
+    );
+    final json = _decodeObject(response);
+    _rejectProviderFailure(json, response);
+    return json;
+  }
+
   Future<MoltbookHttpResponse> _get(String relativePath, String apiKey) async {
+    return _request(method: 'GET', relativePath: relativePath, apiKey: apiKey);
+  }
+
+  Future<MoltbookHttpResponse> _request({
+    required String method,
+    required String relativePath,
+    required String apiKey,
+    Map<String, dynamic>? body,
+  }) async {
     final normalizedKey = apiKey.trim();
     if (normalizedKey.isEmpty || normalizedKey.length > 1024) {
       throw const MoltbookProviderException(
@@ -155,16 +243,28 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     }
     final uri = apiBaseUri.resolve(relativePath);
     _validateEndpoint(uri);
+    if (method != 'GET' && method != 'POST') {
+      throw const MoltbookProviderException(
+        code: 'method_not_allowed',
+        message: 'Moltbook adapter only permits GET and POST',
+        retryable: false,
+      );
+    }
+    final bodyBytes =
+        body == null ? null : Uint8List.fromList(utf8.encode(jsonEncode(body)));
     MoltbookHttpResponse response;
     try {
       response = await _send(
         MoltbookHttpRequest(
-          method: 'GET',
+          method: method,
           uri: uri,
           headers: <String, String>{
             HttpHeaders.acceptHeader: 'application/json',
             HttpHeaders.authorizationHeader: 'Bearer $normalizedKey',
+            if (bodyBytes != null)
+              HttpHeaders.contentTypeHeader: 'application/json',
           },
+          bodyBytes: bodyBytes,
         ),
       ).timeout(_requestTimeout);
     } on TimeoutException {
@@ -197,10 +297,10 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     MoltbookHttpRequest request,
   ) async {
     _validateEndpoint(request.uri);
-    if (request.method != 'GET') {
+    if (request.method != 'GET' && request.method != 'POST') {
       throw const MoltbookProviderException(
         code: 'method_not_allowed',
-        message: 'Observe transport only permits GET',
+        message: 'Moltbook transport only permits GET and POST',
         retryable: false,
       );
     }
@@ -212,6 +312,10 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
       outgoing.followRedirects = false;
       outgoing.maxRedirects = 0;
       request.headers.forEach(outgoing.headers.set);
+      final bodyBytes = request.bodyBytes;
+      if (bodyBytes != null) {
+        outgoing.add(bodyBytes);
+      }
       final incoming = await outgoing.close().timeout(defaultRequestTimeout);
       if (incoming.isRedirect ||
           (incoming.statusCode >= 300 && incoming.statusCode < 400)) {

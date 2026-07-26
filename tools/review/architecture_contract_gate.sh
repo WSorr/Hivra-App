@@ -71,6 +71,8 @@ TRADING_SCREEN="$SCREENS/trading_drone_screen.dart"
 WASM_PLUGINS_SCREEN="$SCREENS/wasm_plugins_screen.dart"
 MOLTBOOK_AMBASSADOR_SCREEN="$SCREENS/moltbook_ambassador_screen.dart"
 MOLTBOOK_PROVIDER_ADAPTER="$ROOT/flutter/lib/services/moltbook_provider_adapter.dart"
+MOLTBOOK_EFFECT_ADAPTER="$ROOT/flutter/lib/services/moltbook_external_effect_adapter.dart"
+MOLTBOOK_PUBLICATION="$ROOT/flutter/lib/services/moltbook_publication_service.dart"
 MOLTBOOK_CONNECTION="$ROOT/flutter/lib/services/moltbook_connection_service.dart"
 MOLTBOOK_DRAFT_STORE="$ROOT/flutter/lib/services/moltbook_draft_store.dart"
 CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
@@ -437,8 +439,8 @@ require_present "$MOLTBOOK_PROVIDER_ADAPTER" "followRedirects = false" \
   "Moltbook adapter rejects redirects before credential forwarding"
 require_present "$MOLTBOOK_PROVIDER_ADAPTER" "maxResponseBytes = 256 \\* 1024" \
   "Moltbook adapter bounds provider responses"
-require_present "$MOLTBOOK_PROVIDER_ADAPTER" "Observe transport only permits GET" \
-  "Moltbook Observe adapter grants no write method"
+require_present "$MOLTBOOK_PROVIDER_ADAPTER" "Moltbook transport only permits GET and POST" \
+  "Moltbook adapter restricts methods to the reviewed read and publication set"
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "moltbook_provider_adapter|CapsuleScopedSecretVault" \
   "Moltbook screen cannot call provider or secure storage directly"
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "PluginHostApiService|executeWithRuntimeHook" \
@@ -453,8 +455,16 @@ require_present "$MOLTBOOK_DRAFT_STORE" "writePluginState" \
   "Moltbook draft history uses Capsule-scoped plugin state"
 require_absent "$MOLTBOOK_DRAFT_STORE" "ledger|ExternalEffect|MoltbookProviderAdapter" \
   "Moltbook local drafts do not become ledger, remote effects, or provider calls"
-require_present "$MOLTBOOK_AMBASSADOR_SCREEN" "Remote publication is intentionally unavailable" \
-  "Moltbook draft workspace cannot imply remote publication"
+require_present "$MOLTBOOK_AMBASSADOR_SCREEN" "Approve permanent publication" \
+  "Moltbook workspace requires exact human publication approval"
+require_present "$MOLTBOOK_PUBLICATION" "approval_kind.*permanent_publication" \
+  "Moltbook approval evidence binds the public permanence decision"
+require_present "$MOLTBOOK_EFFECT_ADAPTER" "automatic resubmission is blocked" \
+  "Moltbook reconciliation cannot blindly duplicate an ambiguous post"
+require_present "$MOLTBOOK_EFFECT_ADAPTER" "request\\.ownerCapsuleHex" \
+  "Moltbook credential lookup is bound to the originating Capsule"
+require_absent "$MOLTBOOK_EFFECT_ADAPTER" "AppRuntimeService|Ledger|Transport" \
+  "Moltbook external effect adapter remains outside Core and transport"
 require_present "$MOLTBOOK_CONNECTION" "_observer\\.observeAccount\\(normalizedKey\\)" \
   "Moltbook connection verifies a credential before storage"
 require_present "$MOLTBOOK_CONNECTION" "_secretVault\\.replaceAccountSecret" \

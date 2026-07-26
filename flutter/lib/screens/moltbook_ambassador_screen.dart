@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../models/external_effect_models.dart';
 import '../models/moltbook_ambassador_models.dart';
 import '../models/moltbook_provider_models.dart';
+import '../services/moltbook_publication_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 
 class MoltbookAmbassadorScreen extends StatefulWidget {
@@ -34,6 +36,9 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     text: 'agent-developers',
   );
   final TextEditingController _factsController = TextEditingController();
+  final TextEditingController _submoltController = TextEditingController(
+    text: MoltbookPublicationService.defaultSubmolt,
+  );
   String _approvalMode = MoltbookAmbassadorConfiguration.approvalAssisted;
   bool _enabled = true;
   bool _loading = true;
@@ -43,7 +48,10 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   MoltbookHomeObservation? _homeObservation;
   MoltbookDraftPreview? _draftPreview;
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
+  List<ExternalEffectOperation> _publications =
+      const <ExternalEffectOperation>[];
   bool _draftBusy = false;
+  bool _publicationBusy = false;
   String? _loadError;
 
   @override
@@ -65,6 +73,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     _titleHintController.dispose();
     _audienceController.dispose();
     _factsController.dispose();
+    _submoltController.dispose();
     super.dispose();
   }
 
@@ -74,10 +83,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         widget.module.loadAmbassadorConfiguration(),
         widget.module.loadMoltbookBinding(),
         widget.module.loadMoltbookDrafts(),
+        widget.module.loadMoltbookPublications(),
       ]);
       final configuration = results[0] as MoltbookAmbassadorConfiguration;
       final binding = results[1] as MoltbookConnectionBinding?;
       final drafts = results[2] as List<MoltbookStoredDraft>;
+      final publications = results[3] as List<ExternalEffectOperation>;
       if (!mounted) return;
       _nameController.text = configuration.agentName;
       _descriptionController.text = configuration.agentDescription;
@@ -89,6 +100,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _enabled = configuration.enabled;
         _binding = binding;
         _storedDrafts = drafts;
+        _publications = publications;
         _loadError = null;
         _loading = false;
       });
@@ -265,6 +277,200 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
+  Future<void> _reviewPublication(MoltbookStoredDraft draft) async {
+    setState(() => _publicationBusy = true);
+    try {
+      final operation = await widget.module.prepareMoltbookPublication(
+        draft: draft.preview,
+        submoltName: _submoltController.text,
+      );
+      if (!mounted) return;
+      final payload = MoltbookPublicationService.decodePayload(operation);
+      final approved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => AlertDialog(
+              title: const Text('Approve permanent publication?'),
+              content: SizedBox(
+                width: 620,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Account: ${payload['account_name']}\n'
+                        'Destination: m/${payload['submolt_name']}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 14),
+                      SelectableText(
+                        payload['title'].toString(),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SelectableText(payload['content'].toString()),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'This creates a public external effect. Moltbook may retain or redistribute the post. Approval cannot be inferred or automated.',
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Keep as draft'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Approve exact post'),
+                ),
+              ],
+            ),
+      );
+      if (!mounted) return;
+      if (approved != true) {
+        _showNotice('Publication remains local and unapproved');
+      } else {
+        await widget.module.approveMoltbookPublication(operation);
+        _showNotice('Publication approved and queued locally');
+      }
+      final publications = await widget.module.loadMoltbookPublications();
+      if (mounted) setState(() => _publications = publications);
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not prepare publication: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
+  Future<void> _processPublication(ExternalEffectOperation operation) async {
+    setState(() => _publicationBusy = true);
+    try {
+      final result = await widget.module.processMoltbookPublication(
+        operation.operationId,
+      );
+      final publications = await widget.module.loadMoltbookPublications();
+      if (!mounted) return;
+      setState(() => _publications = publications);
+      _showNotice(
+        result.state == ExternalEffectState.succeeded
+            ? 'Moltbook receipt verified'
+            : 'Publication state: ${result.state.wireName} '
+                '(${result.lastErrorCode ?? "no receipt"})',
+        isError: result.state != ExternalEffectState.succeeded,
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Publication processing failed: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
+  Future<void> _resolvePublicationVerification(
+    ExternalEffectOperation operation,
+  ) async {
+    final action = operation.requiredAction;
+    if (action == null) return;
+    final answerController = TextEditingController();
+    try {
+      final answer = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => AlertDialog(
+              title: const Text('Complete Moltbook verification'),
+              content: SizedBox(
+                width: 620,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Moltbook created the approved post but keeps it hidden until this anti-spam challenge is solved.',
+                      ),
+                      const SizedBox(height: 14),
+                      SelectableText(
+                        action.prompt,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text('Expires: ${action.expiresAtUtc}'),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: answerController,
+                        autofocus: true,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                          signed: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Numeric answer',
+                          helperText:
+                              'Enter only the result. It will be normalized to 2 decimal places.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Not now'),
+                ),
+                FilledButton(
+                  onPressed:
+                      () => Navigator.pop(context, answerController.text),
+                  child: const Text('Verify and confirm visibility'),
+                ),
+              ],
+            ),
+      );
+      if (!mounted || answer == null) return;
+      setState(() => _publicationBusy = true);
+      final result = await widget.module.resolveMoltbookPublicationVerification(
+        operationId: operation.operationId,
+        answer: answer,
+      );
+      final publications = await widget.module.loadMoltbookPublications();
+      if (!mounted) return;
+      setState(() => _publications = publications);
+      _showNotice(
+        result.state == ExternalEffectState.succeeded
+            ? 'Moltbook post verified and visible'
+            : 'Verification state: ${result.state.wireName} '
+                '(${result.lastErrorCode ?? "not confirmed"})',
+        isError: result.state != ExternalEffectState.succeeded,
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Moltbook verification failed: $error', isError: true);
+      }
+    } finally {
+      answerController.dispose();
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
   void _showNotice(String message, {bool isError = false}) {
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
@@ -276,8 +482,24 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     );
   }
 
+  ExternalEffectOperation? _latestOperationWhere(
+    bool Function(ExternalEffectOperation operation) predicate,
+  ) {
+    for (final operation in _publications.reversed) {
+      if (predicate(operation)) return operation;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final verificationOperation = _latestOperationWhere(
+      (operation) => operation.requiredAction != null,
+    );
+    final queuedOperation = _latestOperationWhere(
+      (operation) => operation.state == ExternalEffectState.queued,
+    );
+    final latestDraft = _storedDrafts.isEmpty ? null : _storedDrafts.first;
     return Scaffold(
       appBar: AppBar(title: const Text('Moltbook Ambassador')),
       body:
@@ -294,8 +516,30 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Draft-only workspace. Account observation is read-only; remote writes remain disabled.',
+                    'Drafts stay local until an exact post is reviewed, approved, queued, and explicitly published.',
                     style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
+                  ),
+                  const SizedBox(height: 16),
+                  _MoltbookWorkflowCard(
+                    connected: _binding != null,
+                    hasDraft: latestDraft != null,
+                    queuedOperation: queuedOperation,
+                    verificationOperation: verificationOperation,
+                    busy: _draftBusy || _publicationBusy,
+                    onReview:
+                        latestDraft == null
+                            ? null
+                            : () => _reviewPublication(latestDraft),
+                    onPublish:
+                        queuedOperation == null
+                            ? null
+                            : () => _processPublication(queuedOperation),
+                    onVerify:
+                        verificationOperation == null
+                            ? null
+                            : () => _resolvePublicationVerification(
+                              verificationOperation,
+                            ),
                   ),
                   const SizedBox(height: 20),
                   _MoltbookConnectionCard(
@@ -324,8 +568,19 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     const SizedBox(height: 20),
                     _MoltbookDraftHistoryCard(
                       drafts: _storedDrafts,
-                      busy: _draftBusy,
+                      busy: _draftBusy || _publicationBusy,
+                      submoltController: _submoltController,
                       onDelete: _deleteDraft,
+                      onReviewPublication: _reviewPublication,
+                    ),
+                  ],
+                  if (_publications.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    _MoltbookPublicationCard(
+                      operations: _publications,
+                      busy: _publicationBusy,
+                      onProcess: _processPublication,
+                      onResolveVerification: _resolvePublicationVerification,
                     ),
                   ],
                   const SizedBox(height: 24),
@@ -417,15 +672,195 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   }
 }
 
+class _MoltbookWorkflowCard extends StatelessWidget {
+  final bool connected;
+  final bool hasDraft;
+  final ExternalEffectOperation? queuedOperation;
+  final ExternalEffectOperation? verificationOperation;
+  final bool busy;
+  final VoidCallback? onReview;
+  final VoidCallback? onPublish;
+  final VoidCallback? onVerify;
+
+  const _MoltbookWorkflowCard({
+    required this.connected,
+    required this.hasDraft,
+    required this.queuedOperation,
+    required this.verificationOperation,
+    required this.busy,
+    required this.onReview,
+    required this.onPublish,
+    required this.onVerify,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final hasVerification = verificationOperation != null;
+    final hasQueued = queuedOperation != null;
+    final String title;
+    final String description;
+    final String? actionLabel;
+    final IconData actionIcon;
+    final VoidCallback? action;
+
+    if (!connected) {
+      title = 'Next: connect your Moltbook account';
+      description = 'Add the API key in the connection section below.';
+      actionLabel = null;
+      actionIcon = Icons.key_outlined;
+      action = null;
+    } else if (hasVerification) {
+      title = 'Next: verify the hidden post';
+      description =
+          'Moltbook created the post. Complete its anti-spam challenge before it expires.';
+      actionLabel = 'Verify post now';
+      actionIcon = Icons.verified_user_outlined;
+      action = onVerify;
+    } else if (hasQueued) {
+      title = 'Next: publish the approved post';
+      description =
+          'The exact text is approved and queued locally. Nothing has been sent yet.';
+      actionLabel = 'Publish approved post';
+      actionIcon = Icons.public;
+      action = onPublish;
+    } else if (hasDraft) {
+      title = 'Next: review the exact post';
+      description =
+          'The draft is local. Review the final public text before approving it.';
+      actionLabel = 'Review latest draft';
+      actionIcon = Icons.rate_review_outlined;
+      action = onReview;
+    } else {
+      title = 'Next: create a local draft';
+      description =
+          'Enter one or more public facts below. Draft creation does not publish anything.';
+      actionLabel = null;
+      actionIcon = Icons.edit_note_outlined;
+      action = null;
+    }
+
+    return Card(
+      margin: EdgeInsets.zero,
+      color: colorScheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  actionIcon,
+                  color: colorScheme.onPrimaryContainer,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: colorScheme.onPrimaryContainer,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        description,
+                        style: TextStyle(
+                          color: colorScheme.onPrimaryContainer.withValues(
+                            alpha: 0.78,
+                          ),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _WorkflowStep(number: '1', label: 'Draft'),
+                _WorkflowStep(number: '2', label: 'Review'),
+                _WorkflowStep(number: '3', label: 'Approve'),
+                _WorkflowStep(number: '4', label: 'Publish & verify'),
+              ],
+            ),
+            if (actionLabel != null) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: busy ? null : action,
+                  icon:
+                      busy
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : Icon(actionIcon),
+                  label: Text(busy ? 'Working…' : actionLabel),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkflowStep extends StatelessWidget {
+  final String number;
+  final String label;
+
+  const _WorkflowStep({required this.number, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        child: Text(
+          '$number  $label',
+          style: TextStyle(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MoltbookDraftHistoryCard extends StatelessWidget {
   final List<MoltbookStoredDraft> drafts;
   final bool busy;
+  final TextEditingController submoltController;
   final Future<void> Function(MoltbookStoredDraft draft) onDelete;
+  final Future<void> Function(MoltbookStoredDraft draft) onReviewPublication;
 
   const _MoltbookDraftHistoryCard({
     required this.drafts,
     required this.busy,
+    required this.submoltController,
     required this.onDelete,
+    required this.onReviewPublication,
   });
 
   @override
@@ -447,6 +882,14 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
               style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
             ),
             const SizedBox(height: 10),
+            TextField(
+              controller: submoltController,
+              decoration: const InputDecoration(
+                labelText: 'Publication destination',
+                prefixText: 'm/',
+              ),
+            ),
+            const SizedBox(height: 10),
             ...drafts.map(
               (draft) => ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -456,11 +899,102 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
                   '${draft.createdAtUtc.toLocal()} · '
                   '${draft.preview.draftHashHex.substring(0, 12)}..',
                 ),
-                trailing: IconButton(
-                  tooltip: 'Delete local draft',
-                  onPressed: busy ? null : () => onDelete(draft),
-                  icon: const Icon(Icons.delete_outline_rounded),
+                trailing: Wrap(
+                  spacing: 4,
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: busy ? null : () => onReviewPublication(draft),
+                      icon: const Icon(Icons.rate_review_outlined),
+                      label: const Text('Review'),
+                    ),
+                    IconButton(
+                      tooltip: 'Delete local draft',
+                      onPressed: busy ? null : () => onDelete(draft),
+                      icon: const Icon(Icons.delete_outline_rounded),
+                    ),
+                  ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MoltbookPublicationCard extends StatelessWidget {
+  final List<ExternalEffectOperation> operations;
+  final bool busy;
+  final Future<void> Function(ExternalEffectOperation operation) onProcess;
+  final Future<void> Function(ExternalEffectOperation operation)
+  onResolveVerification;
+
+  const _MoltbookPublicationCard({
+    required this.operations,
+    required this.busy,
+    required this.onProcess,
+    required this.onResolveVerification,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Publication status · ${operations.length}',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'A post is complete only after Moltbook confirms that the exact approved text is publicly visible.',
+              style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
+            ),
+            const SizedBox(height: 10),
+            ...operations.reversed.map(
+              (operation) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(operation.state.wireName.replaceAll('_', ' ')),
+                subtitle: Text(
+                  '${operation.operationId}\n'
+                  'attempts ${operation.attemptCount} · '
+                  '${operation.lastErrorCode ?? "no error"}',
+                ),
+                isThreeLine: true,
+                trailing:
+                    operation.state == ExternalEffectState.queued ||
+                            operation.state == ExternalEffectState.unresolved
+                        ? FilledButton.icon(
+                          onPressed:
+                              busy
+                                  ? null
+                                  : operation.requiredAction != null
+                                  ? () => onResolveVerification(operation)
+                                  : () => onProcess(operation),
+                          icon: Icon(
+                            operation.requiredAction != null
+                                ? Icons.verified_user_outlined
+                                : Icons.public,
+                            size: 18,
+                          ),
+                          label: Text(
+                            operation.state == ExternalEffectState.queued
+                                ? 'Publish'
+                                : operation.requiredAction != null
+                                ? 'Verify'
+                                : 'Reconcile',
+                          ),
+                        )
+                        : Icon(
+                          operation.state == ExternalEffectState.succeeded
+                              ? Icons.verified_outlined
+                              : Icons.info_outline,
+                        ),
               ),
             ),
           ],
@@ -616,7 +1150,7 @@ class _MoltbookDraftCard extends StatelessWidget {
               ],
               const SizedBox(height: 10),
               const Text(
-                'Remote publication is intentionally unavailable in this phase.',
+                'Use the local draft history below to review an exact publication.',
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
             ],
