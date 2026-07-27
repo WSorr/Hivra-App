@@ -11,9 +11,9 @@ import 'wasm_plugin_registry_service.dart';
 
 class WasmPluginSourceCatalogService {
   static const String defaultCatalogUrl =
-      'https://cdn.jsdelivr.net/gh/WSorr/hivra-plugins@main/catalog/plugin_catalog.json';
-  static const String githubRawCatalogUrl =
       'https://raw.githubusercontent.com/WSorr/hivra-plugins/main/catalog/plugin_catalog.json';
+  static const String fallbackCatalogUrl =
+      'https://cdn.jsdelivr.net/gh/WSorr/hivra-plugins@main/catalog/plugin_catalog.json';
   static const Set<String> defaultTrustedRemoteCatalogSha256Hexes = {
     'aaa9c2204aa213965472a8a874abfbc340c0cef1259476e5d808e6e0474d8b12',
   };
@@ -37,12 +37,11 @@ class WasmPluginSourceCatalogService {
         defaultTrustedRemoteCatalogSha256Hexes,
     Set<String> trustedRemoteCatalogPublicKeyHexes =
         defaultTrustedRemoteCatalogPublicKeyHexes,
-  })  : _registry = registry,
-        _dataDirs = dataDirs,
-        _httpClientFactory = httpClientFactory ?? _defaultHttpClientFactory,
-        _trustedRemoteCatalogSha256Hexes = trustedRemoteCatalogSha256Hexes,
-        _trustedRemoteCatalogPublicKeyHexes =
-            trustedRemoteCatalogPublicKeyHexes;
+  }) : _registry = registry,
+       _dataDirs = dataDirs,
+       _httpClientFactory = httpClientFactory ?? _defaultHttpClientFactory,
+       _trustedRemoteCatalogSha256Hexes = trustedRemoteCatalogSha256Hexes,
+       _trustedRemoteCatalogPublicKeyHexes = trustedRemoteCatalogPublicKeyHexes;
 
   static HttpClient _defaultHttpClientFactory() => HttpClient();
 
@@ -58,14 +57,16 @@ class WasmPluginSourceCatalogService {
       final file = File(filePath);
       if (!await file.exists()) {
         throw FormatException(
-            'Plugin source catalog file not found: $filePath');
+          'Plugin source catalog file not found: $filePath',
+        );
       }
       final body = await file.readAsString();
       return _parseCatalogJson(body);
     }
     if (uri.scheme != 'http' && uri.scheme != 'https') {
       throw const FormatException(
-          'Unsupported plugin source catalog URL scheme');
+        'Unsupported plugin source catalog URL scheme',
+      );
     }
 
     final client = _httpClientFactory();
@@ -74,9 +75,13 @@ class WasmPluginSourceCatalogService {
     try {
       final request = await client.getUrl(uri).timeout(_networkTimeout);
       request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+      request.headers.set('pragma', 'no-cache');
       final response = await request.close().timeout(_networkTimeout);
-      final body =
-          await utf8.decoder.bind(response).join().timeout(_networkTimeout);
+      final body = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(_networkTimeout);
       if (response.statusCode != HttpStatus.ok) {
         throw HttpException(
           'Failed to fetch plugin catalog (HTTP ${response.statusCode})',
@@ -93,7 +98,7 @@ class WasmPluginSourceCatalogService {
 
   Future<WasmPluginSourceCatalog> fetchCatalogWithFallback({
     String primaryCatalogUrl = defaultCatalogUrl,
-    String secondaryCatalogUrl = githubRawCatalogUrl,
+    String secondaryCatalogUrl = fallbackCatalogUrl,
     String? localCatalogPathOverride,
   }) async {
     final localCatalogPath =
@@ -124,7 +129,8 @@ class WasmPluginSourceCatalogService {
     final uri = Uri.tryParse(entry.downloadUrl);
     if (uri == null) {
       throw const FormatException(
-          'Plugin source entry download URL is invalid');
+        'Plugin source entry download URL is invalid',
+      );
     }
     if (!uri.hasScheme || uri.scheme == 'file') {
       final filePath = uri.hasScheme ? uri.toFilePath() : entry.downloadUrl;
@@ -146,13 +152,15 @@ class WasmPluginSourceCatalogService {
     }
     if (uri.scheme != 'http' && uri.scheme != 'https') {
       throw const FormatException(
-          'Unsupported plugin source package URL scheme');
+        'Unsupported plugin source package URL scheme',
+      );
     }
 
     final extension = entry.packageKind == 'wasm' ? '.wasm' : '.zip';
     final tempDir = await Directory.systemTemp.createTemp('hivra_plugin_src_');
-    final tempFile =
-        File('${tempDir.path}/${entry.id}_v${entry.version}$extension');
+    final tempFile = File(
+      '${tempDir.path}/${entry.id}_v${entry.version}$extension',
+    );
 
     final client = _httpClientFactory();
     client.autoUncompress = false;
@@ -216,7 +224,8 @@ class WasmPluginSourceCatalogService {
     final rawEntries = json['entries'];
     if (rawEntries is! List) {
       throw const FormatException(
-          'Plugin source catalog entries must be a list');
+        'Plugin source catalog entries must be a list',
+      );
     }
 
     final entries = <WasmPluginSourceCatalogEntry>[];
@@ -308,10 +317,11 @@ class WasmPluginSourceCatalogService {
   }
 
   Future<bool> _verifyRemoteCatalogSignature(String body) async {
-    final trustedKeys = _trustedRemoteCatalogPublicKeyHexes
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => RegExp(r'^[0-9a-f]{64}$').hasMatch(value))
-        .toSet();
+    final trustedKeys =
+        _trustedRemoteCatalogPublicKeyHexes
+            .map((value) => value.trim().toLowerCase())
+            .where((value) => RegExp(r'^[0-9a-f]{64}$').hasMatch(value))
+            .toSet();
     if (trustedKeys.isEmpty) {
       return false;
     }
@@ -371,10 +381,11 @@ class WasmPluginSourceCatalogService {
   }
 
   void _verifyRemoteCatalogDigest(String body) {
-    final trusted = _trustedRemoteCatalogSha256Hexes
-        .map((value) => value.trim().toLowerCase())
-        .where((value) => RegExp(r'^[0-9a-f]{64}$').hasMatch(value))
-        .toSet();
+    final trusted =
+        _trustedRemoteCatalogSha256Hexes
+            .map((value) => value.trim().toLowerCase())
+            .where((value) => RegExp(r'^[0-9a-f]{64}$').hasMatch(value))
+            .toSet();
     if (trusted.isEmpty) {
       throw const FormatException(
         'Remote plugin source catalog has no trusted digest pin',
@@ -391,9 +402,11 @@ class WasmPluginSourceCatalogService {
   String _canonicalJson(Object? value) {
     if (value is Map) {
       final keys = value.keys.map((key) => key.toString()).toList()..sort();
-      final entries = keys.map((key) {
-        return '${jsonEncode(key)}:${_canonicalJson(value[key])}';
-      }).join(',');
+      final entries = keys
+          .map((key) {
+            return '${jsonEncode(key)}:${_canonicalJson(value[key])}';
+          })
+          .join(',');
       return '{$entries}';
     }
     if (value is List) {
@@ -410,24 +423,24 @@ class WasmPluginSourceCatalogService {
     }
     return List<int>.generate(
       normalized.length ~/ 2,
-      (index) => int.parse(
-        normalized.substring(index * 2, index * 2 + 2),
-        radix: 16,
-      ),
+      (index) =>
+          int.parse(normalized.substring(index * 2, index * 2 + 2), radix: 16),
       growable: false,
     );
   }
 
   bool _isValidPluginId(String value) {
     final normalized = value.trim().toLowerCase();
-    return RegExp(r'^hivra\.contract\.[a-z0-9.\-]+\.v[0-9]+$')
-        .hasMatch(normalized);
+    return RegExp(
+      r'^hivra\.contract\.[a-z0-9.\-]+\.v[0-9]+$',
+    ).hasMatch(normalized);
   }
 
   bool _isValidReleaseVersion(String value) {
     final normalized = value.trim();
-    return RegExp(r'^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.\-]+)?$')
-        .hasMatch(normalized);
+    return RegExp(
+      r'^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.\-]+)?$',
+    ).hasMatch(normalized);
   }
 
   Future<String> _defaultLocalCatalogPath() async {

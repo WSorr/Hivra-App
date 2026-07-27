@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/external_effect_models.dart';
 import '../models/moltbook_ambassador_models.dart';
@@ -381,6 +382,19 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
+  Future<void> _openPublishedPost(Uri uri) async {
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        _showNotice('Could not open the published post', isError: true);
+      }
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not open the published post: $error', isError: true);
+      }
+    }
+  }
+
   Future<void> _resolvePublicationVerification(
     ExternalEffectOperation operation,
   ) async {
@@ -581,6 +595,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       busy: _publicationBusy,
                       onProcess: _processPublication,
                       onResolveVerification: _resolvePublicationVerification,
+                      onOpenPost: _openPublishedPost,
                     ),
                   ],
                   const SizedBox(height: 24),
@@ -929,12 +944,14 @@ class _MoltbookPublicationCard extends StatelessWidget {
   final Future<void> Function(ExternalEffectOperation operation) onProcess;
   final Future<void> Function(ExternalEffectOperation operation)
   onResolveVerification;
+  final Future<void> Function(Uri uri) onOpenPost;
 
   const _MoltbookPublicationCard({
     required this.operations,
     required this.busy,
     required this.onProcess,
     required this.onResolveVerification,
+    required this.onOpenPost,
   });
 
   @override
@@ -956,8 +973,11 @@ class _MoltbookPublicationCard extends StatelessWidget {
               style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
             ),
             const SizedBox(height: 10),
-            ...operations.reversed.map(
-              (operation) => ListTile(
+            ...operations.reversed.map((operation) {
+              final postUri = MoltbookPublicationService.publishedPostUri(
+                operation,
+              );
+              return ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(operation.state.wireName.replaceAll('_', ' ')),
                 subtitle: Text(
@@ -967,7 +987,13 @@ class _MoltbookPublicationCard extends StatelessWidget {
                 ),
                 isThreeLine: true,
                 trailing:
-                    operation.state == ExternalEffectState.queued ||
+                    postUri != null
+                        ? FilledButton.tonalIcon(
+                          onPressed: busy ? null : () => onOpenPost(postUri),
+                          icon: const Icon(Icons.open_in_new, size: 18),
+                          label: const Text('Open post'),
+                        )
+                        : operation.state == ExternalEffectState.queued ||
                             operation.state == ExternalEffectState.unresolved
                         ? FilledButton.icon(
                           onPressed:
@@ -995,8 +1021,8 @@ class _MoltbookPublicationCard extends StatelessWidget {
                               ? Icons.verified_outlined
                               : Icons.info_outline,
                         ),
-              ),
-            ),
+              );
+            }),
           ],
         ),
       ),

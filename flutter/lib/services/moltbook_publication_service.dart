@@ -136,6 +136,22 @@ class MoltbookPublicationService {
     return Map<String, dynamic>.from(decoded);
   }
 
+  static Uri? publishedPostUri(ExternalEffectOperation operation) {
+    final receipt = operation.receipt;
+    if (operation.state != ExternalEffectState.succeeded ||
+        receipt == null ||
+        receipt.providerId != MoltbookConnectionService.providerId) {
+      return null;
+    }
+    final postId = receipt.providerReceiptId.trim();
+    if (!RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+    ).hasMatch(postId)) {
+      return null;
+    }
+    return Uri.https('www.moltbook.com', '/post/$postId');
+  }
+
   static void _validateMoltbookOperation(ExternalEffectOperation operation) {
     operation.validate();
     if (operation.pluginId != moltbookAmbassadorPluginId ||

@@ -22,6 +22,7 @@ dependencies:
   connectivity_plus: ^6.0.5
   cryptography: ^2.7.0
   package_info_plus: ^9.0.1
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
