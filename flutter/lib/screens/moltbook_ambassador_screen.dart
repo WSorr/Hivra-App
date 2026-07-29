@@ -48,6 +48,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   MoltbookConnectionBinding? _binding;
   MoltbookHomeObservation? _homeObservation;
   MoltbookFeedObservation? _feedObservation;
+  MoltbookHeartbeatPlan? _heartbeatPlan;
   MoltbookDraftPreview? _draftPreview;
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
   List<ExternalEffectOperation> _publications =
@@ -194,6 +195,22 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     } catch (error) {
       if (mounted) {
         _showNotice('Could not observe Moltbook feed: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _connectionBusy = false);
+    }
+  }
+
+  Future<void> _planHeartbeat() async {
+    setState(() => _connectionBusy = true);
+    try {
+      final plan = await widget.module.planMoltbookHeartbeat();
+      if (!mounted) return;
+      setState(() => _heartbeatPlan = plan);
+      _showNotice('WASM heartbeat plan prepared');
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not plan Moltbook heartbeat: $error', isError: true);
       }
     } finally {
       if (mounted) setState(() => _connectionBusy = false);
@@ -579,10 +596,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     busy: _connectionBusy,
                     homeObservation: _homeObservation,
                     feedObservation: _feedObservation,
+                    heartbeatPlan: _heartbeatPlan,
                     onConnect: _connect,
                     onRefresh: _refreshConnection,
                     onObserveHome: _observeHome,
                     onObserveFeed: _observeFeed,
+                    onPlanHeartbeat: _planHeartbeat,
                     onDisconnect: _disconnect,
                   ),
                   const SizedBox(height: 20),
@@ -1212,10 +1231,12 @@ class _MoltbookConnectionCard extends StatelessWidget {
   final bool busy;
   final MoltbookHomeObservation? homeObservation;
   final MoltbookFeedObservation? feedObservation;
+  final MoltbookHeartbeatPlan? heartbeatPlan;
   final VoidCallback onConnect;
   final VoidCallback onRefresh;
   final VoidCallback onObserveHome;
   final VoidCallback onObserveFeed;
+  final VoidCallback onPlanHeartbeat;
   final VoidCallback onDisconnect;
 
   const _MoltbookConnectionCard({
@@ -1224,10 +1245,12 @@ class _MoltbookConnectionCard extends StatelessWidget {
     required this.busy,
     required this.homeObservation,
     required this.feedObservation,
+    required this.heartbeatPlan,
     required this.onConnect,
     required this.onRefresh,
     required this.onObserveHome,
     required this.onObserveFeed,
+    required this.onPlanHeartbeat,
     required this.onDisconnect,
   });
 
@@ -1305,6 +1328,11 @@ class _MoltbookConnectionCard extends StatelessWidget {
                           icon: const Icon(Icons.dynamic_feed_outlined),
                           label: const Text('Observe feed'),
                         ),
+                        FilledButton.icon(
+                          onPressed: busy ? null : onPlanHeartbeat,
+                          icon: const Icon(Icons.favorite_outline_rounded),
+                          label: const Text('Plan heartbeat'),
+                        ),
                         OutlinedButton.icon(
                           onPressed: busy ? null : onDisconnect,
                           icon: const Icon(Icons.link_off_rounded),
@@ -1370,6 +1398,26 @@ class _MoltbookConnectionCard extends StatelessWidget {
               const Text(
                 'Remote content is untrusted and remains in memory only.',
                 style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
+              ),
+            ],
+            if (heartbeatPlan != null) ...[
+              const SizedBox(height: 14),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                'Heartbeat · ${heartbeatPlan!.priority.replaceAll("_", " ")}',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                heartbeatPlan!.reason,
+                style: const TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${heartbeatPlan!.candidatePostIds.length} candidates · '
+                'review required · no external effect',
+                style: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ],
           ],

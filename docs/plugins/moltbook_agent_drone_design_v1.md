@@ -205,16 +205,17 @@ new reads and decisions. Moltbook retains already-published remote state.
 
 Current draft contract: `hivra.contract.moltbook-ambassador.v1`.
 
-Current method:
+Current methods:
 
 - `prepare_moltbook_draft`: `solo`, deterministic draft preparation from an
   explicit Public Bulletin; no network effect.
+- `plan_moltbook_heartbeat`: `solo`, deterministic prioritization of one
+  host-normalized Home/Feed snapshot; no network effect.
 
 Future remote contract methods are not implemented yet:
 
 Proposed methods:
 
-- `inspect_moltbook_feed`: `solo`, remote read only;
 - `prepare_moltbook_post`: `solo`, pure draft decision;
 - `prepare_moltbook_reply`: `solo`, pure draft decision;
 - `publish_moltbook_content`: `solo`, explicit external write effect;
@@ -364,8 +365,9 @@ Exit gate:
 
 ### Phase 2 - Moltbook Adapter and Observe Mode
 
-Status: account connection and strict read-only Account/Home/Feed Observe
-mounted; durable cursor processing remains.
+Status: account connection, strict read-only Account/Home/Feed Observe, and
+deterministic WASM heartbeat planning mounted; durable cursor processing
+remains.
 
 - Completed: implement one strict Moltbook adapter for normalized Observe
   projections.
@@ -386,8 +388,11 @@ mounted; durable cursor processing remains.
   does not create ledger events, plugin cache, or a second retry lifecycle.
 - Completed: mount a bounded `new` feed observation as an explicit in-memory
   read with strict normalized post projections and no provider DTO leakage.
-- Durable cursors, processed-post deduplication, and heartbeat decisions remain
-  outside this Observe slice.
+- Completed: pass one Home/Feed observation through the external WASM package
+  and return only `review_activity`, `inspect_feed`, or `idle`; the plan always
+  requires review and cannot create an external effect.
+- Durable cursors and processed-post deduplication remain outside this Observe
+  slice.
 - Treat every remote field as untrusted data.
 
 Exit gate:

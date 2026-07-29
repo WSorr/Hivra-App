@@ -299,3 +299,101 @@ class MoltbookPublicationContract {
     return operationMarker == legacy && content.endsWith(legacy);
   }
 }
+
+class MoltbookHeartbeatPlan {
+  static const Set<String> priorities = <String>{
+    'review_activity',
+    'inspect_feed',
+    'idle',
+  };
+
+  final String observedAtUtc;
+  final String priority;
+  final String reason;
+  final List<String> candidatePostIds;
+  final bool publishAllowed;
+  final bool humanReviewRequired;
+  final List<String> safetyFlags;
+  final String planHashHex;
+  final String canonicalPlanJson;
+
+  const MoltbookHeartbeatPlan({
+    required this.observedAtUtc,
+    required this.priority,
+    required this.reason,
+    required this.candidatePostIds,
+    required this.publishAllowed,
+    required this.humanReviewRequired,
+    required this.safetyFlags,
+    required this.planHashHex,
+    required this.canonicalPlanJson,
+  });
+
+  factory MoltbookHeartbeatPlan.fromHostResult(Map<String, dynamic> result) {
+    if (result['schema_version'] != 1 ||
+        result['plugin_id'] != moltbookAmbassadorPluginId ||
+        result['contract_kind'] != 'moltbook_ambassador_heartbeat_plan' ||
+        result['publish_allowed'] != false ||
+        result['human_review_required'] != true) {
+      throw const FormatException('Invalid Moltbook heartbeat plan');
+    }
+    final observedAt = DateTime.tryParse(
+      result['observed_at_utc']?.toString() ?? '',
+    );
+    final priority = result['priority']?.toString() ?? '';
+    final reason = result['reason']?.toString().trim() ?? '';
+    final rawCandidates = result['candidate_post_ids'];
+    final rawFlags = result['safety_flags'];
+    final planHash = result['plan_hash_hex']?.toString() ?? '';
+    final canonicalJson = result['canonical_plan_json']?.toString() ?? '';
+    if (observedAt == null ||
+        !observedAt.isUtc ||
+        observedAt.toIso8601String() != result['observed_at_utc'] ||
+        !priorities.contains(priority) ||
+        reason.isEmpty ||
+        reason.length > 500 ||
+        rawCandidates is! List ||
+        rawFlags is! List ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(planHash) ||
+        canonicalJson.isEmpty) {
+      throw const FormatException('Malformed Moltbook heartbeat plan');
+    }
+    final candidates = rawCandidates
+        .map((value) {
+          if (value is! String || value.isEmpty || value.length > 256) {
+            throw const FormatException('Invalid Moltbook heartbeat candidate');
+          }
+          return value;
+        })
+        .toList(growable: false);
+    if (candidates.length > 5 ||
+        candidates.toSet().length != candidates.length) {
+      throw const FormatException('Invalid Moltbook heartbeat candidates');
+    }
+    final flags = rawFlags
+        .map((value) {
+          if (value is! String || value.isEmpty || value.length > 80) {
+            throw const FormatException(
+              'Invalid Moltbook heartbeat safety flag',
+            );
+          }
+          return value;
+        })
+        .toList(growable: false);
+    if (!flags.contains('remote_content_untrusted') ||
+        !flags.contains('no_external_effect')) {
+      throw const FormatException('Moltbook heartbeat safety gate is missing');
+    }
+    return MoltbookHeartbeatPlan(
+      observedAtUtc: observedAt.toIso8601String(),
+      priority: priority,
+      reason: reason,
+      candidatePostIds: candidates,
+      publishAllowed: false,
+      humanReviewRequired: true,
+      safetyFlags: flags,
+      planHashHex: planHash,
+      canonicalPlanJson: canonicalJson,
+    );
+  }
+}

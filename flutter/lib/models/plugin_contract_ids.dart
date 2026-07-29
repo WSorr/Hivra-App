@@ -11,3 +11,4 @@ const String postCapsuleChatMethod = 'post_capsule_chat_message';
 const String moltbookAmbassadorPluginId =
     'hivra.contract.moltbook-ambassador.v1';
 const String prepareMoltbookDraftMethod = 'prepare_moltbook_draft';
+const String planMoltbookHeartbeatMethod = 'plan_moltbook_heartbeat';

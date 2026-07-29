@@ -223,6 +223,24 @@ void main() {
       expect(response.result?['draft_hash_hex'], _moltbookDraftHash);
     });
 
+    test('executes Moltbook heartbeat without effect permission', () async {
+      final response = await _service(
+        runtimeInvoke: _moltbookHeartbeatRuntimeEvidence(),
+      ).executeWithRuntimeHook(
+        const PluginHostApiRequest(
+          schemaVersion: 1,
+          pluginId: moltbookAmbassadorPluginId,
+          method: planMoltbookHeartbeatMethod,
+          args: <String, dynamic>{},
+        ),
+      );
+
+      expect(response.status, PluginHostApiStatus.executed);
+      expect(response.result?['priority'], 'inspect_feed');
+      expect(response.result?['publish_allowed'], isFalse);
+      expect(response.result?['human_review_required'], isTrue);
+    });
+
     test('rejects external trading runtime without contract kind', () async {
       final response = await _service(
         runtimeBinding: const PluginRuntimeBinding.externalPackage(
@@ -311,6 +329,8 @@ PluginHostApiService _service({
                   if (pluginId == capsuleChatPluginId) 'consensus_guard.read',
                   if (pluginId == moltbookAmbassadorPluginId)
                     'content.draft.prepare',
+                  if (pluginId == moltbookAmbassadorPluginId)
+                    'content.feed.plan',
                   if (pluginId == bingxFuturesTradingPluginId) ...<String>[
                     'consensus_guard.read',
                     'exchange.read.bingx.market',
@@ -343,6 +363,23 @@ PluginRuntimeInvokeEvidence _moltbookRuntimeEvidence() {
     semanticResult: <String, dynamic>{
       'canonical_json': _canonicalMoltbookDraft,
       'draft_hash_hex': _moltbookDraftHash,
+    },
+    semanticErrorCode: null,
+    semanticErrorMessage: null,
+  );
+}
+
+PluginRuntimeInvokeEvidence _moltbookHeartbeatRuntimeEvidence() {
+  return PluginRuntimeInvokeEvidence(
+    mode: 'wasmi_v1',
+    modulePath: 'plugin/module.wasm',
+    moduleSelection: 'manifest_module_path',
+    moduleDigestHex: _hex('7'),
+    invokeDigestHex: _hex('9'),
+    semanticStatus: PluginHostApiStatus.executed,
+    semanticResult: <String, dynamic>{
+      'canonical_json': _canonicalMoltbookHeartbeat,
+      'plan_hash_hex': _moltbookHeartbeatHash,
     },
     semanticErrorCode: null,
     semanticErrorMessage: null,
@@ -514,6 +551,16 @@ const String _canonicalMoltbookDraft =
     '"title":"Hivra development","body":"A public Hivra development fact.",'
     '"audience":"agent-developers","approval_required":true,'
     '"safety_flags":[]}';
+const String _canonicalMoltbookHeartbeat =
+    '{"schema_version":1,'
+    '"plugin_id":"hivra.contract.moltbook-ambassador.v1",'
+    '"contract_kind":"moltbook_ambassador_heartbeat_plan",'
+    '"observed_at_utc":"2026-07-29T10:00:00.000Z",'
+    '"priority":"inspect_feed",'
+    '"reason":"Verified candidates are available.",'
+    '"candidate_post_ids":["post-1"],'
+    '"publish_allowed":false,"human_review_required":true,'
+    '"safety_flags":["remote_content_untrusted","no_external_effect"]}';
 final String _intentHash =
     sha256.convert(utf8.encode(_canonicalIntent)).toString();
 final String _soloIntentHash =
@@ -530,5 +577,7 @@ const String _canonicalScan =
 final String _scanHash = sha256.convert(utf8.encode(_canonicalScan)).toString();
 final String _moltbookDraftHash =
     sha256.convert(utf8.encode(_canonicalMoltbookDraft)).toString();
+final String _moltbookHeartbeatHash =
+    sha256.convert(utf8.encode(_canonicalMoltbookHeartbeat)).toString();
 
 String _hex(String character) => List<String>.filled(64, character).join();

@@ -7,11 +7,12 @@ import 'package:crypto/crypto.dart';
 
 import '../models/plugin_host_api_models.dart';
 
-typedef WasmJsonInvoker = String? Function({
-  required Uint8List moduleBytes,
-  required String entryExport,
-  required Uint8List inputJsonBytes,
-});
+typedef WasmJsonInvoker =
+    String? Function({
+      required Uint8List moduleBytes,
+      required String entryExport,
+      required Uint8List inputJsonBytes,
+    });
 
 class WasmPluginRuntimeService {
   static const String runtimeMode = 'wasmi_v1';
@@ -24,9 +25,8 @@ class WasmPluginRuntimeService {
 
   final WasmJsonInvoker _invokeJson;
 
-  const WasmPluginRuntimeService({
-    required WasmJsonInvoker invokeJson,
-  }) : _invokeJson = invokeJson;
+  const WasmPluginRuntimeService({required WasmJsonInvoker invokeJson})
+    : _invokeJson = invokeJson;
 
   Future<PluginRuntimeInvokeEvidence?> invoke({
     required PluginHostApiRequest request,
@@ -70,6 +70,7 @@ class WasmPluginRuntimeService {
       ...request.args,
       'schema_version': request.schemaVersion,
       'plugin_id': request.pluginId,
+      'host_method': request.method,
     };
     final inputCanonical = _canonicalJson(invokeInput);
     final outputRaw = _invokeJson(
@@ -83,15 +84,16 @@ class WasmPluginRuntimeService {
     final output = _decodeEnvelope(outputRaw);
     final outputCanonical = _canonicalJson(output);
     final moduleDigestHex = sha256.convert(module.bytes).toString();
-    final invokeDigestHex = sha256
-        .convert(
-          utf8.encode(
-            '$runtimeMode|${request.pluginId}|${request.method}|'
-            '${module.selection}|${module.path}|$moduleDigestHex|'
-            '$inputCanonical|$outputCanonical',
-          ),
-        )
-        .toString();
+    final invokeDigestHex =
+        sha256
+            .convert(
+              utf8.encode(
+                '$runtimeMode|${request.pluginId}|${request.method}|'
+                '${module.selection}|${module.path}|$moduleDigestHex|'
+                '$inputCanonical|$outputCanonical',
+              ),
+            )
+            .toString();
 
     final status = output['status'] as String;
     final result = output['result'];
@@ -121,7 +123,8 @@ class WasmPluginRuntimeService {
       final bytes = await packageFile.readAsBytes();
       if (bytes.length > _maxModuleBytes) {
         throw const FormatException(
-            'Plugin WASM module exceeds the size limit');
+          'Plugin WASM module exceeds the size limit',
+        );
       }
       return _ResolvedModule(
         path: 'package/module.wasm',
@@ -164,7 +167,8 @@ class WasmPluginRuntimeService {
       }
       if (content.length > _maxModuleBytes) {
         throw const FormatException(
-            'Plugin WASM module exceeds the size limit');
+          'Plugin WASM module exceeds the size limit',
+        );
       }
       return _ResolvedModule(
         path: requiredPath,

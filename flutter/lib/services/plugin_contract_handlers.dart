@@ -304,15 +304,19 @@ class MoltbookAmbassadorPluginContractHandler
   String get contractKind => 'moltbook_ambassador_draft';
 
   @override
-  Set<String> get methods => const <String>{prepareMoltbookDraftMethod};
+  Set<String> get methods => const <String>{
+    prepareMoltbookDraftMethod,
+    planMoltbookHeartbeatMethod,
+  };
 
   @override
   bool get requiresExternalRuntime => true;
 
   @override
-  Set<String> requiredCapabilities(String method) => const <String>{
-    'content.draft.prepare',
-  };
+  Set<String> requiredCapabilities(String method) =>
+      method == planMoltbookHeartbeatMethod
+          ? const <String>{'content.feed.plan'}
+          : const <String>{'content.draft.prepare'};
 
   @override
   PluginHostContractResult? preflight(PluginHostApiRequest request) => null;
@@ -342,6 +346,31 @@ class MoltbookAmbassadorPluginContractHandler
     }
     final semantic = runtimeInvoke.semanticResult;
     final canonicalJson = semantic?['canonical_json']?.toString() ?? '';
+    if (request.method == planMoltbookHeartbeatMethod) {
+      final planHashHex = semantic?['plan_hash_hex']?.toString() ?? '';
+      final plan = _validatedCanonicalObject(
+        canonicalJson: canonicalJson,
+        expectedHashHex: planHashHex,
+        expectedPluginId: pluginId,
+        expectedContractKind: 'moltbook_ambassador_heartbeat_plan',
+        expectedPeerHex: null,
+      );
+      if (plan == null ||
+          plan['publish_allowed'] != false ||
+          plan['human_review_required'] != true ||
+          plan['candidate_post_ids'] is! List ||
+          plan['safety_flags'] is! List) {
+        return const PluginHostContractResult.rejected(
+          code: 'runtime_result_invalid',
+          message: 'WASM ambassador heartbeat safety gate failed',
+        );
+      }
+      return PluginHostContractResult.executed(<String, dynamic>{
+        ...plan,
+        'plan_hash_hex': planHashHex,
+        'canonical_plan_json': canonicalJson,
+      });
+    }
     final draftHashHex = semantic?['draft_hash_hex']?.toString() ?? '';
     final draft = _validatedCanonicalObject(
       canonicalJson: canonicalJson,

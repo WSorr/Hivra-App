@@ -167,6 +167,75 @@ class PluginRuntimeModule {
     }
   }
 
+  Future<MoltbookHeartbeatPlan> planMoltbookHeartbeat() async {
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled) {
+      throw StateError('Moltbook Ambassador is disabled');
+    }
+    final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
+    if (ownerHex == null || ownerHex.length != 64) {
+      throw StateError('Active capsule identity is unavailable');
+    }
+    await uiLog.log('moltbook.heartbeat.plan', 'start owner=$ownerHex');
+    final observation = await moltbookConnection.observeHeartbeat();
+    if (!_isStillOwnedBy(ownerHex)) {
+      throw StateError(
+        'Heartbeat discarded because the active capsule changed',
+      );
+    }
+    final observedAtUtc = DateTime.now().toUtc().toIso8601String();
+    final response = await pluginHostApi.executeWithRuntimeHook(
+      PluginHostApiRequest(
+        schemaVersion: pluginHostApiSchemaVersion,
+        pluginId: moltbookAmbassadorPluginId,
+        method: planMoltbookHeartbeatMethod,
+        args: <String, dynamic>{
+          'observed_at_utc': observedAtUtc,
+          'allowed_topics': configuration.allowedTopics,
+          'home': <String, dynamic>{
+            'unread_notification_count':
+                observation.home.unreadNotificationCount,
+            'suggested_actions': observation.home.suggestedActions,
+          },
+          'feed': observation.feed.posts
+              .map(
+                (post) => <String, dynamic>{
+                  'post_id': post.postId,
+                  'title': post.title,
+                  'author_name': post.authorName,
+                  'submolt_name': post.submoltName,
+                  'score': post.score,
+                  'comment_count': post.commentCount,
+                  'is_verified': post.isVerified,
+                  'is_spam': post.isSpam,
+                  'created_at_utc': post.createdAtUtc,
+                },
+              )
+              .toList(growable: false),
+        },
+      ),
+    );
+    if (!_isStillOwnedBy(ownerHex)) {
+      throw StateError(
+        'Heartbeat discarded because the active capsule changed',
+      );
+    }
+    final result = response.result;
+    if (response.status != PluginHostApiStatus.executed || result == null) {
+      throw StateError(
+        response.errorMessage ?? 'Moltbook heartbeat planning was rejected',
+      );
+    }
+    final plan = MoltbookHeartbeatPlan.fromHostResult(result);
+    await uiLog.log(
+      'moltbook.heartbeat.plan',
+      'success priority=${plan.priority} '
+          'candidates=${plan.candidatePostIds.length} '
+          'hash=${plan.planHashHex.substring(0, 12)}..',
+    );
+    return plan;
+  }
+
   Future<void> disconnectMoltbook() async {
     await uiLog.log('moltbook.disconnect', 'start');
     try {

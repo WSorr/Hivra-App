@@ -12,9 +12,7 @@ import 'package:hivra_app/services/wasm_plugin_runtime_service.dart';
 void main() {
   group('WasmPluginRuntimeService', () {
     test('returns null for host fallback binding', () async {
-      final service = WasmPluginRuntimeService(
-        invokeJson: _executedInvoker,
-      );
+      final service = WasmPluginRuntimeService(invokeJson: _executedInvoker);
       final evidence = await service.invoke(
         request: _request(),
         binding: const PluginRuntimeBinding.hostFallback(),
@@ -22,45 +20,46 @@ void main() {
       expect(evidence, isNull);
     });
 
-    test('invokes manifest-selected module and returns semantic result',
-        () async {
-      final package = await _writePackage();
-      addTearDown(package.dispose);
-      final service = WasmPluginRuntimeService(
-        invokeJson: ({
-          required Uint8List moduleBytes,
-          required String entryExport,
-          required Uint8List inputJsonBytes,
-        }) {
-          expect(entryExport, WasmPluginRuntimeService.requiredEntryExport);
-          expect(moduleBytes.take(4), <int>[0, 0x61, 0x73, 0x6d]);
-          final input = jsonDecode(utf8.decode(inputJsonBytes));
-          expect(input['plugin_id'], _pluginId);
-          expect(input['symbol'], 'BTC-USDT');
-          return _executedOutput;
-        },
-      );
+    test(
+      'invokes manifest-selected module and returns semantic result',
+      () async {
+        final package = await _writePackage();
+        addTearDown(package.dispose);
+        final service = WasmPluginRuntimeService(
+          invokeJson: ({
+            required Uint8List moduleBytes,
+            required String entryExport,
+            required Uint8List inputJsonBytes,
+          }) {
+            expect(entryExport, WasmPluginRuntimeService.requiredEntryExport);
+            expect(moduleBytes.take(4), <int>[0, 0x61, 0x73, 0x6d]);
+            final input = jsonDecode(utf8.decode(inputJsonBytes));
+            expect(input['plugin_id'], _pluginId);
+            expect(input['host_method'], 'place_bingx_futures_order_intent');
+            expect(input['symbol'], 'BTC-USDT');
+            return _executedOutput;
+          },
+        );
 
-      final evidence = await service.invoke(
-        request: _request(),
-        binding: package.binding,
-      );
+        final evidence = await service.invoke(
+          request: _request(),
+          binding: package.binding,
+        );
 
-      expect(evidence, isNotNull);
-      expect(evidence!.mode, WasmPluginRuntimeService.runtimeMode);
-      expect(evidence.modulePath, 'plugin/module.wasm');
-      expect(evidence.semanticStatus, PluginHostApiStatus.executed);
-      expect(evidence.semanticResult?['intent_hash_hex'], _hex('a'));
-      expect(evidence.moduleDigestHex.length, 64);
-      expect(evidence.invokeDigestHex.length, 64);
-    });
+        expect(evidence, isNotNull);
+        expect(evidence!.mode, WasmPluginRuntimeService.runtimeMode);
+        expect(evidence.modulePath, 'plugin/module.wasm');
+        expect(evidence.semanticStatus, PluginHostApiStatus.executed);
+        expect(evidence.semanticResult?['intent_hash_hex'], _hex('a'));
+        expect(evidence.moduleDigestHex.length, 64);
+        expect(evidence.invokeDigestHex.length, 64);
+      },
+    );
 
     test('preserves deterministic invoke digest', () async {
       final package = await _writePackage();
       addTearDown(package.dispose);
-      final service = WasmPluginRuntimeService(
-        invokeJson: _executedInvoker,
-      );
+      final service = WasmPluginRuntimeService(invokeJson: _executedInvoker);
 
       final first = await service.invoke(
         request: _request(),
@@ -78,19 +77,16 @@ void main() {
       final package = await _writePackage();
       addTearDown(package.dispose);
       final service = WasmPluginRuntimeService(
-        invokeJson: ({
-          required Uint8List moduleBytes,
-          required String entryExport,
-          required Uint8List inputJsonBytes,
-        }) =>
-            '{"schema_version":1,"status":"executed","result":null}',
+        invokeJson:
+            ({
+              required Uint8List moduleBytes,
+              required String entryExport,
+              required Uint8List inputJsonBytes,
+            }) => '{"schema_version":1,"status":"executed","result":null}',
       );
 
       await expectLater(
-        () => service.invoke(
-          request: _request(),
-          binding: package.binding,
-        ),
+        () => service.invoke(request: _request(), binding: package.binding),
         throwsA(isA<FormatException>()),
       );
     });
@@ -98,9 +94,7 @@ void main() {
     test('requires ABI v2 and package digest', () async {
       final package = await _writePackage();
       addTearDown(package.dispose);
-      final service = WasmPluginRuntimeService(
-        invokeJson: _executedInvoker,
-      );
+      final service = WasmPluginRuntimeService(invokeJson: _executedInvoker);
 
       await expectLater(
         () => service.invoke(
@@ -127,26 +121,21 @@ String? _executedInvoker({
   required Uint8List moduleBytes,
   required String entryExport,
   required Uint8List inputJsonBytes,
-}) =>
-    _executedOutput;
+}) => _executedOutput;
 
 PluginHostApiRequest _request() => const PluginHostApiRequest(
-      schemaVersion: 1,
-      pluginId: _pluginId,
-      method: 'place_bingx_futures_order_intent',
-      args: <String, dynamic>{'symbol': 'BTC-USDT'},
-    );
+  schemaVersion: 1,
+  pluginId: _pluginId,
+  method: 'place_bingx_futures_order_intent',
+  args: <String, dynamic>{'symbol': 'BTC-USDT'},
+);
 
 Future<_TestPackage> _writePackage() async {
   final tempDir = await Directory.systemTemp.createTemp('hivra_wasm_runtime_');
-  final archive = Archive()
-    ..addFile(
-      ArchiveFile(
-        'plugin/module.wasm',
-        _wasmHeader.length,
-        _wasmHeader,
-      ),
-    );
+  final archive =
+      Archive()..addFile(
+        ArchiveFile('plugin/module.wasm', _wasmHeader.length, _wasmHeader),
+      );
   final bytes = ZipEncoder().encode(archive)!;
   final path = '${tempDir.path}/plugin.zip';
   await File(path).writeAsBytes(bytes, flush: true);

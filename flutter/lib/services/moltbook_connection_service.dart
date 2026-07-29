@@ -167,6 +167,16 @@ class MoltbookConnectionService {
     );
   }
 
+  Future<MoltbookHeartbeatObservation> observeHeartbeat() {
+    return _withBoundCredential((apiKey) async {
+      final home = await _observer.observeHome(apiKey);
+      final feed = await _observer.observeFeed(apiKey);
+      final observation = MoltbookHeartbeatObservation(home: home, feed: feed);
+      observation.validate();
+      return observation;
+    });
+  }
+
   Future<T> _withBoundCredential<T>(
     Future<T> Function(String apiKey) operation,
   ) async {

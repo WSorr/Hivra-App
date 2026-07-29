@@ -184,6 +184,22 @@ void main() {
       );
     },
   );
+
+  test(
+    'heartbeat loads one credential for home and feed observations',
+    () async {
+      await service.connect('secret-key');
+      secureStorage.readCount = 0;
+
+      final heartbeat = await service.observeHeartbeat();
+
+      expect(heartbeat.home.unreadNotificationCount, 2);
+      expect(heartbeat.feed.posts.single.postId, 'post-1');
+      expect(secureStorage.readCount, lessThanOrEqualTo(1));
+      expect(observer.homeKeys, <String>['secret-key']);
+      expect(observer.feedKeys, <String>['secret-key']);
+    },
+  );
 }
 
 class _FakeObserver implements MoltbookObservePort {

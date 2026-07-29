@@ -2,6 +2,7 @@ class WasmPluginCapabilityPolicyService {
   static const Set<String> _allowedCapabilities = <String>{
     'consensus_guard.read',
     'content.draft.prepare',
+    'content.feed.plan',
     'exchange.read.bingx.market',
     'exchange.trade.bingx.futures',
   };

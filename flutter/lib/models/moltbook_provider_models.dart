@@ -200,6 +200,18 @@ class MoltbookFeedObservation {
   }
 }
 
+class MoltbookHeartbeatObservation {
+  final MoltbookHomeObservation home;
+  final MoltbookFeedObservation feed;
+
+  const MoltbookHeartbeatObservation({required this.home, required this.feed});
+
+  void validate() {
+    home.validate();
+    feed.validate();
+  }
+}
+
 class MoltbookClaimObservation {
   static const String pending = 'pending_claim';
   static const String claimed = 'claimed';
