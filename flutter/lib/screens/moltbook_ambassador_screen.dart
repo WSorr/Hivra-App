@@ -2003,7 +2003,7 @@ class _MoltbookConnectionCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 5),
                         const Text(
-                          'AI proposes. You edit. WASM binds the exact text to this conversation. Publication still requires explicit approval.',
+                          'Write the reply yourself or ask AI for a proposal. WASM binds the exact reviewed text to this conversation. Publication still requires explicit approval.',
                           style: TextStyle(
                             color: Color(0xFF9CA7B5),
                             height: 1.35,
@@ -2024,21 +2024,21 @@ class _MoltbookConnectionCard extends StatelessWidget {
                                   : const Icon(Icons.auto_awesome_outlined),
                           label: const Text('Ask Gemini for reply'),
                         ),
-                        if (replyProposal != null) ...[
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: replyBodyController,
-                            minLines: 4,
-                            maxLines: 10,
-                            maxLength: 2000,
-                            onChanged: (_) => onReplyChanged(),
-                            decoration: const InputDecoration(
-                              labelText: 'Exact public reply',
-                              helperText:
-                                  'Review every word. This field is still local.',
-                              alignLabelWithHint: true,
-                            ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: replyBodyController,
+                          minLines: 4,
+                          maxLines: 10,
+                          maxLength: 2000,
+                          onChanged: (_) => onReplyChanged(),
+                          decoration: const InputDecoration(
+                            labelText: 'Exact public reply',
+                            helperText:
+                                'Write manually or edit the AI proposal. This field is still local.',
+                            alignLabelWithHint: true,
                           ),
+                        ),
+                        if (replyProposal != null) ...[
                           const SizedBox(height: 6),
                           Text(
                             'Grounded by ${replyProposal!.providerLabel} '
@@ -2054,13 +2054,17 @@ class _MoltbookConnectionCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          FilledButton.icon(
-                            onPressed: replyBusy ? null : onPrepareReply,
-                            icon: const Icon(Icons.shield_outlined),
-                            label: const Text('Prepare WASM reply'),
-                          ),
                         ],
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed:
+                              replyBusy ||
+                                      replyBodyController.text.trim().isEmpty
+                                  ? null
+                                  : onPrepareReply,
+                          icon: const Icon(Icons.shield_outlined),
+                          label: const Text('Prepare WASM reply'),
+                        ),
                         if (replyDraftPreview != null) ...[
                           const SizedBox(height: 12),
                           Text(

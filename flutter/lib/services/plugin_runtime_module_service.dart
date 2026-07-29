@@ -273,6 +273,10 @@ class PluginRuntimeModule {
     if (!configuration.enabled) {
       throw StateError('Moltbook Ambassador is disabled');
     }
+    final binding = await moltbookConnection.loadBinding();
+    if (binding == null || !binding.isClaimed || !binding.isActive) {
+      throw StateError('Active Moltbook account binding is unavailable');
+    }
     final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
     if (ownerHex == null || ownerHex.length != 64) {
       throw StateError('Active capsule identity is unavailable');
@@ -290,6 +294,7 @@ class PluginRuntimeModule {
         args: <String, dynamic>{
           'observed_at_utc': observedAtUtc,
           'selection_kind': selectionKind,
+          'actor_name': binding.accountName,
           'allowed_topics': configuration.allowedTopics,
           'post': <String, dynamic>{
             'post_id': conversation.post.postId,
