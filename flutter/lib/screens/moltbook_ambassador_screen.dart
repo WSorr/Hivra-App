@@ -1360,6 +1360,27 @@ class _MoltbookConnectionCard extends StatelessWidget {
                 '${homeObservation!.unreadNotificationCount} unread',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
+              if (homeObservation!.activityOnOwnPosts.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ...homeObservation!.activityOnOwnPosts
+                    .take(5)
+                    .map(
+                      (activity) => ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.forum_outlined),
+                        title: Text(
+                          activity.postTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${activity.newNotificationCount} new · '
+                          'm/${activity.submoltName}',
+                        ),
+                      ),
+                    ),
+              ],
               if (homeObservation!.suggestedActions.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 ...homeObservation!.suggestedActions

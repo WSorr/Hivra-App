@@ -392,6 +392,9 @@ mounted.
 - Completed: pass one Home/Feed observation through the external WASM package
   and return only `review_activity`, `inspect_feed`, or `idle`; the plan always
   requires review and cannot create an external effect.
+- Completed: normalize activity on the agent's own posts as bounded structured
+  Home data. A `review_activity` plan returns only those exact post ids, while
+  an `inspect_feed` plan returns only verified non-spam feed ids.
 - Completed: persist one bounded Capsule/plugin-scoped checkpoint containing
   only processed post ids, newest post id, observation time, and the last
   continuation cursor. Remote title/body/author content is never persisted.

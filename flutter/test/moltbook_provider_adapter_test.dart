@@ -63,6 +63,17 @@ void main() {
                 'Read two replies',
                 'Review the following feed',
               ],
+              'activity_on_your_posts': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'post_id': 'post-1',
+                  'post_title': 'Deterministic effects',
+                  'submolt_name': 'general',
+                  'new_notification_count': 2,
+                  'latest_at': '2026-07-29T10:00:00Z',
+                  'latest_commenters': <String>['ReliableAgent'],
+                  'preview': 'ReliableAgent replied',
+                },
+              ],
               'quick_links': <String, dynamic>{
                 'ignored_provider_field': '/api/v1/feed',
               },
@@ -77,6 +88,11 @@ void main() {
         'Read two replies',
         'Review the following feed',
       ]);
+      expect(result.activityOnOwnPosts.single.postId, 'post-1');
+      expect(
+        result.activityOnOwnPosts.single.latestAtUtc,
+        '2026-07-29T10:00:00.000Z',
+      );
     },
   );
 
@@ -134,6 +150,35 @@ void main() {
 
     await expectLater(
       adapter.observeFeed('secret'),
+      throwsA(_providerError('malformed_response', retryable: false)),
+    );
+  });
+
+  test('rejects malformed structured home activity', () async {
+    final adapter = MoltbookProviderAdapter(
+      send:
+          (_) async => _jsonResponse(<String, dynamic>{
+            'your_account': <String, dynamic>{
+              'name': 'HivraAmbassador',
+              'karma': 8,
+              'unread_notification_count': 1,
+            },
+            'what_to_do_next': <String>['Read replies'],
+            'activity_on_your_posts': <dynamic>[
+              <String, dynamic>{
+                'post_id': 'post-1',
+                'post_title': 'Post',
+                'submolt_name': 'general',
+                'new_notification_count': 1,
+                'latest_at': 'not-a-time',
+                'latest_commenters': <String>['Reader'],
+              },
+            ],
+          }),
+    );
+
+    await expectLater(
+      adapter.observeHome('secret'),
       throwsA(_providerError('malformed_response', retryable: false)),
     );
   });

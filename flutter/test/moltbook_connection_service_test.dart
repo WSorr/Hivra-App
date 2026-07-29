@@ -271,6 +271,17 @@ class _FakeObserver implements MoltbookObservePort {
       accountName: 'Hivra Agent',
       karma: 7,
       unreadNotificationCount: 2,
+      activityOnOwnPosts: <MoltbookPostActivityObservation>[
+        MoltbookPostActivityObservation(
+          postId: 'own-post-1',
+          postTitle: 'A Hivra update',
+          submoltName: 'general',
+          newNotificationCount: 2,
+          latestAtUtc: '2026-07-29T10:30:00.000Z',
+          latestCommenters: <String>['Reader'],
+          preview: 'Reader replied',
+        ),
+      ],
       suggestedActions: <String>['Read notifications'],
       rateLimit: MoltbookRateLimitSnapshot(
         limit: 60,

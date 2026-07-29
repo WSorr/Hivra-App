@@ -84,6 +84,7 @@ class MoltbookHomeObservation {
   final String accountName;
   final int karma;
   final int unreadNotificationCount;
+  final List<MoltbookPostActivityObservation> activityOnOwnPosts;
   final List<String> suggestedActions;
   final MoltbookRateLimitSnapshot rateLimit;
 
@@ -91,6 +92,7 @@ class MoltbookHomeObservation {
     required this.accountName,
     required this.karma,
     required this.unreadNotificationCount,
+    required this.activityOnOwnPosts,
     required this.suggestedActions,
     required this.rateLimit,
   });
@@ -105,10 +107,69 @@ class MoltbookHomeObservation {
     if (suggestedActions.length > 32) {
       throw const FormatException('Too many Moltbook suggested actions');
     }
+    if (activityOnOwnPosts.length > 32) {
+      throw const FormatException('Too many Moltbook activity entries');
+    }
+    final activityPostIds = <String>{};
+    for (final activity in activityOnOwnPosts) {
+      activity.validate();
+      if (!activityPostIds.add(activity.postId)) {
+        throw const FormatException(
+          'Moltbook home contains duplicate activity posts',
+        );
+      }
+    }
     for (final action in suggestedActions) {
       _bounded('suggested_action', action, 1, 1000);
     }
     rateLimit.validate();
+  }
+}
+
+class MoltbookPostActivityObservation {
+  final String postId;
+  final String postTitle;
+  final String submoltName;
+  final int newNotificationCount;
+  final String latestAtUtc;
+  final List<String> latestCommenters;
+  final String preview;
+
+  const MoltbookPostActivityObservation({
+    required this.postId,
+    required this.postTitle,
+    required this.submoltName,
+    required this.newNotificationCount,
+    required this.latestAtUtc,
+    required this.latestCommenters,
+    required this.preview,
+  });
+
+  void validate() {
+    _bounded('activity.post_id', postId, 1, 256);
+    _bounded('activity.post_title', postTitle, 1, 300);
+    _bounded('activity.submolt_name', submoltName, 1, 128);
+    if (newNotificationCount < 1 || newNotificationCount > 1000000000) {
+      throw const FormatException(
+        'Moltbook activity notification count is invalid',
+      );
+    }
+    final latestAt = DateTime.tryParse(latestAtUtc);
+    if (latestAt == null ||
+        !latestAt.isUtc ||
+        latestAt.toIso8601String() != latestAtUtc) {
+      throw const FormatException(
+        'Moltbook activity timestamp must be canonical UTC',
+      );
+    }
+    if (latestCommenters.length > 32 ||
+        latestCommenters.toSet().length != latestCommenters.length) {
+      throw const FormatException('Moltbook activity commenters are invalid');
+    }
+    for (final commenter in latestCommenters) {
+      _bounded('activity.commenter', commenter, 1, 128);
+    }
+    _bounded('activity.preview', preview, 0, 2000);
   }
 }
 

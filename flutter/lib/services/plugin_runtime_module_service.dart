@@ -204,6 +204,19 @@ class PluginRuntimeModule {
           'home': <String, dynamic>{
             'unread_notification_count':
                 observation.home.unreadNotificationCount,
+            'activity_on_own_posts': observation.home.activityOnOwnPosts
+                .map(
+                  (activity) => <String, dynamic>{
+                    'post_id': activity.postId,
+                    'post_title': activity.postTitle,
+                    'submolt_name': activity.submoltName,
+                    'new_notification_count': activity.newNotificationCount,
+                    'latest_at_utc': activity.latestAtUtc,
+                    'latest_commenters': activity.latestCommenters,
+                    'preview': activity.preview,
+                  },
+                )
+                .toList(growable: false),
             'suggested_actions': observation.home.suggestedActions,
           },
           'feed': observation.feed.posts

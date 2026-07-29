@@ -127,6 +127,47 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
           return value.trim();
         })
         .toList(growable: false);
+    final rawActivity = json['activity_on_your_posts'];
+    if (rawActivity != null && rawActivity is! List) {
+      throw _malformed('Home activity_on_your_posts is invalid');
+    }
+    final activity = (rawActivity as List? ?? const <dynamic>[])
+        .map((value) {
+          if (value is! Map) {
+            throw _malformed('Home activity entry is invalid');
+          }
+          final entry = Map<String, dynamic>.from(value);
+          final timestamp =
+              DateTime.tryParse(_requiredString(entry, 'latest_at'))?.toUtc();
+          if (timestamp == null) {
+            throw _malformed('Home activity timestamp is invalid');
+          }
+          final rawCommenters = entry['latest_commenters'];
+          if (rawCommenters is! List) {
+            throw _malformed('Home activity commenters are invalid');
+          }
+          final commenters = rawCommenters
+              .map((commenter) {
+                if (commenter is! String || commenter.trim().isEmpty) {
+                  throw _malformed('Home activity commenter is invalid');
+                }
+                return commenter.trim();
+              })
+              .toList(growable: false);
+          return MoltbookPostActivityObservation(
+            postId: _requiredString(entry, 'post_id'),
+            postTitle: _requiredString(entry, 'post_title'),
+            submoltName: _requiredString(entry, 'submolt_name'),
+            newNotificationCount: _requiredNonNegativeInt(
+              entry,
+              'new_notification_count',
+            ),
+            latestAtUtc: timestamp.toIso8601String(),
+            latestCommenters: commenters,
+            preview: _optionalString(entry, 'preview'),
+          );
+        })
+        .toList(growable: false);
     final observation = MoltbookHomeObservation(
       accountName: _requiredString(account, 'name'),
       karma: _requiredNonNegativeInt(account, 'karma'),
@@ -134,6 +175,7 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
         account,
         'unread_notification_count',
       ),
+      activityOnOwnPosts: activity,
       suggestedActions: actions,
       rateLimit: _rateLimit(response),
     );
