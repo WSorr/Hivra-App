@@ -13,3 +13,4 @@ const String moltbookAmbassadorPluginId =
 const String prepareMoltbookDraftMethod = 'prepare_moltbook_draft';
 const String planMoltbookHeartbeatMethod = 'plan_moltbook_heartbeat';
 const String planMoltbookEngagementMethod = 'plan_moltbook_engagement';
+const String prepareMoltbookReplyMethod = 'prepare_moltbook_reply';

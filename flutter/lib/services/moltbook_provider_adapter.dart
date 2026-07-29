@@ -314,6 +314,51 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     return json;
   }
 
+  Future<Map<String, dynamic>> createComment({
+    required String apiKey,
+    required String postId,
+    required String content,
+    String? parentCommentId,
+  }) async {
+    final normalizedPostId = postId.trim();
+    final normalizedParentId = parentCommentId?.trim();
+    final normalizedContent = content.trim();
+    if (!RegExp(r'^[A-Za-z0-9-]{1,256}$').hasMatch(normalizedPostId)) {
+      throw const MoltbookProviderException(
+        code: 'invalid_post_id',
+        message: 'Moltbook post id is invalid',
+        retryable: false,
+      );
+    }
+    if (normalizedParentId != null &&
+        !RegExp(r'^[A-Za-z0-9-]{1,256}$').hasMatch(normalizedParentId)) {
+      throw const MoltbookProviderException(
+        code: 'invalid_comment_id',
+        message: 'Moltbook parent comment id is invalid',
+        retryable: false,
+      );
+    }
+    if (normalizedContent.isEmpty || normalizedContent.length > 2000) {
+      throw const MoltbookProviderException(
+        code: 'invalid_comment_content',
+        message: 'Moltbook comment must contain 1..2000 characters',
+        retryable: false,
+      );
+    }
+    final response = await _request(
+      method: 'POST',
+      relativePath: 'posts/${Uri.encodeComponent(normalizedPostId)}/comments',
+      apiKey: apiKey,
+      body: <String, dynamic>{
+        'content': normalizedContent,
+        if (normalizedParentId != null) 'parent_id': normalizedParentId,
+      },
+    );
+    final json = _decodeObject(response);
+    _rejectProviderFailure(json, response);
+    return json;
+  }
+
   Future<Map<String, dynamic>> observeProfile({
     required String apiKey,
     required String accountName,
@@ -393,17 +438,10 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
         commentsJson['has_more'] is! bool) {
       throw _malformed('Comments response has invalid identity or paging');
     }
-    final comments = (commentsJson['comments'] as List)
-        .map((value) {
-          if (value is! Map) {
-            throw _malformed('Comments response contains an invalid comment');
-          }
-          return _parseCommentObservation(
-            Map<String, dynamic>.from(value),
-            postId: normalizedId,
-          );
-        })
-        .toList(growable: false);
+    final comments = _flattenCommentObservations(
+      commentsJson['comments'] as List,
+      postId: normalizedId,
+    );
     final observation = MoltbookConversationObservation(
       post: post,
       comments: comments,
@@ -479,6 +517,44 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
       score: upvotes - downvotes,
       createdAtUtc: createdAt.toIso8601String(),
     );
+  }
+
+  static List<MoltbookCommentObservation> _flattenCommentObservations(
+    List<dynamic> roots, {
+    required String postId,
+  }) {
+    final result = <MoltbookCommentObservation>[];
+    final seen = <String>{};
+
+    void visit(dynamic value, int depth) {
+      if (result.length >= MoltbookConversationObservation.maxComments) return;
+      if (depth > 8 || value is! Map) {
+        throw _malformed('Comments response contains an invalid reply tree');
+      }
+      final raw = Map<String, dynamic>.from(value);
+      final comment = _parseCommentObservation(raw, postId: postId);
+      if (!seen.add(comment.commentId)) {
+        throw _malformed('Comments response contains duplicate ids');
+      }
+      result.add(comment);
+      final replies = raw['replies'];
+      if (replies == null) return;
+      if (replies is! List) {
+        throw _malformed('Comment replies must be a list');
+      }
+      for (final reply in replies) {
+        visit(reply, depth + 1);
+        if (result.length >= MoltbookConversationObservation.maxComments) {
+          break;
+        }
+      }
+    }
+
+    for (final root in roots) {
+      visit(root, 0);
+      if (result.length >= MoltbookConversationObservation.maxComments) break;
+    }
+    return List<MoltbookCommentObservation>.unmodifiable(result);
   }
 
   Future<MoltbookHttpResponse> _get(String relativePath, String apiKey) async {

@@ -68,6 +68,54 @@ class MoltbookPublicBulletinProposal {
   }
 }
 
+class MoltbookReplyProposal {
+  final String body;
+  final List<String> groundingPoints;
+  final String providerLabel;
+  final String model;
+
+  const MoltbookReplyProposal({
+    required this.body,
+    required this.groundingPoints,
+    required this.providerLabel,
+    required this.model,
+  });
+
+  void validate() {
+    if (body.trim() != body || body.isEmpty || body.length > 2000) {
+      throw const FormatException('AI reply body is outside safe bounds');
+    }
+    if (body.contains(
+      RegExp(
+        r'https?://|\[hivra-effect:|api[_ -]?key|seed phrase',
+        caseSensitive: false,
+      ),
+    )) {
+      throw const FormatException('AI reply contains unsupported content');
+    }
+    if (groundingPoints.isEmpty ||
+        groundingPoints.length > 6 ||
+        groundingPoints.toSet().length != groundingPoints.length) {
+      throw const FormatException(
+        'AI reply must contain 1..6 unique grounding points',
+      );
+    }
+    for (final point in groundingPoints) {
+      if (point.trim() != point || point.isEmpty || point.length > 280) {
+        throw const FormatException(
+          'AI reply grounding point is outside safe bounds',
+        );
+      }
+    }
+    if (providerLabel.isEmpty ||
+        providerLabel.length > 64 ||
+        model.isEmpty ||
+        model.length > 128) {
+      throw const FormatException('AI reply model is invalid');
+    }
+  }
+}
+
 class MoltbookDraftPreview {
   final String bulletinId;
   final String releaseTag;
@@ -161,6 +209,88 @@ class MoltbookDraftPreview {
     final result = value[field];
     if (result is! String || result.trim().isEmpty) {
       throw FormatException('Invalid Moltbook draft field: $field');
+    }
+    return result;
+  }
+}
+
+class MoltbookReplyDraftPreview {
+  final String targetPostId;
+  final String? targetCommentId;
+  final String engagementPlanHashHex;
+  final String body;
+  final bool approvalRequired;
+  final List<String> safetyFlags;
+  final String draftHashHex;
+  final String canonicalDraftJson;
+
+  const MoltbookReplyDraftPreview({
+    required this.targetPostId,
+    required this.targetCommentId,
+    required this.engagementPlanHashHex,
+    required this.body,
+    required this.approvalRequired,
+    required this.safetyFlags,
+    required this.draftHashHex,
+    required this.canonicalDraftJson,
+  });
+
+  factory MoltbookReplyDraftPreview.fromHostResult(
+    Map<String, dynamic> result,
+  ) {
+    if (result['schema_version'] != 1 ||
+        result['plugin_id'] != moltbookAmbassadorPluginId ||
+        result['contract_kind'] != 'moltbook_ambassador_reply_draft' ||
+        result['approval_required'] != true) {
+      throw const FormatException('Invalid Moltbook reply draft result');
+    }
+    final rawFlags = result['safety_flags'];
+    final rawCommentId = result['target_comment_id'];
+    if (rawFlags is! List ||
+        rawFlags.any((value) => value is! String) ||
+        (rawCommentId != null && rawCommentId is! String)) {
+      throw const FormatException('Invalid Moltbook reply draft fields');
+    }
+    final preview = MoltbookReplyDraftPreview(
+      targetPostId: _replyRequiredString(result, 'target_post_id'),
+      targetCommentId: rawCommentId as String?,
+      engagementPlanHashHex: _replyRequiredString(
+        result,
+        'engagement_plan_hash_hex',
+      ),
+      body: _replyRequiredString(result, 'body'),
+      approvalRequired: true,
+      safetyFlags: rawFlags.cast<String>(),
+      draftHashHex: _replyRequiredString(result, 'draft_hash_hex'),
+      canonicalDraftJson: _replyRequiredString(result, 'canonical_draft_json'),
+    );
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(preview.draftHashHex) ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(preview.engagementPlanHashHex) ||
+        sha256.convert(utf8.encode(preview.canonicalDraftJson)).toString() !=
+            preview.draftHashHex) {
+      throw const FormatException('Moltbook reply draft hash mismatch');
+    }
+    final canonical = jsonDecode(preview.canonicalDraftJson);
+    if (canonical is! Map ||
+        canonical['target_post_id'] != preview.targetPostId ||
+        canonical['target_comment_id'] != preview.targetCommentId ||
+        canonical['engagement_plan_hash_hex'] !=
+            preview.engagementPlanHashHex ||
+        canonical['body'] != preview.body ||
+        canonical['approval_required'] != true ||
+        jsonEncode(canonical['safety_flags']) !=
+            jsonEncode(preview.safetyFlags)) {
+      throw const FormatException(
+        'Moltbook canonical reply projection mismatch',
+      );
+    }
+    return preview;
+  }
+
+  static String _replyRequiredString(Map<String, dynamic> value, String field) {
+    final result = value[field];
+    if (result is! String || result.trim().isEmpty) {
+      throw FormatException('Invalid Moltbook reply field: $field');
     }
     return result;
   }

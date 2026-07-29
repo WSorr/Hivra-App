@@ -67,6 +67,49 @@ class MoltbookPublicationService {
     );
   }
 
+  Future<ExternalEffectOperation> prepareReply({
+    required MoltbookReplyDraftPreview draft,
+  }) async {
+    final binding = await _connection.loadBinding();
+    if (binding == null) {
+      throw StateError('Connect a Moltbook account before replying');
+    }
+    if (!binding.isClaimed || !binding.isActive) {
+      throw StateError('Moltbook account must be claimed and active');
+    }
+    final semanticId =
+        sha256
+            .convert(
+              utf8.encode(
+                '${binding.accountId}\n'
+                '${draft.targetPostId}\n'
+                '${draft.targetCommentId ?? ""}\n'
+                '${draft.draftHashHex}',
+              ),
+            )
+            .toString();
+    final operationId = 'moltbook-comment-$semanticId';
+    final marker = MoltbookPublicationContract.operationMarker(operationId);
+    final canonicalPayload = jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'account_name': binding.accountName,
+      'post_id': draft.targetPostId,
+      'parent_comment_id': draft.targetCommentId,
+      'content': draft.body,
+      'operation_marker': marker,
+      'source_draft_hash_hex': draft.draftHashHex,
+      'engagement_plan_hash_hex': draft.engagementPlanHashHex,
+    });
+    return _effects.prepare(
+      operationId: operationId,
+      pluginId: moltbookAmbassadorPluginId,
+      providerId: MoltbookConnectionService.providerId,
+      accountBindingId: binding.accountId,
+      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
+      canonicalPayloadJson: canonicalPayload,
+    );
+  }
+
   Future<ExternalEffectOperation> approveAndQueue(
     ExternalEffectOperation operation,
   ) async {
@@ -143,7 +186,11 @@ class MoltbookPublicationService {
         receipt.providerId != MoltbookConnectionService.providerId) {
       return null;
     }
-    final postId = receipt.providerReceiptId.trim();
+    final payload = decodePayload(operation);
+    final postId =
+        operation.effectKind == MoltbookExternalEffectAdapter.commentEffectKind
+            ? payload['post_id']?.toString().trim() ?? ''
+            : receipt.providerReceiptId.trim();
     if (!RegExp(
       r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
     ).hasMatch(postId)) {
@@ -156,7 +203,10 @@ class MoltbookPublicationService {
     operation.validate();
     if (operation.pluginId != moltbookAmbassadorPluginId ||
         operation.providerId != MoltbookConnectionService.providerId ||
-        operation.effectKind != MoltbookExternalEffectAdapter.effectKind) {
+        !const <String>{
+          MoltbookExternalEffectAdapter.postEffectKind,
+          MoltbookExternalEffectAdapter.commentEffectKind,
+        }.contains(operation.effectKind)) {
       throw const FormatException('Operation is not a Moltbook publication');
     }
   }

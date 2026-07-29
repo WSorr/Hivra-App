@@ -40,6 +40,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   final TextEditingController _publicSourceNotesController =
       TextEditingController();
   final TextEditingController _factsController = TextEditingController();
+  final TextEditingController _replyBodyController = TextEditingController();
   final TextEditingController _submoltController = TextEditingController(
     text: MoltbookPublicationService.defaultSubmolt,
   );
@@ -55,6 +56,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   String? _conversationSelectionKind;
   MoltbookHeartbeatPlan? _heartbeatPlan;
   MoltbookEngagementPlan? _engagementPlan;
+  MoltbookReplyProposal? _replyProposal;
+  MoltbookReplyDraftPreview? _replyDraftPreview;
   MoltbookFeedCheckpoint? _feedCheckpoint;
   MoltbookDraftPreview? _draftPreview;
   MoltbookPublicBulletinProposal? _publicBulletinProposal;
@@ -64,6 +67,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   bool _draftBusy = false;
   bool _publicFactsBusy = false;
   bool _publicationBusy = false;
+  bool _replyBusy = false;
   String? _loadError;
 
   @override
@@ -87,6 +91,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     _audienceController.dispose();
     _publicSourceNotesController.dispose();
     _factsController.dispose();
+    _replyBodyController.dispose();
     _submoltController.dispose();
     super.dispose();
   }
@@ -179,6 +184,9 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _conversationSelectionKind = null;
         _heartbeatPlan = null;
         _engagementPlan = null;
+        _replyProposal = null;
+        _replyDraftPreview = null;
+        _replyBodyController.clear();
       });
       _showNotice('Moltbook account disconnected');
     } catch (error) {
@@ -246,6 +254,9 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       _conversationObservation = null;
       _conversationSelectionKind = null;
       _engagementPlan = null;
+      _replyProposal = null;
+      _replyDraftPreview = null;
+      _replyBodyController.clear();
     });
     try {
       final observation = await widget.module.observeMoltbookConversation(
@@ -281,6 +292,9 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     setState(() {
       _connectionBusy = true;
       _engagementPlan = null;
+      _replyProposal = null;
+      _replyDraftPreview = null;
+      _replyBodyController.clear();
     });
     try {
       final plan = await widget.module.planMoltbookEngagement(
@@ -299,6 +313,196 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       }
     } finally {
       if (mounted) setState(() => _connectionBusy = false);
+    }
+  }
+
+  Future<void> _proposeReply() async {
+    final conversation = _conversationObservation;
+    final plan = _engagementPlan;
+    if (conversation == null || plan == null) {
+      _showNotice('Prepare an engagement plan first', isError: true);
+      return;
+    }
+    if (!const <String>{
+      'reply_draft',
+      'comment_draft',
+    }.contains(plan.actionClass)) {
+      _showNotice('This engagement plan does not allow a reply', isError: true);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Send public conversation to AI?'),
+            content: SizedBox(
+              width: 620,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Gemini receives only the bounded public post, recent public comments, the engagement plan, and the local ambassador persona. Remote text is treated as untrusted. No ledger, contacts, credentials, or Capsule history are sent.',
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      conversation.post.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${conversation.comments.length} bounded comment(s) · '
+                      'target ${plan.targetCommentId ?? "post root"}',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Generate reply proposal'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _replyBusy = true;
+      _replyProposal = null;
+      _replyDraftPreview = null;
+    });
+    try {
+      final proposal = await widget.module.proposeMoltbookReply(
+        conversation: conversation,
+        engagementPlan: plan,
+      );
+      if (!mounted) return;
+      setState(() {
+        _replyProposal = proposal;
+        _replyBodyController.text = proposal.body;
+      });
+      _showNotice(
+        'AI reply proposed. Review and edit it before WASM preparation.',
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not propose reply: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _replyBusy = false);
+    }
+  }
+
+  Future<void> _prepareReply() async {
+    final plan = _engagementPlan;
+    if (plan == null) {
+      _showNotice('Prepare an engagement plan first', isError: true);
+      return;
+    }
+    setState(() {
+      _replyBusy = true;
+      _replyDraftPreview = null;
+    });
+    try {
+      final preview = await widget.module.prepareMoltbookReply(
+        engagementPlan: plan,
+        reviewedBody: _replyBodyController.text,
+      );
+      if (!mounted) return;
+      setState(() => _replyDraftPreview = preview);
+      _showNotice('WASM reply draft prepared for exact review');
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not prepare reply: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _replyBusy = false);
+    }
+  }
+
+  Future<void> _reviewReplyPublication() async {
+    final draft = _replyDraftPreview;
+    if (draft == null) {
+      _showNotice('Prepare the WASM reply draft first', isError: true);
+      return;
+    }
+    setState(() => _publicationBusy = true);
+    try {
+      final operation = await widget.module.prepareMoltbookReplyPublication(
+        draft: draft,
+      );
+      if (!mounted) return;
+      final payload = MoltbookPublicationService.decodePayload(operation);
+      final approved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (dialogContext) => AlertDialog(
+              title: const Text('Approve permanent public reply?'),
+              content: SizedBox(
+                width: 620,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Account: ${payload['account_name']}\n'
+                        'Post: ${payload['post_id']}\n'
+                        'Reply target: ${payload['parent_comment_id'] ?? "post root"}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 14),
+                      SelectableText(payload['content'].toString()),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'This exact text creates a public external effect. Moltbook may retain or redistribute it. Approval cannot be inferred or automated.',
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Keep local'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Approve exact reply'),
+                ),
+              ],
+            ),
+      );
+      if (!mounted) return;
+      if (approved == true) {
+        await widget.module.approveMoltbookPublication(operation);
+        _showNotice('Reply approved and queued locally');
+      } else {
+        _showNotice('Reply remains local and unapproved');
+      }
+      final publications = await widget.module.loadMoltbookPublications();
+      if (mounted) setState(() => _publications = publications);
+    } catch (error) {
+      if (mounted) {
+        _showNotice(
+          'Could not prepare reply publication: $error',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
     }
   }
 
@@ -753,14 +957,23 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     feedObservation: _feedObservation,
                     conversationObservation: _conversationObservation,
                     engagementPlan: _engagementPlan,
+                    replyBodyController: _replyBodyController,
+                    replyProposal: _replyProposal,
+                    replyDraftPreview: _replyDraftPreview,
                     heartbeatPlan: _heartbeatPlan,
                     feedCheckpoint: _feedCheckpoint,
+                    replyBusy: _replyBusy || _publicationBusy,
                     onConnect: _connect,
                     onRefresh: _refreshConnection,
                     onObserveHome: _observeHome,
                     onObserveFeed: _observeFeed,
                     onObserveConversation: _observeConversation,
                     onPlanEngagement: _planEngagement,
+                    onProposeReply: _proposeReply,
+                    onPrepareReply: _prepareReply,
+                    onReviewReplyPublication: _reviewReplyPublication,
+                    onReplyChanged:
+                        () => setState(() => _replyDraftPreview = null),
                     onPlanHeartbeat: _planHeartbeat,
                     onDisconnect: _disconnect,
                   ),
@@ -1172,17 +1385,24 @@ class _MoltbookPublicationCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             const Text(
-              'A post is complete only after Moltbook confirms that the exact approved text is publicly visible.',
+              'A post or reply is complete only after Moltbook confirms that the exact approved text is publicly visible.',
               style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
             ),
             const SizedBox(height: 10),
             ...operations.reversed.map((operation) {
+              final payload = MoltbookPublicationService.decodePayload(
+                operation,
+              );
+              final isReply = payload.containsKey('post_id');
               final postUri = MoltbookPublicationService.publishedPostUri(
                 operation,
               );
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(operation.state.wireName.replaceAll('_', ' ')),
+                title: Text(
+                  '${isReply ? "Reply" : "Post"} · '
+                  '${operation.state.wireName.replaceAll('_', ' ')}',
+                ),
                 subtitle: Text(
                   '${operation.operationId}\n'
                   'attempts ${operation.attemptCount} · '
@@ -1194,7 +1414,7 @@ class _MoltbookPublicationCard extends StatelessWidget {
                         ? FilledButton.tonalIcon(
                           onPressed: busy ? null : () => onOpenPost(postUri),
                           icon: const Icon(Icons.open_in_new, size: 18),
-                          label: const Text('Open post'),
+                          label: Text(isReply ? 'Open thread' : 'Open post'),
                         )
                         : operation.state == ExternalEffectState.queued ||
                             operation.state == ExternalEffectState.unresolved
@@ -1320,7 +1540,8 @@ class _MoltbookDraftCard extends StatelessWidget {
               controller: titleHintController,
               decoration: const InputDecoration(
                 labelText: 'Reviewed post title',
-                helperText: 'Specific and factual. Avoid generic repeated titles.',
+                helperText:
+                    'Specific and factual. Avoid generic repeated titles.',
               ),
             ),
             const SizedBox(height: 12),
@@ -1496,8 +1717,12 @@ class _MoltbookConnectionCard extends StatelessWidget {
   final MoltbookFeedObservation? feedObservation;
   final MoltbookConversationObservation? conversationObservation;
   final MoltbookEngagementPlan? engagementPlan;
+  final TextEditingController replyBodyController;
+  final MoltbookReplyProposal? replyProposal;
+  final MoltbookReplyDraftPreview? replyDraftPreview;
   final MoltbookHeartbeatPlan? heartbeatPlan;
   final MoltbookFeedCheckpoint? feedCheckpoint;
+  final bool replyBusy;
   final VoidCallback onConnect;
   final VoidCallback onRefresh;
   final VoidCallback onObserveHome;
@@ -1505,6 +1730,10 @@ class _MoltbookConnectionCard extends StatelessWidget {
   final void Function(String postId, String selectionKind)
   onObserveConversation;
   final VoidCallback onPlanEngagement;
+  final VoidCallback onProposeReply;
+  final VoidCallback onPrepareReply;
+  final VoidCallback onReviewReplyPublication;
+  final VoidCallback onReplyChanged;
   final VoidCallback onPlanHeartbeat;
   final VoidCallback onDisconnect;
 
@@ -1516,14 +1745,22 @@ class _MoltbookConnectionCard extends StatelessWidget {
     required this.feedObservation,
     required this.conversationObservation,
     required this.engagementPlan,
+    required this.replyBodyController,
+    required this.replyProposal,
+    required this.replyDraftPreview,
     required this.heartbeatPlan,
     required this.feedCheckpoint,
+    required this.replyBusy,
     required this.onConnect,
     required this.onRefresh,
     required this.onObserveHome,
     required this.onObserveFeed,
     required this.onObserveConversation,
     required this.onPlanEngagement,
+    required this.onProposeReply,
+    required this.onPrepareReply,
+    required this.onReviewReplyPublication,
+    required this.onReplyChanged,
     required this.onPlanHeartbeat,
     required this.onDisconnect,
   });
@@ -1741,6 +1978,115 @@ class _MoltbookConnectionCard extends StatelessWidget {
                   'Proposal only · no AI text · no external effect',
                   style: TextStyle(color: Colors.orange, height: 1.35),
                 ),
+                if (const <String>{
+                  'reply_draft',
+                  'comment_draft',
+                }.contains(engagementPlan!.actionClass)) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF16221D),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFF315A48)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Assisted reply',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        const Text(
+                          'AI proposes. You edit. WASM binds the exact text to this conversation. Publication still requires explicit approval.',
+                          style: TextStyle(
+                            color: Color(0xFF9CA7B5),
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.tonalIcon(
+                          onPressed: replyBusy ? null : onProposeReply,
+                          icon:
+                              replyBusy
+                                  ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                  : const Icon(Icons.auto_awesome_outlined),
+                          label: const Text('Ask Gemini for reply'),
+                        ),
+                        if (replyProposal != null) ...[
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: replyBodyController,
+                            minLines: 4,
+                            maxLines: 10,
+                            maxLength: 2000,
+                            onChanged: (_) => onReplyChanged(),
+                            decoration: const InputDecoration(
+                              labelText: 'Exact public reply',
+                              helperText:
+                                  'Review every word. This field is still local.',
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Grounded by ${replyProposal!.providerLabel} '
+                            '(${replyProposal!.model})',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          ...replyProposal!.groundingPoints.map(
+                            (point) => Text(
+                              '• $point',
+                              style: const TextStyle(
+                                color: Color(0xFF9CA7B5),
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          FilledButton.icon(
+                            onPressed: replyBusy ? null : onPrepareReply,
+                            icon: const Icon(Icons.shield_outlined),
+                            label: const Text('Prepare WASM reply'),
+                          ),
+                        ],
+                        if (replyDraftPreview != null) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Bound draft ${replyDraftPreview!.draftHashHex.substring(0, 12)}…',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Target ${replyDraftPreview!.targetCommentId ?? "post root"} · exact reviewed text preserved',
+                            style: const TextStyle(
+                              color: Color(0xFF9CA7B5),
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          FilledButton.icon(
+                            onPressed:
+                                replyBusy ? null : onReviewReplyPublication,
+                            icon: const Icon(Icons.rate_review_outlined),
+                            label: const Text('Review & queue reply'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ],
             if (feedObservation != null) ...[

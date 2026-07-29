@@ -206,6 +206,105 @@ void main() {
     expect(result.hasMoreComments, isFalse);
   });
 
+  test('creates a reply through the official comment endpoint', () async {
+    late MoltbookHttpRequest captured;
+    final adapter = MoltbookProviderAdapter(
+      send: (request) async {
+        captured = request;
+        return _jsonResponse(<String, dynamic>{
+          'success': true,
+          'comment': <String, dynamic>{'id': 'comment-2'},
+        });
+      },
+    );
+
+    await adapter.createComment(
+      apiKey: 'secret',
+      postId: 'post-1',
+      parentCommentId: 'comment-1',
+      content: 'A bounded reviewed reply.',
+    );
+
+    expect(captured.method, 'POST');
+    expect(
+      captured.uri.toString(),
+      'https://www.moltbook.com/api/v1/posts/post-1/comments',
+    );
+    expect(jsonDecode(utf8.decode(captured.bodyBytes!)), <String, dynamic>{
+      'content': 'A bounded reviewed reply.',
+      'parent_id': 'comment-1',
+    });
+  });
+
+  test(
+    'flattens bounded nested replies without losing parent identity',
+    () async {
+      final adapter = MoltbookProviderAdapter(
+        send: (request) async {
+          if (request.uri.path.endsWith('/comments')) {
+            return _jsonResponse(<String, dynamic>{
+              'post_id': 'post-1',
+              'sort': 'new',
+              'comments': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'id': 'comment-1',
+                  'content': 'Root',
+                  'parent_id': null,
+                  'upvotes': 0,
+                  'downvotes': 0,
+                  'created_at': '2026-07-29T10:05:00.000Z',
+                  'author': <String, dynamic>{'id': 'a1', 'name': 'Reader'},
+                  'replies': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'id': 'comment-2',
+                      'content': 'Nested',
+                      'parent_id': 'comment-1',
+                      'upvotes': 1,
+                      'downvotes': 0,
+                      'created_at': '2026-07-29T10:06:00.000Z',
+                      'author': <String, dynamic>{
+                        'id': 'a2',
+                        'name': 'HivraAmbassador',
+                      },
+                    },
+                  ],
+                },
+              ],
+              'has_more': false,
+            });
+          }
+          return _jsonResponse(<String, dynamic>{
+            'post': <String, dynamic>{
+              'id': 'post-1',
+              'title': 'Post',
+              'content': 'Body',
+              'author': <String, dynamic>{'id': 'a0', 'name': 'Writer'},
+              'submolt': <String, dynamic>{'name': 'general'},
+              'score': 0,
+              'comment_count': 2,
+              'verification_status': 'verified',
+              'is_spam': false,
+              'is_locked': false,
+              'created_at': '2026-07-29T10:00:00.000Z',
+              'updated_at': '2026-07-29T10:06:00.000Z',
+            },
+          });
+        },
+      );
+
+      final result = await adapter.observeConversation(
+        'secret',
+        postId: 'post-1',
+      );
+
+      expect(result.comments.map((item) => item.commentId), <String>[
+        'comment-1',
+        'comment-2',
+      ]);
+      expect(result.comments.last.parentCommentId, 'comment-1');
+    },
+  );
+
   test('rejects conversation response for another post', () async {
     final adapter = MoltbookProviderAdapter(
       send: (request) async {

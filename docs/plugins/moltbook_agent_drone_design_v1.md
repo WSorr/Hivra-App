@@ -231,13 +231,15 @@ Current methods:
 - `plan_moltbook_engagement`: `solo`, deterministic proposal from one bounded
   host-normalized post conversation; no generated reply text and no network
   effect.
+- `prepare_moltbook_reply`: `solo`, deterministic binding of exact
+  human-reviewed reply prose to one engagement plan and one post/comment
+  target; no network effect.
 
 Future remote contract methods are not implemented yet:
 
 Proposed methods:
 
 - `prepare_moltbook_post`: `solo`, pure draft decision;
-- `prepare_moltbook_reply`: `solo`, pure draft decision;
 - `publish_moltbook_content`: `solo`, explicit external write effect;
 - `sync_moltbook_receipts`: `solo`, remote read and local projection update;
 - `revoke_moltbook_binding`: `solo`, explicit credential/binding teardown.
@@ -443,7 +445,7 @@ Exit gate:
 ### Phase 3 - Ambassador Workspace
 
 Status: local profile/policy, read-only Connection and conversation review,
-deterministic WASM Draft/Engagement Preview, and durable
+deterministic WASM Draft/Engagement/Reply Preview, and durable
 assisted-publication surfaces implemented.
 
 The plugin card opens a dedicated workspace. The generic Plugins screen shows
@@ -465,6 +467,13 @@ history, deduplicated by canonical hash, with status `awaiting_approval`.
 Deleting it removes only the local draft. It neither reads the credential nor
 creates a remote effect. The screen retains only non-secret account metadata
 and does not imply remote write execution.
+
+For assisted replies, the selected bounded public conversation and deterministic
+engagement plan may be sent to the configured inference provider only after a
+separate user confirmation. Remote prose remains explicitly untrusted. The AI
+returns advisory reply text plus bounded grounding points in memory. The user
+may edit the proposal; `prepare_moltbook_reply` then binds the exact reviewed
+text to the target and plan hash. Any later edit invalidates that bound draft.
 
 The complete workspace will contain:
 
@@ -502,7 +511,15 @@ publicly visible verified post. Android manual smoke remains.
   approved title and content inside the provider's bounded recent-post window.
   Existing schema v1 effects retain marker-based reconciliation for migration.
 - Completed: require explicit approval and a separate explicit publish action
-  for every post.
+  for every post or reply.
+- Completed: deliver root comments and nested replies through the official
+  `/api/v1/posts/{post_id}/comments` endpoint using the same provider adapter
+  and durable external-effect lifecycle as posts.
+- Completed: reconcile comments by exact post target, parent comment target,
+  account name, and approved content. Absence from the bounded conversation
+  window remains unresolved and never triggers blind resubmission.
+- Completed: verification receipts require provider `content_type=comment` for
+  reply effects and `content_type=post` for post effects.
 - Completed: bind credential lookup to the originating Capsule, plugin,
   provider, and external account rather than the currently selected Capsule.
 - Completed: reconcile a provider receipt before showing success.
@@ -522,6 +539,13 @@ publicly visible verified post. Android manual smoke remains.
   challenge as unresolved, accepted one explicit answer, then recorded success
   only after the exact post id, approved text, local operation identity, and
   `verification_status=verified` were observed.
+- Completed manual macOS Release evidence on 2026-07-29 for Assisted Reply:
+  bounded conversation observation selected comment
+  `ac9104c9-7e51-492c-9e06-b22602dc682c`; Gemini produced advisory prose;
+  WASM bound the exact reviewed text deterministically; repeated approval
+  produced one stable operation; Moltbook returned a verification challenge;
+  success was recorded only after a `comment` receipt bound provider comment
+  `b3c2d72c-c0ed-48b4-9aef-b5a8bbb05fd3`.
 - Completed: the Ambassador surface presents one prominent next action for the
   Draft, Review, Approve, Publish, and Verify sequence; provider-neutral
   operation details remain available as diagnostics rather than primary

@@ -10,7 +10,9 @@ import 'moltbook_connection_service.dart';
 import 'moltbook_provider_adapter.dart';
 
 class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
-  static const String effectKind = 'moltbook.post.create';
+  static const String postEffectKind = 'moltbook.post.create';
+  static const String commentEffectKind = 'moltbook.comment.create';
+  static const String effectKind = postEffectKind;
 
   final CapsuleScopedSecretVault _secretVault;
   final MoltbookProviderAdapter _provider;
@@ -31,31 +33,39 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     try {
       final payload = _validateRequest(request);
       final apiKey = await _loadCredential(request);
-      final response = await _provider.createPost(
-        apiKey: apiKey,
-        submoltName: payload.submoltName,
-        title: payload.title,
-        content: payload.content,
-      );
-      final postId = _postId(response);
+      final response = switch (payload) {
+        _MoltbookPostPayload post => await _provider.createPost(
+          apiKey: apiKey,
+          submoltName: post.submoltName,
+          title: post.title,
+          content: post.content,
+        ),
+        _MoltbookCommentPayload comment => await _provider.createComment(
+          apiKey: apiKey,
+          postId: comment.postId,
+          parentCommentId: comment.parentCommentId,
+          content: comment.content,
+        ),
+      };
+      final contentId = _contentId(response, payload);
       if (_verificationRequired(response)) {
         return ExternalEffectAdapterResult(
           status: ExternalEffectAdapterStatus.unresolved,
           errorCode: 'verification_required',
           errorMessage:
               'Moltbook created hidden content that requires verification',
-          requiredAction: _requiredAction(response, postId),
+          requiredAction: _requiredAction(response, contentId),
         );
       }
-      if (postId == null) {
+      if (contentId == null) {
         return const ExternalEffectAdapterResult(
           status: ExternalEffectAdapterStatus.unresolved,
           errorCode: 'receipt_missing',
           errorMessage:
-              'Moltbook accepted the request without a verifiable post id',
+              'Moltbook accepted the request without a verifiable content id',
         );
       }
-      return _success(request, postId);
+      return _success(request, contentId);
     } on MoltbookProviderException catch (error) {
       return _providerFailure(error);
     } on FormatException catch (error) {
@@ -80,42 +90,18 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     try {
       final payload = _validateRequest(request);
       final apiKey = await _loadCredential(request);
-      final profile = await _provider.observeProfile(
-        apiKey: apiKey,
-        accountName: payload.accountName,
-      );
-      final recentPosts = profile['recentPosts'];
-      if (recentPosts is! List) {
-        return const ExternalEffectAdapterResult(
-          status: ExternalEffectAdapterStatus.unresolved,
-          errorCode: 'reconciliation_window_unavailable',
-          errorMessage:
-              'Moltbook profile did not expose a recent-post reconciliation window',
-        );
-      }
-      for (final rawPost in recentPosts) {
-        if (rawPost is! Map) continue;
-        final post = Map<String, dynamic>.from(rawPost);
-        final content = post['content']?.toString() ?? '';
-        final title = post['title']?.toString() ?? '';
-        final matches =
-            payload.schemaVersion == 1
-                ? content.contains(payload.operationMarker) &&
-                    title == payload.title
-                : content == payload.content && title == payload.title;
-        if (matches) {
-          final postId = _stringId(post['id'] ?? post['post_id']);
-          if (postId != null) return _success(request, postId);
-        }
-      }
-
-      // Absence in a bounded remote window does not prove that POST failed.
-      return const ExternalEffectAdapterResult(
-        status: ExternalEffectAdapterStatus.unresolved,
-        errorCode: 'receipt_not_observed',
-        errorMessage:
-            'No matching receipt is visible yet; automatic resubmission is blocked',
-      );
+      return switch (payload) {
+        _MoltbookPostPayload post => await _reconcilePost(
+          request,
+          apiKey,
+          post,
+        ),
+        _MoltbookCommentPayload comment => await _reconcileComment(
+          request,
+          apiKey,
+          comment,
+        ),
+      };
     } on MoltbookProviderException catch (error) {
       return _providerFailure(error);
     } on FormatException catch (error) {
@@ -140,7 +126,7 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     String response,
   ) async {
     try {
-      _validateRequest(request);
+      final payload = _validateRequest(request);
       action.validate();
       if (action.kind != 'numeric_challenge') {
         throw const FormatException('Unsupported Moltbook required action');
@@ -163,7 +149,7 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
       );
       final contentId = _stringId(verification['content_id']);
       if (verification['success'] != true ||
-          verification['content_type'] != 'post' ||
+          verification['content_type'] != payload.providerContentType ||
           contentId != action.providerReferenceId) {
         return ExternalEffectAdapterResult(
           status: ExternalEffectAdapterStatus.unresolved,
@@ -214,20 +200,92 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     return value;
   }
 
-  _MoltbookPostPayload _validateRequest(ExternalEffectAdapterRequest request) {
+  _MoltbookPayload _validateRequest(ExternalEffectAdapterRequest request) {
     request.validate();
     if (request.providerId != MoltbookConnectionService.providerId ||
-        request.pluginId != moltbookAmbassadorPluginId ||
-        request.effectKind != effectKind) {
+        request.pluginId != moltbookAmbassadorPluginId) {
       throw const FormatException('Unsupported Moltbook external effect');
     }
     final decoded = jsonDecode(request.canonicalPayloadJson);
     if (decoded is! Map) {
       throw const FormatException('Moltbook effect payload must be an object');
     }
-    return _MoltbookPostPayload.fromJson(
-      Map<String, dynamic>.from(decoded),
-      operationId: request.operationId,
+    final json = Map<String, dynamic>.from(decoded);
+    return switch (request.effectKind) {
+      postEffectKind => _MoltbookPostPayload.fromJson(
+        json,
+        operationId: request.operationId,
+      ),
+      commentEffectKind => _MoltbookCommentPayload.fromJson(
+        json,
+        operationId: request.operationId,
+      ),
+      _ => throw const FormatException('Unsupported Moltbook effect kind'),
+    };
+  }
+
+  Future<ExternalEffectAdapterResult> _reconcilePost(
+    ExternalEffectAdapterRequest request,
+    String apiKey,
+    _MoltbookPostPayload payload,
+  ) async {
+    final profile = await _provider.observeProfile(
+      apiKey: apiKey,
+      accountName: payload.accountName,
+    );
+    final recentPosts = profile['recentPosts'];
+    if (recentPosts is! List) {
+      return const ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.unresolved,
+        errorCode: 'reconciliation_window_unavailable',
+        errorMessage:
+            'Moltbook profile did not expose a recent-post reconciliation window',
+      );
+    }
+    for (final rawPost in recentPosts) {
+      if (rawPost is! Map) continue;
+      final post = Map<String, dynamic>.from(rawPost);
+      final content = post['content']?.toString() ?? '';
+      final title = post['title']?.toString() ?? '';
+      final matches =
+          payload.schemaVersion == 1
+              ? content.contains(payload.operationMarker) &&
+                  title == payload.title
+              : content == payload.content && title == payload.title;
+      if (matches) {
+        final postId = _stringId(post['id'] ?? post['post_id']);
+        if (postId != null) return _success(request, postId);
+      }
+    }
+    return _receiptNotObserved();
+  }
+
+  Future<ExternalEffectAdapterResult> _reconcileComment(
+    ExternalEffectAdapterRequest request,
+    String apiKey,
+    _MoltbookCommentPayload payload,
+  ) async {
+    final conversation = await _provider.observeConversation(
+      apiKey,
+      postId: payload.postId,
+    );
+    for (final comment in conversation.comments) {
+      if (comment.authorName == payload.accountName &&
+          comment.parentCommentId == payload.parentCommentId &&
+          comment.content == payload.content) {
+        return _success(request, comment.commentId);
+      }
+    }
+    return _receiptNotObserved();
+  }
+
+  static ExternalEffectAdapterResult _receiptNotObserved() {
+    // Absence in a bounded remote window does not prove that POST failed.
+    return const ExternalEffectAdapterResult(
+      status: ExternalEffectAdapterStatus.unresolved,
+      errorCode: 'receipt_not_observed',
+      errorMessage:
+          'No matching receipt is visible yet; automatic resubmission is blocked',
     );
   }
 
@@ -271,12 +329,18 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     );
   }
 
-  static String? _postId(Map<String, dynamic> response) {
-    final raw = response['post'] ?? response['data'];
+  static String? _contentId(
+    Map<String, dynamic> response,
+    _MoltbookPayload payload,
+  ) {
+    final raw =
+        response[payload.providerContentType] ??
+        response['data'] ??
+        response['content'];
     if (raw is Map) {
-      return _stringId(raw['id'] ?? raw['post_id']);
+      return _stringId(raw['id'] ?? raw['${payload.providerContentType}_id']);
     }
-    return _stringId(response['post_id']);
+    return _stringId(response['${payload.providerContentType}_id']);
   }
 
   static bool _verificationRequired(Map<String, dynamic> response) {
@@ -284,24 +348,26 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         response['verification'] is Map) {
       return true;
     }
-    final rawPost = response['post'] ?? response['data'];
-    if (rawPost is! Map) return false;
-    final post = Map<String, dynamic>.from(rawPost);
+    final rawContent =
+        response['post'] ?? response['comment'] ?? response['data'];
+    if (rawContent is! Map) return false;
+    final content = Map<String, dynamic>.from(rawContent);
     final verificationStatus =
-        post['verification_status']?.toString().trim().toLowerCase();
-    return post['verification_required'] == true ||
-        post['verification'] is Map ||
+        content['verification_status']?.toString().trim().toLowerCase();
+    return content['verification_required'] == true ||
+        content['verification'] is Map ||
         verificationStatus == 'pending';
   }
 
   static ExternalEffectRequiredAction? _requiredAction(
     Map<String, dynamic> response,
-    String? postId,
+    String? contentId,
   ) {
-    final rawPost = response['post'] ?? response['data'];
-    if (postId == null || rawPost is! Map) return null;
-    final post = Map<String, dynamic>.from(rawPost);
-    final rawVerification = post['verification'];
+    final rawContent =
+        response['post'] ?? response['comment'] ?? response['data'];
+    if (contentId == null || rawContent is! Map) return null;
+    final content = Map<String, dynamic>.from(rawContent);
+    final rawVerification = content['verification'];
     if (rawVerification is! Map) return null;
     final verification = Map<String, dynamic>.from(rawVerification);
     final code = verification['verification_code']?.toString().trim() ?? '';
@@ -311,7 +377,7 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     try {
       final action = ExternalEffectRequiredAction(
         kind: 'numeric_challenge',
-        providerReferenceId: postId,
+        providerReferenceId: contentId,
         actionToken: code,
         prompt: prompt,
         expiresAtUtc: DateTime.parse(expiresAt).toUtc().toIso8601String(),
@@ -342,13 +408,24 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
   }
 }
 
-class _MoltbookPostPayload {
+sealed class _MoltbookPayload {
+  String get accountName;
+  String get content;
+  String get providerContentType;
+}
+
+class _MoltbookPostPayload implements _MoltbookPayload {
   final int schemaVersion;
+  @override
   final String accountName;
   final String submoltName;
   final String title;
+  @override
   final String content;
   final String operationMarker;
+
+  @override
+  String get providerContentType => 'post';
 
   const _MoltbookPostPayload({
     required this.schemaVersion,
@@ -407,5 +484,65 @@ class _MoltbookPostPayload {
       throw FormatException('Invalid Moltbook post field: $field');
     }
     return value;
+  }
+}
+
+class _MoltbookCommentPayload implements _MoltbookPayload {
+  @override
+  final String accountName;
+  final String postId;
+  final String? parentCommentId;
+  @override
+  final String content;
+  final String operationMarker;
+
+  const _MoltbookCommentPayload({
+    required this.accountName,
+    required this.postId,
+    required this.parentCommentId,
+    required this.content,
+    required this.operationMarker,
+  });
+
+  @override
+  String get providerContentType => 'comment';
+
+  factory _MoltbookCommentPayload.fromJson(
+    Map<String, dynamic> json, {
+    required String operationId,
+  }) {
+    if (json['schema_version'] != 1) {
+      throw const FormatException(
+        'Unsupported Moltbook comment payload schema',
+      );
+    }
+    final rawParent = json['parent_comment_id'];
+    if (rawParent != null && rawParent is! String) {
+      throw const FormatException('Invalid Moltbook comment parent');
+    }
+    final payload = _MoltbookCommentPayload(
+      accountName: _MoltbookPostPayload._required(json, 'account_name', 128),
+      postId: _MoltbookPostPayload._required(json, 'post_id', 256),
+      parentCommentId:
+          rawParent == null || rawParent.trim().isEmpty
+              ? null
+              : rawParent.trim(),
+      content: _MoltbookPostPayload._required(json, 'content', 2000),
+      operationMarker: _MoltbookPostPayload._required(
+        json,
+        'operation_marker',
+        256,
+      ),
+    );
+    final idPattern = RegExp(r'^[A-Za-z0-9-]{1,256}$');
+    if (!idPattern.hasMatch(payload.postId) ||
+        (payload.parentCommentId != null &&
+            !idPattern.hasMatch(payload.parentCommentId!)) ||
+        payload.operationMarker !=
+            MoltbookPublicationContract.operationMarker(operationId) ||
+        payload.content.contains(payload.operationMarker)) {
+      throw const FormatException('Invalid Moltbook comment effect payload');
+    }
+    return payload;
   }
 }

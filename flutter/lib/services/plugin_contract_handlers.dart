@@ -308,6 +308,7 @@ class MoltbookAmbassadorPluginContractHandler
     prepareMoltbookDraftMethod,
     planMoltbookHeartbeatMethod,
     planMoltbookEngagementMethod,
+    prepareMoltbookReplyMethod,
   };
 
   @override
@@ -317,6 +318,7 @@ class MoltbookAmbassadorPluginContractHandler
   Set<String> requiredCapabilities(String method) => switch (method) {
     planMoltbookHeartbeatMethod => const <String>{'content.feed.plan'},
     planMoltbookEngagementMethod => const <String>{'content.engagement.plan'},
+    prepareMoltbookReplyMethod => const <String>{'content.reply.prepare'},
     _ => const <String>{'content.draft.prepare'},
   };
 
@@ -397,6 +399,31 @@ class MoltbookAmbassadorPluginContractHandler
         ...plan,
         'plan_hash_hex': planHashHex,
         'canonical_plan_json': canonicalJson,
+      });
+    }
+    if (request.method == prepareMoltbookReplyMethod) {
+      final draftHashHex = semantic?['draft_hash_hex']?.toString() ?? '';
+      final reply = _validatedCanonicalObject(
+        canonicalJson: canonicalJson,
+        expectedHashHex: draftHashHex,
+        expectedPluginId: pluginId,
+        expectedContractKind: 'moltbook_ambassador_reply_draft',
+        expectedPeerHex: null,
+      );
+      if (reply == null ||
+          reply['approval_required'] != true ||
+          reply['target_post_id'] is! String ||
+          reply['body'] is! String ||
+          reply['safety_flags'] is! List) {
+        return const PluginHostContractResult.rejected(
+          code: 'runtime_result_invalid',
+          message: 'WASM ambassador reply integrity or approval gate failed',
+        );
+      }
+      return PluginHostContractResult.executed(<String, dynamic>{
+        ...reply,
+        'draft_hash_hex': draftHashHex,
+        'canonical_draft_json': canonicalJson,
       });
     }
     final draftHashHex = semantic?['draft_hash_hex']?.toString() ?? '';

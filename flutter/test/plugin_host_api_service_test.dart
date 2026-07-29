@@ -351,6 +351,8 @@ PluginHostApiService _service({
                     'content.feed.plan',
                   if (pluginId == moltbookAmbassadorPluginId)
                     'content.engagement.plan',
+                  if (pluginId == moltbookAmbassadorPluginId)
+                    'content.reply.prepare',
                   if (pluginId == bingxFuturesTradingPluginId) ...<String>[
                     'consensus_guard.read',
                     'exchange.read.bingx.market',

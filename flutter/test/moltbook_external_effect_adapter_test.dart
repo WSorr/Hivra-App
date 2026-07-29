@@ -58,6 +58,32 @@ void main() {
     expect(body['content'], isNot(contains('hivra-effect:')));
   });
 
+  test('publishes exact reviewed reply through comment effect', () async {
+    late MoltbookHttpRequest captured;
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send: (request) async {
+          captured = request;
+          return _jsonResponse(<String, dynamic>{
+            'success': true,
+            'comment': <String, dynamic>{'id': 'comment-2'},
+          });
+        },
+      ),
+    );
+
+    final result = await adapter.deliver(_commentRequest());
+
+    expect(result.status, ExternalEffectAdapterStatus.succeeded);
+    expect(result.receipt?.providerReceiptId, 'comment-2');
+    expect(captured.uri.path, '/api/v1/posts/post-1/comments');
+    expect(jsonDecode(utf8.decode(captured.bodyBytes!)), <String, dynamic>{
+      'content': 'A bounded reviewed reply.',
+      'parent_id': 'comment-1',
+    });
+  });
+
   test(
     'keeps legacy operation markers readable for existing effects',
     () async {
@@ -282,6 +308,58 @@ void main() {
     expect(result.receipt?.providerReceiptId, 'legacy-matched-post');
   });
 
+  test('reconciles reply only by exact target, author, and content', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send: (request) async {
+          if (request.uri.path.endsWith('/comments')) {
+            return _jsonResponse(<String, dynamic>{
+              'post_id': 'post-1',
+              'sort': 'new',
+              'comments': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'id': 'comment-2',
+                  'content': 'A bounded reviewed reply.',
+                  'parent_id': 'comment-1',
+                  'upvotes': 0,
+                  'downvotes': 0,
+                  'created_at': '2026-07-29T10:05:00.000Z',
+                  'author': <String, dynamic>{
+                    'id': 'agent-1',
+                    'name': 'HivraAgent',
+                  },
+                },
+              ],
+              'has_more': false,
+            });
+          }
+          return _jsonResponse(<String, dynamic>{
+            'post': <String, dynamic>{
+              'id': 'post-1',
+              'title': 'Post',
+              'content': 'Body',
+              'author': <String, dynamic>{'id': 'writer', 'name': 'Writer'},
+              'submolt': <String, dynamic>{'name': 'general'},
+              'score': 0,
+              'comment_count': 1,
+              'verification_status': 'verified',
+              'is_spam': false,
+              'is_locked': false,
+              'created_at': '2026-07-29T10:00:00.000Z',
+              'updated_at': '2026-07-29T10:05:00.000Z',
+            },
+          });
+        },
+      ),
+    );
+
+    final result = await adapter.reconcile(_commentRequest());
+
+    expect(result.status, ExternalEffectAdapterStatus.succeeded);
+    expect(result.receipt?.providerReceiptId, 'comment-2');
+  });
+
   test('credential lookup is bound to originating capsule scope', () async {
     final request = _request(owner: _otherOwner);
     var networkCalls = 0;
@@ -319,6 +397,29 @@ ExternalEffectAdapterRequest _request({String owner = _owner}) {
     providerId: 'moltbook',
     accountBindingId: 'account-1',
     effectKind: MoltbookExternalEffectAdapter.effectKind,
+    canonicalPayloadJson: payload,
+    payloadHashHex:
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  );
+}
+
+ExternalEffectAdapterRequest _commentRequest() {
+  const payload =
+      '{"schema_version":1,"account_name":"HivraAgent",'
+      '"post_id":"post-1","parent_comment_id":"comment-1",'
+      '"content":"A bounded reviewed reply.",'
+      '"operation_marker":"hivra-effect:comment-1",'
+      '"source_draft_hash_hex":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+      '"engagement_plan_hash_hex":"cccccccccccccccccccccccccccccccc'
+      'cccccccccccccccccccccccccccccccc"}';
+  return ExternalEffectAdapterRequest(
+    ownerCapsuleHex: _owner,
+    operationId: 'comment-1',
+    pluginId: moltbookAmbassadorPluginId,
+    providerId: 'moltbook',
+    accountBindingId: 'account-1',
+    effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
     canonicalPayloadJson: payload,
     payloadHashHex:
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',

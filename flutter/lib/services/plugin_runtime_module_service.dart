@@ -337,6 +337,105 @@ class PluginRuntimeModule {
     return plan;
   }
 
+  Future<MoltbookReplyProposal> proposeMoltbookReply({
+    required MoltbookConversationObservation conversation,
+    required MoltbookEngagementPlan engagementPlan,
+  }) async {
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled) {
+      throw StateError('Moltbook Ambassador is disabled');
+    }
+    final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
+    if (ownerHex == null || ownerHex.length != 64) {
+      throw StateError('Active capsule identity is unavailable');
+    }
+    await uiLog.log(
+      'moltbook.reply.propose',
+      'start post=${engagementPlan.targetPostId} '
+          'comment=${engagementPlan.targetCommentId ?? "root"}',
+    );
+    try {
+      final proposal = await moltbookPublicBulletinAi.proposeReply(
+        conversation: conversation,
+        engagementPlan: engagementPlan,
+        personaSummary: configuration.personaSummary,
+      );
+      if (!_isStillOwnedBy(ownerHex)) {
+        throw StateError(
+          'Reply proposal discarded because the active capsule changed',
+        );
+      }
+      await uiLog.log(
+        'moltbook.reply.propose',
+        'success provider=${proposal.providerLabel} '
+            'model=${_safeLogValue(proposal.model)} '
+            'points=${proposal.groundingPoints.length}',
+      );
+      return proposal;
+    } catch (error) {
+      await uiLog.log('moltbook.reply.propose', 'error ${_safeError(error)}');
+      rethrow;
+    }
+  }
+
+  Future<MoltbookReplyDraftPreview> prepareMoltbookReply({
+    required MoltbookEngagementPlan engagementPlan,
+    required String reviewedBody,
+  }) async {
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled) {
+      throw StateError('Moltbook Ambassador is disabled');
+    }
+    if (!const <String>{
+      'reply_draft',
+      'comment_draft',
+    }.contains(engagementPlan.actionClass)) {
+      throw StateError('Engagement plan does not allow a reply draft');
+    }
+    final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
+    if (ownerHex == null || ownerHex.length != 64) {
+      throw StateError('Active capsule identity is unavailable');
+    }
+    await uiLog.log(
+      'moltbook.reply.prepare',
+      'start post=${engagementPlan.targetPostId} '
+          'plan=${engagementPlan.planHashHex.substring(0, 12)}..',
+    );
+    final response = await pluginHostApi.executeWithRuntimeHook(
+      PluginHostApiRequest(
+        schemaVersion: pluginHostApiSchemaVersion,
+        pluginId: moltbookAmbassadorPluginId,
+        method: prepareMoltbookReplyMethod,
+        args: <String, dynamic>{
+          'schema_version': 1,
+          'plugin_id': moltbookAmbassadorPluginId,
+          'host_method': prepareMoltbookReplyMethod,
+          'target_post_id': engagementPlan.targetPostId,
+          'target_comment_id': engagementPlan.targetCommentId,
+          'engagement_plan_hash_hex': engagementPlan.planHashHex,
+          'reviewed_body': reviewedBody.trim(),
+        },
+      ),
+    );
+    if (!_isStillOwnedBy(ownerHex)) {
+      throw StateError(
+        'Reply draft discarded because the active capsule changed',
+      );
+    }
+    final result = response.result;
+    if (response.status != PluginHostApiStatus.executed || result == null) {
+      throw StateError(
+        response.errorMessage ?? 'Moltbook reply preparation was rejected',
+      );
+    }
+    final preview = MoltbookReplyDraftPreview.fromHostResult(result);
+    await uiLog.log(
+      'moltbook.reply.prepare',
+      'success hash=${preview.draftHashHex.substring(0, 12)}..',
+    );
+    return preview;
+  }
+
   Future<MoltbookHeartbeatPlan> planMoltbookHeartbeat() async {
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) {
@@ -467,6 +566,24 @@ class PluginRuntimeModule {
     );
     await uiLog.log(
       'moltbook.publication.prepare',
+      'operation=${operation.operationId} '
+          'payload=${operation.payloadHashHex.substring(0, 12)}..',
+    );
+    return operation;
+  }
+
+  Future<ExternalEffectOperation> prepareMoltbookReplyPublication({
+    required MoltbookReplyDraftPreview draft,
+  }) async {
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled ||
+        configuration.approvalMode !=
+            MoltbookAmbassadorConfiguration.approvalAssisted) {
+      throw StateError('Assisted Moltbook publication is not enabled');
+    }
+    final operation = await moltbookPublications.prepareReply(draft: draft);
+    await uiLog.log(
+      'moltbook.reply.publication.prepare',
       'operation=${operation.operationId} '
           'payload=${operation.payloadHashHex.substring(0, 12)}..',
     );

@@ -1473,6 +1473,19 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - completed deterministic engagement proposal: WASM may propose review of
       a reply, comment, or vote candidate, but generates no reply text and has
       no network-effect capability.
+    - completed Assisted Reply pipeline: one bounded public conversation and
+      deterministic engagement plan may be explicitly disclosed to the
+      configured inference provider as untrusted context; advisory prose
+      remains editable and in memory until WASM binds the exact reviewed text
+      to its post/comment target and plan hash.
+    - completed durable comment effect: root comments and nested replies use
+      the same approval, queue, delivery, reconciliation, verification, and
+      receipt lifecycle as posts. Exact target, author, and content matching
+      prevents blind retry after an ambiguous provider outcome.
+    - completed macOS Release smoke on 2026-07-29: repeated review produced one
+      stable comment operation, provider verification remained unresolved
+      until explicit challenge resolution, and success bound exact comment
+      receipt `b3c2d72c-c0ed-48b4-9aef-b5a8bbb05fd3`.
     - completed optional Public Bulletin communication proposal: the selected
       inference provider receives only explicitly confirmed public source
       notes, public topic, and persona; a strict bounded title, natural body,
@@ -1509,9 +1522,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       Public Bulletin contract without changing the 1.x Core protocol.
   - Status: Phase 0 draft prototype, Phase 1 host lifecycle, Phase 2
     account/home/feed/conversation Observe with secure binding, Phase 3
-    deterministic WASM Draft and Engagement Preview, and the Phase 4 Assisted
-    publication host path are implemented; macOS verification smoke passes
-    and Android smoke remains before Discover publication.
+    deterministic WASM Draft, Engagement, and Reply Preview, and the Phase 4
+    Assisted post/reply publication host paths are implemented. Automated
+    adapter and contract tests and macOS Release smoke pass; Android manual
+    smoke for the new reply path remains required before catalog publication.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:
