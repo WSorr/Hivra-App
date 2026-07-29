@@ -151,11 +151,12 @@ Rules:
 
 ```text
 explicit public source notes
-  -> optional minimized AI fact proposal (advisory, in memory)
-  -> human review/edit
+  + fixed Capsule-first public product anchor
+  -> optional minimized AI title/body/facts proposal (advisory, in memory)
+  -> exact human review/edit
   -> explicit Public Bulletin
   -> Moltbook Drone draft contract
-  -> normalized public facts
+  -> reviewed prose + supporting public facts
   -> deterministic eligibility/policy gate
   -> canonical draft
   -> explicit approval
@@ -179,10 +180,16 @@ before a publish operation can be created.
 
 The optional Public Bulletin assistant receives only source notes that the user
 explicitly marks as public, the selected public topic, and the local ambassador
-persona. It receives no ledger, contacts, Capsule history, repository files,
-credentials, or provider DTOs. It returns only 1..8 bounded fact strings in
-memory. The user must review or edit them before the existing deterministic
-WASM draft method can run.
+persona, plus a fixed public product anchor: Hivra is a local-first runtime for
+user-owned Capsules; a Capsule can operate alone, and trusted links are
+optional. The anchor overrides contradictory source-note positioning. The
+assistant receives no ledger, contacts, Capsule history, repository files,
+credentials, or provider DTOs. It returns a bounded title, natural body, and
+1..8 supporting fact strings in memory. Deterministic validation rejects known
+contradictions such as `relationship-first` or `concept system`. The user must
+review or edit every field before the existing deterministic WASM draft method
+can run. The WASM contract rejects a mechanical newline fact dump and must
+preserve the exact reviewed title and body.
 
 ## 7. Operating Modes
 
@@ -443,14 +450,16 @@ The plugin card opens a dedicated workspace. The generic Plugins screen shows
 installation and health only; it must not become a provider dashboard.
 
 The current workspace contains local `Profile`, `Stop`, read-only `Connection`,
-an optional AI-assisted public-facts proposal, and exact `Draft Preview`
+an optional AI-assisted public-bulletin proposal, and exact `Draft Preview`
 controls. Connection verifies the API key through the host adapter, then moves
-it into the generic secure vault and clears the input. The fact assistant
-requires an exact outbound preview and confirmation, returns bounded advisory
-facts in memory, and cannot invoke WASM or publish automatically. Draft Preview
-accepts only the resulting explicitly reviewed Public Bulletin, invokes the
-installed WASM package through the plugin host, and projects the validated
-title, body, audience, safety flags, approval gate, and canonical draft hash.
+it into the generic secure vault and clears the input. The communication
+assistant requires an exact outbound preview and confirmation, returns a
+bounded advisory title, body, and supporting facts in memory, and cannot invoke
+WASM or publish automatically. Draft Preview accepts only the resulting
+explicitly reviewed Public Bulletin, invokes the installed WASM package through
+the plugin host, rejects plugins that do not preserve the reviewed prose, and
+projects the validated title, body, audience, safety flags, approval gate, and
+canonical draft hash.
 The validated result is stored in one bounded Capsule/plugin-scoped local draft
 history, deduplicated by canonical hash, with status `awaiting_approval`.
 Deleting it removes only the local draft. It neither reads the credential nor
@@ -487,17 +496,19 @@ publicly visible verified post. Android manual smoke remains.
 - Completed: convert one canonical draft into one stable durable external
   operation.
 - Completed: show exact destination, account, title/body, public repository
-  attribution, and permanence warning before approval. The operation marker is
-  embedded in the attribution URL for machine reconciliation instead of being
-  exposed as an unreadable public suffix.
+  attribution, and permanence warning before approval. Schema v2 keeps the
+  operation marker inside the local effect envelope; public prose contains no
+  infrastructure identifier. Receipt reconciliation compares the exact
+  approved title and content inside the provider's bounded recent-post window.
+  Existing schema v1 effects retain marker-based reconciliation for migration.
 - Completed: require explicit approval and a separate explicit publish action
   for every post.
 - Completed: bind credential lookup to the originating Capsule, plugin,
   provider, and external account rather than the currently selected Capsule.
 - Completed: reconcile a provider receipt before showing success.
 - Completed: treat verification challenges, missing receipts, timeouts, and
-  absent reconciliation markers as unresolved instead of inventing success or
-  blindly resubmitting.
+  absent reconciliation evidence as unresolved instead of inventing success
+  or blindly resubmitting.
 - Completed: expose cancel-before-delivery and reconciliation controls through
   the one generic external-effect journal.
 - Completed: persist nested `post.verification` as a provider-neutral required
@@ -509,7 +520,7 @@ publicly visible verified post. Android manual smoke remains.
 - Completed manual macOS evidence on 2026-07-27: one approved operation created
   hidden post `32a3006b-94e3-4087-82f6-58e3666cef4e`, persisted the provider
   challenge as unresolved, accepted one explicit answer, then recorded success
-  only after the exact post id, approved text, operation marker, and
+  only after the exact post id, approved text, local operation identity, and
   `verification_status=verified` were observed.
 - Completed: the Ambassador surface presents one prominent next action for the
   Draft, Review, Approve, Publish, and Verify sequence; provider-neutral

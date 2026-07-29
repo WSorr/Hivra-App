@@ -18,9 +18,9 @@ class WasmPluginRegistryService {
     WasmPluginPackagePreflightService preflight =
         const WasmPluginPackagePreflightService(),
     AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
-  })  : _dataDirs = dataDirs,
-        _preflight = preflight,
-        _atomicWrites = atomicWrites;
+  }) : _dataDirs = dataDirs,
+       _preflight = preflight,
+       _atomicWrites = atomicWrites;
 
   Future<Directory> pluginsDirectory({bool create = false}) async {
     return _dataDirs.pluginsDirectory(create: create);
@@ -38,19 +38,22 @@ class WasmPluginRegistryService {
     try {
       final decoded = _parseJsonList(await file.readAsString());
       if (decoded == null) return const <WasmPluginRecord>[];
-      final records = decoded
-          .map(_coerceJsonMap)
-          .whereType<Map<String, dynamic>>()
-          .map(WasmPluginRecord.fromJson)
-          .toList()
-        ..sort((a, b) => b.installedAtIso.compareTo(a.installedAtIso));
-      final deduped = _dedupeByPluginVersion(records);
+      final records =
+          decoded
+              .map(_coerceJsonMap)
+              .whereType<Map<String, dynamic>>()
+              .map(WasmPluginRecord.fromJson)
+              .toList()
+            ..sort((a, b) => b.installedAtIso.compareTo(a.installedAtIso));
+      final deduped = _dedupeByPluginId(records);
       final existingOnly = await _filterRecordsWithStoredFile(deduped);
       if (existingOnly.length != records.length) {
-        final stale = records
-            .where(
-                (record) => !existingOnly.any((kept) => kept.id == record.id))
-            .toList();
+        final stale =
+            records
+                .where(
+                  (record) => !existingOnly.any((kept) => kept.id == record.id),
+                )
+                .toList();
         await _deleteStoredFilesForRecords(stale);
         await _writeRegistry(existingOnly);
       }
@@ -71,7 +74,8 @@ class WasmPluginRegistryService {
     final extension = _fileExtension(sourceName).toLowerCase();
     if (extension != '.wasm' && extension != '.zip') {
       throw const FormatException(
-          'Only .wasm or .zip plugin packages are supported');
+        'Only .wasm or .zip plugin packages are supported',
+      );
     }
     final preflight = await _preflight.inspect(sourceFile);
     final existing = await loadPlugins();
@@ -82,7 +86,6 @@ class WasmPluginRegistryService {
     final replaced = _recordsToReplace(
       existing: existing,
       incomingPluginId: preflight.pluginId,
-      incomingPluginVersion: resolvedVersion,
     );
 
     final pluginsDir = await pluginsDirectory(create: true);
@@ -119,9 +122,10 @@ class WasmPluginRegistryService {
         await staleFile.delete();
       }
     }
-    final kept = existing
-        .where((entry) => !replaced.any((stale) => stale.id == entry.id))
-        .toList();
+    final kept =
+        existing
+            .where((entry) => !replaced.any((stale) => stale.id == entry.id))
+            .toList();
     await _writeRegistry(<WasmPluginRecord>[record, ...kept]);
     return record;
   }
@@ -167,8 +171,7 @@ class WasmPluginRegistryService {
         .trim();
   }
 
-  List<WasmPluginRecord> _dedupeByPluginVersion(
-      List<WasmPluginRecord> records) {
+  List<WasmPluginRecord> _dedupeByPluginId(List<WasmPluginRecord> records) {
     final kept = <WasmPluginRecord>[];
     final seenKeys = <String>{};
     for (final record in records) {
@@ -189,10 +192,7 @@ class WasmPluginRegistryService {
   String? _dedupeKey(WasmPluginRecord record) {
     final pluginId = _normalizeOptional(record.pluginId);
     if (pluginId == null) return null;
-    final version = _normalizeOptional(record.pluginVersion) ??
-        _extractVersionFromFileName(record.originalFileName);
-    if (version == null) return null;
-    return '$pluginId::$version';
+    return pluginId;
   }
 
   String? _resolvePluginVersion({
@@ -207,19 +207,14 @@ class WasmPluginRegistryService {
   List<WasmPluginRecord> _recordsToReplace({
     required List<WasmPluginRecord> existing,
     required String? incomingPluginId,
-    required String? incomingPluginVersion,
   }) {
     final pluginId = _normalizeOptional(incomingPluginId);
-    final pluginVersion = _normalizeOptional(incomingPluginVersion);
-    if (pluginId == null || pluginVersion == null) {
+    if (pluginId == null) {
       return const <WasmPluginRecord>[];
     }
     return existing.where((record) {
       final recordPluginId = _normalizeOptional(record.pluginId);
-      if (recordPluginId != pluginId) return false;
-      final recordVersion = _normalizeOptional(record.pluginVersion) ??
-          _extractVersionFromFileName(record.originalFileName);
-      return recordVersion == pluginVersion;
+      return recordPluginId == pluginId;
     }).toList();
   }
 
@@ -236,7 +231,8 @@ class WasmPluginRegistryService {
   }
 
   Future<void> _deleteStoredFilesForRecords(
-      List<WasmPluginRecord> records) async {
+    List<WasmPluginRecord> records,
+  ) async {
     if (records.isEmpty) return;
     final dir = await pluginsDirectory();
     for (final record in records) {

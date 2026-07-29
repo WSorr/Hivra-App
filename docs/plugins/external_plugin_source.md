@@ -39,6 +39,10 @@ the local catalog path and surfaces a clear error if it is missing too.
 - Invalid hash shape in catalog (`not 64 hex chars`) is rejected.
 - Hash mismatch blocks installation.
 - Installed package metadata must match catalog entry (`plugin_id`, `package_kind`, and `version` when package version is available); mismatch triggers install rollback.
+- The local registry has exactly one active package per `plugin_id`. Installing
+  another version atomically replaces the previous package and removes its
+  stored archive; registry loading self-heals older cross-version duplicates by
+  retaining the newest valid record.
 - Zip manifests must declare strict runtime contract:
   - non-empty `contract.kind`
   - non-empty `capabilities` list

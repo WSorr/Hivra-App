@@ -105,7 +105,7 @@ class PluginRuntimeModule {
     MoltbookAmbassadorConfiguration configuration,
   ) => _ambassadorConfiguration.save(configuration);
 
-  Future<MoltbookPublicFactsProposal> proposeMoltbookPublicFacts(
+  Future<MoltbookPublicBulletinProposal> proposeMoltbookPublicBulletin(
     String sourceNotes, {
     required String category,
   }) async {
@@ -116,7 +116,7 @@ class PluginRuntimeModule {
     final normalizedCategory = category.trim();
     if (!configuration.allowedTopics.contains(normalizedCategory)) {
       throw StateError(
-        'Public facts category must match one of the allowed topics',
+        'Public bulletin category must match one of the allowed topics',
       );
     }
     final operationCapsuleHex =
@@ -125,7 +125,7 @@ class PluginRuntimeModule {
       throw StateError('Active capsule identity is unavailable');
     }
     await uiLog.log(
-      'moltbook.public_facts.propose',
+      'moltbook.public_bulletin.propose',
       'start owner=$operationCapsuleHex category=$normalizedCategory',
     );
     try {
@@ -136,18 +136,18 @@ class PluginRuntimeModule {
       );
       if (!_isStillOwnedBy(operationCapsuleHex)) {
         throw StateError(
-          'Public facts discarded because the active capsule changed',
+          'Public bulletin discarded because the active capsule changed',
         );
       }
       await uiLog.log(
-        'moltbook.public_facts.propose',
+        'moltbook.public_bulletin.propose',
         'success provider=${proposal.providerLabel} '
             'model=${_safeLogValue(proposal.model)} facts=${proposal.facts.length}',
       );
       return proposal;
     } catch (error) {
       await uiLog.log(
-        'moltbook.public_facts.propose',
+        'moltbook.public_bulletin.propose',
         'error ${_safeError(error)}',
       );
       rethrow;
@@ -534,6 +534,7 @@ class PluginRuntimeModule {
     required String category,
     required List<String> facts,
     required String titleHint,
+    required String reviewedBody,
     required String audience,
   }) async {
     final configuration = await _ambassadorConfiguration.load();
@@ -566,6 +567,7 @@ class PluginRuntimeModule {
           'category': normalizedCategory,
           'facts': facts.map((fact) => fact.trim()).toList(),
           'title_hint': titleHint.trim(),
+          'reviewed_body': reviewedBody.trim(),
           'audience': audience.trim(),
         },
       ),
@@ -595,6 +597,12 @@ class PluginRuntimeModule {
       throw StateError('Moltbook draft result is missing');
     }
     final preview = MoltbookDraftPreview.fromHostResult(result);
+    if (preview.title != titleHint.trim() ||
+        preview.body != reviewedBody.trim()) {
+      throw StateError(
+        'Installed Moltbook plugin does not preserve the reviewed title/body. Upgrade the plugin before publishing.',
+      );
+    }
     await moltbookDrafts.save(preview);
     await uiLog.log(
       'moltbook.draft.prepare',

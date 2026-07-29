@@ -46,10 +46,10 @@ class MoltbookPublicationService {
             .toString();
     final operationId = 'moltbook-post-$semanticId';
     final marker = MoltbookPublicationContract.operationMarker(operationId);
-    final attribution = MoltbookPublicationContract.attribution(operationId);
+    final attribution = MoltbookPublicationContract.attribution();
     final content = '${draft.body.trimRight()}\n\n$attribution';
     final canonicalPayload = jsonEncode(<String, dynamic>{
-      'schema_version': 1,
+      'schema_version': 2,
       'account_name': binding.accountName,
       'submolt_name': submolt,
       'title': draft.title,

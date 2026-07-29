@@ -33,6 +33,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   final TextEditingController _titleHintController = TextEditingController(
     text: 'Hivra development update',
   );
+  final TextEditingController _reviewedBodyController = TextEditingController();
   final TextEditingController _audienceController = TextEditingController(
     text: 'agent-developers',
   );
@@ -56,7 +57,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   MoltbookEngagementPlan? _engagementPlan;
   MoltbookFeedCheckpoint? _feedCheckpoint;
   MoltbookDraftPreview? _draftPreview;
-  MoltbookPublicFactsProposal? _publicFactsProposal;
+  MoltbookPublicBulletinProposal? _publicBulletinProposal;
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
   List<ExternalEffectOperation> _publications =
       const <ExternalEffectOperation>[];
@@ -82,6 +83,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     _releaseTagController.dispose();
     _categoryController.dispose();
     _titleHintController.dispose();
+    _reviewedBodyController.dispose();
     _audienceController.dispose();
     _publicSourceNotesController.dispose();
     _factsController.dispose();
@@ -357,6 +359,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         category: _categoryController.text,
         facts: facts,
         titleHint: _titleHintController.text,
+        reviewedBody: _reviewedBodyController.text,
         audience: _audienceController.text,
       );
       final drafts = await widget.module.loadMoltbookDrafts();
@@ -374,7 +377,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
-  Future<void> _proposePublicFacts() async {
+  Future<void> _proposePublicBulletin() async {
     final sourceNotes = _publicSourceNotesController.text.trim();
     if (sourceNotes.isEmpty) {
       _showNotice('Add public source notes first', isError: true);
@@ -417,25 +420,27 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
 
     setState(() {
       _publicFactsBusy = true;
-      _publicFactsProposal = null;
+      _publicBulletinProposal = null;
     });
     try {
-      final proposal = await widget.module.proposeMoltbookPublicFacts(
+      final proposal = await widget.module.proposeMoltbookPublicBulletin(
         sourceNotes,
         category: _categoryController.text,
       );
       if (!mounted) return;
       setState(() {
-        _publicFactsProposal = proposal;
+        _publicBulletinProposal = proposal;
+        _titleHintController.text = proposal.title;
+        _reviewedBodyController.text = proposal.body;
         _factsController.text = proposal.facts.join('\n');
         _draftPreview = null;
       });
       _showNotice(
-        'AI proposed ${proposal.facts.length} public fact(s). Review and edit them before preparing the WASM draft.',
+        'AI proposed a public post backed by ${proposal.facts.length} fact(s). Review and edit every field before preparing the WASM draft.',
       );
     } catch (error) {
       if (!mounted) return;
-      _showNotice('Could not propose public facts: $error', isError: true);
+      _showNotice('Could not propose public bulletin: $error', isError: true);
     } finally {
       if (mounted) setState(() => _publicFactsBusy = false);
     }
@@ -765,14 +770,15 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     releaseTagController: _releaseTagController,
                     categoryController: _categoryController,
                     titleHintController: _titleHintController,
+                    reviewedBodyController: _reviewedBodyController,
                     audienceController: _audienceController,
                     publicSourceNotesController: _publicSourceNotesController,
                     factsController: _factsController,
                     busy: _draftBusy || _publicFactsBusy,
                     publicFactsBusy: _publicFactsBusy,
-                    publicFactsProposal: _publicFactsProposal,
+                    publicBulletinProposal: _publicBulletinProposal,
                     preview: _draftPreview,
-                    onProposePublicFacts: _proposePublicFacts,
+                    onProposePublicBulletin: _proposePublicBulletin,
                     onPrepare: _prepareDraft,
                   ),
                   if (_storedDrafts.isNotEmpty) ...[
@@ -1232,14 +1238,15 @@ class _MoltbookDraftCard extends StatelessWidget {
   final TextEditingController releaseTagController;
   final TextEditingController categoryController;
   final TextEditingController titleHintController;
+  final TextEditingController reviewedBodyController;
   final TextEditingController audienceController;
   final TextEditingController publicSourceNotesController;
   final TextEditingController factsController;
   final bool busy;
   final bool publicFactsBusy;
-  final MoltbookPublicFactsProposal? publicFactsProposal;
+  final MoltbookPublicBulletinProposal? publicBulletinProposal;
   final MoltbookDraftPreview? preview;
-  final VoidCallback onProposePublicFacts;
+  final VoidCallback onProposePublicBulletin;
   final VoidCallback onPrepare;
 
   const _MoltbookDraftCard({
@@ -1247,14 +1254,15 @@ class _MoltbookDraftCard extends StatelessWidget {
     required this.releaseTagController,
     required this.categoryController,
     required this.titleHintController,
+    required this.reviewedBodyController,
     required this.audienceController,
     required this.publicSourceNotesController,
     required this.factsController,
     required this.busy,
     required this.publicFactsBusy,
-    required this.publicFactsProposal,
+    required this.publicBulletinProposal,
     required this.preview,
-    required this.onProposePublicFacts,
+    required this.onProposePublicBulletin,
     required this.onPrepare,
   });
 
@@ -1274,7 +1282,7 @@ class _MoltbookDraftCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Only the facts entered here are sent to the installed WASM plugin. Preparing a draft does not publish anything.',
+              'The reviewed title, body, and supporting facts are sent to the installed WASM plugin. Preparing a draft does not publish anything.',
               style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
             ),
             const SizedBox(height: 14),
@@ -1310,7 +1318,22 @@ class _MoltbookDraftCard extends StatelessWidget {
             const SizedBox(height: 12),
             TextField(
               controller: titleHintController,
-              decoration: const InputDecoration(labelText: 'Title'),
+              decoration: const InputDecoration(
+                labelText: 'Reviewed post title',
+                helperText: 'Specific and factual. Avoid generic repeated titles.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reviewedBodyController,
+              minLines: 4,
+              maxLines: 10,
+              decoration: const InputDecoration(
+                labelText: 'Reviewed post body',
+                helperText:
+                    'Natural public prose. Edit before WASM validation; no automatic publication.',
+                alignLabelWithHint: true,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -1334,7 +1357,7 @@ class _MoltbookDraftCard extends StatelessWidget {
                       Icon(Icons.auto_awesome, color: Color(0xFF72D5C4)),
                       SizedBox(width: 8),
                       Text(
-                        'AI fact proposal',
+                        'AI communication proposal',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
@@ -1361,7 +1384,7 @@ class _MoltbookDraftCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   FilledButton.tonalIcon(
-                    onPressed: busy ? null : onProposePublicFacts,
+                    onPressed: busy ? null : onProposePublicBulletin,
                     icon:
                         publicFactsBusy
                             ? const SizedBox(
@@ -1373,13 +1396,13 @@ class _MoltbookDraftCard extends StatelessWidget {
                     label: Text(
                       publicFactsBusy
                           ? 'Generating proposal'
-                          : 'Propose public facts',
+                          : 'Propose reviewed post',
                     ),
                   ),
-                  if (publicFactsProposal != null) ...[
+                  if (publicBulletinProposal != null) ...[
                     const SizedBox(height: 10),
                     Text(
-                      '${publicFactsProposal!.providerLabel} · ${publicFactsProposal!.model} · review required',
+                      '${publicBulletinProposal!.providerLabel} · ${publicBulletinProposal!.model} · human review required',
                       style: const TextStyle(
                         color: Color(0xFF72D5C4),
                         fontWeight: FontWeight.w700,
@@ -1396,7 +1419,8 @@ class _MoltbookDraftCard extends StatelessWidget {
               maxLines: 8,
               decoration: const InputDecoration(
                 labelText: 'Public facts',
-                helperText: 'One explicit public fact per line.',
+                helperText:
+                    'One supporting fact per line. These are provenance for the reviewed prose.',
                 alignLabelWithHint: true,
               ),
             ),

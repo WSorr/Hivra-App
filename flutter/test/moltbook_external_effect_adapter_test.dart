@@ -53,11 +53,9 @@ void main() {
     expect(body['title'], 'Release note');
     expect(
       body['content'],
-      endsWith(
-        '[Hivra on GitHub](https://github.com/WSorr/Hivra-App#'
-        'hivra-effect:post-1)',
-      ),
+      'Public fact\n\n[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
     );
+    expect(body['content'], isNot(contains('hivra-effect:')));
   });
 
   test(
@@ -225,6 +223,65 @@ void main() {
     expect(result.errorCode, 'receipt_not_observed');
   });
 
+  test(
+    'reconciles v2 publication by exact approved title and content',
+    () async {
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send:
+              (_) async => _jsonResponse(<String, dynamic>{
+                'success': true,
+                'agent': <String, dynamic>{'name': 'HivraAgent'},
+                'recentPosts': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 'matched-post',
+                    'title': 'Release note',
+                    'content':
+                        'Public fact\n\n'
+                        '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
+                  },
+                ],
+              }),
+        ),
+      );
+
+      final result = await adapter.reconcile(_request());
+
+      expect(result.status, ExternalEffectAdapterStatus.succeeded);
+      expect(result.receipt?.providerReceiptId, 'matched-post');
+    },
+  );
+
+  test('keeps v1 marker reconciliation for existing queued effects', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send:
+            (_) async => _jsonResponse(<String, dynamic>{
+              'success': true,
+              'agent': <String, dynamic>{'name': 'HivraAgent'},
+              'recentPosts': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'id': 'legacy-matched-post',
+                  'title': 'Release note',
+                  'content':
+                      'Public fact\n\n'
+                      '[Hivra on GitHub]'
+                      '(https://github.com/WSorr/Hivra-App#'
+                      'hivra-effect:post-1)',
+                },
+              ],
+            }),
+      ),
+    );
+
+    final result = await adapter.reconcile(_legacyCurrentMarkerRequest());
+
+    expect(result.status, ExternalEffectAdapterStatus.succeeded);
+    expect(result.receipt?.providerReceiptId, 'legacy-matched-post');
+  });
+
   test('credential lookup is bound to originating capsule scope', () async {
     final request = _request(owner: _otherOwner);
     var networkCalls = 0;
@@ -248,10 +305,10 @@ void main() {
 
 ExternalEffectAdapterRequest _request({String owner = _owner}) {
   const payload =
-      '{"schema_version":1,"account_name":"HivraAgent",'
+      '{"schema_version":2,"account_name":"HivraAgent",'
       '"submolt_name":"general","title":"Release note",'
       '"content":"Public fact\\n\\n[Hivra on GitHub]'
-      '(https://github.com/WSorr/Hivra-App#hivra-effect:post-1)",'
+      '(https://github.com/WSorr/Hivra-App)",'
       '"operation_marker":"hivra-effect:post-1",'
       '"source_draft_hash_hex":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}';
@@ -274,6 +331,28 @@ ExternalEffectAdapterRequest _legacyRequest() {
       '"submolt_name":"general","title":"Release note",'
       '"content":"Public fact\\n\\n[hivra-effect:post-1]",'
       '"operation_marker":"[hivra-effect:post-1]",'
+      '"source_draft_hash_hex":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}';
+  return ExternalEffectAdapterRequest(
+    ownerCapsuleHex: _owner,
+    operationId: 'post-1',
+    pluginId: moltbookAmbassadorPluginId,
+    providerId: 'moltbook',
+    accountBindingId: 'account-1',
+    effectKind: MoltbookExternalEffectAdapter.effectKind,
+    canonicalPayloadJson: payload,
+    payloadHashHex:
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  );
+}
+
+ExternalEffectAdapterRequest _legacyCurrentMarkerRequest() {
+  const payload =
+      '{"schema_version":1,"account_name":"HivraAgent",'
+      '"submolt_name":"general","title":"Release note",'
+      '"content":"Public fact\\n\\n[Hivra on GitHub]'
+      '(https://github.com/WSorr/Hivra-App#hivra-effect:post-1)",'
+      '"operation_marker":"hivra-effect:post-1",'
       '"source_draft_hash_hex":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}';
   return ExternalEffectAdapterRequest(

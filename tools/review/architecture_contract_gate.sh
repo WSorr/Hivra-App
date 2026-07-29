@@ -76,6 +76,7 @@ MOLTBOOK_PUBLICATION="$ROOT/flutter/lib/services/moltbook_publication_service.da
 MOLTBOOK_CONNECTION="$ROOT/flutter/lib/services/moltbook_connection_service.dart"
 MOLTBOOK_DRAFT_STORE="$ROOT/flutter/lib/services/moltbook_draft_store.dart"
 MOLTBOOK_PUBLIC_BULLETIN_AI="$ROOT/flutter/lib/services/moltbook_public_bulletin_ai_service.dart"
+MOLTBOOK_AMBASSADOR_MODELS="$ROOT/flutter/lib/models/moltbook_ambassador_models.dart"
 CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
 INVITATIONS_SCREEN="$SCREENS/invitations_screen.dart"
 LEDGER_INSPECTOR_SCREEN="$SCREENS/ledger_inspector_screen.dart"
@@ -450,14 +451,22 @@ require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "PluginHostApiService|executeWithRu
   "Moltbook screen cannot call the plugin host directly"
 require_absent "$MOLTBOOK_PUBLIC_BULLETIN_AI" "import .*ledger|import .*repository|MoltbookProvider|ExternalEffect|CapsuleFileStore|dart:io" \
   "Moltbook public-facts AI has no private truth, repository, provider, effect, or filesystem dependency"
-require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "facts_only_from_source_notes.*true" \
-  "Moltbook public-facts AI is constrained to explicit source notes"
+require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "content_only_from_source_notes_and_canonical_anchor.*true" \
+  "Moltbook public-bulletin AI is constrained to explicit source notes and canonical anchor"
+require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "canonicalProductAnchor" \
+  "Moltbook public-bulletin AI carries the Capsule-first product anchor"
+require_present "$MOLTBOOK_AMBASSADOR_MODELS" "relationship-first\\|concept system" \
+  "Moltbook public-bulletin validation rejects contradictory positioning"
+require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "natural_non_repetitive_prose.*true" \
+  "Moltbook public-bulletin AI requests bounded natural prose"
 require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "human_review_required.*true" \
-  "Moltbook public-facts AI requires human review"
+  "Moltbook public-bulletin AI requires human review"
 require_present "$PLUGIN_RUNTIME_MODULE" "Future<MoltbookDraftPreview> prepareMoltbookDraft" \
   "Moltbook draft preview is mounted through the plugin runtime module"
 require_present "$PLUGIN_RUNTIME_MODULE" "method: prepareMoltbookDraftMethod" \
   "Moltbook draft preview executes the canonical WASM contract method"
+require_present "$PLUGIN_RUNTIME_MODULE" "preview\\.body != reviewedBody\\.trim\\(\\)" \
+  "Moltbook host rejects plugins that do not preserve reviewed prose"
 require_present "$PLUGIN_RUNTIME_MODULE" "moltbookDrafts\\.save\\(preview\\)" \
   "validated Moltbook drafts enter one local store"
 require_present "$MOLTBOOK_DRAFT_STORE" "writePluginState" \
@@ -575,6 +584,8 @@ require_present "$SERVICES/consensus_processor.dart" 'class ConsensusProcessor' 
   "consensus processor boundary exists"
 require_present "$SERVICES/consensus_runtime_service.dart" 'class ConsensusRuntimeService' \
   "consensus runtime facade exists"
+require_present "$SERVICES/wasm_plugin_registry_service.dart" '_dedupeByPluginId' \
+  "plugin registry keeps one active package per plugin id"
 
 # 9) Ledger-derived slot projection contract: no legacy per-slot FFI probes in Flutter.
 require_absent "$BINDINGS" 'starterExists|getStarterId|getStarterType' \

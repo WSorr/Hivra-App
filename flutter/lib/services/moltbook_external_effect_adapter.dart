@@ -98,8 +98,12 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         final post = Map<String, dynamic>.from(rawPost);
         final content = post['content']?.toString() ?? '';
         final title = post['title']?.toString() ?? '';
-        if (content.contains(payload.operationMarker) &&
-            title == payload.title) {
+        final matches =
+            payload.schemaVersion == 1
+                ? content.contains(payload.operationMarker) &&
+                    title == payload.title
+                : content == payload.content && title == payload.title;
+        if (matches) {
           final postId = _stringId(post['id'] ?? post['post_id']);
           if (postId != null) return _success(request, postId);
         }
@@ -339,6 +343,7 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
 }
 
 class _MoltbookPostPayload {
+  final int schemaVersion;
   final String accountName;
   final String submoltName;
   final String title;
@@ -346,6 +351,7 @@ class _MoltbookPostPayload {
   final String operationMarker;
 
   const _MoltbookPostPayload({
+    required this.schemaVersion,
     required this.accountName,
     required this.submoltName,
     required this.title,
@@ -357,21 +363,34 @@ class _MoltbookPostPayload {
     Map<String, dynamic> json, {
     required String operationId,
   }) {
-    if (json['schema_version'] != 1) {
+    final schemaVersion = json['schema_version'];
+    if (schemaVersion != 1 && schemaVersion != 2) {
       throw const FormatException('Unsupported Moltbook post payload schema');
     }
     final payload = _MoltbookPostPayload(
+      schemaVersion: schemaVersion as int,
       accountName: _required(json, 'account_name', 128),
       submoltName: _required(json, 'submolt_name', 128),
       title: _required(json, 'title', 300),
       content: _required(json, 'content', 40000),
       operationMarker: _required(json, 'operation_marker', 256),
     );
-    if (!MoltbookPublicationContract.matchesApprovedContent(
-      operationId: operationId,
-      operationMarker: payload.operationMarker,
-      content: payload.content,
-    )) {
+    final expectedMarker = MoltbookPublicationContract.operationMarker(
+      operationId,
+    );
+    final markerMatches =
+        payload.schemaVersion == 1
+            ? MoltbookPublicationContract.matchesLegacyApprovedContent(
+              operationId: operationId,
+              operationMarker: payload.operationMarker,
+              content: payload.content,
+            )
+            : payload.operationMarker == expectedMarker &&
+                !payload.content.contains(payload.operationMarker) &&
+                payload.content.endsWith(
+                  MoltbookPublicationContract.attribution(),
+                );
+    if (!markerMatches) {
       throw const FormatException('Moltbook operation marker mismatch');
     }
     if (!RegExp(

@@ -4,10 +4,12 @@ import 'package:hivra_app/services/inference_provider_adapter.dart';
 import 'package:hivra_app/services/moltbook_public_bulletin_ai_service.dart';
 
 void main() {
-  test('proposes bounded facts from explicit public notes only', () async {
+  test('proposes bounded reviewed prose from explicit public notes only', () async {
     final adapter = _RecordingAdapter(
       responseText:
-          '{"facts":["Hivra added bounded Moltbook conversation review.",'
+          '{"title":"Bounded Moltbook review lands in Hivra",'
+          '"body":"Hivra now reviews bounded Moltbook conversations and keeps engagement planning separate from publication.",'
+          '"supporting_facts":["Hivra added bounded Moltbook conversation review.",'
           '"Engagement planning cannot publish external content."]}',
     );
     final service = MoltbookPublicBulletinAiService(
@@ -23,31 +25,73 @@ void main() {
     );
 
     expect(proposal.facts, hasLength(2));
+    expect(proposal.title, 'Bounded Moltbook review lands in Hivra');
+    expect(proposal.body, contains('separate from publication'));
     expect(proposal.providerLabel, 'Gemini');
     expect(adapter.prompt!.inputJson, contains('source_notes'));
     expect(adapter.prompt!.inputJson, contains('no_ledger_access'));
+    expect(
+      adapter.prompt!.inputJson,
+      contains(MoltbookPublicBulletinAiService.canonicalProductAnchor),
+    );
+    expect(
+      adapter.prompt!.inputJson,
+      contains('content_only_from_source_notes_and_canonical_anchor'),
+    );
     expect(adapter.prompt!.inputJson, isNot(contains('capsule_seed')));
-    expect(adapter.prompt!.inputJson, isNot(contains('relationship')));
   });
 
-  test('rejects provider output with fields beyond facts', () async {
+  test('rejects positioning that contradicts Capsule-first axis', () async {
     final service = MoltbookPublicBulletinAiService(
       credentialStore: _FakeCredentialStore(),
       adapterFactory:
           (_) => _RecordingAdapter(
-            responseText: '{"facts":["One fact."],"publish_allowed":true}',
+            responseText:
+                '{"title":"Hivra concept",'
+                '"body":"Hivra is a relationship-first concept system for coordinated value.",'
+                '"supporting_facts":["A source note."]}',
           ),
     );
 
-    expect(
-      () => service.propose(
-        sourceNotes: 'One public fact.',
+    await expectLater(
+      service.propose(
+        sourceNotes: 'A source note.',
         category: 'hivra-development',
         personaSummary: 'Explain facts.',
       ),
-      throwsA(isA<FormatException>()),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('Capsule-first product axis'),
+        ),
+      ),
     );
   });
+
+  test(
+    'rejects provider output with fields beyond the bulletin contract',
+    () async {
+      final service = MoltbookPublicBulletinAiService(
+        credentialStore: _FakeCredentialStore(),
+        adapterFactory:
+            (_) => _RecordingAdapter(
+              responseText:
+                  '{"title":"One change","body":"One public fact.",'
+                  '"supporting_facts":["One public fact."],"publish_allowed":true}',
+            ),
+      );
+
+      expect(
+        () => service.propose(
+          sourceNotes: 'One public fact.',
+          category: 'hivra-development',
+          personaSummary: 'Explain facts.',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    },
+  );
 
   test(
     'fails before inference when preferred provider key is missing',
@@ -57,7 +101,11 @@ void main() {
         credentialStore: _FakeCredentialStore(apiKey: null),
         adapterFactory: (_) {
           adapterRequested = true;
-          return _RecordingAdapter(responseText: '{"facts":["One fact."]}');
+          return _RecordingAdapter(
+            responseText:
+                '{"title":"One change","body":"One public fact.",'
+                '"supporting_facts":["One public fact."]}',
+          );
         },
       );
 

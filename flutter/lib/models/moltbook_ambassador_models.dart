@@ -4,23 +4,54 @@ import 'package:crypto/crypto.dart';
 
 import 'plugin_contract_ids.dart';
 
-class MoltbookPublicFactsProposal {
+class MoltbookPublicBulletinProposal {
+  static final RegExp _forbiddenPositioning = RegExp(
+    r'\b(?:relationship-first|concept system)\b',
+    caseSensitive: false,
+  );
+
+  final String title;
+  final String body;
   final List<String> facts;
   final String providerLabel;
   final String model;
 
-  const MoltbookPublicFactsProposal({
+  const MoltbookPublicBulletinProposal({
+    required this.title,
+    required this.body,
     required this.facts,
     required this.providerLabel,
     required this.model,
   });
 
   void validate() {
+    if (title.trim() != title || title.isEmpty || title.length > 120) {
+      throw const FormatException(
+        'AI public bulletin title is outside safe bounds',
+      );
+    }
+    if (body.trim() != body || body.isEmpty || body.length > 1200) {
+      throw const FormatException(
+        'AI public bulletin body is outside safe bounds',
+      );
+    }
+    if (body.contains(
+      RegExp(r'https?://|#\w|\[hivra-effect:', caseSensitive: false),
+    )) {
+      throw const FormatException(
+        'AI public bulletin body contains unsupported formatting',
+      );
+    }
+    if (_forbiddenPositioning.hasMatch('$title\n$body')) {
+      throw const FormatException(
+        'AI public bulletin contradicts the Capsule-first product axis',
+      );
+    }
     if (facts.isEmpty ||
         facts.length > 8 ||
         facts.toSet().length != facts.length) {
       throw const FormatException(
-        'AI public facts must contain 1..8 unique items',
+        'AI public bulletin must contain 1..8 unique supporting facts',
       );
     }
     for (final fact in facts) {
@@ -308,7 +339,11 @@ class MoltbookPublicationContract {
     return 'hivra-effect:$operationId';
   }
 
-  static String attribution(String operationId) {
+  static String attribution() {
+    return '[Hivra on GitHub]($repositoryUrl)';
+  }
+
+  static String legacyAttribution(String operationId) {
     final marker = operationMarker(operationId);
     return '[Hivra on GitHub]($repositoryUrl#$marker)';
   }
@@ -317,7 +352,7 @@ class MoltbookPublicationContract {
     return '[${operationMarker(operationId)}]';
   }
 
-  static bool matchesApprovedContent({
+  static bool matchesLegacyApprovedContent({
     required String operationId,
     required String operationMarker,
     required String content,
@@ -326,7 +361,7 @@ class MoltbookPublicationContract {
       operationId,
     );
     if (operationMarker == currentMarker) {
-      return content.endsWith(attribution(operationId));
+      return content.endsWith(legacyAttribution(operationId));
     }
     final legacy = legacyMarker(operationId);
     return operationMarker == legacy && content.endsWith(legacy);
