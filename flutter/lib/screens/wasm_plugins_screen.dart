@@ -327,8 +327,13 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       return null;
     }
 
-    final signableChecks = checks.where((check) => check.isSignable).toList();
-    final candidates = signableChecks.isNotEmpty ? signableChecks : checks;
+    final candidates = checks.toList()
+      ..sort((left, right) {
+        if (left.isSignable == right.isSignable) {
+          return left.peerHex.compareTo(right.peerHex);
+        }
+        return left.isSignable ? -1 : 1;
+      });
 
     if (candidates.length == 1) {
       return candidates.first.peerHex;
@@ -366,7 +371,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                   subtitle: Text(
                     check.isSignable
                         ? 'Pair consensus verified'
-                        : 'Pair consensus needs attention',
+                        : 'Select to synchronize pair consensus',
                   ),
                   trailing:
                       check.isSignable
@@ -375,7 +380,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                             style: TextStyle(color: Colors.green),
                           )
                           : const Text(
-                            'Blocked',
+                            'Needs sync',
                             style: TextStyle(color: Colors.orange),
                           ),
                   onTap: () => Navigator.of(sheetContext).pop(check.peerHex),
