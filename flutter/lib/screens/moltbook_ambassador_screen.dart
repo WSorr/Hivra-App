@@ -343,7 +343,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
-                      'Gemini receives only the bounded public post, recent public comments, the engagement plan, and the local ambassador persona. Remote text is treated as untrusted. No ledger, contacts, credentials, or Capsule history are sent.',
+                      'The selected AI provider receives only the bounded public post, recent public comments, the engagement plan, and the local ambassador persona. Remote text is treated as untrusted. No ledger, contacts, credentials, or Capsule history are sent.',
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -2022,7 +2022,7 @@ class _MoltbookConnectionCard extends StatelessWidget {
                                     ),
                                   )
                                   : const Icon(Icons.auto_awesome_outlined),
-                          label: const Text('Ask Gemini for reply'),
+                          label: const Text('Ask AI for reply'),
                         ),
                         const SizedBox(height: 12),
                         TextField(
