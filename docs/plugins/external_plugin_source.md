@@ -14,7 +14,7 @@ This project now supports loading plugin packages from an external source catalo
 - Local source catalog path, used first when present:
   - `~/Documents/Hivra/Plugins/plugin_catalog.json`
 - Published source catalog URL:
-  - `https://raw.githubusercontent.com/WSorr/hivra-plugins/main/catalog/plugin_catalog.json`
+  - `https://raw.githubusercontent.com/WSorr/hivra-plugins/refs/heads/main/catalog/plugin_catalog.json`
 
 If a local catalog exists, app uses it as the explicit user/developer source.
 If it does not exist, app loads the published source catalog. If published

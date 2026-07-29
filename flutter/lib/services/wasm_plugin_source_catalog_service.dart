@@ -11,9 +11,9 @@ import 'wasm_plugin_registry_service.dart';
 
 class WasmPluginSourceCatalogService {
   static const String defaultCatalogUrl =
-      'https://raw.githubusercontent.com/WSorr/hivra-plugins/main/catalog/plugin_catalog.json';
+      'https://raw.githubusercontent.com/WSorr/hivra-plugins/refs/heads/main/catalog/plugin_catalog.json';
   static const String fallbackCatalogUrl =
-      'https://cdn.jsdelivr.net/gh/WSorr/hivra-plugins@main/catalog/plugin_catalog.json';
+      'https://github.com/WSorr/hivra-plugins/raw/refs/heads/main/catalog/plugin_catalog.json';
   static const Set<String> defaultTrustedRemoteCatalogSha256Hexes = {
     'aaa9c2204aa213965472a8a874abfbc340c0cef1259476e5d808e6e0474d8b12',
   };
