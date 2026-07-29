@@ -151,6 +151,22 @@ class PluginRuntimeModule {
     }
   }
 
+  Future<MoltbookFeedObservation> observeMoltbookFeed() async {
+    await uiLog.log('moltbook.feed.observe', 'start sort=new limit=15');
+    try {
+      final observation = await moltbookConnection.observeFeed();
+      await uiLog.log(
+        'moltbook.feed.observe',
+        'success posts=${observation.posts.length} '
+            'has_more=${observation.hasMore}',
+      );
+      return observation;
+    } catch (error) {
+      await uiLog.log('moltbook.feed.observe', 'error ${_safeError(error)}');
+      rethrow;
+    }
+  }
+
   Future<void> disconnectMoltbook() async {
     await uiLog.log('moltbook.disconnect', 'start');
     try {

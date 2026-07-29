@@ -12,6 +12,13 @@ abstract interface class MoltbookObservePort {
   Future<MoltbookAccountObservation> observeAccount(String apiKey);
 
   Future<MoltbookHomeObservation> observeHome(String apiKey);
+
+  Future<MoltbookFeedObservation> observeFeed(
+    String apiKey, {
+    String sort = 'new',
+    int limit = 15,
+    String? cursor,
+  });
 }
 
 class MoltbookHttpRequest {
@@ -128,6 +135,98 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
         'unread_notification_count',
       ),
       suggestedActions: actions,
+      rateLimit: _rateLimit(response),
+    );
+    _validateObservation(observation.validate);
+    return observation;
+  }
+
+  @override
+  Future<MoltbookFeedObservation> observeFeed(
+    String apiKey, {
+    String sort = 'new',
+    int limit = 15,
+    String? cursor,
+  }) async {
+    if (!const <String>{'hot', 'new', 'top', 'rising'}.contains(sort)) {
+      throw const MoltbookProviderException(
+        code: 'invalid_feed_sort',
+        message: 'Moltbook feed sort is invalid',
+        retryable: false,
+      );
+    }
+    if (limit < 1 || limit > 25) {
+      throw const MoltbookProviderException(
+        code: 'invalid_feed_limit',
+        message: 'Moltbook feed limit must be within 1..25',
+        retryable: false,
+      );
+    }
+    final normalizedCursor = cursor?.trim();
+    if (normalizedCursor != null &&
+        (normalizedCursor.isEmpty || normalizedCursor.length > 2048)) {
+      throw const MoltbookProviderException(
+        code: 'invalid_feed_cursor',
+        message: 'Moltbook feed cursor is invalid',
+        retryable: false,
+      );
+    }
+    final query = <String, String>{
+      'sort': sort,
+      'limit': '$limit',
+      if (normalizedCursor != null) 'cursor': normalizedCursor,
+    };
+    final relativeUri = Uri(path: 'posts', queryParameters: query);
+    final response = await _get(relativeUri.toString(), apiKey);
+    final json = _decodeObject(response);
+    _rejectProviderFailure(json, response);
+    final rawPosts = json['posts'];
+    if (rawPosts is! List || json['has_more'] is! bool) {
+      throw _malformed('Feed response has invalid paging fields');
+    }
+    final posts = rawPosts
+        .map((value) {
+          if (value is! Map) {
+            throw _malformed('Feed response contains an invalid post');
+          }
+          final post = Map<String, dynamic>.from(value);
+          final rawAuthor = post['author'];
+          final rawSubmolt = post['submolt'];
+          if (rawAuthor is! Map || rawSubmolt is! Map) {
+            throw _malformed('Feed post identity projection is invalid');
+          }
+          final author = Map<String, dynamic>.from(rawAuthor);
+          final submolt = Map<String, dynamic>.from(rawSubmolt);
+          final timestamp =
+              DateTime.tryParse(_requiredString(post, 'created_at'))?.toUtc();
+          if (timestamp == null) {
+            throw _malformed('Feed post timestamp is invalid');
+          }
+          return MoltbookFeedPost(
+            postId: _requiredString(post, 'id'),
+            title: _requiredString(post, 'title'),
+            content: _optionalString(post, 'content'),
+            authorId: _requiredString(author, 'id'),
+            authorName: _requiredString(author, 'name'),
+            submoltName: _requiredString(submolt, 'name'),
+            score: _requiredNonNegativeInt(post, 'score'),
+            commentCount: _requiredNonNegativeInt(post, 'comment_count'),
+            isVerified:
+                _requiredString(post, 'verification_status') == 'verified',
+            isSpam: _requiredBool(post, 'is_spam'),
+            createdAtUtc: timestamp.toIso8601String(),
+          );
+        })
+        .toList(growable: false);
+    final hasMore = json['has_more'] as bool;
+    final rawCursor = json['next_cursor'];
+    if (rawCursor != null && rawCursor is! String) {
+      throw _malformed('Feed response cursor is invalid');
+    }
+    final observation = MoltbookFeedObservation(
+      posts: posts,
+      hasMore: hasMore,
+      nextCursor: rawCursor as String?,
       rateLimit: _rateLimit(response),
     );
     _validateObservation(observation.validate);

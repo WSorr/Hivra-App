@@ -112,6 +112,94 @@ class MoltbookHomeObservation {
   }
 }
 
+class MoltbookFeedPost {
+  final String postId;
+  final String title;
+  final String content;
+  final String authorId;
+  final String authorName;
+  final String submoltName;
+  final int score;
+  final int commentCount;
+  final bool isVerified;
+  final bool isSpam;
+  final String createdAtUtc;
+
+  const MoltbookFeedPost({
+    required this.postId,
+    required this.title,
+    required this.content,
+    required this.authorId,
+    required this.authorName,
+    required this.submoltName,
+    required this.score,
+    required this.commentCount,
+    required this.isVerified,
+    required this.isSpam,
+    required this.createdAtUtc,
+  });
+
+  void validate() {
+    _bounded('post_id', postId, 1, 256);
+    _bounded('title', title, 1, 300);
+    _bounded('content', content, 0, 40000);
+    _bounded('author_id', authorId, 1, 256);
+    _bounded('author_name', authorName, 1, 128);
+    _bounded('submolt_name', submoltName, 1, 128);
+    if (score < -1000000000 || score > 1000000000 || commentCount < 0) {
+      throw const FormatException(
+        'Moltbook feed counters are outside supported bounds',
+      );
+    }
+    final createdAt = DateTime.tryParse(createdAtUtc);
+    if (createdAt == null ||
+        !createdAt.isUtc ||
+        createdAt.toIso8601String() != createdAtUtc) {
+      throw const FormatException(
+        'Moltbook feed timestamp must be canonical UTC',
+      );
+    }
+  }
+}
+
+class MoltbookFeedObservation {
+  final List<MoltbookFeedPost> posts;
+  final bool hasMore;
+  final String? nextCursor;
+  final MoltbookRateLimitSnapshot rateLimit;
+
+  const MoltbookFeedObservation({
+    required this.posts,
+    required this.hasMore,
+    required this.nextCursor,
+    required this.rateLimit,
+  });
+
+  void validate() {
+    if (posts.length > 25) {
+      throw const FormatException('Moltbook feed exceeds its page limit');
+    }
+    final ids = <String>{};
+    for (final post in posts) {
+      post.validate();
+      if (!ids.add(post.postId)) {
+        throw const FormatException('Moltbook feed contains duplicate posts');
+      }
+    }
+    final cursor = nextCursor?.trim();
+    if (hasMore && (cursor == null || cursor.isEmpty)) {
+      throw const FormatException('Moltbook feed cursor is missing');
+    }
+    if (!hasMore && cursor != null && cursor.isNotEmpty) {
+      throw const FormatException('Moltbook feed has an unexpected cursor');
+    }
+    if (cursor != null && cursor.length > 2048) {
+      throw const FormatException('Moltbook feed cursor is too long');
+    }
+    rateLimit.validate();
+  }
+}
+
 class MoltbookClaimObservation {
   static const String pending = 'pending_claim';
   static const String claimed = 'claimed';

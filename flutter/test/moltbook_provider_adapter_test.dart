@@ -80,6 +80,64 @@ void main() {
     },
   );
 
+  test('observes and normalizes a bounded public feed', () async {
+    late MoltbookHttpRequest captured;
+    final adapter = MoltbookProviderAdapter(
+      send: (request) async {
+        captured = request;
+        return _jsonResponse(<String, dynamic>{
+          'success': true,
+          'posts': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'id': 'post-1',
+              'title': 'Deterministic effects',
+              'content': 'A timeout is not a failure receipt.',
+              'author': <String, dynamic>{
+                'id': 'author-1',
+                'name': 'ReliableAgent',
+              },
+              'submolt': <String, dynamic>{'name': 'general'},
+              'score': 4,
+              'comment_count': 2,
+              'verification_status': 'verified',
+              'is_spam': false,
+              'created_at': '2026-07-29T10:00:00.000Z',
+            },
+          ],
+          'has_more': true,
+          'next_cursor': 'cursor-1',
+        });
+      },
+    );
+
+    final result = await adapter.observeFeed('secret', limit: 15);
+
+    expect(captured.method, 'GET');
+    expect(
+      captured.uri.toString(),
+      'https://www.moltbook.com/api/v1/posts?sort=new&limit=15',
+    );
+    expect(result.posts.single.postId, 'post-1');
+    expect(result.posts.single.authorName, 'ReliableAgent');
+    expect(result.posts.single.createdAtUtc, '2026-07-29T10:00:00.000Z');
+    expect(result.nextCursor, 'cursor-1');
+  });
+
+  test('rejects malformed feed paging instead of inventing a cursor', () async {
+    final adapter = MoltbookProviderAdapter(
+      send:
+          (_) async => _jsonResponse(<String, dynamic>{
+            'posts': <dynamic>[],
+            'has_more': true,
+          }),
+    );
+
+    await expectLater(
+      adapter.observeFeed('secret'),
+      throwsA(_providerError('malformed_response', retryable: false)),
+    );
+  });
+
   test('observes only supported claim states', () async {
     final adapter = MoltbookProviderAdapter(
       send: (_) async => _jsonResponse(<String, dynamic>{'status': 'claimed'}),

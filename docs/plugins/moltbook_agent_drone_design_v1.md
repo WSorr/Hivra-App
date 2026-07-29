@@ -1,7 +1,7 @@
 # Moltbook Agent Drone - Design Contract v1
 
-Status: deterministic drafts, read-only account observation, and assisted
-publication lifecycle implemented; live provider smoke remains gated
+Status: deterministic drafts, read-only account/home/feed observation, and
+assisted publication lifecycle implemented; bounded autonomy remains gated
 Runtime impact: bounded WASM draft contract only
 Primary owner: External Moltbook Drone
 
@@ -17,7 +17,8 @@ drone is absent, offline, revoked, or when Moltbook no longer exists.
 
 ## 2. Capability-Closure Verdict
 
-Current verdict: `OBSERVE_ACCOUNT_ONLY`; remote writes remain `NEEDS_CONTRACT`.
+Current verdict: `ASSISTED_PUBLICATION_IMPLEMENTED`; bounded autonomy remains
+`NEEDS_THREAT_REVIEW`.
 
 The existing bounded WASM runtime intentionally has no direct network imports,
 secret access, or unrestricted storage. A Moltbook package therefore cannot be
@@ -363,8 +364,8 @@ Exit gate:
 
 ### Phase 2 - Moltbook Adapter and Observe Mode
 
-Status: account connection and strict read-only Account/Home Observe mounted;
-feed observation remains.
+Status: account connection and strict read-only Account/Home/Feed Observe
+mounted; durable cursor processing remains.
 
 - Completed: implement one strict Moltbook adapter for normalized Observe
   projections.
@@ -383,7 +384,10 @@ feed observation remains.
   credential access.
 - Completed: mount bounded Home observation as an explicit in-memory read. It
   does not create ledger events, plugin cache, or a second retry lifecycle.
-- Feed reads and cursors remain outside the first Observe slice.
+- Completed: mount a bounded `new` feed observation as an explicit in-memory
+  read with strict normalized post projections and no provider DTO leakage.
+- Durable cursors, processed-post deduplication, and heartbeat decisions remain
+  outside this Observe slice.
 - Treat every remote field as untrusted data.
 
 Exit gate:
@@ -457,8 +461,8 @@ publicly visible verified post. Android manual smoke remains.
   the one generic external-effect journal.
 - Completed: persist nested `post.verification` as a provider-neutral required
   action, show the exact challenge and expiry, submit an explicit numeric
-  answer through the adapter, and require matching visible-post evidence before
-  recording success.
+  answer through the adapter, and require the verification receipt to bind the
+  exact post id before recording success.
 - Completed: legacy or expired challenges remain fail-closed without blind
   resubmission.
 - Completed manual macOS evidence on 2026-07-27: one approved operation created

@@ -160,11 +160,36 @@ void main() {
       );
     },
   );
+
+  test(
+    'feed observation uses the bound key without persisting remote data',
+    () async {
+      await service.connect('secret-key');
+
+      final feed = await service.observeFeed();
+
+      expect(feed.posts.single.postId, 'post-1');
+      expect(observer.feedKeys, <String>['secret-key']);
+      final capsuleDir = await files.capsuleDirForHex(_rootA);
+      final stateDir = await files.pluginStateDirectory(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+      );
+      expect(
+        await stateDir
+            .list()
+            .where((entry) => entry.path.contains('feed'))
+            .isEmpty,
+        isTrue,
+      );
+    },
+  );
 }
 
 class _FakeObserver implements MoltbookObservePort {
   final List<String> keys = <String>[];
   final List<String> homeKeys = <String>[];
+  final List<String> feedKeys = <String>[];
   String accountId = 'agent-1';
   String accountName = 'Hivra Agent';
   void Function()? onObserve;
@@ -204,6 +229,41 @@ class _FakeObserver implements MoltbookObservePort {
       rateLimit: MoltbookRateLimitSnapshot(
         limit: 60,
         remaining: 58,
+        resetEpochSeconds: 1,
+        retryAfterSeconds: null,
+      ),
+    );
+  }
+
+  @override
+  Future<MoltbookFeedObservation> observeFeed(
+    String apiKey, {
+    String sort = 'new',
+    int limit = 15,
+    String? cursor,
+  }) async {
+    feedKeys.add(apiKey);
+    return const MoltbookFeedObservation(
+      posts: <MoltbookFeedPost>[
+        MoltbookFeedPost(
+          postId: 'post-1',
+          title: 'A useful post',
+          content: 'Public content',
+          authorId: 'author-1',
+          authorName: 'Agent',
+          submoltName: 'general',
+          score: 1,
+          commentCount: 0,
+          isVerified: true,
+          isSpam: false,
+          createdAtUtc: '2026-07-29T10:00:00.000Z',
+        ),
+      ],
+      hasMore: false,
+      nextCursor: null,
+      rateLimit: MoltbookRateLimitSnapshot(
+        limit: 60,
+        remaining: 57,
         resetEpochSeconds: 1,
         retryAfterSeconds: null,
       ),

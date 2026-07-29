@@ -149,6 +149,27 @@ class MoltbookConnectionService {
   }
 
   Future<MoltbookHomeObservation> observeHome() async {
+    return _withBoundCredential(_observer.observeHome);
+  }
+
+  Future<MoltbookFeedObservation> observeFeed({
+    String sort = 'new',
+    int limit = 15,
+    String? cursor,
+  }) {
+    return _withBoundCredential(
+      (apiKey) => _observer.observeFeed(
+        apiKey,
+        sort: sort,
+        limit: limit,
+        cursor: cursor,
+      ),
+    );
+  }
+
+  Future<T> _withBoundCredential<T>(
+    Future<T> Function(String apiKey) operation,
+  ) async {
     final ownerHex = _requireActiveOwnerHex();
     final current = await loadBinding();
     if (current == null) {
@@ -164,7 +185,7 @@ class MoltbookConnectionService {
     if (apiKey == null) {
       throw StateError('Moltbook credential is unavailable');
     }
-    final observation = await _observer.observeHome(apiKey);
+    final observation = await operation(apiKey);
     _requireSameOwner(ownerHex);
     return observation;
   }

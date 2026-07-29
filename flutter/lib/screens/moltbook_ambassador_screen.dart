@@ -47,6 +47,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   bool _connectionBusy = false;
   MoltbookConnectionBinding? _binding;
   MoltbookHomeObservation? _homeObservation;
+  MoltbookFeedObservation? _feedObservation;
   MoltbookDraftPreview? _draftPreview;
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
   List<ExternalEffectOperation> _publications =
@@ -178,6 +179,22 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     } catch (error) {
       if (!mounted) return;
       _showNotice('Moltbook home failed: $error', isError: true);
+    } finally {
+      if (mounted) setState(() => _connectionBusy = false);
+    }
+  }
+
+  Future<void> _observeFeed() async {
+    setState(() => _connectionBusy = true);
+    try {
+      final observation = await widget.module.observeMoltbookFeed();
+      if (!mounted) return;
+      setState(() => _feedObservation = observation);
+      _showNotice('Moltbook feed observed');
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not observe Moltbook feed: $error', isError: true);
+      }
     } finally {
       if (mounted) setState(() => _connectionBusy = false);
     }
@@ -561,9 +578,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     apiKeyController: _apiKeyController,
                     busy: _connectionBusy,
                     homeObservation: _homeObservation,
+                    feedObservation: _feedObservation,
                     onConnect: _connect,
                     onRefresh: _refreshConnection,
                     onObserveHome: _observeHome,
+                    onObserveFeed: _observeFeed,
                     onDisconnect: _disconnect,
                   ),
                   const SizedBox(height: 20),
@@ -1192,9 +1211,11 @@ class _MoltbookConnectionCard extends StatelessWidget {
   final TextEditingController apiKeyController;
   final bool busy;
   final MoltbookHomeObservation? homeObservation;
+  final MoltbookFeedObservation? feedObservation;
   final VoidCallback onConnect;
   final VoidCallback onRefresh;
   final VoidCallback onObserveHome;
+  final VoidCallback onObserveFeed;
   final VoidCallback onDisconnect;
 
   const _MoltbookConnectionCard({
@@ -1202,9 +1223,11 @@ class _MoltbookConnectionCard extends StatelessWidget {
     required this.apiKeyController,
     required this.busy,
     required this.homeObservation,
+    required this.feedObservation,
     required this.onConnect,
     required this.onRefresh,
     required this.onObserveHome,
+    required this.onObserveFeed,
     required this.onDisconnect,
   });
 
@@ -1277,6 +1300,11 @@ class _MoltbookConnectionCard extends StatelessWidget {
                           icon: const Icon(Icons.visibility_outlined),
                           label: const Text('Observe home'),
                         ),
+                        FilledButton.tonalIcon(
+                          onPressed: busy ? null : onObserveFeed,
+                          icon: const Icon(Icons.dynamic_feed_outlined),
+                          label: const Text('Observe feed'),
+                        ),
                         OutlinedButton.icon(
                           onPressed: busy ? null : onDisconnect,
                           icon: const Icon(Icons.link_off_rounded),
@@ -1307,6 +1335,42 @@ class _MoltbookConnectionCard extends StatelessWidget {
                       ),
                     ),
               ],
+            ],
+            if (feedObservation != null) ...[
+              const SizedBox(height: 14),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                'Latest public feed · ${feedObservation!.posts.length} posts',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              ...feedObservation!.posts
+                  .take(5)
+                  .map(
+                    (post) => ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        post.isVerified && !post.isSpam
+                            ? Icons.verified_outlined
+                            : Icons.warning_amber_rounded,
+                      ),
+                      title: Text(
+                        post.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '${post.authorName} · m/${post.submoltName} · '
+                        '${post.commentCount} comments',
+                      ),
+                    ),
+                  ),
+              const Text(
+                'Remote content is untrusted and remains in memory only.',
+                style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
+              ),
             ],
           ],
         ),
