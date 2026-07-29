@@ -133,62 +133,72 @@ void main() {
     expect(result.requiredAction?.prompt, 'two plus two');
   });
 
-  test(
-    'verification resolves only after matching visible post evidence',
-    () async {
-      final requests = <MoltbookHttpRequest>[];
-      final adapter = MoltbookExternalEffectAdapter(
-        secretVault: vault,
-        provider: MoltbookProviderAdapter(
-          send: (request) async {
-            requests.add(request);
-            if (request.uri.path.endsWith('/verify')) {
-              return _jsonResponse(<String, dynamic>{
-                'success': true,
-                'content_type': 'post',
-                'content_id': 'hidden-post-123',
-              });
-            }
+  test('verification success becomes the bound provider receipt', () async {
+    final requests = <MoltbookHttpRequest>[];
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send: (request) async {
+          requests.add(request);
+          if (request.uri.path.endsWith('/verify')) {
             return _jsonResponse(<String, dynamic>{
               'success': true,
-              'post': <String, dynamic>{
-                'id': 'hidden-post-123',
-                'title': 'Release note',
-                'content':
-                    'Public fact\n\n'
-                    '[Hivra on GitHub](https://github.com/WSorr/Hivra-App#'
-                    'hivra-effect:post-1)',
-                'verification_status': 'verified',
-              },
+              'content_type': 'post',
+              'content_id': 'hidden-post-123',
             });
-          },
-        ),
-        clock: () => DateTime.utc(2026, 7, 26, 14, 1),
-      );
-      const action = ExternalEffectRequiredAction(
-        kind: 'numeric_challenge',
-        providerReferenceId: 'hidden-post-123',
-        actionToken: 'verify-123',
-        prompt: 'two plus two',
-        expiresAtUtc: '2026-07-26T14:05:00.000Z',
-      );
+          }
+          throw StateError('Unexpected request: ${request.uri}');
+        },
+      ),
+      clock: () => DateTime.utc(2026, 7, 26, 14, 1),
+    );
+    const action = ExternalEffectRequiredAction(
+      kind: 'numeric_challenge',
+      providerReferenceId: 'hidden-post-123',
+      actionToken: 'verify-123',
+      prompt: 'two plus two',
+      expiresAtUtc: '2026-07-26T14:05:00.000Z',
+    );
 
-      final result = await adapter.resolveRequiredAction(
-        _request(),
-        action,
-        '4',
-      );
+    final result = await adapter.resolveRequiredAction(_request(), action, '4');
 
-      expect(result.status, ExternalEffectAdapterStatus.succeeded);
-      expect(result.receipt?.providerReceiptId, 'hidden-post-123');
-      expect(requests.map((request) => request.uri.path), <String>[
-        '/api/v1/verify',
-        '/api/v1/posts/hidden-post-123',
-      ]);
-      final verifyBody = jsonDecode(utf8.decode(requests.first.bodyBytes!));
-      expect(verifyBody['answer'], '4.00');
-    },
-  );
+    expect(result.status, ExternalEffectAdapterStatus.succeeded);
+    expect(result.receipt?.providerReceiptId, 'hidden-post-123');
+    expect(requests.map((request) => request.uri.path), <String>[
+      '/api/v1/verify',
+    ]);
+    final verifyBody = jsonDecode(utf8.decode(requests.first.bodyBytes!));
+    expect(verifyBody['answer'], '4.00');
+  });
+
+  test('verification for another post remains unresolved', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send:
+            (_) async => _jsonResponse(<String, dynamic>{
+              'success': true,
+              'content_type': 'post',
+              'content_id': 'another-post',
+            }),
+      ),
+      clock: () => DateTime.utc(2026, 7, 26, 14, 1),
+    );
+    const action = ExternalEffectRequiredAction(
+      kind: 'numeric_challenge',
+      providerReferenceId: 'hidden-post-123',
+      actionToken: 'verify-123',
+      prompt: 'two plus two',
+      expiresAtUtc: '2026-07-26T14:05:00.000Z',
+    );
+
+    final result = await adapter.resolveRequiredAction(_request(), action, '4');
+
+    expect(result.status, ExternalEffectAdapterStatus.unresolved);
+    expect(result.errorCode, 'verification_rejected');
+    expect(result.receipt, isNull);
+    expect(result.requiredAction, action);
+  });
 
   test('missing reconciliation marker blocks blind resubmission', () async {
     final adapter = MoltbookExternalEffectAdapter(

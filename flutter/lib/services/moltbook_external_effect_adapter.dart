@@ -136,7 +136,7 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     String response,
   ) async {
     try {
-      final payload = _validateRequest(request);
+      _validateRequest(request);
       action.validate();
       if (action.kind != 'numeric_challenge') {
         throw const FormatException('Unsupported Moltbook required action');
@@ -168,37 +168,7 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
           requiredAction: action,
         );
       }
-      final observed = await _provider.observePost(
-        apiKey: apiKey,
-        postId: action.providerReferenceId,
-      );
-      final rawPost = observed['post'] ?? observed['data'];
-      if (rawPost is! Map) {
-        return const ExternalEffectAdapterResult(
-          status: ExternalEffectAdapterStatus.unresolved,
-          errorCode: 'verified_post_not_observed',
-          errorMessage:
-              'Moltbook accepted verification but the post is not observable yet',
-        );
-      }
-      final post = Map<String, dynamic>.from(rawPost);
-      final observedId = _stringId(post['id'] ?? post['post_id']);
-      final status =
-          post['verification_status']?.toString().trim().toLowerCase();
-      final title = post['title']?.toString() ?? '';
-      final content = post['content']?.toString() ?? '';
-      if (observedId != action.providerReferenceId ||
-          status != 'verified' ||
-          title != payload.title ||
-          !content.contains(payload.operationMarker)) {
-        return const ExternalEffectAdapterResult(
-          status: ExternalEffectAdapterStatus.unresolved,
-          errorCode: 'verified_post_mismatch',
-          errorMessage:
-              'Moltbook verification completed but visible post evidence does not match the approved effect',
-        );
-      }
-      return _success(request, observedId!);
+      return _success(request, contentId!);
     } on MoltbookProviderException catch (error) {
       if (error.code == 'provider_rejected' &&
           _clock().toUtc().isBefore(DateTime.parse(action.expiresAtUtc))) {
