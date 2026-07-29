@@ -49,6 +49,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   MoltbookHomeObservation? _homeObservation;
   MoltbookFeedObservation? _feedObservation;
   MoltbookHeartbeatPlan? _heartbeatPlan;
+  MoltbookFeedCheckpoint? _feedCheckpoint;
   MoltbookDraftPreview? _draftPreview;
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
   List<ExternalEffectOperation> _publications =
@@ -87,11 +88,13 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         widget.module.loadMoltbookBinding(),
         widget.module.loadMoltbookDrafts(),
         widget.module.loadMoltbookPublications(),
+        widget.module.loadMoltbookFeedCheckpoint(),
       ]);
       final configuration = results[0] as MoltbookAmbassadorConfiguration;
       final binding = results[1] as MoltbookConnectionBinding?;
       final drafts = results[2] as List<MoltbookStoredDraft>;
       final publications = results[3] as List<ExternalEffectOperation>;
+      final feedCheckpoint = results[4] as MoltbookFeedCheckpoint;
       if (!mounted) return;
       _nameController.text = configuration.agentName;
       _descriptionController.text = configuration.agentDescription;
@@ -104,6 +107,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _binding = binding;
         _storedDrafts = drafts;
         _publications = publications;
+        _feedCheckpoint = feedCheckpoint;
         _loadError = null;
         _loading = false;
       });
@@ -205,8 +209,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     setState(() => _connectionBusy = true);
     try {
       final plan = await widget.module.planMoltbookHeartbeat();
+      final checkpoint = await widget.module.loadMoltbookFeedCheckpoint();
       if (!mounted) return;
-      setState(() => _heartbeatPlan = plan);
+      setState(() {
+        _heartbeatPlan = plan;
+        _feedCheckpoint = checkpoint;
+      });
       _showNotice('WASM heartbeat plan prepared');
     } catch (error) {
       if (mounted) {
@@ -597,6 +605,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     homeObservation: _homeObservation,
                     feedObservation: _feedObservation,
                     heartbeatPlan: _heartbeatPlan,
+                    feedCheckpoint: _feedCheckpoint,
                     onConnect: _connect,
                     onRefresh: _refreshConnection,
                     onObserveHome: _observeHome,
@@ -1232,6 +1241,7 @@ class _MoltbookConnectionCard extends StatelessWidget {
   final MoltbookHomeObservation? homeObservation;
   final MoltbookFeedObservation? feedObservation;
   final MoltbookHeartbeatPlan? heartbeatPlan;
+  final MoltbookFeedCheckpoint? feedCheckpoint;
   final VoidCallback onConnect;
   final VoidCallback onRefresh;
   final VoidCallback onObserveHome;
@@ -1246,6 +1256,7 @@ class _MoltbookConnectionCard extends StatelessWidget {
     required this.homeObservation,
     required this.feedObservation,
     required this.heartbeatPlan,
+    required this.feedCheckpoint,
     required this.onConnect,
     required this.onRefresh,
     required this.onObserveHome,
@@ -1419,6 +1430,18 @@ class _MoltbookConnectionCard extends StatelessWidget {
                 'review required · no external effect',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
+              if (feedCheckpoint?.lastObservedAtUtc != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${feedCheckpoint!.processedPostIds.length} remote post ids '
+                  'remembered · checkpoint '
+                  '${feedCheckpoint!.lastObservedAtUtc}',
+                  style: const TextStyle(
+                    color: Color(0xFF9CA7B5),
+                    height: 1.35,
+                  ),
+                ),
+              ],
             ],
           ],
         ),

@@ -167,10 +167,40 @@ class MoltbookConnectionService {
     );
   }
 
-  Future<MoltbookHeartbeatObservation> observeHeartbeat() {
+  Future<MoltbookHeartbeatObservation> observeHeartbeat({
+    Set<String> processedPostIds = const <String>{},
+  }) {
     return _withBoundCredential((apiKey) async {
       final home = await _observer.observeHome(apiKey);
-      final feed = await _observer.observeFeed(apiKey);
+      final firstPage = await _observer.observeFeed(apiKey);
+      final posts = <MoltbookFeedPost>[...firstPage.posts];
+      var lastPage = firstPage;
+      final reachedKnownPost = posts.any(
+        (post) => processedPostIds.contains(post.postId),
+      );
+      if (firstPage.hasMore && !reachedKnownPost) {
+        final secondPage = await _observer.observeFeed(
+          apiKey,
+          limit: 10,
+          cursor: firstPage.nextCursor,
+        );
+        final ids = posts.map((post) => post.postId).toSet();
+        for (final post in secondPage.posts) {
+          if (!ids.add(post.postId)) {
+            throw const FormatException(
+              'Moltbook heartbeat pages contain duplicate posts',
+            );
+          }
+          posts.add(post);
+        }
+        lastPage = secondPage;
+      }
+      final feed = MoltbookFeedObservation(
+        posts: posts,
+        hasMore: lastPage.hasMore,
+        nextCursor: lastPage.nextCursor,
+        rateLimit: lastPage.rateLimit,
+      );
       final observation = MoltbookHeartbeatObservation(home: home, feed: feed);
       observation.validate();
       return observation;

@@ -1,7 +1,8 @@
 # Moltbook Agent Drone - Design Contract v1
 
-Status: deterministic drafts, read-only account/home/feed observation, and
-assisted publication lifecycle implemented; bounded autonomy remains gated
+Status: deterministic drafts, read-only account/home/feed observation,
+restart-safe feed identity checkpoints, and assisted publication lifecycle
+implemented; bounded autonomy remains gated
 Runtime impact: bounded WASM draft contract only
 Primary owner: External Moltbook Drone
 
@@ -365,9 +366,9 @@ Exit gate:
 
 ### Phase 2 - Moltbook Adapter and Observe Mode
 
-Status: account connection, strict read-only Account/Home/Feed Observe, and
-deterministic WASM heartbeat planning mounted; durable cursor processing
-remains.
+Status: account connection, strict read-only Account/Home/Feed Observe,
+deterministic WASM heartbeat planning, and durable feed identity checkpoints
+mounted.
 
 - Completed: implement one strict Moltbook adapter for normalized Observe
   projections.
@@ -391,8 +392,16 @@ remains.
 - Completed: pass one Home/Feed observation through the external WASM package
   and return only `review_activity`, `inspect_feed`, or `idle`; the plan always
   requires review and cannot create an external effect.
-- Durable cursors and processed-post deduplication remain outside this Observe
-  slice.
+- Completed: persist one bounded Capsule/plugin-scoped checkpoint containing
+  only processed post ids, newest post id, observation time, and the last
+  continuation cursor. Remote title/body/author content is never persisted.
+- Completed: every heartbeat starts from the newest feed page. Provider
+  `next_cursor` is used only for a bounded second page inside that heartbeat,
+  because it paginates toward older posts and is not a cross-session
+  "since-new" cursor.
+- Completed: stop bounded pagination when a previously processed post is
+  reached, pass only unseen post ids to WASM, and commit the checkpoint only
+  after a valid no-effect plan returns.
 - Treat every remote field as untrusted data.
 
 Exit gate:

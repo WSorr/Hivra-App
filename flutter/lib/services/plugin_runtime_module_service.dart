@@ -19,6 +19,7 @@ import 'moltbook_ambassador_configuration_store.dart';
 import 'moltbook_connection_service.dart';
 import 'moltbook_draft_store.dart';
 import 'moltbook_external_effect_adapter.dart';
+import 'moltbook_feed_checkpoint_store.dart';
 import 'moltbook_publication_service.dart';
 import 'moltbook_provider_adapter.dart';
 import 'plugin_host_api_service.dart';
@@ -63,6 +64,7 @@ class PluginRuntimeModule {
   final ExternalEffectService externalEffects;
   final MoltbookConnectionService moltbookConnection;
   final MoltbookDraftStore moltbookDrafts;
+  final MoltbookFeedCheckpointStore moltbookFeedCheckpoint;
   final MoltbookPublicationService moltbookPublications;
   final MoltbookAmbassadorConfigurationStore _ambassadorConfiguration;
   final CapsuleFileStore _fileStore;
@@ -81,6 +83,7 @@ class PluginRuntimeModule {
     required this.externalEffects,
     required this.moltbookConnection,
     required this.moltbookDrafts,
+    required this.moltbookFeedCheckpoint,
     required this.moltbookPublications,
     required MoltbookAmbassadorConfigurationStore ambassadorConfiguration,
     required CapsuleFileStore fileStore,
@@ -100,6 +103,9 @@ class PluginRuntimeModule {
 
   Future<MoltbookConnectionBinding?> loadMoltbookBinding() =>
       moltbookConnection.loadBinding();
+
+  Future<MoltbookFeedCheckpoint> loadMoltbookFeedCheckpoint() =>
+      moltbookFeedCheckpoint.load();
 
   Future<MoltbookConnectionBinding> connectMoltbook(String apiKey) async {
     await uiLog.log('moltbook.connect', 'start');
@@ -177,7 +183,10 @@ class PluginRuntimeModule {
       throw StateError('Active capsule identity is unavailable');
     }
     await uiLog.log('moltbook.heartbeat.plan', 'start owner=$ownerHex');
-    final observation = await moltbookConnection.observeHeartbeat();
+    final checkpoint = await moltbookFeedCheckpoint.load();
+    final observation = await moltbookConnection.observeHeartbeat(
+      processedPostIds: checkpoint.processedPostIdSet,
+    );
     if (!_isStillOwnedBy(ownerHex)) {
       throw StateError(
         'Heartbeat discarded because the active capsule changed',
@@ -198,6 +207,9 @@ class PluginRuntimeModule {
             'suggested_actions': observation.home.suggestedActions,
           },
           'feed': observation.feed.posts
+              .where(
+                (post) => !checkpoint.processedPostIdSet.contains(post.postId),
+              )
               .map(
                 (post) => <String, dynamic>{
                   'post_id': post.postId,
@@ -227,6 +239,15 @@ class PluginRuntimeModule {
       );
     }
     final plan = MoltbookHeartbeatPlan.fromHostResult(result);
+    await moltbookFeedCheckpoint.commit(
+      observation.feed,
+      observedAt: DateTime.parse(observedAtUtc),
+    );
+    if (!_isStillOwnedBy(ownerHex)) {
+      throw StateError(
+        'Heartbeat checkpoint discarded because the active capsule changed',
+      );
+    }
     await uiLog.log(
       'moltbook.heartbeat.plan',
       'success priority=${plan.priority} '
@@ -640,6 +661,10 @@ class PluginRuntimeModuleService {
       externalEffects: effects,
       moltbookConnection: connection,
       moltbookDrafts: MoltbookDraftStore(
+        fileStore: fileStore,
+        readActiveCapsuleRootHex: activeCapsuleRootHex,
+      ),
+      moltbookFeedCheckpoint: MoltbookFeedCheckpointStore(
         fileStore: fileStore,
         readActiveCapsuleRootHex: activeCapsuleRootHex,
       ),

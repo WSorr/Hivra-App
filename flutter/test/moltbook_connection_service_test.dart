@@ -200,14 +200,44 @@ void main() {
       expect(observer.feedKeys, <String>['secret-key']);
     },
   );
+
+  test('heartbeat follows at most one continuation page', () async {
+    await service.connect('secret-key');
+    observer.firstPageHasMore = true;
+
+    final heartbeat = await service.observeHeartbeat();
+
+    expect(heartbeat.feed.posts.map((post) => post.postId), <String>[
+      'post-1',
+      'post-2',
+    ]);
+    expect(observer.feedLimits, <int>[15, 10]);
+    expect(observer.feedCursors, <String?>[null, 'next-page']);
+  });
+
+  test('heartbeat stops pagination when a processed post is reached', () async {
+    await service.connect('secret-key');
+    observer.firstPageHasMore = true;
+
+    final heartbeat = await service.observeHeartbeat(
+      processedPostIds: const <String>{'post-1'},
+    );
+
+    expect(heartbeat.feed.posts.map((post) => post.postId), <String>['post-1']);
+    expect(observer.feedLimits, <int>[15]);
+    expect(observer.feedCursors, <String?>[null]);
+  });
 }
 
 class _FakeObserver implements MoltbookObservePort {
   final List<String> keys = <String>[];
   final List<String> homeKeys = <String>[];
   final List<String> feedKeys = <String>[];
+  final List<int> feedLimits = <int>[];
+  final List<String?> feedCursors = <String?>[];
   String accountId = 'agent-1';
   String accountName = 'Hivra Agent';
+  bool firstPageHasMore = false;
   void Function()? onObserve;
 
   @override
@@ -259,11 +289,14 @@ class _FakeObserver implements MoltbookObservePort {
     String? cursor,
   }) async {
     feedKeys.add(apiKey);
-    return const MoltbookFeedObservation(
+    feedLimits.add(limit);
+    feedCursors.add(cursor);
+    final isSecondPage = cursor != null;
+    return MoltbookFeedObservation(
       posts: <MoltbookFeedPost>[
         MoltbookFeedPost(
-          postId: 'post-1',
-          title: 'A useful post',
+          postId: isSecondPage ? 'post-2' : 'post-1',
+          title: isSecondPage ? 'An older post' : 'A useful post',
           content: 'Public content',
           authorId: 'author-1',
           authorName: 'Agent',
@@ -272,12 +305,15 @@ class _FakeObserver implements MoltbookObservePort {
           commentCount: 0,
           isVerified: true,
           isSpam: false,
-          createdAtUtc: '2026-07-29T10:00:00.000Z',
+          createdAtUtc:
+              isSecondPage
+                  ? '2026-07-29T09:00:00.000Z'
+                  : '2026-07-29T10:00:00.000Z',
         ),
       ],
-      hasMore: false,
-      nextCursor: null,
-      rateLimit: MoltbookRateLimitSnapshot(
+      hasMore: !isSecondPage && firstPageHasMore,
+      nextCursor: !isSecondPage && firstPageHasMore ? 'next-page' : null,
+      rateLimit: const MoltbookRateLimitSnapshot(
         limit: 60,
         remaining: 57,
         resetEpochSeconds: 1,
