@@ -36,6 +36,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   final TextEditingController _audienceController = TextEditingController(
     text: 'agent-developers',
   );
+  final TextEditingController _publicSourceNotesController =
+      TextEditingController();
   final TextEditingController _factsController = TextEditingController();
   final TextEditingController _submoltController = TextEditingController(
     text: MoltbookPublicationService.defaultSubmolt,
@@ -54,10 +56,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   MoltbookEngagementPlan? _engagementPlan;
   MoltbookFeedCheckpoint? _feedCheckpoint;
   MoltbookDraftPreview? _draftPreview;
+  MoltbookPublicFactsProposal? _publicFactsProposal;
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
   List<ExternalEffectOperation> _publications =
       const <ExternalEffectOperation>[];
   bool _draftBusy = false;
+  bool _publicFactsBusy = false;
   bool _publicationBusy = false;
   String? _loadError;
 
@@ -79,6 +83,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     _categoryController.dispose();
     _titleHintController.dispose();
     _audienceController.dispose();
+    _publicSourceNotesController.dispose();
     _factsController.dispose();
     _submoltController.dispose();
     super.dispose();
@@ -366,6 +371,73 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       _showNotice('Could not prepare draft: $error', isError: true);
     } finally {
       if (mounted) setState(() => _draftBusy = false);
+    }
+  }
+
+  Future<void> _proposePublicFacts() async {
+    final sourceNotes = _publicSourceNotesController.text.trim();
+    if (sourceNotes.isEmpty) {
+      _showNotice('Add public source notes first', isError: true);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Send these public notes to AI?'),
+            content: SizedBox(
+              width: 560,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Only the text below, the selected public topic, and the local ambassador persona will be sent. No ledger, contacts, repository files, credentials, or Capsule history are included.',
+                    ),
+                    const SizedBox(height: 12),
+                    SelectableText(sourceNotes),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Generate proposal'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _publicFactsBusy = true;
+      _publicFactsProposal = null;
+    });
+    try {
+      final proposal = await widget.module.proposeMoltbookPublicFacts(
+        sourceNotes,
+        category: _categoryController.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _publicFactsProposal = proposal;
+        _factsController.text = proposal.facts.join('\n');
+        _draftPreview = null;
+      });
+      _showNotice(
+        'AI proposed ${proposal.facts.length} public fact(s). Review and edit them before preparing the WASM draft.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showNotice('Could not propose public facts: $error', isError: true);
+    } finally {
+      if (mounted) setState(() => _publicFactsBusy = false);
     }
   }
 
@@ -694,9 +766,13 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     categoryController: _categoryController,
                     titleHintController: _titleHintController,
                     audienceController: _audienceController,
+                    publicSourceNotesController: _publicSourceNotesController,
                     factsController: _factsController,
-                    busy: _draftBusy,
+                    busy: _draftBusy || _publicFactsBusy,
+                    publicFactsBusy: _publicFactsBusy,
+                    publicFactsProposal: _publicFactsProposal,
                     preview: _draftPreview,
+                    onProposePublicFacts: _proposePublicFacts,
                     onPrepare: _prepareDraft,
                   ),
                   if (_storedDrafts.isNotEmpty) ...[
@@ -1157,9 +1233,13 @@ class _MoltbookDraftCard extends StatelessWidget {
   final TextEditingController categoryController;
   final TextEditingController titleHintController;
   final TextEditingController audienceController;
+  final TextEditingController publicSourceNotesController;
   final TextEditingController factsController;
   final bool busy;
+  final bool publicFactsBusy;
+  final MoltbookPublicFactsProposal? publicFactsProposal;
   final MoltbookDraftPreview? preview;
+  final VoidCallback onProposePublicFacts;
   final VoidCallback onPrepare;
 
   const _MoltbookDraftCard({
@@ -1168,9 +1248,13 @@ class _MoltbookDraftCard extends StatelessWidget {
     required this.categoryController,
     required this.titleHintController,
     required this.audienceController,
+    required this.publicSourceNotesController,
     required this.factsController,
     required this.busy,
+    required this.publicFactsBusy,
+    required this.publicFactsProposal,
     required this.preview,
+    required this.onProposePublicFacts,
     required this.onPrepare,
   });
 
@@ -1232,6 +1316,78 @@ class _MoltbookDraftCard extends StatelessWidget {
             TextField(
               controller: audienceController,
               decoration: const InputDecoration(labelText: 'Audience'),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF17252B),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF365C66)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.auto_awesome, color: Color(0xFF72D5C4)),
+                      SizedBox(width: 8),
+                      Text(
+                        'AI fact proposal',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Paste only information you are willing to send to the selected AI provider. The proposal stays local and cannot publish.',
+                    style: TextStyle(color: Color(0xFFA9C7C4), height: 1.35),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: publicSourceNotesController,
+                    minLines: 3,
+                    maxLines: 8,
+                    decoration: const InputDecoration(
+                      labelText: 'Public source notes',
+                      helperText:
+                          'Explicit public input only. No secrets or private Capsule data.',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.tonalIcon(
+                    onPressed: busy ? null : onProposePublicFacts,
+                    icon:
+                        publicFactsBusy
+                            ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.fact_check_outlined),
+                    label: Text(
+                      publicFactsBusy
+                          ? 'Generating proposal'
+                          : 'Propose public facts',
+                    ),
+                  ),
+                  if (publicFactsProposal != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      '${publicFactsProposal!.providerLabel} · ${publicFactsProposal!.model} · review required',
+                      style: const TextStyle(
+                        color: Color(0xFF72D5C4),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             TextField(

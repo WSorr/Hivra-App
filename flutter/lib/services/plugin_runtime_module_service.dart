@@ -8,6 +8,7 @@ import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import 'app_runtime_service.dart';
+import 'ai_doctor_credential_store.dart';
 import 'capsule_file_store.dart';
 import 'capsule_scoped_secret_vault.dart';
 import 'capsule_chat_delivery_service.dart';
@@ -21,6 +22,7 @@ import 'moltbook_draft_store.dart';
 import 'moltbook_external_effect_adapter.dart';
 import 'moltbook_feed_checkpoint_store.dart';
 import 'moltbook_publication_service.dart';
+import 'moltbook_public_bulletin_ai_service.dart';
 import 'moltbook_provider_adapter.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
@@ -66,6 +68,7 @@ class PluginRuntimeModule {
   final MoltbookDraftStore moltbookDrafts;
   final MoltbookFeedCheckpointStore moltbookFeedCheckpoint;
   final MoltbookPublicationService moltbookPublications;
+  final MoltbookPublicBulletinAiService moltbookPublicBulletinAi;
   final MoltbookAmbassadorConfigurationStore _ambassadorConfiguration;
   final CapsuleFileStore _fileStore;
   final CapsuleScopedSecretVault _secretVault;
@@ -85,6 +88,7 @@ class PluginRuntimeModule {
     required this.moltbookDrafts,
     required this.moltbookFeedCheckpoint,
     required this.moltbookPublications,
+    required this.moltbookPublicBulletinAi,
     required MoltbookAmbassadorConfigurationStore ambassadorConfiguration,
     required CapsuleFileStore fileStore,
     required CapsuleScopedSecretVault secretVault,
@@ -100,6 +104,55 @@ class PluginRuntimeModule {
   Future<void> saveAmbassadorConfiguration(
     MoltbookAmbassadorConfiguration configuration,
   ) => _ambassadorConfiguration.save(configuration);
+
+  Future<MoltbookPublicFactsProposal> proposeMoltbookPublicFacts(
+    String sourceNotes, {
+    required String category,
+  }) async {
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled) {
+      throw StateError('Moltbook Ambassador is disabled');
+    }
+    final normalizedCategory = category.trim();
+    if (!configuration.allowedTopics.contains(normalizedCategory)) {
+      throw StateError(
+        'Public facts category must match one of the allowed topics',
+      );
+    }
+    final operationCapsuleHex =
+        _readActiveCapsuleRootHex()?.trim().toLowerCase();
+    if (operationCapsuleHex == null || operationCapsuleHex.length != 64) {
+      throw StateError('Active capsule identity is unavailable');
+    }
+    await uiLog.log(
+      'moltbook.public_facts.propose',
+      'start owner=$operationCapsuleHex category=$normalizedCategory',
+    );
+    try {
+      final proposal = await moltbookPublicBulletinAi.propose(
+        sourceNotes: sourceNotes,
+        category: normalizedCategory,
+        personaSummary: configuration.personaSummary,
+      );
+      if (!_isStillOwnedBy(operationCapsuleHex)) {
+        throw StateError(
+          'Public facts discarded because the active capsule changed',
+        );
+      }
+      await uiLog.log(
+        'moltbook.public_facts.propose',
+        'success provider=${proposal.providerLabel} '
+            'model=${_safeLogValue(proposal.model)} facts=${proposal.facts.length}',
+      );
+      return proposal;
+    } catch (error) {
+      await uiLog.log(
+        'moltbook.public_facts.propose',
+        'error ${_safeError(error)}',
+      );
+      rethrow;
+    }
+  }
 
   Future<MoltbookConnectionBinding?> loadMoltbookBinding() =>
       moltbookConnection.loadBinding();
@@ -795,6 +848,9 @@ class PluginRuntimeModuleService {
       moltbookPublications: MoltbookPublicationService(
         connection: connection,
         effects: effects,
+      ),
+      moltbookPublicBulletinAi: MoltbookPublicBulletinAiService(
+        credentialStore: AiDoctorCredentialStore(),
       ),
       ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(
         fileStore: fileStore,

@@ -4,6 +4,39 @@ import 'package:crypto/crypto.dart';
 
 import 'plugin_contract_ids.dart';
 
+class MoltbookPublicFactsProposal {
+  final List<String> facts;
+  final String providerLabel;
+  final String model;
+
+  const MoltbookPublicFactsProposal({
+    required this.facts,
+    required this.providerLabel,
+    required this.model,
+  });
+
+  void validate() {
+    if (facts.isEmpty ||
+        facts.length > 8 ||
+        facts.toSet().length != facts.length) {
+      throw const FormatException(
+        'AI public facts must contain 1..8 unique items',
+      );
+    }
+    for (final fact in facts) {
+      if (fact.trim() != fact || fact.isEmpty || fact.length > 280) {
+        throw const FormatException('AI public fact is outside safe bounds');
+      }
+    }
+    if (providerLabel.isEmpty ||
+        providerLabel.length > 64 ||
+        model.isEmpty ||
+        model.length > 128) {
+      throw const FormatException('AI public facts model is invalid');
+    }
+  }
+}
+
 class MoltbookDraftPreview {
   final String bulletinId;
   final String releaseTag;

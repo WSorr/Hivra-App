@@ -75,6 +75,7 @@ MOLTBOOK_EFFECT_ADAPTER="$ROOT/flutter/lib/services/moltbook_external_effect_ada
 MOLTBOOK_PUBLICATION="$ROOT/flutter/lib/services/moltbook_publication_service.dart"
 MOLTBOOK_CONNECTION="$ROOT/flutter/lib/services/moltbook_connection_service.dart"
 MOLTBOOK_DRAFT_STORE="$ROOT/flutter/lib/services/moltbook_draft_store.dart"
+MOLTBOOK_PUBLIC_BULLETIN_AI="$ROOT/flutter/lib/services/moltbook_public_bulletin_ai_service.dart"
 CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
 INVITATIONS_SCREEN="$SCREENS/invitations_screen.dart"
 LEDGER_INSPECTOR_SCREEN="$SCREENS/ledger_inspector_screen.dart"
@@ -443,8 +444,16 @@ require_present "$MOLTBOOK_PROVIDER_ADAPTER" "Moltbook transport only permits GE
   "Moltbook adapter restricts methods to the reviewed read and publication set"
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "moltbook_provider_adapter|CapsuleScopedSecretVault" \
   "Moltbook screen cannot call provider or secure storage directly"
+require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "InferenceProviderAdapter|AiDoctorCredentialStore" \
+  "Moltbook screen cannot call inference provider or credential store directly"
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" "PluginHostApiService|executeWithRuntimeHook" \
   "Moltbook screen cannot call the plugin host directly"
+require_absent "$MOLTBOOK_PUBLIC_BULLETIN_AI" "import .*ledger|import .*repository|MoltbookProvider|ExternalEffect|CapsuleFileStore|dart:io" \
+  "Moltbook public-facts AI has no private truth, repository, provider, effect, or filesystem dependency"
+require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "facts_only_from_source_notes.*true" \
+  "Moltbook public-facts AI is constrained to explicit source notes"
+require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "human_review_required.*true" \
+  "Moltbook public-facts AI requires human review"
 require_present "$PLUGIN_RUNTIME_MODULE" "Future<MoltbookDraftPreview> prepareMoltbookDraft" \
   "Moltbook draft preview is mounted through the plugin runtime module"
 require_present "$PLUGIN_RUNTIME_MODULE" "method: prepareMoltbookDraftMethod" \

@@ -150,11 +150,13 @@ Rules:
 ## 6. Processing Pipeline
 
 ```text
-explicit Public Bulletin
+explicit public source notes
+  -> optional minimized AI fact proposal (advisory, in memory)
+  -> human review/edit
+  -> explicit Public Bulletin
   -> Moltbook Drone draft contract
   -> normalized public facts
   -> deterministic eligibility/policy gate
-  -> optional minimized AI inference
   -> canonical draft
   -> explicit approval
 
@@ -174,6 +176,13 @@ approval.
 AI output is also untrusted advisory data. A deterministic host/drone policy
 must validate output shape, topic, target, size, rate budget, and action class
 before a publish operation can be created.
+
+The optional Public Bulletin assistant receives only source notes that the user
+explicitly marks as public, the selected public topic, and the local ambassador
+persona. It receives no ledger, contacts, Capsule history, repository files,
+credentials, or provider DTOs. It returns only 1..8 bounded fact strings in
+memory. The user must review or edit them before the existing deterministic
+WASM draft method can run.
 
 ## 7. Operating Modes
 
@@ -434,9 +443,12 @@ The plugin card opens a dedicated workspace. The generic Plugins screen shows
 installation and health only; it must not become a provider dashboard.
 
 The current workspace contains local `Profile`, `Stop`, read-only `Connection`,
-and exact `Draft Preview` controls. Connection verifies the API key through the
-host adapter, then moves it into the generic secure vault and clears the input.
-Draft Preview accepts only an explicit bounded Public Bulletin, invokes the
+an optional AI-assisted public-facts proposal, and exact `Draft Preview`
+controls. Connection verifies the API key through the host adapter, then moves
+it into the generic secure vault and clears the input. The fact assistant
+requires an exact outbound preview and confirmation, returns bounded advisory
+facts in memory, and cannot invoke WASM or publish automatically. Draft Preview
+accepts only the resulting explicitly reviewed Public Bulletin, invokes the
 installed WASM package through the plugin host, and projects the validated
 title, body, audience, safety flags, approval gate, and canonical draft hash.
 The validated result is stored in one bounded Capsule/plugin-scoped local draft

@@ -1473,6 +1473,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - completed deterministic engagement proposal: WASM may propose review of
       a reply, comment, or vote candidate, but generates no reply text and has
       no network-effect capability.
+    - completed optional Public Bulletin fact proposal: the selected inference
+      provider receives only explicitly confirmed public source notes, public
+      topic, and persona; strict bounded facts remain in memory for manual edit
+      before the independent WASM draft and publication approval gates.
     - completed generic secure plugin-credential vault: one versioned Secure
       Storage item, serialized updates, fail-closed parsing, and cleanup by
       both Capsule deletion and plugin removal.
