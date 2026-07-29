@@ -1467,6 +1467,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - completed read-only adapter baseline: pinned official HTTPS origin,
       bounded account/home projections, redirect rejection, timeout/size
       limits, rate-budget parsing, and fail-closed provider error mapping.
+    - completed bounded conversation review: one exact post and at most 20
+      newest comments are normalized as untrusted in-memory observations;
+      provider DTOs and remote text are not persisted.
+    - completed deterministic engagement proposal: WASM may propose review of
+      a reply, comment, or vote candidate, but generates no reply text and has
+      no network-effect capability.
     - completed generic secure plugin-credential vault: one versioned Secure
       Storage item, serialized updates, fail-closed parsing, and cleanup by
       both Capsule deletion and plugin removal.
@@ -1494,10 +1500,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - completed: approve the ownership boundary and define the draft-only
       Public Bulletin contract without changing the 1.x Core protocol.
   - Status: Phase 0 draft prototype, Phase 1 host lifecycle, Phase 2
-    account/home Observe with secure binding, Phase 3 deterministic WASM Draft
-    Preview, and the Phase 4 Assisted publication host path are implemented;
-    macOS verification smoke passes and Android smoke remains before Discover
-    publication.
+    account/home/feed/conversation Observe with secure binding, Phase 3
+    deterministic WASM Draft and Engagement Preview, and the Phase 4 Assisted
+    publication host path are implemented; macOS verification smoke passes
+    and Android smoke remains before Discover publication.
 
 - `11.8 Trading Drone Live Criteria Parity (spec factors must drive live entry)`
   - Goal:

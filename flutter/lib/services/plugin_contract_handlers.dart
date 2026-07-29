@@ -307,16 +307,18 @@ class MoltbookAmbassadorPluginContractHandler
   Set<String> get methods => const <String>{
     prepareMoltbookDraftMethod,
     planMoltbookHeartbeatMethod,
+    planMoltbookEngagementMethod,
   };
 
   @override
   bool get requiresExternalRuntime => true;
 
   @override
-  Set<String> requiredCapabilities(String method) =>
-      method == planMoltbookHeartbeatMethod
-          ? const <String>{'content.feed.plan'}
-          : const <String>{'content.draft.prepare'};
+  Set<String> requiredCapabilities(String method) => switch (method) {
+    planMoltbookHeartbeatMethod => const <String>{'content.feed.plan'},
+    planMoltbookEngagementMethod => const <String>{'content.engagement.plan'},
+    _ => const <String>{'content.draft.prepare'},
+  };
 
   @override
   PluginHostContractResult? preflight(PluginHostApiRequest request) => null;
@@ -363,6 +365,32 @@ class MoltbookAmbassadorPluginContractHandler
         return const PluginHostContractResult.rejected(
           code: 'runtime_result_invalid',
           message: 'WASM ambassador heartbeat safety gate failed',
+        );
+      }
+      return PluginHostContractResult.executed(<String, dynamic>{
+        ...plan,
+        'plan_hash_hex': planHashHex,
+        'canonical_plan_json': canonicalJson,
+      });
+    }
+    if (request.method == planMoltbookEngagementMethod) {
+      final planHashHex = semantic?['plan_hash_hex']?.toString() ?? '';
+      final plan = _validatedCanonicalObject(
+        canonicalJson: canonicalJson,
+        expectedHashHex: planHashHex,
+        expectedPluginId: pluginId,
+        expectedContractKind: 'moltbook_ambassador_engagement_plan',
+        expectedPeerHex: null,
+      );
+      if (plan == null ||
+          plan['publish_allowed'] != false ||
+          plan['human_review_required'] != true ||
+          plan['action_class'] is! String ||
+          plan['target_post_id'] is! String ||
+          plan['safety_flags'] is! List) {
+        return const PluginHostContractResult.rejected(
+          code: 'runtime_result_invalid',
+          message: 'WASM ambassador engagement safety gate failed',
         );
       }
       return PluginHostContractResult.executed(<String, dynamic>{

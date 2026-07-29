@@ -19,6 +19,12 @@ abstract interface class MoltbookObservePort {
     int limit = 15,
     String? cursor,
   });
+
+  Future<MoltbookConversationObservation> observeConversation(
+    String apiKey, {
+    required String postId,
+    int commentLimit = MoltbookConversationObservation.maxComments,
+  });
 }
 
 class MoltbookHttpRequest {
@@ -342,9 +348,11 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     return json;
   }
 
-  Future<Map<String, dynamic>> observePost({
-    required String apiKey,
+  @override
+  Future<MoltbookConversationObservation> observeConversation(
+    String apiKey, {
     required String postId,
+    int commentLimit = MoltbookConversationObservation.maxComments,
   }) async {
     final normalizedId = postId.trim();
     if (!RegExp(r'^[A-Za-z0-9-]{1,256}$').hasMatch(normalizedId)) {
@@ -354,14 +362,123 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
         retryable: false,
       );
     }
-    final response = await _request(
-      method: 'GET',
-      relativePath: 'posts/${Uri.encodeComponent(normalizedId)}',
-      apiKey: apiKey,
+    if (commentLimit < 1 ||
+        commentLimit > MoltbookConversationObservation.maxComments) {
+      throw const MoltbookProviderException(
+        code: 'invalid_comment_limit',
+        message: 'Moltbook comment limit must be within 1..20',
+        retryable: false,
+      );
+    }
+    final encodedId = Uri.encodeComponent(normalizedId);
+    final responses = await Future.wait<MoltbookHttpResponse>([
+      _get('posts/$encodedId', apiKey),
+      _get('posts/$encodedId/comments?sort=new&limit=$commentLimit', apiKey),
+    ]);
+    final postJson = _decodeObject(responses[0]);
+    final commentsJson = _decodeObject(responses[1]);
+    _rejectProviderFailure(postJson, responses[0]);
+    _rejectProviderFailure(commentsJson, responses[1]);
+    final rawPost = postJson['post'];
+    if (rawPost is! Map) {
+      throw _malformed('Post response has no post object');
+    }
+    final post = _parsePostObservation(Map<String, dynamic>.from(rawPost));
+    if (post.postId != normalizedId) {
+      throw _malformed('Post response identity does not match request');
+    }
+    if (commentsJson['post_id'] != normalizedId ||
+        commentsJson['sort'] != 'new' ||
+        commentsJson['comments'] is! List ||
+        commentsJson['has_more'] is! bool) {
+      throw _malformed('Comments response has invalid identity or paging');
+    }
+    final comments = (commentsJson['comments'] as List)
+        .map((value) {
+          if (value is! Map) {
+            throw _malformed('Comments response contains an invalid comment');
+          }
+          return _parseCommentObservation(
+            Map<String, dynamic>.from(value),
+            postId: normalizedId,
+          );
+        })
+        .toList(growable: false);
+    final observation = MoltbookConversationObservation(
+      post: post,
+      comments: comments,
+      hasMoreComments: commentsJson['has_more'] as bool,
+      rateLimit: _rateLimit(responses[1]),
     );
-    final json = _decodeObject(response);
-    _rejectProviderFailure(json, response);
-    return json;
+    _validateObservation(observation.validate);
+    return observation;
+  }
+
+  static MoltbookPostObservation _parsePostObservation(
+    Map<String, dynamic> post,
+  ) {
+    final rawAuthor = post['author'];
+    final rawSubmolt = post['submolt'];
+    if (rawAuthor is! Map || rawSubmolt is! Map) {
+      throw _malformed('Post identity projection is invalid');
+    }
+    final author = Map<String, dynamic>.from(rawAuthor);
+    final submolt = Map<String, dynamic>.from(rawSubmolt);
+    final createdAt =
+        DateTime.tryParse(_requiredString(post, 'created_at'))?.toUtc();
+    final updatedAt =
+        DateTime.tryParse(_requiredString(post, 'updated_at'))?.toUtc();
+    if (createdAt == null || updatedAt == null) {
+      throw _malformed('Post timestamp is invalid');
+    }
+    return MoltbookPostObservation(
+      postId: _requiredString(post, 'id'),
+      title: _requiredString(post, 'title'),
+      content: _optionalString(post, 'content'),
+      authorId: _requiredString(author, 'id'),
+      authorName: _requiredString(author, 'name'),
+      submoltName: _requiredString(submolt, 'name'),
+      score: _requiredInt(post, 'score'),
+      commentCount: _requiredNonNegativeInt(post, 'comment_count'),
+      isVerified: _requiredString(post, 'verification_status') == 'verified',
+      isSpam: _requiredBool(post, 'is_spam'),
+      isLocked: _requiredBool(post, 'is_locked'),
+      createdAtUtc: createdAt.toIso8601String(),
+      updatedAtUtc: updatedAt.toIso8601String(),
+    );
+  }
+
+  static MoltbookCommentObservation _parseCommentObservation(
+    Map<String, dynamic> comment, {
+    required String postId,
+  }) {
+    final rawAuthor = comment['author'];
+    if (rawAuthor is! Map) {
+      throw _malformed('Comment author projection is invalid');
+    }
+    final author = Map<String, dynamic>.from(rawAuthor);
+    final createdAt =
+        DateTime.tryParse(_requiredString(comment, 'created_at'))?.toUtc();
+    if (createdAt == null) {
+      throw _malformed('Comment timestamp is invalid');
+    }
+    final parentId = comment['parent_id'];
+    if (parentId != null && parentId is! String) {
+      throw _malformed('Comment parent id is invalid');
+    }
+    final upvotes = _requiredNonNegativeInt(comment, 'upvotes');
+    final downvotes = _requiredNonNegativeInt(comment, 'downvotes');
+    return MoltbookCommentObservation(
+      commentId: _requiredString(comment, 'id'),
+      postId: postId,
+      parentCommentId:
+          parentId == null || parentId.trim().isEmpty ? null : parentId.trim(),
+      content: _requiredString(comment, 'content'),
+      authorId: _requiredString(author, 'id'),
+      authorName: _requiredString(author, 'name'),
+      score: upvotes - downvotes,
+      createdAtUtc: createdAt.toIso8601String(),
+    );
   }
 
   Future<MoltbookHttpResponse> _get(String relativePath, String apiKey) async {
@@ -619,6 +736,14 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     final value = map[field];
     if (value is! int || value < 0) {
       throw _malformed('Moltbook field $field must be a non-negative integer');
+    }
+    return value;
+  }
+
+  static int _requiredInt(Map<String, dynamic> map, String field) {
+    final value = map[field];
+    if (value is! int) {
+      throw _malformed('Moltbook field $field must be an integer');
     }
     return value;
   }

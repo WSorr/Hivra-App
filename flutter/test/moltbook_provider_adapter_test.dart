@@ -139,6 +139,109 @@ void main() {
     expect(result.nextCursor, 'cursor-1');
   });
 
+  test('observes one bounded read-only conversation', () async {
+    final requests = <MoltbookHttpRequest>[];
+    final adapter = MoltbookProviderAdapter(
+      send: (request) async {
+        requests.add(request);
+        if (request.uri.path.endsWith('/comments')) {
+          return _jsonResponse(<String, dynamic>{
+            'success': true,
+            'post_id': 'post-1',
+            'sort': 'new',
+            'count': 1,
+            'comments': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'comment-1',
+                'content': 'A useful reply.',
+                'parent_id': null,
+                'upvotes': 3,
+                'downvotes': 1,
+                'created_at': '2026-07-29T10:05:00.000Z',
+                'author': <String, dynamic>{'id': 'author-2', 'name': 'Reader'},
+              },
+            ],
+            'has_more': false,
+          });
+        }
+        return _jsonResponse(<String, dynamic>{
+          'success': true,
+          'post': <String, dynamic>{
+            'id': 'post-1',
+            'title': 'Deterministic effects',
+            'content': 'A timeout is not a failure receipt.',
+            'author': <String, dynamic>{
+              'id': 'author-1',
+              'name': 'HivraAmbassador',
+            },
+            'submolt': <String, dynamic>{'name': 'general'},
+            'score': 4,
+            'comment_count': 1,
+            'verification_status': 'verified',
+            'is_spam': false,
+            'is_locked': false,
+            'created_at': '2026-07-29T10:00:00.000Z',
+            'updated_at': '2026-07-29T10:05:00.000Z',
+          },
+        });
+      },
+    );
+
+    final result = await adapter.observeConversation(
+      'secret',
+      postId: 'post-1',
+    );
+
+    expect(requests, hasLength(2));
+    expect(
+      requests.map((request) => request.uri.toString()),
+      containsAll(<String>[
+        'https://www.moltbook.com/api/v1/posts/post-1',
+        'https://www.moltbook.com/api/v1/posts/post-1/comments?sort=new&limit=20',
+      ]),
+    );
+    expect(result.post.postId, 'post-1');
+    expect(result.comments.single.commentId, 'comment-1');
+    expect(result.comments.single.score, 2);
+    expect(result.hasMoreComments, isFalse);
+  });
+
+  test('rejects conversation response for another post', () async {
+    final adapter = MoltbookProviderAdapter(
+      send: (request) async {
+        if (request.uri.path.endsWith('/comments')) {
+          return _jsonResponse(<String, dynamic>{
+            'post_id': 'other-post',
+            'sort': 'new',
+            'comments': <dynamic>[],
+            'has_more': false,
+          });
+        }
+        return _jsonResponse(<String, dynamic>{
+          'post': <String, dynamic>{
+            'id': 'post-1',
+            'title': 'Post',
+            'content': '',
+            'author': <String, dynamic>{'id': 'author-1', 'name': 'Agent'},
+            'submolt': <String, dynamic>{'name': 'general'},
+            'score': 0,
+            'comment_count': 0,
+            'verification_status': 'verified',
+            'is_spam': false,
+            'is_locked': false,
+            'created_at': '2026-07-29T10:00:00.000Z',
+            'updated_at': '2026-07-29T10:00:00.000Z',
+          },
+        });
+      },
+    );
+
+    await expectLater(
+      adapter.observeConversation('secret', postId: 'post-1'),
+      throwsA(_providerError('malformed_response', retryable: false)),
+    );
+  });
+
   test('rejects malformed feed paging instead of inventing a cursor', () async {
     final adapter = MoltbookProviderAdapter(
       send:

@@ -173,6 +173,136 @@ class MoltbookPostActivityObservation {
   }
 }
 
+class MoltbookPostObservation {
+  final String postId;
+  final String title;
+  final String content;
+  final String authorId;
+  final String authorName;
+  final String submoltName;
+  final int score;
+  final int commentCount;
+  final bool isVerified;
+  final bool isSpam;
+  final bool isLocked;
+  final String createdAtUtc;
+  final String updatedAtUtc;
+
+  const MoltbookPostObservation({
+    required this.postId,
+    required this.title,
+    required this.content,
+    required this.authorId,
+    required this.authorName,
+    required this.submoltName,
+    required this.score,
+    required this.commentCount,
+    required this.isVerified,
+    required this.isSpam,
+    required this.isLocked,
+    required this.createdAtUtc,
+    required this.updatedAtUtc,
+  });
+
+  void validate() {
+    _bounded('conversation.post_id', postId, 1, 256);
+    _bounded('conversation.title', title, 1, 300);
+    _bounded('conversation.content', content, 0, 40000);
+    _bounded('conversation.author_id', authorId, 1, 256);
+    _bounded('conversation.author_name', authorName, 1, 128);
+    _bounded('conversation.submolt_name', submoltName, 1, 128);
+    if (score < -1000000000 ||
+        score > 1000000000 ||
+        commentCount < 0 ||
+        commentCount > 1000000000) {
+      throw const FormatException(
+        'Moltbook conversation counters are outside supported bounds',
+      );
+    }
+    _canonicalUtc('conversation.created_at_utc', createdAtUtc);
+    _canonicalUtc('conversation.updated_at_utc', updatedAtUtc);
+  }
+}
+
+class MoltbookCommentObservation {
+  final String commentId;
+  final String postId;
+  final String? parentCommentId;
+  final String content;
+  final String authorId;
+  final String authorName;
+  final int score;
+  final String createdAtUtc;
+
+  const MoltbookCommentObservation({
+    required this.commentId,
+    required this.postId,
+    required this.parentCommentId,
+    required this.content,
+    required this.authorId,
+    required this.authorName,
+    required this.score,
+    required this.createdAtUtc,
+  });
+
+  void validate() {
+    _bounded('comment.comment_id', commentId, 1, 256);
+    _bounded('comment.post_id', postId, 1, 256);
+    final parentId = parentCommentId;
+    if (parentId != null) {
+      _bounded('comment.parent_comment_id', parentId, 1, 256);
+      if (parentId == commentId) {
+        throw const FormatException('Moltbook comment cannot parent itself');
+      }
+    }
+    _bounded('comment.content', content, 1, 12000);
+    _bounded('comment.author_id', authorId, 1, 256);
+    _bounded('comment.author_name', authorName, 1, 128);
+    if (score < -1000000000 || score > 1000000000) {
+      throw const FormatException('Moltbook comment score is invalid');
+    }
+    _canonicalUtc('comment.created_at_utc', createdAtUtc);
+  }
+}
+
+class MoltbookConversationObservation {
+  static const int maxComments = 20;
+
+  final MoltbookPostObservation post;
+  final List<MoltbookCommentObservation> comments;
+  final bool hasMoreComments;
+  final MoltbookRateLimitSnapshot rateLimit;
+
+  const MoltbookConversationObservation({
+    required this.post,
+    required this.comments,
+    required this.hasMoreComments,
+    required this.rateLimit,
+  });
+
+  void validate() {
+    post.validate();
+    if (comments.length > maxComments) {
+      throw const FormatException(
+        'Moltbook conversation exceeds its comment limit',
+      );
+    }
+    final ids = <String>{};
+    for (final comment in comments) {
+      comment.validate();
+      if (comment.postId != post.postId) {
+        throw const FormatException('Moltbook comment belongs to another post');
+      }
+      if (!ids.add(comment.commentId)) {
+        throw const FormatException(
+          'Moltbook conversation contains duplicate comments',
+        );
+      }
+    }
+    rateLimit.validate();
+  }
+}
+
 class MoltbookFeedPost {
   final String postId;
   final String title;
@@ -514,5 +644,14 @@ void _bounded(String field, String value, int min, int max) {
   final length = value.trim().length;
   if (length < min || length > max) {
     throw FormatException('$field must contain $min..$max characters');
+  }
+}
+
+void _canonicalUtc(String field, String value) {
+  final timestamp = DateTime.tryParse(value);
+  if (timestamp == null ||
+      !timestamp.isUtc ||
+      timestamp.toIso8601String() != value) {
+    throw FormatException('$field must be canonical UTC');
   }
 }

@@ -397,3 +397,102 @@ class MoltbookHeartbeatPlan {
     );
   }
 }
+
+class MoltbookEngagementPlan {
+  static const Set<String> actionClasses = <String>{
+    'reply_draft',
+    'comment_draft',
+    'upvote_candidate',
+    'follow_candidate',
+    'no_action',
+  };
+
+  final String observedAtUtc;
+  final String actionClass;
+  final String targetPostId;
+  final String? targetCommentId;
+  final String reason;
+  final bool publishAllowed;
+  final bool humanReviewRequired;
+  final List<String> safetyFlags;
+  final String planHashHex;
+  final String canonicalPlanJson;
+
+  const MoltbookEngagementPlan({
+    required this.observedAtUtc,
+    required this.actionClass,
+    required this.targetPostId,
+    required this.targetCommentId,
+    required this.reason,
+    required this.publishAllowed,
+    required this.humanReviewRequired,
+    required this.safetyFlags,
+    required this.planHashHex,
+    required this.canonicalPlanJson,
+  });
+
+  factory MoltbookEngagementPlan.fromHostResult(Map<String, dynamic> result) {
+    if (result['schema_version'] != 1 ||
+        result['plugin_id'] != moltbookAmbassadorPluginId ||
+        result['contract_kind'] != 'moltbook_ambassador_engagement_plan' ||
+        result['publish_allowed'] != false ||
+        result['human_review_required'] != true) {
+      throw const FormatException('Invalid Moltbook engagement plan');
+    }
+    final observedAt = DateTime.tryParse(
+      result['observed_at_utc']?.toString() ?? '',
+    );
+    final actionClass = result['action_class']?.toString() ?? '';
+    final postId = result['target_post_id']?.toString() ?? '';
+    final rawCommentId = result['target_comment_id'];
+    final commentId = rawCommentId is String ? rawCommentId : null;
+    final reason = result['reason']?.toString().trim() ?? '';
+    final rawFlags = result['safety_flags'];
+    final planHash = result['plan_hash_hex']?.toString() ?? '';
+    final canonicalJson = result['canonical_plan_json']?.toString() ?? '';
+    if (observedAt == null ||
+        !observedAt.isUtc ||
+        observedAt.toIso8601String() != result['observed_at_utc'] ||
+        !actionClasses.contains(actionClass) ||
+        postId.isEmpty ||
+        postId.length > 256 ||
+        (rawCommentId != null &&
+            (commentId == null ||
+                commentId.isEmpty ||
+                commentId.length > 256)) ||
+        reason.isEmpty ||
+        reason.length > 500 ||
+        rawFlags is! List ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(planHash) ||
+        canonicalJson.isEmpty) {
+      throw const FormatException('Malformed Moltbook engagement plan');
+    }
+    final flags = rawFlags
+        .map((value) {
+          if (value is! String || value.isEmpty || value.length > 80) {
+            throw const FormatException(
+              'Invalid Moltbook engagement safety flag',
+            );
+          }
+          return value;
+        })
+        .toList(growable: false);
+    if (!flags.contains('remote_content_untrusted') ||
+        !flags.contains('no_external_effect') ||
+        !flags.contains('ai_text_not_generated')) {
+      throw const FormatException('Moltbook engagement safety gate is missing');
+    }
+    return MoltbookEngagementPlan(
+      observedAtUtc: observedAt.toIso8601String(),
+      actionClass: actionClass,
+      targetPostId: postId,
+      targetCommentId: commentId,
+      reason: reason,
+      publishAllowed: false,
+      humanReviewRequired: true,
+      safetyFlags: flags,
+      planHashHex: planHash,
+      canonicalPlanJson: canonicalJson,
+    );
+  }
+}

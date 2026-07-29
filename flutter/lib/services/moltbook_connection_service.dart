@@ -167,6 +167,12 @@ class MoltbookConnectionService {
     );
   }
 
+  Future<MoltbookConversationObservation> observeConversation(String postId) {
+    return _withBoundCredential(
+      (apiKey) => _observer.observeConversation(apiKey, postId: postId),
+    );
+  }
+
   Future<MoltbookHeartbeatObservation> observeHeartbeat({
     Set<String> processedPostIds = const <String>{},
   }) {

@@ -212,6 +212,9 @@ Current methods:
   explicit Public Bulletin; no network effect.
 - `plan_moltbook_heartbeat`: `solo`, deterministic prioritization of one
   host-normalized Home/Feed snapshot; no network effect.
+- `plan_moltbook_engagement`: `solo`, deterministic proposal from one bounded
+  host-normalized post conversation; no generated reply text and no network
+  effect.
 
 Future remote contract methods are not implemented yet:
 
@@ -263,7 +266,9 @@ Observe v1 permits only:
 - path prefix `/api/v1/`;
 - `GET /api/v1/agents/me`;
 - `GET /api/v1/agents/status`;
-- `GET /api/v1/home`.
+- `GET /api/v1/home`;
+- `GET /api/v1/posts/{post_id}`;
+- `GET /api/v1/posts/{post_id}/comments` with at most 20 comments.
 
 The adapter rejects redirects, non-HTTPS origins, malformed JSON, missing
 required fields, invalid rate-limit headers, and responses over 256 KiB. Its
@@ -389,9 +394,15 @@ mounted.
   does not create ledger events, plugin cache, or a second retry lifecycle.
 - Completed: mount a bounded `new` feed observation as an explicit in-memory
   read with strict normalized post projections and no provider DTO leakage.
+- Completed: mount an explicit read-only review of one post and at most 20
+  newest comments. Conversation text remains untrusted and in memory only.
 - Completed: pass one Home/Feed observation through the external WASM package
   and return only `review_activity`, `inspect_feed`, or `idle`; the plan always
   requires review and cannot create an external effect.
+- Completed: pass one normalized conversation through WASM and return only a
+  review proposal (`reply_draft`, `comment_draft`, `upvote_candidate`, or
+  `no_action`). The proposal contains no generated text, grants no external
+  effect, and cannot publish, vote, or follow.
 - Completed: normalize activity on the agent's own posts as bounded structured
   Home data. A `review_activity` plan returns only those exact post ids, while
   an `inspect_feed` plan returns only verified non-spam feed ids.
@@ -415,8 +426,9 @@ Exit gate:
 
 ### Phase 3 - Ambassador Workspace
 
-Status: local profile/policy, read-only Connection, deterministic WASM Draft
-Preview, and durable assisted-publication surfaces implemented.
+Status: local profile/policy, read-only Connection and conversation review,
+deterministic WASM Draft/Engagement Preview, and durable
+assisted-publication surfaces implemented.
 
 The plugin card opens a dedicated workspace. The generic Plugins screen shows
 installation and health only; it must not become a provider dashboard.

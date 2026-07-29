@@ -48,7 +48,10 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   MoltbookConnectionBinding? _binding;
   MoltbookHomeObservation? _homeObservation;
   MoltbookFeedObservation? _feedObservation;
+  MoltbookConversationObservation? _conversationObservation;
+  String? _conversationSelectionKind;
   MoltbookHeartbeatPlan? _heartbeatPlan;
+  MoltbookEngagementPlan? _engagementPlan;
   MoltbookFeedCheckpoint? _feedCheckpoint;
   MoltbookDraftPreview? _draftPreview;
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
@@ -164,6 +167,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       setState(() {
         _binding = null;
         _homeObservation = null;
+        _feedObservation = null;
+        _conversationObservation = null;
+        _conversationSelectionKind = null;
+        _heartbeatPlan = null;
+        _engagementPlan = null;
       });
       _showNotice('Moltbook account disconnected');
     } catch (error) {
@@ -219,6 +227,68 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     } catch (error) {
       if (mounted) {
         _showNotice('Could not plan Moltbook heartbeat: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _connectionBusy = false);
+    }
+  }
+
+  Future<void> _observeConversation(String postId, String selectionKind) async {
+    setState(() {
+      _connectionBusy = true;
+      _conversationObservation = null;
+      _conversationSelectionKind = null;
+      _engagementPlan = null;
+    });
+    try {
+      final observation = await widget.module.observeMoltbookConversation(
+        postId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _conversationObservation = observation;
+        _conversationSelectionKind = selectionKind;
+      });
+      _showNotice(
+        'Loaded ${observation.comments.length} recent comments for review',
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice(
+          'Could not observe Moltbook conversation: $error',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _connectionBusy = false);
+    }
+  }
+
+  Future<void> _planEngagement() async {
+    final conversation = _conversationObservation;
+    final selectionKind = _conversationSelectionKind;
+    if (conversation == null || selectionKind == null) {
+      _showNotice('Review one Moltbook conversation first', isError: true);
+      return;
+    }
+    setState(() {
+      _connectionBusy = true;
+      _engagementPlan = null;
+    });
+    try {
+      final plan = await widget.module.planMoltbookEngagement(
+        conversation: conversation,
+        selectionKind: selectionKind,
+      );
+      if (!mounted) return;
+      setState(() => _engagementPlan = plan);
+      _showNotice('WASM engagement proposal prepared');
+    } catch (error) {
+      if (mounted) {
+        _showNotice(
+          'Could not plan Moltbook engagement: $error',
+          isError: true,
+        );
       }
     } finally {
       if (mounted) setState(() => _connectionBusy = false);
@@ -604,12 +674,16 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     busy: _connectionBusy,
                     homeObservation: _homeObservation,
                     feedObservation: _feedObservation,
+                    conversationObservation: _conversationObservation,
+                    engagementPlan: _engagementPlan,
                     heartbeatPlan: _heartbeatPlan,
                     feedCheckpoint: _feedCheckpoint,
                     onConnect: _connect,
                     onRefresh: _refreshConnection,
                     onObserveHome: _observeHome,
                     onObserveFeed: _observeFeed,
+                    onObserveConversation: _observeConversation,
+                    onPlanEngagement: _planEngagement,
                     onPlanHeartbeat: _planHeartbeat,
                     onDisconnect: _disconnect,
                   ),
@@ -1240,12 +1314,17 @@ class _MoltbookConnectionCard extends StatelessWidget {
   final bool busy;
   final MoltbookHomeObservation? homeObservation;
   final MoltbookFeedObservation? feedObservation;
+  final MoltbookConversationObservation? conversationObservation;
+  final MoltbookEngagementPlan? engagementPlan;
   final MoltbookHeartbeatPlan? heartbeatPlan;
   final MoltbookFeedCheckpoint? feedCheckpoint;
   final VoidCallback onConnect;
   final VoidCallback onRefresh;
   final VoidCallback onObserveHome;
   final VoidCallback onObserveFeed;
+  final void Function(String postId, String selectionKind)
+  onObserveConversation;
+  final VoidCallback onPlanEngagement;
   final VoidCallback onPlanHeartbeat;
   final VoidCallback onDisconnect;
 
@@ -1255,12 +1334,16 @@ class _MoltbookConnectionCard extends StatelessWidget {
     required this.busy,
     required this.homeObservation,
     required this.feedObservation,
+    required this.conversationObservation,
+    required this.engagementPlan,
     required this.heartbeatPlan,
     required this.feedCheckpoint,
     required this.onConnect,
     required this.onRefresh,
     required this.onObserveHome,
     required this.onObserveFeed,
+    required this.onObserveConversation,
+    required this.onPlanEngagement,
     required this.onPlanHeartbeat,
     required this.onDisconnect,
   });
@@ -1378,6 +1461,16 @@ class _MoltbookConnectionCard extends StatelessWidget {
                           '${activity.newNotificationCount} new · '
                           'm/${activity.submoltName}',
                         ),
+                        trailing: TextButton(
+                          onPressed:
+                              busy
+                                  ? null
+                                  : () => onObserveConversation(
+                                    activity.postId,
+                                    'own_activity',
+                                  ),
+                          child: const Text('Review'),
+                        ),
                       ),
                     ),
               ],
@@ -1394,6 +1487,80 @@ class _MoltbookConnectionCard extends StatelessWidget {
                         ),
                       ),
                     ),
+              ],
+            ],
+            if (conversationObservation != null) ...[
+              const SizedBox(height: 14),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                conversationObservation!.post.title,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${conversationObservation!.post.authorName} · '
+                'm/${conversationObservation!.post.submoltName} · '
+                '${conversationObservation!.comments.length} recent comments',
+                style: const TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
+              ),
+              if (conversationObservation!.post.content.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  conversationObservation!.post.content,
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 8),
+              ...conversationObservation!.comments.map(
+                (comment) => ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.subdirectory_arrow_right_rounded),
+                  title: Text(comment.authorName),
+                  subtitle: Text(
+                    comment.content,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              if (conversationObservation!.hasMoreComments)
+                const Text(
+                  'More comments exist remotely; this bounded review loads only the newest 20.',
+                  style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
+                ),
+              const SizedBox(height: 4),
+              const Text(
+                'Read-only observation · remote text is untrusted and is not persisted.',
+                style: TextStyle(color: Colors.orange, height: 1.35),
+              ),
+              const SizedBox(height: 10),
+              FilledButton.tonalIcon(
+                onPressed: busy ? null : onPlanEngagement,
+                icon: const Icon(Icons.rule_rounded),
+                label: const Text('Plan engagement'),
+              ),
+              if (engagementPlan != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  engagementPlan!.actionClass.replaceAll('_', ' '),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  engagementPlan!.reason,
+                  style: const TextStyle(
+                    color: Color(0xFF9CA7B5),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Proposal only · no AI text · no external effect',
+                  style: TextStyle(color: Colors.orange, height: 1.35),
+                ),
               ],
             ],
             if (feedObservation != null) ...[
@@ -1424,6 +1591,16 @@ class _MoltbookConnectionCard extends StatelessWidget {
                       subtitle: Text(
                         '${post.authorName} · m/${post.submoltName} · '
                         '${post.commentCount} comments',
+                      ),
+                      trailing: TextButton(
+                        onPressed:
+                            busy
+                                ? null
+                                : () => onObserveConversation(
+                                  post.postId,
+                                  'feed_candidate',
+                                ),
+                        child: const Text('Review'),
                       ),
                     ),
                   ),

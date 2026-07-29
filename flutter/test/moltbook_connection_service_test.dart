@@ -186,6 +186,31 @@ void main() {
   );
 
   test(
+    'conversation observation stays in memory and uses the bound key',
+    () async {
+      await service.connect('secret-key');
+
+      final conversation = await service.observeConversation('own-post-1');
+
+      expect(conversation.post.postId, 'own-post-1');
+      expect(conversation.comments.single.commentId, 'comment-1');
+      expect(observer.conversationKeys, <String>['secret-key']);
+      final capsuleDir = await files.capsuleDirForHex(_rootA);
+      final stateDir = await files.pluginStateDirectory(
+        capsuleDir,
+        moltbookAmbassadorPluginId,
+      );
+      expect(
+        await stateDir
+            .list()
+            .where((entry) => entry.path.contains('conversation'))
+            .isEmpty,
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'heartbeat loads one credential for home and feed observations',
     () async {
       await service.connect('secret-key');
@@ -235,6 +260,7 @@ class _FakeObserver implements MoltbookObservePort {
   final List<String> feedKeys = <String>[];
   final List<int> feedLimits = <int>[];
   final List<String?> feedCursors = <String?>[];
+  final List<String> conversationKeys = <String>[];
   String accountId = 'agent-1';
   String accountName = 'Hivra Agent';
   bool firstPageHasMore = false;
@@ -327,6 +353,51 @@ class _FakeObserver implements MoltbookObservePort {
       rateLimit: const MoltbookRateLimitSnapshot(
         limit: 60,
         remaining: 57,
+        resetEpochSeconds: 1,
+        retryAfterSeconds: null,
+      ),
+    );
+  }
+
+  @override
+  Future<MoltbookConversationObservation> observeConversation(
+    String apiKey, {
+    required String postId,
+    int commentLimit = MoltbookConversationObservation.maxComments,
+  }) async {
+    conversationKeys.add(apiKey);
+    return MoltbookConversationObservation(
+      post: MoltbookPostObservation(
+        postId: postId,
+        title: 'A Hivra update',
+        content: 'Public post content',
+        authorId: 'agent-1',
+        authorName: 'Hivra Agent',
+        submoltName: 'general',
+        score: 1,
+        commentCount: 1,
+        isVerified: true,
+        isSpam: false,
+        isLocked: false,
+        createdAtUtc: '2026-07-29T10:00:00.000Z',
+        updatedAtUtc: '2026-07-29T10:30:00.000Z',
+      ),
+      comments: const <MoltbookCommentObservation>[
+        MoltbookCommentObservation(
+          commentId: 'comment-1',
+          postId: 'own-post-1',
+          parentCommentId: null,
+          content: 'A useful reply',
+          authorId: 'reader-1',
+          authorName: 'Reader',
+          score: 1,
+          createdAtUtc: '2026-07-29T10:30:00.000Z',
+        ),
+      ],
+      hasMoreComments: false,
+      rateLimit: const MoltbookRateLimitSnapshot(
+        limit: 60,
+        remaining: 56,
         resetEpochSeconds: 1,
         retryAfterSeconds: null,
       ),

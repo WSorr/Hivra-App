@@ -3,6 +3,7 @@ class WasmPluginCapabilityPolicyService {
     'consensus_guard.read',
     'content.draft.prepare',
     'content.feed.plan',
+    'content.engagement.plan',
     'exchange.read.bingx.market',
     'exchange.trade.bingx.futures',
   };

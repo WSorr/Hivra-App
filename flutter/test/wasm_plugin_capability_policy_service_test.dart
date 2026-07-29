@@ -9,6 +9,7 @@ void main() {
     final normalized = service.normalizeAndValidate(<String>[
       'consensus_guard.read',
       'content.draft.prepare',
+      'content.engagement.plan',
       'content.feed.plan',
       'exchange.read.bingx.market',
       'exchange.trade.bingx.futures',
@@ -18,6 +19,7 @@ void main() {
     expect(normalized, <String>[
       'consensus_guard.read',
       'content.draft.prepare',
+      'content.engagement.plan',
       'content.feed.plan',
       'exchange.read.bingx.market',
       'exchange.trade.bingx.futures',

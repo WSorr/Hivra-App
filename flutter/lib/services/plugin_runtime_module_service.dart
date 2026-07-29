@@ -173,6 +173,117 @@ class PluginRuntimeModule {
     }
   }
 
+  Future<MoltbookConversationObservation> observeMoltbookConversation(
+    String postId,
+  ) async {
+    final normalizedPostId = postId.trim();
+    await uiLog.log(
+      'moltbook.conversation.observe',
+      'start post=$normalizedPostId',
+    );
+    try {
+      final observation = await moltbookConnection.observeConversation(
+        normalizedPostId,
+      );
+      await uiLog.log(
+        'moltbook.conversation.observe',
+        'success post=${observation.post.postId} '
+            'comments=${observation.comments.length} '
+            'hasMore=${observation.hasMoreComments}',
+      );
+      return observation;
+    } catch (error) {
+      await uiLog.log(
+        'moltbook.conversation.observe',
+        'error post=$normalizedPostId ${_safeError(error)}',
+      );
+      rethrow;
+    }
+  }
+
+  Future<MoltbookEngagementPlan> planMoltbookEngagement({
+    required MoltbookConversationObservation conversation,
+    required String selectionKind,
+  }) async {
+    if (!const <String>{
+      'own_activity',
+      'feed_candidate',
+    }.contains(selectionKind)) {
+      throw ArgumentError.value(
+        selectionKind,
+        'selectionKind',
+        'Unsupported Moltbook engagement selection',
+      );
+    }
+    conversation.validate();
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled) {
+      throw StateError('Moltbook Ambassador is disabled');
+    }
+    final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
+    if (ownerHex == null || ownerHex.length != 64) {
+      throw StateError('Active capsule identity is unavailable');
+    }
+    final observedAtUtc = DateTime.now().toUtc().toIso8601String();
+    await uiLog.log(
+      'moltbook.engagement.plan',
+      'start post=${conversation.post.postId} selection=$selectionKind',
+    );
+    final response = await pluginHostApi.executeWithRuntimeHook(
+      PluginHostApiRequest(
+        schemaVersion: pluginHostApiSchemaVersion,
+        pluginId: moltbookAmbassadorPluginId,
+        method: planMoltbookEngagementMethod,
+        args: <String, dynamic>{
+          'observed_at_utc': observedAtUtc,
+          'selection_kind': selectionKind,
+          'allowed_topics': configuration.allowedTopics,
+          'post': <String, dynamic>{
+            'post_id': conversation.post.postId,
+            'title': conversation.post.title,
+            'content': conversation.post.content,
+            'author_name': conversation.post.authorName,
+            'submolt_name': conversation.post.submoltName,
+            'score': conversation.post.score,
+            'is_verified': conversation.post.isVerified,
+            'is_spam': conversation.post.isSpam,
+            'is_locked': conversation.post.isLocked,
+          },
+          'comments': conversation.comments
+              .map(
+                (comment) => <String, dynamic>{
+                  'comment_id': comment.commentId,
+                  'parent_comment_id': comment.parentCommentId,
+                  'content': comment.content,
+                  'author_name': comment.authorName,
+                  'score': comment.score,
+                  'created_at_utc': comment.createdAtUtc,
+                },
+              )
+              .toList(growable: false),
+        },
+      ),
+    );
+    if (!_isStillOwnedBy(ownerHex)) {
+      throw StateError(
+        'Engagement plan discarded because the active capsule changed',
+      );
+    }
+    final result = response.result;
+    if (response.status != PluginHostApiStatus.executed || result == null) {
+      throw StateError(
+        response.errorMessage ?? 'Moltbook engagement planning was rejected',
+      );
+    }
+    final plan = MoltbookEngagementPlan.fromHostResult(result);
+    await uiLog.log(
+      'moltbook.engagement.plan',
+      'success action=${plan.actionClass} '
+          'post=${plan.targetPostId} hash=${plan.planHashHex.substring(0, 12)}..',
+    );
+    return plan;
+  }
+
   Future<MoltbookHeartbeatPlan> planMoltbookHeartbeat() async {
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) {
