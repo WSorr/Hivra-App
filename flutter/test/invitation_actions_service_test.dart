@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
+import 'package:hivra_app/services/capsule_delivery_lifecycle_service.dart';
 import 'package:hivra_app/services/delivery_outbox_store.dart';
 import 'package:hivra_app/services/invitation_actions_service.dart';
 
@@ -96,6 +98,50 @@ void main() {
         expect(runtime.bootstrapActiveCalls, 0);
       },
     );
+
+    test(
+      'restores only locally signed terminal delivery obligations',
+      () async {
+        const activeCapsule =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        final lifecycle = _RecordingDeliveryLifecycle();
+        final service = InvitationActionsService(
+          runtime: _FakeInvitationActionsRuntime(
+            activeCapsuleHex: activeCapsule,
+          ),
+          deliveryLifecycle: lifecycle,
+        );
+        final invitationId = List<int>.filled(32, 17);
+        final localSigner = List<int>.filled(32, 170);
+        final remoteSigner = List<int>.filled(32, 187);
+        final ledgerJson = jsonEncode(<String, Object?>{
+          'events': <Object?>[
+            <String, Object?>{
+              'kind': 'InvitationAccepted',
+              'signer': localSigner,
+              'payload': <int>[...invitationId, ...List<int>.filled(64, 0)],
+            },
+            <String, Object?>{
+              'kind': 'InvitationRejected',
+              'signer': remoteSigner,
+              'payload': <int>[
+                ...List<int>.filled(32, 34),
+                ...List<int>.filled(65, 0),
+              ],
+            },
+          ],
+        });
+
+        await service.reconcileTerminalOutboxForTest(<String, Object?>{
+          'activeCapsuleHex': activeCapsule,
+          'ledgerJson': ledgerJson,
+        });
+
+        expect(lifecycle.references, <String>[
+          List<String>.filled(32, '11').join(),
+        ]);
+      },
+    );
   });
 
   group('CapsuleWorkerQueue', () {
@@ -171,6 +217,27 @@ void main() {
       expect(await second, 'continued');
     });
   });
+}
+
+class _RecordingDeliveryLifecycle extends CapsuleDeliveryLifecycleService {
+  final List<String> references = <String>[];
+
+  _RecordingDeliveryLifecycle()
+    : super(
+        retryRunner:
+            (_, _) async => const CapsuleDeliveryCycleResult(code: -1004),
+      );
+
+  @override
+  Future<bool> ensureEnqueued({
+    required String? capsuleHex,
+    required String kind,
+    required String reason,
+    String? deliveryReference,
+  }) async {
+    if (deliveryReference != null) references.add(deliveryReference);
+    return true;
+  }
 }
 
 class _FakeInvitationActionsRuntime implements InvitationActionsRuntime {

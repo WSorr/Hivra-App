@@ -78,6 +78,26 @@ class CapsuleDeliveryLifecycleService {
     scheduleDuePump(capsuleHex: normalized);
   }
 
+  Future<bool> ensureEnqueued({
+    required String? capsuleHex,
+    required String kind,
+    required String reason,
+    String? deliveryReference,
+  }) async {
+    final normalized = _normalizeCapsuleHex(capsuleHex);
+    if (normalized == null) return false;
+    final inserted = await _outbox.enqueueIfAbsent(
+      capsuleHex: normalized,
+      transport: DeliveryTransportId.nostr,
+      kind: kind,
+      reason: reason,
+      deliveryReference: deliveryReference,
+      now: _now(),
+    );
+    if (inserted) scheduleDuePump(capsuleHex: normalized);
+    return inserted;
+  }
+
   Future<void> _recordItemCycle({
     required String capsuleHex,
     required DeliveryOutboxItem item,

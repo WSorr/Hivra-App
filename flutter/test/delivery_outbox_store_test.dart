@@ -173,5 +173,39 @@ void main() {
         );
       },
     );
+
+    test('ensure enqueue does not revive a published item', () async {
+      final now = DateTime.utc(2026, 7, 5, 10);
+      const invitation =
+          '1111111111111111111111111111111111111111111111111111111111111111';
+      await store.enqueue(
+        capsuleHex: capsuleHex,
+        transport: DeliveryTransportId.nostr,
+        kind: DeliveryOutboxKind.invitationTerminal,
+        reason: DeliveryOutboxReason.invitationTerminalRetry,
+        deliveryReference: invitation,
+        now: now,
+      );
+      final item = (await store.load(capsuleHex)).single;
+      await store.markPublished(
+        capsuleHex: capsuleHex,
+        itemId: item.id,
+        nextAttemptAt: now.add(const Duration(minutes: 1)),
+      );
+
+      final inserted = await store.enqueueIfAbsent(
+        capsuleHex: capsuleHex,
+        transport: DeliveryTransportId.nostr,
+        kind: DeliveryOutboxKind.invitationTerminal,
+        reason: DeliveryOutboxReason.invitationTerminalRetry,
+        deliveryReference: invitation,
+        now: now.add(const Duration(hours: 1)),
+      );
+
+      expect(inserted, isFalse);
+      final after = (await store.load(capsuleHex)).single;
+      expect(after.status, DeliveryOutboxStatus.published);
+      expect(after.attempts, 1);
+    });
   });
 }

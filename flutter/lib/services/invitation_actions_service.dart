@@ -42,10 +42,8 @@ class InvitationWorkerResult {
 }
 
 typedef CapsuleWorkerQueue = CapsuleFfiWorkerQueue;
-typedef InvitationWorkerResultObserver = FutureOr<void> Function(
-  Map<String, Object?> result,
-  String capsuleHex,
-);
+typedef InvitationWorkerResultObserver =
+    FutureOr<void> Function(Map<String, Object?> result, String capsuleHex);
 
 class InvitationActionsService {
   static final CapsuleFfiWorkerQueue _sharedWorkerQueue =
@@ -228,6 +226,44 @@ class InvitationActionsService {
       reason: DeliveryOutboxReason.sendInvitationRetry,
       deliveryReference: _latestInvitationSentReference(ledgerJson),
     );
+  }
+
+  Future<void> _reconcileTerminalOutbox(Map<String, Object?> bootstrap) async {
+    final capsuleHex =
+        (bootstrap['activeCapsuleHex'] as String?)?.trim().toLowerCase();
+    final ledgerJson = bootstrap['ledgerJson'] as String?;
+    if (capsuleHex == null ||
+        capsuleHex.length != 64 ||
+        ledgerJson == null ||
+        ledgerJson.isEmpty) {
+      return;
+    }
+
+    final root = const LedgerViewSupport().exportLedgerRoot(ledgerJson);
+    if (root == null) return;
+    for (final raw in const LedgerViewSupport().events(root)) {
+      if (raw is! Map) continue;
+      final event = Map<String, dynamic>.from(raw);
+      final kind = const LedgerViewSupport().kindCode(event['kind']);
+      if (kind != 2 && kind != 3 && kind != 4) continue;
+
+      final signer = const LedgerViewSupport().payloadBytes(event['signer']);
+      if (signer.length != 32 || _hex32(signer) != capsuleHex) continue;
+      final payload = const LedgerViewSupport().payloadBytes(event['payload']);
+      if (payload.length < 32) continue;
+
+      await _deliveryLifecycle.ensureEnqueued(
+        capsuleHex: capsuleHex,
+        kind: DeliveryOutboxKind.invitationTerminal,
+        reason: DeliveryOutboxReason.invitationTerminalRetry,
+        deliveryReference: _hex32(Uint8List.sublistView(payload, 0, 32)),
+      );
+    }
+  }
+
+  @visibleForTesting
+  Future<void> reconcileTerminalOutboxForTest(Map<String, Object?> bootstrap) {
+    return _reconcileTerminalOutbox(bootstrap);
   }
 
   String? _hex32(Uint8List bytes) {
@@ -423,6 +459,7 @@ class InvitationActionsService {
       }
 
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
+      await _reconcileTerminalOutbox(bootstrap);
       _deliveryLifecycle.scheduleDuePump(capsuleHex: bootstrapActiveHex);
       final workerFuture = _runCapsuleWorker(
         initialBootstrap: bootstrap,
@@ -468,6 +505,7 @@ class InvitationActionsService {
       }
 
       final bootstrapActiveHex = bootstrap['activeCapsuleHex'] as String?;
+      await _reconcileTerminalOutbox(bootstrap);
       _deliveryLifecycle.scheduleDuePump(capsuleHex: bootstrapActiveHex);
       final workerFuture = _runCapsuleWorker(
         initialBootstrap: bootstrap,

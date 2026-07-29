@@ -232,6 +232,48 @@ class DeliveryOutboxStore {
     await _write(normalizedCapsuleHex, next);
   }
 
+  /// Restores a missing delivery obligation without reviving an existing
+  /// published or superseded record.
+  Future<bool> enqueueIfAbsent({
+    required String capsuleHex,
+    required String transport,
+    required String kind,
+    required String reason,
+    String? deliveryReference,
+    required DateTime now,
+  }) async {
+    final normalizedCapsuleHex = capsuleHex.trim().toLowerCase();
+    if (normalizedCapsuleHex.isEmpty) return false;
+    final normalizedReference = _normalizeDeliveryReference(deliveryReference);
+    final id = _stableId(
+      capsuleHex: normalizedCapsuleHex,
+      transport: transport,
+      kind: kind,
+      reason: reason,
+      deliveryReference: normalizedReference,
+    );
+    final items = await load(normalizedCapsuleHex);
+    if (items.any((item) => item.id == id)) return false;
+
+    final next = <DeliveryOutboxItem>[
+      ...items,
+      DeliveryOutboxItem(
+        id: id,
+        capsuleHex: normalizedCapsuleHex,
+        transport: transport,
+        kind: kind,
+        reason: reason,
+        deliveryReference: normalizedReference,
+        createdAt: now.toUtc(),
+        nextAttemptAt: now.toUtc(),
+        attempts: 0,
+        status: DeliveryOutboxStatus.pending,
+      ),
+    ];
+    await _write(normalizedCapsuleHex, next);
+    return true;
+  }
+
   Future<List<DeliveryOutboxItem>> due({
     required String capsuleHex,
     required DateTime now,
