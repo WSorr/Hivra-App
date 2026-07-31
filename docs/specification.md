@@ -377,6 +377,20 @@ Users can have multiple independent capsules.
 Storage:
 
 - Each capsule has its own seed in platform secure storage.
+- On macOS, canonical mutable runtime data is stored under
+  `~/Library/Application Support/Hivra`. This includes capsule ledgers and
+  index, contact cards, plugin runtime/catalog data, delivery state, logs, and
+  disposable caches. Runtime state MUST NOT use `~/Documents/Hivra` as its
+  canonical location because cloud synchronization may offload or partially
+  hydrate user documents.
+- `~/Documents/Hivra` is a user-visible boundary for explicit backups and
+  exports only. It is not a runtime authority and MUST NOT be scanned on every
+  launch to recreate missing canonical state.
+- A build that moves canonical storage MUST perform a one-time copy, verify the
+  copied bytes, and persist a migration marker before using the new location.
+  A migration conflict or unavailable source fails closed. The old source MAY
+  remain as a rollback copy, but MUST NOT be read again as runtime truth after
+  migration succeeds.
 - On macOS, per-capsule seeds are stored in Keychain. Runtime activation uses a
   process-local active seed cache; selecting or bootstrapping a capsule MUST NOT
   rewrite a global active-seed Keychain pointer or persist a second native copy
@@ -394,6 +408,16 @@ Selector screen:
 - Shown on launch if at least one capsule exists.
 - Displays public key, network, starter count.
 - Allows creating a new capsule.
+- Missing or unreadable canonical storage MUST NOT be interpreted as a new
+  installation. The selector shows an explicit recovery state with Retry,
+  Import Backup, Recover from Seed, and a separately de-emphasized Create New
+  Capsule action.
+- Seed recovery restores Capsule identity. Ledger history requires a verified
+  backup or independently available transport history; the UI MUST state this
+  distinction before recovery.
+- On macOS, Settings MUST expose an `Open local data folder` action so the
+  canonical runtime can be inspected without requiring users to reveal or
+  manually navigate the hidden `~/Library` directory.
 
 Switching:
 

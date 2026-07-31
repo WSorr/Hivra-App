@@ -10,10 +10,7 @@ class CapsulesIndex {
   String? activePubKeyHex;
   final Map<String, CapsuleIndexEntry> capsules;
 
-  CapsulesIndex({
-    required this.activePubKeyHex,
-    required this.capsules,
-  });
+  CapsulesIndex({required this.activePubKeyHex, required this.capsules});
 }
 
 class CapsuleIndexStore {
@@ -25,8 +22,8 @@ class CapsuleIndexStore {
   const CapsuleIndexStore({
     UserVisibleDataDirectoryService? dirs,
     AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
-  })  : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
-        _atomicWrites = atomicWrites;
+  }) : _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+       _atomicWrites = atomicWrites;
 
   Future<CapsulesIndex> read() {
     return _serializeMutation(_readUnlocked);
@@ -36,6 +33,7 @@ class CapsuleIndexStore {
     final capsulesRoot = await _dirs.capsulesDirectory(create: false);
     final indexFile = File('${capsulesRoot.path}/$_indexFileName');
     CapsulesIndex index;
+    var indexReadFailed = false;
     if (!await indexFile.exists()) {
       index = CapsulesIndex(activePubKeyHex: null, capsules: {});
     } else {
@@ -43,11 +41,17 @@ class CapsuleIndexStore {
         final raw = await indexFile.readAsString();
         index = _fromJson(raw);
       } catch (_) {
+        indexReadFailed = true;
         index = CapsulesIndex(activePubKeyHex: null, capsules: {});
       }
     }
 
     final repaired = await _repairFromCapsuleDirectories(index, capsulesRoot);
+    if (indexReadFailed && repaired.capsules.isEmpty) {
+      throw const FormatException(
+        'Capsule index is unreadable and no recoverable capsule directories were found.',
+      );
+    }
     if (!_sameIndexState(index, repaired)) {
       await _writeUnlocked(repaired);
     }
@@ -120,20 +124,21 @@ class CapsuleIndexStore {
   }
 
   CapsulesIndex _fromJson(String raw) {
-    final map = _parseJsonMap(raw);
-    if (map == null) {
-      return CapsulesIndex(activePubKeyHex: null, capsules: {});
-    }
+    final decoded = jsonDecode(raw);
+    final map = _coerceJsonMap(decoded);
+    if (map == null) throw const FormatException('Invalid capsule index');
     final active = map['active']?.toString();
     final capsulesMap = <String, CapsuleIndexEntry>{};
     final items = _coerceJsonMap(map['capsules']);
-    if (items != null) {
-      for (final entry in items.entries) {
-        final entryMap = _coerceJsonMap(entry.value);
-        if (entryMap != null) {
-          capsulesMap[entry.key] = CapsuleIndexEntry.fromMap(entryMap);
-        }
+    if (items == null) {
+      throw const FormatException('Capsule index has no capsules map');
+    }
+    for (final entry in items.entries) {
+      final entryMap = _coerceJsonMap(entry.value);
+      if (entryMap == null) {
+        throw FormatException('Invalid capsule index entry: ${entry.key}');
       }
+      capsulesMap[entry.key] = CapsuleIndexEntry.fromMap(entryMap);
     }
     final normalizedActive =
         active != null && capsulesMap.containsKey(active) ? active : null;
@@ -187,9 +192,10 @@ class CapsuleIndexStore {
 
     await for (final entity in capsulesRoot.list(followLinks: false)) {
       if (entity is! Directory) continue;
-      final segments = entity.uri.pathSegments
-          .where((segment) => segment.isNotEmpty)
-          .toList();
+      final segments =
+          entity.uri.pathSegments
+              .where((segment) => segment.isNotEmpty)
+              .toList();
       if (segments.isEmpty) continue;
       final pubKeyHex = segments.last;
       if (!_isPubKeyHex(pubKeyHex)) continue;

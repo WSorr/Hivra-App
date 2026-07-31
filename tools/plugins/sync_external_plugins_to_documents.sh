@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 EXTERNAL_REPO="${1:-$ROOT_DIR/../hivra-plugins}"
-DOCS_PLUGIN_DIR="$HOME/Documents/Hivra/Plugins"
-SOURCE_DIR="$DOCS_PLUGIN_DIR/source"
-CATALOG_PATH="$DOCS_PLUGIN_DIR/plugin_catalog.json"
+RUNTIME_PLUGIN_DIR="$HOME/Library/Application Support/Hivra/Plugins"
+SOURCE_DIR="$RUNTIME_PLUGIN_DIR/source"
+CATALOG_PATH="$RUNTIME_PLUGIN_DIR/plugin_catalog.json"
 
 if [[ ! -d "$EXTERNAL_REPO" ]]; then
   echo "external repo not found: $EXTERNAL_REPO"

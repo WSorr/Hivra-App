@@ -12,7 +12,7 @@ This project now supports loading plugin packages from an external source catalo
 ## Runtime behavior
 
 - Local source catalog path, used first when present:
-  - `~/Documents/Hivra/Plugins/plugin_catalog.json`
+  - macOS: `~/Library/Application Support/Hivra/Plugins/plugin_catalog.json`
 - Published source catalog URL:
   - `https://raw.githubusercontent.com/WSorr/hivra-plugins/refs/heads/main/catalog/plugin_catalog.json`
 
@@ -63,8 +63,12 @@ Use:
 This script:
 
 1. Builds plugin zip packages in sibling repo `../hivra-plugins`
-2. Copies zip packages to `~/Documents/Hivra/Plugins/source`
-3. Generates `~/Documents/Hivra/Plugins/plugin_catalog.json` with `file://` URLs and per-package `sha256_hex`
+2. Copies zip packages to `~/Library/Application Support/Hivra/Plugins/source`
+3. Generates `~/Library/Application Support/Hivra/Plugins/plugin_catalog.json` with `file://` URLs and per-package `sha256_hex`
+
+`~/Documents/Hivra` remains reserved for explicit backups and exports. Plugin
+runtime packages and catalogs are mutable application state and therefore do
+not belong in the user Documents/iCloud boundary.
 
 Then open `WASM Plugins` screen and install from `Source Catalog`.
 

@@ -36,6 +36,16 @@ Run it on the release candidate build.
 - [ ] Previously resolved invitations do not reappear as pending.
 - [ ] Deleting a capsule in canonical storage does not get silently undone by legacy-container migration on next launch.
 
+## Scenario 4A: macOS Runtime Storage Migration
+
+- [ ] Start with a previous-build capsule under `~/Documents/Hivra/capsules`.
+- [ ] Launch the update and verify capsule runtime is copied to `~/Library/Application Support/Hivra` with matching files and ledger truth.
+- [ ] Verify `Backups` and `Ledger Exports` remain user-visible under `~/Documents/Hivra`.
+- [ ] Relaunch after deleting or changing the old runtime copy and verify it is not imported again.
+- [ ] Simulate an unavailable/offloaded old source and verify the app fails closed with recovery actions instead of opening first launch.
+- [ ] Corrupt `capsules_index.json` while keeping valid capsule directories and verify the index is repaired from those directories.
+- [ ] Corrupt the index with no recoverable capsule directories and verify the corrupt index is preserved and an explicit error is shown.
+
 ## Scenario 5: Long-Pending Invitation Stability
 
 - [ ] Create one pending invitation and leave it unresolved.

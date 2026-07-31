@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'capsule_address_service.dart';
 import 'capsule_contact_label_store.dart';
+import 'user_visible_data_directory_service.dart';
 
 class SettingsService {
   final bool Function() _loadIsNeste;
@@ -11,6 +13,7 @@ class SettingsService {
   final Future<CapsuleAddressCard?> Function() _buildOwnCard;
   final Future<String?> Function() _exportOwnCardJson;
   final Future<String> Function() _loadAppVersionLabel;
+  final Future<String> Function() _openLocalDataFolder;
   final CapsuleAddressService _contactCards;
   final CapsuleContactLabelStore _contactLabels;
 
@@ -20,6 +23,7 @@ class SettingsService {
     required Future<CapsuleAddressCard?> Function() buildOwnCard,
     required Future<String?> Function() exportOwnCardJson,
     Future<String> Function() loadAppVersionLabel = _defaultAppVersionLabel,
+    Future<String> Function() openLocalDataFolder = _defaultOpenLocalDataFolder,
     CapsuleAddressService contactCards = const CapsuleAddressService(),
     CapsuleContactLabelStore? contactLabels,
   }) : _loadIsNeste = loadIsNeste,
@@ -27,6 +31,7 @@ class SettingsService {
        _buildOwnCard = buildOwnCard,
        _exportOwnCardJson = exportOwnCardJson,
        _loadAppVersionLabel = loadAppVersionLabel,
+       _openLocalDataFolder = openLocalDataFolder,
        _contactCards = contactCards,
        _contactLabels =
            contactLabels ??
@@ -37,6 +42,21 @@ class SettingsService {
     final build = info.buildNumber.trim();
     final suffix = build.isEmpty ? '' : ' ($build)';
     return 'Hivra v${info.version}$suffix';
+  }
+
+  static Future<String> _defaultOpenLocalDataFolder() async {
+    if (!Platform.isMacOS) {
+      throw UnsupportedError(
+        'The local data folder is managed by the operating system.',
+      );
+    }
+    final directory = await const UserVisibleDataDirectoryService()
+        .rootDirectory(create: true);
+    final result = await Process.run('open', <String>[directory.path]);
+    if (result.exitCode != 0) {
+      throw StateError('Finder could not open the local data folder.');
+    }
+    return directory.path;
   }
 
   bool loadIsNeste() {
@@ -52,6 +72,8 @@ class SettingsService {
   Future<String?> exportOwnCardJson() => _exportOwnCardJson();
 
   Future<String> appVersionLabel() => _loadAppVersionLabel();
+
+  Future<String> openLocalDataFolder() => _openLocalDataFolder();
 
   Future<void> importCardJson(String raw) => _contactCards.importCardJson(raw);
 

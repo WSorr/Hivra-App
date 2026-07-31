@@ -56,7 +56,7 @@ void main() {
       expect(items.single.nextAttemptAt, now.add(const Duration(seconds: 5)));
 
       final file = File(
-        '${tempHome.path}/Documents/Hivra/capsules/$capsuleHex/delivery_outbox.json',
+        '${tempHome.path}/Library/Application Support/Hivra/capsules/$capsuleHex/delivery_outbox.json',
       );
       expect(await file.exists(), isTrue);
     });

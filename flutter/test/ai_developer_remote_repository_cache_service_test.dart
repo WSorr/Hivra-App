@@ -13,12 +13,14 @@ class _FakeGit {
     String? workingDirectory,
     Map<String, String>? environment,
   }) async {
-    calls.add(_GitCall(
-      executable: executable,
-      arguments: List<String>.from(arguments),
-      workingDirectory: workingDirectory,
-      environment: Map<String, String>.from(environment ?? const {}),
-    ));
+    calls.add(
+      _GitCall(
+        executable: executable,
+        arguments: List<String>.from(arguments),
+        workingDirectory: workingDirectory,
+        environment: Map<String, String>.from(environment ?? const {}),
+      ),
+    );
     if (arguments.length == 2 &&
         arguments[0] == 'rev-parse' &&
         arguments[1] == 'HEAD') {
@@ -65,42 +67,56 @@ void main() {
       final service = _service(tempHome, _FakeGit());
 
       await expectLater(
-        service.cacheRepository(const AiDeveloperRemoteRepositoryRequest(
-          remoteUrl: 'git@github.com:WSorr/hivra-plugins.git',
-        )),
+        service.cacheRepository(
+          const AiDeveloperRemoteRepositoryRequest(
+            remoteUrl: 'git@github.com:WSorr/hivra-plugins.git',
+          ),
+        ),
         throwsA(isA<ArgumentError>()),
       );
       await expectLater(
-        service.cacheRepository(const AiDeveloperRemoteRepositoryRequest(
-          remoteUrl: 'https://example.com/WSorr/hivra-plugins',
-        )),
+        service.cacheRepository(
+          const AiDeveloperRemoteRepositoryRequest(
+            remoteUrl: 'https://example.com/WSorr/hivra-plugins',
+          ),
+        ),
         throwsA(isA<ArgumentError>()),
       );
     });
 
-    test('clones into controlled cache with hooks and submodules disabled',
-        () async {
-      final git = _FakeGit();
-      final service = _service(tempHome, git);
+    test(
+      'clones into controlled cache with hooks and submodules disabled',
+      () async {
+        final git = _FakeGit();
+        final service = _service(tempHome, git);
 
-      final report = await service.cacheRepository(
-        const AiDeveloperRemoteRepositoryRequest(
-          remoteUrl: 'https://github.com/WSorr/hivra-plugins',
-        ),
-      );
+        final report = await service.cacheRepository(
+          const AiDeveloperRemoteRepositoryRequest(
+            remoteUrl: 'https://github.com/WSorr/hivra-plugins',
+          ),
+        );
 
-      expect(report.normalizedRemoteUrl,
-          'https://github.com/WSorr/hivra-plugins.git');
-      expect(report.cachePath,
-          contains('/Documents/Hivra/Developer Cache/Remote Repositories/'));
-      expect(report.resolvedCommit, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
-      expect(report.mutableRefDangerous, isTrue);
-      expect(report.submodulesBlocked, isTrue);
-      expect(report.findings.single.title, 'Mutable repository context');
+        expect(
+          report.normalizedRemoteUrl,
+          'https://github.com/WSorr/hivra-plugins.git',
+        );
+        expect(
+          report.cachePath,
+          contains(
+            '/Library/Application Support/Hivra/Developer Cache/Remote Repositories/',
+          ),
+        );
+        expect(
+          report.resolvedCommit,
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        );
+        expect(report.mutableRefDangerous, isTrue);
+        expect(report.submodulesBlocked, isTrue);
+        expect(report.findings.single.title, 'Mutable repository context');
 
-      final clone = git.calls.first;
-      expect(clone.executable, 'git');
-      expect(
+        final clone = git.calls.first;
+        expect(clone.executable, 'git');
+        expect(
           clone.arguments,
           containsAll(<String>[
             'core.hooksPath=/dev/null',
@@ -111,59 +127,71 @@ void main() {
             '--no-tags',
             '--depth',
             '1',
-          ]));
-      expect(clone.environment['GIT_TERMINAL_PROMPT'], '0');
-      expect(clone.environment['GIT_ASKPASS'], '');
-      expect(
-        git.calls.any((call) =>
-            call.arguments.contains('submodule') ||
-            call.arguments.contains('update')),
-        isFalse,
-      );
-    });
+          ]),
+        );
+        expect(clone.environment['GIT_TERMINAL_PROMPT'], '0');
+        expect(clone.environment['GIT_ASKPASS'], '');
+        expect(
+          git.calls.any(
+            (call) =>
+                call.arguments.contains('submodule') ||
+                call.arguments.contains('update'),
+          ),
+          isFalse,
+        );
+      },
+    );
 
-    test('fetches requested ref and marks full commit hash as immutable',
-        () async {
-      final git = _FakeGit();
-      final service = _service(tempHome, git);
-      final ref = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    test(
+      'fetches requested ref and marks full commit hash as immutable',
+      () async {
+        final git = _FakeGit();
+        final service = _service(tempHome, git);
+        final ref = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-      final report = await service.cacheRepository(
-        AiDeveloperRemoteRepositoryRequest(
-          remoteUrl: 'https://github.com/WSorr/hivra-plugins.git',
-          ref: ref,
-        ),
-      );
+        final report = await service.cacheRepository(
+          AiDeveloperRemoteRepositoryRequest(
+            remoteUrl: 'https://github.com/WSorr/hivra-plugins.git',
+            ref: ref,
+          ),
+        );
 
-      expect(report.requestedRef, ref);
-      expect(report.mutableRefDangerous, isFalse);
-      expect(report.findings, isEmpty);
-      expect(
-        git.calls.any((call) =>
-            call.arguments.length >= 6 &&
-            call.arguments.contains('fetch') &&
-            call.arguments.last == ref),
-        isTrue,
-      );
-      expect(
-        git.calls.any((call) =>
-            call.arguments.length == 3 &&
-            call.arguments[0] == 'checkout' &&
-            call.arguments[1] == '--detach' &&
-            call.arguments[2] == 'FETCH_HEAD'),
-        isTrue,
-      );
-    });
+        expect(report.requestedRef, ref);
+        expect(report.mutableRefDangerous, isFalse);
+        expect(report.findings, isEmpty);
+        expect(
+          git.calls.any(
+            (call) =>
+                call.arguments.length >= 6 &&
+                call.arguments.contains('fetch') &&
+                call.arguments.last == ref,
+          ),
+          isTrue,
+        );
+        expect(
+          git.calls.any(
+            (call) =>
+                call.arguments.length == 3 &&
+                call.arguments[0] == 'checkout' &&
+                call.arguments[1] == '--detach' &&
+                call.arguments[2] == 'FETCH_HEAD',
+          ),
+          isTrue,
+        );
+      },
+    );
 
     test('clear cache removes controlled cache directory only', () async {
       final git = _FakeGit();
       final service = _service(tempHome, git);
       final root = Directory(
-        '${tempHome.path}/Documents/Hivra/Developer Cache/Remote Repositories',
+        '${tempHome.path}/Library/Application Support/Hivra/Developer Cache/Remote Repositories',
       );
       await root.create(recursive: true);
       await File('${root.path}/marker.txt').writeAsString('cache');
-      final unrelated = File('${tempHome.path}/Documents/Hivra/keep.txt');
+      final unrelated = File(
+        '${tempHome.path}/Library/Application Support/Hivra/keep.txt',
+      );
       await unrelated.create(recursive: true);
 
       await service.clearCache();

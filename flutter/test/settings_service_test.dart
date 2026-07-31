@@ -58,43 +58,63 @@ void main() {
     expect(await service.appVersionLabel(), 'Hivra v9.9.9 (999)');
   });
 
-  test(
-      'delegates contact-card management to contact service and card boundaries',
-      () async {
-    final fakeContacts = _FakeCapsuleAddressService()
-      ..count = 2
-      ..cards = <CapsuleAddressCard>[
-        const CapsuleAddressCard(
-          rootKey: 'h1abc',
-          rootHex: '11',
-          nostrNpub: 'npub1abc',
-          nostrHex: '22',
-        ),
-      ];
-    final card = const CapsuleAddressCard(
-      rootKey: 'h1self',
-      rootHex: 'aa',
-      nostrNpub: 'npub1self',
-      nostrHex: 'bb',
-    );
-
+  test('opens local data folder through injected boundary', () async {
+    var opened = false;
     final service = SettingsService(
       loadIsNeste: () => true,
       loadSeed: () => null,
-      buildOwnCard: () async => card,
-      exportOwnCardJson: () async => '{"version":1}',
-      contactCards: fakeContacts,
+      buildOwnCard: () async => null,
+      exportOwnCardJson: () async => null,
+      openLocalDataFolder: () async {
+        opened = true;
+        return '/tmp/Hivra';
+      },
+      contactCards: _FakeCapsuleAddressService(),
     );
 
-    expect(await service.contactCount(), 2);
-    expect(await service.buildOwnCard(), same(card));
-    expect(await service.exportOwnCardJson(), '{"version":1}');
-
-    await service.importCardJson('{"root":"peer"}');
-    expect(fakeContacts.imported, '{"root":"peer"}');
-
-    expect(await service.listTrustedCards(), fakeContacts.cards);
-    expect(await service.removeTrustedCard('h1abc'), isTrue);
-    expect(fakeContacts.removedRootKey, 'h1abc');
+    expect(await service.openLocalDataFolder(), '/tmp/Hivra');
+    expect(opened, isTrue);
   });
+
+  test(
+    'delegates contact-card management to contact service and card boundaries',
+    () async {
+      final fakeContacts =
+          _FakeCapsuleAddressService()
+            ..count = 2
+            ..cards = <CapsuleAddressCard>[
+              const CapsuleAddressCard(
+                rootKey: 'h1abc',
+                rootHex: '11',
+                nostrNpub: 'npub1abc',
+                nostrHex: '22',
+              ),
+            ];
+      final card = const CapsuleAddressCard(
+        rootKey: 'h1self',
+        rootHex: 'aa',
+        nostrNpub: 'npub1self',
+        nostrHex: 'bb',
+      );
+
+      final service = SettingsService(
+        loadIsNeste: () => true,
+        loadSeed: () => null,
+        buildOwnCard: () async => card,
+        exportOwnCardJson: () async => '{"version":1}',
+        contactCards: fakeContacts,
+      );
+
+      expect(await service.contactCount(), 2);
+      expect(await service.buildOwnCard(), same(card));
+      expect(await service.exportOwnCardJson(), '{"version":1}');
+
+      await service.importCardJson('{"root":"peer"}');
+      expect(fakeContacts.imported, '{"root":"peer"}');
+
+      expect(await service.listTrustedCards(), fakeContacts.cards);
+      expect(await service.removeTrustedCard('h1abc'), isTrue);
+      expect(fakeContacts.removedRootKey, 'h1abc');
+    },
+  );
 }

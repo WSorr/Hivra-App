@@ -28,6 +28,10 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Intel smoke launch was tested.
 - [ ] App starts past first screen on a clean machine or clean user account.
 - [ ] Existing-user update path was evaluated for truth preservation (same ledger -> same starters/relationships/pending state).
+- [ ] Previous `~/Documents/Hivra` runtime migrated once to `~/Library/Application Support/Hivra`; copied ledger/index hashes and projected counters match.
+- [ ] Empty, unavailable, or corrupt runtime storage shows explicit Retry / Import Backup / Recover from Seed actions and does not auto-route to capsule creation.
+- [ ] `~/Documents/Hivra/Backups` and `~/Documents/Hivra/Ledger Exports` remain available as user-visible data after migration.
+- [ ] Settings -> Open local data folder opens `~/Library/Application Support/Hivra` in Finder.
 - [ ] Update build does not re-materialize previously resolved invitation history.
 - [ ] Legacy container migration does not rehydrate deleted canonical capsule files on relaunch.
 - [ ] Trading Drone smoke gate completed:

@@ -280,6 +280,14 @@ class BingxFuturesCredentialStore {
       throw StateError('Secure credential migration failed: $error');
     }
     await file.delete();
+    await _deleteVisibleLegacyFallback(file);
+  }
+
+  Future<void> _deleteVisibleLegacyFallback(File canonicalFile) async {
+    final visibleRoot = await _dirs.userVisibleRootDirectory();
+    final legacyFile = File('${visibleRoot.path}/$_fallbackFileName');
+    if (legacyFile.absolute.path == canonicalFile.absolute.path) return;
+    if (await legacyFile.exists()) await legacyFile.delete();
   }
 
   Future<BingxFuturesApiCredentials?> _readScopeAndPromote(String scope) async {

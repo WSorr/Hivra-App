@@ -73,10 +73,6 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       return;
     }
 
-    if (_capsules.isEmpty && _service.seedExists()) {
-      // If we still don't have an index, stay empty and let user create/recover.
-    }
-
     if (!mounted) return;
     setState(() {
       _isLoading = false;
@@ -129,6 +125,10 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       context,
       MaterialPageRoute(builder: (_) => const FirstLaunchScreen()),
     );
+  }
+
+  void _recoverCapsule() {
+    Navigator.pushNamed(context, '/recovery');
   }
 
   Future<void> _importCapsule() async {
@@ -322,23 +322,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
                   style: TextStyle(color: Colors.grey.shade400),
                 ),
                 const SizedBox(height: 18),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: _loadCapsules,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Retry'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _createNewCapsule,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Create / Recover'),
-                    ),
-                  ],
-                ),
+                _buildStorageRecoveryActions(),
               ],
             ),
           ),
@@ -347,15 +331,45 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     }
 
     if (_capsules.isEmpty) {
-      // No capsules, go to first launch
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const FirstLaunchScreen()),
-        );
-      });
-      return const SizedBox.shrink();
+      return Scaffold(
+        appBar: AppBar(title: const Text('Select Capsule')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.inventory_2_outlined, size: 56),
+                const SizedBox(height: 16),
+                const Text(
+                  'No local Capsules found',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  Platform.isMacOS
+                      ? 'If this Mac already had Capsules, download any cloud items in '
+                          '~/Documents/Hivra in Finder, then retry. Otherwise import a '
+                          'backup or recover the identity from its seed.'
+                      : 'This can be a new installation or temporary storage access '
+                          'problem. Retry before creating or recovering a Capsule.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade400),
+                ),
+                const SizedBox(height: 18),
+                _buildStorageRecoveryActions(),
+                const SizedBox(height: 12),
+                Text(
+                  'Seed recovery restores the Capsule identity. Local ledger history '
+                  'requires a backup or available transport history.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
 
     return Scaffold(
@@ -465,6 +479,36 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildStorageRecoveryActions() {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      alignment: WrapAlignment.center,
+      children: [
+        FilledButton.icon(
+          onPressed: _loadCapsules,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Retry'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _importCapsule,
+          icon: const Icon(Icons.file_upload),
+          label: const Text('Import Backup'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _recoverCapsule,
+          icon: const Icon(Icons.restore),
+          label: const Text('Recover from Seed'),
+        ),
+        TextButton.icon(
+          onPressed: _createNewCapsule,
+          icon: const Icon(Icons.add),
+          label: const Text('Create New Capsule'),
+        ),
+      ],
     );
   }
 

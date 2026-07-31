@@ -56,8 +56,9 @@ void main() {
   late CapsuleIndexStore store;
 
   setUp(() async {
-    tempDocsDir =
-        await Directory.systemTemp.createTemp('hivra_index_store_test_');
+    tempDocsDir = await Directory.systemTemp.createTemp(
+      'hivra_index_store_test_',
+    );
     store = CapsuleIndexStore(
       dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
     );
@@ -110,24 +111,26 @@ void main() {
     expect(writes.maxConcurrentWrites, 1);
   });
 
-  test('reconciled metadata cannot overwrite a newer active selection',
-      () async {
-    const capsuleA =
-        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-    const capsuleB =
-        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  test(
+    'reconciled metadata cannot overwrite a newer active selection',
+    () async {
+      const capsuleA =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const capsuleB =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-    await store.upsert(capsuleA);
-    await store.upsert(capsuleB);
-    await store.setActive(capsuleA);
-    final staleReconciledIndex = await store.read();
+      await store.upsert(capsuleA);
+      await store.upsert(capsuleB);
+      await store.setActive(capsuleA);
+      final staleReconciledIndex = await store.read();
 
-    await store.setActive(capsuleB);
-    await store.writePreservingActive(staleReconciledIndex);
+      await store.setActive(capsuleB);
+      await store.writePreservingActive(staleReconciledIndex);
 
-    final index = await store.read();
-    expect(index.activePubKeyHex, capsuleB);
-  });
+      final index = await store.read();
+      expect(index.activePubKeyHex, capsuleB);
+    },
+  );
 
   test('writes index without leaving temp files', () async {
     const capsuleA =
@@ -238,7 +241,9 @@ void main() {
 
     final index = await store.read();
     expect(
-        index.capsules.keys.toSet(), equals({indexedCapsule, missingCapsule}));
+      index.capsules.keys.toSet(),
+      equals({indexedCapsule, missingCapsule}),
+    );
     final repaired = index.capsules[missingCapsule];
     expect(repaired, isNotNull);
     expect(repaired!.isGenesis, isTrue);
@@ -246,22 +251,54 @@ void main() {
     expect(repaired.identityMode, equals('legacy_nostr_owner'));
   });
 
-  test('does not synthesize capsule entry from service-only directory',
-      () async {
-    const ghostCapsule =
-        '2222222222222222222222222222222222222222222222222222222222222222';
+  test(
+    'does not synthesize capsule entry from service-only directory',
+    () async {
+      const ghostCapsule =
+          '2222222222222222222222222222222222222222222222222222222222222222';
+      final capsulesRoot = Directory('${tempDocsDir.path}/capsules');
+      final ghostDir = Directory('${capsulesRoot.path}/$ghostCapsule');
+      await ghostDir.create(recursive: true);
+      await File(
+        '${ghostDir.path}/chat_deferred_inbox.v1.json',
+      ).writeAsString('{"schema_version":1,"items":[]}', flush: true);
+
+      final index = await store.read();
+
+      expect(index.capsules.containsKey(ghostCapsule), isFalse);
+    },
+  );
+
+  test('does not silently replace an unrecoverable corrupt index', () async {
     final capsulesRoot = Directory('${tempDocsDir.path}/capsules');
-    final ghostDir = Directory('${capsulesRoot.path}/$ghostCapsule');
-    await ghostDir.create(recursive: true);
-    await File('${ghostDir.path}/chat_deferred_inbox.v1.json').writeAsString(
-      '{"schema_version":1,"items":[]}',
-      flush: true,
-    );
+    await capsulesRoot.create(recursive: true);
+    final indexFile = File('${capsulesRoot.path}/capsules_index.json');
+    await indexFile.writeAsString('{corrupt', flush: true);
 
-    final index = await store.read();
-
-    expect(index.capsules.containsKey(ghostCapsule), isFalse);
+    await expectLater(store.read(), throwsA(isA<FormatException>()));
+    expect(await indexFile.readAsString(), '{corrupt');
   });
+
+  test(
+    'repairs a corrupt index when an authoritative capsule exists',
+    () async {
+      const capsuleHex =
+          'abababababababababababababababababababababababababababababababab';
+      final capsulesRoot = Directory('${tempDocsDir.path}/capsules');
+      final capsuleDir = Directory('${capsulesRoot.path}/$capsuleHex');
+      await capsuleDir.create(recursive: true);
+      await File(
+        '${capsuleDir.path}/ledger.json',
+      ).writeAsString('{"version":1}', flush: true);
+      final indexFile = File('${capsulesRoot.path}/capsules_index.json');
+      await indexFile.writeAsString('{corrupt', flush: true);
+
+      final index = await store.read();
+
+      expect(index.capsules.keys, contains(capsuleHex));
+      expect(await indexFile.readAsString(), contains(capsuleHex));
+    },
+  );
 
   test('prunes indexed capsule entry backed only by service files', () async {
     const realCapsule =
@@ -277,10 +314,9 @@ void main() {
       '{"isGenesis":true,"isNeste":true,"identityMode":"root_owner"}',
       flush: true,
     );
-    await File('${ghostDir.path}/chat_deferred_inbox.v1.json').writeAsString(
-      '{"schema_version":1,"items":[]}',
-      flush: true,
-    );
+    await File(
+      '${ghostDir.path}/chat_deferred_inbox.v1.json',
+    ).writeAsString('{"schema_version":1,"items":[]}', flush: true);
     final indexFile = File('${capsulesRoot.path}/capsules_index.json');
     await indexFile.writeAsString(
       jsonEncode({

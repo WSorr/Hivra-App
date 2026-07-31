@@ -49,6 +49,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _appVersionLabel = label);
   }
 
+  Future<void> _openLocalDataFolder() async {
+    try {
+      final path = await widget.service.openLocalDataFolder();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Opened local data folder: $path')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open local data folder: $error')),
+      );
+    }
+  }
+
   Future<void> _showSeedPhrase() async {
     final seed = widget.service.loadSeed();
     if (seed == null) {
@@ -460,6 +475,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           const Divider(),
+          if (Theme.of(context).platform == TargetPlatform.macOS) ...[
+            _buildSection(
+              title: 'Storage',
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.folder_open_outlined),
+                  title: const Text('Open local data folder'),
+                  subtitle: const Text(
+                    'Capsule ledgers, plugins and local runtime files',
+                  ),
+                  onTap: _openLocalDataFolder,
+                ),
+              ],
+            ),
+            const Divider(),
+          ],
           _buildSection(
             title: 'Network',
             children: [

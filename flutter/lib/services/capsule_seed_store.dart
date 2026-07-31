@@ -24,12 +24,11 @@ class CapsuleSeedStore {
     FlutterSecureStorage? secureStorage,
     UserVisibleDataDirectoryService? dirs,
     AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
-  })  : _secureStorage = secureStorage ??
-            const FlutterSecureStorage(
-              mOptions: hivraMacOsSecureStorageOptions,
-            ),
-        _dirs = dirs ?? const UserVisibleDataDirectoryService(),
-        _atomicWrites = atomicWrites;
+  }) : _secureStorage =
+           secureStorage ??
+           const FlutterSecureStorage(mOptions: hivraMacOsSecureStorageOptions),
+       _dirs = dirs ?? const UserVisibleDataDirectoryService(),
+       _atomicWrites = atomicWrites;
 
   Future<void> storeSeed(String pubKeyHex, Uint8List seed) async {
     await _migrateLegacyFallbackFile();
@@ -38,8 +37,9 @@ class CapsuleSeedStore {
     try {
       final existing = await _secureStorage.read(key: key);
       if (existing == encoded) {
-        _processSeedCache[await _cacheKey(pubKeyHex)] =
-            Uint8List.fromList(seed);
+        _processSeedCache[await _cacheKey(pubKeyHex)] = Uint8List.fromList(
+          seed,
+        );
         await deleteFallback(pubKeyHex);
         return;
       }
@@ -154,6 +154,7 @@ class CapsuleSeedStore {
     final map = _parseJsonMap(raw);
     if (map == null) {
       await file.delete();
+      await _deleteVisibleLegacyFallback(file);
       return;
     }
 
@@ -181,6 +182,7 @@ class CapsuleSeedStore {
       throw StateError('Secure seed migration failed: $error');
     }
     await file.delete();
+    await _deleteVisibleLegacyFallback(file);
   }
 
   Future<Uint8List?> loadValidatedSeed(
@@ -210,6 +212,15 @@ class CapsuleSeedStore {
   Future<File> _seedFallbackFile() async {
     final capsulesRoot = await _dirs.capsulesDirectory(create: true);
     return File('${capsulesRoot.path}/$_seedFallbackFileName');
+  }
+
+  Future<void> _deleteVisibleLegacyFallback(File canonicalFile) async {
+    final visibleRoot = await _dirs.userVisibleRootDirectory();
+    final legacyFile = File(
+      '${visibleRoot.path}/capsules/$_seedFallbackFileName',
+    );
+    if (legacyFile.absolute.path == canonicalFile.absolute.path) return;
+    if (await legacyFile.exists()) await legacyFile.delete();
   }
 
   Future<String> _cacheKey(String pubKeyHex) async {
