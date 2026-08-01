@@ -446,31 +446,7 @@ pub(crate) fn import_runtime_ledger(json: &str) -> Result<(), &'static str> {
     let mut runtime = RUNTIME.lock().unwrap();
     let capsule = runtime.capsule.as_mut().ok_or("no capsule")?;
 
-    let parsed: Ledger = match serde_json::from_str::<Ledger>(json) {
-        Ok(ledger) => ledger,
-        Err(_) => {
-            let mut value: serde_json::Value =
-                serde_json::from_str(json).map_err(|_| "parse failed")?;
-            if let serde_json::Value::Object(obj) = &mut value {
-                let schema = obj.get("schema").and_then(|v| v.as_str());
-                let version = obj.get("version").and_then(|v| v.as_u64());
-                if schema == Some("hivra.capsule_backup") && version == Some(1) {
-                    if let Some(ledger_value) = obj.get_mut("ledger") {
-                        normalize_ledger_last_hash(ledger_value);
-                        serde_json::from_value(std::mem::take(ledger_value))
-                            .map_err(|_| "parse failed")?
-                    } else {
-                        return Err("parse failed");
-                    }
-                } else {
-                    normalize_ledger_last_hash(&mut value);
-                    serde_json::from_value(value).map_err(|_| "parse failed")?
-                }
-            } else {
-                return Err("parse failed");
-            }
-        }
-    };
+    let parsed = parse_ledger_json(json)?;
 
     validate_imported_ledger(&parsed, &capsule.pubkey, cfg!(not(test)))?;
     let parsed = if parsed.is_continuous_v5() || cfg!(test) {
@@ -497,6 +473,34 @@ pub(crate) fn import_runtime_ledger(json: &str) -> Result<(), &'static str> {
     observe_ledger_tail_ts(&parsed);
     capsule.ledger = parsed;
     Ok(())
+}
+
+pub(crate) fn parse_ledger_json(json: &str) -> Result<Ledger, &'static str> {
+    Ok(match serde_json::from_str::<Ledger>(json) {
+        Ok(ledger) => ledger,
+        Err(_) => {
+            let mut value: serde_json::Value =
+                serde_json::from_str(json).map_err(|_| "parse failed")?;
+            if let serde_json::Value::Object(obj) = &mut value {
+                let schema = obj.get("schema").and_then(|v| v.as_str());
+                let version = obj.get("version").and_then(|v| v.as_u64());
+                if schema == Some("hivra.capsule_backup") && version == Some(1) {
+                    if let Some(ledger_value) = obj.get_mut("ledger") {
+                        normalize_ledger_last_hash(ledger_value);
+                        serde_json::from_value(std::mem::take(ledger_value))
+                            .map_err(|_| "parse failed")?
+                    } else {
+                        return Err("parse failed");
+                    }
+                } else {
+                    normalize_ledger_last_hash(&mut value);
+                    serde_json::from_value(value).map_err(|_| "parse failed")?
+                }
+            } else {
+                return Err("parse failed");
+            }
+        }
+    })
 }
 
 pub(crate) fn event_kind_from_u8(kind: u8) -> Option<EventKind> {

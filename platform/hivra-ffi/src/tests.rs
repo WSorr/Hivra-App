@@ -2911,6 +2911,44 @@ fn exported_ledger_roundtrips_same_event_count() {
 }
 
 #[test]
+fn invitation_current_view_v1_projects_exported_ledger_json() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(52);
+    let owner = derived_pubkey(&seed);
+    let peer = PubKey::from([152u8; 32]);
+    set_runtime_capsule(owner, Network::Neste);
+    append_runtime_event(
+        EventKind::InvitationSent,
+        &InvitationSentPayload {
+            invitation_id: [153u8; 32],
+            starter_id: StarterId::from([154u8; 32]),
+            to_pubkey: peer,
+            sender_root_pubkey: Some(owner),
+        }
+        .to_bytes(),
+    )
+    .unwrap();
+
+    let ledger = CString::new(export_runtime_ledger().unwrap()).unwrap();
+    let mut projected = ptr::null_mut();
+    let code = unsafe {
+        crate::ledger_api::hivra_project_invitation_current_view_v1(ledger.as_ptr(), &mut projected)
+    };
+    assert_eq!(code, 0);
+    assert!(!projected.is_null());
+    let json = unsafe { CStr::from_ptr(projected).to_str().unwrap().to_owned() };
+    unsafe { crate::ffi_support::hivra_free_string(projected) };
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["schema"], "hivra.invitation_current_view");
+    assert_eq!(value["version"], 1);
+    assert_eq!(value["invitations"].as_array().unwrap().len(), 1);
+    assert_eq!(value["invitations"][0]["direction"], "outgoing");
+    assert_eq!(value["invitations"][0]["status"], "pending");
+}
+
+#[test]
 fn repeated_import_of_same_ledger_keeps_projection_stable() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

@@ -66,6 +66,37 @@ pub unsafe extern "C" fn hivra_export_ledger(out_json: *mut *mut c_char) -> i32 
     }
 }
 
+/// Project a ledger JSON document into the canonical invitation current view.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_project_invitation_current_view_v1(
+    ledger_json: *const c_char,
+    out_json: *mut *mut c_char,
+) -> i32 {
+    if ledger_json.is_null() || out_json.is_null() {
+        return -1;
+    }
+    let ledger_json = match CStr::from_ptr(ledger_json).to_str() {
+        Ok(value) => value,
+        Err(_) => return -2,
+    };
+    let ledger = match parse_ledger_json(ledger_json) {
+        Ok(value) => value,
+        Err(_) => return -3,
+    };
+    let view = hivra_core::invitation_current_view_v1(&ledger);
+    let json = match serde_json::to_string(&view) {
+        Ok(value) => value,
+        Err(_) => return -4,
+    };
+    match CString::new(json) {
+        Ok(value) => {
+            *out_json = value.into_raw();
+            0
+        }
+        Err(_) => -4,
+    }
+}
+
 /// Import a ledger from JSON and replace the runtime ledger
 #[no_mangle]
 pub unsafe extern "C" fn hivra_import_ledger(json_ptr: *const c_char) -> i32 {

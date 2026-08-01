@@ -1,326 +1,126 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import '../models/invitation.dart';
 import '../models/starter.dart';
-import 'ledger_view_support.dart';
 
-String _hex(List<int> bytes) =>
-    bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+typedef InvitationCurrentViewProjector = String? Function(String ledgerJson);
 
+/// Maps the versioned Core invitation view into Flutter UI models.
+///
+/// Domain replay belongs to Core. This adapter must not inspect ledger events.
 class InvitationProjectionService {
-  final Uint8List? Function() _runtimeOwnerPublicKey;
-  final Uint8List? Function()? _runtimeTransportPublicKey;
-  final LedgerViewSupport _support;
+  final InvitationCurrentViewProjector _projectCurrentView;
 
-  InvitationProjectionService.withOwnerKeyProvider(
-    Uint8List? Function() runtimeOwnerPublicKey,
-    this._support, {
-    Uint8List? Function()? runtimeTransportPublicKey,
-  }) : _runtimeOwnerPublicKey = runtimeOwnerPublicKey,
-       _runtimeTransportPublicKey = runtimeTransportPublicKey;
+  const InvitationProjectionService(this._projectCurrentView);
 
-  List<Invitation> loadInvitations(
-    Map<String, dynamic> root, {
-    List<Uint8List?> starterIds = const <Uint8List?>[],
-  }) {
-    final events = _support.events(root);
-    final selfOwners = _resolveLocalOwners(root);
-    final selfTransport = _resolveLocalTransport();
-    if (selfOwners.isEmpty && selfTransport == null) return <Invitation>[];
-
-    final starterKinds = <String, StarterKind>{};
-    for (final e in events) {
-      if (_support.kindCode(e['kind']) != 5) continue;
-      final payload = _support.payloadBytes(e['payload']);
-      if (payload.length != 66) continue;
-      starterKinds[base64.encode(payload.sublist(0, 32))] = _support
-          .starterKindFromByte(payload[64]);
+  List<Invitation> loadInvitations(Map<String, dynamic> ledgerRoot) {
+    final projected = _projectCurrentView(jsonEncode(ledgerRoot));
+    if (projected == null || projected.trim().isEmpty) {
+      return <Invitation>[];
     }
 
-    final ownStarterBySlot = <int, Uint8List>{};
-    for (var i = 0; i < starterIds.length; i++) {
-      final id = starterIds[i];
-      if (id != null) ownStarterBySlot[i] = id;
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(projected);
+    } on FormatException {
+      return <Invitation>[];
     }
-    final localStarterIds = <String>{
-      ...starterKinds.keys,
-      ...ownStarterBySlot.values.map(base64.encode),
-    };
+    if (decoded is! Map<String, dynamic> ||
+        decoded['schema'] != 'hivra.invitation_current_view' ||
+        decoded['version'] != 1) {
+      return <Invitation>[];
+    }
+    final rows = decoded['invitations'];
+    if (rows is! List) return <Invitation>[];
 
-    final offersById = <String, _ProjectedInvitationOffer>{};
-    final terminalById = <String, _ProjectedInvitationTerminal>{};
+    final invitations = <Invitation>[];
+    for (final raw in rows) {
+      if (raw is! Map) continue;
+      final row = Map<String, dynamic>.from(raw);
+      final invitationId = _bytes(row['invitation_id'], 32);
+      final fromPubkey = _bytes(row['from_pubkey'], 32);
+      if (invitationId == null || fromPubkey == null) continue;
 
-    for (final e in events) {
-      final kind = _support.kindCode(e['kind']);
-      final timestamp = _support.eventTime(e['timestamp']);
-      final payload = _support.payloadBytes(e['payload']);
+      final direction = row['direction'];
+      final toPubkey = _bytes(row['to_pubkey'], 32);
+      if (direction != 'incoming' && direction != 'outgoing') continue;
+      if (direction == 'outgoing' && toPubkey == null) continue;
 
-      if ((kind == 1 || kind == 9) &&
-          (payload.length == 96 ||
-              payload.length == 97 ||
-              payload.length == 128 ||
-              payload.length == 129 ||
-              payload.length == 161 ||
-              payload.length == 225)) {
-        final signerBytes = _support.payloadBytes(e['signer']);
-        if (signerBytes.length != 32) {
-          continue;
-        }
-        final signer = Uint8List.fromList(signerBytes);
-        final invitationId = payload.sublist(0, 32);
-        final starterId = payload.sublist(32, 64);
-        final toPubkey = payload.sublist(64, 96);
-        final starterIdB64 = base64.encode(starterId);
+      final status = switch (row['status']) {
+        'pending' => InvitationStatus.pending,
+        'accepted' => InvitationStatus.accepted,
+        'rejected' => InvitationStatus.rejected,
+        'expired' => InvitationStatus.expired,
+        _ => null,
+      };
+      final starterKind = _starterKind(row['starter_kind']);
+      final sentAt = _timestamp(row['sent_at']);
+      if (status == null || starterKind == null || sentAt == null) continue;
 
-        final kindByteOffset = switch (payload.length) {
-          97 => 96,
-          129 || 161 || 225 => 128,
-          _ => null,
-        };
-        final kindFromPayload =
-            kindByteOffset == null
-                ? null
-                : _support.starterKindFromByte(payload[kindByteOffset]);
-        final senderRoot =
-            payload.length >= 128
-                ? Uint8List.fromList(payload.sublist(96, 128))
-                : null;
-        final senderTransport =
-            payload.length >= 161
-                ? Uint8List.fromList(payload.sublist(129, 161))
-                : signer;
-        final senderCardSignatureHex =
-            payload.length == 225 ? _hex(payload.sublist(161, 225)) : null;
+      final respondedAt = _timestamp(row['responded_at']);
+      final rejectionReason = switch (row['rejection_reason']) {
+        'empty_slot' => RejectionReason.emptySlot,
+        'other' => RejectionReason.other,
+        _ => null,
+      };
+      final rootPubkey = _bytes(row['from_root_pubkey'], 32);
+      final cardSignature = _bytes(row['from_card_signature'], 64);
+      final starterSlot = row['starter_slot'];
 
-        final id = base64.encode(invitationId);
-        final current = offersById[id];
-        final starterSlot = _support.slotForStarterId(
-          starterId,
-          ownStarterBySlot,
-        );
-        final matchesOwnStarter = starterSlot != null;
-        final localStarterKnownFromLedger = localStarterIds.contains(
-          starterIdB64,
-        );
-        final isIncomingByAddress = _matchesLocalIdentity(
-          toPubkey,
-          owners: selfOwners,
-          transport: selfTransport,
-        );
-        final signerIsSelf = _matchesLocalIdentity(
-          signer,
-          owners: selfOwners,
-          transport: selfTransport,
-        );
-        if (kind == 9) {
-          // Ignore foreign or mirrored self-signed incoming rows.
-          if (!isIncomingByAddress || signerIsSelf) {
-            continue;
-          }
-        } else {
-          // Receiver projection must be driven by InvitationReceived events.
-          // Foreign InvitationSent rows addressed to local identity are
-          // transport mirrors and are not actionable for accept/reject.
-          if (isIncomingByAddress && !signerIsSelf) {
-            continue;
-          }
-          final localOutgoingByIdentity = signerIsSelf;
-          // Keep local outgoing events when signer identity is temporarily
-          // unresolved, as long as invitation starter_id maps to own starter
-          // slot or exists among local starter ids from ledger projection.
-          // This avoids dropping local pending invites after capsule
-          // restore/switch when runtime identity is transiently unavailable.
-          final localOutgoingByStarter =
-              matchesOwnStarter || localStarterKnownFromLedger;
-          if (!localOutgoingByIdentity &&
-              !localOutgoingByStarter &&
-              !isIncomingByAddress) {
-            // Ignore foreign outgoing-looking rows from merged/imported ledgers.
-            continue;
-          }
-        }
-        final isIncoming = kind == 9 || (isIncomingByAddress && !signerIsSelf);
-        final candidateOffer = _ProjectedInvitationOffer(
-          id: id,
-          fromPubkey: base64.encode(isIncoming ? senderTransport : signer),
-          fromRootPubkey:
-              isIncoming && senderRoot != null
-                  ? base64.encode(senderRoot)
+      invitations.add(
+        Invitation(
+          id: base64.encode(invitationId),
+          fromPubkey: base64.encode(fromPubkey),
+          fromRootPubkey: rootPubkey == null ? null : base64.encode(rootPubkey),
+          fromCardSignatureHex:
+              cardSignature == null ? null : _hex(cardSignature),
+          toPubkey: direction == 'incoming' ? null : base64.encode(toPubkey!),
+          kind: starterKind,
+          starterSlot:
+              starterSlot is num && starterSlot >= 0 && starterSlot < 5
+                  ? starterSlot.toInt()
                   : null,
-          fromCardSignatureHex: isIncoming ? senderCardSignatureHex : null,
-          toPubkey: isIncoming ? null : base64.encode(toPubkey),
-          kind:
-              kindFromPayload ??
-              starterKinds[starterIdB64] ??
-              StarterKind.juice,
-          starterSlot: isIncoming ? null : starterSlot,
-          isIncoming: isIncoming,
-          sentAt: timestamp,
-        );
-        if (current == null || timestamp.isBefore(current.sentAt)) {
-          offersById[id] = candidateOffer;
-        }
-      } else if (kind == 2 && (payload.length == 96 || payload.length == 128)) {
-        final signerBytes = _support.payloadBytes(e['signer']);
-        if (signerBytes.length != 32) {
-          continue;
-        }
-        final id = base64.encode(payload.sublist(0, 32));
-        if (offersById.containsKey(id) && !terminalById.containsKey(id)) {
-          terminalById[id] = _ProjectedInvitationTerminal(
-            status: InvitationStatus.accepted,
-            at: timestamp,
-          );
-        }
-      } else if (kind == 3 && payload.length == 33) {
-        final signerBytes = _support.payloadBytes(e['signer']);
-        if (signerBytes.length != 32) {
-          continue;
-        }
-        final id = base64.encode(payload.sublist(0, 32));
-        final reason =
-            payload[32] == 0
-                ? RejectionReason.emptySlot
-                : RejectionReason.other;
-        if (offersById.containsKey(id) && !terminalById.containsKey(id)) {
-          terminalById[id] = _ProjectedInvitationTerminal(
-            status: InvitationStatus.rejected,
-            at: timestamp,
-            rejectionReason: reason,
-          );
-        }
-      } else if (kind == 4 && payload.length == 32) {
-        final signerBytes = _support.payloadBytes(e['signer']);
-        if (signerBytes.length != 32) {
-          continue;
-        }
-        final id = base64.encode(payload.sublist(0, 32));
-        final offer = offersById[id];
-        final senderRevocation =
-            offer?.isIncoming == true &&
-            offer!.fromPubkey == base64.encode(signerBytes);
-        if (offer != null &&
-            (!terminalById.containsKey(id) || senderRevocation)) {
-          // The offer sender may revoke a still-unacknowledged invitation.
-          // This intentionally supersedes a recipient-local optimistic accept
-          // if the revoke reaches the receiver later.
-          terminalById[id] = _ProjectedInvitationTerminal(
-            status: InvitationStatus.expired,
-            at: timestamp,
-          );
-        }
-      }
+          status: status,
+          sentAt: sentAt,
+          expiresAt: status == InvitationStatus.expired ? respondedAt : null,
+          respondedAt: respondedAt,
+          rejectionReason: rejectionReason,
+        ),
+      );
     }
-
-    final list =
-        offersById.values.map((offer) {
-          InvitationStatus status = InvitationStatus.pending;
-          DateTime? respondedAt;
-          RejectionReason? rejectionReason;
-          final terminal = terminalById[offer.id];
-          final expiresAt =
-              terminal?.status == InvitationStatus.expired
-                  ? terminal?.at
-                  : null;
-          if (terminal != null) {
-            status = terminal.status;
-            respondedAt = terminal.at;
-            rejectionReason = terminal.rejectionReason;
-          }
-          return Invitation(
-            id: offer.id,
-            fromPubkey: offer.fromPubkey,
-            fromRootPubkey: offer.fromRootPubkey,
-            fromCardSignatureHex: offer.fromCardSignatureHex,
-            toPubkey: offer.toPubkey,
-            kind: offer.kind,
-            starterSlot: offer.starterSlot,
-            status: status,
-            sentAt: offer.sentAt,
-            expiresAt: expiresAt,
-            respondedAt: respondedAt,
-            rejectionReason: rejectionReason,
-          );
-        }).toList();
-    list.sort((a, b) => b.sentAt.compareTo(a.sentAt));
-    return list;
+    invitations.sort((a, b) => b.sentAt.compareTo(a.sentAt));
+    return invitations;
   }
 
-  List<Uint8List> _resolveLocalOwners(Map<String, dynamic> root) {
-    final owners = <Uint8List>[];
-    final runtimeOwner = _runtimeOwnerPublicKey();
-    if (runtimeOwner != null && runtimeOwner.length == 32) {
-      owners.add(Uint8List.fromList(runtimeOwner));
+  List<int>? _bytes(Object? raw, int length) {
+    if (raw is! List || raw.length != length) return null;
+    final result = <int>[];
+    for (final value in raw) {
+      if (value is! num || value < 0 || value > 255) return null;
+      result.add(value.toInt());
     }
-    final ledgerOwner = _support.payloadBytes(root['owner']);
-    if (ledgerOwner.length == 32) {
-      final owner = Uint8List.fromList(ledgerOwner);
-      final exists = owners.any((existing) => _support.eq32(existing, owner));
-      if (!exists) {
-        owners.add(owner);
-      }
-    }
-    return owners;
+    return result;
   }
 
-  Uint8List? _resolveLocalTransport() {
-    final runtimeTransport = _runtimeTransportPublicKey?.call();
-    if (runtimeTransport != null && runtimeTransport.length == 32) {
-      return Uint8List.fromList(runtimeTransport);
-    }
-    return null;
+  StarterKind? _starterKind(Object? raw) {
+    if (raw is! num) return null;
+    return switch (raw.toInt()) {
+      0 => StarterKind.juice,
+      1 => StarterKind.spark,
+      2 => StarterKind.seed,
+      3 => StarterKind.pulse,
+      4 => StarterKind.kick,
+      _ => null,
+    };
   }
 
-  bool _matchesLocalIdentity(
-    Uint8List key, {
-    required List<Uint8List> owners,
-    required Uint8List? transport,
-  }) {
-    for (final owner in owners) {
-      if (_support.eq32(key, owner)) {
-        return true;
-      }
-    }
-    if (transport != null && _support.eq32(key, transport)) {
-      return true;
-    }
-    return false;
+  DateTime? _timestamp(Object? raw) {
+    if (raw is! num || raw <= 0) return null;
+    final value = raw.toInt();
+    final millis = value < 100000000000 ? value * 1000 : value;
+    return DateTime.fromMillisecondsSinceEpoch(millis);
   }
-}
 
-class _ProjectedInvitationOffer {
-  final String id;
-  final String fromPubkey;
-  final String? fromRootPubkey;
-  final String? fromCardSignatureHex;
-  final String? toPubkey;
-  final StarterKind kind;
-  final int? starterSlot;
-  final bool isIncoming;
-  final DateTime sentAt;
-
-  const _ProjectedInvitationOffer({
-    required this.id,
-    required this.fromPubkey,
-    required this.fromRootPubkey,
-    required this.fromCardSignatureHex,
-    required this.toPubkey,
-    required this.kind,
-    required this.starterSlot,
-    required this.isIncoming,
-    required this.sentAt,
-  });
-}
-
-class _ProjectedInvitationTerminal {
-  final InvitationStatus status;
-  final DateTime at;
-  final RejectionReason? rejectionReason;
-
-  const _ProjectedInvitationTerminal({
-    required this.status,
-    required this.at,
-    this.rejectionReason,
-  });
+  String _hex(List<int> bytes) =>
+      bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 }

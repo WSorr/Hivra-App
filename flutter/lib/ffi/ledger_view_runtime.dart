@@ -7,6 +7,8 @@ abstract class LedgerViewRuntime {
 
   String? exportCapsuleStateJson();
 
+  String? projectInvitationCurrentViewV1(String ledgerJson);
+
   Uint8List? capsuleRuntimeOwnerPublicKey();
 
   Uint8List? capsuleRuntimeTransportPublicKey();
@@ -16,13 +18,17 @@ class HivraLedgerViewRuntime implements LedgerViewRuntime {
   final HivraBindings _hivra;
 
   HivraLedgerViewRuntime([HivraBindings? hivra])
-      : _hivra = hivra ?? HivraBindings();
+    : _hivra = hivra ?? HivraBindings();
 
   @override
   String? exportLedger() => _hivra.exportLedger();
 
   @override
   String? exportCapsuleStateJson() => _hivra.exportCapsuleStateJson();
+
+  @override
+  String? projectInvitationCurrentViewV1(String ledgerJson) =>
+      _hivra.projectInvitationCurrentViewV1(ledgerJson);
 
   @override
   Uint8List? capsuleRuntimeOwnerPublicKey() =>

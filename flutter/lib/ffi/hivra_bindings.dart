@@ -208,6 +208,10 @@ typedef HivraExportCapsuleStateJsonDart =
 
 typedef HivraExportLedgerC = Int32 Function(Pointer<Pointer<Int8>> outJson);
 typedef HivraExportLedgerDart = int Function(Pointer<Pointer<Int8>> outJson);
+typedef HivraProjectInvitationCurrentViewV1C =
+    Int32 Function(Pointer<Int8> ledgerJson, Pointer<Pointer<Int8>> outJson);
+typedef HivraProjectInvitationCurrentViewV1Dart =
+    int Function(Pointer<Int8> ledgerJson, Pointer<Pointer<Int8>> outJson);
 
 typedef HivraImportLedgerC = Int32 Function(Pointer<Int8> json);
 typedef HivraImportLedgerDart = int Function(Pointer<Int8> json);
@@ -316,6 +320,8 @@ class HivraBindings {
   HivraDeliveryPreparedSelfCheckDart? _deliveryPreparedSelfCheck;
   late final HivraExportCapsuleStateJsonDart _exportCapsuleStateJson;
   late final HivraExportLedgerDart _exportLedger;
+  late final HivraProjectInvitationCurrentViewV1Dart
+  _projectInvitationCurrentViewV1;
   late final HivraImportLedgerDart _importLedger;
   late final HivraLedgerAppendEventDart _ledgerAppendEvent;
   late final HivraWasmInvokeJsonDart _wasmInvokeJson;
@@ -637,6 +643,13 @@ class HivraBindings {
     _exportLedger =
         _lib
             .lookup<NativeFunction<HivraExportLedgerC>>('hivra_export_ledger')
+            .asFunction();
+
+    _projectInvitationCurrentViewV1 =
+        _lib
+            .lookup<NativeFunction<HivraProjectInvitationCurrentViewV1C>>(
+              'hivra_project_invitation_current_view_v1',
+            )
             .asFunction();
 
     _importLedger =
@@ -1221,6 +1234,22 @@ class HivraBindings {
       _freeString(cstr);
       return json;
     } finally {
+      calloc.free(outPtr);
+    }
+  }
+
+  String? projectInvitationCurrentViewV1(String ledgerJson) {
+    final ledgerPtr = ledgerJson.toNativeUtf8().cast<Int8>();
+    final outPtr = calloc<Pointer<Int8>>();
+    try {
+      if (_projectInvitationCurrentViewV1(ledgerPtr, outPtr) != 0) return null;
+      final cstr = outPtr.value;
+      if (cstr == nullptr) return null;
+      final json = cstr.cast<Utf8>().toDartString();
+      _freeString(cstr);
+      return json;
+    } finally {
+      calloc.free(ledgerPtr);
       calloc.free(outPtr);
     }
   }

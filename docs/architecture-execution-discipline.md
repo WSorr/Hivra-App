@@ -21,6 +21,9 @@ It is an internal Hivra standard and should be applied to all new modules and re
 2. **Determinism means one input route and one result.**
    - domain state is projected from ledger events
    - replaying the same ledger history yields the same projection
+   - if two actions produce the same canonical domain or effect result, they
+     share one lifecycle owner and one result-application route; if they cannot
+     be merged, their distinct intent and result contracts must be explicit
    - every async effect is bound to one capsule, one queue/lifecycle owner, and
      one result-application path
    - timeout, retry, refresh, or a screen switch must not create a second

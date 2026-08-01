@@ -846,6 +846,7 @@ class CapsulePersistenceService {
         _bytesToHex,
         coreProjection: state?['coreProjection'],
         runtimeTransportPublicKey: localTransportPublicKey,
+        invitationCurrentViewJson: hivra?.projectInvitationCurrentViewV1(raw),
       );
     } catch (_) {
       return CapsuleLedgerSummary.empty();

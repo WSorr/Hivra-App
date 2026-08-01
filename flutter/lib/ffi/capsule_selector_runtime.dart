@@ -26,7 +26,9 @@ abstract class CapsuleSelectorRuntime {
   Future<String?> importCapsuleFromBackupJson(String raw);
 
   Future<String?> exportCapsuleBackupToPath(
-      String pubKeyHex, String targetPath);
+    String pubKeyHex,
+    String targetPath,
+  );
 
   Future<void> deleteCapsule(String pubKeyHex);
 
@@ -46,8 +48,8 @@ class HivraCapsuleSelectorRuntime implements CapsuleSelectorRuntime {
   HivraCapsuleSelectorRuntime({
     HivraBindings? hivra,
     CapsulePersistenceService? persistence,
-  })  : _hivra = hivra ?? HivraBindings(),
-        _persistence = persistence ?? CapsulePersistenceService();
+  }) : _hivra = hivra ?? HivraBindings(),
+       _persistence = persistence ?? CapsulePersistenceService();
 
   @override
   Future<List<CapsuleIndexEntry>> listCapsules() {
@@ -71,7 +73,7 @@ class HivraCapsuleSelectorRuntime implements CapsuleSelectorRuntime {
 
   @override
   Future<CapsuleLedgerSummary> loadCapsuleSummary(String pubKeyHex) {
-    return _persistence.loadCapsuleSummary(pubKeyHex);
+    return _persistence.loadCapsuleSummary(pubKeyHex, hivra: _hivra);
   }
 
   @override
@@ -99,7 +101,9 @@ class HivraCapsuleSelectorRuntime implements CapsuleSelectorRuntime {
 
   @override
   Future<String?> exportCapsuleBackupToPath(
-      String pubKeyHex, String targetPath) {
+    String pubKeyHex,
+    String targetPath,
+  ) {
     return _persistence.exportCapsuleBackupToPath(pubKeyHex, targetPath);
   }
 

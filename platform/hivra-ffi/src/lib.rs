@@ -78,7 +78,7 @@ pub(crate) use runtime_support::{
     current_capsule_state, derive_nostr_public_key, domain_event_proof, event_exists_in_runtime,
     event_exists_in_runtime_with_signer, event_kind_from_u8, export_runtime_ledger,
     find_starter_kind_by_id_in_runtime, import_runtime_ledger, init_runtime_state,
-    starter_kind_from_slot, CapsuleOwnerMode, FfiEngine, RUNTIME,
+    parse_ledger_json, starter_kind_from_slot, CapsuleOwnerMode, FfiEngine, RUNTIME,
 };
 #[cfg(test)]
 pub(crate) use runtime_support::{

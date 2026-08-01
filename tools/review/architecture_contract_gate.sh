@@ -92,6 +92,9 @@ PAIRWISE="$ROOT/flutter/lib/services/pairwise_snapshot_service.dart"
 SUPPORT="$ROOT/flutter/lib/services/ledger_view_support.dart"
 LEDGER_VIEW="$ROOT/flutter/lib/services/ledger_view_service.dart"
 LEDGER_SUMMARY="$ROOT/flutter/lib/services/capsule_ledger_summary_parser.dart"
+INVITATION_PROJECTION="$ROOT/flutter/lib/services/invitation_projection_service.dart"
+CORE_INVITATION="$ROOT/core/hivra-core/src/invitation.rs"
+FFI_LEDGER_API="$ROOT/platform/hivra-ffi/src/ledger_api.rs"
 CONSENSUS="$ROOT/flutter/lib/services/consensus_processor.dart"
 CONSENSUS_ATTESTATION_SYNC="$ROOT/flutter/lib/services/consensus_attestation_sync_service.dart"
 CONSENSUS_ATTESTATION_STORE="$ROOT/flutter/lib/services/consensus_attestation_store.dart"
@@ -174,6 +177,17 @@ require_present "$CHECKLIST" 'Normative domain lifecycle semantics are interpret
   "architecture review checks single domain interpreter"
 require_present "$ROADMAP" 'Canonical Core Projection Convergence' \
   "roadmap tracks canonical projection convergence debt"
+require_present "$CORE_INVITATION" 'pub fn invitation_current_view_v1' \
+  "Core owns the versioned invitation current view"
+require_present "$FFI_LEDGER_API" 'hivra_project_invitation_current_view_v1' \
+  "FFI exposes the canonical invitation current view"
+require_present "$INVITATION_PROJECTION" 'hivra\.invitation_current_view' \
+  "Flutter invitation adapter consumes the versioned Core view"
+require_absent "$INVITATION_PROJECTION" \
+  'InvitationSent|InvitationReceived|InvitationAccepted|InvitationRejected|InvitationExpired|kindCode\(|payloadBytes\(' \
+  "Flutter invitation adapter does not replay raw domain events"
+require_absent "$LEDGER_SUMMARY" 'InvitationProjectionService' \
+  "ledger summary does not own a second invitation reducer"
 require_present "$SPEC" 'Flutter Boundary Direction' \
   "spec defines downward direction inside Flutter boundary"
 require_present "$SPEC" 'WASM Plugin Host Contract' \
@@ -206,6 +220,8 @@ require_present "$CHECKLIST" 'Repo boundary is preserved: `Hivra-App` is host/ru
   "architecture checklist enforces app-vs-plugin repo boundary"
 require_present "$EXEC_DISCIPLINE" '^# Hivra Architecture Execution Discipline v1' \
   "execution discipline doc exists"
+require_present "$EXEC_DISCIPLINE" 'if two actions produce the same canonical domain or effect result' \
+  "execution discipline merges equivalent result paths under one owner"
 require_present "$DELIVERY_LIFECYCLE_DOC" '^# Transport Delivery Lifecycle v1' \
   "delivery lifecycle architecture doc exists"
 require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" '^# External Effect Lifecycle v1' \

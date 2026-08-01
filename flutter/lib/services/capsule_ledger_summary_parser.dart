@@ -1,10 +1,9 @@
 import 'dart:typed_data';
+import 'dart:convert';
 
 import 'capsule_persistence_models.dart';
-import 'invitation_projection_service.dart';
 import 'ledger_view_support.dart';
 import 'relationship_projection_service.dart';
-import '../models/invitation.dart';
 
 class CapsuleLedgerSummaryParser {
   final LedgerViewSupport _support;
@@ -19,6 +18,7 @@ class CapsuleLedgerSummaryParser {
     Object? coreProjection,
     Uint8List? runtimeOwnerPublicKey,
     Uint8List? runtimeTransportPublicKey,
+    String? invitationCurrentViewJson,
   }) {
     if (json.trim().isEmpty) return CapsuleLedgerSummary.empty();
     try {
@@ -37,6 +37,7 @@ class CapsuleLedgerSummaryParser {
         ledger,
         runtimeOwnerPublicKey: runtimeOwnerPublicKey,
         runtimeTransportPublicKey: runtimeTransportPublicKey,
+        invitationCurrentViewJson: invitationCurrentViewJson,
       );
       return CapsuleLedgerSummary(
         starterCount: starterCount,
@@ -55,7 +56,7 @@ class CapsuleLedgerSummaryParser {
     Map<String, dynamic> ledger, {
     Uint8List? runtimeOwnerPublicKey,
     Uint8List? runtimeTransportPublicKey,
-    List<Uint8List?> starterIds = const <Uint8List?>[],
+    String? invitationCurrentViewJson,
   }) {
     final ownerBytes = parseBytesField(ledger['owner']);
     Uint8List? readOwner() {
@@ -68,14 +69,6 @@ class CapsuleLedgerSummaryParser {
       return null;
     }
 
-    final projection = InvitationProjectionService.withOwnerKeyProvider(
-      readOwner,
-      _support,
-      runtimeTransportPublicKey:
-          runtimeTransportPublicKey == null
-              ? null
-              : () => runtimeTransportPublicKey,
-    );
     final relationshipProjection =
         RelationshipProjectionService.withOwnerKeyProvider(
           readOwner,
@@ -90,16 +83,32 @@ class CapsuleLedgerSummaryParser {
         .where((group) => group.isActive)
         .length
         .clamp(0, 9999);
-    final pendingInvitations = projection
-        .loadInvitations(ledger, starterIds: starterIds)
-        .where((invitation) => invitation.status == InvitationStatus.pending)
-        .length
-        .clamp(0, 9999);
+    final pendingInvitations = _pendingInvitationCount(
+      invitationCurrentViewJson,
+    ).clamp(0, 9999);
 
     return (
       relationshipCount: relationshipCount,
       pendingInvitations: pendingInvitations,
     );
+  }
+
+  int _pendingInvitationCount(String? currentViewJson) {
+    if (currentViewJson == null || currentViewJson.trim().isEmpty) return 0;
+    try {
+      final root = jsonDecode(currentViewJson);
+      if (root is! Map ||
+          root['schema'] != 'hivra.invitation_current_view' ||
+          root['version'] != 1 ||
+          root['invitations'] is! List) {
+        return 0;
+      }
+      return (root['invitations'] as List)
+          .where((row) => row is Map && row['status'] == 'pending')
+          .length;
+    } catch (_) {
+      return 0;
+    }
   }
 
   List<int>? parseBytesField(dynamic raw) {

@@ -2,9 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hivra_app/models/invitation.dart';
 import 'package:hivra_app/services/capsule_ledger_summary_parser.dart';
-import 'package:hivra_app/services/invitation_projection_service.dart';
 import 'package:hivra_app/services/ledger_view_support.dart';
 import 'package:hivra_app/services/relationship_projection_service.dart';
 
@@ -16,6 +14,16 @@ void main() {
         bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
     List<int> rep(int value) => List<int>.filled(32, value);
+
+    String pendingInvitationView(int count) => jsonEncode(<String, Object?>{
+      'schema': 'hivra.invitation_current_view',
+      'version': 1,
+      'ledger_version': count,
+      'invitations': <Object>[
+        for (var index = 0; index < count; index++)
+          <String, Object>{'status': 'pending'},
+      ],
+    });
 
     Map<String, dynamic> coreProjection({
       required int version,
@@ -230,7 +238,11 @@ void main() {
         ],
       });
 
-      final summary = parser.parse(ledger, toHex);
+      final summary = parser.parse(
+        ledger,
+        toHex,
+        invitationCurrentViewJson: pendingInvitationView(1),
+      );
       expect(summary.pendingInvitations, equals(1));
     });
 
@@ -255,86 +267,13 @@ void main() {
         ],
       });
 
-      final summary = parser.parse(ledger, toHex);
+      final summary = parser.parse(
+        ledger,
+        toHex,
+        invitationCurrentViewJson: pendingInvitationView(1),
+      );
       expect(summary.pendingInvitations, equals(1));
     });
-
-    test(
-      'pending count uses runtime transport key when owner/root differs from transport',
-      () {
-        final ownerRoot = rep(0xaa);
-        final localTransport = rep(0xab);
-        final peer = rep(0xbb);
-        final t0 =
-            DateTime.now()
-                .subtract(const Duration(hours: 2))
-                .millisecondsSinceEpoch;
-
-        final ledger = jsonEncode(<String, dynamic>{
-          'owner': ownerRoot,
-          'events': <Map<String, dynamic>>[
-            event(
-              kind: 'InvitationSent',
-              payload: invitationSentPayload(
-                invitationByte: 0x14,
-                starterByte: 0x24,
-                toPubkey: peer,
-              ),
-              timestamp: t0 + 1,
-              signer: localTransport,
-            ),
-          ],
-        });
-
-        final summaryWithoutTransport = parser.parse(ledger, toHex);
-        final summaryWithTransport = parser.parse(
-          ledger,
-          toHex,
-          runtimeTransportPublicKey: Uint8List.fromList(localTransport),
-        );
-
-        expect(summaryWithoutTransport.pendingInvitations, equals(0));
-        expect(summaryWithTransport.pendingInvitations, equals(1));
-      },
-    );
-
-    test(
-      'pending count uses runtime owner key when ledger owner is malformed',
-      () {
-        final runtimeOwner = Uint8List.fromList(rep(0xaa));
-        final peer = rep(0xbb);
-        final t0 =
-            DateTime.now()
-                .subtract(const Duration(hours: 2))
-                .millisecondsSinceEpoch;
-
-        final ledger = jsonEncode(<String, dynamic>{
-          'owner': <int>[170, 170], // malformed owner field
-          'events': <Map<String, dynamic>>[
-            event(
-              kind: 'InvitationSent',
-              payload: invitationSentPayload(
-                invitationByte: 0x15,
-                starterByte: 0x25,
-                toPubkey: peer,
-              ),
-              timestamp: t0 + 1,
-              signer: runtimeOwner,
-            ),
-          ],
-        });
-
-        final summaryWithoutRuntimeOwner = parser.parse(ledger, toHex);
-        final summaryWithRuntimeOwner = parser.parse(
-          ledger,
-          toHex,
-          runtimeOwnerPublicKey: runtimeOwner,
-        );
-
-        expect(summaryWithoutRuntimeOwner.pendingInvitations, equals(0));
-        expect(summaryWithRuntimeOwner.pendingInvitations, equals(1));
-      },
-    );
 
     test('starter count comes from matching Core projection', () {
       final self = rep(0xaa);
@@ -628,29 +567,29 @@ void main() {
           ledgerHash: '0xabc123',
           occupiedSlotBytes: const <int>[0x21, 0x23, 0x24],
         );
+        final invitationCurrentView = jsonEncode(<String, Object?>{
+          'schema': 'hivra.invitation_current_view',
+          'version': 1,
+          'ledger_version': 16,
+          'invitations': <Object>[
+            <String, Object>{'status': 'pending'},
+            <String, Object>{'status': 'pending'},
+            <String, Object>{'status': 'accepted'},
+          ],
+        });
         final summaryA = parser.parse(
           ledger,
           toHex,
           coreProjection: projection,
+          invitationCurrentViewJson: invitationCurrentView,
         );
         final summaryB = parser.parse(
           ledger,
           toHex,
           coreProjection: projection,
+          invitationCurrentViewJson: invitationCurrentView,
         );
         final root = support.exportLedgerRoot(ledger)!;
-        final invitationProjection =
-            InvitationProjectionService.withOwnerKeyProvider(
-              () => Uint8List.fromList(self),
-              support,
-            );
-        final pendingFromProjection =
-            invitationProjection
-                .loadInvitations(root)
-                .where(
-                  (invitation) => invitation.status == InvitationStatus.pending,
-                )
-                .length;
         final relationshipCountFromProjection =
             relationshipProjection
                 .loadRelationshipGroups(root)
@@ -672,7 +611,7 @@ void main() {
         expect(summaryB.ledgerVersion, equals(summaryA.ledgerVersion));
         expect(summaryB.ledgerHashHex, equals(summaryA.ledgerHashHex));
 
-        expect(summaryA.pendingInvitations, equals(pendingFromProjection));
+        expect(summaryA.pendingInvitations, equals(2));
         expect(
           summaryA.relationshipCount,
           equals(relationshipCountFromProjection),

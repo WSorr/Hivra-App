@@ -16,11 +16,19 @@ typedef CapsuleStateExporter = String? Function();
 typedef RuntimeOwnerKeyReader = Uint8List? Function();
 typedef RuntimeTransportKeyReader = Uint8List? Function();
 
+String? _emptyInvitationCurrentView(String _) => jsonEncode(<String, Object>{
+  'schema': 'hivra.invitation_current_view',
+  'version': 1,
+  'ledger_version': 0,
+  'invitations': <Object>[],
+});
+
 class LedgerViewService {
   final LedgerExporter _exportLedger;
   final CapsuleStateExporter _exportCapsuleState;
   final RuntimeOwnerKeyReader _readRuntimeOwnerPublicKey;
   final RuntimeTransportKeyReader _readRuntimeTransportPublicKey;
+  final InvitationCurrentViewProjector _projectInvitationCurrentView;
   final LedgerViewSupport _support;
   final CapsuleLedgerSummaryParser _summaryParser;
   late final InvitationProjectionService _invitationProjection;
@@ -31,12 +39,11 @@ class LedgerViewService {
       _exportCapsuleState = runtime.exportCapsuleStateJson,
       _readRuntimeOwnerPublicKey = runtime.capsuleRuntimeOwnerPublicKey,
       _readRuntimeTransportPublicKey = runtime.capsuleRuntimeTransportPublicKey,
+      _projectInvitationCurrentView = runtime.projectInvitationCurrentViewV1,
       _support = const LedgerViewSupport(),
       _summaryParser = const CapsuleLedgerSummaryParser() {
-    _invitationProjection = InvitationProjectionService.withOwnerKeyProvider(
-      _readRuntimeOwnerPublicKey,
-      _support,
-      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
+    _invitationProjection = InvitationProjectionService(
+      _projectInvitationCurrentView,
     );
     _relationshipProjection =
         RelationshipProjectionService.withOwnerKeyProvider(
@@ -51,6 +58,8 @@ class LedgerViewService {
     required CapsuleStateExporter exportCapsuleState,
     required RuntimeOwnerKeyReader readRuntimeOwnerPublicKey,
     RuntimeTransportKeyReader? readRuntimeTransportPublicKey,
+    InvitationCurrentViewProjector projectInvitationCurrentView =
+        _emptyInvitationCurrentView,
     LedgerViewSupport support = const LedgerViewSupport(),
     CapsuleLedgerSummaryParser summaryParser =
         const CapsuleLedgerSummaryParser(),
@@ -59,12 +68,11 @@ class LedgerViewService {
        _readRuntimeOwnerPublicKey = readRuntimeOwnerPublicKey,
        _readRuntimeTransportPublicKey =
            readRuntimeTransportPublicKey ?? _emptyRuntimeTransportKey,
+       _projectInvitationCurrentView = projectInvitationCurrentView,
        _support = support,
        _summaryParser = summaryParser {
-    _invitationProjection = InvitationProjectionService.withOwnerKeyProvider(
-      _readRuntimeOwnerPublicKey,
-      _support,
-      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
+    _invitationProjection = InvitationProjectionService(
+      _projectInvitationCurrentView,
     );
     _relationshipProjection =
         RelationshipProjectionService.withOwnerKeyProvider(
@@ -138,7 +146,9 @@ class LedgerViewService {
       root,
       runtimeOwnerPublicKey: _readRuntimeOwnerPublicKey(),
       runtimeTransportPublicKey: _readRuntimeTransportPublicKey(),
-      starterIds: starterIds,
+      invitationCurrentViewJson: _projectInvitationCurrentView(
+        jsonEncode(root),
+      ),
     );
     final lockedStarterSlots =
         invitations
@@ -183,11 +193,7 @@ class LedgerViewService {
   }) {
     final ledgerRoot = root ?? _exportLedgerRoot();
     if (ledgerRoot == null) return <Invitation>[];
-    return _invitationProjection.loadInvitations(
-      ledgerRoot,
-      starterIds:
-          starterIds ?? _starterIdsFromCapsuleState(_exportCapsuleStateRoot()),
-    );
+    return _invitationProjection.loadInvitations(ledgerRoot);
   }
 
   List<Relationship> loadRelationships({Map<String, dynamic>? root}) {

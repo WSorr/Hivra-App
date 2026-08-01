@@ -261,7 +261,7 @@ fn revoked_created_starter_ids(ledger: &Ledger) -> Vec<StarterId> {
     revoked_starters
 }
 
-fn starter_kind_for_id(ledger: &Ledger, starter_id: StarterId) -> Option<StarterKind> {
+pub(crate) fn starter_kind_for_id(ledger: &Ledger, starter_id: StarterId) -> Option<StarterKind> {
     let owner = ledger.owner();
 
     for event in ledger.events().iter().rev() {

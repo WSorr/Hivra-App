@@ -4,10 +4,11 @@ use crate::event_payloads::{
     InvitationSentPayload, RejectReason,
 };
 use crate::ledger::Ledger;
-use crate::primitives::SlotIndex;
-use crate::slot::SlotLayout;
+use crate::primitives::{SlotIndex, Timestamp};
+use crate::slot::{starter_kind_for_id, SlotLayout};
 use crate::{PubKey, StarterId, StarterKind};
 use alloc::vec::Vec;
+use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvitationStatus {
@@ -36,7 +37,38 @@ pub struct InvitationRecord {
     pub peer_pubkey: PubKey,
     pub direction: InvitationDirection,
     pub offer_signer: PubKey,
+    pub sender_root_pubkey: Option<PubKey>,
+    pub sender_transport_pubkey: PubKey,
+    pub sender_card_signature: Option<[u8; 64]>,
+    pub recipient_pubkey: PubKey,
+    pub sent_at: Timestamp,
+    pub responded_at: Option<Timestamp>,
     pub status: InvitationStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InvitationCurrentViewV1 {
+    pub schema: &'static str,
+    pub version: u16,
+    pub ledger_version: usize,
+    pub invitations: Vec<InvitationCurrentItemV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InvitationCurrentItemV1 {
+    pub invitation_id: [u8; 32],
+    pub starter_id: [u8; 32],
+    pub direction: &'static str,
+    pub from_pubkey: [u8; 32],
+    pub from_root_pubkey: Option<[u8; 32]>,
+    pub from_card_signature: Option<Vec<u8>>,
+    pub to_pubkey: Option<[u8; 32]>,
+    pub starter_kind: Option<u8>,
+    pub starter_slot: Option<u8>,
+    pub status: &'static str,
+    pub sent_at: u64,
+    pub responded_at: Option<u64>,
+    pub rejection_reason: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +99,76 @@ pub fn pending_invitations(ledger: &Ledger) -> Vec<InvitationRecord> {
 
 pub fn pending_invitation_count(ledger: &Ledger) -> usize {
     pending_invitations(ledger).len()
+}
+
+pub fn invitation_current_view_v1(ledger: &Ledger) -> InvitationCurrentViewV1 {
+    let slots = SlotLayout::from_ledger(ledger);
+    let invitations = invitations_with_status(ledger)
+        .into_iter()
+        .map(|record| {
+            let starter_kind = record
+                .starter_kind_hint
+                .or_else(|| starter_kind_for_id(ledger, record.starter_id));
+            let (status, rejection_reason) = match record.status {
+                InvitationStatus::Pending => ("pending", None),
+                InvitationStatus::Accepted { .. } => ("accepted", None),
+                InvitationStatus::Rejected {
+                    reason: RejectReason::EmptySlot,
+                } => ("rejected", Some("empty_slot")),
+                InvitationStatus::Rejected {
+                    reason: RejectReason::Other,
+                } => ("rejected", Some("other")),
+                InvitationStatus::Expired => ("expired", None),
+            };
+            let incoming = record.direction == InvitationDirection::Incoming;
+            InvitationCurrentItemV1 {
+                invitation_id: record.invitation_id,
+                starter_id: *record.starter_id.as_bytes(),
+                direction: if incoming { "incoming" } else { "outgoing" },
+                from_pubkey: if incoming {
+                    *record.sender_transport_pubkey.as_bytes()
+                } else {
+                    *record.offer_signer.as_bytes()
+                },
+                from_root_pubkey: if incoming {
+                    record.sender_root_pubkey.map(|key| *key.as_bytes())
+                } else {
+                    None
+                },
+                from_card_signature: if incoming {
+                    record
+                        .sender_card_signature
+                        .map(|signature| signature.to_vec())
+                } else {
+                    None
+                },
+                to_pubkey: if incoming {
+                    None
+                } else {
+                    Some(*record.recipient_pubkey.as_bytes())
+                },
+                starter_kind: starter_kind.map(|kind| kind.to_byte()),
+                starter_slot: if incoming {
+                    None
+                } else {
+                    slots
+                        .find_by_starter(record.starter_id)
+                        .map(|slot| slot.as_u8())
+                },
+                status,
+                sent_at: record.sent_at.as_u64(),
+                responded_at: record.responded_at.map(|timestamp| timestamp.as_u64()),
+                rejection_reason,
+            }
+        })
+        .collect();
+
+    InvitationCurrentViewV1 {
+        schema: "hivra.invitation_current_view",
+        version: 1,
+        ledger_version: ledger.events().len(),
+        invitations,
+    }
 }
 
 pub fn find_invitation(ledger: &Ledger, invitation_id: [u8; 32]) -> Option<InvitationRecord> {
@@ -142,12 +244,19 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
                     starter_id: payload.starter_id,
                     starter_kind_hint: invitation_starter_kind_hint(event.payload()),
                     peer_pubkey: if direction == InvitationDirection::Incoming {
-                        *event.signer()
+                        invitation_sender_transport(event.payload()).unwrap_or(*event.signer())
                     } else {
                         payload.to_pubkey
                     },
                     direction,
                     offer_signer: *event.signer(),
+                    sender_root_pubkey: payload.sender_root_pubkey,
+                    sender_transport_pubkey: invitation_sender_transport(event.payload())
+                        .unwrap_or(*event.signer()),
+                    sender_card_signature: invitation_sender_card_signature(event.payload()),
+                    recipient_pubkey: payload.to_pubkey,
+                    sent_at: event.timestamp(),
+                    responded_at: None,
                     status: InvitationStatus::Pending,
                 });
             }
@@ -173,6 +282,7 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
                 }
                 if record.status == InvitationStatus::Pending {
                     record.status = terminal;
+                    record.responded_at = Some(event.timestamp());
                 } else if record.direction == InvitationDirection::Incoming
                     && matches!(record.status, InvitationStatus::Accepted { .. })
                     && terminal == InvitationStatus::Expired
@@ -180,6 +290,7 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
                     // The original sender may revoke an incoming offer after a
                     // recipient-local optimistic acceptance.
                     record.status = InvitationStatus::Expired;
+                    record.responded_at = Some(event.timestamp());
                 }
             }
             _ => {}
@@ -233,6 +344,14 @@ fn invitation_starter_kind_hint(bytes: &[u8]) -> Option<StarterKind> {
     StarterKind::from_u8(bytes[offset])
 }
 
+fn invitation_sender_transport(bytes: &[u8]) -> Option<PubKey> {
+    (bytes.len() >= 161).then(|| PubKey::from(bytes[129..161].try_into().expect("fixed slice")))
+}
+
+fn invitation_sender_card_signature(bytes: &[u8]) -> Option<[u8; 64]> {
+    (bytes.len() == 225).then(|| bytes[161..225].try_into().expect("fixed slice"))
+}
+
 fn valid_expiry_signer(ledger: &Ledger, record: &InvitationRecord, signer: &PubKey) -> bool {
     match record.direction {
         InvitationDirection::Outgoing => signer == ledger.owner(),
@@ -268,7 +387,7 @@ fn first_missing_kind(active_kinds: &[bool; 5]) -> Option<StarterKind> {
 mod tests {
     use super::*;
     use crate::event::Event;
-    use crate::event_payloads::StarterCreatedPayload;
+    use crate::event_payloads::{StarterBurnedPayload, StarterCreatedPayload};
     use crate::slot::SlotLayout;
     use crate::{Network, Signature, Timestamp};
 
@@ -614,6 +733,104 @@ mod tests {
         assert_eq!(projected.len(), 1);
         assert_eq!(projected[0].direction, InvitationDirection::Outgoing);
         assert_eq!(projected[0].peer_pubkey, outgoing_peer);
+    }
+
+    #[test]
+    fn current_view_v1_exposes_ui_facts_from_the_same_replay() {
+        let owner = PubKey::from([61u8; 32]);
+        let sender_root = PubKey::from([62u8; 32]);
+        let sender_transport = PubKey::from([63u8; 32]);
+        let invitation_id = [49u8; 32];
+        let signature = [64u8; 64];
+        let mut ledger = Ledger::new(owner);
+        let mut offer = InvitationSentPayload {
+            invitation_id,
+            starter_id: StarterId::from([65u8; 32]),
+            to_pubkey: owner,
+            sender_root_pubkey: Some(sender_root),
+        }
+        .to_bytes();
+        offer.push(StarterKind::Kick.to_byte());
+        offer.extend_from_slice(sender_transport.as_bytes());
+        offer.extend_from_slice(&signature);
+
+        append_event_with_signer(
+            &mut ledger,
+            EventKind::InvitationReceived,
+            &offer,
+            100,
+            sender_transport,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationRejected,
+            &InvitationRejectedPayload {
+                invitation_id,
+                reason: RejectReason::EmptySlot,
+            }
+            .to_bytes(),
+            110,
+        );
+
+        let view = invitation_current_view_v1(&ledger);
+        assert_eq!(view.schema, "hivra.invitation_current_view");
+        assert_eq!(view.version, 1);
+        assert_eq!(view.invitations.len(), 1);
+        let item = &view.invitations[0];
+        assert_eq!(item.direction, "incoming");
+        assert_eq!(item.from_pubkey, *sender_transport.as_bytes());
+        assert_eq!(item.from_root_pubkey, Some(*sender_root.as_bytes()));
+        assert_eq!(item.from_card_signature.as_deref(), Some(&signature[..]));
+        assert_eq!(item.starter_kind, Some(StarterKind::Kick.to_byte()));
+        assert_eq!(item.status, "rejected");
+        assert_eq!(item.rejection_reason, Some("empty_slot"));
+        assert_eq!(item.sent_at, 100);
+        assert_eq!(item.responded_at, Some(110));
+    }
+
+    #[test]
+    fn current_view_v1_keeps_historical_kind_after_starter_burn() {
+        let owner = PubKey::from([71u8; 32]);
+        let peer = PubKey::from([72u8; 32]);
+        let starter_id = StarterId::from([73u8; 32]);
+        let invitation_id = [74u8; 32];
+        let mut ledger = Ledger::new(owner);
+
+        append_event(
+            &mut ledger,
+            EventKind::StarterCreated,
+            &starter_created(73, StarterKind::Spark),
+            1,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationSent,
+            &InvitationSentPayload {
+                invitation_id,
+                starter_id,
+                to_pubkey: peer,
+                sender_root_pubkey: None,
+            }
+            .to_bytes(),
+            2,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::StarterBurned,
+            &StarterBurnedPayload {
+                starter_id,
+                reason: 0,
+            }
+            .to_bytes(),
+            3,
+        );
+
+        let view = invitation_current_view_v1(&ledger);
+        assert_eq!(view.invitations.len(), 1);
+        assert_eq!(
+            view.invitations[0].starter_kind,
+            Some(StarterKind::Spark.to_byte())
+        );
     }
 
     #[test]

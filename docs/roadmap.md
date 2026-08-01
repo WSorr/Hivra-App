@@ -320,9 +320,15 @@ Current progress:
 - Golden Core vectors cover terminal precedence, sender revocation, invalid
   revocation, orphan terminals, canonical peer direction, and duplicate IDs
   across directions.
-- Remaining in this milestone: expose versioned projection views through the
-  binding, migrate Flutter consumers, and delete the replaced Flutter event
-  walkers before declaring invitation convergence complete.
+- `InvitationCurrentViewV1` now carries the complete UI-facing invitation
+  state through FFI. Flutter maps that versioned DTO without reading raw event
+  kinds or payload offsets, and capsule-list pending counters consume the same
+  view.
+- The former Flutter invitation event walker and its duplicated lifecycle test
+  matrix were removed; Core golden vectors now own those semantics. An
+  architecture gate rejects reintroducing invitation replay into the adapter.
+- Remaining in this milestone: converge relationship lifecycle and scoped
+  pair/history views, then remove their replaced Flutter event walkers.
 
 Required migration units:
 1. Inventory every raw-ledger domain reader and classify it as current state,

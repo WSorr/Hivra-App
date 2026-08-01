@@ -18,6 +18,30 @@ void main() {
       kindByte,
       1,
     ];
+    String invitationView({int pending = 0, int? outgoingSlot}) =>
+        jsonEncode(<String, Object?>{
+          'schema': 'hivra.invitation_current_view',
+          'version': 1,
+          'ledger_version': 3,
+          'invitations': <Object>[
+            for (var index = 0; index < pending; index++)
+              <String, Object?>{
+                'invitation_id': bytes32(0x51 + index),
+                'starter_id': bytes32(0x41 + index),
+                'direction': outgoingSlot == null ? 'incoming' : 'outgoing',
+                'from_pubkey': bytes32(0x31 + index),
+                'from_root_pubkey': null,
+                'from_card_signature': null,
+                'to_pubkey': outgoingSlot == null ? null : bytes32(0x61),
+                'starter_kind': 1,
+                'starter_slot': outgoingSlot,
+                'status': 'pending',
+                'sent_at': 1891000001 + index,
+                'responded_at': null,
+                'rejection_reason': null,
+              },
+          ],
+        });
 
     test('keeps awaiting-history state when ledger has zero events', () {
       final owner = bytes32(0xaa);
@@ -279,6 +303,7 @@ void main() {
               }),
           readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
           readRuntimeTransportPublicKey: () => Uint8List.fromList(transport),
+          projectInvitationCurrentView: (_) => invitationView(pending: 1),
         );
 
         final parser = const CapsuleLedgerSummaryParser();
@@ -287,6 +312,7 @@ void main() {
           (bytes) =>
               bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
           runtimeTransportPublicKey: Uint8List.fromList(transport),
+          invitationCurrentViewJson: invitationView(pending: 1),
         );
         final snapshot = service.loadCapsuleSnapshot();
 
@@ -350,6 +376,8 @@ void main() {
                 'slots': <Object?>[localStarter, null, null, null, null],
               }),
           readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
+          projectInvitationCurrentView:
+              (_) => invitationView(pending: 1, outgoingSlot: 0),
         );
 
         final snapshot = service.loadCapsuleSnapshot();
