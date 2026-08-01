@@ -1124,7 +1124,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                         _publicationBusy ||
                         _saving,
                     onNextAction: nextAction,
-                    onStop: _stopCycles,
+                    onStop: _saving ? null : _stopCycles,
                   ),
                   const SizedBox(height: 20),
                   _MoltbookConnectionCard(
@@ -1318,7 +1318,7 @@ class _MoltbookWorkflowCard extends StatelessWidget {
   final String triggerPolicy;
   final bool busy;
   final VoidCallback? onNextAction;
-  final VoidCallback onStop;
+  final VoidCallback? onStop;
 
   const _MoltbookWorkflowCard({
     required this.projection,
@@ -1494,7 +1494,7 @@ class _MoltbookWorkflowCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   OutlinedButton.icon(
-                    onPressed: busy ? null : onStop,
+                    onPressed: onStop,
                     icon: const Icon(Icons.stop_circle_outlined),
                     label: const Text('Stop'),
                   ),

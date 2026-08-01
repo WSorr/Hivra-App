@@ -710,6 +710,8 @@ require_present "$PLUGIN_RUNTIME_MODULE" 'Future<void> stopMoltbookCyclesAndDisa
   "Moltbook runtime exposes one persistent kill-switch route"
 require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'runMoltbookOnDemandCycle\(\)' \
   "Moltbook manual cycle uses the canonical cycle port"
+require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'onStop: _saving \? null : _stopCycles' \
+  "Moltbook Stop remains available while cycle work is in flight"
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'planMoltbookHeartbeat\(\)' \
   "Moltbook screen has no legacy direct heartbeat planning route"
 require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'UI projection \(implemented\)' \
