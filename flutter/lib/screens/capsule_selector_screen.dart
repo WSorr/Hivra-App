@@ -10,15 +10,21 @@ import 'first_launch_screen.dart';
 
 class CapsuleSelectorScreen extends StatefulWidget {
   final bool autoSelectSingle;
+  final CapsuleSelectorService? service;
 
-  const CapsuleSelectorScreen({super.key, this.autoSelectSingle = true});
+  const CapsuleSelectorScreen({
+    super.key,
+    this.autoSelectSingle = true,
+    this.service,
+  });
 
   @override
   State<CapsuleSelectorScreen> createState() => _CapsuleSelectorScreenState();
 }
 
 class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
-  final CapsuleSelectorService _service = CapsuleSelectorService();
+  late final CapsuleSelectorService _service =
+      widget.service ?? CapsuleSelectorService();
   final UiEventLogService _uiLog = const UiEventLogService();
   List<CapsuleSelectorItem> _capsules = [];
   bool _isLoading = true;
@@ -38,7 +44,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     super.dispose();
   }
 
-  Future<void> _loadCapsules() async {
+  Future<void> _loadCapsules({bool allowAutoSelect = true}) async {
     setState(() {
       _isLoading = true;
       _loadError = null;
@@ -78,7 +84,10 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       _isLoading = false;
     });
 
-    if (widget.autoSelectSingle && _capsules.length == 1 && mounted) {
+    if (allowAutoSelect &&
+        widget.autoSelectSingle &&
+        _capsules.length == 1 &&
+        mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _selectCapsule(_capsules.first);
@@ -97,7 +106,20 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     });
     await _uiLog.log('capsule.selector.select', 'start target=$capsuleHex');
     try {
-      await _service.activateCapsule(capsuleHex);
+      final activated = await _service.activateCapsule(capsuleHex);
+      if (!activated) {
+        if (!mounted) return;
+        setState(() {
+          _selectingCapsuleHex = null;
+        });
+        final restored = await _restoreSeedForCapsule(capsule);
+        if (!restored || !mounted) return;
+        final restoredCapsule = _capsules.firstWhere(
+          (item) => item.publicKeyHex == capsuleHex,
+        );
+        await _selectCapsule(restoredCapsule);
+        return;
+      }
       await _uiLog.log('capsule.selector.select', 'done target=$capsuleHex');
     } catch (e) {
       await _uiLog.log(
@@ -145,7 +167,28 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
         );
         return;
       }
-      await _loadCapsules();
+      await _loadCapsules(allowAutoSelect: false);
+      if (!mounted) return;
+      final importedCapsule = _capsules.where(
+        (capsule) => capsule.publicKeyHex == importedHex,
+      );
+      if (importedCapsule.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Backup imported, but its Capsule was not found'),
+          ),
+        );
+        return;
+      }
+      final capsule = importedCapsule.single;
+      if (!await _service.hasStoredSeed(importedHex)) {
+        final restored = await _restoreSeedForCapsule(capsule);
+        if (!restored || !mounted) return;
+      }
+      final restoredCapsule = _capsules.firstWhere(
+        (item) => item.publicKeyHex == importedHex,
+      );
+      await _selectCapsule(restoredCapsule);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -237,7 +280,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
     await _loadCapsules();
   }
 
-  Future<void> _restoreSeedForCapsule(CapsuleSelectorItem capsule) async {
+  Future<bool> _restoreSeedForCapsule(CapsuleSelectorItem capsule) async {
     _seedController.clear();
     final confirm = await showDialog<bool>(
       context: context,
@@ -265,14 +308,14 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       },
     );
 
-    if (confirm != true) return;
+    if (confirm != true) return false;
     final phrase = _seedController.text.trim();
     if (!_service.validateMnemonic(phrase)) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Invalid seed phrase')));
-      return;
+      return false;
     }
 
     final seed = _service.mnemonicToSeed(phrase);
@@ -281,15 +324,20 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       capsule.publicKeyHex,
     );
     if (!matches) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Seed does not match capsule')),
       );
-      return;
+      return false;
     }
 
     await _service.saveSeedForCapsule(capsule.publicKeyHex, seed);
-    await _loadCapsules();
+    await _loadCapsules(allowAutoSelect: false);
+    if (!mounted) return false;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Recovery seed restored')));
+    return true;
   }
 
   @override
@@ -511,8 +559,6 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   }
 
   Future<void> _showCapsuleMenu(CapsuleSelectorItem capsule) async {
-    final hasSeed = await _service.hasStoredSeed(capsule.publicKeyHex);
-    if (!mounted) return;
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) {
@@ -521,7 +567,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.vpn_key),
-                title: Text(hasSeed ? 'Replace Seed' : 'Restore Seed'),
+                title: const Text('Restore / Replace Seed'),
                 onTap: () => Navigator.pop(ctx, 'restore'),
               ),
               ListTile(

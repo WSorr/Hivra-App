@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/ffi/capsule_selector_runtime.dart';
+import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/capsule_selector_service.dart';
 
 CapsuleSelectorItem _item({
@@ -22,6 +24,20 @@ CapsuleSelectorItem _item({
     lastActive: lastActive,
     createdAt: createdAt ?? lastActive,
   );
+}
+
+class _ActivationRuntime implements CapsuleSelectorRuntime {
+  final Object? activationError;
+
+  _ActivationRuntime({this.activationError});
+
+  @override
+  Future<void> activateCapsule(String pubKeyHex) async {
+    if (activationError != null) throw activationError!;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
@@ -184,5 +200,23 @@ void main() {
 
     expect(orderedKeys(activateB: false), equals(<String>[capsuleA, capsuleB]));
     expect(orderedKeys(activateB: true), equals(<String>[capsuleA, capsuleB]));
+  });
+
+  test('maps a missing capsule seed to recovery-required outcome', () async {
+    final service = CapsuleSelectorService(
+      _ActivationRuntime(
+        activationError: const CapsuleSeedRequiredException('aa'),
+      ),
+    );
+
+    expect(await service.activateCapsule('aa'), isFalse);
+  });
+
+  test('does not hide unrelated activation failures', () async {
+    final service = CapsuleSelectorService(
+      _ActivationRuntime(activationError: StateError('ledger damaged')),
+    );
+
+    expect(() => service.activateCapsule('aa'), throwsA(isA<StateError>()));
   });
 }

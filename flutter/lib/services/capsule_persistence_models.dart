@@ -1,5 +1,14 @@
 import 'dart:typed_data';
 
+class CapsuleSeedRequiredException implements Exception {
+  final String pubKeyHex;
+
+  const CapsuleSeedRequiredException(this.pubKeyHex);
+
+  @override
+  String toString() => 'Recovery seed required for capsule $pubKeyHex';
+}
+
 class CapsuleIndexEntry {
   final String pubKeyHex;
   final DateTime createdAt;

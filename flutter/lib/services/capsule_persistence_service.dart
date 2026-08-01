@@ -1198,7 +1198,7 @@ class CapsulePersistenceService {
               ? _bytesToHex(currentPubKey)
               : null;
       if (currentHex != pubKeyHex) {
-        throw Exception('Seed not found for capsule');
+        throw CapsuleSeedRequiredException(pubKeyHex);
       }
       final currentSeed = hivra.loadSeed();
       if (currentSeed != null) {

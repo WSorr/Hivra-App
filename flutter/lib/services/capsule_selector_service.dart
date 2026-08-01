@@ -223,8 +223,13 @@ class CapsuleSelectorService {
 
   bool seedExists() => _runtime.seedExists();
 
-  Future<void> activateCapsule(String pubKeyHex) {
-    return _runtime.activateCapsule(pubKeyHex);
+  Future<bool> activateCapsule(String pubKeyHex) async {
+    try {
+      await _runtime.activateCapsule(pubKeyHex);
+      return true;
+    } on CapsuleSeedRequiredException {
+      return false;
+    }
   }
 
   Future<String?> importCapsuleFromBackupJson(String raw) {
