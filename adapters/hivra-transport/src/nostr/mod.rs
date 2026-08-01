@@ -136,6 +136,7 @@ pub struct NostrTransport {
     // Relay histories replicate asynchronously. A cursor shared by every
     // relay can skip a valid event that arrives late on a second relay.
     receive_since_by_relay: Mutex<HashMap<String, u64>>,
+    last_receive_diagnostic: Mutex<String>,
 }
 
 impl NostrTransport {
@@ -167,6 +168,7 @@ impl NostrTransport {
             timeout_secs: config.timeout,
             publish_timeout_secs: config.publish_timeout,
             receive_since_by_relay: Mutex::new(HashMap::new()),
+            last_receive_diagnostic: Mutex::new(String::new()),
         })
     }
 
@@ -275,6 +277,13 @@ impl NostrTransport {
 
     pub fn public_key_bytes(&self) -> [u8; 32] {
         self.public_key.to_bytes()
+    }
+
+    pub fn last_receive_diagnostic(&self) -> String {
+        self.last_receive_diagnostic
+            .lock()
+            .map(|value| value.clone())
+            .unwrap_or_default()
     }
 
     /// Returns the Nostr event kind used by Hivra messages.
@@ -564,7 +573,7 @@ impl NostrTransport {
         relay_urls: Vec<String>,
         query_now: u64,
         timeout: Duration,
-    ) -> (Vec<Event>, usize) {
+    ) -> (Vec<Event>, usize, Vec<String>) {
         let requests: Vec<_> = relay_urls
             .into_iter()
             .map(|relay_url| {
@@ -601,20 +610,23 @@ impl NostrTransport {
 
         let mut events = Vec::new();
         let mut successful_reads = 0usize;
+        let mut relay_diagnostics = Vec::new();
         for (relay_url, result) in results {
             match result {
                 Ok(relay_events) => {
                     let relay_events = relay_events.to_vec();
+                    relay_diagnostics.push(format!("{relay_url}={}", relay_events.len()));
                     self.advance_receive_cursor_for_relay(&relay_url, query_now, &relay_events);
                     successful_reads += 1;
                     events.extend(relay_events);
                 }
                 Err(err) => {
+                    relay_diagnostics.push(format!("{relay_url}=error:{err:?}"));
                     eprintln!("[Nostr] Receive failed for {relay_url}: {err:?}");
                 }
             }
         }
-        (events, successful_reads)
+        (events, successful_reads, relay_diagnostics)
     }
 }
 
@@ -656,14 +668,15 @@ impl Transport for NostrTransport {
             return Err(TransportError::ReceiveFailed);
         }
         let fetch_timeout = Duration::from_secs(self.timeout_secs);
-        let (events, successful_reads) =
+        let (events, successful_reads, relay_diagnostics) =
             self.fetch_events_from_relays(relay_urls, query_now, fetch_timeout);
 
         if successful_reads == 0 {
             return Err(TransportError::ReceiveFailed);
         }
 
-        eprintln!("[Nostr] Received {} events", events.len());
+        let fetched_count = events.len();
+        eprintln!("[Nostr] Received {} events", fetched_count);
 
         let mut seen_guard = seen_event_ids().lock().expect("seen ids mutex poisoned");
         let seen_for_pubkey = seen_guard
@@ -671,9 +684,12 @@ impl Transport for NostrTransport {
             .or_insert_with(HashSet::new);
 
         let mut messages = Vec::new();
+        let mut replayed = 0usize;
+        let mut dropped: HashMap<String, usize> = HashMap::new();
         for event in events {
             let event_id = event.id.to_hex();
             if seen_for_pubkey.contains(&event_id) {
+                replayed += 1;
                 continue;
             }
 
@@ -689,9 +705,28 @@ impl Transport for NostrTransport {
             match decoded {
                 Ok(message) => messages.push(message),
                 Err(err) => {
+                    *dropped.entry(format!("{err:?}")).or_insert(0) += 1;
                     eprintln!("[Nostr] Dropped invalid inbound event: {err:?}");
                 }
             }
+        }
+        let decoded_count = messages.len();
+        let dropped_summary = if dropped.is_empty() {
+            "none".to_string()
+        } else {
+            let mut entries = dropped
+                .into_iter()
+                .map(|(reason, count)| format!("{reason}:{count}"))
+                .collect::<Vec<_>>();
+            entries.sort();
+            entries.join(",")
+        };
+        let diagnostic = format!(
+            "reads={successful_reads}; relays=[{}]; fetched={fetched_count}; decoded={decoded_count}; replayed={replayed}; dropped=[{dropped_summary}]",
+            relay_diagnostics.join(", ")
+        );
+        if let Ok(mut current) = self.last_receive_diagnostic.lock() {
+            *current = diagnostic;
         }
         Ok(messages)
     }

@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 
 import '../models/invitation.dart';
 import 'capsule_state_manager.dart';
@@ -260,6 +261,7 @@ class InvitationIntentHandler {
     final code = workerResult.code;
     _transportHealth.recordResult(capsuleHex: operationCapsuleHex, code: code);
     final diagnostics = _receiveDiagnostics(workerResult);
+    _logReceiveDiagnostic(workerResult);
     return InvitationIntentResult(
       code: code,
       message:
@@ -359,6 +361,7 @@ class InvitationIntentHandler {
     final code = workerResult.code;
     _transportHealth.recordResult(capsuleHex: operationCapsuleHex, code: code);
     final diagnostics = _receiveDiagnostics(workerResult);
+    _logReceiveDiagnostic(workerResult);
     return InvitationIntentResult(
       code: code,
       message:
@@ -375,6 +378,12 @@ class InvitationIntentHandler {
       return ' [code: $code; ffi: $lastError]';
     }
     return ' [code: $code]';
+  }
+
+  void _logReceiveDiagnostic(InvitationWorkerResult workerResult) {
+    final diagnostic = workerResult.lastError?.trim();
+    if (diagnostic == null || diagnostic.isEmpty) return;
+    debugPrint('[TransportReceive] $diagnostic');
   }
 
   Future<InvitationIntentResult> acceptInvitation(

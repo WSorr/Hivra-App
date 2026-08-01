@@ -829,6 +829,44 @@ fn incoming_invitation_accepted_projection_is_idempotent() {
 }
 
 #[test]
+fn replayed_invitation_accepted_repairs_missing_relationship_projection() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let local_seed = test_seed(150);
+    let local_pubkey = derived_pubkey(&local_seed);
+    let peer_pubkey = [134u8; 32];
+    let invitation_id = [156u8; 32];
+    let own_starter_id = derive_starter_id(&local_seed, 0);
+    let peer_starter_id = derive_starter_id(&test_seed(151), 0);
+
+    set_runtime_capsule(local_pubkey, Network::Neste);
+    append_invitation_sent_for_test(invitation_id, own_starter_id, peer_pubkey, Some(0), None);
+
+    let accepted = InvitationAcceptedPayload {
+        invitation_id,
+        from_pubkey: local_pubkey,
+        created_starter_id: StarterId::from(peer_starter_id),
+        accepter_root_pubkey: Some(PubKey::from(peer_pubkey)),
+    };
+    append_runtime_event_with_signer(
+        EventKind::InvitationAccepted,
+        &accepted.to_bytes(),
+        PubKey::from(peer_pubkey),
+    )
+    .unwrap();
+
+    assert_eq!(invitation_accepted_count(), 1);
+    assert_eq!(relationship_established_count(), 0);
+
+    let engine = build_engine(&local_seed);
+    project_relationship_from_invitation_accepted(&engine, peer_pubkey, &accepted).unwrap();
+
+    assert_eq!(invitation_accepted_count(), 1);
+    assert_eq!(relationship_established_count(), 1);
+}
+
+#[test]
 fn incoming_invitation_accepted_from_self_is_rejected() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

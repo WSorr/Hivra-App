@@ -145,6 +145,17 @@ fn proof_signer_matches_payload(kind: EventKind, payload: &[u8], signer: PubKey)
     }
 }
 
+fn project_invitation_accepted_delivery(
+    seed: &Seed,
+    message_from: [u8; 32],
+    payload: &[u8],
+) -> Result<(), &'static str> {
+    let payload = InvitationAcceptedPayload::from_bytes(payload)
+        .map_err(|_| "invalid InvitationAccepted payload")?;
+    let engine = build_engine(seed);
+    project_relationship_from_invitation_accepted(&engine, message_from, &payload)
+}
+
 fn retry_outgoing_relationship_break_by_event_id_over_transport(
     transport: &NostrTransport,
     engine: &FfiEngine,
@@ -568,6 +579,7 @@ pub unsafe extern "C" fn hivra_transport_receive_quick() -> i32 {
 }
 
 fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
+    clear_last_error();
     clear_delivery_receipts();
     let seed = match load_seed() {
         Ok(seed) => seed,
@@ -591,18 +603,31 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         }
     }
 
-    let received = match with_cached_nostr_transport(sender_secret, profile, -4, |transport| {
-        // Receiving must never publish unrelated local facts. Outbound retry is
-        // owned by the capsule-scoped delivery coordinator, which selects one
-        // immutable outbox item at a time. Mixing it into receive() caused a
-        // read operation to replay every unresolved relationship break.
-        transport.receive().map_err(|_| -5)
-    }) {
-        Ok(messages) => messages,
-        Err(code) => return code,
-    };
-
+    let (received, receive_diagnostic) =
+        match with_cached_nostr_transport(sender_secret, profile, -4, |transport| {
+            // Receiving must never publish unrelated local facts. Outbound retry is
+            // owned by the capsule-scoped delivery coordinator, which selects one
+            // immutable outbox item at a time. Mixing it into receive() caused a
+            // read operation to replay every unresolved relationship break.
+            let received = transport.receive().map_err(|_| -5)?;
+            Ok((received, transport.last_receive_diagnostic()))
+        }) {
+            Ok(result) => result,
+            Err(code) => return code,
+        };
     let mut appended: i32 = 0;
+    let mut loopback = 0usize;
+    let mut routed_non_core = 0usize;
+    let mut unsupported = 0usize;
+    let mut not_addressed = 0usize;
+    let mut proof_invalid = 0usize;
+    let mut signer_mismatch = 0usize;
+    let mut replayed = 0usize;
+    let mut append_failed = 0usize;
+    let mut accepted_seen = 0usize;
+    let mut accepted_replayed = 0usize;
+    let mut accepted_appended = 0usize;
+    let mut accepted_projection_reconciled = 0usize;
     for message in received {
         eprintln!(
             "[Delivery/Nostr] Received message kind={} payload_len={} to_prefix={:02x?}",
@@ -612,6 +637,7 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         );
 
         if message.from == local_pubkey {
+            loopback += 1;
             eprintln!(
                 "[Delivery/Nostr] Skip loopback message kind={} from local pubkey",
                 message.kind
@@ -624,12 +650,14 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         // If we parse EventKind first, chat messages are dropped as "unsupported kind"
         // after already being marked as seen by transport receive.
         if crate::chat_api::queue_incoming_chat_if_match(&message, local_pubkey) {
+            routed_non_core += 1;
             continue;
         }
         if crate::consensus_attestation_api::queue_incoming_attestation_if_match(
             &message,
             local_pubkey,
         ) {
+            routed_non_core += 1;
             continue;
         }
 
@@ -638,6 +666,7 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         let kind_u8 = match u8::try_from(message.kind) {
             Ok(value) => value,
             Err(_) => {
+                unsupported += 1;
                 eprintln!(
                     "[Delivery/Nostr] Skip message: unsupported kind value {}",
                     message.kind
@@ -649,6 +678,7 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         let kind = match event_kind_from_u8(kind_u8) {
             Some(value) => value,
             None => {
+                unsupported += 1;
                 eprintln!("[Delivery/Nostr] Skip message: unmapped kind {}", kind_u8);
                 continue;
             }
@@ -679,6 +709,7 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         };
 
         if !to_matches && !payload_targets_local && !expired_targets_local {
+            not_addressed += 1;
             eprintln!("[Delivery/Nostr] Skip message: not addressed to local capsule");
             continue;
         }
@@ -689,16 +720,22 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         } else {
             kind
         };
+        let is_accepted = local_kind == EventKind::InvitationAccepted;
+        if is_accepted {
+            accepted_seen += 1;
+        }
 
         let verified_event = match verified_event_from_message(&message, local_kind) {
             Ok(event) => event,
             Err(err) => {
+                proof_invalid += 1;
                 eprintln!("[Delivery/Nostr] Skip message: {}", err);
                 continue;
             }
         };
         let message_signer = *verified_event.signer();
         if !proof_signer_matches_payload(local_kind, &local_payload, message_signer) {
+            signer_mismatch += 1;
             eprintln!("[Delivery/Nostr] Skip message: proof signer does not match payload root");
             continue;
         }
@@ -708,6 +745,17 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
             message_signer,
             Some(message.timestamp),
         ) {
+            replayed += 1;
+            if is_accepted {
+                accepted_replayed += 1;
+                match project_invitation_accepted_delivery(&seed, message.from, &local_payload) {
+                    Ok(()) => accepted_projection_reconciled += 1,
+                    Err(err) => eprintln!(
+                        "[Delivery/Nostr] Failed to reconcile RelationshipEstablished from replayed InvitationAccepted ({})",
+                        err
+                    ),
+                }
+            }
             eprintln!("[Delivery/Nostr] Skip message: event already exists");
             continue;
         }
@@ -715,23 +763,20 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         match append_verified_runtime_event(verified_event) {
             Ok(_) => {
                 appended += 1;
+                if is_accepted {
+                    accepted_appended += 1;
+                }
             }
             Err(err) => {
+                append_failed += 1;
                 eprintln!("[Delivery/Nostr] Skip message: append failed ({})", err);
                 continue;
             }
         }
 
-        if kind == EventKind::InvitationAccepted
-            && (message.payload.len() == 96 || message.payload.len() == 128)
-        {
-            let Ok(payload) = InvitationAcceptedPayload::from_bytes(&message.payload) else {
-                continue;
-            };
-
-            let engine = build_engine(&seed);
+        if kind == EventKind::InvitationAccepted {
             if let Err(err) =
-                project_relationship_from_invitation_accepted(&engine, message.from, &payload)
+                project_invitation_accepted_delivery(&seed, message.from, &message.payload)
             {
                 eprintln!(
                     "[Delivery/Nostr] Failed to project RelationshipEstablished from InvitationAccepted ({})",
@@ -752,6 +797,10 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
             }
         }
     }
+
+    set_last_error(format!(
+        "Transport receive diagnostic: {receive_diagnostic}; ingress=[appended={appended}, loopback={loopback}, non_core={routed_non_core}, unsupported={unsupported}, not_addressed={not_addressed}, proof_invalid={proof_invalid}, signer_mismatch={signer_mismatch}, replayed={replayed}, append_failed={append_failed}, accepted_seen={accepted_seen}, accepted_replayed={accepted_replayed}, accepted_appended={accepted_appended}, accepted_projection_reconciled={accepted_projection_reconciled}]"
+    ));
 
     appended
 }
