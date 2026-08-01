@@ -33,4 +33,8 @@ pub use ledger_v5::{
     LEDGER_PROTOCOL_VERSION_V5, ZERO_COMMITMENT,
 };
 pub use primitives::{Network, PubKey, Signature, StarterId, StarterKind, Timestamp};
+pub use relationship::{
+    relationship_current_view_v1, Relationship, RelationshipCurrentItemV1,
+    RelationshipCurrentViewV1, Relationships,
+};
 pub use starter::Starter;

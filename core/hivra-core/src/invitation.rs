@@ -16,6 +16,7 @@ pub enum InvitationStatus {
     Accepted {
         created_starter_id: StarterId,
         from_pubkey: PubKey,
+        accepter_root_pubkey: Option<PubKey>,
     },
     Rejected {
         reason: RejectReason,
@@ -43,6 +44,7 @@ pub struct InvitationRecord {
     pub recipient_pubkey: PubKey,
     pub sent_at: Timestamp,
     pub responded_at: Option<Timestamp>,
+    pub responded_signer: Option<PubKey>,
     pub status: InvitationStatus,
 }
 
@@ -257,6 +259,7 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
                     recipient_pubkey: payload.to_pubkey,
                     sent_at: event.timestamp(),
                     responded_at: None,
+                    responded_signer: None,
                     status: InvitationStatus::Pending,
                 });
             }
@@ -283,6 +286,7 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
                 if record.status == InvitationStatus::Pending {
                     record.status = terminal;
                     record.responded_at = Some(event.timestamp());
+                    record.responded_signer = Some(*event.signer());
                 } else if record.direction == InvitationDirection::Incoming
                     && matches!(record.status, InvitationStatus::Accepted { .. })
                     && terminal == InvitationStatus::Expired
@@ -291,6 +295,7 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
                     // recipient-local optimistic acceptance.
                     record.status = InvitationStatus::Expired;
                     record.responded_at = Some(event.timestamp());
+                    record.responded_signer = Some(*event.signer());
                 }
             }
             _ => {}
@@ -315,6 +320,7 @@ fn terminal_status(kind: EventKind, bytes: &[u8]) -> Option<([u8; 32], Invitatio
                 InvitationStatus::Accepted {
                     created_starter_id: payload.created_starter_id,
                     from_pubkey: payload.from_pubkey,
+                    accepter_root_pubkey: payload.accepter_root_pubkey,
                 },
             ))
         }

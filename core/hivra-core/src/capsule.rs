@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::event::EventKind;
 use crate::ledger::Ledger;
 use crate::primitives::{Network, PubKey};
+use crate::relationship::relationship_current_view_v1;
 use crate::slot::SlotLayout;
 
 /// Capsule type (Leaf = 0, Relay = 1)
@@ -76,24 +76,16 @@ pub struct Capsule {
 
 /// Count relationships from ledger
 fn count_relationships(ledger: &Ledger) -> u32 {
-    let mut established = 0u32;
-    let mut broken = 0u32;
-
-    for event in ledger.events() {
-        match event.kind() {
-            EventKind::RelationshipEstablished => established += 1,
-            EventKind::RelationshipBroken => broken += 1,
-            _ => {}
-        }
-    }
-
-    established.saturating_sub(broken)
+    relationship_current_view_v1(ledger, None)
+        .active_peer_count
+        .try_into()
+        .unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::Event;
+    use crate::event::{Event, EventKind};
     use crate::event_payloads::{
         EventPayload, RelationshipBrokenPayload, RelationshipEstablishedPayload,
     };

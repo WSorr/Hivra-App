@@ -2850,7 +2850,9 @@ fn replayed_relationship_broken_is_skipped_after_export_import() {
     .unwrap();
 
     assert_eq!(relationship_broken_count(), 1);
-    assert_eq!(runtime_capsule_state().relationships_count, 0);
+    // A peer-signed break is a pending notification until the local capsule
+    // confirms it, so the canonical current view still counts the peer.
+    assert_eq!(runtime_capsule_state().relationships_count, 1);
 
     let exported = export_runtime_ledger().unwrap();
     clear_runtime_state();
@@ -2871,7 +2873,7 @@ fn replayed_relationship_broken_is_skipped_after_export_import() {
     }
 
     assert_eq!(relationship_broken_count(), 1);
-    assert_eq!(runtime_capsule_state().relationships_count, 0);
+    assert_eq!(runtime_capsule_state().relationships_count, 1);
 }
 
 #[test]
@@ -2946,6 +2948,54 @@ fn invitation_current_view_v1_projects_exported_ledger_json() {
     assert_eq!(value["invitations"].as_array().unwrap().len(), 1);
     assert_eq!(value["invitations"][0]["direction"], "outgoing");
     assert_eq!(value["invitations"][0]["status"], "pending");
+}
+
+#[test]
+fn relationship_current_view_v1_projects_exported_ledger_json() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(53);
+    let owner = derived_pubkey(&seed);
+    let peer = PubKey::from([155u8; 32]);
+    set_runtime_capsule(owner, Network::Neste);
+    append_runtime_event_with_signer(
+        EventKind::RelationshipEstablished,
+        &RelationshipEstablishedPayload {
+            peer_pubkey: peer,
+            own_starter_id: StarterId::from([156u8; 32]),
+            peer_starter_id: StarterId::from([157u8; 32]),
+            kind: StarterKind::Spark,
+            invitation_id: [158u8; 32],
+            sender_pubkey: peer,
+            sender_starter_type: StarterKind::Spark,
+            sender_starter_id: StarterId::from([157u8; 32]),
+            peer_root_pubkey: Some(PubKey::from([159u8; 32])),
+            sender_root_pubkey: Some(owner),
+        }
+        .to_bytes(),
+        owner,
+    )
+    .unwrap();
+
+    let ledger = CString::new(export_runtime_ledger().unwrap()).unwrap();
+    let mut projected = ptr::null_mut();
+    let code = unsafe {
+        crate::ledger_api::hivra_project_relationship_current_view_v1(
+            ledger.as_ptr(),
+            ptr::null(),
+            &mut projected,
+        )
+    };
+    assert_eq!(code, 0);
+    assert!(!projected.is_null());
+    let json = unsafe { CStr::from_ptr(projected).to_str().unwrap().to_owned() };
+    unsafe { crate::ffi_support::hivra_free_string(projected) };
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["schema"], "hivra.relationship_current_view");
+    assert_eq!(value["version"], 1);
+    assert_eq!(value["active_peer_count"], 1);
+    assert_eq!(value["relationships"][0]["status"], "active");
 }
 
 #[test]

@@ -301,11 +301,9 @@ Goal:
   projector and scoped `CurrentView`, `PairView`, and `HistoryView` contracts.
 
 Current finding:
-- Starter-slot state now has one Core owner, but invitation and relationship
-  lifecycle projection still lives in Flutter services.
-- `CapsuleState.relationships_count` in Core and
-  `RelationshipProjectionService` in Flutter are competing potential owners
-  and must not remain as separate semantic implementations.
+- Starter-slot, invitation, and relationship current state now have one Core
+  owner. Remaining convergence work is scoped pair-consensus and history/audit
+  views; those readers must not grow new lifecycle reducers while migrating.
 
 Current progress:
 - Core now owns a direction-aware invitation lifecycle replay keyed by one
@@ -327,8 +325,17 @@ Current progress:
 - The former Flutter invitation event walker and its duplicated lifecycle test
   matrix were removed; Core golden vectors now own those semantics. An
   architecture gate rejects reintroducing invitation replay into the adapter.
-- Remaining in this milestone: converge relationship lifecycle and scoped
-  pair/history views, then remove their replaced Flutter event walkers.
+- `RelationshipCurrentViewV1` now owns relationship episode precedence,
+  signer-bound break classification, root/transport identity grouping, and the
+  active peer count in Core. FFI exports the versioned view; Flutter only maps
+  its DTO and groups ready facts for presentation.
+- The former Flutter relationship event walker and the naive competing Core
+  relationship counter were removed. Core golden vectors cover remote-pending
+  versus local-final breaks, foreign breaks, re-establishment, rejected
+  invitation lineage, and multiple transports sharing one root. Architecture
+  gates reject reintroducing raw relationship replay into Flutter.
+- Remaining in this milestone: converge scoped pair/history views and remove
+  their replaced application-owned event walkers.
 
 Required migration units:
 1. Inventory every raw-ledger domain reader and classify it as current state,

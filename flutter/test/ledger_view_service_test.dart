@@ -42,6 +42,14 @@ void main() {
               },
           ],
         });
+    String relationshipView({int activePeers = 0}) =>
+        jsonEncode(<String, Object?>{
+          'schema': 'hivra.relationship_current_view',
+          'version': 1,
+          'ledger_version': 3,
+          'active_peer_count': activePeers,
+          'relationships': <Object>[],
+        });
 
     test('keeps awaiting-history state when ledger has zero events', () {
       final owner = bytes32(0xaa);
@@ -304,6 +312,8 @@ void main() {
           readRuntimeOwnerPublicKey: () => Uint8List.fromList(owner),
           readRuntimeTransportPublicKey: () => Uint8List.fromList(transport),
           projectInvitationCurrentView: (_) => invitationView(pending: 1),
+          projectRelationshipCurrentView:
+              (_, transport) => relationshipView(activePeers: 1),
         );
 
         final parser = const CapsuleLedgerSummaryParser();
@@ -311,8 +321,8 @@ void main() {
           ledgerJson,
           (bytes) =>
               bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
-          runtimeTransportPublicKey: Uint8List.fromList(transport),
           invitationCurrentViewJson: invitationView(pending: 1),
+          relationshipCurrentViewJson: relationshipView(activePeers: 1),
         );
         final snapshot = service.loadCapsuleSnapshot();
 

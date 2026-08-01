@@ -3,8 +3,279 @@
 //! A Relationship is a fact of mutual recognition between two Capsules.
 //! One starter can participate in multiple relationships.
 
+use crate::event::EventKind;
+use crate::event_payloads::{
+    EventPayload, RelationshipBrokenPayload, RelationshipEstablishedPayload,
+};
+use crate::invitation::{invitations_with_status, InvitationDirection, InvitationStatus};
+use crate::ledger::Ledger;
 use crate::{PubKey, StarterId, StarterKind, Timestamp};
 use alloc::vec::Vec;
+use serde::Serialize;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RelationshipCurrentViewV1 {
+    pub schema: &'static str,
+    pub version: u16,
+    pub ledger_version: usize,
+    pub active_peer_count: usize,
+    pub relationships: Vec<RelationshipCurrentItemV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RelationshipCurrentItemV1 {
+    pub peer_pubkey: [u8; 32],
+    pub peer_root_pubkey: Option<[u8; 32]>,
+    pub peer_identity: [u8; 32],
+    pub own_starter_id: [u8; 32],
+    pub peer_starter_id: [u8; 32],
+    pub starter_kind: u8,
+    pub established_at: u64,
+    pub status: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProjectedRelationship {
+    peer_pubkey: PubKey,
+    peer_root_pubkey: Option<PubKey>,
+    own_starter_id: StarterId,
+    peer_starter_id: StarterId,
+    kind: StarterKind,
+    established_at: Timestamp,
+    is_active: bool,
+    has_pending_remote_break: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EstablishedFact {
+    peer_pubkey: PubKey,
+    sender_pubkey: Option<PubKey>,
+    invitation_id: Option<[u8; 32]>,
+    peer_root_pubkey: Option<PubKey>,
+    sender_root_pubkey: Option<PubKey>,
+    own_starter_id: StarterId,
+    peer_starter_id: StarterId,
+    kind: StarterKind,
+}
+
+pub fn relationship_current_view_v1(
+    ledger: &Ledger,
+    local_transport: Option<PubKey>,
+) -> RelationshipCurrentViewV1 {
+    let owner = *ledger.owner();
+    let invitation_records = invitations_with_status(ledger);
+    let mut projected: Vec<ProjectedRelationship> = Vec::new();
+
+    for event in ledger.events() {
+        match event.kind() {
+            EventKind::RelationshipEstablished => {
+                let Some(established) = parse_established_fact(event.payload()) else {
+                    continue;
+                };
+                let invitation = established.invitation_id.and_then(|invitation_id| {
+                    invitation_records
+                        .iter()
+                        .find(|record| record.invitation_id == invitation_id)
+                });
+                if invitation.is_some_and(|record| {
+                    matches!(
+                        record.status,
+                        InvitationStatus::Rejected { .. } | InvitationStatus::Expired
+                    )
+                }) {
+                    continue;
+                }
+
+                let mut relationship = orient_established(established, owner, event.timestamp());
+                if relationship.peer_root_pubkey.is_none() {
+                    relationship.peer_root_pubkey =
+                        invitation.and_then(|record| match record.direction {
+                            InvitationDirection::Incoming => record.sender_root_pubkey,
+                            InvitationDirection::Outgoing => match record.status {
+                                InvitationStatus::Accepted {
+                                    from_pubkey,
+                                    accepter_root_pubkey,
+                                    ..
+                                } if local_transport == Some(from_pubkey)
+                                    && record.responded_signer != Some(owner) =>
+                                {
+                                    accepter_root_pubkey
+                                }
+                                _ => None,
+                            },
+                        });
+                }
+                if relationship.peer_root_pubkey == Some(owner)
+                    || local_transport == Some(relationship.peer_pubkey)
+                {
+                    continue;
+                }
+
+                if let Some(current) = projected.iter_mut().find(|current| {
+                    current.peer_pubkey == relationship.peer_pubkey
+                        && current.own_starter_id == relationship.own_starter_id
+                }) {
+                    *current = relationship;
+                } else {
+                    projected.push(relationship);
+                }
+            }
+            EventKind::RelationshipBroken => {
+                let Ok(broken) = RelationshipBrokenPayload::from_bytes(event.payload()) else {
+                    continue;
+                };
+                let Some(current) = projected.iter_mut().find(|current| {
+                    current.peer_pubkey == broken.peer_pubkey
+                        && current.own_starter_id == broken.own_starter_id
+                }) else {
+                    continue;
+                };
+                if event.timestamp() < current.established_at {
+                    continue;
+                }
+
+                let signer = *event.signer();
+                let signer_matches_local = signer == owner || local_transport == Some(signer);
+                let signer_matches_peer = signer == current.peer_pubkey;
+                if !signer_matches_local && !signer_matches_peer {
+                    continue;
+                }
+                let pending_remote = !signer_matches_local && signer_matches_peer;
+                if pending_remote && !current.is_active && !current.has_pending_remote_break {
+                    continue;
+                }
+                current.is_active = pending_remote;
+                current.has_pending_remote_break = pending_remote;
+            }
+            _ => {}
+        }
+    }
+
+    projected.sort_by(|left, right| right.established_at.cmp(&left.established_at));
+    let transport_roots: Vec<(PubKey, PubKey)> = projected
+        .iter()
+        .filter_map(|relationship| {
+            relationship
+                .peer_root_pubkey
+                .map(|root| (relationship.peer_pubkey, root))
+        })
+        .collect();
+    let mut active_peers: Vec<PubKey> = Vec::new();
+    let relationships = projected
+        .into_iter()
+        .map(|relationship| {
+            let peer_identity = relationship
+                .peer_root_pubkey
+                .or_else(|| {
+                    transport_roots.iter().find_map(|(transport, root)| {
+                        (*transport == relationship.peer_pubkey).then_some(*root)
+                    })
+                })
+                .unwrap_or(relationship.peer_pubkey);
+            if relationship.is_active && !active_peers.contains(&peer_identity) {
+                active_peers.push(peer_identity);
+            }
+            RelationshipCurrentItemV1 {
+                peer_pubkey: *relationship.peer_pubkey.as_bytes(),
+                peer_root_pubkey: relationship.peer_root_pubkey.map(|key| *key.as_bytes()),
+                peer_identity: *peer_identity.as_bytes(),
+                own_starter_id: *relationship.own_starter_id.as_bytes(),
+                peer_starter_id: *relationship.peer_starter_id.as_bytes(),
+                starter_kind: relationship.kind.to_byte(),
+                established_at: relationship.established_at.as_u64(),
+                status: if relationship.has_pending_remote_break {
+                    "pending_remote_break"
+                } else if relationship.is_active {
+                    "active"
+                } else {
+                    "broken"
+                },
+            }
+        })
+        .collect();
+
+    RelationshipCurrentViewV1 {
+        schema: "hivra.relationship_current_view",
+        version: 1,
+        ledger_version: ledger.events().len(),
+        active_peer_count: active_peers.len(),
+        relationships,
+    }
+}
+
+fn parse_established_fact(bytes: &[u8]) -> Option<EstablishedFact> {
+    if bytes.len() == 97 {
+        return Some(EstablishedFact {
+            peer_pubkey: PubKey::from(bytes[0..32].try_into().ok()?),
+            sender_pubkey: None,
+            invitation_id: None,
+            peer_root_pubkey: None,
+            sender_root_pubkey: None,
+            own_starter_id: StarterId::from(bytes[32..64].try_into().ok()?),
+            peer_starter_id: StarterId::from(bytes[64..96].try_into().ok()?),
+            kind: StarterKind::from_u8(bytes[96])?,
+        });
+    }
+    let payload = RelationshipEstablishedPayload::from_bytes(bytes).ok()?;
+    Some(EstablishedFact {
+        peer_pubkey: payload.peer_pubkey,
+        sender_pubkey: Some(payload.sender_pubkey),
+        invitation_id: Some(payload.invitation_id),
+        peer_root_pubkey: payload.peer_root_pubkey,
+        sender_root_pubkey: payload.sender_root_pubkey,
+        own_starter_id: payload.own_starter_id,
+        peer_starter_id: payload.peer_starter_id,
+        kind: payload.kind,
+    })
+}
+
+fn orient_established(
+    fact: EstablishedFact,
+    owner: PubKey,
+    established_at: Timestamp,
+) -> ProjectedRelationship {
+    let peer_root = resolve_peer_root(fact.peer_root_pubkey, fact.sender_root_pubkey, owner);
+    let swap_to_sender = fact.peer_root_pubkey == Some(owner)
+        && fact.sender_root_pubkey.is_some_and(|root| root != owner)
+        && fact.sender_pubkey.is_some();
+
+    if swap_to_sender {
+        ProjectedRelationship {
+            peer_pubkey: fact.sender_pubkey.expect("checked sender"),
+            peer_root_pubkey: peer_root,
+            own_starter_id: fact.peer_starter_id,
+            peer_starter_id: fact.own_starter_id,
+            kind: fact.kind,
+            established_at,
+            is_active: true,
+            has_pending_remote_break: false,
+        }
+    } else {
+        ProjectedRelationship {
+            peer_pubkey: fact.peer_pubkey,
+            peer_root_pubkey: peer_root,
+            own_starter_id: fact.own_starter_id,
+            peer_starter_id: fact.peer_starter_id,
+            kind: fact.kind,
+            established_at,
+            is_active: true,
+            has_pending_remote_break: false,
+        }
+    }
+}
+
+fn resolve_peer_root(
+    peer_root: Option<PubKey>,
+    sender_root: Option<PubKey>,
+    owner: PubKey,
+) -> Option<PubKey> {
+    match (peer_root, sender_root) {
+        (None, sender) => sender,
+        (Some(peer), Some(sender)) if peer == owner && sender != owner => Some(sender),
+        (Some(peer), Some(sender)) if sender == owner && peer != owner => Some(peer),
+        (peer, _) => peer,
+    }
+}
 
 /// A relationship between two capsules.
 ///
@@ -209,6 +480,9 @@ impl Default for Relationships {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::Event;
+    use crate::event_payloads::{InvitationRejectedPayload, RejectReason};
+    use crate::Signature;
 
     fn test_pubkey(id: u8) -> PubKey {
         PubKey::from([id; 32])
@@ -232,6 +506,305 @@ mod tests {
             kind,
             Timestamp::from(time),
         )
+    }
+
+    fn append_event(
+        ledger: &mut Ledger,
+        kind: EventKind,
+        payload: Vec<u8>,
+        timestamp: u64,
+        signer: PubKey,
+    ) {
+        ledger
+            .append(Event::new(
+                kind,
+                payload,
+                Timestamp::from(timestamp),
+                Signature::from([0u8; 64]),
+                signer,
+            ))
+            .expect("append relationship vector");
+    }
+
+    fn established_payload(
+        peer: PubKey,
+        own_starter: StarterId,
+        peer_starter: StarterId,
+        kind: StarterKind,
+        invitation_id: [u8; 32],
+        sender: PubKey,
+        peer_root: Option<PubKey>,
+        sender_root: Option<PubKey>,
+    ) -> Vec<u8> {
+        RelationshipEstablishedPayload {
+            peer_pubkey: peer,
+            own_starter_id: own_starter,
+            peer_starter_id: peer_starter,
+            kind,
+            invitation_id,
+            sender_pubkey: sender,
+            sender_starter_type: kind,
+            sender_starter_id: own_starter,
+            peer_root_pubkey: peer_root,
+            sender_root_pubkey: sender_root,
+        }
+        .to_bytes()
+    }
+
+    #[test]
+    fn current_view_marks_remote_break_pending() {
+        let owner = test_pubkey(1);
+        let local_transport = test_pubkey(2);
+        let peer = test_pubkey(3);
+        let mut ledger = Ledger::new(owner);
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipEstablished,
+            established_payload(
+                peer,
+                test_starter_id(4),
+                test_starter_id(5),
+                StarterKind::Spark,
+                [6u8; 32],
+                owner,
+                Some(test_pubkey(7)),
+                Some(owner),
+            ),
+            10,
+            owner,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipBroken,
+            RelationshipBrokenPayload {
+                peer_pubkey: peer,
+                own_starter_id: test_starter_id(4),
+                peer_root_pubkey: Some(test_pubkey(7)),
+            }
+            .to_bytes(),
+            11,
+            peer,
+        );
+
+        let view = relationship_current_view_v1(&ledger, Some(local_transport));
+        assert_eq!(view.active_peer_count, 1);
+        assert_eq!(view.relationships.len(), 1);
+        assert_eq!(view.relationships[0].status, "pending_remote_break");
+    }
+
+    #[test]
+    fn current_view_keeps_local_break_final() {
+        let owner = test_pubkey(11);
+        let peer = test_pubkey(12);
+        let own_starter = test_starter_id(13);
+        let mut ledger = Ledger::new(owner);
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipEstablished,
+            established_payload(
+                peer,
+                own_starter,
+                test_starter_id(14),
+                StarterKind::Seed,
+                [15u8; 32],
+                owner,
+                Some(test_pubkey(16)),
+                Some(owner),
+            ),
+            20,
+            owner,
+        );
+        for (timestamp, signer) in [(21, owner), (22, peer)] {
+            append_event(
+                &mut ledger,
+                EventKind::RelationshipBroken,
+                RelationshipBrokenPayload {
+                    peer_pubkey: peer,
+                    own_starter_id: own_starter,
+                    peer_root_pubkey: Some(test_pubkey(16)),
+                }
+                .to_bytes(),
+                timestamp,
+                signer,
+            );
+        }
+
+        let view = relationship_current_view_v1(&ledger, None);
+        assert_eq!(view.active_peer_count, 0);
+        assert_eq!(view.relationships[0].status, "broken");
+    }
+
+    #[test]
+    fn current_view_ignores_foreign_breaks() {
+        let owner = test_pubkey(21);
+        let peer = test_pubkey(22);
+        let own_starter = test_starter_id(23);
+        let mut ledger = Ledger::new(owner);
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipEstablished,
+            established_payload(
+                peer,
+                own_starter,
+                test_starter_id(24),
+                StarterKind::Pulse,
+                [25u8; 32],
+                owner,
+                None,
+                None,
+            ),
+            100,
+            owner,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipBroken,
+            RelationshipBrokenPayload {
+                peer_pubkey: peer,
+                own_starter_id: own_starter,
+                peer_root_pubkey: None,
+            }
+            .to_bytes(),
+            101,
+            test_pubkey(26),
+        );
+
+        let view = relationship_current_view_v1(&ledger, None);
+        assert_eq!(view.relationships[0].status, "active");
+    }
+
+    #[test]
+    fn current_view_counts_one_root_across_multiple_transport_links() {
+        let owner = test_pubkey(27);
+        let peer_root = test_pubkey(28);
+        let mut ledger = Ledger::new(owner);
+        for (offset, peer) in [test_pubkey(29), test_pubkey(30)].into_iter().enumerate() {
+            append_event(
+                &mut ledger,
+                EventKind::RelationshipEstablished,
+                established_payload(
+                    peer,
+                    test_starter_id(40 + offset as u8),
+                    test_starter_id(50 + offset as u8),
+                    StarterKind::Spark,
+                    [60 + offset as u8; 32],
+                    owner,
+                    Some(peer_root),
+                    Some(owner),
+                ),
+                110 + offset as u64,
+                owner,
+            );
+        }
+
+        let view = relationship_current_view_v1(&ledger, None);
+        assert_eq!(view.relationships.len(), 2);
+        assert_eq!(view.active_peer_count, 1);
+        assert!(view
+            .relationships
+            .iter()
+            .all(|item| item.peer_identity == *peer_root.as_bytes()));
+    }
+
+    #[test]
+    fn current_view_new_establishment_supersedes_old_break_episode() {
+        let owner = test_pubkey(31);
+        let peer = test_pubkey(32);
+        let own_starter = test_starter_id(33);
+        let mut ledger = Ledger::new(owner);
+        let first = established_payload(
+            peer,
+            own_starter,
+            test_starter_id(34),
+            StarterKind::Kick,
+            [35u8; 32],
+            owner,
+            None,
+            None,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipEstablished,
+            first.clone(),
+            10,
+            owner,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipBroken,
+            RelationshipBrokenPayload {
+                peer_pubkey: peer,
+                own_starter_id: own_starter,
+                peer_root_pubkey: None,
+            }
+            .to_bytes(),
+            11,
+            owner,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipEstablished,
+            first,
+            20,
+            owner,
+        );
+
+        let view = relationship_current_view_v1(&ledger, None);
+        assert_eq!(view.active_peer_count, 1);
+        assert_eq!(view.relationships[0].status, "active");
+        assert_eq!(view.relationships[0].established_at, 20);
+    }
+
+    #[test]
+    fn current_view_rejects_relationship_lineage_after_invitation_reject() {
+        let owner = test_pubkey(41);
+        let peer = test_pubkey(42);
+        let invitation_id = [43u8; 32];
+        let mut ledger = Ledger::new(owner);
+        append_event(
+            &mut ledger,
+            EventKind::InvitationSent,
+            crate::InvitationSentPayload {
+                invitation_id,
+                starter_id: test_starter_id(44),
+                to_pubkey: peer,
+                sender_root_pubkey: Some(owner),
+            }
+            .to_bytes(),
+            1,
+            owner,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationRejected,
+            InvitationRejectedPayload {
+                invitation_id,
+                reason: RejectReason::Other,
+            }
+            .to_bytes(),
+            2,
+            peer,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipEstablished,
+            established_payload(
+                peer,
+                test_starter_id(44),
+                test_starter_id(45),
+                StarterKind::Juice,
+                invitation_id,
+                owner,
+                None,
+                None,
+            ),
+            3,
+            owner,
+        );
+
+        let view = relationship_current_view_v1(&ledger, None);
+        assert!(view.relationships.is_empty());
+        assert_eq!(view.active_peer_count, 0);
     }
 
     #[test]

@@ -212,6 +212,18 @@ typedef HivraProjectInvitationCurrentViewV1C =
     Int32 Function(Pointer<Int8> ledgerJson, Pointer<Pointer<Int8>> outJson);
 typedef HivraProjectInvitationCurrentViewV1Dart =
     int Function(Pointer<Int8> ledgerJson, Pointer<Pointer<Int8>> outJson);
+typedef HivraProjectRelationshipCurrentViewV1C =
+    Int32 Function(
+      Pointer<Int8> ledgerJson,
+      Pointer<Uint8> localTransport,
+      Pointer<Pointer<Int8>> outJson,
+    );
+typedef HivraProjectRelationshipCurrentViewV1Dart =
+    int Function(
+      Pointer<Int8> ledgerJson,
+      Pointer<Uint8> localTransport,
+      Pointer<Pointer<Int8>> outJson,
+    );
 
 typedef HivraImportLedgerC = Int32 Function(Pointer<Int8> json);
 typedef HivraImportLedgerDart = int Function(Pointer<Int8> json);
@@ -322,6 +334,8 @@ class HivraBindings {
   late final HivraExportLedgerDart _exportLedger;
   late final HivraProjectInvitationCurrentViewV1Dart
   _projectInvitationCurrentViewV1;
+  late final HivraProjectRelationshipCurrentViewV1Dart
+  _projectRelationshipCurrentViewV1;
   late final HivraImportLedgerDart _importLedger;
   late final HivraLedgerAppendEventDart _ledgerAppendEvent;
   late final HivraWasmInvokeJsonDart _wasmInvokeJson;
@@ -649,6 +663,13 @@ class HivraBindings {
         _lib
             .lookup<NativeFunction<HivraProjectInvitationCurrentViewV1C>>(
               'hivra_project_invitation_current_view_v1',
+            )
+            .asFunction();
+
+    _projectRelationshipCurrentViewV1 =
+        _lib
+            .lookup<NativeFunction<HivraProjectRelationshipCurrentViewV1C>>(
+              'hivra_project_relationship_current_view_v1',
             )
             .asFunction();
 
@@ -1250,6 +1271,38 @@ class HivraBindings {
       return json;
     } finally {
       calloc.free(ledgerPtr);
+      calloc.free(outPtr);
+    }
+  }
+
+  String? projectRelationshipCurrentViewV1(
+    String ledgerJson, {
+    Uint8List? localTransportPublicKey,
+  }) {
+    if (localTransportPublicKey != null &&
+        localTransportPublicKey.length != 32) {
+      return null;
+    }
+    final ledgerPtr = ledgerJson.toNativeUtf8().cast<Int8>();
+    final transportPtr =
+        localTransportPublicKey == null ? nullptr : calloc<Uint8>(32);
+    final outPtr = calloc<Pointer<Int8>>();
+    try {
+      if (localTransportPublicKey != null) {
+        transportPtr.asTypedList(32).setAll(0, localTransportPublicKey);
+      }
+      if (_projectRelationshipCurrentViewV1(ledgerPtr, transportPtr, outPtr) !=
+          0) {
+        return null;
+      }
+      final cstr = outPtr.value;
+      if (cstr == nullptr) return null;
+      final json = cstr.cast<Utf8>().toDartString();
+      _freeString(cstr);
+      return json;
+    } finally {
+      calloc.free(ledgerPtr);
+      if (transportPtr != nullptr) calloc.free(transportPtr);
       calloc.free(outPtr);
     }
   }

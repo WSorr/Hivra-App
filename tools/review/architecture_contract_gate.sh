@@ -94,6 +94,8 @@ LEDGER_VIEW="$ROOT/flutter/lib/services/ledger_view_service.dart"
 LEDGER_SUMMARY="$ROOT/flutter/lib/services/capsule_ledger_summary_parser.dart"
 INVITATION_PROJECTION="$ROOT/flutter/lib/services/invitation_projection_service.dart"
 CORE_INVITATION="$ROOT/core/hivra-core/src/invitation.rs"
+RELATIONSHIP_PROJECTION="$ROOT/flutter/lib/services/relationship_projection_service.dart"
+CORE_RELATIONSHIP="$ROOT/core/hivra-core/src/relationship.rs"
 FFI_LEDGER_API="$ROOT/platform/hivra-ffi/src/ledger_api.rs"
 CONSENSUS="$ROOT/flutter/lib/services/consensus_processor.dart"
 CONSENSUS_ATTESTATION_SYNC="$ROOT/flutter/lib/services/consensus_attestation_sync_service.dart"
@@ -188,6 +190,17 @@ require_absent "$INVITATION_PROJECTION" \
   "Flutter invitation adapter does not replay raw domain events"
 require_absent "$LEDGER_SUMMARY" 'InvitationProjectionService' \
   "ledger summary does not own a second invitation reducer"
+require_present "$CORE_RELATIONSHIP" 'pub fn relationship_current_view_v1' \
+  "Core owns the versioned relationship current view"
+require_present "$FFI_LEDGER_API" 'hivra_project_relationship_current_view_v1' \
+  "FFI exposes the canonical relationship current view"
+require_present "$RELATIONSHIP_PROJECTION" 'hivra\.relationship_current_view' \
+  "Flutter relationship adapter consumes the versioned Core view"
+require_absent "$RELATIONSHIP_PROJECTION" \
+  'RelationshipEstablished|RelationshipBroken|kindCode\(|payloadBytes\(|\['"'"'events'"'"'\]' \
+  "Flutter relationship adapter does not replay raw domain events"
+require_absent "$LEDGER_SUMMARY" 'RelationshipProjectionService' \
+  "ledger summary does not own a second relationship reducer"
 require_present "$SPEC" 'Flutter Boundary Direction' \
   "spec defines downward direction inside Flutter boundary"
 require_present "$SPEC" 'WASM Plugin Host Contract' \

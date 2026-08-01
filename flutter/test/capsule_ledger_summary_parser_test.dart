@@ -3,8 +3,6 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/capsule_ledger_summary_parser.dart';
-import 'package:hivra_app/services/ledger_view_support.dart';
-import 'package:hivra_app/services/relationship_projection_service.dart';
 
 void main() {
   group('CapsuleLedgerSummaryParser', () {
@@ -24,6 +22,14 @@ void main() {
           <String, Object>{'status': 'pending'},
       ],
     });
+    String relationshipCurrentView(int activePeerCount) =>
+        jsonEncode(<String, Object?>{
+          'schema': 'hivra.relationship_current_view',
+          'version': 1,
+          'ledger_version': 1,
+          'active_peer_count': activePeerCount,
+          'relationships': <Object>[],
+        });
 
     Map<String, dynamic> coreProjection({
       required int version,
@@ -398,13 +404,7 @@ void main() {
     test(
       'update safety fixture keeps counters stable and aligned with projections',
       () {
-        const support = LedgerViewSupport();
         final self = rep(0xaa);
-        final relationshipProjection =
-            RelationshipProjectionService.withOwnerKeyProvider(
-              () => Uint8List.fromList(self),
-              support,
-            );
         final peerA = rep(0xbb);
         final peerB = rep(0xcc);
         const t0 = 1890000000000;
@@ -577,24 +577,27 @@ void main() {
             <String, Object>{'status': 'accepted'},
           ],
         });
+        final relationshipCurrentView = jsonEncode(<String, Object?>{
+          'schema': 'hivra.relationship_current_view',
+          'version': 1,
+          'ledger_version': 16,
+          'active_peer_count': 1,
+          'relationships': <Object>[],
+        });
         final summaryA = parser.parse(
           ledger,
           toHex,
           coreProjection: projection,
           invitationCurrentViewJson: invitationCurrentView,
+          relationshipCurrentViewJson: relationshipCurrentView,
         );
         final summaryB = parser.parse(
           ledger,
           toHex,
           coreProjection: projection,
           invitationCurrentViewJson: invitationCurrentView,
+          relationshipCurrentViewJson: relationshipCurrentView,
         );
-        final root = support.exportLedgerRoot(ledger)!;
-        final relationshipCountFromProjection =
-            relationshipProjection
-                .loadRelationshipGroups(root)
-                .where((group) => group.isActive)
-                .length;
 
         expect(summaryA.starterCount, equals(3));
         expect(summaryA.relationshipCount, equals(1));
@@ -612,10 +615,7 @@ void main() {
         expect(summaryB.ledgerHashHex, equals(summaryA.ledgerHashHex));
 
         expect(summaryA.pendingInvitations, equals(2));
-        expect(
-          summaryA.relationshipCount,
-          equals(relationshipCountFromProjection),
-        );
+        expect(summaryA.relationshipCount, equals(1));
       },
     );
 
@@ -746,7 +746,11 @@ void main() {
           ],
         });
 
-        final summary = parser.parse(ledger, toHex);
+        final summary = parser.parse(
+          ledger,
+          toHex,
+          relationshipCurrentViewJson: relationshipCurrentView(1),
+        );
         expect(summary.relationshipCount, equals(1));
       },
     );
@@ -794,7 +798,11 @@ void main() {
           ],
         });
 
-        final summary = parser.parse(ledger, toHex);
+        final summary = parser.parse(
+          ledger,
+          toHex,
+          relationshipCurrentViewJson: relationshipCurrentView(1),
+        );
         expect(summary.relationshipCount, equals(1));
       },
     );
@@ -836,7 +844,11 @@ void main() {
           ],
         });
 
-        final summary = parser.parse(ledger, toHex);
+        final summary = parser.parse(
+          ledger,
+          toHex,
+          relationshipCurrentViewJson: relationshipCurrentView(1),
+        );
         expect(summary.relationshipCount, equals(1));
       },
     );

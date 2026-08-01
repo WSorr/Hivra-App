@@ -845,8 +845,11 @@ class CapsulePersistenceService {
         raw,
         _bytesToHex,
         coreProjection: state?['coreProjection'],
-        runtimeTransportPublicKey: localTransportPublicKey,
         invitationCurrentViewJson: hivra?.projectInvitationCurrentViewV1(raw),
+        relationshipCurrentViewJson: hivra?.projectRelationshipCurrentViewV1(
+          raw,
+          localTransportPublicKey: localTransportPublicKey,
+        ),
       );
     } catch (_) {
       return CapsuleLedgerSummary.empty();

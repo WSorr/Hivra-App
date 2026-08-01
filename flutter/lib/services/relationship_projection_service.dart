@@ -1,535 +1,168 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import '../models/relationship_peer_group.dart';
 import '../models/relationship.dart';
+import '../models/relationship_peer_group.dart';
 import '../models/starter.dart';
-import 'ledger_view_support.dart';
 
+typedef RelationshipCurrentViewProjector =
+    String? Function(String ledgerJson, Uint8List? localTransportPublicKey);
+
+/// Maps the versioned Core relationship view into Flutter UI models.
+///
+/// Relationship lifecycle replay, signer classification, and episode
+/// precedence belong to Core. This adapter must not inspect ledger events.
 class RelationshipProjectionService {
-  final LedgerViewSupport _support;
-  final Uint8List? Function()? _runtimeOwnerPublicKey;
+  final RelationshipCurrentViewProjector _projectCurrentView;
   final Uint8List? Function()? _runtimeTransportPublicKey;
 
   const RelationshipProjectionService(
-    this._support, {
-    Uint8List? Function()? runtimeOwnerPublicKey,
+    this._projectCurrentView, {
     Uint8List? Function()? runtimeTransportPublicKey,
-  })  : _runtimeOwnerPublicKey = runtimeOwnerPublicKey,
-        _runtimeTransportPublicKey = runtimeTransportPublicKey;
+  }) : _runtimeTransportPublicKey = runtimeTransportPublicKey;
 
-  RelationshipProjectionService.withOwnerKeyProvider(
-    Uint8List? Function() runtimeOwnerPublicKey,
-    this._support, {
-    Uint8List? Function()? runtimeTransportPublicKey,
-  })  : _runtimeOwnerPublicKey = runtimeOwnerPublicKey,
-        _runtimeTransportPublicKey = runtimeTransportPublicKey;
-
-  List<Relationship> loadRelationships(Map<String, dynamic> root) {
-    final events = _support.events(root);
-    final localOwner = _resolveLocalOwner(root);
-    final localTransport = _resolveLocalTransport();
-    final localOwnerB64 = localOwner == null ? null : base64.encode(localOwner);
-    final localTransportB64 =
-        localTransport == null ? null : base64.encode(localTransport);
-    final terminalKindByInvitationId = <String, int>{};
-    final peerRootByInvitationId = _collectPeerRootsByInvitationId(
-      events,
-      localOwner,
-      localTransport,
-      terminalKindByInvitationId: terminalKindByInvitationId,
+  List<Relationship> loadRelationships(Map<String, dynamic> ledgerRoot) {
+    final projected = _projectCurrentView(
+      jsonEncode(ledgerRoot),
+      _runtimeTransportPublicKey?.call(),
     );
-    final byKey = <String, Relationship>{};
-
-    for (final e in events) {
-      final kind = _support.kindCode(e['kind']);
-      final payload = _support.payloadBytes(e['payload']);
-      final timestamp = _support.eventTime(e['timestamp']);
-      if (kind == 7) {
-        final established = _parseRelationshipEstablished(payload);
-        if (established == null) continue;
-        final terminalKind = established.invitationId == null
-            ? null
-            : terminalKindByInvitationId[established.invitationId!];
-        if (terminalKind == 3 || terminalKind == 4) {
-          // Rejected/expired invitation lineage cannot establish a relation,
-          // even if a stale RelationshipEstablished row arrives later.
-          continue;
-        }
-        final oriented = _orientEstablishedForLocal(
-          established,
-          localOwnerB64: localOwnerB64,
-        );
-        final resolvedPeerRoot = oriented.peerRootPubkey ??
-            (oriented.invitationId == null
-                ? null
-                : peerRootByInvitationId[oriented.invitationId!]);
-        if (localOwnerB64 != null && resolvedPeerRoot == localOwnerB64) {
-          // Ignore mirrored self-looking records from remote payload orientation.
-          continue;
-        }
-        if (localTransportB64 != null &&
-            oriented.peerPubkey == localTransportB64) {
-          // Ignore transport-self relationships (for mixed root/transport ledgers).
-          continue;
-        }
-        final key = '${oriented.peerPubkey}:${oriented.ownStarterId}';
-        byKey[key] = Relationship(
-          peerPubkey: oriented.peerPubkey,
-          peerRootPubkey: resolvedPeerRoot,
-          kind: oriented.kind,
-          ownStarterId: oriented.ownStarterId,
-          peerStarterId: oriented.peerStarterId,
-          establishedAt: timestamp,
-          isActive: true,
-          hasPendingRemoteBreak: false,
-        );
-      } else if (kind == 8) {
-        final key = _support.relationshipKeyFromBrokenPayload(payload);
-        if (key == null) continue;
-        final current = byKey[key];
-        if (current != null) {
-          final signerBytes = _support.payloadBytes(e['signer']);
-          final signerIsValid = signerBytes.length == 32;
-          final signer =
-              signerIsValid ? Uint8List.fromList(signerBytes) : Uint8List(0);
-          final hasLocalOwner = localOwner != null && localOwner.length == 32;
-          final hasLocalTransport =
-              localTransport != null && localTransport.length == 32;
-          final hasLocalIdentity = hasLocalOwner || hasLocalTransport;
-          if (hasLocalIdentity && !signerIsValid) {
-            // Without signer we cannot deterministically classify this break as
-            // local-finalized vs remote-pending.
-            continue;
-          }
-          final signerMatchesLocalOwner = hasLocalOwner &&
-              signerIsValid &&
-              _support.eq32(signer, localOwner);
-          final signerMatchesLocalTransport = hasLocalTransport &&
-              signerIsValid &&
-              _support.eq32(signer, localTransport);
-          final signerMatchesLocal =
-              signerMatchesLocalOwner || signerMatchesLocalTransport;
-          final peerTransport = _decodeB64_32(current.peerPubkey);
-          final signerMatchesPeerTransport = signerIsValid &&
-              peerTransport != null &&
-              _support.eq32(signer, peerTransport);
-          if (hasLocalIdentity &&
-              signerIsValid &&
-              !signerMatchesLocal &&
-              !signerMatchesPeerTransport) {
-            // Foreign signer cannot deterministically mutate local pairwise
-            // break state when local identity is known.
-            continue;
-          }
-          if (timestamp.isBefore(current.establishedAt)) {
-            // A break older than the currently projected relationship episode
-            // is stale replay noise and must not reopen pending/final break.
-            continue;
-          }
-          final isPendingRemoteBreak = signerIsValid &&
-              !signerMatchesLocal &&
-              (signerMatchesPeerTransport || hasLocalIdentity);
-          if (isPendingRemoteBreak &&
-              !current.isActive &&
-              !current.hasPendingRemoteBreak) {
-            // Local break finalization has higher precedence than replayed
-            // remote break notifications.
-            continue;
-          }
-          byKey[key] = Relationship(
-            peerPubkey: current.peerPubkey,
-            peerRootPubkey: current.peerRootPubkey,
-            kind: current.kind,
-            ownStarterId: current.ownStarterId,
-            peerStarterId: current.peerStarterId,
-            establishedAt: current.establishedAt,
-            isActive: isPendingRemoteBreak ? true : false,
-            hasPendingRemoteBreak: isPendingRemoteBreak,
-          );
-        }
-      }
+    if (projected == null || projected.trim().isEmpty) {
+      return <Relationship>[];
     }
 
-    final list = byKey.values.toList();
-    list.sort((a, b) => b.establishedAt.compareTo(a.establishedAt));
-    return list;
-  }
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(projected);
+    } on FormatException {
+      return <Relationship>[];
+    }
+    if (decoded is! Map<String, dynamic> ||
+        decoded['schema'] != 'hivra.relationship_current_view' ||
+        decoded['version'] != 1 ||
+        decoded['relationships'] is! List) {
+      return <Relationship>[];
+    }
 
-  Map<String, String> _collectPeerRootsByInvitationId(
-    List<dynamic> events,
-    Uint8List? localOwner,
-    Uint8List? localTransport, {
-    required Map<String, int> terminalKindByInvitationId,
-  }) {
-    final map = <String, String>{};
-    final hasLocalOwner = localOwner != null && localOwner.length == 32;
-    final localOwnerB64 = hasLocalOwner ? base64.encode(localOwner) : null;
-    final hasLocalTransport =
-        localTransport != null && localTransport.length == 32;
-    final localTransportB64 =
-        hasLocalTransport ? base64.encode(localTransport) : null;
-    final offerLineageEventIndexById = <String, int>{};
-    final incomingOfferSignerById = <String, String>{};
-
-    for (var eventIndex = 0; eventIndex < events.length; eventIndex++) {
-      final eventRaw = events[eventIndex];
-      if (eventRaw is! Map) continue;
-      final event = Map<String, dynamic>.from(eventRaw);
-      final kind = _support.kindCode(event['kind']);
-      final payload = _support.payloadBytes(event['payload']);
-      if ((kind != 1 && kind != 9) || payload.length < 96) {
+    final relationships = <Relationship>[];
+    for (final raw in decoded['relationships'] as List) {
+      if (raw is! Map) continue;
+      final row = Map<String, dynamic>.from(raw);
+      final peer = _bytes(row['peer_pubkey'], 32);
+      final peerRoot = _bytes(row['peer_root_pubkey'], 32);
+      final peerIdentity = _bytes(row['peer_identity'], 32);
+      final ownStarter = _bytes(row['own_starter_id'], 32);
+      final peerStarter = _bytes(row['peer_starter_id'], 32);
+      final kind = _starterKind(row['starter_kind']);
+      final establishedAt = _timestamp(row['established_at']);
+      final status = row['status'];
+      if (peer == null ||
+          peerIdentity == null ||
+          ownStarter == null ||
+          peerStarter == null ||
+          kind == null ||
+          establishedAt == null ||
+          (status != 'active' &&
+              status != 'pending_remote_break' &&
+              status != 'broken')) {
         continue;
       }
 
-      final signerBytes = _support.payloadBytes(event['signer']);
-      final signerIsValid = signerBytes.length == 32;
-      if (!signerIsValid) continue;
-      final signer = Uint8List.fromList(signerBytes);
-      final signerMatchesLocal =
-          hasLocalOwner && _support.eq32(signer, localOwner);
-      final toPubkey = base64.encode(payload.sublist(64, 96));
-
-      if (kind == 1) {
-        if (!signerMatchesLocal) continue;
-      } else {
-        if (signerMatchesLocal) continue;
-        if (!_isAddressedToLocalIdentity(
-          toPubkey: toPubkey,
-          localOwnerB64: localOwnerB64,
-          localTransportB64: localTransportB64,
-        )) {
-          continue;
-        }
-      }
-
-      final invitationId = base64.encode(payload.sublist(0, 32));
-      offerLineageEventIndexById.putIfAbsent(invitationId, () => eventIndex);
-      if (kind == 9) {
-        incomingOfferSignerById.putIfAbsent(
-          invitationId,
-          () => base64.encode(signer),
-        );
-      }
-    }
-
-    final resolvedTerminalIds = <String>{};
-    for (var eventIndex = 0; eventIndex < events.length; eventIndex++) {
-      final eventRaw = events[eventIndex];
-      if (eventRaw is! Map) continue;
-      final event = Map<String, dynamic>.from(eventRaw);
-      final kind = _support.kindCode(event['kind']);
-      final payload = _support.payloadBytes(event['payload']);
-      final signerBytes = _support.payloadBytes(event['signer']);
-      final signerIsValid = signerBytes.length == 32;
-      final signer =
-          signerIsValid ? Uint8List.fromList(signerBytes) : Uint8List(0);
-      final signerMatchesLocal =
-          hasLocalOwner && signerIsValid && _support.eq32(signer, localOwner);
-
-      if (kind == 9 && (payload.length == 128 || payload.length == 129)) {
-        if (!signerIsValid || signerMatchesLocal) {
-          continue;
-        }
-        final toPubkey = base64.encode(payload.sublist(64, 96));
-        if (!_isAddressedToLocalIdentity(
-          toPubkey: toPubkey,
-          localOwnerB64: localOwnerB64,
-          localTransportB64: localTransportB64,
-        )) {
-          continue;
-        }
-        final invitationId = base64.encode(payload.sublist(0, 32));
-        final senderRoot = base64.encode(payload.sublist(96, 128));
-        map[invitationId] = senderRoot;
-        continue;
-      }
-
-      final terminalShapeValid = switch (kind) {
-        2 => payload.length == 96 || payload.length == 128,
-        3 => payload.length == 33,
-        4 => payload.length == 32,
-        _ => false,
-      };
-      if (terminalShapeValid && signerIsValid) {
-        final invitationId = base64.encode(payload.sublist(0, 32));
-        final offerEventIndex = offerLineageEventIndexById[invitationId];
-        // The original incoming-offer signer can revoke an offer even if this
-        // capsule optimistically accepted it before receiving the revocation.
-        final senderRevocation = kind == 4 &&
-            incomingOfferSignerById[invitationId] == base64.encode(signer);
-        if (offerEventIndex == null || eventIndex <= offerEventIndex) {
-          continue;
-        }
-        if (!resolvedTerminalIds.add(invitationId) && !senderRevocation) {
-          continue;
-        }
-        terminalKindByInvitationId[invitationId] = kind;
-        if (kind != 2 || payload.length != 128) {
-          continue;
-        }
-        if (localTransportB64 == null) {
-          continue;
-        }
-        final fromPubkey = base64.encode(payload.sublist(32, 64));
-        if (fromPubkey != localTransportB64) {
-          continue;
-        }
-        if (!(hasLocalOwner && signerIsValid && !signerMatchesLocal)) {
-          continue;
-        }
-        final accepterRoot = base64.encode(payload.sublist(96, 128));
-        map[invitationId] = accepterRoot;
-        continue;
-      }
-
-      if (kind == 7 && payload.length >= 226) {
-        final invitationId = base64.encode(payload.sublist(97, 129));
-        final peerRoot = base64.encode(payload.sublist(194, 226));
-        final senderRoot = payload.length >= 258
-            ? base64.encode(payload.sublist(226, 258))
-            : null;
-        final resolvedPeerRoot = _resolvePeerRootForLocal(
-          peerRootPubkey: peerRoot,
-          senderRootPubkey: senderRoot,
-          localOwnerB64: localOwnerB64,
-        );
-        if (resolvedPeerRoot == null || resolvedPeerRoot.isEmpty) {
-          continue;
-        }
-        map[invitationId] = resolvedPeerRoot;
-      }
-    }
-    return map;
-  }
-
-  bool _isAddressedToLocalIdentity({
-    required String toPubkey,
-    required String? localOwnerB64,
-    required String? localTransportB64,
-  }) {
-    if (localTransportB64 != null && toPubkey == localTransportB64) {
-      return true;
-    }
-    if (localOwnerB64 != null && toPubkey == localOwnerB64) {
-      return true;
-    }
-    return false;
-  }
-
-  _ProjectedRelationship _orientEstablishedForLocal(
-    _ProjectedRelationship established, {
-    required String? localOwnerB64,
-  }) {
-    if (localOwnerB64 == null) {
-      return established;
-    }
-    final resolvedPeerRoot = _resolvePeerRootForLocal(
-      peerRootPubkey: established.peerRootPubkey,
-      senderRootPubkey: established.senderRootPubkey,
-      localOwnerB64: localOwnerB64,
-    );
-    final shouldSwapToSender = established.peerRootPubkey != null &&
-        established.senderRootPubkey != null &&
-        established.peerRootPubkey == localOwnerB64 &&
-        established.senderRootPubkey != localOwnerB64 &&
-        established.senderPubkey != null;
-
-    if (!shouldSwapToSender) {
-      return _ProjectedRelationship(
-        peerPubkey: established.peerPubkey,
-        senderPubkey: established.senderPubkey,
-        invitationId: established.invitationId,
-        peerRootPubkey: resolvedPeerRoot,
-        senderRootPubkey: established.senderRootPubkey,
-        ownStarterId: established.ownStarterId,
-        peerStarterId: established.peerStarterId,
-        senderStarterId: established.senderStarterId,
-        kind: established.kind,
+      relationships.add(
+        Relationship(
+          peerPubkey: base64.encode(peer),
+          peerRootPubkey:
+              peerRoot != null
+                  ? base64.encode(peerRoot)
+                  : (_equalBytes(peerIdentity, peer)
+                      ? null
+                      : base64.encode(peerIdentity)),
+          kind: kind,
+          ownStarterId: base64.encode(ownStarter),
+          peerStarterId: base64.encode(peerStarter),
+          establishedAt: establishedAt,
+          isActive: status != 'broken',
+          hasPendingRemoteBreak: status == 'pending_remote_break',
+        ),
       );
     }
-
-    return _ProjectedRelationship(
-      peerPubkey: established.senderPubkey!,
-      senderPubkey: established.peerPubkey,
-      invitationId: established.invitationId,
-      peerRootPubkey: resolvedPeerRoot,
-      senderRootPubkey: established.peerRootPubkey,
-      ownStarterId: established.peerStarterId,
-      peerStarterId: established.ownStarterId,
-      senderStarterId: established.senderStarterId,
-      kind: established.kind,
+    relationships.sort(
+      (left, right) => right.establishedAt.compareTo(left.establishedAt),
     );
-  }
-
-  String? _resolvePeerRootForLocal({
-    required String? peerRootPubkey,
-    required String? senderRootPubkey,
-    required String? localOwnerB64,
-  }) {
-    if (peerRootPubkey == null || peerRootPubkey.isEmpty) {
-      return senderRootPubkey;
-    }
-    if (localOwnerB64 == null) return peerRootPubkey;
-    if (senderRootPubkey != null &&
-        senderRootPubkey.isNotEmpty &&
-        peerRootPubkey == localOwnerB64 &&
-        senderRootPubkey != localOwnerB64) {
-      return senderRootPubkey;
-    }
-    if (senderRootPubkey != null &&
-        senderRootPubkey.isNotEmpty &&
-        senderRootPubkey == localOwnerB64 &&
-        peerRootPubkey != localOwnerB64) {
-      return peerRootPubkey;
-    }
-    return peerRootPubkey;
-  }
-
-  Uint8List? _resolveLocalOwner(Map<String, dynamic> root) {
-    final runtimeOwner = _runtimeOwnerPublicKey?.call();
-    if (runtimeOwner != null && runtimeOwner.length == 32) {
-      return Uint8List.fromList(runtimeOwner);
-    }
-    final ledgerOwner = _support.payloadBytes(root['owner']);
-    if (ledgerOwner.length == 32) {
-      return Uint8List.fromList(ledgerOwner);
-    }
-    return null;
-  }
-
-  Uint8List? _resolveLocalTransport() {
-    final runtimeTransport = _runtimeTransportPublicKey?.call();
-    if (runtimeTransport != null && runtimeTransport.length == 32) {
-      return Uint8List.fromList(runtimeTransport);
-    }
-    return null;
-  }
-
-  Uint8List? _decodeB64_32(String value) {
-    try {
-      final bytes = base64.decode(value);
-      if (bytes.length != 32) return null;
-      return Uint8List.fromList(bytes);
-    } catch (_) {
-      return null;
-    }
+    return relationships;
   }
 
   List<RelationshipPeerGroup> loadRelationshipGroups(
-      Map<String, dynamic> root) {
+    Map<String, dynamic> root,
+  ) {
     final relationships = loadRelationships(root);
-    final transportPeerToRootPeer = <String, String>{};
-    for (final relationship in relationships) {
-      final peerRoot = relationship.peerRootPubkey;
-      if (peerRoot != null && peerRoot.isNotEmpty) {
-        transportPeerToRootPeer[relationship.peerPubkey] = peerRoot;
-      }
-    }
-
     final byPeer = <String, List<Relationship>>{};
     final representativeByPeer = <String, Relationship>{};
     for (final relationship in relationships) {
-      final peerIdentityKey = _canonicalPeerIdentityKey(
-        relationship,
-        transportPeerToRootPeer,
-      );
-      byPeer.putIfAbsent(peerIdentityKey, () => <Relationship>[]).add(
-            relationship,
-          );
-      final currentRepresentative = representativeByPeer[peerIdentityKey];
-      if (currentRepresentative == null ||
-          relationship.establishedAt.isAfter(
-            currentRepresentative.establishedAt,
-          )) {
-        representativeByPeer[peerIdentityKey] = relationship;
+      final peerIdentity =
+          relationship.peerRootPubkey ?? relationship.peerPubkey;
+      byPeer
+          .putIfAbsent(peerIdentity, () => <Relationship>[])
+          .add(relationship);
+      final representative = representativeByPeer[peerIdentity];
+      if (representative == null ||
+          relationship.establishedAt.isAfter(representative.establishedAt)) {
+        representativeByPeer[peerIdentity] = relationship;
       }
     }
 
-    final groups = byPeer.entries
-        .map(
-          (entry) => RelationshipPeerGroup(
-            peerPubkey: representativeByPeer[entry.key]?.peerPubkey ??
-                entry.value.first.peerPubkey,
-            relationships: entry.value,
-          ),
-        )
-        .toList();
-    groups
-        .sort((a, b) => b.latestEstablishedAt.compareTo(a.latestEstablishedAt));
+    final groups =
+        byPeer.entries
+            .map(
+              (entry) => RelationshipPeerGroup(
+                peerPubkey:
+                    representativeByPeer[entry.key]?.peerPubkey ??
+                    entry.value.first.peerPubkey,
+                relationships: entry.value,
+              ),
+            )
+            .toList();
+    groups.sort(
+      (left, right) =>
+          right.latestEstablishedAt.compareTo(left.latestEstablishedAt),
+    );
     return groups;
   }
 
-  String _canonicalPeerIdentityKey(
-    Relationship relationship,
-    Map<String, String> transportPeerToRootPeer,
-  ) {
-    final peerRoot = relationship.peerRootPubkey;
-    if (peerRoot != null && peerRoot.isNotEmpty) {
-      return peerRoot;
+  List<int>? _bytes(Object? raw, int length) {
+    if (raw == null) return null;
+    if (raw is! List || raw.length != length) return null;
+    final result = <int>[];
+    for (final value in raw) {
+      if (value is! num || value < 0 || value > 255) return null;
+      result.add(value.toInt());
     }
-    final mappedRoot = transportPeerToRootPeer[relationship.peerPubkey];
-    if (mappedRoot != null && mappedRoot.isNotEmpty) {
-      return mappedRoot;
-    }
-    return relationship.peerPubkey;
+    return result;
   }
 
-  _ProjectedRelationship? _parseRelationshipEstablished(List<int> payload) {
-    // Legacy payload:
-    //   peer(32) + ownStarter(32) + peerStarter(32) + kind(1) = 97 bytes
-    // Current payload adds provenance after the first 97 bytes:
-    //   + invitationId(32) + senderPubkey(32) + senderStarterType(1) + senderStarterId(32)
-    // Root-augmented payloads append:
-    //   + peerRootPubkey(32) + senderRootPubkey(32)
-    if (payload.length < 97) {
-      return null;
+  bool _equalBytes(List<int> left, List<int> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
     }
-
-    return _ProjectedRelationship(
-      peerPubkey: base64.encode(payload.sublist(0, 32)),
-      senderPubkey: payload.length >= 161
-          ? base64.encode(payload.sublist(129, 161))
-          : null,
-      invitationId: payload.length >= 129
-          ? base64.encode(payload.sublist(97, 129))
-          : null,
-      peerRootPubkey: payload.length >= 226
-          ? base64.encode(payload.sublist(194, 226))
-          : null,
-      senderRootPubkey: payload.length >= 258
-          ? base64.encode(payload.sublist(226, 258))
-          : null,
-      ownStarterId: base64.encode(payload.sublist(32, 64)),
-      peerStarterId: base64.encode(payload.sublist(64, 96)),
-      senderStarterId: payload.length >= 194
-          ? base64.encode(payload.sublist(162, 194))
-          : null,
-      kind: _support.starterKindFromByte(payload[96]),
-    );
+    return true;
   }
-}
 
-class _ProjectedRelationship {
-  final String peerPubkey;
-  final String? senderPubkey;
-  final String? invitationId;
-  final String? peerRootPubkey;
-  final String? senderRootPubkey;
-  final String ownStarterId;
-  final String peerStarterId;
-  final String? senderStarterId;
-  final StarterKind kind;
+  StarterKind? _starterKind(Object? raw) {
+    if (raw is! num) return null;
+    return switch (raw.toInt()) {
+      0 => StarterKind.juice,
+      1 => StarterKind.spark,
+      2 => StarterKind.seed,
+      3 => StarterKind.pulse,
+      4 => StarterKind.kick,
+      _ => null,
+    };
+  }
 
-  const _ProjectedRelationship({
-    required this.peerPubkey,
-    this.senderPubkey,
-    this.invitationId,
-    this.peerRootPubkey,
-    this.senderRootPubkey,
-    required this.ownStarterId,
-    required this.peerStarterId,
-    this.senderStarterId,
-    required this.kind,
-  });
+  DateTime? _timestamp(Object? raw) {
+    if (raw is! num || raw <= 0) return null;
+    final value = raw.toInt();
+    final millis = value < 100000000000 ? value * 1000 : value;
+    return DateTime.fromMillisecondsSinceEpoch(millis);
+  }
 }

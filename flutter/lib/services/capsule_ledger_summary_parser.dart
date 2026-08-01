@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'capsule_persistence_models.dart';
 import 'ledger_view_support.dart';
-import 'relationship_projection_service.dart';
 
 class CapsuleLedgerSummaryParser {
   final LedgerViewSupport _support;
@@ -16,9 +15,8 @@ class CapsuleLedgerSummaryParser {
     String json,
     String Function(Uint8List bytes) _, {
     Object? coreProjection,
-    Uint8List? runtimeOwnerPublicKey,
-    Uint8List? runtimeTransportPublicKey,
     String? invitationCurrentViewJson,
+    String? relationshipCurrentViewJson,
   }) {
     if (json.trim().isEmpty) return CapsuleLedgerSummary.empty();
     try {
@@ -33,11 +31,9 @@ class CapsuleLedgerSummaryParser {
         ledgerVersion: ledgerVersion,
         ledgerHashHex: ledgerHashHex,
       );
-      final sharedCounters = projectSharedCountersFromLedgerRoot(
-        ledger,
-        runtimeOwnerPublicKey: runtimeOwnerPublicKey,
-        runtimeTransportPublicKey: runtimeTransportPublicKey,
+      final sharedCounters = projectSharedCounters(
         invitationCurrentViewJson: invitationCurrentViewJson,
+        relationshipCurrentViewJson: relationshipCurrentViewJson,
       );
       return CapsuleLedgerSummary(
         starterCount: starterCount,
@@ -51,38 +47,13 @@ class CapsuleLedgerSummaryParser {
     }
   }
 
-  ({int relationshipCount, int pendingInvitations})
-  projectSharedCountersFromLedgerRoot(
-    Map<String, dynamic> ledger, {
-    Uint8List? runtimeOwnerPublicKey,
-    Uint8List? runtimeTransportPublicKey,
+  ({int relationshipCount, int pendingInvitations}) projectSharedCounters({
     String? invitationCurrentViewJson,
+    String? relationshipCurrentViewJson,
   }) {
-    final ownerBytes = parseBytesField(ledger['owner']);
-    Uint8List? readOwner() {
-      if (runtimeOwnerPublicKey != null && runtimeOwnerPublicKey.length == 32) {
-        return Uint8List.fromList(runtimeOwnerPublicKey);
-      }
-      if (ownerBytes != null && ownerBytes.length == 32) {
-        return Uint8List.fromList(ownerBytes);
-      }
-      return null;
-    }
-
-    final relationshipProjection =
-        RelationshipProjectionService.withOwnerKeyProvider(
-          readOwner,
-          _support,
-          runtimeTransportPublicKey:
-              runtimeTransportPublicKey == null
-                  ? null
-                  : () => runtimeTransportPublicKey,
-        );
-    final relationshipCount = relationshipProjection
-        .loadRelationshipGroups(ledger)
-        .where((group) => group.isActive)
-        .length
-        .clamp(0, 9999);
+    final relationshipCount = _activeRelationshipPeerCount(
+      relationshipCurrentViewJson,
+    ).clamp(0, 9999);
     final pendingInvitations = _pendingInvitationCount(
       invitationCurrentViewJson,
     ).clamp(0, 9999);
@@ -106,6 +77,23 @@ class CapsuleLedgerSummaryParser {
       return (root['invitations'] as List)
           .where((row) => row is Map && row['status'] == 'pending')
           .length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  int _activeRelationshipPeerCount(String? currentViewJson) {
+    if (currentViewJson == null || currentViewJson.trim().isEmpty) return 0;
+    try {
+      final root = jsonDecode(currentViewJson);
+      if (root is! Map ||
+          root['schema'] != 'hivra.relationship_current_view' ||
+          root['version'] != 1 ||
+          root['active_peer_count'] is! num) {
+        return 0;
+      }
+      final count = (root['active_peer_count'] as num).toInt();
+      return count < 0 ? 0 : count;
     } catch (_) {
       return 0;
     }

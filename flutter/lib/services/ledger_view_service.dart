@@ -23,12 +23,22 @@ String? _emptyInvitationCurrentView(String _) => jsonEncode(<String, Object>{
   'invitations': <Object>[],
 });
 
+String? _emptyRelationshipCurrentView(String _, Uint8List? transport) =>
+    jsonEncode(<String, Object>{
+      'schema': 'hivra.relationship_current_view',
+      'version': 1,
+      'ledger_version': 0,
+      'active_peer_count': 0,
+      'relationships': <Object>[],
+    });
+
 class LedgerViewService {
   final LedgerExporter _exportLedger;
   final CapsuleStateExporter _exportCapsuleState;
   final RuntimeOwnerKeyReader _readRuntimeOwnerPublicKey;
   final RuntimeTransportKeyReader _readRuntimeTransportPublicKey;
   final InvitationCurrentViewProjector _projectInvitationCurrentView;
+  final RelationshipCurrentViewProjector _projectRelationshipCurrentView;
   final LedgerViewSupport _support;
   final CapsuleLedgerSummaryParser _summaryParser;
   late final InvitationProjectionService _invitationProjection;
@@ -40,17 +50,21 @@ class LedgerViewService {
       _readRuntimeOwnerPublicKey = runtime.capsuleRuntimeOwnerPublicKey,
       _readRuntimeTransportPublicKey = runtime.capsuleRuntimeTransportPublicKey,
       _projectInvitationCurrentView = runtime.projectInvitationCurrentViewV1,
+      _projectRelationshipCurrentView =
+          ((ledgerJson, localTransportPublicKey) =>
+              runtime.projectRelationshipCurrentViewV1(
+                ledgerJson,
+                localTransportPublicKey: localTransportPublicKey,
+              )),
       _support = const LedgerViewSupport(),
       _summaryParser = const CapsuleLedgerSummaryParser() {
     _invitationProjection = InvitationProjectionService(
       _projectInvitationCurrentView,
     );
-    _relationshipProjection =
-        RelationshipProjectionService.withOwnerKeyProvider(
-          _readRuntimeOwnerPublicKey,
-          _support,
-          runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
-        );
+    _relationshipProjection = RelationshipProjectionService(
+      _projectRelationshipCurrentView,
+      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
+    );
   }
 
   LedgerViewService.withSources({
@@ -60,6 +74,8 @@ class LedgerViewService {
     RuntimeTransportKeyReader? readRuntimeTransportPublicKey,
     InvitationCurrentViewProjector projectInvitationCurrentView =
         _emptyInvitationCurrentView,
+    RelationshipCurrentViewProjector projectRelationshipCurrentView =
+        _emptyRelationshipCurrentView,
     LedgerViewSupport support = const LedgerViewSupport(),
     CapsuleLedgerSummaryParser summaryParser =
         const CapsuleLedgerSummaryParser(),
@@ -69,17 +85,16 @@ class LedgerViewService {
        _readRuntimeTransportPublicKey =
            readRuntimeTransportPublicKey ?? _emptyRuntimeTransportKey,
        _projectInvitationCurrentView = projectInvitationCurrentView,
+       _projectRelationshipCurrentView = projectRelationshipCurrentView,
        _support = support,
        _summaryParser = summaryParser {
     _invitationProjection = InvitationProjectionService(
       _projectInvitationCurrentView,
     );
-    _relationshipProjection =
-        RelationshipProjectionService.withOwnerKeyProvider(
-          _readRuntimeOwnerPublicKey,
-          _support,
-          runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
-        );
+    _relationshipProjection = RelationshipProjectionService(
+      _projectRelationshipCurrentView,
+      runtimeTransportPublicKey: _readRuntimeTransportPublicKey,
+    );
   }
 
   static Uint8List? _emptyRuntimeTransportKey() => null;
@@ -142,12 +157,13 @@ class LedgerViewService {
     final hashHex = _ledgerHashHex(rawHash);
 
     final invitations = loadInvitations(root: root, starterIds: starterIds);
-    final sharedCounters = _summaryParser.projectSharedCountersFromLedgerRoot(
-      root,
-      runtimeOwnerPublicKey: _readRuntimeOwnerPublicKey(),
-      runtimeTransportPublicKey: _readRuntimeTransportPublicKey(),
+    final sharedCounters = _summaryParser.projectSharedCounters(
       invitationCurrentViewJson: _projectInvitationCurrentView(
         jsonEncode(root),
+      ),
+      relationshipCurrentViewJson: _projectRelationshipCurrentView(
+        jsonEncode(root),
+        _readRuntimeTransportPublicKey(),
       ),
     );
     final lockedStarterSlots =

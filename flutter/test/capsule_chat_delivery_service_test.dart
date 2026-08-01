@@ -1004,6 +1004,12 @@ class _FakeLedgerViewRuntime implements LedgerViewRuntime {
   String? projectInvitationCurrentViewV1(String ledgerJson) => null;
 
   @override
+  String? projectRelationshipCurrentViewV1(
+    String ledgerJson, {
+    Uint8List? localTransportPublicKey,
+  }) => null;
+
+  @override
   Uint8List? capsuleRuntimeOwnerPublicKey() => null;
 
   @override
