@@ -27,12 +27,27 @@ void main() {
       expect(display, equals('Unverified capsule'));
     });
 
-    test('identity hint keeps transport details out of the normal UI', () {
+    test('identity hint preserves root identity without transport details', () {
       final hint = PeerIdentityFormat.identityHint(
         transportPubkeyB64: transportB64,
         rootCapsuleKey: rootKey,
       );
-      expect(hint, equals('Verified capsule identity'));
+      expect(hint, equals('Capsule ID ${HivraIdFormat.short(rootKey)}'));
+    });
+
+    test('root hex identity hint remains visible beside a local label', () {
+      final rootHex = List<String>.filled(32, '09').join();
+      expect(
+        PeerIdentityFormat.capsuleLabelFromRootHex(
+          rootHex,
+          localLabel: 'Bernadett',
+        ),
+        equals('Bernadett'),
+      );
+      expect(
+        PeerIdentityFormat.capsuleIdentityHintFromRootHex(rootHex),
+        equals('Capsule ID ${HivraIdFormat.short(rootKey)}'),
+      );
     });
 
     test('formats a root hex key only for internal selection state', () {

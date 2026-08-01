@@ -362,9 +362,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                     ),
                   ),
                   subtitle: Text(
-                    check.isSignable
-                        ? 'Pair consensus verified'
-                        : 'Select to synchronize pair consensus',
+                    '${check.isSignable ? 'Pair consensus verified' : 'Select to synchronize pair consensus'}\n'
+                    '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(check.peerHex)}',
                   ),
                   trailing:
                       check.isSignable
@@ -2020,10 +2019,8 @@ class _SelectedCapsuleCard extends StatelessWidget {
         title: Text(label),
         subtitle: Text(
           hasPeer
-              ? PeerIdentityFormat.capsuleLabelFromRootHex(
-                peerHex,
-                localLabel: localLabel,
-              )
+              ? '${PeerIdentityFormat.capsuleLabelFromRootHex(peerHex, localLabel: localLabel)}\n'
+                  '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(peerHex)}'
               : 'Choose a trusted capsule to start a chat.',
         ),
         trailing:
@@ -2072,7 +2069,7 @@ class _ChatInboxRow extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'from $peerLabel · ${message.createdAtUtc}',
+            'from $peerLabel · ${PeerIdentityFormat.capsuleIdentityHintFromRootHex(message.fromHex)} · ${message.createdAtUtc}',
             style: const TextStyle(fontSize: 11, color: Color(0xFF95A5B7)),
           ),
         ],

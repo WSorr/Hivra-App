@@ -29,12 +29,20 @@ class PeerIdentityFormat {
   static String identityHint({
     required String transportPubkeyB64,
     String? rootCapsuleKey,
-  }) {
+  }) => rootIdentityHint(rootCapsuleKey);
+
+  static String rootIdentityHint(String? rootCapsuleKey) {
     final root = rootCapsuleKey?.trim();
     if (root != null && root.isNotEmpty) {
-      return 'Verified capsule identity';
+      return 'Capsule ID ${HivraIdFormat.short(root)}';
     }
     return 'Awaiting a signed capsule card';
+  }
+
+  static String capsuleIdentityHintFromRootHex(String rootHex) {
+    final capsuleKey = capsuleKeyFromRootHex(rootHex);
+    if (capsuleKey == null) return 'Unknown capsule identity';
+    return rootIdentityHint(capsuleKey);
   }
 
   static String technicalHint({

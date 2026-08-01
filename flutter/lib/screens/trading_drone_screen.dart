@@ -559,9 +559,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     ),
                   ),
                   subtitle: Text(
-                    check.isSignable
-                        ? 'Pair consensus verified'
-                        : 'Pair consensus needs attention',
+                    '${check.isSignable ? 'Pair consensus verified' : 'Pair consensus needs attention'}\n'
+                    '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(check.peerHex)}',
                   ),
                   trailing:
                       check.isSignable
