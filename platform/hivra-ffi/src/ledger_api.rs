@@ -1,5 +1,12 @@
 use super::*;
 
+#[derive(serde::Deserialize)]
+struct HistoryViewRequestV1 {
+    schema: String,
+    version: u16,
+    subject: hivra_core::HistorySubjectV1,
+}
+
 /// Get complete capsule state in one FFI call
 #[no_mangle]
 pub unsafe extern "C" fn capsule_state_encode(_capsule_ptr: *const c_void) -> FfiBytes {
@@ -162,6 +169,49 @@ pub unsafe extern "C" fn hivra_project_pair_view_v1(
         Some(hivra_core::PubKey::from(bytes))
     };
     let view = hivra_core::pair_view_v1(&ledger, local_transport);
+    let json = match serde_json::to_string(&view) {
+        Ok(value) => value,
+        Err(_) => return -4,
+    };
+    match CString::new(json) {
+        Ok(value) => {
+            *out_json = value.into_raw();
+            0
+        }
+        Err(_) => -4,
+    }
+}
+
+/// Project a ledger JSON document into the canonical subject-scoped history view.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_project_history_view_v1(
+    ledger_json: *const c_char,
+    request_json: *const c_char,
+    out_json: *mut *mut c_char,
+) -> i32 {
+    if ledger_json.is_null() || request_json.is_null() || out_json.is_null() {
+        return -1;
+    }
+    let ledger_json = match CStr::from_ptr(ledger_json).to_str() {
+        Ok(value) => value,
+        Err(_) => return -2,
+    };
+    let request_json = match CStr::from_ptr(request_json).to_str() {
+        Ok(value) => value,
+        Err(_) => return -2,
+    };
+    let ledger = match parse_ledger_json(ledger_json) {
+        Ok(value) => value,
+        Err(_) => return -3,
+    };
+    let request: HistoryViewRequestV1 = match serde_json::from_str(request_json) {
+        Ok(value) => value,
+        Err(_) => return -5,
+    };
+    if request.schema != "hivra.history_view.request" || request.version != 1 {
+        return -5;
+    }
+    let view = hivra_core::history_view_v1(&ledger, request.subject);
     let json = match serde_json::to_string(&view) {
         Ok(value) => value,
         Err(_) => return -4,

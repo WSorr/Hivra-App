@@ -301,9 +301,9 @@ Goal:
   projector and scoped `CurrentView`, `PairView`, and `HistoryView` contracts.
 
 Current finding:
-- Starter-slot, invitation, and relationship current state now have one Core
-  owner. Remaining convergence work is scoped pair-consensus and history/audit
-  views; those readers must not grow new lifecycle reducers while migrating.
+- Starter-slot, invitation, relationship, pair-consensus, and scoped history
+  state now have one Core owner. Flutter consumers map versioned views and do
+  not own lifecycle replay.
 
 Current progress:
 - Core now owns a direction-aware invitation lifecycle replay keyed by one
@@ -343,8 +343,14 @@ Current progress:
   third-capsule isolation, relationship deduplication, pending invitations,
   and remote-break blocking. The architecture gate rejects raw pair replay in
   Flutter.
-- Remaining in this milestone: converge the scoped history/audit view and
-  remove its replaced application-owned event walker.
+- `HistoryViewV1` now validates typed payloads and projects the complete
+  invitation, starter, or relationship chronology for one explicit subject.
+  The FFI exposes the versioned view; Flutter owns only display labels,
+  localized time/prose, and the advisory projection hash.
+- The former Flutter history event walker and byte-offset matcher were removed.
+  Core golden vectors own invitation provenance, starter lifecycle,
+  root/transport relationship aliases, ledger ordering, and malformed-payload
+  exclusion. The architecture gate rejects raw history replay in Flutter.
 
 Required migration units:
 1. Inventory every raw-ledger domain reader and classify it as current state,
@@ -366,7 +372,7 @@ Definition of done:
 - Current UI hides superseded history; explicit history remains complete;
   pair consensus contains only current pair-scoped truth and required lineage.
 - No application or plugin module owns a second lifecycle reducer.
-- Status: active correctness/architecture debt (2026-07-21).
+- Status: completed (2026-08-01).
 
 ## Release Discipline
 
@@ -1383,10 +1389,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         restart. This is continuity evidence only, not packaged restore signoff.
     - Current ordered 12.3 item is closure of packaged macOS/Android restart
       and restore evidence for continuous-ledger pass 3. Canonical Core
-      projection convergence (`5.1`) follows that closure. Event-scoped
-      delivery records, transport-health UI, plugin transactionality,
-      encrypted backup envelopes, and deprecated-envelope migration remain
-      subsequent items.
+      projection convergence (`5.1`) is complete. Event-scoped delivery
+      records, transport-health UI, plugin transactionality, encrypted backup
+      envelopes, and deprecated-envelope migration remain subsequent items.
   - Status: active; pass 1 and pass 2 are completed.
 
 ## Planned Product Tracks

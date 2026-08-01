@@ -98,6 +98,9 @@ class AppRuntimeService {
   Uint8List? capsuleNostrPublicKey() => _runtime.capsuleNostrPublicKey();
   String? exportLedger() => _runtime.exportLedger();
 
+  String? projectHistoryViewV1(String ledgerJson, String requestJson) =>
+      _runtime.ledgerViewRuntime.projectHistoryViewV1(ledgerJson, requestJson);
+
   String? activeCapsuleRootHex() {
     final stateKey = _stateManager.state.publicKey;
     if (stateKey.length == 32) {

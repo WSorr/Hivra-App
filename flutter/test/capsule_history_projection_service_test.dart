@@ -5,103 +5,160 @@ import 'package:hivra_app/services/capsule_history_projection_service.dart';
 
 void main() {
   test(
-    'invitation history includes its lifecycle and relationship provenance',
+    'maps the versioned Core HistoryView and keeps advisory hash stable',
     () {
-      final invite = List<int>.filled(32, 1);
-      final starter = List<int>.filled(32, 2);
-      final peer = List<int>.filled(32, 3);
-      final otherInvite = List<int>.filled(32, 9);
-      final events = <Map<String, dynamic>>[
-        _event(1, <int>[...invite, ...starter, ...peer], 100),
-        _event(1, <int>[...otherInvite, ...starter, ...peer], 101),
-        _event(2, <int>[...invite, ...peer, ...starter], 102),
-        _event(7, <int>[
-          ...peer,
-          ...starter,
-          ...List<int>.filled(32, 4),
-          0,
-          ...invite,
-          ...peer,
-          0,
-          ...starter,
-        ], 103),
-      ];
-      final service = _service(events);
-
-      final projection = service.project(
-        CapsuleHistorySubject.invitation(
-          invitationId: base64.encode(invite),
-          displayLabel: 'Juice invitation',
-        ),
+      final invitationId = List<int>.filled(32, 1);
+      final starterId = List<int>.filled(32, 2);
+      final subject = CapsuleHistorySubject.invitation(
+        invitationId: base64.encode(invitationId),
+        displayLabel: 'Juice invitation',
+      );
+      String? requestSeen;
+      final service = CapsuleHistoryProjectionService(
+        exportLedger: () => '{"events":[]}',
+        projectHistoryView: (ledger, request) {
+          requestSeen = request;
+          return _historyView(
+            kind: 'invitation',
+            primaryId: invitationId,
+            entries: <Map<String, dynamic>>[
+              _entry(
+                index: 0,
+                kind: 'InvitationSent',
+                timestamp: 100,
+                code: 'invitation_sent',
+                ids: <List<int>>[invitationId, starterId],
+              ),
+              _entry(
+                index: 2,
+                kind: 'InvitationAccepted',
+                timestamp: 102,
+                code: 'invitation_accepted',
+                ids: <List<int>>[invitationId, starterId],
+              ),
+            ],
+          );
+        },
       );
 
-      expect(projection.entries.map((entry) => entry.eventKind), <String>[
+      final first = service.project(subject);
+      final replay = service.project(subject);
+      final request = jsonDecode(requestSeen!) as Map<String, dynamic>;
+
+      expect(request['schema'], 'hivra.history_view.request');
+      expect(request['version'], 1);
+      expect(request['subject']['kind'], 'invitation');
+      expect(request['subject']['primary_id'], invitationId);
+      expect(first.entries.map((entry) => entry.eventKind), <String>[
         'InvitationSent',
         'InvitationAccepted',
-        'RelationshipEstablished',
       ]);
-      expect(projection.entries.map((entry) => entry.ledgerIndex), <int>[
-        0,
-        2,
-        3,
-      ]);
+      expect(first.entries.first.summary, contains('sent with starter'));
+      expect(first.entries.last.summary, contains('accepted'));
+      expect(replay.projectionHashHex, first.projectionHashHex);
     },
   );
 
-  test(
-    'starter history follows creation, invitation, relationship, and burn',
-    () {
-      final invite = List<int>.filled(32, 1);
-      final starter = List<int>.filled(32, 2);
-      final peer = List<int>.filled(32, 3);
-      final nonce = List<int>.filled(32, 8);
-      final events = <Map<String, dynamic>>[
-        _event(5, <int>[...starter, ...nonce, 1, 1], 200),
-        _event(1, <int>[...invite, ...starter, ...peer], 201),
-        _event(8, <int>[...peer, ...starter], 202),
-        _event(6, <int>[...starter, 0], 203),
-      ];
-      final service = _service(events);
-
-      final projection = service.project(
-        CapsuleHistorySubject.starter(
-          starterId: base64.encode(starter),
-          displayLabel: 'Spark starter',
-        ),
-      );
-
-      expect(projection.entries, hasLength(4));
-      expect(projection.entries.last.eventKind, 'StarterBurned');
-    },
-  );
-
-  test('relationship history is peer-scoped and replay hash is stable', () {
-    final peer = List<int>.filled(32, 3);
-    final otherPeer = List<int>.filled(32, 7);
-    final starter = List<int>.filled(32, 2);
-    final events = <Map<String, dynamic>>[
-      _event(8, <int>[...otherPeer, ...starter], 300),
-      _event(8, <int>[...peer, ...starter], 301),
-    ];
-    final service = _service(events);
-    final subject = CapsuleHistorySubject.relationship(
-      peerTransportKey: base64.encode(peer),
-      displayLabel: 'Peer',
+  test('relationship request carries transport and root aliases', () {
+    final transport = List<int>.filled(32, 3);
+    final root = List<int>.filled(32, 4);
+    String? requestSeen;
+    final service = CapsuleHistoryProjectionService(
+      exportLedger: () => '{}',
+      projectHistoryView: (_, request) {
+        requestSeen = request;
+        return _historyView(
+          kind: 'relationship',
+          primaryId: transport,
+          secondaryId: root,
+          entries: <Map<String, dynamic>>[
+            _entry(
+              index: 1,
+              kind: 'RelationshipBroken',
+              timestamp: 301,
+              code: 'relationship_broken',
+              ids: <List<int>>[transport],
+            ),
+          ],
+        );
+      },
     );
 
-    final first = service.project(subject);
-    final replay = service.project(subject);
+    final projection = service.project(
+      CapsuleHistorySubject.relationship(
+        peerTransportKey: base64.encode(transport),
+        peerRootKey: base64.encode(root),
+        displayLabel: 'Peer',
+      ),
+    );
+    final request = jsonDecode(requestSeen!) as Map<String, dynamic>;
 
-    expect(first.entries, hasLength(1));
-    expect(first.entries.single.ledgerIndex, 1);
-    expect(replay.projectionHashHex, first.projectionHashHex);
+    expect(request['subject']['secondary_id'], root);
+    expect(projection.entries.single.summary, contains('broken'));
+  });
+
+  test('fails closed for unavailable, stale, or mismatched Core views', () {
+    final starter = List<int>.filled(32, 5);
+    final subject = CapsuleHistorySubject.starter(
+      starterId: base64.encode(starter),
+      displayLabel: 'Starter',
+    );
+
+    CapsuleHistoryProjection project(String? view) =>
+        CapsuleHistoryProjectionService(
+          exportLedger: () => '{}',
+          projectHistoryView: (_, unused) => view,
+        ).project(subject);
+
+    expect(project(null).entries, isEmpty);
+    expect(
+      project('{"schema":"hivra.history_view","version":2}').entries,
+      isEmpty,
+    );
+    expect(
+      project(
+        _historyView(
+          kind: 'starter',
+          primaryId: List<int>.filled(32, 6),
+          entries: const <Map<String, dynamic>>[],
+        ),
+      ).entries,
+      isEmpty,
+    );
   });
 }
 
-CapsuleHistoryProjectionService _service(List<Map<String, dynamic>> events) {
-  final ledger = jsonEncode(<String, dynamic>{'events': events});
-  return CapsuleHistoryProjectionService(exportLedger: () => ledger);
-}
+String _historyView({
+  required String kind,
+  required List<int> primaryId,
+  List<int>? secondaryId,
+  required List<Map<String, dynamic>> entries,
+}) => jsonEncode(<String, dynamic>{
+  'schema': 'hivra.history_view',
+  'version': 1,
+  'ledger_version': entries.length,
+  'subject': <String, dynamic>{
+    'kind': kind,
+    'primary_id': primaryId,
+    'secondary_id': secondaryId,
+  },
+  'entries': entries,
+});
 
-Map<String, dynamic> _event(int kind, List<int> payload, int timestamp) =>
-    <String, dynamic>{'kind': kind, 'payload': payload, 'timestamp': timestamp};
+Map<String, dynamic> _entry({
+  required int index,
+  required String kind,
+  required int timestamp,
+  required String code,
+  required List<List<int>> ids,
+  int? starterKind,
+  int? reason,
+}) => <String, dynamic>{
+  'ledger_index': index,
+  'event_kind': kind,
+  'timestamp': timestamp,
+  'summary_code': code,
+  'summary_ids': ids,
+  'starter_kind': starterKind,
+  'reason': reason,
+};

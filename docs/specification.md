@@ -349,6 +349,13 @@ invitation count for diagnostics, and deterministic pair blockers. The host
 maps this typed view into pair snapshot schema v3 and owns hashing, signatures,
 attestation exchange, and verification; it does not replay domain events.
 
+The current Core/FFI HistoryView contract is `hivra.history_view` version `1`.
+It accepts one explicit invitation, starter, or relationship subject and
+returns the complete matching typed chronology in ledger order. Core owns
+payload validation, subject aliases, event membership, and summary facts. The
+host may localize time and prose and hash an advisory projection, but it does
+not inspect raw event kinds, payload layouts, or lifecycle offsets.
+
 All persisted projection caches are disposable materialized views. They MUST
 be bound to ledger identity, protocol version, event version, and ledger hash;
 a missing or mismatched binding fails closed and triggers Core replay. Cached

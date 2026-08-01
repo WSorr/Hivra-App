@@ -6,6 +6,7 @@ extern crate alloc;
 pub mod capsule;
 pub mod event;
 pub mod event_payloads;
+pub mod history;
 pub mod invitation;
 pub mod ledger;
 pub mod ledger_v5;
@@ -21,6 +22,9 @@ pub use event_payloads::{
     CapsuleCreatedPayload, EventPayload, InvitationAcceptedPayload, InvitationExpiredPayload,
     InvitationRejectedPayload, InvitationSentPayload, RejectReason, RelationshipBrokenPayload,
     RelationshipEstablishedPayload, StarterBurnedPayload, StarterCreatedPayload,
+};
+pub use history::{
+    history_view_v1, HistoryEntryV1, HistorySubjectKindV1, HistorySubjectV1, HistoryViewV1,
 };
 pub use invitation::{
     find_invitation, find_invitation_by_direction, invitation_current_view_v1, invitation_status,

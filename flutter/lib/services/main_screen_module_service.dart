@@ -40,6 +40,7 @@ class MainScreenModuleService {
       attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       capsuleHistory: CapsuleHistoryProjectionService(
         exportLedger: runtime.exportLedger,
+        projectHistoryView: runtime.projectHistoryViewV1,
       ),
       capsuleHistoryAi: aiTooling.buildCapsuleHistoryAiAdvisorService(),
     );

@@ -98,6 +98,7 @@ RELATIONSHIP_PROJECTION="$ROOT/flutter/lib/services/relationship_projection_serv
 CORE_RELATIONSHIP="$ROOT/core/hivra-core/src/relationship.rs"
 FFI_LEDGER_API="$ROOT/platform/hivra-ffi/src/ledger_api.rs"
 CONSENSUS="$ROOT/flutter/lib/services/consensus_processor.dart"
+HISTORY_PROJECTION="$ROOT/flutter/lib/services/capsule_history_projection_service.dart"
 CONSENSUS_ATTESTATION_SYNC="$ROOT/flutter/lib/services/consensus_attestation_sync_service.dart"
 CONSENSUS_ATTESTATION_STORE="$ROOT/flutter/lib/services/consensus_attestation_store.dart"
 CAPSULE_FILE_STORE="$ROOT/flutter/lib/services/capsule_file_store.dart"
@@ -210,6 +211,15 @@ require_present "$CONSENSUS" 'hivra\.pair_view' \
 require_absent "$CONSENSUS" \
   'InvitationSent|InvitationReceived|InvitationAccepted|InvitationRejected|InvitationExpired|RelationshipEstablished|RelationshipBroken|kindCode\(|payloadBytes\(|\['"'"'events'"'"'\]' \
   "Flutter consensus adapter does not replay raw domain events"
+require_present "$ROOT/core/hivra-core/src/history.rs" 'pub fn history_view_v1' \
+  "Core owns the versioned subject-scoped history view"
+require_present "$FFI_LEDGER_API" 'hivra_project_history_view_v1' \
+  "FFI exposes the canonical subject-scoped history view"
+require_present "$HISTORY_PROJECTION" 'hivra\.history_view' \
+  "Flutter history adapter consumes the versioned Core HistoryView"
+require_absent "$HISTORY_PROJECTION" \
+  'kindCode\(|payloadBytes\(|\['"'"'events'"'"'\]|InvitationSent|InvitationReceived|InvitationAccepted|InvitationRejected|InvitationExpired|StarterCreated|StarterBurned|RelationshipEstablished|RelationshipBroken' \
+  "Flutter history adapter does not replay raw domain events"
 require_present "$SPEC" 'Flutter Boundary Direction' \
   "spec defines downward direction inside Flutter boundary"
 require_present "$SPEC" 'WASM Plugin Host Contract' \

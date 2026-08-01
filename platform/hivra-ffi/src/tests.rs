@@ -3056,6 +3056,62 @@ fn pair_view_v1_projects_exported_ledger_json() {
 }
 
 #[test]
+fn history_view_v1_projects_an_explicit_subject() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(55);
+    let owner = derived_pubkey(&seed);
+    let starter_id = StarterId::from([166u8; 32]);
+    set_runtime_capsule(owner, Network::Neste);
+    append_runtime_event_with_signer(
+        EventKind::StarterCreated,
+        &StarterCreatedPayload {
+            starter_id,
+            nonce: [167u8; 32],
+            kind: StarterKind::Seed,
+            network: Network::Neste.to_byte(),
+        }
+        .to_bytes(),
+        owner,
+    )
+    .unwrap();
+
+    let ledger = CString::new(export_runtime_ledger().unwrap()).unwrap();
+    let request = CString::new(
+        serde_json::json!({
+            "schema": "hivra.history_view.request",
+            "version": 1,
+            "subject": {
+                "kind": "starter",
+                "primary_id": starter_id.as_bytes(),
+                "secondary_id": null
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let mut projected = ptr::null_mut();
+    let code = unsafe {
+        crate::ledger_api::hivra_project_history_view_v1(
+            ledger.as_ptr(),
+            request.as_ptr(),
+            &mut projected,
+        )
+    };
+    assert_eq!(code, 0);
+    assert!(!projected.is_null());
+    let json = unsafe { CStr::from_ptr(projected).to_str().unwrap().to_owned() };
+    unsafe { crate::ffi_support::hivra_free_string(projected) };
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["schema"], "hivra.history_view");
+    assert_eq!(value["version"], 1);
+    assert_eq!(value["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(value["entries"][0]["event_kind"], "StarterCreated");
+    assert_eq!(value["entries"][0]["summary_code"], "starter_created");
+}
+
+#[test]
 fn repeated_import_of_same_ledger_keeps_projection_stable() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
