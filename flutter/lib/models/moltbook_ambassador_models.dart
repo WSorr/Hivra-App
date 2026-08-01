@@ -798,6 +798,134 @@ class MoltbookCycleSummary {
   }
 }
 
+enum MoltbookCycleTriggerPhase { idle, running, waiting, stopped, failed }
+
+class MoltbookCycleTriggerSnapshot {
+  final String scope;
+  final String policy;
+  final MoltbookCycleTriggerPhase phase;
+  final MoltbookCycleSummary? lastSummary;
+  final String? lastError;
+
+  const MoltbookCycleTriggerSnapshot({
+    required this.scope,
+    required this.policy,
+    required this.phase,
+    required this.lastSummary,
+    required this.lastError,
+  });
+}
+
+enum MoltbookWorkspaceCyclePhase {
+  idle,
+  observing,
+  proposing,
+  delivering,
+  stopped,
+  blocked,
+}
+
+enum MoltbookWorkspaceNextAction {
+  connect,
+  verify,
+  reconcile,
+  publish,
+  reviewReply,
+  reviewDraft,
+  runCycle,
+  none,
+}
+
+class MoltbookWorkspaceProjection {
+  final MoltbookWorkspaceCyclePhase phase;
+  final MoltbookWorkspaceNextAction nextAction;
+  final int readCount;
+  final int eligibleCount;
+  final int proposedCount;
+  final int publishedCount;
+  final int challengedCount;
+  final int blockedCount;
+
+  const MoltbookWorkspaceProjection({
+    required this.phase,
+    required this.nextAction,
+    required this.readCount,
+    required this.eligibleCount,
+    required this.proposedCount,
+    required this.publishedCount,
+    required this.challengedCount,
+    required this.blockedCount,
+  });
+
+  factory MoltbookWorkspaceProjection.resolve({
+    required bool connected,
+    required bool enabled,
+    required MoltbookCycleTriggerPhase? triggerPhase,
+    required MoltbookCycleSummary? cycleSummary,
+    required bool observing,
+    required bool proposing,
+    required bool delivering,
+    required bool hasVerification,
+    required bool hasRecoverableEffect,
+    required bool hasQueuedEffect,
+    required bool hasReplyDraft,
+    required bool hasLocalDraft,
+    required int proposedCount,
+    required int publishedCount,
+    required int challengedCount,
+    required int blockedCount,
+  }) {
+    if (proposedCount < 0 ||
+        publishedCount < 0 ||
+        challengedCount < 0 ||
+        blockedCount < 0) {
+      throw ArgumentError('Moltbook workspace counts must be non-negative');
+    }
+
+    final phase = switch ((enabled, triggerPhase)) {
+      (false, _) || (_, MoltbookCycleTriggerPhase.stopped) =>
+        MoltbookWorkspaceCyclePhase.stopped,
+      (_, MoltbookCycleTriggerPhase.failed) =>
+        MoltbookWorkspaceCyclePhase.blocked,
+      _ when delivering => MoltbookWorkspaceCyclePhase.delivering,
+      _ when proposing => MoltbookWorkspaceCyclePhase.proposing,
+      _ when observing || triggerPhase == MoltbookCycleTriggerPhase.running =>
+        MoltbookWorkspaceCyclePhase.observing,
+      _ => MoltbookWorkspaceCyclePhase.idle,
+    };
+
+    final nextAction = switch ((
+      connected,
+      hasVerification,
+      hasRecoverableEffect,
+      hasQueuedEffect,
+      hasReplyDraft,
+      hasLocalDraft,
+      enabled,
+    )) {
+      (false, _, _, _, _, _, _) => MoltbookWorkspaceNextAction.connect,
+      (_, true, _, _, _, _, _) => MoltbookWorkspaceNextAction.verify,
+      (_, _, true, _, _, _, _) => MoltbookWorkspaceNextAction.reconcile,
+      (_, _, _, _, _, _, false) => MoltbookWorkspaceNextAction.none,
+      (_, _, _, true, _, _, _) => MoltbookWorkspaceNextAction.publish,
+      (_, _, _, _, true, _, _) => MoltbookWorkspaceNextAction.reviewReply,
+      (_, _, _, _, _, true, _) => MoltbookWorkspaceNextAction.reviewDraft,
+      (_, _, _, _, _, _, true) => MoltbookWorkspaceNextAction.runCycle,
+    };
+
+    return MoltbookWorkspaceProjection(
+      phase: phase,
+      nextAction: nextAction,
+      readCount: cycleSummary?.inspectedCount ?? 0,
+      eligibleCount: cycleSummary?.candidateCount ?? 0,
+      proposedCount: proposedCount,
+      publishedCount: publishedCount,
+      challengedCount: challengedCount,
+      blockedCount: blockedCount,
+    );
+  }
+}
+
 class MoltbookEngagementPlan {
   static const Set<String> actionClasses = <String>{
     'reply_draft',

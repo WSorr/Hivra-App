@@ -1,0 +1,135 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/moltbook_ambassador_models.dart';
+import 'package:hivra_app/models/moltbook_provider_models.dart';
+
+void main() {
+  group('MoltbookWorkspaceProjection', () {
+    test('gives an active effect priority over every new proposal path', () {
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: MoltbookCycleTriggerPhase.waiting,
+        cycleSummary: null,
+        observing: false,
+        proposing: false,
+        delivering: false,
+        hasVerification: false,
+        hasRecoverableEffect: true,
+        hasQueuedEffect: true,
+        hasReplyDraft: true,
+        hasLocalDraft: true,
+        proposedCount: 2,
+        publishedCount: 1,
+        challengedCount: 0,
+        blockedCount: 0,
+      );
+
+      expect(projection.nextAction, MoltbookWorkspaceNextAction.reconcile);
+    });
+
+    test('verification is the only next action for challenged effect', () {
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: MoltbookCycleTriggerPhase.idle,
+        cycleSummary: null,
+        observing: false,
+        proposing: false,
+        delivering: true,
+        hasVerification: true,
+        hasRecoverableEffect: true,
+        hasQueuedEffect: true,
+        hasReplyDraft: true,
+        hasLocalDraft: true,
+        proposedCount: 1,
+        publishedCount: 0,
+        challengedCount: 1,
+        blockedCount: 0,
+      );
+
+      expect(projection.nextAction, MoltbookWorkspaceNextAction.verify);
+      expect(projection.phase, MoltbookWorkspaceCyclePhase.delivering);
+    });
+
+    test('projects cycle evidence without inventing effect counts', () {
+      final summary = MoltbookCycleSummary(
+        ownerCapsuleHex: 'a' * 64,
+        accountBindingId: 'account-1',
+        startedAtUtc: '2026-08-01T10:00:00.000Z',
+        completedAtUtc: '2026-08-01T10:00:01.000Z',
+        inspectedCount: 24,
+        candidateCount: 3,
+        reconciledCount: 1,
+        challengedCount: 1,
+        blockedCount: 2,
+        heartbeatPlan: MoltbookHeartbeatPlan(
+          observedAtUtc: '2026-08-01T10:00:00.000Z',
+          priority: 'review_feed',
+          reason: 'Three eligible candidates',
+          candidatePostIds: const <String>['post-1', 'post-2', 'post-3'],
+          publishAllowed: false,
+          humanReviewRequired: true,
+          safetyFlags: const <String>[],
+          planHashHex: 'b' * 64,
+          canonicalPlanJson: '{}',
+        ),
+        checkpoint: const MoltbookFeedCheckpoint.empty(),
+      );
+
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: MoltbookCycleTriggerPhase.waiting,
+        cycleSummary: summary,
+        observing: false,
+        proposing: false,
+        delivering: false,
+        hasVerification: false,
+        hasRecoverableEffect: false,
+        hasQueuedEffect: false,
+        hasReplyDraft: false,
+        hasLocalDraft: false,
+        proposedCount: 0,
+        publishedCount: 4,
+        challengedCount: 1,
+        blockedCount: 2,
+      );
+
+      expect(projection.phase, MoltbookWorkspaceCyclePhase.idle);
+      expect(projection.nextAction, MoltbookWorkspaceNextAction.runCycle);
+      expect(projection.readCount, 24);
+      expect(projection.eligibleCount, 3);
+      expect(projection.proposedCount, 0);
+      expect(projection.publishedCount, 4);
+      expect(projection.challengedCount, 1);
+      expect(projection.blockedCount, 2);
+    });
+
+    test(
+      'disabled workspace stays stopped and does not deliver queued work',
+      () {
+        final projection = MoltbookWorkspaceProjection.resolve(
+          connected: true,
+          enabled: false,
+          triggerPhase: MoltbookCycleTriggerPhase.stopped,
+          cycleSummary: null,
+          observing: false,
+          proposing: false,
+          delivering: false,
+          hasVerification: false,
+          hasRecoverableEffect: false,
+          hasQueuedEffect: true,
+          hasReplyDraft: false,
+          hasLocalDraft: false,
+          proposedCount: 0,
+          publishedCount: 0,
+          challengedCount: 0,
+          blockedCount: 0,
+        );
+
+        expect(projection.phase, MoltbookWorkspaceCyclePhase.stopped);
+        expect(projection.nextAction, MoltbookWorkspaceNextAction.none);
+      },
+    );
+  });
+}

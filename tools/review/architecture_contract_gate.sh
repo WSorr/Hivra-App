@@ -669,13 +669,15 @@ MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT="$(
   rg -c 'advanceMoltbookEngagement' \
     "$MOLTBOOK_AMBASSADOR_SCREEN" || true
 )"
-if [ "${MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT:-0}" -ge 3 ]; then
-  pass "Moltbook Assisted and Bounded UI routes share one orchestration owner"
+if [ "${MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT:-0}" -eq 2 ]; then
+  pass "Moltbook release UI has one Assisted orchestration route"
 else
-  fail "Moltbook Assisted and Bounded UI routes share one orchestration owner"
+  fail "Moltbook release UI has one Assisted orchestration route"
 fi
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'prepareMoltbookReplyPublication|authorizeDelegatedMoltbookReply|approveDelegatedMoltbookReply' \
   "Moltbook screen has no parallel reply authorization or queue route"
+require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'MoltbookEngagementWritePolicy\.bounded|Bounded queue' \
+  "Moltbook release UI does not expose Bounded publication before evidence"
 require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Cycle engine \(implemented\)' \
   "Moltbook lifecycle records the implemented serialized cycle"
 require_present "$PLUGIN_RUNTIME_MODULE" 'static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles' \
@@ -710,5 +712,15 @@ require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'runMoltbookOnDemandCycle\(\)' \
   "Moltbook manual cycle uses the canonical cycle port"
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'planMoltbookHeartbeat\(\)' \
   "Moltbook screen has no legacy direct heartbeat planning route"
+require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'UI projection \(implemented\)' \
+  "Moltbook lifecycle records the implemented workspace projection"
+require_present "$MOLTBOOK_AMBASSADOR_MODELS" 'class MoltbookWorkspaceProjection' \
+  "Moltbook workspace has one canonical UI projection"
+require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'MoltbookWorkspaceProjection\.resolve\(' \
+  "Moltbook screen derives actions and summary from the canonical projection"
+require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'Technical account controls' \
+  "Moltbook manual provider controls remain secondary"
+require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'Technical cycle details' \
+  "Moltbook raw cycle evidence remains secondary"
 
 exit "$STATUS"

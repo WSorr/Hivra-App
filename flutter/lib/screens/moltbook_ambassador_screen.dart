@@ -58,6 +58,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   MoltbookConversationObservation? _conversationObservation;
   String? _conversationSelectionKind;
   MoltbookHeartbeatPlan? _heartbeatPlan;
+  MoltbookCycleSummary? _cycleSummary;
+  MoltbookCycleTriggerSnapshot? _cycleTriggerSnapshot;
   MoltbookEngagementPlan? _engagementPlan;
   MoltbookReplyProposal? _replyProposal;
   MoltbookReplyDraftPreview? _replyDraftPreview;
@@ -243,9 +245,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       final summary = await widget.module.runMoltbookOnDemandCycle();
       if (!mounted) return;
       setState(() {
+        _cycleSummary = summary;
         _heartbeatPlan = summary.heartbeatPlan;
         _feedCheckpoint = summary.checkpoint;
       });
+      await _refreshCycleProjection();
       _showNotice(
         'Moltbook cycle completed: ${summary.inspectedCount} inspected, '
         '${summary.candidateCount} candidates',
@@ -261,14 +265,19 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
 
   Future<void> _startConfiguredCycles({bool showNotice = true}) async {
     if (_binding == null) return;
+    if (mounted) setState(() => _connectionBusy = true);
     try {
       final summary = await widget.module.startConfiguredMoltbookCycles();
-      if (!mounted || summary == null) return;
-      setState(() {
-        _heartbeatPlan = summary.heartbeatPlan;
-        _feedCheckpoint = summary.checkpoint;
-      });
-      if (showNotice) {
+      if (!mounted) return;
+      if (summary != null) {
+        setState(() {
+          _cycleSummary = summary;
+          _heartbeatPlan = summary.heartbeatPlan;
+          _feedCheckpoint = summary.checkpoint;
+        });
+      }
+      await _refreshCycleProjection();
+      if (showNotice && summary != null) {
         _showNotice(
           'Configured Moltbook cycle completed: '
           '${summary.inspectedCount} inspected',
@@ -278,6 +287,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       if (mounted && showNotice) {
         _showNotice('Configured Moltbook cycle stopped: $error', isError: true);
       }
+    } finally {
+      if (mounted) setState(() => _connectionBusy = false);
     }
   }
 
@@ -287,6 +298,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       await widget.module.stopMoltbookCyclesAndDisable();
       if (!mounted) return;
       setState(() => _enabled = false);
+      await _refreshCycleProjection();
       _showNotice('Moltbook cycles stopped; Ambassador disabled locally');
     } catch (error) {
       if (mounted) {
@@ -294,6 +306,23 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       }
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _refreshCycleProjection() async {
+    if (_binding == null) {
+      if (mounted) setState(() => _cycleTriggerSnapshot = null);
+      return;
+    }
+    try {
+      final snapshot = await widget.module.loadMoltbookCycleTriggerSnapshot();
+      if (!mounted) return;
+      setState(() {
+        _cycleTriggerSnapshot = snapshot;
+        _cycleSummary = snapshot?.lastSummary ?? _cycleSummary;
+      });
+    } catch (_) {
+      // Connection and effect errors remain owned by their explicit actions.
     }
   }
 
@@ -558,95 +587,6 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           'Could not prepare reply publication: $error',
           isError: true,
         );
-      }
-    } finally {
-      if (mounted) setState(() => _publicationBusy = false);
-    }
-  }
-
-  Future<void> _queueBoundedReply() async {
-    final plan = _engagementPlan;
-    final draft = _replyDraftPreview;
-    if (plan == null || draft == null) {
-      _showNotice('Prepare the exact WASM reply first', isError: true);
-      return;
-    }
-    if (plan.actionClass != 'reply_draft' || draft.targetCommentId == null) {
-      _showNotice(
-        'Bounded mode permits replies to an exact comment only',
-        isError: true,
-      );
-      return;
-    }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (dialogContext) => AlertDialog(
-            title: const Text('Use bounded delegation?'),
-            content: SizedBox(
-              width: 620,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'This queues only the exact reply shown below. WASM binds its draft and engagement hashes. The local policy allows at most 3 committed replies per UTC day, at least 30 minutes apart. Posts, root comments, votes, and follows remain blocked.',
-                    ),
-                    const SizedBox(height: 14),
-                    SelectableText(
-                      draft.body,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Target comment: ${draft.targetCommentId}\n'
-                      'Draft: ${draft.draftHashHex.substring(0, 12)}…',
-                      style: const TextStyle(color: Color(0xFF9CA7B5)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Keep assisted'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Authorize exact reply'),
-              ),
-            ],
-          ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _publicationBusy = true);
-    try {
-      final result = await widget.module.advanceMoltbookEngagement(
-        engagementPlan: plan,
-        draft: draft,
-        policy: MoltbookEngagementWritePolicy.bounded,
-        exactApproval: true,
-        processAuthorizedEffect: true,
-      );
-      final publications = await widget.module.loadMoltbookPublications();
-      if (!mounted) return;
-      setState(() => _publications = publications);
-      _showNotice(
-        result.state == ExternalEffectState.succeeded
-            ? 'Exact bounded reply published and receipt verified'
-            : 'Exact bounded reply state: ${result.state.wireName} '
-                '(${result.lastErrorCode ?? "awaiting provider result"})',
-        isError:
-            result.state != ExternalEffectState.succeeded &&
-            result.state != ExternalEffectState.unresolved,
-      );
-    } catch (error) {
-      if (mounted) {
-        _showNotice('Bounded reply blocked: $error', isError: true);
       }
     } finally {
       if (mounted) setState(() => _publicationBusy = false);
@@ -1053,12 +993,78 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   @override
   Widget build(BuildContext context) {
     final verificationOperation = _latestOperationWhere(
-      (operation) => operation.requiredAction != null,
+      (operation) =>
+          operation.requiredAction != null && !operation.state.isTerminal,
+    );
+    final recoverableOperation = _latestOperationWhere(
+      (operation) =>
+          operation.state == ExternalEffectState.unresolved &&
+          operation.requiredAction == null,
     );
     final queuedOperation = _latestOperationWhere(
       (operation) => operation.state == ExternalEffectState.queued,
     );
     final latestDraft = _storedDrafts.isEmpty ? null : _storedDrafts.first;
+    final challengedCount =
+        _publications
+            .where(
+              (operation) =>
+                  operation.requiredAction != null &&
+                  !operation.state.isTerminal,
+            )
+            .length;
+    final terminalFailureCount =
+        _publications
+            .where(
+              (operation) =>
+                  operation.state == ExternalEffectState.terminalFailure,
+            )
+            .length;
+    final projectedChallengedCount =
+        challengedCount > (_cycleSummary?.challengedCount ?? 0)
+            ? challengedCount
+            : (_cycleSummary?.challengedCount ?? 0);
+    final projectedBlockedCount =
+        terminalFailureCount > (_cycleSummary?.blockedCount ?? 0)
+            ? terminalFailureCount
+            : (_cycleSummary?.blockedCount ?? 0);
+    final projection = MoltbookWorkspaceProjection.resolve(
+      connected: _binding != null,
+      enabled: _enabled,
+      triggerPhase: _cycleTriggerSnapshot?.phase,
+      cycleSummary: _cycleSummary,
+      observing: _connectionBusy,
+      proposing: _replyBusy || _draftBusy || _publicFactsBusy,
+      delivering: _publicationBusy,
+      hasVerification: verificationOperation != null,
+      hasRecoverableEffect: recoverableOperation != null,
+      hasQueuedEffect: queuedOperation != null,
+      hasReplyDraft: _replyDraftPreview != null,
+      hasLocalDraft: latestDraft != null,
+      proposedCount:
+          _storedDrafts.length + (_replyDraftPreview == null ? 0 : 1),
+      publishedCount:
+          _publications
+              .where(
+                (operation) => operation.state == ExternalEffectState.succeeded,
+              )
+              .length,
+      challengedCount: projectedChallengedCount,
+      blockedCount: projectedBlockedCount,
+    );
+    final VoidCallback? nextAction = switch (projection.nextAction) {
+      MoltbookWorkspaceNextAction.verify =>
+        () => _resolvePublicationVerification(verificationOperation!),
+      MoltbookWorkspaceNextAction.reconcile =>
+        () => _processPublication(recoverableOperation!),
+      MoltbookWorkspaceNextAction.publish =>
+        () => _processPublication(queuedOperation!),
+      MoltbookWorkspaceNextAction.reviewReply => _reviewReplyPublication,
+      MoltbookWorkspaceNextAction.reviewDraft =>
+        () => _reviewPublication(latestDraft!),
+      MoltbookWorkspaceNextAction.runCycle => _planHeartbeat,
+      _ => null,
+    };
     return Scaffold(
       appBar: AppBar(title: const Text('Moltbook Ambassador')),
       body:
@@ -1080,25 +1086,18 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                   ),
                   const SizedBox(height: 16),
                   _MoltbookWorkflowCard(
-                    connected: _binding != null,
-                    hasDraft: latestDraft != null,
-                    queuedOperation: queuedOperation,
-                    verificationOperation: verificationOperation,
-                    busy: _draftBusy || _publicationBusy,
-                    onReview:
-                        latestDraft == null
-                            ? null
-                            : () => _reviewPublication(latestDraft),
-                    onPublish:
-                        queuedOperation == null
-                            ? null
-                            : () => _processPublication(queuedOperation),
-                    onVerify:
-                        verificationOperation == null
-                            ? null
-                            : () => _resolvePublicationVerification(
-                              verificationOperation,
-                            ),
+                    projection: projection,
+                    writePolicy: _approvalMode,
+                    triggerPolicy: _triggerPolicy,
+                    busy:
+                        _connectionBusy ||
+                        _replyBusy ||
+                        _draftBusy ||
+                        _publicFactsBusy ||
+                        _publicationBusy ||
+                        _saving,
+                    onNextAction: nextAction,
+                    onStop: _stopCycles,
                   ),
                   const SizedBox(height: 20),
                   _MoltbookConnectionCard(
@@ -1123,11 +1122,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     onPlanEngagement: _planEngagement,
                     onProposeReply: _proposeReply,
                     onPrepareReply: _prepareReply,
-                    onReviewReplyPublication: _reviewReplyPublication,
-                    onQueueBoundedReply: _queueBoundedReply,
                     onReplyChanged:
                         () => setState(() => _replyDraftPreview = null),
-                    onPlanHeartbeat: _planHeartbeat,
                     onDisconnect: _disconnect,
                   ),
                   const SizedBox(height: 20),
@@ -1161,9 +1157,6 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     const SizedBox(height: 20),
                     _MoltbookPublicationCard(
                       operations: _publications,
-                      busy: _publicationBusy,
-                      onProcess: _processPublication,
-                      onResolveVerification: _resolvePublicationVerification,
                       onOpenPost: _openPublishedPost,
                     ),
                   ],
@@ -1270,11 +1263,6 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     spacing: 10,
                     runSpacing: 10,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: _saving ? null : _stopCycles,
-                        icon: const Icon(Icons.stop_circle_outlined),
-                        label: const Text('Stop cycles'),
-                      ),
                       FilledButton.icon(
                         onPressed: _saving ? null : _save,
                         icon:
@@ -1298,72 +1286,76 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
 }
 
 class _MoltbookWorkflowCard extends StatelessWidget {
-  final bool connected;
-  final bool hasDraft;
-  final ExternalEffectOperation? queuedOperation;
-  final ExternalEffectOperation? verificationOperation;
+  final MoltbookWorkspaceProjection projection;
+  final String writePolicy;
+  final String triggerPolicy;
   final bool busy;
-  final VoidCallback? onReview;
-  final VoidCallback? onPublish;
-  final VoidCallback? onVerify;
+  final VoidCallback? onNextAction;
+  final VoidCallback onStop;
 
   const _MoltbookWorkflowCard({
-    required this.connected,
-    required this.hasDraft,
-    required this.queuedOperation,
-    required this.verificationOperation,
+    required this.projection,
+    required this.writePolicy,
+    required this.triggerPolicy,
     required this.busy,
-    required this.onReview,
-    required this.onPublish,
-    required this.onVerify,
+    required this.onNextAction,
+    required this.onStop,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final hasVerification = verificationOperation != null;
-    final hasQueued = queuedOperation != null;
-    final String title;
-    final String description;
-    final String? actionLabel;
-    final IconData actionIcon;
-    final VoidCallback? action;
-
-    if (!connected) {
-      title = 'Next: connect your Moltbook account';
-      description = 'Add the API key in the connection section below.';
-      actionLabel = null;
-      actionIcon = Icons.key_outlined;
-      action = null;
-    } else if (hasVerification) {
-      title = 'Next: verify the hidden post';
-      description =
-          'Moltbook created the post. Complete its anti-spam challenge before it expires.';
-      actionLabel = 'Verify post now';
-      actionIcon = Icons.verified_user_outlined;
-      action = onVerify;
-    } else if (hasQueued) {
-      title = 'Next: publish the approved post';
-      description =
-          'The exact text is approved and queued locally. Nothing has been sent yet.';
-      actionLabel = 'Publish approved post';
-      actionIcon = Icons.public;
-      action = onPublish;
-    } else if (hasDraft) {
-      title = 'Next: review the exact post';
-      description =
-          'The draft is local. Review the final public text before approving it.';
-      actionLabel = 'Review latest draft';
-      actionIcon = Icons.rate_review_outlined;
-      action = onReview;
-    } else {
-      title = 'Next: create a local draft';
-      description =
-          'Enter one or more public facts below. Draft creation does not publish anything.';
-      actionLabel = null;
-      actionIcon = Icons.edit_note_outlined;
-      action = null;
-    }
+    final (title, description, actionLabel, actionIcon) = switch (projection
+        .nextAction) {
+      MoltbookWorkspaceNextAction.connect => (
+        'Next: connect your Moltbook account',
+        'Add the API key in the account section below.',
+        null,
+        Icons.key_outlined,
+      ),
+      MoltbookWorkspaceNextAction.verify => (
+        'Next: verify the challenged publication',
+        'The provider accepted the effect but requires human anti-spam verification.',
+        'Verify now',
+        Icons.verified_user_outlined,
+      ),
+      MoltbookWorkspaceNextAction.reconcile => (
+        'Next: reconcile the unresolved effect',
+        'Check provider evidence before any retry. No second effect path is available.',
+        'Reconcile effect',
+        Icons.sync_problem_outlined,
+      ),
+      MoltbookWorkspaceNextAction.publish => (
+        'Next: deliver the approved effect',
+        'The exact text is approved and queued locally. Nothing new will be prepared first.',
+        'Publish approved effect',
+        Icons.public,
+      ),
+      MoltbookWorkspaceNextAction.reviewReply => (
+        'Next: review the exact reply',
+        'One WASM-bound reply is ready for explicit Assisted approval.',
+        'Review reply',
+        Icons.rate_review_outlined,
+      ),
+      MoltbookWorkspaceNextAction.reviewDraft => (
+        'Next: review the exact post',
+        'The latest draft remains local until explicit approval.',
+        'Review latest draft',
+        Icons.rate_review_outlined,
+      ),
+      MoltbookWorkspaceNextAction.runCycle => (
+        'Next: observe and plan one cycle',
+        'Read bounded public activity and create local proposals without publishing.',
+        'Run one cycle',
+        Icons.play_circle_outline_rounded,
+      ),
+      MoltbookWorkspaceNextAction.none => (
+        'Ambassador is stopped',
+        'Existing journals and receipts are preserved. Enable and save the profile to resume.',
+        null,
+        Icons.stop_circle_outlined,
+      ),
+    };
 
     return Card(
       margin: EdgeInsets.zero,
@@ -1410,32 +1402,76 @@ class _MoltbookWorkflowCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            const Wrap(
+            Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                _WorkflowStep(number: '1', label: 'Draft'),
-                _WorkflowStep(number: '2', label: 'Review'),
-                _WorkflowStep(number: '3', label: 'Approve'),
-                _WorkflowStep(number: '4', label: 'Publish & verify'),
+                _WorkspacePolicyChip(
+                  icon: Icons.edit_note_outlined,
+                  label: 'Write · ${_writePolicyLabel(writePolicy)}',
+                ),
+                _WorkspacePolicyChip(
+                  icon: Icons.schedule_outlined,
+                  label: 'Trigger · ${_triggerPolicyLabel(triggerPolicy)}',
+                ),
+                _WorkspacePolicyChip(
+                  icon: Icons.motion_photos_on_outlined,
+                  label: 'Cycle · ${_phaseLabel(projection.phase)}',
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _CycleMetric(label: 'Read', value: projection.readCount),
+                _CycleMetric(
+                  label: 'Eligible',
+                  value: projection.eligibleCount,
+                ),
+                _CycleMetric(
+                  label: 'Proposed',
+                  value: projection.proposedCount,
+                ),
+                _CycleMetric(
+                  label: 'Published',
+                  value: projection.publishedCount,
+                ),
+                _CycleMetric(
+                  label: 'Challenged',
+                  value: projection.challengedCount,
+                ),
+                _CycleMetric(label: 'Blocked', value: projection.blockedCount),
               ],
             ),
             if (actionLabel != null) ...[
               const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: busy ? null : action,
-                  icon:
-                      busy
-                          ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                          : Icon(actionIcon),
-                  label: Text(busy ? 'Working…' : actionLabel),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: busy ? null : onNextAction,
+                      icon:
+                          busy
+                              ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : Icon(actionIcon),
+                      label: Text(busy ? 'Working…' : actionLabel),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : onStop,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: const Text('Stop'),
+                  ),
+                ],
               ),
             ],
           ],
@@ -1443,13 +1479,36 @@ class _MoltbookWorkflowCard extends StatelessWidget {
       ),
     );
   }
+
+  static String _writePolicyLabel(String policy) => switch (policy) {
+    MoltbookAmbassadorConfiguration.approvalDraft => 'Draft only',
+    MoltbookAmbassadorConfiguration.approvalAssisted => 'Assisted',
+    _ => 'Unknown',
+  };
+
+  static String _triggerPolicyLabel(String policy) => switch (policy) {
+    MoltbookAmbassadorConfiguration.triggerOnDemand => 'On demand',
+    MoltbookAmbassadorConfiguration.triggerSession => 'Session',
+    MoltbookAmbassadorConfiguration.triggerContinuous => 'Continuous',
+    _ => 'Unknown',
+  };
+
+  static String _phaseLabel(MoltbookWorkspaceCyclePhase phase) =>
+      switch (phase) {
+        MoltbookWorkspaceCyclePhase.idle => 'Idle',
+        MoltbookWorkspaceCyclePhase.observing => 'Observing',
+        MoltbookWorkspaceCyclePhase.proposing => 'Proposing',
+        MoltbookWorkspaceCyclePhase.delivering => 'Delivering',
+        MoltbookWorkspaceCyclePhase.stopped => 'Stopped',
+        MoltbookWorkspaceCyclePhase.blocked => 'Blocked',
+      };
 }
 
-class _WorkflowStep extends StatelessWidget {
-  final String number;
+class _WorkspacePolicyChip extends StatelessWidget {
+  final IconData icon;
   final String label;
 
-  const _WorkflowStep({required this.number, required this.label});
+  const _WorkspacePolicyChip({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -1461,13 +1520,37 @@ class _WorkflowStep extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-        child: Text(
-          '$number  $label',
-          style: TextStyle(
-            color: colorScheme.onSurface,
-            fontWeight: FontWeight.w700,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16),
+            const SizedBox(width: 6),
+            Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _CycleMetric extends StatelessWidget {
+  final String label;
+  final int value;
+
+  const _CycleMetric({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '$value  $label',
+        style: const TextStyle(fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -1550,17 +1633,10 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
 
 class _MoltbookPublicationCard extends StatelessWidget {
   final List<ExternalEffectOperation> operations;
-  final bool busy;
-  final Future<void> Function(ExternalEffectOperation operation) onProcess;
-  final Future<void> Function(ExternalEffectOperation operation)
-  onResolveVerification;
   final Future<void> Function(Uri uri) onOpenPost;
 
   const _MoltbookPublicationCard({
     required this.operations,
-    required this.busy,
-    required this.onProcess,
-    required this.onResolveVerification,
     required this.onOpenPost,
   });
 
@@ -1591,53 +1667,65 @@ class _MoltbookPublicationCard extends StatelessWidget {
               final postUri = MoltbookPublicationService.publishedPostUri(
                 operation,
               );
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
+              final target =
+                  isReply
+                      ? payload['parent_comment_id']?.toString() ?? 'post root'
+                      : 'm/${payload['submolt_name'] ?? "unknown"}';
+              final exactText =
+                  payload['content']?.toString() ??
+                  payload['body']?.toString() ??
+                  '';
+              return ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 12),
                 title: Text(
-                  '${isReply ? "Reply" : "Post"} · '
+                  '${isReply ? "Reply" : "Post"} to $target · '
                   '${operation.state.wireName.replaceAll('_', ' ')}',
                 ),
                 subtitle: Text(
-                  '${operation.operationId}\n'
-                  'attempts ${operation.attemptCount} · '
-                  '${operation.lastErrorCode ?? "no error"}',
+                  exactText,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                isThreeLine: true,
                 trailing:
                     postUri != null
-                        ? FilledButton.tonalIcon(
-                          onPressed: busy ? null : () => onOpenPost(postUri),
-                          icon: const Icon(Icons.open_in_new, size: 18),
-                          label: Text(isReply ? 'Open thread' : 'Open post'),
-                        )
-                        : operation.state == ExternalEffectState.queued ||
-                            operation.state == ExternalEffectState.unresolved
-                        ? FilledButton.icon(
-                          onPressed:
-                              busy
-                                  ? null
-                                  : operation.requiredAction != null
-                                  ? () => onResolveVerification(operation)
-                                  : () => onProcess(operation),
-                          icon: Icon(
-                            operation.requiredAction != null
-                                ? Icons.verified_user_outlined
-                                : Icons.public,
-                            size: 18,
-                          ),
-                          label: Text(
-                            operation.state == ExternalEffectState.queued
-                                ? 'Publish'
-                                : operation.requiredAction != null
-                                ? 'Verify'
-                                : 'Reconcile',
-                          ),
+                        ? IconButton(
+                          tooltip: isReply ? 'Open thread' : 'Open post',
+                          onPressed: () => onOpenPost(postUri),
+                          icon: const Icon(Icons.open_in_new),
                         )
                         : Icon(
                           operation.state == ExternalEffectState.succeeded
                               ? Icons.verified_outlined
                               : Icons.info_outline,
                         ),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Exact public text',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 4),
+                        SelectableText(exactText),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Mode: explicit approval · state: ${operation.state.wireName}\n'
+                          'Provider: ${operation.providerId} · attempts: ${operation.attemptCount}\n'
+                          'Operation: ${operation.operationId}\n'
+                          'Receipt: ${operation.receipt?.providerReceiptId ?? "not confirmed"}',
+                          style: const TextStyle(
+                            color: Color(0xFF9CA7B5),
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               );
             }),
           ],
@@ -1926,10 +2014,7 @@ class _MoltbookConnectionCard extends StatelessWidget {
   final VoidCallback onPlanEngagement;
   final VoidCallback onProposeReply;
   final VoidCallback onPrepareReply;
-  final VoidCallback onReviewReplyPublication;
-  final VoidCallback onQueueBoundedReply;
   final VoidCallback onReplyChanged;
-  final VoidCallback onPlanHeartbeat;
   final VoidCallback onDisconnect;
 
   const _MoltbookConnectionCard({
@@ -1954,10 +2039,7 @@ class _MoltbookConnectionCard extends StatelessWidget {
     required this.onPlanEngagement,
     required this.onProposeReply,
     required this.onPrepareReply,
-    required this.onReviewReplyPublication,
-    required this.onQueueBoundedReply,
     required this.onReplyChanged,
-    required this.onPlanHeartbeat,
     required this.onDisconnect,
   });
 
@@ -1998,32 +2080,39 @@ class _MoltbookConnectionCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 8,
-              children:
-                  current == null
-                      ? <Widget>[
-                        FilledButton.icon(
-                          onPressed: busy ? null : onConnect,
-                          icon:
-                              busy
-                                  ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                  : const Icon(Icons.link_rounded),
-                          label: const Text('Verify and connect'),
-                        ),
-                      ]
-                      : <Widget>[
+            if (current == null)
+              FilledButton.icon(
+                onPressed: busy ? null : onConnect,
+                icon:
+                    busy
+                        ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.link_rounded),
+                label: const Text('Verify and connect'),
+              )
+            else
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 8),
+                leading: const Icon(Icons.tune_rounded),
+                title: const Text('Technical account controls'),
+                subtitle: const Text(
+                  'Manual provider reads and connection maintenance',
+                ),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: [
                         FilledButton.tonalIcon(
                           onPressed: busy ? null : onRefresh,
                           icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Refresh'),
+                          label: const Text('Refresh account'),
                         ),
                         FilledButton.tonalIcon(
                           onPressed: busy ? null : onObserveHome,
@@ -2035,18 +2124,16 @@ class _MoltbookConnectionCard extends StatelessWidget {
                           icon: const Icon(Icons.dynamic_feed_outlined),
                           label: const Text('Observe feed'),
                         ),
-                        FilledButton.icon(
-                          onPressed: busy ? null : onPlanHeartbeat,
-                          icon: const Icon(Icons.favorite_outline_rounded),
-                          label: const Text('Run cycle'),
-                        ),
                         OutlinedButton.icon(
                           onPressed: busy ? null : onDisconnect,
                           icon: const Icon(Icons.link_off_rounded),
                           label: const Text('Disconnect'),
                         ),
                       ],
-            ),
+                    ),
+                  ),
+                ],
+              ),
             if (homeObservation != null) ...[
               const SizedBox(height: 14),
               const Divider(),
@@ -2275,18 +2362,13 @@ class _MoltbookConnectionCard extends StatelessWidget {
                               height: 1.35,
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          FilledButton.icon(
-                            onPressed:
-                                replyBusy ? null : onReviewReplyPublication,
-                            icon: const Icon(Icons.rate_review_outlined),
-                            label: const Text('Review & queue reply'),
-                          ),
                           const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            onPressed: replyBusy ? null : onQueueBoundedReply,
-                            icon: const Icon(Icons.policy_outlined),
-                            label: const Text('Bounded queue · 3/day'),
+                          const Text(
+                            'Continue with the single next action at the top of this workspace.',
+                            style: TextStyle(
+                              color: Color(0xFF9CA7B5),
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ],
                       ],
@@ -2344,34 +2426,32 @@ class _MoltbookConnectionCard extends StatelessWidget {
             if (heartbeatPlan != null) ...[
               const SizedBox(height: 14),
               const Divider(),
-              const SizedBox(height: 8),
-              Text(
-                'Heartbeat · ${heartbeatPlan!.priority.replaceAll("_", " ")}',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                heartbeatPlan!.reason,
-                style: const TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${heartbeatPlan!.candidatePostIds.length} candidates · '
-                'review required · no external effect',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              if (feedCheckpoint?.lastObservedAtUtc != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '${feedCheckpoint!.processedPostIds.length} remote post ids '
-                  'remembered · checkpoint '
-                  '${feedCheckpoint!.lastObservedAtUtc}',
-                  style: const TextStyle(
-                    color: Color(0xFF9CA7B5),
-                    height: 1.35,
-                  ),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                leading: const Icon(Icons.analytics_outlined),
+                title: Text(
+                  'Technical cycle details · '
+                  '${heartbeatPlan!.priority.replaceAll("_", " ")}',
                 ),
-              ],
+                subtitle: Text(
+                  '${heartbeatPlan!.candidatePostIds.length} candidates · no external effect',
+                ),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '${heartbeatPlan!.reason}\n'
+                      '${feedCheckpoint?.processedPostIds.length ?? 0} remote post ids remembered\n'
+                      'Checkpoint: ${feedCheckpoint?.lastObservedAtUtc ?? "not committed"}\n'
+                      'Plan hash: ${heartbeatPlan!.planHashHex}',
+                      style: const TextStyle(
+                        color: Color(0xFF9CA7B5),
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ],
         ),

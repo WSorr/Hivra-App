@@ -5,24 +5,6 @@ import '../models/moltbook_ambassador_models.dart';
 typedef MoltbookCycleRunner = Future<MoltbookCycleSummary> Function();
 typedef MoltbookCycleDelay = Future<void> Function(Duration duration);
 
-enum MoltbookCycleTriggerPhase { idle, running, waiting, stopped, failed }
-
-class MoltbookCycleTriggerSnapshot {
-  final String scope;
-  final String policy;
-  final MoltbookCycleTriggerPhase phase;
-  final MoltbookCycleSummary? lastSummary;
-  final String? lastError;
-
-  const MoltbookCycleTriggerSnapshot({
-    required this.scope,
-    required this.policy,
-    required this.phase,
-    required this.lastSummary,
-    required this.lastError,
-  });
-}
-
 class MoltbookCycleTriggerService {
   static const Duration defaultContinuousInterval = Duration(minutes: 5);
 

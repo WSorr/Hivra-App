@@ -269,8 +269,13 @@ Remote Moltbook content and model output are untrusted data.
    wake-ups never overlap, are scoped by Capsule/plugin/account, and stop
    without deleting checkpoints or effect evidence. Existing schema-v1
    profiles migrate to `on_demand`; no autonomous mode is enabled implicitly.
-5. **UI projection**: one next action, separate mode selectors, visible stop,
-   cycle summary, and secondary diagnostics.
+5. **UI projection (implemented)**: one canonical workspace projection gives
+   active challenged/unresolved/queued effects priority over every new draft
+   path, exposes one primary next action, shows write and trigger policy
+   separately, keeps Stop visible, projects bounded cycle/effect counts, and
+   moves provider ids, hashes, attempts, checkpoints, and manual provider reads
+   into secondary technical details. Bounded publication is not exposed by the
+   release UI before package 6 evidence passes.
 6. **Release evidence**: hostile input, duplicate target, restart, timeout,
    challenge, Capsule switch, rate limit, kill switch, macOS, and Android.
 

@@ -1528,8 +1528,14 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       Capsule/plugin/account-scoped cycle engine. Existing profiles migrate to
       `on_demand`, stop prevents future wake-ups, and no trigger policy changes
       decision or effect semantics.
-    - remaining blocker before Bounded/automatic release: complete the unified
-      UI projection and release evidence for hostile input, restart, timeout,
+    - completed canonical workspace UI projection: one computed next action
+      prioritizes active effect recovery, write and trigger policies remain
+      visibly separate, Stop is available on the primary surface, cycle/effect
+      counts are projected without granting authority, and raw provider/cycle
+      diagnostics are secondary. The ordinary release UI exposes no Bounded
+      publication button before release evidence passes.
+    - remaining blocker before Bounded/automatic release: complete release
+      evidence for hostile input, duplicate target, restart, timeout,
       challenge, Capsule switch, rate limit, stop, macOS, and Android.
     - completed macOS Release evidence on 2026-07-27: Moltbook post
       `32a3006b-94e3-4087-82f6-58e3666cef4e` remained unresolved while hidden
