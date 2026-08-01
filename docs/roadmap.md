@@ -1326,6 +1326,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         the real continuous-history head;
       - focused restart/restore and cross-platform recovery evidence remains
         the release blocker.
+      - P3-C automated recovery evidence now proves that backup wrapping
+        preserves the complete v5 continuity object and that partial backup or
+        derived-projection write failures retain the authoritative ledger
+        generation without inventing a second truth. Packaged macOS/Android
+        restart and restore smoke remains required before pass 3 closes.
     - Next ordered 12.3 item is the cryptographically continuous ledger
       implementation. Event-scoped delivery records, transport-health UI,
       plugin transactionality, encrypted backup envelopes, and

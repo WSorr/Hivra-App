@@ -96,6 +96,8 @@ CONSENSUS="$ROOT/flutter/lib/services/consensus_processor.dart"
 CONSENSUS_ATTESTATION_SYNC="$ROOT/flutter/lib/services/consensus_attestation_sync_service.dart"
 CONSENSUS_ATTESTATION_STORE="$ROOT/flutter/lib/services/consensus_attestation_store.dart"
 CAPSULE_FILE_STORE="$ROOT/flutter/lib/services/capsule_file_store.dart"
+CAPSULE_FILE_STORE_TEST="$ROOT/flutter/test/capsule_file_store_test.dart"
+CAPSULE_BACKUP_CODEC_TEST="$ROOT/flutter/test/capsule_backup_codec_test.dart"
 CAPSULE_INDEX_STORE="$ROOT/flutter/lib/services/capsule_index_store.dart"
 CAPSULE_PERSISTENCE="$ROOT/flutter/lib/services/capsule_persistence_service.dart"
 CAPSULE_SECRET_VAULT="$ROOT/flutter/lib/services/capsule_scoped_secret_vault.dart"
@@ -236,6 +238,10 @@ require_present "$CONTINUOUS_LEDGER_PROTOCOL" '^### P3-B: Engine and FFI append/
   "continuous-ledger contract defines Engine/FFI implementation unit"
 require_present "$CONTINUOUS_LEDGER_PROTOCOL" '^### P3-C: Persistence and release evidence' \
   "continuous-ledger contract defines persistence implementation unit"
+require_present "$CAPSULE_BACKUP_CODEC_TEST" 'preserves continuous v5 evidence through backup envelope' \
+  "continuous-ledger backup evidence preserves the complete v5 export object"
+require_present "$CAPSULE_FILE_STORE_TEST" 'keeps ledger and backup generation when derived projection fails' \
+  "continuous-ledger persistence permits only the derived projection to lag"
 require_present "$DOCS_README" 'continuous-ledger-protocol-v5\.md' \
   "docs index references continuous-ledger protocol"
 require_present "$DELIVERY_LIFECYCLE_DOC" 'delivery recovery index' \

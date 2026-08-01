@@ -178,6 +178,17 @@ one owner-signed anchor begins subsequent v5 history.
 - run adversarial import vectors and focused macOS/Android smoke before a
   release candidate.
 
+**Current automated evidence:** the Flutter backup codec preserves the complete
+v5 export object, including the continuity anchor, receipts, signatures, and
+`head_commitment_v5`, without translating it into a Flutter-owned ledger DTO.
+Persistence failure tests prove the authoritative ordering in both partial
+failure directions: backup failure leaves the newly durable ledger intact,
+while derived-projection failure leaves the matching ledger and backup
+generation intact and permits the projection cache to lag. Rust FFI tests
+verify that a fresh signed v5 history exports, reimports, and verifies against
+the same root. Packaged macOS/Android restart and restore evidence remains the
+P3-C release blocker.
+
 Pass 3 is complete only after P3-A through P3-C land with the old mutable v4
 append path removed or sealed for new state.
 

@@ -31,6 +31,16 @@ class _FailingBackupAtomicFileWriteService extends AtomicFileWriteService {
   }
 }
 
+class _FailingProjectionAtomicFileWriteService extends AtomicFileWriteService {
+  @override
+  Future<void> writeString(File target, String contents) {
+    if (target.path.endsWith(CapsuleFileStore.stateFileName)) {
+      throw const FileSystemException('simulated projection failure');
+    }
+    return super.writeString(target, contents);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory tempDocsDir;
@@ -122,6 +132,34 @@ void main() {
 
       expect(await safeStore.readLedger(dir), '{"generation":2}');
       expect(await safeStore.readBackup(dir), isNull);
+    },
+  );
+
+  test(
+    'keeps ledger and backup generation when derived projection fails',
+    () async {
+      final dir = await store.capsuleDirForHex(capsuleHex, create: true);
+      await store.writeState(dir, <String, dynamic>{
+        'coreProjection': <String, dynamic>{'version': 1},
+      });
+      final safeStore = CapsuleFileStore(
+        dirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+        atomicWrites: _FailingProjectionAtomicFileWriteService(),
+      );
+
+      await safeStore.writeLedgerSnapshot(
+        dir,
+        ledgerJson: '{"generation":2}',
+        backupJson: '{"generation":2}',
+        coreProjectionJson: '{"version":2,"ledger_hash":"22","slots":[]}',
+      );
+
+      expect(await safeStore.readLedger(dir), '{"generation":2}');
+      expect(await safeStore.readBackup(dir), '{"generation":2}');
+      expect(
+        (await store.readState(dir))?['coreProjection'],
+        equals(<String, dynamic>{'version': 1}),
+      );
     },
   );
 
