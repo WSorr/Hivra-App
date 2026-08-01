@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,6 +11,7 @@ import '../services/ai_doctor_prompt_service.dart';
 import '../services/ai_plugin_audit_service.dart';
 import '../services/ai_tooling_module_service.dart';
 import '../services/app_runtime_service.dart';
+import '../services/hivra_file_picker_service.dart';
 import '../services/inference_provider_adapter.dart';
 import '../services/ui_event_log_service.dart';
 import '../widgets/ai_diagnostics/developer_workspace_widgets.dart';
@@ -956,7 +956,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
 
   Future<void> _pickWorkspaceDirectory() async {
     if (_busy) return;
-    final selectedPath = await getDirectoryPath(
+    final selectedPath = await HivraFilePickerService.selectDirectory(
       confirmButtonText: 'Add repository',
     );
     if (selectedPath == null || selectedPath.trim().isEmpty) return;

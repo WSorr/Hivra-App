@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/capsule_backup_codec.dart';
+import '../services/hivra_file_picker_service.dart';
 import '../services/recovery_service.dart';
 
 class RecoveryScreen extends StatefulWidget {
@@ -76,11 +76,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
 
   Future<void> _pickBackupFile() async {
     try {
-      final file = await openFile(
-        acceptedTypeGroups: const [
-          XTypeGroup(label: 'JSON', extensions: ['json']),
-        ],
-      );
+      final file = await HivraFilePickerService.openJsonDocument();
       if (file == null) return;
 
       final raw = await File(file.path).readAsString();
@@ -97,8 +93,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       setState(() {
         _selectedBackupLedgerJson = ledgerJson;
         _selectedBackupName = file.name;
-        _selectedBackupIsGenesis =
-            widget.service.extractGenesisHintFromBackupJson(raw);
+        _selectedBackupIsGenesis = widget.service
+            .extractGenesisHintFromBackupJson(raw);
         _errorMessage = null;
       });
     } catch (e) {
@@ -116,7 +112,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       if (raw == null || raw.isEmpty) {
         if (!mounted) return;
         setState(() {
-          _errorMessage = 'Clipboard is empty. Copy a backup JSON file and try again.';
+          _errorMessage =
+              'Clipboard is empty. Copy a backup JSON file and try again.';
         });
         return;
       }
@@ -135,8 +132,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       setState(() {
         _selectedBackupLedgerJson = ledgerJson;
         _selectedBackupName = 'Pasted from clipboard';
-        _selectedBackupIsGenesis =
-            widget.service.extractGenesisHintFromBackupJson(raw);
+        _selectedBackupIsGenesis = widget.service
+            .extractGenesisHintFromBackupJson(raw);
         _errorMessage = null;
       });
 
@@ -154,9 +151,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Recover Capsule'),
-      ),
+      appBar: AppBar(title: const Text('Recover Capsule')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -194,9 +189,10 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
                 hintText: 'Enter seed phrase...',
                 border: const OutlineInputBorder(),
                 errorText: _errorMessage,
-                suffixIcon: _isValid
-                    ? const Icon(Icons.check_circle, color: Colors.green)
-                    : null,
+                suffixIcon:
+                    _isValid
+                        ? const Icon(Icons.check_circle, color: Colors.green)
+                        : null,
               ),
             ),
             const SizedBox(height: 16),

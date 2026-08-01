@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/capsule_selector_service.dart';
+import '../services/hivra_file_picker_service.dart';
 import '../services/ui_event_log_service.dart';
 import 'main_screen.dart';
 import 'first_launch_screen.dart';
@@ -133,11 +133,7 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
 
   Future<void> _importCapsule() async {
     try {
-      final file = await openFile(
-        acceptedTypeGroups: const [
-          XTypeGroup(label: 'JSON', extensions: ['json']),
-        ],
-      );
+      final file = await HivraFilePickerService.openJsonDocument();
       if (file == null) return;
 
       final raw = await File(file.path).readAsString();
@@ -181,7 +177,9 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
         return;
       }
 
-      final folder = await getDirectoryPath(confirmButtonText: 'Save Here');
+      final folder = await HivraFilePickerService.selectDirectory(
+        confirmButtonText: 'Save Here',
+      );
       if (folder == null || folder.isEmpty) return;
 
       final targetPath =

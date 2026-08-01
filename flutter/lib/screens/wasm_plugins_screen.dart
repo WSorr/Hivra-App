@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../models/capsule_chat_models.dart';
@@ -9,6 +8,7 @@ import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import '../services/app_runtime_service.dart';
+import '../services/hivra_file_picker_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../utils/peer_identity_format.dart';
 import '../utils/runtime_capability_display.dart';
@@ -133,14 +133,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   }
 
   Future<void> _installPlugin() async {
-    final file = await openFile(
-      acceptedTypeGroups: const <XTypeGroup>[
-        XTypeGroup(
-          label: 'WASM plugin packages',
-          extensions: <String>['wasm', 'zip'],
-        ),
-      ],
-    );
+    final file = await HivraFilePickerService.openPluginPackage();
     if (file == null) return;
     await _module.uiLog.log(
       'plugin.install.pick',
@@ -327,13 +320,13 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       return null;
     }
 
-    final candidates = checks.toList()
-      ..sort((left, right) {
-        if (left.isSignable == right.isSignable) {
-          return left.peerHex.compareTo(right.peerHex);
-        }
-        return left.isSignable ? -1 : 1;
-      });
+    final candidates =
+        checks.toList()..sort((left, right) {
+          if (left.isSignable == right.isSignable) {
+            return left.peerHex.compareTo(right.peerHex);
+          }
+          return left.isSignable ? -1 : 1;
+        });
 
     if (candidates.length == 1) {
       return candidates.first.peerHex;
