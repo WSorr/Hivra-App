@@ -1382,6 +1382,13 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         and a cold restart preserved it. This narrows the remaining blocker but
         does not replace packaged macOS/Android evidence for the next release
         candidate.
+      - current-line Android update/restart smoke completed on 2026-08-01 from
+        source `9df510c` using a development `versionCode=100000318` installed
+        over `100000317`: both cold starts selected the same Capsule
+        `5996bcbe...0d6e` and projected the same ledger `v74`; bootstrap and
+        Keystore access completed without errors. This is build-tree continuity
+        evidence only. It does not satisfy clean packaged restore or release
+        signoff for `v1.0.3-test15`.
       - local macOS cold-restart smoke completed on 2026-08-01 from the same
         runtime checkpoint: the selector reconstructed three existing capsules
         at ledger versions `94`, `49`, and `111`; all three canonical
