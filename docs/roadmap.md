@@ -1389,6 +1389,14 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         Keystore access completed without errors. This is build-tree continuity
         evidence only. It does not satisfy clean packaged restore or release
         signoff for `v1.0.3-test15`.
+      - current-source Android clean restore smoke completed on 2026-08-01 at
+        `1d12554`: after uninstall and clean install, standalone backup import
+        required the matching recovery phrase before activation, restored
+        owner `5996bcbe...0d6e` with ledger `v74`, persisted the seed in Android
+        Keystore, and cold-started again without another phrase prompt while
+        preserving the same owner and ledger. This validates the repaired
+        backup-to-seed binding path but remains development evidence until the
+        guarded packaged candidate is built and signed off.
       - local macOS cold-restart smoke completed on 2026-08-01 from the same
         runtime checkpoint: the selector reconstructed three existing capsules
         at ledger versions `94`, `49`, and `111`; all three canonical
