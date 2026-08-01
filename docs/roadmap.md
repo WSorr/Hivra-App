@@ -1397,11 +1397,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         preserving the same owner and ledger. This validates the repaired
         backup-to-seed binding path but remains development evidence until the
         guarded packaged candidate is built and signed off.
+      - accepted-terminal projection reconciliation completed on 2026-08-01
+        at `c91cd81`:
+        - relay diagnostics proved that Android fetched and authenticated the
+          retained `InvitationAccepted` envelopes while the signed terminal
+          facts already existed in the local ledger;
+        - replay now idempotently reconciles a missing
+          `RelationshipEstablished` derivation instead of treating the
+          terminal fact as an exhausted no-op;
+        - the repair appends only missing signed derived facts and never
+          rewrites prior ledger history;
+        - focused regression coverage preserves one `InvitationAccepted` and
+          one derived relationship under repair;
+        - manual Android evidence restored `Kick`, `Spark`, `Juice`, and
+          `Seed` parity with peer `h1jd57...49q2vl`, advanced the ledger from
+          `v74` to `v79`, and retained `v79` across a cold restart.
       - local macOS cold-restart smoke completed on 2026-08-01 from the same
         runtime checkpoint: the selector reconstructed three existing capsules
         at ledger versions `94`, `49`, and `111`; all three canonical
         `ledger.json` SHA-256 values were byte-identical before and after the
         restart. This is continuity evidence only, not packaged restore signoff.
+      - selector and peer-identity cleanup completed at `e1c0c0a` and
+        `074b586`: selector rows read public summaries without activating a
+        Capsule or unlocking its seed, while local peer labels retain a
+        separate shortened root Capsule ID in operational UI.
     - Current ordered 12.3 item is closure of packaged macOS/Android restart
       and restore evidence for continuous-ledger pass 3. Canonical Core
       projection convergence (`5.1`) is complete. Event-scoped delivery
