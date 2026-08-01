@@ -55,6 +55,9 @@ class PluginChatSendResult {
 }
 
 class PluginRuntimeModule {
+  static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles =
+      <String, Future<MoltbookCycleSummary>>{};
+
   final WasmPluginRegistryService registry;
   final WasmPluginSourceCatalogService sourceCatalog;
   final ManualConsensusCheckService manualChecks;
@@ -534,16 +537,16 @@ class PluginRuntimeModule {
     if (ownerHex == null || ownerHex.length != 64) {
       throw StateError('Active capsule identity is unavailable');
     }
+    final binding = await moltbookConnection.loadBinding();
+    if (binding == null || !binding.isClaimed || !binding.isActive) {
+      throw StateError('Active Moltbook account binding is unavailable');
+    }
     await uiLog.log('moltbook.heartbeat.plan', 'start owner=$ownerHex');
     final checkpoint = await moltbookFeedCheckpoint.load();
     final observation = await moltbookConnection.observeHeartbeat(
       processedPostIds: checkpoint.processedPostIdSet,
     );
-    if (!_isStillOwnedBy(ownerHex)) {
-      throw StateError(
-        'Heartbeat discarded because the active capsule changed',
-      );
-    }
+    await _ensureMoltbookCycleScope(ownerHex, binding.accountId);
     final observedAtUtc = DateTime.now().toUtc().toIso8601String();
     final response = await pluginHostApi.executeWithRuntimeHook(
       PluginHostApiRequest(
@@ -592,11 +595,7 @@ class PluginRuntimeModule {
         },
       ),
     );
-    if (!_isStillOwnedBy(ownerHex)) {
-      throw StateError(
-        'Heartbeat discarded because the active capsule changed',
-      );
-    }
+    await _ensureMoltbookCycleScope(ownerHex, binding.accountId);
     final result = response.result;
     if (response.status != PluginHostApiStatus.executed || result == null) {
       throw StateError(
@@ -604,15 +603,12 @@ class PluginRuntimeModule {
       );
     }
     final plan = MoltbookHeartbeatPlan.fromHostResult(result);
+    await _ensureMoltbookCycleScope(ownerHex, binding.accountId);
     await moltbookFeedCheckpoint.commit(
       observation.feed,
       observedAt: DateTime.parse(observedAtUtc),
     );
-    if (!_isStillOwnedBy(ownerHex)) {
-      throw StateError(
-        'Heartbeat checkpoint discarded because the active capsule changed',
-      );
-    }
+    await _ensureMoltbookCycleScope(ownerHex, binding.accountId);
     await uiLog.log(
       'moltbook.heartbeat.plan',
       'success priority=${plan.priority} '
@@ -620,6 +616,134 @@ class PluginRuntimeModule {
           'hash=${plan.planHashHex.substring(0, 12)}..',
     );
     return plan;
+  }
+
+  Future<MoltbookCycleSummary> runMoltbookCycle() async {
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled) {
+      throw StateError('Moltbook Ambassador is disabled');
+    }
+    final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
+    if (ownerHex == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(ownerHex)) {
+      throw StateError('Active capsule identity is unavailable');
+    }
+    final binding = await moltbookConnection.loadBinding();
+    if (binding == null || !binding.isClaimed || !binding.isActive) {
+      throw StateError('Active Moltbook account binding is unavailable');
+    }
+    final scope =
+        '$ownerHex::$moltbookAmbassadorPluginId::${binding.accountId}';
+    final existing = _moltbookCycles[scope];
+    if (existing != null) return existing;
+
+    final cycle = _runMoltbookCycle(
+      ownerHex: ownerHex,
+      accountBindingId: binding.accountId,
+      startedAtUtc: DateTime.now().toUtc(),
+    );
+    _moltbookCycles[scope] = cycle;
+    void releaseCycle() {
+      if (identical(_moltbookCycles[scope], cycle)) {
+        _moltbookCycles.remove(scope);
+      }
+    }
+
+    cycle.then<void>(
+      (_) => releaseCycle(),
+      onError: (Object _, StackTrace _) => releaseCycle(),
+    );
+    return cycle;
+  }
+
+  Future<MoltbookCycleSummary> _runMoltbookCycle({
+    required String ownerHex,
+    required String accountBindingId,
+    required DateTime startedAtUtc,
+  }) async {
+    await uiLog.log(
+      'moltbook.cycle',
+      'wake owner=$ownerHex account=$accountBindingId',
+    );
+    await _ensureMoltbookCycleScope(ownerHex, accountBindingId);
+    final before = await moltbookFeedCheckpoint.load();
+    var reconciledCount = 0;
+    var challengedCount = 0;
+    var blockedCount = 0;
+    final unresolved = (await moltbookPublications.list())
+        .where((operation) => operation.state == ExternalEffectState.unresolved)
+        .toList(growable: false);
+    for (final operation in unresolved) {
+      await _ensureMoltbookCycleScope(ownerHex, accountBindingId);
+      try {
+        final resolved = await moltbookPublications.process(
+          operation.operationId,
+        );
+        reconciledCount++;
+        if (resolved.requiredAction != null ||
+            resolved.lastErrorCode == 'verification_required') {
+          challengedCount++;
+        }
+      } catch (error) {
+        blockedCount++;
+        await uiLog.log(
+          'moltbook.cycle.reconcile',
+          'blocked operation=${operation.operationId} ${_safeError(error)}',
+        );
+      }
+    }
+    await _ensureMoltbookCycleScope(ownerHex, accountBindingId);
+    final heartbeatPlan = await planMoltbookHeartbeat();
+    final checkpoint = await moltbookFeedCheckpoint.load();
+    await _ensureMoltbookCycleScope(ownerHex, accountBindingId);
+    final inspectedCount = checkpoint.processedPostIdSet
+        .difference(before.processedPostIdSet)
+        .length
+        .clamp(0, 100);
+    final completedAtUtc = DateTime.now().toUtc();
+    final summary = MoltbookCycleSummary(
+      ownerCapsuleHex: ownerHex,
+      accountBindingId: accountBindingId,
+      startedAtUtc: startedAtUtc.toIso8601String(),
+      completedAtUtc:
+          completedAtUtc.isBefore(startedAtUtc)
+              ? startedAtUtc.toIso8601String()
+              : completedAtUtc.toIso8601String(),
+      inspectedCount: inspectedCount,
+      candidateCount: heartbeatPlan.candidatePostIds.length,
+      reconciledCount: reconciledCount,
+      challengedCount: challengedCount,
+      blockedCount: blockedCount,
+      heartbeatPlan: heartbeatPlan,
+      checkpoint: checkpoint,
+    );
+    summary.validate();
+    await uiLog.log(
+      'moltbook.cycle',
+      'sleep inspected=${summary.inspectedCount} '
+          'candidates=${summary.candidateCount} '
+          'reconciled=${summary.reconciledCount} '
+          'challenged=${summary.challengedCount} '
+          'blocked=${summary.blockedCount}',
+    );
+    return summary;
+  }
+
+  Future<void> _ensureMoltbookCycleScope(
+    String ownerHex,
+    String accountBindingId,
+  ) async {
+    if (!_isStillOwnedBy(ownerHex)) {
+      throw StateError('Moltbook cycle stopped because the Capsule changed');
+    }
+    final binding = await moltbookConnection.loadBinding();
+    if (binding == null ||
+        !binding.isClaimed ||
+        !binding.isActive ||
+        binding.accountId != accountBindingId) {
+      throw StateError(
+        'Moltbook cycle stopped because the account binding changed',
+      );
+    }
   }
 
   Future<void> disconnectMoltbook() async {

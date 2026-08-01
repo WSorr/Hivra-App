@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import 'moltbook_provider_models.dart';
 import 'plugin_contract_ids.dart';
 
 final RegExp _unsafePublicTextControls = RegExp(
@@ -715,6 +716,62 @@ class MoltbookHeartbeatPlan {
       planHashHex: planHash,
       canonicalPlanJson: canonicalJson,
     );
+  }
+}
+
+class MoltbookCycleSummary {
+  final String ownerCapsuleHex;
+  final String accountBindingId;
+  final String startedAtUtc;
+  final String completedAtUtc;
+  final int inspectedCount;
+  final int candidateCount;
+  final int reconciledCount;
+  final int challengedCount;
+  final int blockedCount;
+  final MoltbookHeartbeatPlan heartbeatPlan;
+  final MoltbookFeedCheckpoint checkpoint;
+
+  const MoltbookCycleSummary({
+    required this.ownerCapsuleHex,
+    required this.accountBindingId,
+    required this.startedAtUtc,
+    required this.completedAtUtc,
+    required this.inspectedCount,
+    required this.candidateCount,
+    required this.reconciledCount,
+    required this.challengedCount,
+    required this.blockedCount,
+    required this.heartbeatPlan,
+    required this.checkpoint,
+  });
+
+  void validate() {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(ownerCapsuleHex) ||
+        accountBindingId.trim() != accountBindingId ||
+        accountBindingId.isEmpty ||
+        accountBindingId.length > 256 ||
+        inspectedCount < 0 ||
+        inspectedCount > 100 ||
+        candidateCount < 0 ||
+        candidateCount > 5 ||
+        reconciledCount < 0 ||
+        challengedCount < 0 ||
+        blockedCount < 0) {
+      throw const FormatException('Invalid Moltbook cycle summary');
+    }
+    final started = DateTime.tryParse(startedAtUtc);
+    final completed = DateTime.tryParse(completedAtUtc);
+    if (started == null ||
+        completed == null ||
+        !started.isUtc ||
+        !completed.isUtc ||
+        completed.isBefore(started) ||
+        started.toIso8601String() != startedAtUtc ||
+        completed.toIso8601String() != completedAtUtc) {
+      throw const FormatException('Invalid Moltbook cycle timestamps');
+    }
+    checkpoint.validate();
   }
 }
 

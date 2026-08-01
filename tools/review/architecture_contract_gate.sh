@@ -675,5 +675,17 @@ else
 fi
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'prepareMoltbookReplyPublication|authorizeDelegatedMoltbookReply|approveDelegatedMoltbookReply' \
   "Moltbook screen has no parallel reply authorization or queue route"
+require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Cycle engine \(implemented\)' \
+  "Moltbook lifecycle records the implemented serialized cycle"
+require_present "$PLUGIN_RUNTIME_MODULE" 'static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles' \
+  "Moltbook runtime serializes cycles by Capsule and provider account"
+require_present "$PLUGIN_RUNTIME_MODULE" 'Future<MoltbookCycleSummary> runMoltbookCycle\(' \
+  "Moltbook runtime exposes one wake-run-sleep cycle port"
+require_present "$PLUGIN_RUNTIME_MODULE" "operation.state == ExternalEffectState.unresolved" \
+  "Moltbook cycle reconciles unresolved effects before new observation"
+require_present "$PLUGIN_RUNTIME_MODULE" 'final heartbeatPlan = await planMoltbookHeartbeat\(\);' \
+  "Moltbook cycle reuses deterministic heartbeat planning"
+require_present "$PLUGIN_RUNTIME_MODULE" "'sleep inspected=" \
+  "Moltbook cycle publishes one bounded local summary"
 
 exit "$STATUS"

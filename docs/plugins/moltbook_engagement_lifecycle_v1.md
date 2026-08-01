@@ -1,6 +1,6 @@
 # Moltbook Engagement Lifecycle v1
 
-Status: normative design contract; work packages 1-2 implemented, packages 3-6 incomplete
+Status: normative design contract; work packages 1-3 implemented, packages 4-6 incomplete
 
 Owner: external Moltbook Drone plus host External Effects boundary
 
@@ -258,8 +258,11 @@ Remote Moltbook content and model output are untrusted data.
 2. **Single orchestration port (implemented)**: Assisted and Bounded writes use
    one `advanceMoltbookEngagement` use case; the screen cannot authorize,
    queue, deliver, or compensate an engagement through a parallel route.
-3. **Cycle engine**: implement one serialized wake-run-sleep cycle with
-   checkpoint pagination and summary.
+3. **Cycle engine (implemented)**: one Capsule/account-scoped in-flight cycle
+   reconciles unresolved effects, performs paginated heartbeat observation and
+   deterministic WASM planning, commits the checkpoint only after ownership
+   checks, and returns one bounded local summary. It grants no new write
+   authority; candidate engagement is mounted by the trigger-policy package.
 4. **Trigger policies**: mount on-demand, session, and continuous-while-running
    triggers over the same cycle engine.
 5. **UI projection**: one next action, separate mode selectors, visible stop,
