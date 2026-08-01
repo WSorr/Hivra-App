@@ -56,3 +56,9 @@ docs/checklists/release-manual-signoff-log.md
 - [ ] Retry path is exercised (transient failure) and execution envelope is written.
 - [ ] Receipt path is visible (`drone.execution.envelope`) and hash is traceable in logs.
 - [ ] Trading drone parity checklist is completed: `docs/checklists/trading-drone-spec-runtime-parity.md`.
+
+## Moltbook Ambassador
+
+- [ ] Moltbook release smoke checklist is completed: `docs/checklists/moltbook-release-smoke.md`.
+- [ ] One semantic operation survives duplicate click, restart, timeout, and
+      challenge handling without duplicate publication.

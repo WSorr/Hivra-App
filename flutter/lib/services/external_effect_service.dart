@@ -208,11 +208,32 @@ class ExternalEffectService {
 
   Future<List<ExternalEffectOperation>> list({required String pluginId}) {
     final ownerHex = _requireActiveOwner();
-    return _withJournalLock(
-      ownerHex,
-      pluginId,
-      () => _load(ownerHex, pluginId),
-    );
+    return _withJournalLock(ownerHex, pluginId, () async {
+      final operations = await _load(ownerHex, pluginId);
+      final now = _clock().toUtc();
+      var changed = false;
+      for (var index = 0; index < operations.length; index++) {
+        final operation = operations[index];
+        final action = operation.requiredAction;
+        if (operation.state != ExternalEffectState.unresolved ||
+            action == null ||
+            now.isBefore(DateTime.parse(action.expiresAtUtc).toUtc())) {
+          continue;
+        }
+        operations[index] = _copy(
+          operation,
+          state: ExternalEffectState.terminalFailure,
+          lastErrorCode: 'required_action_expired',
+          lastErrorMessage:
+              'Required provider action expired; blind retry is blocked',
+          clearRequiredAction: true,
+        );
+        operations[index].validate();
+        changed = true;
+      }
+      if (changed) await _save(ownerHex, pluginId, operations);
+      return operations;
+    });
   }
 
   Future<ExternalEffectOperation> resolveRequiredAction({

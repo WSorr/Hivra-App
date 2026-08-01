@@ -13,6 +13,25 @@ import 'package:hivra_app/services/moltbook_publication_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 void main() {
+  test('projects a source draft only from a succeeded post effect', () {
+    final succeeded = _operation(
+      state: ExternalEffectState.succeeded,
+      effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+    );
+    final queued = _operation(
+      state: ExternalEffectState.queued,
+      effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+    );
+    final reply = _operation(
+      state: ExternalEffectState.succeeded,
+      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
+    );
+
+    expect(MoltbookPublicationService.succeededPostDraftHash(succeeded), _hash);
+    expect(MoltbookPublicationService.succeededPostDraftHash(queued), isNull);
+    expect(MoltbookPublicationService.succeededPostDraftHash(reply), isNull);
+  });
+
   const postId = '20e1d392-5f55-4cae-b48a-af3192dc477b';
 
   test('publishedPostUri maps a verified receipt to its public post', () {
@@ -417,7 +436,8 @@ ExternalEffectOperation _replyOperation({required String sourceDraftHashHex}) {
 
 ExternalEffectOperation _operation({
   required ExternalEffectState state,
-  required String providerReceiptId,
+  String providerReceiptId = '20e1d392-5f55-4cae-b48a-af3192dc477b',
+  String effectKind = MoltbookExternalEffectAdapter.postEffectKind,
 }) {
   const operationId = 'moltbook-post-test';
   return ExternalEffectOperation(
@@ -427,8 +447,9 @@ ExternalEffectOperation _operation({
     pluginId: moltbookAmbassadorPluginId,
     providerId: 'moltbook',
     accountBindingId: 'account-test',
-    effectKind: MoltbookExternalEffectAdapter.effectKind,
-    canonicalPayloadJson: '{}',
+    effectKind: effectKind,
+    canonicalPayloadJson:
+        '{"schema_version":2,"source_draft_hash_hex":"$_hash"}',
     payloadHashHex:
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     state: state,
@@ -451,3 +472,6 @@ ExternalEffectOperation _operation({
     ),
   );
 }
+
+const String _hash =
+    'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';

@@ -45,12 +45,19 @@ class MoltbookDraftStore {
   }
 
   Future<void> delete(String draftHashHex) {
+    return deleteAll(<String>{draftHashHex});
+  }
+
+  Future<void> deleteAll(Set<String> draftHashHexes) {
+    if (draftHashHexes.isEmpty) return Future<void>.value();
     return _serialized(() async {
       final ownerHex = _requireOwnerHex();
       final drafts = await _loadForOwner(ownerHex);
       final updated =
           drafts
-              .where((draft) => draft.preview.draftHashHex != draftHashHex)
+              .where(
+                (draft) => !draftHashHexes.contains(draft.preview.draftHashHex),
+              )
               .toList();
       if (updated.length != drafts.length) {
         await _writeForOwner(ownerHex, updated);

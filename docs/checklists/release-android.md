@@ -35,6 +35,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 - [ ] Trading Drone evidence row recorded in `docs/checklists/trading-drone-evidence-log.md` (via `tools/release/record_trading_drone_evidence.sh`).
 - [ ] Trading Drone evidence coverage validated for this build tag via `tools/release/check_trading_drone_evidence.sh --build-tag <version-tag>`.
 - [ ] Trading drone spec/runtime parity checklist was completed (`docs/checklists/trading-drone-spec-runtime-parity.md`).
+- [ ] Moltbook release smoke checklist was completed (`docs/checklists/moltbook-release-smoke.md`).
 - [ ] User Lifetime Safety Pack (`docs/checklists/user-lifetime-safety-pack.md`) was completed on this build.
 
 ## Diagnostics

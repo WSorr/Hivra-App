@@ -13,15 +13,16 @@ Required status values:
 - `N/A`: gate is intentionally not applicable to this platform.
 
 For publication, macOS and Android must each have one row for the build tag.
-`Manual Smoke`, `Trading Smoke`, and `User Lifetime` must be `PASS` on both
-platforms. `AI Engineer` must be `PASS` for macOS and may be `PASS` or `N/A` for
-Android.
+`Manual Smoke`, `Trading Smoke`, `Moltbook Smoke`, and `User Lifetime` must be
+`PASS` on both platforms. `AI Engineer` must be `PASS` for macOS and may be
+`PASS` or `N/A` for Android. Historical rows created before the Moltbook gate
+retain `N/A`; new release candidates may not use `N/A` for Moltbook.
 
-| Build Tag | Date (UTC) | Platform | Artifact | Manual Smoke | Trading Smoke | User Lifetime | AI Engineer | Signer | Notes |
-|---|---|---|---|---|---|---|---|---|---|
-| v1.0.3-test12 | 2026-07-16T14:56:13Z | macOS | hivra_app-v1.0.3-test12-macos-universal.zip | PASS | PASS | PASS | PASS | codex | Packaged ZIP launch smoke passed from extracted artifact; current-session trading/plugin smoke covered BingX 0.2.3 install path and macOS reopen fix. Unsigned/not notarized test build. |
-| v1.0.3-test12 | 2026-07-16T14:56:13Z | Android | hivra_app-v1.0.3-test12-android-universal.apk | PASS | PASS | PASS | N/A | codex | Packaged APK installed and launched on connected device irobusydx49dvckf; current-session transport/plugin smoke covered Android release path. |
-| v1.0.3-test13 | 2026-07-21T19:48:21Z | macOS | hivra_app-v1.0.3-test13-macos-universal.zip | PASS | PASS | PASS | PASS | codex + user | Packaged ZIP launched from a fresh temporary extraction. Capsule selection, invitation flow, pair-attested chat, external plugins, AI Engineer, and live BingX trading/tracking were exercised. Unsigned/not notarized test build. |
-| v1.0.3-test13 | 2026-07-22T00:58:24Z | Android | hivra_app-v1.0.3-test13-android-universal.apk | PASS | PASS | PASS | N/A | codex + user | Exact APK 100000313 installed after backup restore. Capsule bootstrap, invitation send/receive without manual Refresh, external plugin installation, pair attestation recovery, and chat send/receive were exercised. Unsigned test build. |
-| v1.0.3-test14 | 2026-07-25T14:49:09Z | macOS | hivra_app-v1.0.3-test14-macos-universal.zip | PASS | PASS | PASS | PASS | codex + user | Release build-tree app was launched for final smoke. Capsule launch, plugin catalog refresh, BingX 0.2.3 path, 918 perp symbols, open-orders tracking/revalidation, scanner, and run-intent flow were exercised; live order was blocked by exchange minimum/risk guard as expected. Unsigned/not notarized test build. |
-| v1.0.3-test14 | 2026-07-25T14:49:09Z | Android | hivra_app-v1.0.3-test14-android-universal.apk | PASS | PASS | PASS | N/A | codex + user | Exact APK 100000314 installed on device irobusydx49dvck. Capsule bootstrap, invitation auto-fetch/accept terminal receipts, chat fetch, plugin install, 918 perp symbols, scanner, run-intent flow, and risk-block execution envelope were exercised. Unsigned test build. |
+| Build Tag | Date (UTC) | Platform | Artifact | Manual Smoke | Trading Smoke | Moltbook Smoke | User Lifetime | AI Engineer | Signer | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|
+| v1.0.3-test12 | 2026-07-16T14:56:13Z | macOS | hivra_app-v1.0.3-test12-macos-universal.zip | PASS | PASS | N/A | PASS | PASS | codex | Packaged ZIP launch smoke passed from extracted artifact; current-session trading/plugin smoke covered BingX 0.2.3 install path and macOS reopen fix. Unsigned/not notarized test build. |
+| v1.0.3-test12 | 2026-07-16T14:56:13Z | Android | hivra_app-v1.0.3-test12-android-universal.apk | PASS | PASS | N/A | PASS | N/A | codex | Packaged APK installed and launched on connected device irobusydx49dvckf; current-session transport/plugin smoke covered Android release path. |
+| v1.0.3-test13 | 2026-07-21T19:48:21Z | macOS | hivra_app-v1.0.3-test13-macos-universal.zip | PASS | PASS | N/A | PASS | PASS | codex + user | Packaged ZIP launched from a fresh temporary extraction. Capsule selection, invitation flow, pair-attested chat, external plugins, AI Engineer, and live BingX trading/tracking were exercised. Unsigned/not notarized test build. |
+| v1.0.3-test13 | 2026-07-22T00:58:24Z | Android | hivra_app-v1.0.3-test13-android-universal.apk | PASS | PASS | N/A | PASS | N/A | codex + user | Exact APK 100000313 installed after backup restore. Capsule bootstrap, invitation send/receive without manual Refresh, external plugin installation, pair attestation recovery, and chat send/receive were exercised. Unsigned test build. |
+| v1.0.3-test14 | 2026-07-25T14:49:09Z | macOS | hivra_app-v1.0.3-test14-macos-universal.zip | PASS | PASS | N/A | PASS | PASS | codex + user | Release build-tree app was launched for final smoke. Capsule launch, plugin catalog refresh, BingX 0.2.3 path, 918 perp symbols, open-orders tracking/revalidation, scanner, and run-intent flow were exercised; live order was blocked by exchange minimum/risk guard as expected. Unsigned/not notarized test build. |
+| v1.0.3-test14 | 2026-07-25T14:49:09Z | Android | hivra_app-v1.0.3-test14-android-universal.apk | PASS | PASS | N/A | PASS | N/A | codex + user | Exact APK 100000314 installed on device irobusydx49dvck. Capsule bootstrap, invitation auto-fetch/accept terminal receipts, chat fetch, plugin install, 918 perp symbols, scanner, run-intent flow, and risk-block execution envelope were exercised. Unsigned test build. |

@@ -212,6 +212,53 @@ void main() {
     expect(restartedAdapter.resolveCount, 1);
   });
 
+  test(
+    'expired required provider action fails closed during projection',
+    () async {
+      const action = ExternalEffectRequiredAction(
+        kind: 'numeric_challenge',
+        providerReferenceId: 'post-1',
+        actionToken: 'verify-expired',
+        prompt: 'two plus two',
+        expiresAtUtc: '2026-07-26T12:10:00.000Z',
+      );
+      final service = build(
+        _FakeExternalEffectAdapter(
+          deliverResults: const <Object>[
+            ExternalEffectAdapterResult(
+              status: ExternalEffectAdapterStatus.unresolved,
+              errorCode: 'verification_required',
+              errorMessage: 'Verification required',
+              requiredAction: action,
+            ),
+          ],
+        ),
+      );
+      await prepareApprovedQueued(service);
+      final unresolved = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(unresolved.requiredAction?.actionToken, 'verify-expired');
+
+      now = DateTime.utc(2026, 7, 26, 12, 11);
+      final projected = await service.list(
+        pluginId: moltbookAmbassadorPluginId,
+      );
+
+      expect(projected.single.state, ExternalEffectState.terminalFailure);
+      expect(projected.single.requiredAction, isNull);
+      expect(projected.single.lastErrorCode, 'required_action_expired');
+
+      final restarted = build(_FakeExternalEffectAdapter());
+      final restored = await restarted.list(
+        pluginId: moltbookAmbassadorPluginId,
+      );
+      expect(restored.single.state, ExternalEffectState.terminalFailure);
+      expect(restored.single.requiredAction, isNull);
+    },
+  );
+
   test('not-found reconciliation retries the same semantic operation', () async {
     final firstAdapter = _FakeExternalEffectAdapter(
       deliverResults: const <Object>[

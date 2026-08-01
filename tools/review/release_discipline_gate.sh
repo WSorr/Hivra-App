@@ -47,6 +47,7 @@ CHECKLIST_ANDROID_RUNTIME="$ROOT/docs/checklists/android-runtime-hardening.md"
 CHECKLIST_SMOKE="$ROOT/docs/checklists/manual-smoke.md"
 CHECKLIST_USER_LIFETIME="$ROOT/docs/checklists/user-lifetime-safety-pack.md"
 CHECKLIST_AI_ENGINEER_SMOKE="$ROOT/docs/checklists/ai-engineer-release-smoke.md"
+CHECKLIST_MOLTBOOK_SMOKE="$ROOT/docs/checklists/moltbook-release-smoke.md"
 CHECKLIST_MANUAL_SIGNOFF="$ROOT/docs/checklists/release-manual-signoff-log.md"
 CHECKLIST_DRONE_PARITY="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
 CHECKLIST_DRONE_EVIDENCE="$ROOT/docs/checklists/trading-drone-evidence-log.md"
@@ -67,6 +68,7 @@ require_file "$CHECKLIST_ANDROID_RUNTIME" "Android runtime hardening checklist e
 require_file "$CHECKLIST_SMOKE" "manual smoke checklist exists"
 require_file "$CHECKLIST_USER_LIFETIME" "user lifetime safety checklist exists"
 require_file "$CHECKLIST_AI_ENGINEER_SMOKE" "AI Engineer release smoke checklist exists"
+require_file "$CHECKLIST_MOLTBOOK_SMOKE" "Moltbook release smoke checklist exists"
 require_file "$CHECKLIST_MANUAL_SIGNOFF" "manual release signoff log exists"
 require_file "$CHECKLIST_DRONE_PARITY" "trading drone spec/runtime parity checklist exists"
 require_file "$CHECKLIST_DRONE_EVIDENCE" "trading drone evidence log exists"
@@ -157,6 +159,8 @@ require_present "$CHECKLIST_MAC" 'Tester instructions are included if the build 
   "macOS checklist requires unsigned-build tester instructions"
 require_present "$CHECKLIST_MAC" 'User Lifetime Safety Pack' \
   "macOS checklist requires user lifetime safety pass"
+require_present "$CHECKLIST_MAC" 'moltbook-release-smoke\.md' \
+  "macOS checklist requires Moltbook release smoke"
 require_present "$CHECKLIST_MAC" 'Correct Git tag exists on the intended commit' \
   "macOS checklist requires publish tag verification"
 require_present "$CHECKLIST_MAC" 'release-manual-signoff-log\.md' \
@@ -225,6 +229,8 @@ require_present "$CHECKLIST_ANDROID" '`test` => pre-release, `public` => stable 
   "Android checklist requires pre-release flag/channel mapping"
 require_present "$CHECKLIST_ANDROID" 'User Lifetime Safety Pack' \
   "Android checklist requires user lifetime safety pass"
+require_present "$CHECKLIST_ANDROID" 'moltbook-release-smoke\.md' \
+  "Android checklist requires Moltbook release smoke"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'matches ledger-first policy' \
   "Android runtime checklist covers ledger-first bootstrap parity"
 require_present "$CHECKLIST_ANDROID_RUNTIME" 'preserves active capsule selection' \
@@ -263,6 +269,14 @@ require_present "$CHECKLIST_SMOKE" 'drone\.decision\.envelope' \
   "manual smoke checklist requires decision envelope visibility"
 require_present "$CHECKLIST_SMOKE" 'drone\.execution\.envelope' \
   "manual smoke checklist requires execution envelope visibility"
+require_present "$CHECKLIST_SMOKE" 'Moltbook Ambassador' \
+  "manual smoke checklist covers Moltbook Ambassador"
+require_present "$CHECKLIST_MOLTBOOK_SMOKE" 'Repeated approval/publish clicks retain one semantic operation' \
+  "Moltbook smoke covers duplicate actions"
+require_present "$CHECKLIST_MOLTBOOK_SMOKE" 'Restart while the operation is unresolved' \
+  "Moltbook smoke covers restart recovery"
+require_present "$CHECKLIST_MOLTBOOK_SMOKE" 'Disable the agent or press Stop' \
+  "Moltbook smoke covers kill switch"
 require_present "$CHECKLIST_DRONE_PARITY" '## Hivra Laws \(Non-Negotiable\)' \
   "drone parity checklist includes Hivra laws gate"
 require_present "$CHECKLIST_DRONE_PARITY" 'Modularity: decision/risk/execution logic stays in services; UI is projection-only' \
@@ -287,8 +301,10 @@ require_present "$CHECKLIST_DRONE_EVIDENCE" 'tools/release/check_trading_drone_e
   "drone evidence log includes coverage verification command"
 require_present "$CHECKLIST_DRONE_EVIDENCE" 'release approval is recorded separately' \
   "drone evidence log cannot replace manual release signoff"
-require_present "$CHECKLIST_MANUAL_SIGNOFF" '\| Build Tag \| Date \(UTC\) \| Platform \| Artifact \| Manual Smoke \| Trading Smoke \| User Lifetime \| AI Engineer \| Signer \| Notes \|' \
+require_present "$CHECKLIST_MANUAL_SIGNOFF" '\| Build Tag \| Date \(UTC\) \| Platform \| Artifact \| Manual Smoke \| Trading Smoke \| Moltbook Smoke \| User Lifetime \| AI Engineer \| Signer \| Notes \|' \
   "manual signoff log includes required table columns"
+require_present "$MANUAL_SIGNOFF_CHECK" 'Moltbook Smoke must be PASS' \
+  "manual signoff checker requires Moltbook smoke"
 require_present "$DRONE_EVIDENCE_CHECK" '\^\[0-9a-fA-F\]\{64\}\$' \
   "drone evidence checker requires canonical 64-hex hashes"
 require_present "$MANUAL_SIGNOFF_CHECK" '--self-test' \

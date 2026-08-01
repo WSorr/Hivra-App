@@ -771,6 +771,19 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         submoltName: _submoltController.text,
       );
       if (!mounted) return;
+      if (operation.state == ExternalEffectState.succeeded) {
+        final results = await Future.wait<Object?>(<Future<Object?>>[
+          widget.module.loadMoltbookDrafts(),
+          widget.module.loadMoltbookPublications(),
+        ]);
+        if (!mounted) return;
+        setState(() {
+          _storedDrafts = results[0] as List<MoltbookStoredDraft>;
+          _publications = results[1] as List<ExternalEffectOperation>;
+        });
+        _showNotice('Already published; local draft archived');
+        return;
+      }
       final payload = MoltbookPublicationService.decodePayload(operation);
       final approved = await showDialog<bool>(
         context: context,
@@ -831,8 +844,16 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         await widget.module.approveMoltbookPublication(operation);
         _showNotice('Publication approved and queued locally');
       }
-      final publications = await widget.module.loadMoltbookPublications();
-      if (mounted) setState(() => _publications = publications);
+      final results = await Future.wait<Object?>(<Future<Object?>>[
+        widget.module.loadMoltbookDrafts(),
+        widget.module.loadMoltbookPublications(),
+      ]);
+      if (mounted) {
+        setState(() {
+          _storedDrafts = results[0] as List<MoltbookStoredDraft>;
+          _publications = results[1] as List<ExternalEffectOperation>;
+        });
+      }
     } catch (error) {
       if (mounted) {
         _showNotice('Could not prepare publication: $error', isError: true);
@@ -848,9 +869,15 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       final result = await widget.module.processMoltbookPublication(
         operation.operationId,
       );
-      final publications = await widget.module.loadMoltbookPublications();
+      final results = await Future.wait<Object?>(<Future<Object?>>[
+        widget.module.loadMoltbookDrafts(),
+        widget.module.loadMoltbookPublications(),
+      ]);
       if (!mounted) return;
-      setState(() => _publications = publications);
+      setState(() {
+        _storedDrafts = results[0] as List<MoltbookStoredDraft>;
+        _publications = results[1] as List<ExternalEffectOperation>;
+      });
       _showNotice(
         result.state == ExternalEffectState.succeeded
             ? 'Moltbook receipt verified'
@@ -1223,7 +1250,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Cycle trigger',
                       helperText:
-                          'All modes use the same Capsule-scoped cycle engine.',
+                          'Automatic triggers are experimental until release evidence passes.',
                     ),
                     items: const [
                       DropdownMenuItem(
@@ -1232,12 +1259,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       ),
                       DropdownMenuItem(
                         value: MoltbookAmbassadorConfiguration.triggerSession,
-                        child: Text('Once per app session'),
+                        child: Text('Once per app session (experimental)'),
                       ),
                       DropdownMenuItem(
                         value:
                             MoltbookAmbassadorConfiguration.triggerContinuous,
-                        child: Text('Continuous while running'),
+                        child: Text('Continuous while running (experimental)'),
                       ),
                     ],
                     onChanged: (value) {
@@ -1488,8 +1515,9 @@ class _MoltbookWorkflowCard extends StatelessWidget {
 
   static String _triggerPolicyLabel(String policy) => switch (policy) {
     MoltbookAmbassadorConfiguration.triggerOnDemand => 'On demand',
-    MoltbookAmbassadorConfiguration.triggerSession => 'Session',
-    MoltbookAmbassadorConfiguration.triggerContinuous => 'Continuous',
+    MoltbookAmbassadorConfiguration.triggerSession => 'Session (experimental)',
+    MoltbookAmbassadorConfiguration.triggerContinuous =>
+      'Continuous (experimental)',
     _ => 'Unknown',
   };
 

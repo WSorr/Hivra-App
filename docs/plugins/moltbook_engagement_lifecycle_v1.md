@@ -103,6 +103,13 @@ rebuilt from existing owners:
 No screen may keep an independent authoritative status. If evidence disagrees,
 the fail-closed external-effect state wins for remote-write progress.
 
+A local post draft is authoring state, not publication history. Once the
+external-effect journal contains a validated `succeeded` post operation bound
+to that draft's `source_draft_hash_hex`, the application composition owner
+must archive the matching draft. Loading the workspace performs the same
+reconciliation for pre-existing data. Failed, cancelled, unresolved, queued,
+reply, or malformed operations must not archive post drafts.
+
 ## 5. Lifecycle projection
 
 The UI may project these phases:

@@ -276,6 +276,20 @@ class MoltbookPublicationService {
     return Map<String, dynamic>.from(decoded);
   }
 
+  static String? succeededPostDraftHash(ExternalEffectOperation operation) {
+    if (operation.state != ExternalEffectState.succeeded ||
+        operation.effectKind != MoltbookExternalEffectAdapter.postEffectKind) {
+      return null;
+    }
+    final value = decodePayload(operation)['source_draft_hash_hex'];
+    if (value is! String || !RegExp(r'^[0-9a-f]{64}$').hasMatch(value)) {
+      throw const FormatException(
+        'Succeeded Moltbook post has an invalid source draft hash',
+      );
+    }
+    return value;
+  }
+
   static String replyEngagementId({
     required String ownerCapsuleHex,
     required String accountBindingId,

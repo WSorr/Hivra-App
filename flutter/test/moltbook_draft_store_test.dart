@@ -60,6 +60,21 @@ void main() {
     expect(await store.load(), isEmpty);
   });
 
+  test('deletes a set of completed local drafts atomically', () async {
+    final first = _preview();
+    final second = _preview(title: 'Second update');
+    final retained = _preview(title: 'Retained update');
+    await store.save(first);
+    await store.save(second);
+    await store.save(retained);
+
+    await store.deleteAll(<String>{first.draftHashHex, second.draftHashHex});
+
+    final drafts = await store.load();
+    expect(drafts, hasLength(1));
+    expect(drafts.single.preview.draftHashHex, retained.draftHashHex);
+  });
+
   test('fails closed on malformed persisted draft state', () async {
     final capsuleDir = await files.capsuleDirForHex(_rootA, create: true);
     await files.writePluginState(
@@ -73,15 +88,15 @@ void main() {
   });
 }
 
-MoltbookDraftPreview _preview() {
-  const canonical =
+MoltbookDraftPreview _preview({String title = 'Hivra update'}) {
+  final canonical =
       '{"schema_version":1,'
       '"plugin_id":"hivra.contract.moltbook-ambassador.v1",'
       '"contract_kind":"moltbook_ambassador_draft",'
       '"bulletin_id":"development-note",'
       '"release_tag":"development",'
       '"category":"hivra-development",'
-      '"title":"Hivra update",'
+      '"title":"$title",'
       '"body":"A public Hivra fact.",'
       '"audience":"agent-developers",'
       '"approval_required":true,'

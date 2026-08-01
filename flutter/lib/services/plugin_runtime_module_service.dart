@@ -830,8 +830,10 @@ class PluginRuntimeModule {
     }
   }
 
-  Future<List<MoltbookStoredDraft>> loadMoltbookDrafts() =>
-      moltbookDrafts.load();
+  Future<List<MoltbookStoredDraft>> loadMoltbookDrafts() async {
+    await _archiveSucceededMoltbookDrafts(await moltbookPublications.list());
+    return moltbookDrafts.load();
+  }
 
   Future<List<ExternalEffectOperation>> loadMoltbookPublications() =>
       moltbookPublications.list();
@@ -850,6 +852,7 @@ class PluginRuntimeModule {
       draft: draft,
       submoltName: submoltName,
     );
+    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[operation]);
     await uiLog.log(
       'moltbook.publication.prepare',
       'operation=${operation.operationId} '
@@ -920,6 +923,7 @@ class PluginRuntimeModule {
     ExternalEffectOperation operation,
   ) async {
     final queued = await moltbookPublications.approveAndQueue(operation);
+    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[queued]);
     await uiLog.log(
       'moltbook.publication.approve',
       'operation=${queued.operationId} state=${queued.state.wireName}',
@@ -1002,12 +1006,26 @@ class PluginRuntimeModule {
     String operationId,
   ) async {
     final result = await moltbookPublications.process(operationId);
+    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[result]);
     await uiLog.log(
       'moltbook.publication.process',
       'operation=$operationId state=${result.state.wireName} '
           'error=${result.lastErrorCode ?? "none"}',
     );
     return result;
+  }
+
+  Future<void> _archiveSucceededMoltbookDrafts(
+    Iterable<ExternalEffectOperation> operations,
+  ) async {
+    final hashes = <String>{};
+    for (final operation in operations) {
+      final hash = MoltbookPublicationService.succeededPostDraftHash(operation);
+      if (hash != null) hashes.add(hash);
+    }
+    if (hashes.isEmpty) return;
+    await moltbookDrafts.deleteAll(hashes);
+    await uiLog.log('moltbook.draft.archive', 'success count=${hashes.length}');
   }
 
   Future<ExternalEffectOperation> resolveMoltbookPublicationVerification({
