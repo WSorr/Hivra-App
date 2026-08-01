@@ -121,8 +121,45 @@ void main() {
       expect(runtime.publicSummaryCalls, equals(2));
       expect(runtime.activationCalls, isZero);
       expect(capsules.every((capsule) => capsule.starterCount == 5), isTrue);
+      expect(
+        capsules.every((capsule) => capsule.displayKeyText.startsWith('h1')),
+        isTrue,
+      );
     },
   );
+
+  test('formats root-owner index identity without loading a seed', () {
+    final entry = CapsuleIndexEntry(
+      pubKeyHex: List.filled(32, 'ab').join(),
+      createdAt: DateTime.utc(2026, 8, 1),
+      lastActive: DateTime.utc(2026, 8, 1),
+      isGenesis: true,
+      isNeste: true,
+      identityMode: 'root_owner',
+    );
+
+    expect(
+      CapsuleSelectorService.displayKeyForIndexEntry(entry),
+      startsWith('h1'),
+    );
+  });
+
+  test('does not present a legacy transport owner as a root key', () {
+    final transportHex = List.filled(32, 'cd').join();
+    final entry = CapsuleIndexEntry(
+      pubKeyHex: transportHex,
+      createdAt: DateTime.utc(2026, 8, 1),
+      lastActive: DateTime.utc(2026, 8, 1),
+      isGenesis: false,
+      isNeste: true,
+      identityMode: 'legacy_nostr_owner',
+    );
+
+    expect(
+      CapsuleSelectorService.displayKeyForIndexEntry(entry),
+      equals(transportHex),
+    );
+  });
 
   test('collapses duplicate display entries and prefers seeded root_owner', () {
     final now = DateTime.utc(2026, 3, 31, 10, 0, 0);

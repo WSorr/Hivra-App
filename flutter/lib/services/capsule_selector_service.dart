@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../ffi/capsule_selector_runtime.dart';
+import '../utils/hivra_id_format.dart';
 import 'capsule_persistence_models.dart';
 import 'ui_event_log_service.dart';
 
@@ -79,7 +80,7 @@ class CapsuleSelectorService {
         CapsuleSelectorItem(
           id: entry.pubKeyHex,
           publicKeyHex: entry.pubKeyHex,
-          displayKeyText: entry.pubKeyHex,
+          displayKeyText: displayKeyForIndexEntry(entry),
           network: networkLabelForCapsule(
             indexIsNeste: entry.isNeste,
             bootstrapIsNeste: null,
@@ -210,6 +211,13 @@ class CapsuleSelectorService {
       default:
         return 0;
     }
+  }
+
+  @visibleForTesting
+  static String displayKeyForIndexEntry(CapsuleIndexEntry entry) {
+    if (entry.identityMode != 'root_owner') return entry.pubKeyHex;
+    return HivraIdFormat.tryFormatCapsuleKeyFromHex(entry.pubKeyHex) ??
+        entry.pubKeyHex;
   }
 
   @visibleForTesting
