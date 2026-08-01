@@ -23,10 +23,19 @@ pub enum InvitationStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvitationDirection {
+    Outgoing,
+    Incoming,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvitationRecord {
     pub invitation_id: [u8; 32],
     pub starter_id: StarterId,
+    pub starter_kind_hint: Option<StarterKind>,
     pub peer_pubkey: PubKey,
+    pub direction: InvitationDirection,
+    pub offer_signer: PubKey,
     pub status: InvitationStatus,
 }
 
@@ -66,6 +75,18 @@ pub fn find_invitation(ledger: &Ledger, invitation_id: [u8; 32]) -> Option<Invit
         .find(|invitation| invitation.invitation_id == invitation_id)
 }
 
+pub fn find_invitation_by_direction(
+    ledger: &Ledger,
+    invitation_id: [u8; 32],
+    direction: InvitationDirection,
+) -> Option<InvitationRecord> {
+    invitations_with_status(ledger)
+        .into_iter()
+        .find(|invitation| {
+            invitation.invitation_id == invitation_id && invitation.direction == direction
+        })
+}
+
 pub fn plan_accept_for_kind(ledger: &Ledger, slots: &SlotLayout, kind: StarterKind) -> AcceptPlan {
     let starter_kinds = active_starter_kinds(slots, ledger);
     let matching_starter_id = slots
@@ -100,73 +121,123 @@ pub fn invitations_with_status(ledger: &Ledger) -> Vec<InvitationRecord> {
     let mut invitations = Vec::new();
 
     for event in ledger.events() {
-        if event.kind() != EventKind::InvitationSent {
-            continue;
-        }
-
-        let Ok(payload) = InvitationSentPayload::from_bytes(event.payload()) else {
-            continue;
-        };
-
-        invitations.push(InvitationRecord {
-            invitation_id: payload.invitation_id,
-            starter_id: payload.starter_id,
-            peer_pubkey: payload.to_pubkey,
-            status: invitation_status(ledger, payload.invitation_id),
-        });
-    }
-
-    invitations
-}
-
-pub fn invitation_status(ledger: &Ledger, invitation_id: [u8; 32]) -> InvitationStatus {
-    let mut accepted: Option<(StarterId, PubKey)> = None;
-    let mut rejected: Option<RejectReason> = None;
-    let mut expired = false;
-
-    for event in ledger.events() {
         match event.kind() {
-            EventKind::InvitationAccepted => {
-                let Ok(payload) = InvitationAcceptedPayload::from_bytes(event.payload()) else {
+            EventKind::InvitationSent | EventKind::InvitationReceived => {
+                let Ok(payload) = InvitationSentPayload::from_bytes(event.payload()) else {
                     continue;
                 };
-                if payload.invitation_id == invitation_id {
-                    accepted.get_or_insert((payload.created_starter_id, payload.from_pubkey));
+                let direction = if event.kind() == EventKind::InvitationReceived {
+                    InvitationDirection::Incoming
+                } else {
+                    InvitationDirection::Outgoing
+                };
+                if invitations
+                    .iter()
+                    .any(|record: &InvitationRecord| record.invitation_id == payload.invitation_id)
+                {
+                    continue;
                 }
+                invitations.push(InvitationRecord {
+                    invitation_id: payload.invitation_id,
+                    starter_id: payload.starter_id,
+                    starter_kind_hint: invitation_starter_kind_hint(event.payload()),
+                    peer_pubkey: if direction == InvitationDirection::Incoming {
+                        *event.signer()
+                    } else {
+                        payload.to_pubkey
+                    },
+                    direction,
+                    offer_signer: *event.signer(),
+                    status: InvitationStatus::Pending,
+                });
             }
-            EventKind::InvitationRejected => {
-                let Ok(payload) = InvitationRejectedPayload::from_bytes(event.payload()) else {
+            EventKind::InvitationAccepted
+            | EventKind::InvitationRejected
+            | EventKind::InvitationExpired => {
+                let Some((invitation_id, terminal)) =
+                    terminal_status(event.kind(), event.payload())
+                else {
                     continue;
                 };
-                if payload.invitation_id == invitation_id {
-                    rejected.get_or_insert(payload.reason);
+                let Some(record) = invitations
+                    .iter_mut()
+                    .find(|record| record.invitation_id == invitation_id)
+                else {
+                    // A terminal before its offer is orphan history forever.
+                    continue;
+                };
+                if terminal == InvitationStatus::Expired
+                    && !valid_expiry_signer(ledger, record, event.signer())
+                {
+                    continue;
                 }
-            }
-            EventKind::InvitationExpired => {
-                let Ok(payload) = InvitationExpiredPayload::from_bytes(event.payload()) else {
-                    continue;
-                };
-                if payload.invitation_id == invitation_id {
-                    expired = true;
+                if record.status == InvitationStatus::Pending {
+                    record.status = terminal;
+                } else if record.direction == InvitationDirection::Incoming
+                    && matches!(record.status, InvitationStatus::Accepted { .. })
+                    && terminal == InvitationStatus::Expired
+                {
+                    // The original sender may revoke an incoming offer after a
+                    // recipient-local optimistic acceptance.
+                    record.status = InvitationStatus::Expired;
                 }
             }
             _ => {}
         }
     }
 
-    if expired {
-        return InvitationStatus::Expired;
+    invitations
+}
+
+pub fn invitation_status(ledger: &Ledger, invitation_id: [u8; 32]) -> InvitationStatus {
+    find_invitation(ledger, invitation_id)
+        .map(|record| record.status)
+        .unwrap_or(InvitationStatus::Pending)
+}
+
+fn terminal_status(kind: EventKind, bytes: &[u8]) -> Option<([u8; 32], InvitationStatus)> {
+    match kind {
+        EventKind::InvitationAccepted => {
+            let payload = InvitationAcceptedPayload::from_bytes(bytes).ok()?;
+            Some((
+                payload.invitation_id,
+                InvitationStatus::Accepted {
+                    created_starter_id: payload.created_starter_id,
+                    from_pubkey: payload.from_pubkey,
+                },
+            ))
+        }
+        EventKind::InvitationRejected => {
+            let payload = InvitationRejectedPayload::from_bytes(bytes).ok()?;
+            Some((
+                payload.invitation_id,
+                InvitationStatus::Rejected {
+                    reason: payload.reason,
+                },
+            ))
+        }
+        EventKind::InvitationExpired => {
+            let payload = InvitationExpiredPayload::from_bytes(bytes).ok()?;
+            Some((payload.invitation_id, InvitationStatus::Expired))
+        }
+        _ => None,
     }
-    if let Some((created_starter_id, from_pubkey)) = accepted {
-        return InvitationStatus::Accepted {
-            created_starter_id,
-            from_pubkey,
-        };
+}
+
+fn invitation_starter_kind_hint(bytes: &[u8]) -> Option<StarterKind> {
+    let offset = match bytes.len() {
+        97 => 96,
+        129 | 161 | 225 => 128,
+        _ => return None,
+    };
+    StarterKind::from_u8(bytes[offset])
+}
+
+fn valid_expiry_signer(ledger: &Ledger, record: &InvitationRecord, signer: &PubKey) -> bool {
+    match record.direction {
+        InvitationDirection::Outgoing => signer == ledger.owner(),
+        InvitationDirection::Incoming => signer == &record.offer_signer,
     }
-    if let Some(reason) = rejected {
-        return InvitationStatus::Rejected { reason };
-    }
-    InvitationStatus::Pending
 }
 
 fn active_starter_kinds(slots: &SlotLayout, ledger: &Ledger) -> [bool; 5] {
@@ -203,13 +274,23 @@ mod tests {
 
     fn append_event(ledger: &mut Ledger, kind: EventKind, payload: &[u8], timestamp: u64) {
         let owner = *ledger.owner();
+        append_event_with_signer(ledger, kind, payload, timestamp, owner);
+    }
+
+    fn append_event_with_signer(
+        ledger: &mut Ledger,
+        kind: EventKind,
+        payload: &[u8],
+        timestamp: u64,
+        signer: PubKey,
+    ) {
         ledger
             .append(Event::new(
                 kind,
                 payload.to_vec(),
                 Timestamp::from(timestamp),
                 Signature::from([0u8; 64]),
-                owner,
+                signer,
             ))
             .expect("append succeeds");
     }
@@ -270,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn invitation_status_prefers_accepted_over_rejected() {
+    fn golden_first_valid_terminal_wins() {
         let owner = PubKey::from([7u8; 32]);
         let peer = PubKey::from([8u8; 32]);
         let invitation_id = [42u8; 32];
@@ -313,31 +394,31 @@ mod tests {
 
         assert_eq!(
             invitation_status(&ledger, invitation_id),
-            InvitationStatus::Accepted {
-                created_starter_id: StarterId::from([10u8; 32]),
-                from_pubkey: peer,
+            InvitationStatus::Rejected {
+                reason: RejectReason::EmptySlot,
             }
         );
     }
 
     #[test]
-    fn sender_revoke_prefers_expired_over_optimistic_acceptance() {
+    fn golden_incoming_sender_revoke_supersedes_optimistic_acceptance() {
         let owner = PubKey::from([11u8; 32]);
         let peer = PubKey::from([12u8; 32]);
         let invitation_id = [43u8; 32];
         let mut ledger = Ledger::new(owner);
 
-        append_event(
+        append_event_with_signer(
             &mut ledger,
-            EventKind::InvitationSent,
+            EventKind::InvitationReceived,
             &InvitationSentPayload {
                 invitation_id,
                 starter_id: StarterId::from([13u8; 32]),
-                to_pubkey: peer,
-                sender_root_pubkey: None,
+                to_pubkey: owner,
+                sender_root_pubkey: Some(peer),
             }
             .to_bytes(),
             1,
+            peer,
         );
         append_event(
             &mut ledger,
@@ -351,17 +432,188 @@ mod tests {
             .to_bytes(),
             2,
         );
-        append_event(
+        append_event_with_signer(
             &mut ledger,
             EventKind::InvitationExpired,
             &InvitationExpiredPayload { invitation_id }.to_bytes(),
             3,
+            peer,
         );
 
         assert_eq!(
             invitation_status(&ledger, invitation_id),
             InvitationStatus::Expired
         );
+    }
+
+    #[test]
+    fn golden_wrong_signer_cannot_revoke_incoming_offer() {
+        let owner = PubKey::from([21u8; 32]);
+        let peer = PubKey::from([22u8; 32]);
+        let attacker = PubKey::from([23u8; 32]);
+        let invitation_id = [44u8; 32];
+        let mut ledger = Ledger::new(owner);
+
+        append_event_with_signer(
+            &mut ledger,
+            EventKind::InvitationReceived,
+            &InvitationSentPayload {
+                invitation_id,
+                starter_id: StarterId::from([24u8; 32]),
+                to_pubkey: owner,
+                sender_root_pubkey: Some(peer),
+            }
+            .to_bytes(),
+            1,
+            peer,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationAccepted,
+            &InvitationAcceptedPayload {
+                invitation_id,
+                created_starter_id: StarterId::from([25u8; 32]),
+                from_pubkey: owner,
+                accepter_root_pubkey: None,
+            }
+            .to_bytes(),
+            2,
+        );
+        append_event_with_signer(
+            &mut ledger,
+            EventKind::InvitationExpired,
+            &InvitationExpiredPayload { invitation_id }.to_bytes(),
+            3,
+            attacker,
+        );
+
+        assert!(matches!(
+            invitation_status(&ledger, invitation_id),
+            InvitationStatus::Accepted { .. }
+        ));
+    }
+
+    #[test]
+    fn golden_orphan_terminal_does_not_resolve_later_offer() {
+        let owner = PubKey::from([31u8; 32]);
+        let peer = PubKey::from([32u8; 32]);
+        let invitation_id = [45u8; 32];
+        let mut ledger = Ledger::new(owner);
+
+        append_event(
+            &mut ledger,
+            EventKind::InvitationRejected,
+            &InvitationRejectedPayload {
+                invitation_id,
+                reason: RejectReason::Other,
+            }
+            .to_bytes(),
+            1,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::InvitationSent,
+            &InvitationSentPayload {
+                invitation_id,
+                starter_id: StarterId::from([33u8; 32]),
+                to_pubkey: peer,
+                sender_root_pubkey: Some(owner),
+            }
+            .to_bytes(),
+            2,
+        );
+
+        assert_eq!(
+            invitation_status(&ledger, invitation_id),
+            InvitationStatus::Pending
+        );
+    }
+
+    #[test]
+    fn golden_offer_direction_and_peer_are_canonical() {
+        let owner = PubKey::from([41u8; 32]);
+        let outgoing_peer = PubKey::from([42u8; 32]);
+        let incoming_peer = PubKey::from([43u8; 32]);
+        let mut ledger = Ledger::new(owner);
+
+        append_event(
+            &mut ledger,
+            EventKind::InvitationSent,
+            &InvitationSentPayload {
+                invitation_id: [46u8; 32],
+                starter_id: StarterId::from([44u8; 32]),
+                to_pubkey: outgoing_peer,
+                sender_root_pubkey: Some(owner),
+            }
+            .to_bytes(),
+            1,
+        );
+        append_event_with_signer(
+            &mut ledger,
+            EventKind::InvitationReceived,
+            &{
+                let mut payload = InvitationSentPayload {
+                    invitation_id: [47u8; 32],
+                    starter_id: StarterId::from([45u8; 32]),
+                    to_pubkey: owner,
+                    sender_root_pubkey: Some(incoming_peer),
+                }
+                .to_bytes();
+                payload.push(StarterKind::Pulse.to_byte());
+                payload
+            },
+            2,
+            incoming_peer,
+        );
+
+        let projected = invitations_with_status(&ledger);
+        assert_eq!(projected.len(), 2);
+        assert_eq!(projected[0].direction, InvitationDirection::Outgoing);
+        assert_eq!(projected[0].peer_pubkey, outgoing_peer);
+        assert_eq!(projected[1].direction, InvitationDirection::Incoming);
+        assert_eq!(projected[1].peer_pubkey, incoming_peer);
+        assert_eq!(projected[1].offer_signer, incoming_peer);
+        assert_eq!(projected[1].starter_kind_hint, Some(StarterKind::Pulse));
+    }
+
+    #[test]
+    fn golden_invitation_id_has_one_lifecycle_across_directions() {
+        let owner = PubKey::from([51u8; 32]);
+        let outgoing_peer = PubKey::from([52u8; 32]);
+        let incoming_peer = PubKey::from([53u8; 32]);
+        let invitation_id = [48u8; 32];
+        let mut ledger = Ledger::new(owner);
+
+        append_event(
+            &mut ledger,
+            EventKind::InvitationSent,
+            &InvitationSentPayload {
+                invitation_id,
+                starter_id: StarterId::from([54u8; 32]),
+                to_pubkey: outgoing_peer,
+                sender_root_pubkey: Some(owner),
+            }
+            .to_bytes(),
+            1,
+        );
+        append_event_with_signer(
+            &mut ledger,
+            EventKind::InvitationReceived,
+            &InvitationSentPayload {
+                invitation_id,
+                starter_id: StarterId::from([55u8; 32]),
+                to_pubkey: owner,
+                sender_root_pubkey: Some(incoming_peer),
+            }
+            .to_bytes(),
+            2,
+            incoming_peer,
+        );
+
+        let projected = invitations_with_status(&ledger);
+        assert_eq!(projected.len(), 1);
+        assert_eq!(projected[0].direction, InvitationDirection::Outgoing);
+        assert_eq!(projected[0].peer_pubkey, outgoing_peer);
     }
 
     #[test]

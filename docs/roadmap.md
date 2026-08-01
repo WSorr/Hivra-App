@@ -307,6 +307,23 @@ Current finding:
   `RelationshipProjectionService` in Flutter are competing potential owners
   and must not remain as separate semantic implementations.
 
+Current progress:
+- Core now owns a direction-aware invitation lifecycle replay keyed by one
+  globally unique `invitation_id`: the first offer owns the lifecycle, orphan
+  terminals remain inapplicable, and the first valid terminal wins in ledger
+  order.
+- Sender revocation of an incoming offer is signer-bound and may supersede
+  only recipient-local optimistic acceptance; an unrelated signer cannot
+  expire that lifecycle.
+- Engine invitation decisions now request an explicit incoming or outgoing
+  projection instead of relying on an ambiguous direction fallback.
+- Golden Core vectors cover terminal precedence, sender revocation, invalid
+  revocation, orphan terminals, canonical peer direction, and duplicate IDs
+  across directions.
+- Remaining in this milestone: expose versioned projection views through the
+  binding, migrate Flutter consumers, and delete the replaced Flutter event
+  walkers before declaring invitation convergence complete.
+
 Required migration units:
 1. Inventory every raw-ledger domain reader and classify it as current state,
    pair consensus, history/audit, or non-domain operational evidence.

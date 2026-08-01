@@ -524,11 +524,16 @@ where
         ledger: &Ledger,
         invitation_id: [u8; 32],
     ) -> Result<hivra_core::AcceptPlan, EngineError<K::Error>> {
-        let invitation = hivra_core::find_invitation(ledger, invitation_id)
-            .ok_or(EngineError::MatchingInvitationNotFound)?;
+        let invitation = hivra_core::find_invitation_by_direction(
+            ledger,
+            invitation_id,
+            hivra_core::InvitationDirection::Incoming,
+        )
+        .ok_or(EngineError::MatchingInvitationNotFound)?;
         let slots = hivra_core::slot::SlotLayout::from_ledger(ledger);
-        let kind = self
-            .starter_kind_for_id(ledger, invitation.starter_id)
+        let kind = invitation
+            .starter_kind_hint
+            .or_else(|| self.starter_kind_for_id(ledger, invitation.starter_id))
             .ok_or(EngineError::MatchingInvitationNotFound)?;
 
         Ok(hivra_core::plan_accept_for_kind(ledger, &slots, kind))
@@ -540,8 +545,12 @@ where
         accepter_pubkey: PubKey,
         payload: &InvitationAcceptedPayload,
     ) -> Result<Vec<IncomingEffect>, EngineError<K::Error>> {
-        let invitation = hivra_core::find_invitation(ledger, payload.invitation_id)
-            .ok_or(EngineError::MatchingInvitationNotFound)?;
+        let invitation = hivra_core::find_invitation_by_direction(
+            ledger,
+            payload.invitation_id,
+            hivra_core::InvitationDirection::Outgoing,
+        )
+        .ok_or(EngineError::MatchingInvitationNotFound)?;
         let kind = self
             .starter_kind_for_id(ledger, invitation.starter_id)
             .ok_or(EngineError::MatchingInvitationNotFound)?;
@@ -568,8 +577,12 @@ where
         ledger: &Ledger,
         payload: &InvitationRejectedPayload,
     ) -> Result<OutgoingRejectionEffect, EngineError<K::Error>> {
-        let invitation = hivra_core::find_invitation(ledger, payload.invitation_id)
-            .ok_or(EngineError::MatchingInvitationNotFound)?;
+        let invitation = hivra_core::find_invitation_by_direction(
+            ledger,
+            payload.invitation_id,
+            hivra_core::InvitationDirection::Outgoing,
+        )
+        .ok_or(EngineError::MatchingInvitationNotFound)?;
 
         Ok(match payload.reason {
             RejectReason::EmptySlot => OutgoingRejectionEffect::BurnStarter {
@@ -894,19 +907,21 @@ mod tests {
             ))
             .unwrap();
 
+        let mut incoming_payload = InvitationSentPayload {
+            invitation_id: [8; 32],
+            starter_id: StarterId::from([4; 32]),
+            to_pubkey: owner,
+            sender_root_pubkey: Some(PubKey::from([9; 32])),
+        }
+        .to_bytes();
+        incoming_payload.push(StarterKind::Seed.to_byte());
         ledger
             .append(Event::new(
-                EventKind::InvitationSent,
-                InvitationSentPayload {
-                    invitation_id: [8; 32],
-                    starter_id: StarterId::from([4; 32]),
-                    to_pubkey: PubKey::from([9; 32]),
-                    sender_root_pubkey: None,
-                }
-                .to_bytes(),
+                EventKind::InvitationReceived,
+                incoming_payload,
                 Timestamp::from(2),
                 Signature::from([0; 64]),
-                owner,
+                PubKey::from([9; 32]),
             ))
             .unwrap();
 

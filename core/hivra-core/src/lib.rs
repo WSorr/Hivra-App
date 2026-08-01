@@ -22,9 +22,9 @@ pub use event_payloads::{
     RelationshipEstablishedPayload, StarterBurnedPayload, StarterCreatedPayload,
 };
 pub use invitation::{
-    find_invitation, invitation_status, invitations_with_status, pending_invitation_count,
-    pending_invitations, plan_accept_for_kind, AcceptPlan, InvitationRecord, InvitationStatus,
-    PlannedStarterCreation,
+    find_invitation, find_invitation_by_direction, invitation_status, invitations_with_status,
+    pending_invitation_count, pending_invitations, plan_accept_for_kind, AcceptPlan,
+    InvitationDirection, InvitationRecord, InvitationStatus, PlannedStarterCreation,
 };
 pub use ledger::Ledger;
 pub use ledger_v5::{
