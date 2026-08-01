@@ -61,25 +61,43 @@ require_tag_points_to_head() {
     die "Git tag $VERSION points to $tag_commit, but HEAD is $head_commit"
 }
 
+require_release_only_changes_after_build() {
+  local source_commit="$1"
+  local changed_file
+
+  git merge-base --is-ancestor "$source_commit" HEAD ||
+    die "Artifact source commit $source_commit is not an ancestor of release HEAD"
+
+  while IFS= read -r changed_file; do
+    [ -z "$changed_file" ] && continue
+    case "$changed_file" in
+      docs/checklists/release-manual-signoff-log.md)
+        ;;
+      *)
+        die "Runtime-affecting file changed after artifact build: $changed_file"
+        ;;
+    esac
+  done < <(git diff --name-only "$source_commit"..HEAD)
+}
+
 verify_release_metadata() {
   local file="$1"
   local platform="$2"
   local version
   local source_commit
   local source_tree_dirty
-  local head_commit
 
   version="$(metadata_value "$file" version)"
   source_commit="$(metadata_value "$file" source_commit)"
   source_tree_dirty="$(metadata_value "$file" source_tree_dirty)"
-  head_commit="$(git rev-parse HEAD)"
 
   [ "$version" = "$VERSION" ] ||
     die "$platform metadata version is ${version:-missing}, expected $VERSION"
-  [ "$source_commit" = "$head_commit" ] ||
-    die "$platform metadata source_commit is ${source_commit:-missing}, expected $head_commit"
+  git cat-file -e "$source_commit^{commit}" 2>/dev/null ||
+    die "$platform metadata source_commit is missing or invalid: ${source_commit:-missing}"
   [ "$source_tree_dirty" = "no" ] ||
     die "$platform metadata source_tree_dirty must be no"
+  require_release_only_changes_after_build "$source_commit"
 }
 
 while [ $# -gt 0 ]; do
