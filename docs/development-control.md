@@ -2,7 +2,8 @@
 
 Status date: 2026-08-01
 Current released baseline: `main` at `b1756df` (`v1.0.3-test14`, macOS and Android manual signoff recorded)
-Current runtime checkpoint: `39ba870` (not released; local Android and macOS continuity smoke recorded)
+Current runtime checkpoint: `29bb78a` (not released; canonical Core current,
+pair, and history projection boundaries completed)
 
 This is the short operational map for deciding what Hivra work is happening
 now. It is not a second specification, backlog, or release record. It points
@@ -16,7 +17,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation pass? | `12.3 / pass 3`: cryptographically continuous ledger protocol. `5.1` remains the mandatory projection boundary before any new lifecycle UI or consensus semantics. | `roadmap.md`, `specification.md` |
+| What is the next 1.x remediation pass? | Close packaged macOS/Android restart and restore evidence for `12.3 / pass 3`. Canonical Core projection convergence (`5.1`) is complete; no Flutter lifecycle reducer may be reintroduced. | `roadmap.md`, `specification.md` |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -26,7 +27,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `12.3 / pass 3`: cryptographically continuous ledger. Automated P3-C backup and partial-write recovery evidence is present. Local Android reinstall/recovery/restart and macOS cold-restart continuity passed at runtime checkpoint `39ba870`; packaged cross-platform restart/restore evidence remains. `5.1` is a cross-cutting projection blocker, not a reason to add another Flutter reducer. | Current released baseline is `b1756df`; guarded packaged macOS/Android smoke passed for `v1.0.3-test14`. Runtime checkpoint `39ba870` includes v5 backup continuity evidence, macOS storage relocation, bounded Moltbook lifecycle work, and the Android picker boundary. It is not a release candidate until fresh packaged platform smoke is recorded. | Close packaged macOS/Android pass 3 evidence on the next candidate, then move lifecycle readers to the canonical Core projection before event-scoped delivery records. Durable sender-rate quarantine remains `NEEDS_CONTRACT`; do not hide it in an adapter. |
+| **1.x maintained runtime** | Active | `12.3 / pass 3`: cryptographically continuous ledger. Automated P3-C backup and partial-write recovery evidence is present. Local Android reinstall/recovery/restart and macOS cold-restart continuity passed at runtime checkpoint `39ba870`; packaged cross-platform restart/restore evidence remains. Canonical Core projection convergence (`5.1`) is complete at `29bb78a`. | Current released baseline is `b1756df`; guarded packaged macOS/Android smoke passed for `v1.0.3-test14`. Runtime checkpoint `29bb78a` adds canonical Core invitation, relationship, pair-consensus, and history views over the previously recorded v5 continuity and local platform smoke. It is not a release candidate until fresh packaged platform smoke is recorded. | Close packaged macOS/Android pass 3 evidence on `v1.0.3-test15`; then begin event-scoped delivery records. Durable sender-rate quarantine remains `NEEDS_CONTRACT`; do not hide it in an adapter. |
 | **1.x release** | Released | `v1.0.3-test14` is the current test release on macOS and Android. | Tag, guarded GitHub release, clean worktree, platform signoff, and artifact evidence are recorded. | The development checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |
