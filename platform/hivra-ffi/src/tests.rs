@@ -2999,6 +2999,63 @@ fn relationship_current_view_v1_projects_exported_ledger_json() {
 }
 
 #[test]
+fn pair_view_v1_projects_exported_ledger_json() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(54);
+    let owner = derived_pubkey(&seed);
+    let local_transport = PubKey::from([160u8; 32]);
+    let peer_transport = PubKey::from([161u8; 32]);
+    let peer_root = PubKey::from([162u8; 32]);
+    set_runtime_capsule(owner, Network::Neste);
+    append_runtime_event_with_signer(
+        EventKind::RelationshipEstablished,
+        &RelationshipEstablishedPayload {
+            peer_pubkey: peer_transport,
+            own_starter_id: StarterId::from([163u8; 32]),
+            peer_starter_id: StarterId::from([164u8; 32]),
+            kind: StarterKind::Spark,
+            invitation_id: [165u8; 32],
+            sender_pubkey: local_transport,
+            sender_starter_type: StarterKind::Spark,
+            sender_starter_id: StarterId::from([163u8; 32]),
+            peer_root_pubkey: Some(peer_root),
+            sender_root_pubkey: Some(owner),
+        }
+        .to_bytes(),
+        owner,
+    )
+    .unwrap();
+
+    let ledger = CString::new(export_runtime_ledger().unwrap()).unwrap();
+    let mut projected = ptr::null_mut();
+    let code = unsafe {
+        crate::ledger_api::hivra_project_pair_view_v1(
+            ledger.as_ptr(),
+            local_transport.as_bytes().as_ptr(),
+            &mut projected,
+        )
+    };
+    assert_eq!(code, 0);
+    assert!(!projected.is_null());
+    let json = unsafe { CStr::from_ptr(projected).to_str().unwrap().to_owned() };
+    unsafe { crate::ffi_support::hivra_free_string(projected) };
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["schema"], "hivra.pair_view");
+    assert_eq!(value["version"], 1);
+    assert_eq!(value["pairs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        value["pairs"][0]["active_relationships"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(value["pairs"][0]["blockers"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn repeated_import_of_same_ledger_keeps_projection_stable() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();

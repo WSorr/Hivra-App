@@ -14,6 +14,11 @@ abstract class LedgerViewRuntime {
     Uint8List? localTransportPublicKey,
   });
 
+  String? projectPairViewV1(
+    String ledgerJson, {
+    Uint8List? localTransportPublicKey,
+  });
+
   Uint8List? capsuleRuntimeOwnerPublicKey();
 
   Uint8List? capsuleRuntimeTransportPublicKey();
@@ -40,6 +45,15 @@ class HivraLedgerViewRuntime implements LedgerViewRuntime {
     String ledgerJson, {
     Uint8List? localTransportPublicKey,
   }) => _hivra.projectRelationshipCurrentViewV1(
+    ledgerJson,
+    localTransportPublicKey: localTransportPublicKey,
+  );
+
+  @override
+  String? projectPairViewV1(
+    String ledgerJson, {
+    Uint8List? localTransportPublicKey,
+  }) => _hivra.projectPairViewV1(
     ledgerJson,
     localTransportPublicKey: localTransportPublicKey,
   );

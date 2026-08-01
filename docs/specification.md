@@ -343,6 +343,12 @@ extended; Flutter or a drone MUST NOT introduce a temporary replay policy.
 Inspector-only raw decoding MAY display evidence, but MUST NOT authorize an
 action, compute consensus, or feed current domain state.
 
+The current Core/FFI PairView contract is `hivra.pair_view` version `1`. It
+contains pair identities, deduplicated active relationship facts, finalized
+invitation count for diagnostics, and deterministic pair blockers. The host
+maps this typed view into pair snapshot schema v3 and owns hashing, signatures,
+attestation exchange, and verification; it does not replay domain events.
+
 All persisted projection caches are disposable materialized views. They MUST
 be bound to ledger identity, protocol version, event version, and ledger hash;
 a missing or mismatched binding fails closed and triggers Core replay. Cached

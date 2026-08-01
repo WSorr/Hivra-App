@@ -2,234 +2,83 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:hivra_app/services/consensus_runtime_service.dart';
 import 'package:hivra_app/services/plugin_execution_guard_service.dart';
 
 void main() {
-  group('PluginExecutionGuardService', () {
-    test('reports ready when all derived pairs are signable', () {
-      final service = PluginExecutionGuardService(
-        consensus: ConsensusRuntimeService(
-          exportLedger: () => _acceptedLedgerJson(),
-          readLocalTransportKey: () =>
-              Uint8List.fromList(List<int>.filled(32, 11)),
-        ),
-      );
+  PluginExecutionGuardService guard({String? blocker}) {
+    return PluginExecutionGuardService(
+      consensus: ConsensusRuntimeService(
+        exportLedger: () => '{"events":[]}',
+        readLocalTransportKey:
+            () => Uint8List.fromList(List<int>.filled(32, 11)),
+        projectPairView: (_, unused) => _pairView(blocker: blocker),
+      ),
+    );
+  }
 
-      final snapshot = service.inspectHostReadiness();
+  test('reports ready when every Core pair is signable', () {
+    final snapshot = guard().inspectHostReadiness();
 
-      expect(snapshot.state, ConsensusGuardState.ready);
-      expect(snapshot.readyPairCount, 1);
-      expect(snapshot.blockedPairCount, 0);
-      expect(snapshot.blockingFacts, isEmpty);
-    });
+    expect(snapshot.state, ConsensusGuardState.ready);
+    expect(snapshot.readyPairCount, 1);
+    expect(snapshot.blockedPairCount, 0);
+    expect(snapshot.blockingFacts, isEmpty);
+  });
 
-    test('reports blocked when pairwise history is unresolved', () {
-      final service = PluginExecutionGuardService(
-        consensus: ConsensusRuntimeService(
-          exportLedger: () => _pendingLedgerJson(),
-          readLocalTransportKey: () =>
-              Uint8List.fromList(List<int>.filled(32, 11)),
-        ),
-      );
+  test('reports blocked when Core projects a pending invitation', () {
+    final snapshot =
+        guard(blocker: 'pending_invitation').inspectHostReadiness();
 
-      final snapshot = service.inspectHostReadiness();
-      final factCodes = snapshot.blockingFacts
-          .map((fact) => fact.code)
-          .toList(growable: false);
+    expect(snapshot.state, ConsensusGuardState.blocked);
+    expect(snapshot.readyPairCount, 0);
+    expect(snapshot.blockedPairCount, 1);
+    expect(
+      snapshot.blockingFacts.map((fact) => fact.code),
+      contains('pending_invitation'),
+    );
+  });
 
-      expect(snapshot.state, ConsensusGuardState.blocked);
-      expect(snapshot.readyPairCount, 0);
-      expect(snapshot.blockedPairCount, 1);
-      expect(factCodes, contains('pending_invitation'));
-    });
+  test('pending remote break blocks without removing the active pair', () {
+    final snapshot =
+        guard(blocker: 'pending_remote_break').inspectHostReadiness();
+    final factCodes = snapshot.blockingFacts.map((fact) => fact.code);
 
-    test('reports blocked on pending_remote_break without losing active pair',
-        () {
-      final service = PluginExecutionGuardService(
-        consensus: ConsensusRuntimeService(
-          exportLedger: () => _remoteBreakPendingLedgerJson(),
-          readLocalTransportKey: () =>
-              Uint8List.fromList(List<int>.filled(32, 26)),
-          readLocalRootKey: () => Uint8List.fromList(List<int>.filled(32, 27)),
-        ),
-      );
-
-      final snapshot = service.inspectHostReadiness();
-      final factCodes = snapshot.blockingFacts
-          .map((fact) => fact.code)
-          .toList(growable: false);
-
-      expect(snapshot.state, ConsensusGuardState.blocked);
-      expect(snapshot.readyPairCount, 0);
-      expect(snapshot.blockedPairCount, 1);
-      expect(factCodes, contains('pending_remote_break'));
-      expect(factCodes, isNot(contains('relationship_broken')));
-      expect(factCodes, isNot(contains('no_active_relationship')));
-    });
+    expect(snapshot.state, ConsensusGuardState.blocked);
+    expect(snapshot.blockedPairCount, 1);
+    expect(factCodes, contains('pending_remote_break'));
+    expect(factCodes, isNot(contains('relationship_broken')));
+    expect(factCodes, isNot(contains('no_active_relationship')));
   });
 }
 
-String _acceptedLedgerJson() {
-  final invitationId = Uint8List.fromList(List<int>.filled(32, 1));
-  final ownStarter = Uint8List.fromList(List<int>.filled(32, 2));
-  final peerTransport = Uint8List.fromList(List<int>.filled(32, 3));
-  final peerRoot = Uint8List.fromList(List<int>.filled(32, 4));
-  final peerStarter = Uint8List.fromList(List<int>.filled(32, 5));
-  final sender = Uint8List.fromList(List<int>.filled(32, 6));
-  final senderStarter = Uint8List.fromList(List<int>.filled(32, 7));
-  final acceptedFrom = Uint8List.fromList(List<int>.filled(32, 8));
-  final acceptedCreated = Uint8List.fromList(List<int>.filled(32, 9));
-
-  return jsonEncode(<String, dynamic>{
-    'events': <Map<String, dynamic>>[
-      <String, dynamic>{
-        'kind': 1,
-        'payload': <int>[
-          ...invitationId,
-          ...ownStarter,
-          ...peerTransport,
-          1,
-        ],
-      },
-      <String, dynamic>{
-        'kind': 7,
-        'payload': <int>[
-          ...peerRoot,
-          ...ownStarter,
-          ...peerStarter,
-          1,
-          ...invitationId,
-          ...sender,
-          1,
-          ...senderStarter,
-        ],
-      },
-      <String, dynamic>{
-        'kind': 2,
-        'payload': <int>[
-          ...invitationId,
-          ...acceptedFrom,
-          ...acceptedCreated,
-        ],
-      },
-    ],
-  });
-}
-
-String _pendingLedgerJson() {
-  final acceptedInvitationId = Uint8List.fromList(List<int>.filled(32, 1));
-  final pendingInvitationId = Uint8List.fromList(List<int>.filled(32, 12));
-  final ownStarter = Uint8List.fromList(List<int>.filled(32, 2));
-  final ownStarter2 = Uint8List.fromList(List<int>.filled(32, 13));
-  final peerTransport = Uint8List.fromList(List<int>.filled(32, 3));
-  final peerRoot = Uint8List.fromList(List<int>.filled(32, 4));
-  final peerStarter = Uint8List.fromList(List<int>.filled(32, 5));
-  final sender = Uint8List.fromList(List<int>.filled(32, 6));
-  final senderStarter = Uint8List.fromList(List<int>.filled(32, 7));
-  final acceptedFrom = Uint8List.fromList(List<int>.filled(32, 8));
-  final acceptedCreated = Uint8List.fromList(List<int>.filled(32, 9));
-
-  return jsonEncode(<String, dynamic>{
-    'events': <Map<String, dynamic>>[
-      <String, dynamic>{
-        'kind': 1,
-        'payload': <int>[
-          ...acceptedInvitationId,
-          ...ownStarter,
-          ...peerTransport,
-          1,
-        ],
-      },
-      <String, dynamic>{
-        'kind': 7,
-        'payload': <int>[
-          ...peerRoot,
-          ...ownStarter,
-          ...peerStarter,
-          1,
-          ...acceptedInvitationId,
-          ...sender,
-          1,
-          ...senderStarter,
-        ],
-      },
-      <String, dynamic>{
-        'kind': 2,
-        'payload': <int>[
-          ...acceptedInvitationId,
-          ...acceptedFrom,
-          ...acceptedCreated,
-        ],
-      },
-      <String, dynamic>{
-        'kind': 1,
-        'payload': <int>[
-          ...pendingInvitationId,
-          ...ownStarter2,
-          ...peerTransport,
-          1,
-        ],
-      },
-    ],
-  });
-}
-
-String _remoteBreakPendingLedgerJson() {
-  final invitationId = Uint8List.fromList(List<int>.filled(32, 21));
-  final ownStarter = Uint8List.fromList(List<int>.filled(32, 22));
-  final peerTransport = Uint8List.fromList(List<int>.filled(32, 23));
-  final peerRoot = Uint8List.fromList(List<int>.filled(32, 24));
-  final peerStarter = Uint8List.fromList(List<int>.filled(32, 25));
-  final localTransport = Uint8List.fromList(List<int>.filled(32, 26));
-  final localRoot = Uint8List.fromList(List<int>.filled(32, 27));
-  final senderStarter = Uint8List.fromList(List<int>.filled(32, 28));
-
-  return jsonEncode(<String, dynamic>{
-    'events': <Map<String, dynamic>>[
-      <String, dynamic>{
-        'kind': 1,
-        'payload': <int>[
-          ...invitationId,
-          ...ownStarter,
-          ...peerTransport,
-          1,
-        ],
-      },
-      <String, dynamic>{
-        'kind': 7,
-        'payload': <int>[
-          ...peerTransport,
-          ...ownStarter,
-          ...peerStarter,
-          1,
-          ...invitationId,
-          ...localTransport,
-          1,
-          ...senderStarter,
-          ...peerRoot,
-          ...localRoot,
-        ],
-      },
-      <String, dynamic>{
-        'kind': 2,
-        'payload': <int>[
-          ...invitationId,
-          ...peerTransport,
-          ...peerStarter,
-          ...peerRoot,
-        ],
-      },
-      <String, dynamic>{
-        'kind': 8,
-        'payload': <int>[
-          ...peerTransport,
-          ...ownStarter,
-          ...peerRoot,
-        ],
-        'signer': peerTransport,
-      },
-    ],
-  });
-}
+String _pairView({String? blocker}) => jsonEncode(<String, Object?>{
+  'schema': 'hivra.pair_view',
+  'version': 1,
+  'ledger_version': 1,
+  'pairs': <Object?>[
+    <String, Object?>{
+      'local_identity': List<int>.filled(32, 1),
+      'peer_identity': List<int>.filled(32, 2),
+      'finalized_invitation_count': 1,
+      'active_relationships': <Object?>[
+        <String, Object?>{
+          'relationship_kind': 1,
+          'starter_pair': <Object?>[
+            List<int>.filled(32, 3),
+            List<int>.filled(32, 4),
+          ],
+        },
+      ],
+      'blockers':
+          blocker == null
+              ? <Object?>[]
+              : <Object?>[
+                <String, Object?>{
+                  'code': blocker,
+                  'subject_id': List<int>.filled(32, 5),
+                },
+              ],
+    },
+  ],
+});

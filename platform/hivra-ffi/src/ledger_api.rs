@@ -136,6 +136,45 @@ pub unsafe extern "C" fn hivra_project_relationship_current_view_v1(
     }
 }
 
+/// Project a ledger JSON document into the canonical pair-consensus view.
+#[no_mangle]
+pub unsafe extern "C" fn hivra_project_pair_view_v1(
+    ledger_json: *const c_char,
+    local_transport_ptr: *const u8,
+    out_json: *mut *mut c_char,
+) -> i32 {
+    if ledger_json.is_null() || out_json.is_null() {
+        return -1;
+    }
+    let ledger_json = match CStr::from_ptr(ledger_json).to_str() {
+        Ok(value) => value,
+        Err(_) => return -2,
+    };
+    let ledger = match parse_ledger_json(ledger_json) {
+        Ok(value) => value,
+        Err(_) => return -3,
+    };
+    let local_transport = if local_transport_ptr.is_null() {
+        None
+    } else {
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(std::slice::from_raw_parts(local_transport_ptr, 32));
+        Some(hivra_core::PubKey::from(bytes))
+    };
+    let view = hivra_core::pair_view_v1(&ledger, local_transport);
+    let json = match serde_json::to_string(&view) {
+        Ok(value) => value,
+        Err(_) => return -4,
+    };
+    match CString::new(json) {
+        Ok(value) => {
+            *out_json = value.into_raw();
+            0
+        }
+        Err(_) => -4,
+    }
+}
+
 /// Import a ledger from JSON and replace the runtime ledger
 #[no_mangle]
 pub unsafe extern "C" fn hivra_import_ledger(json_ptr: *const c_char) -> i32 {

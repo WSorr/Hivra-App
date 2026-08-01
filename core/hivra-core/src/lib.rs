@@ -9,6 +9,7 @@ pub mod event_payloads;
 pub mod invitation;
 pub mod ledger;
 pub mod ledger_v5;
+pub mod pair;
 pub mod primitives;
 pub mod relationship;
 pub mod slot;
@@ -32,6 +33,7 @@ pub use ledger_v5::{
     Commitment, LedgerAnchorV5, LedgerEntryV5, LedgerV5Error, COMMITMENT_LENGTH,
     LEDGER_PROTOCOL_VERSION_V5, ZERO_COMMITMENT,
 };
+pub use pair::{pair_view_v1, PairBlockerV1, PairRelationshipV1, PairViewItemV1, PairViewV1};
 pub use primitives::{Network, PubKey, Signature, StarterId, StarterKind, Timestamp};
 pub use relationship::{
     relationship_current_view_v1, Relationship, RelationshipCurrentItemV1,

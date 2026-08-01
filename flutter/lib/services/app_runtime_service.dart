@@ -113,6 +113,12 @@ class AppRuntimeService {
       exportLedger: _runtime.exportLedger,
       readLocalTransportKey: _runtime.capsuleNostrPublicKey,
       readLocalRootKey: _runtime.capsuleRootPublicKey,
+      projectPairView:
+          (ledgerJson, localTransportKey) =>
+              _runtime.ledgerViewRuntime.projectPairViewV1(
+                ledgerJson,
+                localTransportPublicKey: localTransportKey,
+              ),
       verifySignature: _runtime.verifyConsensusSignature,
     );
   }

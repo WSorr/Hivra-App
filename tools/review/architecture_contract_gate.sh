@@ -201,6 +201,15 @@ require_absent "$RELATIONSHIP_PROJECTION" \
   "Flutter relationship adapter does not replay raw domain events"
 require_absent "$LEDGER_SUMMARY" 'RelationshipProjectionService' \
   "ledger summary does not own a second relationship reducer"
+require_present "$ROOT/core/hivra-core/src/pair.rs" 'pub fn pair_view_v1' \
+  "Core owns the versioned pair-consensus view"
+require_present "$FFI_LEDGER_API" 'hivra_project_pair_view_v1' \
+  "FFI exposes the canonical pair-consensus view"
+require_present "$CONSENSUS" 'hivra\.pair_view' \
+  "Flutter consensus adapter consumes the versioned Core PairView"
+require_absent "$CONSENSUS" \
+  'InvitationSent|InvitationReceived|InvitationAccepted|InvitationRejected|InvitationExpired|RelationshipEstablished|RelationshipBroken|kindCode\(|payloadBytes\(|\['"'"'events'"'"'\]' \
+  "Flutter consensus adapter does not replay raw domain events"
 require_present "$SPEC" 'Flutter Boundary Direction' \
   "spec defines downward direction inside Flutter boundary"
 require_present "$SPEC" 'WASM Plugin Host Contract' \
@@ -629,11 +638,13 @@ if [ -f "$PAIRWISE" ]; then
   require_present "$PAIRWISE" '_support\.kindLabel\(event\['"'"'kind'"'"'\]\)' \
     "pairwise service uses shared kindLabel mapping"
 else
-  pass "legacy pairwise service removed; checking consensus processor mapping instead"
+  pass "legacy pairwise service removed; checking Core PairView adapter instead"
   require_absent "$CONSENSUS" 'String _kindLabel\(' \
     "consensus processor does not declare local kindLabel dictionary"
-  require_present "$CONSENSUS" '_support\.kindLabel\(event\['"'"'kind'"'"'\]\)' \
-    "consensus processor uses shared kindLabel mapping"
+  require_present "$CONSENSUS" 'hivra\.pair_view' \
+    "consensus processor consumes the versioned Core PairView"
+  require_absent "$CONSENSUS" "event\['kind'\]" \
+    "consensus processor does not inspect raw ledger event kinds"
 fi
 
 # 7) Screen layer should not bypass boundary at usage level.

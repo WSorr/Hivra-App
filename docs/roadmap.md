@@ -334,8 +334,17 @@ Current progress:
   versus local-final breaks, foreign breaks, re-establishment, rejected
   invitation lineage, and multiple transports sharing one root. Architecture
   gates reject reintroducing raw relationship replay into Flutter.
-- Remaining in this milestone: converge scoped pair/history views and remove
-  their replaced application-owned event walkers.
+- `PairViewV1` now composes the canonical invitation and relationship replay in
+  Core into pair-scoped active relationships and blockers. The FFI exports the
+  versioned view; Flutter only validates/maps it, creates snapshot-schema-v3
+  canonical JSON, hashes it, and orchestrates signatures/attestations.
+- The former Flutter pair lifecycle reducer and its duplicated event-offset
+  matrix were removed. Core golden vectors now own mirrored orientation,
+  third-capsule isolation, relationship deduplication, pending invitations,
+  and remote-break blocking. The architecture gate rejects raw pair replay in
+  Flutter.
+- Remaining in this milestone: converge the scoped history/audit view and
+  remove its replaced application-owned event walker.
 
 Required migration units:
 1. Inventory every raw-ledger domain reader and classify it as current state,

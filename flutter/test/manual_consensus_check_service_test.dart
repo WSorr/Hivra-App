@@ -9,56 +9,35 @@ import 'package:hivra_app/services/manual_consensus_check_service.dart';
 void main() {
   group('ManualConsensusCheckService', () {
     test('builds inspector-facing rows from runtime consensus checks', () {
-      final invitationId = Uint8List.fromList(List<int>.filled(32, 1));
-      final ownStarter = Uint8List.fromList(List<int>.filled(32, 2));
-      final peerTransport = Uint8List.fromList(List<int>.filled(32, 3));
-      final peerRoot = Uint8List.fromList(List<int>.filled(32, 4));
-      final peerStarter = Uint8List.fromList(List<int>.filled(32, 5));
-      final sender = Uint8List.fromList(List<int>.filled(32, 6));
-      final senderStarter = Uint8List.fromList(List<int>.filled(32, 7));
-      final acceptedFrom = Uint8List.fromList(List<int>.filled(32, 8));
-      final acceptedCreated = Uint8List.fromList(List<int>.filled(32, 9));
-
-      final ledgerJson = jsonEncode(<String, dynamic>{
-        'events': <Map<String, dynamic>>[
+      final pairViewJson = jsonEncode(<String, dynamic>{
+        'schema': 'hivra.pair_view',
+        'version': 1,
+        'ledger_version': 3,
+        'pairs': <Map<String, dynamic>>[
           <String, dynamic>{
-            'kind': 1,
-            'payload': <int>[
-              ...invitationId,
-              ...ownStarter,
-              ...peerTransport,
-              1,
+            'local_identity': List<int>.filled(32, 1),
+            'peer_identity': List<int>.filled(32, 2),
+            'finalized_invitation_count': 1,
+            'active_relationships': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'relationship_kind': 1,
+                'starter_pair': <List<int>>[
+                  List<int>.filled(32, 3),
+                  List<int>.filled(32, 4),
+                ],
+              },
             ],
-          },
-          <String, dynamic>{
-            'kind': 7,
-            'payload': <int>[
-              ...peerRoot,
-              ...ownStarter,
-              ...peerStarter,
-              1,
-              ...invitationId,
-              ...sender,
-              1,
-              ...senderStarter,
-            ],
-          },
-          <String, dynamic>{
-            'kind': 2,
-            'payload': <int>[
-              ...invitationId,
-              ...acceptedFrom,
-              ...acceptedCreated,
-            ],
+            'blockers': <Map<String, dynamic>>[],
           },
         ],
       });
 
       final service = ManualConsensusCheckService(
         consensus: ConsensusRuntimeService(
-          exportLedger: () => ledgerJson,
+          exportLedger: () => '{"events":[]}',
           readLocalTransportKey:
               () => Uint8List.fromList(List<int>.filled(32, 11)),
+          projectPairView: (_, unused) => pairViewJson,
         ),
       );
 

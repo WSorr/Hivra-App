@@ -1010,6 +1010,12 @@ class _FakeLedgerViewRuntime implements LedgerViewRuntime {
   }) => null;
 
   @override
+  String? projectPairViewV1(
+    String ledgerJson, {
+    Uint8List? localTransportPublicKey,
+  }) => null;
+
+  @override
   Uint8List? capsuleRuntimeOwnerPublicKey() => null;
 
   @override
@@ -1075,6 +1081,7 @@ Uint8List _hexToBytes(String hex) {
   for (var i = 0; i < out.length; i += 1) {
     out[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
   }
+
   return out;
 }
 

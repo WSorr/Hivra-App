@@ -224,6 +224,18 @@ typedef HivraProjectRelationshipCurrentViewV1Dart =
       Pointer<Uint8> localTransport,
       Pointer<Pointer<Int8>> outJson,
     );
+typedef HivraProjectPairViewV1C =
+    Int32 Function(
+      Pointer<Int8> ledgerJson,
+      Pointer<Uint8> localTransport,
+      Pointer<Pointer<Int8>> outJson,
+    );
+typedef HivraProjectPairViewV1Dart =
+    int Function(
+      Pointer<Int8> ledgerJson,
+      Pointer<Uint8> localTransport,
+      Pointer<Pointer<Int8>> outJson,
+    );
 
 typedef HivraImportLedgerC = Int32 Function(Pointer<Int8> json);
 typedef HivraImportLedgerDart = int Function(Pointer<Int8> json);
@@ -336,6 +348,7 @@ class HivraBindings {
   _projectInvitationCurrentViewV1;
   late final HivraProjectRelationshipCurrentViewV1Dart
   _projectRelationshipCurrentViewV1;
+  late final HivraProjectPairViewV1Dart _projectPairViewV1;
   late final HivraImportLedgerDart _importLedger;
   late final HivraLedgerAppendEventDart _ledgerAppendEvent;
   late final HivraWasmInvokeJsonDart _wasmInvokeJson;
@@ -670,6 +683,13 @@ class HivraBindings {
         _lib
             .lookup<NativeFunction<HivraProjectRelationshipCurrentViewV1C>>(
               'hivra_project_relationship_current_view_v1',
+            )
+            .asFunction();
+
+    _projectPairViewV1 =
+        _lib
+            .lookup<NativeFunction<HivraProjectPairViewV1C>>(
+              'hivra_project_pair_view_v1',
             )
             .asFunction();
 
@@ -1293,6 +1313,37 @@ class HivraBindings {
       }
       if (_projectRelationshipCurrentViewV1(ledgerPtr, transportPtr, outPtr) !=
           0) {
+        return null;
+      }
+      final cstr = outPtr.value;
+      if (cstr == nullptr) return null;
+      final json = cstr.cast<Utf8>().toDartString();
+      _freeString(cstr);
+      return json;
+    } finally {
+      calloc.free(ledgerPtr);
+      if (transportPtr != nullptr) calloc.free(transportPtr);
+      calloc.free(outPtr);
+    }
+  }
+
+  String? projectPairViewV1(
+    String ledgerJson, {
+    Uint8List? localTransportPublicKey,
+  }) {
+    if (localTransportPublicKey != null &&
+        localTransportPublicKey.length != 32) {
+      return null;
+    }
+    final ledgerPtr = ledgerJson.toNativeUtf8().cast<Int8>();
+    final transportPtr =
+        localTransportPublicKey == null ? nullptr : calloc<Uint8>(32);
+    final outPtr = calloc<Pointer<Int8>>();
+    try {
+      if (localTransportPublicKey != null) {
+        transportPtr.asTypedList(32).setAll(0, localTransportPublicKey);
+      }
+      if (_projectPairViewV1(ledgerPtr, transportPtr, outPtr) != 0) {
         return null;
       }
       final cstr = outPtr.value;
