@@ -81,6 +81,7 @@ MOLTBOOK_CONNECTION="$ROOT/flutter/lib/services/moltbook_connection_service.dart
 MOLTBOOK_DRAFT_STORE="$ROOT/flutter/lib/services/moltbook_draft_store.dart"
 MOLTBOOK_PUBLIC_BULLETIN_AI="$ROOT/flutter/lib/services/moltbook_public_bulletin_ai_service.dart"
 MOLTBOOK_AMBASSADOR_MODELS="$ROOT/flutter/lib/models/moltbook_ambassador_models.dart"
+MOLTBOOK_CYCLE_TRIGGER="$ROOT/flutter/lib/services/moltbook_cycle_trigger_service.dart"
 CAPSULE_DOCTOR_SCREEN="$SCREENS/capsule_doctor_screen.dart"
 INVITATIONS_SCREEN="$SCREENS/invitations_screen.dart"
 LEDGER_INSPECTOR_SCREEN="$SCREENS/ledger_inspector_screen.dart"
@@ -687,5 +688,27 @@ require_present "$PLUGIN_RUNTIME_MODULE" 'final heartbeatPlan = await planMoltbo
   "Moltbook cycle reuses deterministic heartbeat planning"
 require_present "$PLUGIN_RUNTIME_MODULE" "'sleep inspected=" \
   "Moltbook cycle publishes one bounded local summary"
+require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Trigger policies \(implemented\)' \
+  "Moltbook lifecycle records the implemented trigger policies"
+require_present "$MOLTBOOK_AMBASSADOR_MODELS" "triggerContinuous = 'continuous_while_running'" \
+  "Moltbook configuration separates trigger policy from write policy"
+require_present "$MOLTBOOK_CYCLE_TRIGGER" 'Future<MoltbookCycleSummary> runOnDemand\(' \
+  "Moltbook trigger owner exposes on-demand execution"
+require_present "$MOLTBOOK_CYCLE_TRIGGER" 'Future<MoltbookCycleSummary\?> startSession\(' \
+  "Moltbook trigger owner exposes once-per-session execution"
+require_present "$MOLTBOOK_CYCLE_TRIGGER" 'Future<MoltbookCycleSummary> startContinuous\(' \
+  "Moltbook trigger owner exposes sequential continuous execution"
+require_present "$MOLTBOOK_CYCLE_TRIGGER" 'void stopAll\(\)' \
+  "Moltbook trigger owner exposes an immediate scheduling stop"
+require_absent "$MOLTBOOK_CYCLE_TRIGGER" 'moltbook_provider_adapter|moltbook_external_effect_adapter|plugin_host_api_service' \
+  "Moltbook trigger owner depends only on the canonical cycle callback"
+require_present "$PLUGIN_RUNTIME_MODULE" 'Future<MoltbookCycleSummary\?> startConfiguredMoltbookCycles\(' \
+  "Moltbook runtime maps persisted trigger policy to one controller"
+require_present "$PLUGIN_RUNTIME_MODULE" 'Future<void> stopMoltbookCyclesAndDisable\(' \
+  "Moltbook runtime exposes one persistent kill-switch route"
+require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'runMoltbookOnDemandCycle\(\)' \
+  "Moltbook manual cycle uses the canonical cycle port"
+require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'planMoltbookHeartbeat\(\)' \
+  "Moltbook screen has no legacy direct heartbeat planning route"
 
 exit "$STATUS"

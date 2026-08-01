@@ -1520,13 +1520,17 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - completed first write milestone: Assisted publication with exact preview,
       one explicit approval per effect, durable provider challenge, explicit
       verification response, and matching visible-post evidence before success.
-    - active blocker before Bounded/automatic release: Assisted and Bounded UI
-      paths can create separate effects for one remote comment. Implement one
-      canonical `engagement_id`, target-level active/succeeded deduplication,
-      and one orchestration port before enabling session or continuous modes.
-    - planned trigger policies over that one cycle engine: `on_demand`,
-      `session` catch-up (recommended default), and
-      `continuous_while_running`; no mode may fork decision/effect semantics.
+    - completed canonical engagement convergence: Assisted and Bounded writes
+      share one `engagement_id`, target projection, and orchestration port;
+      duplicate active/succeeded targets cannot enter a parallel effect route.
+    - completed trigger-policy host: `on_demand`, once-per-process `session`,
+      and sequential `continuous_while_running` invoke the same
+      Capsule/plugin/account-scoped cycle engine. Existing profiles migrate to
+      `on_demand`, stop prevents future wake-ups, and no trigger policy changes
+      decision or effect semantics.
+    - remaining blocker before Bounded/automatic release: complete the unified
+      UI projection and release evidence for hostile input, restart, timeout,
+      challenge, Capsule switch, rate limit, stop, macOS, and Android.
     - completed macOS Release evidence on 2026-07-27: Moltbook post
       `32a3006b-94e3-4087-82f6-58e3666cef4e` remained unresolved while hidden
       and became succeeded only after explicit challenge resolution and a

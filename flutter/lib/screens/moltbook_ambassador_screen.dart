@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -45,6 +47,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     text: MoltbookPublicationService.defaultSubmolt,
   );
   String _approvalMode = MoltbookAmbassadorConfiguration.approvalAssisted;
+  String _triggerPolicy = MoltbookAmbassadorConfiguration.triggerOnDemand;
   bool _enabled = true;
   bool _loading = true;
   bool _saving = false;
@@ -118,6 +121,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       _categoryController.text = configuration.allowedTopics.first;
       setState(() {
         _approvalMode = configuration.approvalMode;
+        _triggerPolicy = configuration.triggerPolicy;
         _enabled = configuration.enabled;
         _binding = binding;
         _storedDrafts = drafts;
@@ -126,6 +130,9 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _loadError = null;
         _loading = false;
       });
+      if (binding != null && binding.isClaimed && binding.isActive) {
+        unawaited(_startConfiguredCycles(showNotice: false));
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -148,6 +155,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       if (!mounted) return;
       setState(() => _binding = binding);
       _showNotice('Connected to ${binding.accountName}');
+      unawaited(_startConfiguredCycles(showNotice: false));
     } catch (error) {
       if (!mounted) return;
       _showNotice('Moltbook connection failed: $error', isError: true);
@@ -174,6 +182,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   Future<void> _disconnect() async {
     setState(() => _connectionBusy = true);
     try {
+      widget.module.stopMoltbookCycles();
       await widget.module.disconnectMoltbook();
       if (!mounted) return;
       setState(() {
@@ -231,20 +240,60 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   Future<void> _planHeartbeat() async {
     setState(() => _connectionBusy = true);
     try {
-      final plan = await widget.module.planMoltbookHeartbeat();
-      final checkpoint = await widget.module.loadMoltbookFeedCheckpoint();
+      final summary = await widget.module.runMoltbookOnDemandCycle();
       if (!mounted) return;
       setState(() {
-        _heartbeatPlan = plan;
-        _feedCheckpoint = checkpoint;
+        _heartbeatPlan = summary.heartbeatPlan;
+        _feedCheckpoint = summary.checkpoint;
       });
-      _showNotice('WASM heartbeat plan prepared');
+      _showNotice(
+        'Moltbook cycle completed: ${summary.inspectedCount} inspected, '
+        '${summary.candidateCount} candidates',
+      );
     } catch (error) {
       if (mounted) {
         _showNotice('Could not plan Moltbook heartbeat: $error', isError: true);
       }
     } finally {
       if (mounted) setState(() => _connectionBusy = false);
+    }
+  }
+
+  Future<void> _startConfiguredCycles({bool showNotice = true}) async {
+    if (_binding == null) return;
+    try {
+      final summary = await widget.module.startConfiguredMoltbookCycles();
+      if (!mounted || summary == null) return;
+      setState(() {
+        _heartbeatPlan = summary.heartbeatPlan;
+        _feedCheckpoint = summary.checkpoint;
+      });
+      if (showNotice) {
+        _showNotice(
+          'Configured Moltbook cycle completed: '
+          '${summary.inspectedCount} inspected',
+        );
+      }
+    } catch (error) {
+      if (mounted && showNotice) {
+        _showNotice('Configured Moltbook cycle stopped: $error', isError: true);
+      }
+    }
+  }
+
+  Future<void> _stopCycles() async {
+    setState(() => _saving = true);
+    try {
+      await widget.module.stopMoltbookCyclesAndDisable();
+      if (!mounted) return;
+      setState(() => _enabled = false);
+      _showNotice('Moltbook cycles stopped; Ambassador disabled locally');
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not persist Moltbook stop: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -616,6 +665,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
               .where((topic) => topic.isNotEmpty)
               .toList(),
       approvalMode: _approvalMode,
+      triggerPolicy: _triggerPolicy,
       enabled: _enabled,
     );
     try {
@@ -630,7 +680,11 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     try {
       await widget.module.saveAmbassadorConfiguration(configuration);
       if (!mounted) return;
+      widget.module.stopMoltbookCycles();
       _showNotice('Ambassador profile saved locally');
+      if (configuration.enabled && _binding != null) {
+        unawaited(_startConfiguredCycles());
+      }
     } catch (error) {
       if (!mounted) return;
       _showNotice('Could not save ambassador profile: $error', isError: true);
@@ -1170,31 +1224,72 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       }
                     },
                   ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _triggerPolicy,
+                    decoration: const InputDecoration(
+                      labelText: 'Cycle trigger',
+                      helperText:
+                          'All modes use the same Capsule-scoped cycle engine.',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: MoltbookAmbassadorConfiguration.triggerOnDemand,
+                        child: Text('On demand'),
+                      ),
+                      DropdownMenuItem(
+                        value: MoltbookAmbassadorConfiguration.triggerSession,
+                        child: Text('Once per app session'),
+                      ),
+                      DropdownMenuItem(
+                        value:
+                            MoltbookAmbassadorConfiguration.triggerContinuous,
+                        child: Text('Continuous while running'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _triggerPolicy = value);
+                      }
+                    },
+                  ),
                   const SizedBox(height: 8),
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Enabled'),
                     subtitle: const Text('Immediate local stop control'),
                     value: _enabled,
-                    onChanged: (value) => setState(() => _enabled = value),
+                    onChanged: (value) {
+                      setState(() => _enabled = value);
+                      if (!value) widget.module.stopMoltbookCycles();
+                    },
                   ),
                   const SizedBox(height: 16),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton.icon(
-                      onPressed: _saving ? null : _save,
-                      icon:
-                          _saving
-                              ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                              : const Icon(Icons.save_outlined),
-                      label: Text(_saving ? 'Saving' : 'Save profile'),
-                    ),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _saving ? null : _stopCycles,
+                        icon: const Icon(Icons.stop_circle_outlined),
+                        label: const Text('Stop cycles'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _saving ? null : _save,
+                        icon:
+                            _saving
+                                ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                : const Icon(Icons.save_outlined),
+                        label: Text(_saving ? 'Saving' : 'Save profile'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1943,7 +2038,7 @@ class _MoltbookConnectionCard extends StatelessWidget {
                         FilledButton.icon(
                           onPressed: busy ? null : onPlanHeartbeat,
                           icon: const Icon(Icons.favorite_outline_rounded),
-                          label: const Text('Plan heartbeat'),
+                          label: const Text('Run cycle'),
                         ),
                         OutlinedButton.icon(
                           onPressed: busy ? null : onDisconnect,

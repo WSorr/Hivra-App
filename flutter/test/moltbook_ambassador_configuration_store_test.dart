@@ -41,11 +41,17 @@ void main() {
       personaSummary: 'Explain verified public changes without hype.',
       allowedTopics: const <String>['hivra-development'],
       approvalMode: MoltbookAmbassadorConfiguration.approvalAssisted,
+      triggerPolicy: MoltbookAmbassadorConfiguration.triggerSession,
       enabled: true,
     );
 
     await store.save(configuration);
-    expect((await store.load()).agentName, 'Hivra Notes');
+    final loaded = await store.load();
+    expect(loaded.agentName, 'Hivra Notes');
+    expect(
+      loaded.triggerPolicy,
+      MoltbookAmbassadorConfiguration.triggerSession,
+    );
 
     activeRoot = _rootB;
     expect(
@@ -66,9 +72,31 @@ void main() {
     expect(raw, isNotNull);
     expect(raw, contains('agent_name'));
     expect(raw, contains('approval_mode'));
+    expect(raw, contains('trigger_policy'));
     expect(raw, isNot(contains('api_key')));
     expect(raw, isNot(contains('seed')));
     expect(raw, isNot(contains('private_key')));
+  });
+
+  test('migrates schema v1 configuration to on-demand triggering', () {
+    final configuration = MoltbookAmbassadorConfiguration.fromJson(
+      <String, dynamic>{
+        'schema_version': 1,
+        'plugin_id': moltbookAmbassadorPluginId,
+        'agent_name': 'agent',
+        'agent_description': 'description',
+        'persona_summary': 'summary',
+        'allowed_topics': <String>['hivra-development'],
+        'approval_mode': MoltbookAmbassadorConfiguration.approvalAssisted,
+        'enabled': true,
+      },
+    );
+
+    expect(
+      configuration.triggerPolicy,
+      MoltbookAmbassadorConfiguration.triggerOnDemand,
+    );
+    expect(configuration.toJson()['schema_version'], 2);
   });
 
   test('rejects invalid autonomous approval mode', () {

@@ -18,6 +18,7 @@ import 'external_effect_service.dart';
 import 'manual_consensus_check_service.dart';
 import 'moltbook_ambassador_configuration_store.dart';
 import 'moltbook_connection_service.dart';
+import 'moltbook_cycle_trigger_service.dart';
 import 'moltbook_draft_store.dart';
 import 'moltbook_external_effect_adapter.dart';
 import 'moltbook_feed_checkpoint_store.dart';
@@ -72,6 +73,7 @@ class PluginRuntimeModule {
   final MoltbookFeedCheckpointStore moltbookFeedCheckpoint;
   final MoltbookPublicationService moltbookPublications;
   final MoltbookPublicBulletinAiService moltbookPublicBulletinAi;
+  final MoltbookCycleTriggerService moltbookCycleTriggers;
   final MoltbookAmbassadorConfigurationStore _ambassadorConfiguration;
   final CapsuleFileStore _fileStore;
   final CapsuleScopedSecretVault _secretVault;
@@ -92,6 +94,7 @@ class PluginRuntimeModule {
     required this.moltbookFeedCheckpoint,
     required this.moltbookPublications,
     required this.moltbookPublicBulletinAi,
+    required this.moltbookCycleTriggers,
     required MoltbookAmbassadorConfigurationStore ambassadorConfiguration,
     required CapsuleFileStore fileStore,
     required CapsuleScopedSecretVault secretVault,
@@ -655,6 +658,64 @@ class PluginRuntimeModule {
     return cycle;
   }
 
+  Future<MoltbookCycleSummary> runMoltbookOnDemandCycle() async {
+    final scope = await _moltbookCycleScope();
+    return moltbookCycleTriggers.runOnDemand(
+      scope: scope,
+      runCycle: runMoltbookCycle,
+    );
+  }
+
+  Future<MoltbookCycleSummary?> startConfiguredMoltbookCycles() async {
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled) {
+      moltbookCycleTriggers.stopAll();
+      return null;
+    }
+    final scope = await _moltbookCycleScope();
+    switch (configuration.triggerPolicy) {
+      case MoltbookAmbassadorConfiguration.triggerOnDemand:
+        return null;
+      case MoltbookAmbassadorConfiguration.triggerSession:
+        return moltbookCycleTriggers.startSession(
+          scope: scope,
+          runCycle: runMoltbookCycle,
+        );
+      case MoltbookAmbassadorConfiguration.triggerContinuous:
+        return moltbookCycleTriggers.startContinuous(
+          scope: scope,
+          runCycle: runMoltbookCycle,
+        );
+      default:
+        throw StateError('Unsupported Moltbook trigger policy');
+    }
+  }
+
+  void stopMoltbookCycles() => moltbookCycleTriggers.stopAll();
+
+  Future<void> stopMoltbookCyclesAndDisable() async {
+    moltbookCycleTriggers.stopAll();
+    final configuration = await _ambassadorConfiguration.load();
+    if (!configuration.enabled) return;
+    await _ambassadorConfiguration.save(
+      MoltbookAmbassadorConfiguration(
+        agentName: configuration.agentName,
+        agentDescription: configuration.agentDescription,
+        personaSummary: configuration.personaSummary,
+        allowedTopics: configuration.allowedTopics,
+        approvalMode: configuration.approvalMode,
+        triggerPolicy: configuration.triggerPolicy,
+        enabled: false,
+      ),
+    );
+  }
+
+  Future<MoltbookCycleTriggerSnapshot?>
+  loadMoltbookCycleTriggerSnapshot() async {
+    final scope = await _moltbookCycleScope();
+    return moltbookCycleTriggers.snapshot(scope);
+  }
+
   Future<MoltbookCycleSummary> _runMoltbookCycle({
     required String ownerHex,
     required String accountBindingId,
@@ -744,6 +805,18 @@ class PluginRuntimeModule {
         'Moltbook cycle stopped because the account binding changed',
       );
     }
+  }
+
+  Future<String> _moltbookCycleScope() async {
+    final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
+    if (ownerHex == null || !RegExp(r'^[0-9a-f]{64}$').hasMatch(ownerHex)) {
+      throw StateError('Active capsule identity is unavailable');
+    }
+    final binding = await moltbookConnection.loadBinding();
+    if (binding == null || !binding.isClaimed || !binding.isActive) {
+      throw StateError('Active Moltbook account binding is unavailable');
+    }
+    return '$ownerHex::$moltbookAmbassadorPluginId::${binding.accountId}';
   }
 
   Future<void> disconnectMoltbook() async {
@@ -1241,6 +1314,9 @@ class PluginRuntimeModule {
 }
 
 class PluginRuntimeModuleService {
+  static final MoltbookCycleTriggerService _moltbookCycleTriggers =
+      MoltbookCycleTriggerService();
+
   final AppRuntimeService runtime;
   final ExternalEffectAdapterResolver? externalEffectAdapterResolver;
   final CapsuleFileStore fileStore;
@@ -1301,6 +1377,7 @@ class PluginRuntimeModuleService {
       moltbookPublicBulletinAi: MoltbookPublicBulletinAiService(
         credentialStore: AiDoctorCredentialStore(),
       ),
+      moltbookCycleTriggers: _moltbookCycleTriggers,
       ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(
         fileStore: fileStore,
         readActiveCapsuleRootHex: activeCapsuleRootHex,

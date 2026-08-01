@@ -462,15 +462,20 @@ class MoltbookStoredDraft {
 }
 
 class MoltbookAmbassadorConfiguration {
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
+  static const int legacySchemaVersion = 1;
   static const String approvalDraft = 'draft';
   static const String approvalAssisted = 'assisted';
+  static const String triggerOnDemand = 'on_demand';
+  static const String triggerSession = 'session';
+  static const String triggerContinuous = 'continuous_while_running';
 
   final String agentName;
   final String agentDescription;
   final String personaSummary;
   final List<String> allowedTopics;
   final String approvalMode;
+  final String triggerPolicy;
   final bool enabled;
 
   const MoltbookAmbassadorConfiguration({
@@ -479,6 +484,7 @@ class MoltbookAmbassadorConfiguration {
     required this.personaSummary,
     required this.allowedTopics,
     required this.approvalMode,
+    this.triggerPolicy = triggerOnDemand,
     required this.enabled,
   });
 
@@ -494,12 +500,15 @@ class MoltbookAmbassadorConfiguration {
         'wasm-drones',
       ],
       approvalMode: approvalAssisted,
+      triggerPolicy: triggerOnDemand,
       enabled: true,
     );
   }
 
   factory MoltbookAmbassadorConfiguration.fromJson(Map<String, dynamic> json) {
-    if (json['schema_version'] != schemaVersion) {
+    final sourceSchemaVersion = json['schema_version'];
+    if (sourceSchemaVersion != legacySchemaVersion &&
+        sourceSchemaVersion != schemaVersion) {
       throw const FormatException('Unsupported Moltbook configuration schema');
     }
     if (json['plugin_id'] != moltbookAmbassadorPluginId) {
@@ -535,6 +544,12 @@ class MoltbookAmbassadorConfiguration {
           json['approval_mode'] is String
               ? json['approval_mode'] as String
               : '',
+      triggerPolicy:
+          sourceSchemaVersion == legacySchemaVersion
+              ? triggerOnDemand
+              : json['trigger_policy'] is String
+              ? json['trigger_policy'] as String
+              : '',
       enabled: json['enabled'] as bool,
     );
     config.validate();
@@ -549,6 +564,7 @@ class MoltbookAmbassadorConfiguration {
     'persona_summary': personaSummary,
     'allowed_topics': allowedTopics,
     'approval_mode': approvalMode,
+    'trigger_policy': triggerPolicy,
     'enabled': enabled,
   };
 
@@ -570,6 +586,13 @@ class MoltbookAmbassadorConfiguration {
     }
     if (approvalMode != approvalDraft && approvalMode != approvalAssisted) {
       throw const FormatException('approval_mode must be draft or assisted');
+    }
+    if (triggerPolicy != triggerOnDemand &&
+        triggerPolicy != triggerSession &&
+        triggerPolicy != triggerContinuous) {
+      throw const FormatException(
+        'trigger_policy must be on_demand, session, or continuous_while_running',
+      );
     }
   }
 

@@ -601,10 +601,11 @@ different operations for the same remote comment; this is a release blocker,
 not an acceptable duplicate-click edge case. The normative remediation and
 mode model are defined in `moltbook_engagement_lifecycle_v1.md`.
 
-It still requires canonical engagement identity, one orchestration port,
-automatic wake-run-sleep cycle execution, a prominent persistent opt-in and
-stop control, plus replay,
-prompt-injection, revocation, Capsule-switch, and unattended-restart tests. It
-must not be enabled by changing a profile field in the Assisted release.
+Canonical engagement identity, the single orchestration port, serialized
+wake-run-sleep execution, three trigger policies, and a persistent local stop
+are implemented. Bounded/automatic release still requires the unified cycle
+projection plus replay, prompt-injection, revocation, Capsule-switch,
+rate-limit, and unattended-restart evidence. Trigger configuration alone does
+not grant write authority or make Bounded mode releasable.
 
 No phase may add direct network or secure-storage access to WASM.

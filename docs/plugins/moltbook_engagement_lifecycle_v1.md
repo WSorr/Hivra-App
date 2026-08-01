@@ -1,6 +1,6 @@
 # Moltbook Engagement Lifecycle v1
 
-Status: normative design contract; work packages 1-3 implemented, packages 4-6 incomplete
+Status: normative design contract; work packages 1-4 implemented, packages 5-6 incomplete
 
 Owner: external Moltbook Drone plus host External Effects boundary
 
@@ -263,8 +263,12 @@ Remote Moltbook content and model output are untrusted data.
    deterministic WASM planning, commits the checkpoint only after ownership
    checks, and returns one bounded local summary. It grants no new write
    authority; candidate engagement is mounted by the trigger-policy package.
-4. **Trigger policies**: mount on-demand, session, and continuous-while-running
-   triggers over the same cycle engine.
+4. **Trigger policies (implemented)**: a single application controller mounts
+   `on_demand`, once-per-process `session`, and sequential
+   `continuous_while_running` triggers over the same cycle port. Continuous
+   wake-ups never overlap, are scoped by Capsule/plugin/account, and stop
+   without deleting checkpoints or effect evidence. Existing schema-v1
+   profiles migrate to `on_demand`; no autonomous mode is enabled implicitly.
 5. **UI projection**: one next action, separate mode selectors, visible stop,
    cycle summary, and secondary diagnostics.
 6. **Release evidence**: hostile input, duplicate target, restart, timeout,

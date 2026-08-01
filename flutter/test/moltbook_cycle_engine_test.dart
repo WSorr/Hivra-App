@@ -18,6 +18,7 @@ import 'package:hivra_app/services/external_effect_service.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/moltbook_ambassador_configuration_store.dart';
 import 'package:hivra_app/services/moltbook_connection_service.dart';
+import 'package:hivra_app/services/moltbook_cycle_trigger_service.dart';
 import 'package:hivra_app/services/moltbook_draft_store.dart';
 import 'package:hivra_app/services/moltbook_feed_checkpoint_store.dart';
 import 'package:hivra_app/services/moltbook_publication_service.dart';
@@ -33,6 +34,8 @@ void main() {
   late _CycleConnection connection;
   late _MemoryCheckpoint checkpoint;
   late _CyclePublications publications;
+  late _EnabledConfiguration configuration;
+  late MoltbookCycleTriggerService triggers;
   late PluginRuntimeModule module;
 
   setUp(() {
@@ -40,6 +43,8 @@ void main() {
     connection = _CycleConnection();
     checkpoint = _MemoryCheckpoint();
     publications = _CyclePublications();
+    configuration = _EnabledConfiguration();
+    triggers = MoltbookCycleTriggerService();
     module = PluginRuntimeModule(
       registry: _UnusedRegistry(),
       sourceCatalog: _UnusedCatalog(),
@@ -55,7 +60,8 @@ void main() {
       moltbookFeedCheckpoint: checkpoint,
       moltbookPublications: publications,
       moltbookPublicBulletinAi: _UnusedAi(),
-      ambassadorConfiguration: _EnabledConfiguration(),
+      moltbookCycleTriggers: triggers,
+      ambassadorConfiguration: configuration,
       fileStore: _UnusedFileStore(),
       secretVault: _UnusedSecretVault(),
       readActiveCapsuleRootHex: () => activeRoot,
@@ -127,6 +133,40 @@ void main() {
     expect(summary.challengedCount, 1);
     expect(summary.blockedCount, 0);
     expect(checkpoint.commitCount, 1);
+  });
+
+  test('configured on-demand policy never starts implicitly', () async {
+    configuration.triggerPolicy =
+        MoltbookAmbassadorConfiguration.triggerOnDemand;
+
+    final summary = await module.startConfiguredMoltbookCycles();
+
+    expect(summary, isNull);
+    expect(connection.observeCount, 0);
+  });
+
+  test('configured session policy starts once for the runtime scope', () async {
+    configuration.triggerPolicy =
+        MoltbookAmbassadorConfiguration.triggerSession;
+
+    final first = await module.startConfiguredMoltbookCycles();
+    final duplicate = await module.startConfiguredMoltbookCycles();
+
+    expect(first, isNotNull);
+    expect(duplicate, isNull);
+    expect(connection.observeCount, 1);
+  });
+
+  test('persistent stop disables future configured cycles', () async {
+    configuration.triggerPolicy =
+        MoltbookAmbassadorConfiguration.triggerSession;
+
+    await module.stopMoltbookCyclesAndDisable();
+    final summary = await module.startConfiguredMoltbookCycles();
+
+    expect(configuration.enabled, isFalse);
+    expect(summary, isNull);
+    expect(connection.observeCount, 0);
   });
 }
 
@@ -275,16 +315,26 @@ class _HeartbeatHost implements PluginHostApiService {
 }
 
 class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
+  String triggerPolicy = MoltbookAmbassadorConfiguration.triggerOnDemand;
+  bool enabled = true;
+
   @override
   Future<MoltbookAmbassadorConfiguration> load() async =>
-      const MoltbookAmbassadorConfiguration(
+      MoltbookAmbassadorConfiguration(
         agentName: 'Hivra Agent',
         agentDescription: 'Capsule ambassador',
         personaSummary: 'Technical Hivra updates',
-        allowedTopics: <String>['hivra'],
+        allowedTopics: const <String>['hivra'],
         approvalMode: MoltbookAmbassadorConfiguration.approvalAssisted,
-        enabled: true,
+        triggerPolicy: triggerPolicy,
+        enabled: enabled,
       );
+
+  @override
+  Future<void> save(MoltbookAmbassadorConfiguration configuration) async {
+    triggerPolicy = configuration.triggerPolicy;
+    enabled = configuration.enabled;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
