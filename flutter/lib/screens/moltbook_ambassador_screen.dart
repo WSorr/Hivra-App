@@ -428,15 +428,19 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   }
 
   Future<void> _reviewReplyPublication() async {
+    final plan = _engagementPlan;
     final draft = _replyDraftPreview;
-    if (draft == null) {
+    if (plan == null || draft == null) {
       _showNotice('Prepare the WASM reply draft first', isError: true);
       return;
     }
     setState(() => _publicationBusy = true);
     try {
-      final operation = await widget.module.prepareMoltbookReplyPublication(
+      final operation = await widget.module.advanceMoltbookEngagement(
+        engagementPlan: plan,
         draft: draft,
+        policy: MoltbookEngagementWritePolicy.assisted,
+        exactApproval: false,
       );
       if (!mounted) return;
       final payload = MoltbookPublicationService.decodePayload(operation);
@@ -487,7 +491,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       );
       if (!mounted) return;
       if (approved == true) {
-        await widget.module.approveMoltbookPublication(operation);
+        await widget.module.advanceMoltbookEngagement(
+          engagementPlan: plan,
+          draft: draft,
+          policy: MoltbookEngagementWritePolicy.assisted,
+          exactApproval: true,
+        );
         _showNotice('Reply approved and queued locally');
       } else {
         _showNotice('Reply remains local and unapproved');
@@ -500,6 +509,95 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           'Could not prepare reply publication: $error',
           isError: true,
         );
+      }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
+  Future<void> _queueBoundedReply() async {
+    final plan = _engagementPlan;
+    final draft = _replyDraftPreview;
+    if (plan == null || draft == null) {
+      _showNotice('Prepare the exact WASM reply first', isError: true);
+      return;
+    }
+    if (plan.actionClass != 'reply_draft' || draft.targetCommentId == null) {
+      _showNotice(
+        'Bounded mode permits replies to an exact comment only',
+        isError: true,
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Use bounded delegation?'),
+            content: SizedBox(
+              width: 620,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'This queues only the exact reply shown below. WASM binds its draft and engagement hashes. The local policy allows at most 3 committed replies per UTC day, at least 30 minutes apart. Posts, root comments, votes, and follows remain blocked.',
+                    ),
+                    const SizedBox(height: 14),
+                    SelectableText(
+                      draft.body,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Target comment: ${draft.targetCommentId}\n'
+                      'Draft: ${draft.draftHashHex.substring(0, 12)}…',
+                      style: const TextStyle(color: Color(0xFF9CA7B5)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Keep assisted'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Authorize exact reply'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _publicationBusy = true);
+    try {
+      final result = await widget.module.advanceMoltbookEngagement(
+        engagementPlan: plan,
+        draft: draft,
+        policy: MoltbookEngagementWritePolicy.bounded,
+        exactApproval: true,
+        processAuthorizedEffect: true,
+      );
+      final publications = await widget.module.loadMoltbookPublications();
+      if (!mounted) return;
+      setState(() => _publications = publications);
+      _showNotice(
+        result.state == ExternalEffectState.succeeded
+            ? 'Exact bounded reply published and receipt verified'
+            : 'Exact bounded reply state: ${result.state.wireName} '
+                '(${result.lastErrorCode ?? "awaiting provider result"})',
+        isError:
+            result.state != ExternalEffectState.succeeded &&
+            result.state != ExternalEffectState.unresolved,
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Bounded reply blocked: $error', isError: true);
       }
     } finally {
       if (mounted) setState(() => _publicationBusy = false);
@@ -972,6 +1070,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                     onProposeReply: _proposeReply,
                     onPrepareReply: _prepareReply,
                     onReviewReplyPublication: _reviewReplyPublication,
+                    onQueueBoundedReply: _queueBoundedReply,
                     onReplyChanged:
                         () => setState(() => _replyDraftPreview = null),
                     onPlanHeartbeat: _planHeartbeat,
@@ -1733,6 +1832,7 @@ class _MoltbookConnectionCard extends StatelessWidget {
   final VoidCallback onProposeReply;
   final VoidCallback onPrepareReply;
   final VoidCallback onReviewReplyPublication;
+  final VoidCallback onQueueBoundedReply;
   final VoidCallback onReplyChanged;
   final VoidCallback onPlanHeartbeat;
   final VoidCallback onDisconnect;
@@ -1760,6 +1860,7 @@ class _MoltbookConnectionCard extends StatelessWidget {
     required this.onProposeReply,
     required this.onPrepareReply,
     required this.onReviewReplyPublication,
+    required this.onQueueBoundedReply,
     required this.onReplyChanged,
     required this.onPlanHeartbeat,
     required this.onDisconnect,
@@ -2085,6 +2186,12 @@ class _MoltbookConnectionCard extends StatelessWidget {
                                 replyBusy ? null : onReviewReplyPublication,
                             icon: const Icon(Icons.rate_review_outlined),
                             label: const Text('Review & queue reply'),
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: replyBusy ? null : onQueueBoundedReply,
+                            icon: const Icon(Icons.policy_outlined),
+                            label: const Text('Bounded queue · 3/day'),
                           ),
                         ],
                       ],

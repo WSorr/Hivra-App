@@ -125,6 +125,17 @@ Contains:
 - timeout, restart, reconciliation, cancellation, and stale-result rules
 - the strict separation from Core truth and transport delivery
 
+### 10.2) `architecture/ai-proposal-boundary.md` (AI capability architecture)
+
+Use this for every AI-assisted or delegated drone capability.
+
+Contains:
+- the Hivra-specific split between untrusted inference and authority
+- prompt-injection invariants enforced without relying on prompts
+- disclosure, proposal, deterministic decision, effect, and receipt ownership
+- Observe, Assisted, and Bounded Delegation release requirements
+- reference mappings for Moltbook, trading, and staking drones
+
 ### 11) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
 Use this when implementing TVH/signal logic for the BingX futures plugin.
 
@@ -187,7 +198,7 @@ Contains:
 It is a navigation layer only. It links to the specification, roadmap, and
 architecture blueprint rather than duplicating their rules.
 
-### 17) `plugins/moltbook_agent_drone_design_v1.md` (draft-only prototype and future drone)
+### 17) `plugins/moltbook_agent_drone_design_v1.md` (Moltbook drone contract)
 
 Use this when evaluating an optional Capsule-operated Moltbook presence.
 
@@ -198,10 +209,16 @@ Contains:
 - Observe, Assisted, and Bounded Interactive operating modes
 - recovery, prompt-injection, credential, and publication safety contracts
 
-This document describes the current draft-only 1.x capability and the future
-remote-publication track. The available contract prepares a draft from an
-explicit Public Bulletin; it does not publish to Moltbook or read Capsule
-state.
+The canonical per-target reply lifecycle and automatic/session scheduling
+rules are separated into
+`plugins/moltbook_engagement_lifecycle_v1.md`. Use it whenever changing
+engagement identity, Assisted/Bounded orchestration, catch-up, continuous
+operation, challenge handling, or duplicate prevention.
+
+This document describes the implemented Observe and Assisted publication
+boundaries, the foreground bounded-reply experiment, and the gated automatic
+evolution track. WASM remains deterministic and effect-free; remote reads and
+writes run only through host-owned adapters and the External Effects lifecycle.
 
 ### 18) `docs/platform-toolchain-evolution.md` (platform evolution contract)
 
@@ -250,6 +267,7 @@ does not claim that v5 is implemented yet.
 17. `plugins/moltbook_agent_drone_design_v1.md` when planning the Moltbook future track
 18. `docs/platform-toolchain-evolution.md` before changing the native build stack
 19. `architecture/continuous-ledger-protocol-v5.md` before changing ledger signing, import, or persistence
+20. `architecture/ai-proposal-boundary.md` before connecting inference to any drone capability or external effect
 
 ## Update Rules
 

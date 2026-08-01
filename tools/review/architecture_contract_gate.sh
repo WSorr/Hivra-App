@@ -50,6 +50,8 @@ PLATFORM_TOOLCHAIN="$ROOT/docs/platform-toolchain-evolution.md"
 CONTINUOUS_LEDGER_PROTOCOL="$ROOT/docs/architecture/continuous-ledger-protocol-v5.md"
 DELIVERY_LIFECYCLE_DOC="$ROOT/docs/architecture/transport-delivery-lifecycle.md"
 EXTERNAL_EFFECT_LIFECYCLE_DOC="$ROOT/docs/architecture/external-effect-lifecycle.md"
+AI_PROPOSAL_BOUNDARY_DOC="$ROOT/docs/architecture/ai-proposal-boundary.md"
+MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC="$ROOT/docs/plugins/moltbook_engagement_lifecycle_v1.md"
 CAPSULE_SECRET_LIFECYCLE_DOC="$ROOT/docs/architecture/capsule-scoped-secret-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
@@ -73,6 +75,8 @@ MOLTBOOK_AMBASSADOR_SCREEN="$SCREENS/moltbook_ambassador_screen.dart"
 MOLTBOOK_PROVIDER_ADAPTER="$ROOT/flutter/lib/services/moltbook_provider_adapter.dart"
 MOLTBOOK_EFFECT_ADAPTER="$ROOT/flutter/lib/services/moltbook_external_effect_adapter.dart"
 MOLTBOOK_PUBLICATION="$ROOT/flutter/lib/services/moltbook_publication_service.dart"
+PLUGIN_RUNTIME_MODULE="$ROOT/flutter/lib/services/plugin_runtime_module_service.dart"
+PLUGIN_CONTRACT_IDS="$ROOT/flutter/lib/models/plugin_contract_ids.dart"
 MOLTBOOK_CONNECTION="$ROOT/flutter/lib/services/moltbook_connection_service.dart"
 MOLTBOOK_DRAFT_STORE="$ROOT/flutter/lib/services/moltbook_draft_store.dart"
 MOLTBOOK_PUBLIC_BULLETIN_AI="$ROOT/flutter/lib/services/moltbook_public_bulletin_ai_service.dart"
@@ -187,6 +191,10 @@ require_present "$CHECKLIST" '## Engine Integrity' \
   "architecture checklist includes engine integrity section"
 require_present "$CHECKLIST" '## WASM Plugin Host' \
   "architecture checklist includes wasm plugin-host section"
+require_present "$CHECKLIST" '## AI Proposal Boundary' \
+  "architecture checklist includes AI proposal boundary section"
+require_present "$CHECKLIST" 'Prompt wording is treated only as defense in depth' \
+  "architecture checklist rejects prompt-only enforcement"
 require_present "$CHECKLIST" 'Every drone method declares exactly one scope: `solo`, `market_scan`, or `pair_scoped`\.' \
   "architecture checklist requires explicit drone consensus scope"
 require_present "$CHECKLIST" 'No pair-scoped path treats "any signable peer" as authorization for a missing or different peer\.' \
@@ -205,6 +213,16 @@ require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" 'late adapter result cannot ove
   "external effect lifecycle rejects stale adapter completion"
 require_present "$EXTERNAL_EFFECT_LIFECYCLE_DOC" 'must not share journals, DTOs' \
   "external effects remain separate from transport delivery"
+require_present "$AI_PROPOSAL_BOUNDARY_DOC" '^# AI Proposal Boundary' \
+  "AI proposal boundary architecture doc exists"
+require_present "$AI_PROPOSAL_BOUNDARY_DOC" 'Inference ends before authority begins' \
+  "AI proposal boundary separates inference from authority"
+require_present "$AI_PROPOSAL_BOUNDARY_DOC" 'prompt wording is cited as the primary security boundary' \
+  "AI proposal boundary rejects prompt-only security"
+require_present "$SPEC" 'architecture/ai-proposal-boundary\.md' \
+  "specification binds AI-enabled capabilities to proposal boundary"
+require_present "$DOCS_README" 'architecture/ai-proposal-boundary\.md' \
+  "docs index references AI proposal boundary"
 require_present "$CONTINUOUS_LEDGER_PROTOCOL" '^# Cryptographically Continuous Ledger Protocol v5' \
   "continuous-ledger v5 protocol contract exists"
 require_present "$CONTINUOUS_LEDGER_PROTOCOL" 'Local history acceptance' \
@@ -457,6 +475,24 @@ require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "canonicalProductAnchor" \
   "Moltbook public-bulletin AI carries the Capsule-first product anchor"
 require_present "$MOLTBOOK_AMBASSADOR_MODELS" "relationship-first\\|concept system" \
   "Moltbook public-bulletin validation rejects contradictory positioning"
+require_present "$MOLTBOOK_AMBASSADOR_MODELS" '_unsafePublicTextControls' \
+  "Moltbook AI proposals reject hidden text controls"
+require_present "$MOLTBOOK_EFFECT_ADAPTER" 'payload contains unsupported fields' \
+  "Moltbook external effects reject unknown envelope fields"
+require_present "$PLUGIN_CONTRACT_IDS" 'authorize_moltbook_delegated_reply' \
+  "Moltbook bounded delegation has an explicit plugin method"
+require_present "$PLUGIN_HOST_API_DOC" 'authorize_moltbook_delegated_reply' \
+  "host API documents Moltbook bounded delegation method"
+require_present "$PLUGIN_CONTRACT_HANDLERS" 'content\.reply\.delegate' \
+  "Moltbook delegated reply requires its own WASM capability"
+require_present "$PLUGIN_CONTRACT_HANDLERS" 'moltbook_ambassador_delegated_reply_authorization' \
+  "Moltbook host validates delegated authorization contract kind"
+require_present "$MOLTBOOK_PUBLICATION" 'validateDelegatedReplyBinding' \
+  "Moltbook delegated approval binds the exact canonical reply effect"
+require_present "$PLUGIN_RUNTIME_MODULE" 'maxDailyWrites = 3' \
+  "Moltbook delegated replies have a conservative daily budget"
+require_present "$PLUGIN_RUNTIME_MODULE" 'minIntervalMinutes = 30' \
+  "Moltbook delegated replies have a conservative minimum interval"
 require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "natural_non_repetitive_prose.*true" \
   "Moltbook public-bulletin AI requests bounded natural prose"
 require_present "$MOLTBOOK_PUBLIC_BULLETIN_AI" "human_review_required.*true" \
@@ -602,5 +638,42 @@ require_present "$LEDGER_SUMMARY" '_starterCountFromCoreProjection' \
   "capsule selector consumes Core-owned starter slot projection"
 require_absent "$LEDGER_SUMMARY" '_parseStarterCreated|_parseStarterBurnedId|activeStartersById' \
   "capsule selector does not mirror starter lifecycle transitions"
+
+# 10) Moltbook automatic evolution must preserve one target lifecycle.
+require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" '^# Moltbook Engagement Lifecycle v1$' \
+  "Moltbook canonical engagement lifecycle exists"
+require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'engagement_id' \
+  "Moltbook lifecycle defines canonical engagement identity"
+require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'zero or one non-terminal engagement' \
+  "Moltbook lifecycle forbids parallel active target engagements"
+require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'on_demand.*session.*continuous_while_running|`on_demand`|`continuous_while_running`' \
+  "Moltbook trigger modes share one lifecycle contract"
+require_present "$ROOT/docs/plugins/moltbook_agent_drone_design_v1.md" 'moltbook_engagement_lifecycle_v1\.md' \
+  "Moltbook design references canonical engagement lifecycle"
+require_present "$ROADMAP" 'moltbook_engagement_lifecycle_v1\.md' \
+  "roadmap tracks canonical Moltbook engagement remediation"
+require_present "$MOLTBOOK_PUBLICATION" 'String replyEngagementId\(' \
+  "Moltbook publication owner derives canonical engagement identity"
+require_present "$MOLTBOOK_PUBLICATION" "'engagement_id': engagementId" \
+  "Moltbook reply payload binds the canonical engagement identity"
+require_present "$MOLTBOOK_PUBLICATION" 'findReplyOperations\(' \
+  "Moltbook publication owner projects targets from the effect journal"
+require_present "$MOLTBOOK_PUBLICATION" 'conflicting active publication effects' \
+  "Moltbook publication owner freezes legacy duplicate targets"
+require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Single orchestration port \(implemented\)' \
+  "Moltbook lifecycle records the implemented orchestration port"
+require_present "$PLUGIN_RUNTIME_MODULE" 'Future<ExternalEffectOperation> advanceMoltbookEngagement\(' \
+  "Moltbook runtime exposes one engagement orchestration port"
+MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT="$(
+  rg -c 'advanceMoltbookEngagement' \
+    "$MOLTBOOK_AMBASSADOR_SCREEN" || true
+)"
+if [ "${MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT:-0}" -ge 3 ]; then
+  pass "Moltbook Assisted and Bounded UI routes share one orchestration owner"
+else
+  fail "Moltbook Assisted and Bounded UI routes share one orchestration owner"
+fi
+require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'prepareMoltbookReplyPublication|authorizeDelegatedMoltbookReply|approveDelegatedMoltbookReply' \
+  "Moltbook screen has no parallel reply authorization or queue route"
 
 exit "$STATUS"

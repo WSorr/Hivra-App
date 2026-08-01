@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
 import '../models/external_effect_models.dart';
 import '../models/moltbook_ambassador_models.dart';
+import '../models/moltbook_provider_models.dart';
 import '../models/plugin_contract_ids.dart';
 import 'external_effect_service.dart';
 import 'moltbook_connection_service.dart';
@@ -11,21 +13,30 @@ import 'moltbook_external_effect_adapter.dart';
 
 class MoltbookPublicationService {
   static const String defaultSubmolt = 'general';
+  static const String replyActionClass = 'reply_draft';
+  static final Map<String, Future<void>> _engagementTails =
+      <String, Future<void>>{};
 
-  final MoltbookConnectionService _connection;
   final ExternalEffectService _effects;
+  final Future<MoltbookConnectionBinding?> Function() _loadBinding;
 
-  const MoltbookPublicationService({
+  MoltbookPublicationService({
     required MoltbookConnectionService connection,
     required ExternalEffectService effects,
-  }) : _connection = connection,
-       _effects = effects;
+  }) : _effects = effects,
+       _loadBinding = connection.loadBinding;
+
+  MoltbookPublicationService.withBindingLoader({
+    required ExternalEffectService effects,
+    required Future<MoltbookConnectionBinding?> Function() loadBinding,
+  }) : _effects = effects,
+       _loadBinding = loadBinding;
 
   Future<ExternalEffectOperation> prepare({
     required MoltbookDraftPreview draft,
     required String submoltName,
   }) async {
-    final binding = await _connection.loadBinding();
+    final binding = await _loadBinding();
     if (binding == null) {
       throw StateError('Connect a Moltbook account before publication');
     }
@@ -70,13 +81,20 @@ class MoltbookPublicationService {
   Future<ExternalEffectOperation> prepareReply({
     required MoltbookReplyDraftPreview draft,
   }) async {
-    final binding = await _connection.loadBinding();
+    final binding = await _loadBinding();
     if (binding == null) {
       throw StateError('Connect a Moltbook account before replying');
     }
     if (!binding.isClaimed || !binding.isActive) {
       throw StateError('Moltbook account must be claimed and active');
     }
+    final ownerHex = _effects.activeOwnerCapsuleHex;
+    final engagementId = replyEngagementId(
+      ownerCapsuleHex: ownerHex,
+      accountBindingId: binding.accountId,
+      postId: draft.targetPostId,
+      parentCommentId: draft.targetCommentId,
+    );
     final semanticId =
         sha256
             .convert(
@@ -91,7 +109,8 @@ class MoltbookPublicationService {
     final operationId = 'moltbook-comment-$semanticId';
     final marker = MoltbookPublicationContract.operationMarker(operationId);
     final canonicalPayload = jsonEncode(<String, dynamic>{
-      'schema_version': 1,
+      'schema_version': 2,
+      'engagement_id': engagementId,
       'account_name': binding.accountName,
       'post_id': draft.targetPostId,
       'parent_comment_id': draft.targetCommentId,
@@ -100,20 +119,79 @@ class MoltbookPublicationService {
       'source_draft_hash_hex': draft.draftHashHex,
       'engagement_plan_hash_hex': draft.engagementPlanHashHex,
     });
-    return _effects.prepare(
-      operationId: operationId,
-      pluginId: moltbookAmbassadorPluginId,
-      providerId: MoltbookConnectionService.providerId,
-      accountBindingId: binding.accountId,
-      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
-      canonicalPayloadJson: canonicalPayload,
+    final lockKey = '$ownerHex::$engagementId';
+    return _withEngagementLock(lockKey, () async {
+      _requireSameOwner(ownerHex);
+      final matching = await findReplyOperations(
+        accountBindingId: binding.accountId,
+        postId: draft.targetPostId,
+        parentCommentId: draft.targetCommentId,
+      );
+      final blocking = matching
+          .where(
+            (operation) =>
+                !operation.state.isTerminal ||
+                operation.state == ExternalEffectState.succeeded,
+          )
+          .toList(growable: false);
+      if (blocking.length > 1) {
+        throw StateError(
+          'Moltbook engagement has conflicting active publication effects',
+        );
+      }
+      if (blocking.isNotEmpty) {
+        final existing = blocking.single;
+        if (existing.state == ExternalEffectState.succeeded) {
+          throw StateError('Moltbook engagement is already published');
+        }
+        if (_sameReplyDraft(existing, draft)) return existing;
+        throw StateError(
+          'Moltbook engagement already has an active immutable reply',
+        );
+      }
+      _requireSameOwner(ownerHex);
+      return _effects.prepare(
+        operationId: operationId,
+        pluginId: moltbookAmbassadorPluginId,
+        providerId: MoltbookConnectionService.providerId,
+        accountBindingId: binding.accountId,
+        effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
+        canonicalPayloadJson: canonicalPayload,
+      );
+    });
+  }
+
+  Future<List<ExternalEffectOperation>> findReplyOperations({
+    required String accountBindingId,
+    required String postId,
+    required String? parentCommentId,
+  }) async {
+    final ownerHex = _effects.activeOwnerCapsuleHex;
+    final expectedId = replyEngagementId(
+      ownerCapsuleHex: ownerHex,
+      accountBindingId: accountBindingId,
+      postId: postId,
+      parentCommentId: parentCommentId,
     );
+    final operations = await _effects.list(
+      pluginId: moltbookAmbassadorPluginId,
+    );
+    return operations
+        .where(
+          (operation) =>
+              operation.effectKind ==
+                  MoltbookExternalEffectAdapter.commentEffectKind &&
+              operation.accountBindingId == accountBindingId &&
+              _replyEngagementId(operation) == expectedId,
+        )
+        .toList(growable: false);
   }
 
   Future<ExternalEffectOperation> approveAndQueue(
     ExternalEffectOperation operation,
   ) async {
     _validateMoltbookOperation(operation);
+    await _assertNoReplyConflict(operation);
     final evidenceHash =
         sha256
             .convert(
@@ -141,7 +219,26 @@ class MoltbookPublicationService {
     );
   }
 
-  Future<ExternalEffectOperation> process(String operationId) {
+  Future<ExternalEffectOperation> approveDelegatedReplyAndQueue({
+    required ExternalEffectOperation operation,
+    required MoltbookDelegatedReplyAuthorization authorization,
+  }) async {
+    validateDelegatedReplyBinding(operation, authorization);
+    await _assertNoReplyConflict(operation);
+    await _effects.approve(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: operation.operationId,
+      approvalEvidenceHashHex: authorization.authorizationHashHex,
+    );
+    return _effects.enqueue(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: operation.operationId,
+    );
+  }
+
+  Future<ExternalEffectOperation> process(String operationId) async {
+    final operation = await _operationById(operationId);
+    await _assertNoReplyConflict(operation);
     return _effects.process(
       pluginId: moltbookAmbassadorPluginId,
       operationId: operationId,
@@ -179,6 +276,28 @@ class MoltbookPublicationService {
     return Map<String, dynamic>.from(decoded);
   }
 
+  static String replyEngagementId({
+    required String ownerCapsuleHex,
+    required String accountBindingId,
+    required String postId,
+    required String? parentCommentId,
+  }) {
+    final canonical = jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'capsule_root': ownerCapsuleHex.trim().toLowerCase(),
+      'plugin_id': moltbookAmbassadorPluginId,
+      'provider_id': MoltbookConnectionService.providerId,
+      'provider_account_id': accountBindingId.trim(),
+      'post_id': postId.trim(),
+      'action_class': replyActionClass,
+      'parent_comment_id_or_root':
+          parentCommentId?.trim().isNotEmpty == true
+              ? parentCommentId!.trim()
+              : 'root',
+    });
+    return sha256.convert(utf8.encode(canonical)).toString();
+  }
+
   static Uri? publishedPostUri(ExternalEffectOperation operation) {
     final receipt = operation.receipt;
     if (operation.state != ExternalEffectState.succeeded ||
@@ -199,6 +318,32 @@ class MoltbookPublicationService {
     return Uri.https('www.moltbook.com', '/post/$postId');
   }
 
+  static void validateDelegatedReplyBinding(
+    ExternalEffectOperation operation,
+    MoltbookDelegatedReplyAuthorization authorization,
+  ) {
+    _validateMoltbookOperation(operation);
+    if (operation.effectKind !=
+        MoltbookExternalEffectAdapter.commentEffectKind) {
+      throw const FormatException('Delegation permits Moltbook replies only');
+    }
+    if (authorization.targetCommentId == null) {
+      throw const FormatException(
+        'Delegated reply requires an exact parent comment',
+      );
+    }
+    final payload = decodePayload(operation);
+    if (payload['post_id'] != authorization.targetPostId ||
+        payload['parent_comment_id'] != authorization.targetCommentId ||
+        payload['source_draft_hash_hex'] != authorization.replyDraftHashHex ||
+        payload['engagement_plan_hash_hex'] !=
+            authorization.engagementPlanHashHex) {
+      throw const FormatException(
+        'Delegated authorization does not bind this exact reply effect',
+      );
+    }
+  }
+
   static void _validateMoltbookOperation(ExternalEffectOperation operation) {
     operation.validate();
     if (operation.pluginId != moltbookAmbassadorPluginId ||
@@ -209,5 +354,101 @@ class MoltbookPublicationService {
         }.contains(operation.effectKind)) {
       throw const FormatException('Operation is not a Moltbook publication');
     }
+  }
+
+  Future<ExternalEffectOperation> _operationById(String operationId) async {
+    final operations = await list();
+    return operations.firstWhere(
+      (operation) => operation.operationId == operationId,
+      orElse: () => throw StateError('Moltbook publication was not found'),
+    );
+  }
+
+  Future<void> _assertNoReplyConflict(ExternalEffectOperation operation) async {
+    if (operation.effectKind !=
+        MoltbookExternalEffectAdapter.commentEffectKind) {
+      return;
+    }
+    final payload = decodePayload(operation);
+    final matching = await findReplyOperations(
+      accountBindingId: operation.accountBindingId,
+      postId: payload['post_id']?.toString() ?? '',
+      parentCommentId: payload['parent_comment_id']?.toString(),
+    );
+    final blocking = matching
+        .where(
+          (candidate) =>
+              !candidate.state.isTerminal ||
+              candidate.state == ExternalEffectState.succeeded,
+        )
+        .toList(growable: false);
+    if (blocking.length > 1 ||
+        (blocking.length == 1 &&
+            blocking.single.operationId != operation.operationId)) {
+      throw StateError(
+        'Moltbook engagement has conflicting active publication effects',
+      );
+    }
+  }
+
+  static String _replyEngagementId(ExternalEffectOperation operation) {
+    final payload = decodePayload(operation);
+    final schemaVersion = payload['schema_version'];
+    final postId = payload['post_id'];
+    final parentCommentId = payload['parent_comment_id'];
+    if ((schemaVersion != 1 && schemaVersion != 2) ||
+        postId is! String ||
+        postId.trim().isEmpty ||
+        (parentCommentId != null && parentCommentId is! String)) {
+      throw const FormatException('Invalid Moltbook reply target in journal');
+    }
+    final derived = replyEngagementId(
+      ownerCapsuleHex: operation.ownerCapsuleHex,
+      accountBindingId: operation.accountBindingId,
+      postId: postId,
+      parentCommentId: parentCommentId as String?,
+    );
+    final embedded = payload['engagement_id'];
+    if ((schemaVersion == 2 && embedded is! String) ||
+        (embedded != null && embedded != derived)) {
+      throw const FormatException('Moltbook engagement identity mismatch');
+    }
+    return derived;
+  }
+
+  static bool _sameReplyDraft(
+    ExternalEffectOperation operation,
+    MoltbookReplyDraftPreview draft,
+  ) {
+    final payload = decodePayload(operation);
+    return payload['source_draft_hash_hex'] == draft.draftHashHex &&
+        payload['engagement_plan_hash_hex'] == draft.engagementPlanHashHex &&
+        payload['content'] == draft.body;
+  }
+
+  void _requireSameOwner(String ownerHex) {
+    if (_effects.activeOwnerCapsuleHex != ownerHex) {
+      throw StateError('Active Capsule changed during Moltbook preparation');
+    }
+  }
+
+  static Future<T> _withEngagementLock<T>(
+    String key,
+    Future<T> Function() action,
+  ) {
+    final previous = _engagementTails[key] ?? Future<void>.value();
+    final completer = Completer<void>();
+    _engagementTails[key] = completer.future;
+    return () async {
+      await previous.catchError((_) {});
+      try {
+        return await action();
+      } finally {
+        completer.complete();
+        if (identical(_engagementTails[key], completer.future)) {
+          _engagementTails.remove(key);
+        }
+      }
+    }();
   }
 }

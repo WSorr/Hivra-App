@@ -1339,6 +1339,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - connect the existing Capsule Analyst/Hivra Engineer AI tooling to the
       Trading Drone as an advisory analysis layer.
   - Boundary:
+    - all inference follows
+      `docs/architecture/ai-proposal-boundary.md`; AI output remains an
+      untrusted proposal/explanation with no trading capability.
     - AI reads trading-drone snapshots, decision envelopes, risk envelopes,
       order-tracking state, and reason codes.
     - AI explains signals, missing inputs, risk blocks, trend conflicts, and
@@ -1397,6 +1400,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       helps the user understand yield, risk, lockups, rewards, validator health,
       and required maintenance actions.
   - Boundary:
+    - all inference follows
+      `docs/architecture/ai-proposal-boundary.md`; executable staking authority
+      cannot be inferred from model output.
     - This is a Staking Drone / financial-operations plugin, not Core.
     - AI acts as an operator assistant: it explains portfolio state, detects
       anomalies, ranks maintenance actions, and prepares user-readable plans.
@@ -1443,6 +1449,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       drafts, cursors, and audit history remain isolated plugin state.
     - solo account operation does not require Relationships or Pair Consensus.
   - Required safety model:
+    - all inference follows
+      `docs/architecture/ai-proposal-boundary.md`; model output has no
+      capability and cannot select or execute provider effects.
     - credentials are scoped by Capsule, plugin, provider, and external account
       in platform secure storage.
     - agent name, description, persona, topic allowlist, approval mode, and
@@ -1464,6 +1473,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       receipt`.
     - the normative lifecycle owner and review gate are documented in
       `docs/architecture/external-effect-lifecycle.md`.
+    - the normative inference/authority boundary is documented in
+      `docs/architecture/ai-proposal-boundary.md`.
+    - the normative target identity, single-engagement lifecycle,
+      wake-run-sleep cycle, and trigger-mode contract is documented in
+      `docs/plugins/moltbook_engagement_lifecycle_v1.md`.
     - completed read-only adapter baseline: pinned official HTTPS origin,
       bounded account/home projections, redirect rejection, timeout/size
       limits, rate-budget parsing, and fail-closed provider error mapping.
@@ -1506,6 +1520,13 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - completed first write milestone: Assisted publication with exact preview,
       one explicit approval per effect, durable provider challenge, explicit
       verification response, and matching visible-post evidence before success.
+    - active blocker before Bounded/automatic release: Assisted and Bounded UI
+      paths can create separate effects for one remote comment. Implement one
+      canonical `engagement_id`, target-level active/succeeded deduplication,
+      and one orchestration port before enabling session or continuous modes.
+    - planned trigger policies over that one cycle engine: `on_demand`,
+      `session` catch-up (recommended default), and
+      `continuous_while_running`; no mode may fork decision/effect semantics.
     - completed macOS Release evidence on 2026-07-27: Moltbook post
       `32a3006b-94e3-4087-82f6-58e3666cef4e` remained unresolved while hidden
       and became succeeded only after explicit challenge resolution and a

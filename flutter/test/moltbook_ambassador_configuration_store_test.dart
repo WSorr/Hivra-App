@@ -107,6 +107,55 @@ void main() {
     );
   });
 
+  test('accepts only a hash-bound delegated reply authorization', () {
+    const canonical =
+        '{"schema_version":1,'
+        '"plugin_id":"hivra.contract.moltbook-ambassador.v1",'
+        '"contract_kind":"moltbook_ambassador_delegated_reply_authorization",'
+        '"target_post_id":"post-1",'
+        '"target_comment_id":"comment-1",'
+        '"engagement_plan_hash_hex":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+        '"reply_draft_hash_hex":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",'
+        '"policy_version":1,"max_daily_writes":3,"writes_today":1,'
+        '"min_interval_minutes":30,'
+        '"observed_at_utc":"2026-07-31T18:00:00.000Z",'
+        '"publish_allowed":true,"human_review_required":false,'
+        '"safety_flags":["exact_reply_draft_bound","engagement_plan_bound"]}';
+    final authorization = MoltbookDelegatedReplyAuthorization.fromHostResult(
+      <String, dynamic>{
+        'schema_version': 1,
+        'plugin_id': moltbookAmbassadorPluginId,
+        'contract_kind': 'moltbook_ambassador_delegated_reply_authorization',
+        'target_post_id': 'post-1',
+        'target_comment_id': 'comment-1',
+        'engagement_plan_hash_hex':
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'reply_draft_hash_hex':
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        'policy_version': 1,
+        'max_daily_writes': 3,
+        'writes_today': 1,
+        'min_interval_minutes': 30,
+        'observed_at_utc': '2026-07-31T18:00:00.000Z',
+        'publish_allowed': true,
+        'human_review_required': false,
+        'safety_flags': <String>[
+          'exact_reply_draft_bound',
+          'engagement_plan_bound',
+        ],
+        'authorization_hash_hex':
+            sha256.convert(canonical.codeUnits).toString(),
+        'canonical_authorization_json': canonical,
+      },
+    );
+
+    expect(authorization.writesToday, 1);
+    expect(
+      authorization.replyDraftHashHex,
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
+  });
+
   test(
     'does not replace a malformed persisted configuration with defaults',
     () async {

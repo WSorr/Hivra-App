@@ -122,6 +122,14 @@ An adapter implements a capability port and keeps native DTOs inside the
 adapter boundary. Provider output is input or evidence; it cannot silently
 become a deterministic decision or Core fact.
 
+### New AI-enabled capability
+
+Inference is an untrusted proposal source, never a capability owner or effect
+executor. The drone owns proposal semantics and deterministic policy; the host
+owns disclosure, grants, approval, and lifecycle; the adapter owns one pinned
+provider boundary. AI output reaches an external effect only through
+`architecture/ai-proposal-boundary.md` and the existing Effect Lane.
+
 ## 5. Pre-Implementation Capability Closure
 
 No material function enters implementation until it has a written closure

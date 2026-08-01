@@ -441,6 +441,90 @@ class PluginRuntimeModule {
     return preview;
   }
 
+  Future<MoltbookDelegatedReplyAuthorization> _authorizeDelegatedMoltbookReply({
+    required MoltbookEngagementPlan engagementPlan,
+    required MoltbookReplyDraftPreview draft,
+    DateTime? nowUtc,
+  }) async {
+    if (engagementPlan.actionClass != 'reply_draft' ||
+        draft.targetCommentId == null) {
+      throw StateError(
+        'Bounded delegation permits replies to an exact comment only',
+      );
+    }
+    if (draft.engagementPlanHashHex != engagementPlan.planHashHex ||
+        draft.targetPostId != engagementPlan.targetPostId ||
+        draft.targetCommentId != engagementPlan.targetCommentId) {
+      throw const FormatException(
+        'Reply draft does not bind the selected engagement plan',
+      );
+    }
+    if (!const <String>{
+      'reply_draft',
+      'comment_draft',
+    }.contains(engagementPlan.actionClass)) {
+      throw StateError('Engagement plan does not authorize a written reply');
+    }
+    final ownerHex = _readActiveCapsuleRootHex()?.trim().toLowerCase();
+    if (ownerHex == null || ownerHex.length != 64) {
+      throw StateError('Active capsule identity is unavailable');
+    }
+    final now = (nowUtc ?? DateTime.now()).toUtc();
+    final usage = await _moltbookDelegationUsage(now);
+    final writesToday = usage.writesToday;
+    final minutesSinceLastWrite = usage.minutesSinceLastWrite;
+    const maxDailyWrites = 3;
+    const minIntervalMinutes = 30;
+    final response = await pluginHostApi.executeWithRuntimeHook(
+      PluginHostApiRequest(
+        schemaVersion: pluginHostApiSchemaVersion,
+        pluginId: moltbookAmbassadorPluginId,
+        method: authorizeMoltbookDelegatedReplyMethod,
+        args: <String, dynamic>{
+          'schema_version': 1,
+          'plugin_id': moltbookAmbassadorPluginId,
+          'host_method': authorizeMoltbookDelegatedReplyMethod,
+          'target_post_id': draft.targetPostId,
+          'target_comment_id': draft.targetCommentId,
+          'engagement_plan_hash_hex': draft.engagementPlanHashHex,
+          'reply_draft_hash_hex': draft.draftHashHex,
+          'policy_version': 1,
+          'max_daily_writes': maxDailyWrites,
+          'writes_today': writesToday,
+          'min_interval_minutes': minIntervalMinutes,
+          'minutes_since_last_write': minutesSinceLastWrite,
+          'observed_at_utc': now.toIso8601String(),
+        },
+      ),
+    );
+    if (!_isStillOwnedBy(ownerHex)) {
+      throw StateError(
+        'Delegated authorization discarded because the active capsule changed',
+      );
+    }
+    final result = response.result;
+    if (response.status != PluginHostApiStatus.executed || result == null) {
+      throw StateError(
+        response.errorMessage ?? 'Delegated reply authorization was rejected',
+      );
+    }
+    final authorization = MoltbookDelegatedReplyAuthorization.fromHostResult(
+      result,
+    );
+    if (authorization.replyDraftHashHex != draft.draftHashHex ||
+        authorization.engagementPlanHashHex != engagementPlan.planHashHex) {
+      throw const FormatException(
+        'Delegated authorization changed the bound reply evidence',
+      );
+    }
+    await uiLog.log(
+      'moltbook.reply.delegate',
+      'authorized draft=${draft.draftHashHex.substring(0, 12)}.. '
+          'budget=$writesToday/$maxDailyWrites',
+    );
+    return authorization;
+  }
+
   Future<MoltbookHeartbeatPlan> planMoltbookHeartbeat() async {
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) {
@@ -577,22 +661,62 @@ class PluginRuntimeModule {
     return operation;
   }
 
-  Future<ExternalEffectOperation> prepareMoltbookReplyPublication({
+  Future<ExternalEffectOperation> advanceMoltbookEngagement({
+    required MoltbookEngagementPlan engagementPlan,
     required MoltbookReplyDraftPreview draft,
+    required MoltbookEngagementWritePolicy policy,
+    required bool exactApproval,
+    bool processAuthorizedEffect = false,
+    DateTime? nowUtc,
   }) async {
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled ||
         configuration.approvalMode !=
             MoltbookAmbassadorConfiguration.approvalAssisted) {
-      throw StateError('Assisted Moltbook publication is not enabled');
+      throw StateError('Moltbook engagement publication is not enabled');
     }
+    if (draft.engagementPlanHashHex != engagementPlan.planHashHex ||
+        draft.targetPostId != engagementPlan.targetPostId ||
+        draft.targetCommentId != engagementPlan.targetCommentId) {
+      throw const FormatException(
+        'Reply draft does not bind the selected engagement plan',
+      );
+    }
+    if (processAuthorizedEffect && !exactApproval) {
+      throw StateError('An unapproved engagement cannot be processed');
+    }
+
+    MoltbookDelegatedReplyAuthorization? delegatedAuthorization;
+    if (policy == MoltbookEngagementWritePolicy.bounded) {
+      if (!exactApproval) {
+        throw StateError('Bounded engagement requires explicit enablement');
+      }
+      delegatedAuthorization = await _authorizeDelegatedMoltbookReply(
+        engagementPlan: engagementPlan,
+        draft: draft,
+        nowUtc: nowUtc,
+      );
+    }
+
     final operation = await moltbookPublications.prepareReply(draft: draft);
     await uiLog.log(
-      'moltbook.reply.publication.prepare',
-      'operation=${operation.operationId} '
+      'moltbook.engagement.advance',
+      'policy=${policy.name} approval=$exactApproval '
+          'operation=${operation.operationId} '
           'payload=${operation.payloadHashHex.substring(0, 12)}..',
     );
-    return operation;
+    if (!exactApproval) return operation;
+
+    final queued =
+        policy == MoltbookEngagementWritePolicy.assisted
+            ? await moltbookPublications.approveAndQueue(operation)
+            : await _approveDelegatedMoltbookReply(
+              operation: operation,
+              authorization: delegatedAuthorization!,
+              nowUtc: nowUtc,
+            );
+    if (!processAuthorizedEffect) return queued;
+    return moltbookPublications.process(queued.operationId);
   }
 
   Future<ExternalEffectOperation> approveMoltbookPublication(
@@ -604,6 +728,77 @@ class PluginRuntimeModule {
       'operation=${queued.operationId} state=${queued.state.wireName}',
     );
     return queued;
+  }
+
+  Future<ExternalEffectOperation> _approveDelegatedMoltbookReply({
+    required ExternalEffectOperation operation,
+    required MoltbookDelegatedReplyAuthorization authorization,
+    DateTime? nowUtc,
+  }) async {
+    final now = (nowUtc ?? DateTime.now()).toUtc();
+    final observedAt = DateTime.parse(authorization.observedAtUtc).toUtc();
+    final authorizationAge = now.difference(observedAt);
+    if (authorizationAge.isNegative ||
+        authorizationAge > const Duration(minutes: 10)) {
+      throw StateError('Delegated reply authorization is stale');
+    }
+    final usage = await _moltbookDelegationUsage(now);
+    if (usage.writesToday != authorization.writesToday ||
+        usage.writesToday >= authorization.maxDailyWrites ||
+        (usage.minutesSinceLastWrite != null &&
+            usage.minutesSinceLastWrite! < authorization.minIntervalMinutes)) {
+      throw StateError(
+        'Delegated reply policy changed after authorization; authorize again',
+      );
+    }
+    final queued = await moltbookPublications.approveDelegatedReplyAndQueue(
+      operation: operation,
+      authorization: authorization,
+    );
+    await uiLog.log(
+      'moltbook.reply.delegate.queue',
+      'operation=${queued.operationId} state=${queued.state.wireName}',
+    );
+    return queued;
+  }
+
+  Future<({int writesToday, int? minutesSinceLastWrite})>
+  _moltbookDelegationUsage(DateTime nowUtc) async {
+    final now = nowUtc.toUtc();
+    final dayStart = DateTime.utc(now.year, now.month, now.day);
+    final committedReplies =
+        (await moltbookPublications.list())
+            .where(
+              (operation) =>
+                  operation.effectKind ==
+                      MoltbookExternalEffectAdapter.commentEffectKind &&
+                  const <ExternalEffectState>{
+                    ExternalEffectState.approved,
+                    ExternalEffectState.queued,
+                    ExternalEffectState.delivering,
+                    ExternalEffectState.unresolved,
+                    ExternalEffectState.succeeded,
+                  }.contains(operation.state),
+            )
+            .toList()
+          ..sort((a, b) => b.updatedAtUtc.compareTo(a.updatedAtUtc));
+    final writesToday =
+        committedReplies.where((operation) {
+          final updated = DateTime.tryParse(operation.updatedAtUtc)?.toUtc();
+          return updated != null && !updated.isBefore(dayStart);
+        }).length;
+    final lastWriteAt =
+        committedReplies.isEmpty
+            ? null
+            : DateTime.tryParse(committedReplies.first.updatedAtUtc)?.toUtc();
+    final minutesSinceLastWrite =
+        lastWriteAt == null
+            ? null
+            : now.difference(lastWriteAt).inMinutes.clamp(0, 1000000);
+    return (
+      writesToday: writesToday,
+      minutesSinceLastWrite: minutesSinceLastWrite,
+    );
   }
 
   Future<ExternalEffectOperation> processMoltbookPublication(

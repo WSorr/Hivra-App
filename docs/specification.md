@@ -499,6 +499,16 @@ Diagnostics:
   release-readiness outputs as unverified until the user runs the required
   Hivra gates. AI output MUST NOT override review gates, release gates, or
   manual smoke.
+- Every AI-enabled drone or external capability MUST follow
+  `docs/architecture/ai-proposal-boundary.md`: inference produces untrusted
+  bounded proposals only; deterministic capability policy remains executable
+  without AI authority; external writes use the existing durable effect
+  lifecycle.
+- Inference output MUST NOT select capabilities, adapter origins/endpoints,
+  credentials, operation ids, approval states, retry states, or receipts.
+- Prompt instructions are defense in depth only. Exact schemas, dependency
+  isolation, capability-scoped ports, deterministic policy, and effect
+  reconciliation are the mandatory enforcement boundary.
 
 ---
 

@@ -84,6 +84,24 @@ void main() {
     });
   });
 
+  test('accepts a target-bound v2 reply payload', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send:
+            (_) async => _jsonResponse(<String, dynamic>{
+              'success': true,
+              'comment': <String, dynamic>{'id': 'comment-v2'},
+            }),
+      ),
+    );
+
+    final result = await adapter.deliver(_commentRequest(schemaVersion: 2));
+
+    expect(result.status, ExternalEffectAdapterStatus.succeeded);
+    expect(result.receipt?.providerReceiptId, 'comment-v2');
+  });
+
   test(
     'keeps legacy operation markers readable for existing effects',
     () async {
@@ -379,6 +397,42 @@ void main() {
     expect(result.errorCode, 'credential_unavailable');
     expect(networkCalls, 0);
   });
+
+  test(
+    'rejects effect payload fields outside the canonical contract',
+    () async {
+      var networkCalls = 0;
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (_) async {
+            networkCalls += 1;
+            return _jsonResponse(<String, dynamic>{});
+          },
+        ),
+      );
+      final base = _request();
+      final decoded =
+          jsonDecode(base.canonicalPayloadJson) as Map<String, dynamic>;
+      decoded['target_url'] = 'https://attacker.invalid/publish';
+      final request = ExternalEffectAdapterRequest(
+        ownerCapsuleHex: base.ownerCapsuleHex,
+        operationId: base.operationId,
+        pluginId: base.pluginId,
+        providerId: base.providerId,
+        accountBindingId: base.accountBindingId,
+        effectKind: base.effectKind,
+        canonicalPayloadJson: jsonEncode(decoded),
+        payloadHashHex: base.payloadHashHex,
+      );
+
+      final result = await adapter.deliver(request);
+
+      expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
+      expect(result.errorCode, 'invalid_effect_payload');
+      expect(networkCalls, 0);
+    },
+  );
 }
 
 ExternalEffectAdapterRequest _request({String owner = _owner}) {
@@ -403,9 +457,13 @@ ExternalEffectAdapterRequest _request({String owner = _owner}) {
   );
 }
 
-ExternalEffectAdapterRequest _commentRequest() {
-  const payload =
-      '{"schema_version":1,"account_name":"HivraAgent",'
+ExternalEffectAdapterRequest _commentRequest({int schemaVersion = 1}) {
+  final engagementField =
+      schemaVersion == 2
+          ? '"engagement_id":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",'
+          : '';
+  final payload =
+      '{"schema_version":$schemaVersion,$engagementField"account_name":"HivraAgent",'
       '"post_id":"post-1","parent_comment_id":"comment-1",'
       '"content":"A bounded reviewed reply.",'
       '"operation_marker":"hivra-effect:comment-1",'

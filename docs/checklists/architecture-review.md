@@ -125,6 +125,32 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] UI action surfaces close immediately on submit, then show short result status.
 - [ ] Screens consume shared projection services and do not reinterpret terminal states locally.
 
+## AI Proposal Boundary
+
+- [ ] The AI path follows `docs/architecture/ai-proposal-boundary.md`; inference
+      is an untrusted proposal source, not a capability owner.
+- [ ] The inference adapter has no direct reference to Core mutation, effect
+      execution, credentials outside its own provider scope, or another
+      capability adapter.
+- [ ] The proposal uses one exact bounded drone-owned schema and rejects
+      unknown fields, hidden controls, malformed content, and excess size.
+- [ ] Remote content, model output, and tool-call syntax cannot choose a
+      capability, endpoint, account, operation id, approval, retry, or receipt.
+- [ ] Deterministic capability policy remains authoritative and testable without
+      trusting or replaying AI prose.
+- [ ] Any external action enters the existing durable Effect Lane with stable
+      identity, Capsule/plugin scope, approval policy, and receipt reconciliation.
+- [ ] Bounded Delegation has explicit action/topic/target/time/rate limits, a
+      kill switch, hostile-model tests, and a separate release decision.
+- [ ] Provider engagement follows one canonical target identity; Assisted and
+      Bounded policies cannot create parallel active effects for that target.
+- [ ] Trigger modes call one cycle/use-case port and change only scheduling,
+      never identity, eligibility, effect, retry, or receipt semantics.
+- [ ] A succeeded target is closed, an active target is resumed, and legacy
+      duplicate active targets freeze automatic delivery for explicit review.
+- [ ] Prompt wording is treated only as defense in depth, never as the primary
+      enforcement boundary.
+
 ## Review Gates
 
 - [ ] `tools/review/review_all.sh` passes.

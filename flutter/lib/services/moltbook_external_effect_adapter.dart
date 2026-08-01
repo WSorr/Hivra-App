@@ -440,6 +440,20 @@ class _MoltbookPostPayload implements _MoltbookPayload {
     Map<String, dynamic> json, {
     required String operationId,
   }) {
+    const allowedFields = <String>{
+      'schema_version',
+      'account_name',
+      'submolt_name',
+      'title',
+      'content',
+      'operation_marker',
+      'source_draft_hash_hex',
+    };
+    if (json.keys.any((field) => !allowedFields.contains(field))) {
+      throw const FormatException(
+        'Moltbook post payload contains unsupported fields',
+      );
+    }
     final schemaVersion = json['schema_version'];
     if (schemaVersion != 1 && schemaVersion != 2) {
       throw const FormatException('Unsupported Moltbook post payload schema');
@@ -511,10 +525,33 @@ class _MoltbookCommentPayload implements _MoltbookPayload {
     Map<String, dynamic> json, {
     required String operationId,
   }) {
-    if (json['schema_version'] != 1) {
+    const allowedFields = <String>{
+      'schema_version',
+      'engagement_id',
+      'account_name',
+      'post_id',
+      'parent_comment_id',
+      'content',
+      'operation_marker',
+      'source_draft_hash_hex',
+      'engagement_plan_hash_hex',
+    };
+    if (json.keys.any((field) => !allowedFields.contains(field))) {
+      throw const FormatException(
+        'Moltbook comment payload contains unsupported fields',
+      );
+    }
+    final schemaVersion = json['schema_version'];
+    if (schemaVersion != 1 && schemaVersion != 2) {
       throw const FormatException(
         'Unsupported Moltbook comment payload schema',
       );
+    }
+    if (schemaVersion == 2 &&
+        !RegExp(
+          r'^[0-9a-f]{64}$',
+        ).hasMatch(json['engagement_id']?.toString() ?? '')) {
+      throw const FormatException('Invalid Moltbook engagement identity');
     }
     final rawParent = json['parent_comment_id'];
     if (rawParent != null && rawParent is! String) {

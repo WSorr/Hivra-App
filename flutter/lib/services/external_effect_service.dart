@@ -34,6 +34,8 @@ class ExternalEffectService {
        _fileStore = fileStore,
        _clock = clock ?? DateTime.now;
 
+  String get activeOwnerCapsuleHex => _requireActiveOwner();
+
   Future<ExternalEffectOperation> prepare({
     required String operationId,
     required String pluginId,

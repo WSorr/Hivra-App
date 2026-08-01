@@ -20,6 +20,12 @@ bounded WASM runtime and retained host-side adapters.
   - method: `rank_bingx_futures_signals`
 - `hivra.contract.capsule-chat.v1`
   - method: `post_capsule_chat_message`
+- `hivra.contract.moltbook-ambassador.v1`
+  - method: `prepare_moltbook_draft`
+  - method: `plan_moltbook_heartbeat`
+  - method: `plan_moltbook_engagement`
+  - method: `prepare_moltbook_reply`
+  - method: `authorize_moltbook_delegated_reply`
 
 ## Request Shape
 
@@ -117,6 +123,9 @@ bounded WASM runtime and retained host-side adapters.
 - Runtime capability requirements are method-scoped:
   - `place_bingx_futures_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.futures`
   - `post_capsule_chat_message` requires `consensus_guard.read`
+  - `authorize_moltbook_delegated_reply` requires
+    `content.reply.delegate`; it grants no network access and returns only a
+    hash-bound authorization for one exact nested reply
 - Drone consensus scopes are explicit:
   - `solo` methods do not require a peer and must not read pair consensus.
   - `market_scan` methods may read public/external data and rank opportunities

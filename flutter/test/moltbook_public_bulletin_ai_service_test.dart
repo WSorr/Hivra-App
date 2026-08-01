@@ -176,6 +176,33 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+
+  test('rejects invisible text controls in AI public output', () async {
+    final service = MoltbookPublicBulletinAiService(
+      credentialStore: _FakeCredentialStore(),
+      adapterFactory:
+          (_) => _RecordingAdapter(
+            responseText:
+                '{"title":"Release update","body":"Safe text\u202Eevil",'
+                '"supporting_facts":["One public fact."]}',
+          ),
+    );
+
+    await expectLater(
+      service.propose(
+        sourceNotes: 'One public fact.',
+        category: 'hivra-development',
+        personaSummary: 'Explain facts.',
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('hidden text controls'),
+        ),
+      ),
+    );
+  });
 }
 
 MoltbookConversationObservation _conversation() {

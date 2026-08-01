@@ -309,6 +309,7 @@ class MoltbookAmbassadorPluginContractHandler
     planMoltbookHeartbeatMethod,
     planMoltbookEngagementMethod,
     prepareMoltbookReplyMethod,
+    authorizeMoltbookDelegatedReplyMethod,
   };
 
   @override
@@ -319,6 +320,9 @@ class MoltbookAmbassadorPluginContractHandler
     planMoltbookHeartbeatMethod => const <String>{'content.feed.plan'},
     planMoltbookEngagementMethod => const <String>{'content.engagement.plan'},
     prepareMoltbookReplyMethod => const <String>{'content.reply.prepare'},
+    authorizeMoltbookDelegatedReplyMethod => const <String>{
+      'content.reply.delegate',
+    },
     _ => const <String>{'content.draft.prepare'},
   };
 
@@ -424,6 +428,36 @@ class MoltbookAmbassadorPluginContractHandler
         ...reply,
         'draft_hash_hex': draftHashHex,
         'canonical_draft_json': canonicalJson,
+      });
+    }
+    if (request.method == authorizeMoltbookDelegatedReplyMethod) {
+      final authorizationHashHex =
+          semantic?['authorization_hash_hex']?.toString() ?? '';
+      final authorization = _validatedCanonicalObject(
+        canonicalJson: canonicalJson,
+        expectedHashHex: authorizationHashHex,
+        expectedPluginId: pluginId,
+        expectedContractKind:
+            'moltbook_ambassador_delegated_reply_authorization',
+        expectedPeerHex: null,
+      );
+      if (authorization == null ||
+          authorization['publish_allowed'] != true ||
+          authorization['human_review_required'] != false ||
+          authorization['target_post_id'] is! String ||
+          authorization['target_comment_id'] is! String ||
+          authorization['engagement_plan_hash_hex'] is! String ||
+          authorization['reply_draft_hash_hex'] is! String ||
+          authorization['safety_flags'] is! List) {
+        return const PluginHostContractResult.rejected(
+          code: 'runtime_result_invalid',
+          message: 'WASM delegated reply authorization gate failed',
+        );
+      }
+      return PluginHostContractResult.executed(<String, dynamic>{
+        ...authorization,
+        'authorization_hash_hex': authorizationHashHex,
+        'canonical_authorization_json': canonicalJson,
       });
     }
     final draftHashHex = semantic?['draft_hash_hex']?.toString() ?? '';

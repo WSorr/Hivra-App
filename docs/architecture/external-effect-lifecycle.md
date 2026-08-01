@@ -173,6 +173,13 @@ Provider integrations implemented above this generic phase:
   visibility confirmation;
 - fail-closed handling for expired challenges and ambiguous delivery.
 
+Provider workflows may define a semantic target identity above this generic
+operation lifecycle. When they do, they must prevent parallel active effects
+for that target before preparing a new operation. Operation-id idempotency does
+not by itself prevent two different payloads from targeting the same remote
+comment. Moltbook's normative target rule is defined in
+`../plugins/moltbook_engagement_lifecycle_v1.md`.
+
 Not implemented in this generic phase:
 
 - remote read/observe mode;

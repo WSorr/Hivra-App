@@ -108,6 +108,7 @@ The map is organized by ownership, not by a growing global `services/` or
 | Pair Consensus | Core Consensus | pair snapshot/attestation | ledger + verified evidence | signing/delivery ports |
 | Delivery | Runtime Delivery | enqueue/status/receipt | durable operation journal | transport adapters |
 | External service effects | Runtime External Effects | provider-scoped operation/status/receipt | durable operation journal | allowlisted provider adapters |
+| AI proposals | External drone + host disclosure gate | drone-owned proposal contract | private bounded drone state or none | inference adapter only; no direct capability effect |
 | Drone execution | WASM Host | capability-scoped host ABI | plugin registry/evidence | sandbox/runtime ports |
 | Application projection | App Shell | screen projections/intents | no independent truth | capability APIs only |
 | Trading/chat/AI/staking | External drones | declared WASM contracts | drone-owned state | granted host capabilities |

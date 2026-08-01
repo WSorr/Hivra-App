@@ -4,6 +4,13 @@ import 'package:crypto/crypto.dart';
 
 import 'plugin_contract_ids.dart';
 
+final RegExp _unsafePublicTextControls = RegExp(
+  r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]',
+);
+
+bool _containsUnsafePublicTextControls(String value) =>
+    _unsafePublicTextControls.hasMatch(value);
+
 class MoltbookPublicBulletinProposal {
   static final RegExp _forbiddenPositioning = RegExp(
     r'\b(?:relationship-first|concept system)\b',
@@ -35,6 +42,11 @@ class MoltbookPublicBulletinProposal {
         'AI public bulletin body is outside safe bounds',
       );
     }
+    if (_containsUnsafePublicTextControls('$title\n$body')) {
+      throw const FormatException(
+        'AI public bulletin contains hidden text controls',
+      );
+    }
     if (body.contains(
       RegExp(r'https?://|#\w|\[hivra-effect:', caseSensitive: false),
     )) {
@@ -55,7 +67,10 @@ class MoltbookPublicBulletinProposal {
       );
     }
     for (final fact in facts) {
-      if (fact.trim() != fact || fact.isEmpty || fact.length > 280) {
+      if (fact.trim() != fact ||
+          fact.isEmpty ||
+          fact.length > 280 ||
+          _containsUnsafePublicTextControls(fact)) {
         throw const FormatException('AI public fact is outside safe bounds');
       }
     }
@@ -85,6 +100,9 @@ class MoltbookReplyProposal {
     if (body.trim() != body || body.isEmpty || body.length > 2000) {
       throw const FormatException('AI reply body is outside safe bounds');
     }
+    if (_containsUnsafePublicTextControls(body)) {
+      throw const FormatException('AI reply contains hidden text controls');
+    }
     if (body.contains(
       RegExp(
         r'https?://|\[hivra-effect:|api[_ -]?key|seed phrase',
@@ -101,7 +119,10 @@ class MoltbookReplyProposal {
       );
     }
     for (final point in groundingPoints) {
-      if (point.trim() != point || point.isEmpty || point.length > 280) {
+      if (point.trim() != point ||
+          point.isEmpty ||
+          point.length > 280 ||
+          _containsUnsafePublicTextControls(point)) {
         throw const FormatException(
           'AI reply grounding point is outside safe bounds',
         );
@@ -296,6 +317,105 @@ class MoltbookReplyDraftPreview {
   }
 }
 
+class MoltbookDelegatedReplyAuthorization {
+  final String targetPostId;
+  final String? targetCommentId;
+  final String engagementPlanHashHex;
+  final String replyDraftHashHex;
+  final int policyVersion;
+  final int maxDailyWrites;
+  final int writesToday;
+  final int minIntervalMinutes;
+  final String observedAtUtc;
+  final List<String> safetyFlags;
+  final String authorizationHashHex;
+  final String canonicalAuthorizationJson;
+
+  const MoltbookDelegatedReplyAuthorization({
+    required this.targetPostId,
+    required this.targetCommentId,
+    required this.engagementPlanHashHex,
+    required this.replyDraftHashHex,
+    required this.policyVersion,
+    required this.maxDailyWrites,
+    required this.writesToday,
+    required this.minIntervalMinutes,
+    required this.observedAtUtc,
+    required this.safetyFlags,
+    required this.authorizationHashHex,
+    required this.canonicalAuthorizationJson,
+  });
+
+  factory MoltbookDelegatedReplyAuthorization.fromHostResult(
+    Map<String, dynamic> result,
+  ) {
+    if (result['schema_version'] != 1 ||
+        result['plugin_id'] != moltbookAmbassadorPluginId ||
+        result['contract_kind'] !=
+            'moltbook_ambassador_delegated_reply_authorization' ||
+        result['publish_allowed'] != true ||
+        result['human_review_required'] != false ||
+        result['safety_flags'] is! List) {
+      throw const FormatException('Invalid delegated reply authorization');
+    }
+    final authorization = MoltbookDelegatedReplyAuthorization(
+      targetPostId: result['target_post_id']?.toString() ?? '',
+      targetCommentId: result['target_comment_id'] as String?,
+      engagementPlanHashHex:
+          result['engagement_plan_hash_hex']?.toString() ?? '',
+      replyDraftHashHex: result['reply_draft_hash_hex']?.toString() ?? '',
+      policyVersion:
+          result['policy_version'] is int
+              ? result['policy_version'] as int
+              : -1,
+      maxDailyWrites:
+          result['max_daily_writes'] is int
+              ? result['max_daily_writes'] as int
+              : -1,
+      writesToday:
+          result['writes_today'] is int ? result['writes_today'] as int : -1,
+      minIntervalMinutes:
+          result['min_interval_minutes'] is int
+              ? result['min_interval_minutes'] as int
+              : -1,
+      observedAtUtc: result['observed_at_utc']?.toString() ?? '',
+      safetyFlags: (result['safety_flags'] as List).cast<String>(),
+      authorizationHashHex: result['authorization_hash_hex']?.toString() ?? '',
+      canonicalAuthorizationJson:
+          result['canonical_authorization_json']?.toString() ?? '',
+    );
+    final observedAt = DateTime.tryParse(authorization.observedAtUtc);
+    if (authorization.targetPostId.isEmpty ||
+        authorization.targetCommentId == null ||
+        authorization.targetCommentId!.isEmpty ||
+        !RegExp(
+          r'^[0-9a-f]{64}$',
+        ).hasMatch(authorization.engagementPlanHashHex) ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(authorization.replyDraftHashHex) ||
+        !RegExp(
+          r'^[0-9a-f]{64}$',
+        ).hasMatch(authorization.authorizationHashHex) ||
+        observedAt == null ||
+        !observedAt.isUtc ||
+        authorization.policyVersion != 1 ||
+        authorization.maxDailyWrites < 1 ||
+        authorization.maxDailyWrites > 12 ||
+        authorization.writesToday < 0 ||
+        authorization.writesToday >= authorization.maxDailyWrites ||
+        authorization.minIntervalMinutes < 5 ||
+        authorization.minIntervalMinutes > 1440 ||
+        !authorization.safetyFlags.contains('exact_reply_draft_bound') ||
+        !authorization.safetyFlags.contains('engagement_plan_bound') ||
+        sha256
+                .convert(utf8.encode(authorization.canonicalAuthorizationJson))
+                .toString() !=
+            authorization.authorizationHashHex) {
+      throw const FormatException('Malformed delegated reply authorization');
+    }
+    return authorization;
+  }
+}
+
 class MoltbookStoredDraft {
   static const String awaitingApproval = 'awaiting_approval';
 
@@ -459,6 +579,8 @@ class MoltbookAmbassadorConfiguration {
     }
   }
 }
+
+enum MoltbookEngagementWritePolicy { assisted, bounded }
 
 class MoltbookPublicationContract {
   static const String repositoryUrl = 'https://github.com/WSorr/Hivra-App';

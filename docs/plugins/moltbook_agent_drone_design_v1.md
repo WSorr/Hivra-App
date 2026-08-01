@@ -2,9 +2,18 @@
 
 Status: deterministic drafts, read-only account/home/feed observation,
 restart-safe feed identity checkpoints, and assisted publication lifecycle
-implemented; bounded autonomy remains gated
-Runtime impact: bounded WASM draft contract only
+implemented; foreground bounded reply authorization is available for exact
+prepared replies, while unattended autonomy remains disabled
+Runtime impact: bounded WASM contracts plus host-owned Assisted effects and a
+fail-closed delegation authorization boundary
 Primary owner: External Moltbook Drone
+
+AI inference and authority separation follows the normative
+`../architecture/ai-proposal-boundary.md`. The provider-specific publication
+lifecycle follows `../architecture/external-effect-lifecycle.md`.
+Canonical engagement identity, deduplication, operating triggers, and
+automation release gates follow the normative
+`moltbook_engagement_lifecycle_v1.md`.
 
 ## 1. Purpose
 
@@ -18,15 +27,14 @@ drone is absent, offline, revoked, or when Moltbook no longer exists.
 
 ## 2. Capability-Closure Verdict
 
-Current verdict: `ASSISTED_PUBLICATION_IMPLEMENTED`; bounded autonomy remains
-`NEEDS_THREAT_REVIEW`.
+Current verdict: `ASSISTED_PUBLICATION_IMPLEMENTED`; exact-draft bounded reply
+authorization is `FOREGROUND_SMOKE_READY`; unattended execution remains
+`NEEDS_MANUAL_RELEASE_EVIDENCE`.
 
 The existing bounded WASM runtime intentionally has no direct network imports,
-secret access, or unrestricted storage. A Moltbook package therefore cannot be
-implemented safely as WASM alone. Implementation may start only after the host
-contracts below are approved.
-
-Missing host capabilities:
+secret access, or unrestricted storage. A Moltbook package therefore does not
+implement remote presence as WASM alone. The following required host
+capabilities are now mounted behind explicit contracts:
 
 - provider-scoped external identity registration and account binding;
 - provider-scoped HTTPS read/publish effects;
@@ -37,8 +45,11 @@ Missing host capabilities:
 - foreground scheduling with an explicit online/offline lifecycle.
 
 No temporary direct HTTP call from a screen or WASM import may close these
-gaps. The currently implemented draft contract does not close them: it only
-turns an explicit Public Bulletin into a deterministic, approval-gated draft.
+boundaries. Bounded Interactive mode remains gated. The authorization method
+now proves exact draft/plan binding, daily budget, and minimum interval;
+the foreground exact-reply queue is exposed behind explicit confirmation;
+automatic selection, scheduling, and unattended processing remain disabled
+until stop-control and restart evidence exist.
 
 ## 3. Ownership and Dependency Stack
 
@@ -131,9 +142,9 @@ Moltbook profile and local policy: `agent_name`, `agent_description`,
 `persona_summary`, `allowed_topics`, `approval_mode`, and `enabled`.
 `agent_name` and `agent_description` customize the external agent only; they
 never rename the Capsule or plugin. Credentials, claim tokens, seeds, transport
-keys, ledger data, and contact data are excluded. The draft-only WASM method
-does not consume this configuration until the host registration, preview, and
-publication ports exist.
+keys, ledger data, and contact data are excluded. The Public Bulletin draft
+method remains independent of this configuration; host orchestration applies
+the profile to Observe, engagement, inference, and publication boundaries.
 
 Rules:
 
@@ -215,6 +226,11 @@ preserve the exact reviewed title and body.
 - High-risk, ambiguous, private, financial, promotional, or identity-related
   content always returns to manual approval.
 
+Bounded write policy is independent from trigger policy. The same canonical
+cycle may be started on demand, once per Capsule session, or continuously while
+the application remains running. These modes do not create separate reply
+routes or state machines.
+
 There is no background-service promise in v1. Closing the application stops
 new reads and decisions. Moltbook retains already-published remote state.
 
@@ -234,6 +250,11 @@ Current methods:
 - `prepare_moltbook_reply`: `solo`, deterministic binding of exact
   human-reviewed reply prose to one engagement plan and one post/comment
   target; no network effect.
+- `authorize_moltbook_delegated_reply`: `solo`, deterministic authorization of
+  one exact reply-draft hash under policy v1 (at most 3 committed replies per
+  UTC day and at least 30 minutes apart in the current host profile); no
+  network effect. The authorization hash may approve only a canonical reply
+  effect carrying the same target and evidence hashes.
 
 Future remote contract methods are not implemented yet:
 
@@ -261,6 +282,15 @@ peer requirement to these solo methods.
 - Retry never creates a second semantic publication.
 - Provider rate limits and terminal errors are visible and deterministic.
 - Remote text is never interpreted as a tool instruction.
+- AI responses are accepted only through exact bounded output schemas. Unknown
+  fields, invisible direction/zero-width controls, external links, effect
+  markers, and out-of-range content fail closed before WASM preparation.
+- Canonical post and comment effect envelopes reject every field outside their
+  versioned allowlist. AI or remote text cannot select an origin, endpoint,
+  method, credential scope, capability, operation id, or delivery state.
+- The inference adapter has no reference to the Moltbook network adapter or
+  external-effect executor. Assisted publication still requires a separate
+  exact preview, explicit approval, and explicit process action.
 - Outbound AI context is minimized, previewable in Assisted mode, and contains
   no Capsule secrets or broad private history.
 - Published content must be treated as public and potentially permanent.
@@ -564,9 +594,17 @@ Discover publication is allowed only after Phases 1-4 pass automated and
 manual release evidence. The signed catalog entry must pin the reviewed package
 hash and minimum host ABI/capabilities.
 
-Bounded Interactive mode remains a separate future decision. It requires a new
-threat review and replay, prompt-injection, rate-limit, revocation, kill-switch,
-and unattended-restart tests. It must not be enabled by changing a profile
-field in the Assisted release.
+The bounded reply authorization primitive and explicit foreground exact-reply
+queue are implemented. Bounded Interactive mode remains a separate release
+decision. Manual smoke exposed that Assisted and Bounded controls can prepare
+different operations for the same remote comment; this is a release blocker,
+not an acceptable duplicate-click edge case. The normative remediation and
+mode model are defined in `moltbook_engagement_lifecycle_v1.md`.
+
+It still requires canonical engagement identity, one orchestration port,
+automatic wake-run-sleep cycle execution, a prominent persistent opt-in and
+stop control, plus replay,
+prompt-injection, revocation, Capsule-switch, and unattended-restart tests. It
+must not be enabled by changing a profile field in the Assisted release.
 
 No phase may add direct network or secure-storage access to WASM.

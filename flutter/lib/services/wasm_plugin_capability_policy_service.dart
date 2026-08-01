@@ -5,6 +5,7 @@ class WasmPluginCapabilityPolicyService {
     'content.feed.plan',
     'content.engagement.plan',
     'content.reply.prepare',
+    'content.reply.delegate',
     'exchange.read.bingx.market',
     'exchange.trade.bingx.futures',
   };

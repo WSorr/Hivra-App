@@ -259,6 +259,27 @@ void main() {
       expect(response.result?['human_review_required'], isTrue);
     });
 
+    test(
+      'executes hash-bound Moltbook delegated reply authorization',
+      () async {
+        final response = await _service(
+          runtimeInvoke: _moltbookDelegatedReplyRuntimeEvidence(),
+        ).executeWithRuntimeHook(
+          const PluginHostApiRequest(
+            schemaVersion: 1,
+            pluginId: moltbookAmbassadorPluginId,
+            method: authorizeMoltbookDelegatedReplyMethod,
+            args: <String, dynamic>{},
+          ),
+        );
+
+        expect(response.status, PluginHostApiStatus.executed);
+        expect(response.result?['publish_allowed'], isTrue);
+        expect(response.result?['human_review_required'], isFalse);
+        expect(response.result?['reply_draft_hash_hex'], _hexB);
+      },
+    );
+
     test('rejects external trading runtime without contract kind', () async {
       final response = await _service(
         runtimeBinding: const PluginRuntimeBinding.externalPackage(
@@ -352,6 +373,8 @@ PluginHostApiService _service({
                   if (pluginId == moltbookAmbassadorPluginId)
                     'content.engagement.plan',
                   if (pluginId == moltbookAmbassadorPluginId)
+                    'content.reply.delegate',
+                  if (pluginId == moltbookAmbassadorPluginId)
                     'content.reply.prepare',
                   if (pluginId == bingxFuturesTradingPluginId) ...<String>[
                     'consensus_guard.read',
@@ -419,6 +442,23 @@ PluginRuntimeInvokeEvidence _moltbookEngagementRuntimeEvidence() {
     semanticResult: <String, dynamic>{
       'canonical_json': _canonicalMoltbookEngagement,
       'plan_hash_hex': _moltbookEngagementHash,
+    },
+    semanticErrorCode: null,
+    semanticErrorMessage: null,
+  );
+}
+
+PluginRuntimeInvokeEvidence _moltbookDelegatedReplyRuntimeEvidence() {
+  return PluginRuntimeInvokeEvidence(
+    mode: 'wasmi_v1',
+    modulePath: 'plugin/module.wasm',
+    moduleSelection: 'manifest_module_path',
+    moduleDigestHex: _hex('7'),
+    invokeDigestHex: _hex('b'),
+    semanticStatus: PluginHostApiStatus.executed,
+    semanticResult: <String, dynamic>{
+      'canonical_json': _canonicalMoltbookDelegatedReply,
+      'authorization_hash_hex': _moltbookDelegatedReplyHash,
     },
     semanticErrorCode: null,
     semanticErrorMessage: null,
@@ -611,6 +651,22 @@ const String _canonicalMoltbookEngagement =
     '"publish_allowed":false,"human_review_required":true,'
     '"safety_flags":["remote_content_untrusted","no_external_effect",'
     '"ai_text_not_generated","follow_requires_longitudinal_evidence"]}';
+const String _hexA =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const String _hexB =
+    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const String _canonicalMoltbookDelegatedReply =
+    '{"schema_version":1,'
+    '"plugin_id":"hivra.contract.moltbook-ambassador.v1",'
+    '"contract_kind":"moltbook_ambassador_delegated_reply_authorization",'
+    '"target_post_id":"post-1","target_comment_id":"comment-1",'
+    '"engagement_plan_hash_hex":"$_hexA",'
+    '"reply_draft_hash_hex":"$_hexB",'
+    '"policy_version":1,"max_daily_writes":3,"writes_today":1,'
+    '"min_interval_minutes":30,'
+    '"observed_at_utc":"2026-07-31T18:00:00.000Z",'
+    '"publish_allowed":true,"human_review_required":false,'
+    '"safety_flags":["exact_reply_draft_bound","engagement_plan_bound"]}';
 final String _intentHash =
     sha256.convert(utf8.encode(_canonicalIntent)).toString();
 final String _soloIntentHash =
@@ -631,5 +687,7 @@ final String _moltbookHeartbeatHash =
     sha256.convert(utf8.encode(_canonicalMoltbookHeartbeat)).toString();
 final String _moltbookEngagementHash =
     sha256.convert(utf8.encode(_canonicalMoltbookEngagement)).toString();
+final String _moltbookDelegatedReplyHash =
+    sha256.convert(utf8.encode(_canonicalMoltbookDelegatedReply)).toString();
 
 String _hex(String character) => List<String>.filled(64, character).join();
