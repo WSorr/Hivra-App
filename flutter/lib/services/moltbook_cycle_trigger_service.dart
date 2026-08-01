@@ -15,6 +15,7 @@ class MoltbookCycleTriggerService {
       <String, _ContinuousRun>{};
   final Map<String, MoltbookCycleTriggerSnapshot> _snapshots =
       <String, MoltbookCycleTriggerSnapshot>{};
+  int _generation = 0;
 
   MoltbookCycleTriggerService({
     this.continuousInterval = defaultContinuousInterval,
@@ -79,15 +80,18 @@ class MoltbookCycleTriggerService {
   }
 
   void stopAll() {
+    _generation++;
     for (final entry in _continuousRuns.entries) {
       final run = entry.value;
       run.active = false;
-      final previous = _snapshots[entry.key];
+    }
+    for (final entry in _snapshots.entries.toList(growable: false)) {
+      final previous = entry.value;
       _snapshots[entry.key] = MoltbookCycleTriggerSnapshot(
         scope: entry.key,
-        policy: MoltbookAmbassadorConfiguration.triggerContinuous,
+        policy: previous.policy,
         phase: MoltbookCycleTriggerPhase.stopped,
-        lastSummary: previous?.lastSummary,
+        lastSummary: previous.lastSummary,
         lastError: null,
       );
     }
@@ -100,7 +104,10 @@ class MoltbookCycleTriggerService {
     required MoltbookCycleRunner runCycle,
     bool Function()? isCurrent,
   }) async {
-    final ownsProjection = isCurrent ?? () => true;
+    final runGeneration = _generation;
+    final suppliedOwnership = isCurrent ?? () => true;
+    bool ownsProjection() =>
+        runGeneration == _generation && suppliedOwnership();
     if (ownsProjection()) {
       _snapshots[scope] = MoltbookCycleTriggerSnapshot(
         scope: scope,

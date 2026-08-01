@@ -1534,6 +1534,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       counts are projected without granting authority, and raw provider/cycle
       diagnostics are secondary. The ordinary release UI exposes no Bounded
       publication button before release evidence passes.
+    - completed generation-bound Stop behavior: an in-flight provider read may
+      finish, but its late result cannot start WASM planning, commit a
+      checkpoint, overwrite the stopped projection, or race a replacement
+      cycle.
     - remaining blocker before Bounded/automatic release: complete release
       evidence for hostile input, duplicate target, restart, timeout,
       challenge, Capsule switch, rate limit, stop, macOS, and Android.

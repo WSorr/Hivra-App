@@ -58,6 +58,8 @@ class PluginChatSendResult {
 class PluginRuntimeModule {
   static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles =
       <String, Future<MoltbookCycleSummary>>{};
+  static final Map<String, int> _moltbookCycleEpochs = <String, int>{};
+  static int _moltbookCycleEpoch = 0;
 
   final WasmPluginRegistryService registry;
   final WasmPluginSourceCatalogService sourceCatalog;
@@ -78,8 +80,7 @@ class PluginRuntimeModule {
   final CapsuleFileStore _fileStore;
   final CapsuleScopedSecretVault _secretVault;
   final String? Function() _readActiveCapsuleRootHex;
-
-  const PluginRuntimeModule({
+  PluginRuntimeModule({
     required this.registry,
     required this.sourceCatalog,
     required this.manualChecks,
@@ -531,7 +532,12 @@ class PluginRuntimeModule {
     return authorization;
   }
 
-  Future<MoltbookHeartbeatPlan> planMoltbookHeartbeat() async {
+  Future<MoltbookHeartbeatPlan> planMoltbookHeartbeat() =>
+      _planMoltbookHeartbeat(cycleEpoch: _moltbookCycleEpoch);
+
+  Future<MoltbookHeartbeatPlan> _planMoltbookHeartbeat({
+    required int cycleEpoch,
+  }) async {
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) {
       throw StateError('Moltbook Ambassador is disabled');
@@ -549,7 +555,11 @@ class PluginRuntimeModule {
     final observation = await moltbookConnection.observeHeartbeat(
       processedPostIds: checkpoint.processedPostIdSet,
     );
-    await _ensureMoltbookCycleScope(ownerHex, binding.accountId);
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      binding.accountId,
+      cycleEpoch: cycleEpoch,
+    );
     final observedAtUtc = DateTime.now().toUtc().toIso8601String();
     final response = await pluginHostApi.executeWithRuntimeHook(
       PluginHostApiRequest(
@@ -598,7 +608,11 @@ class PluginRuntimeModule {
         },
       ),
     );
-    await _ensureMoltbookCycleScope(ownerHex, binding.accountId);
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      binding.accountId,
+      cycleEpoch: cycleEpoch,
+    );
     final result = response.result;
     if (response.status != PluginHostApiStatus.executed || result == null) {
       throw StateError(
@@ -606,12 +620,20 @@ class PluginRuntimeModule {
       );
     }
     final plan = MoltbookHeartbeatPlan.fromHostResult(result);
-    await _ensureMoltbookCycleScope(ownerHex, binding.accountId);
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      binding.accountId,
+      cycleEpoch: cycleEpoch,
+    );
     await moltbookFeedCheckpoint.commit(
       observation.feed,
       observedAt: DateTime.parse(observedAtUtc),
     );
-    await _ensureMoltbookCycleScope(ownerHex, binding.accountId);
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      binding.accountId,
+      cycleEpoch: cycleEpoch,
+    );
     await uiLog.log(
       'moltbook.heartbeat.plan',
       'success priority=${plan.priority} '
@@ -622,6 +644,7 @@ class PluginRuntimeModule {
   }
 
   Future<MoltbookCycleSummary> runMoltbookCycle() async {
+    final cycleEpoch = _moltbookCycleEpoch;
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) {
       throw StateError('Moltbook Ambassador is disabled');
@@ -637,17 +660,31 @@ class PluginRuntimeModule {
     final scope =
         '$ownerHex::$moltbookAmbassadorPluginId::${binding.accountId}';
     final existing = _moltbookCycles[scope];
-    if (existing != null) return existing;
+    if (existing != null) {
+      if (_moltbookCycleEpochs[scope] == cycleEpoch) return existing;
+      try {
+        await existing;
+      } catch (_) {
+        // A stopped predecessor must quiesce before a replacement can start.
+      }
+      if (cycleEpoch != _moltbookCycleEpoch) {
+        throw StateError('Moltbook cycle was stopped');
+      }
+      return runMoltbookCycle();
+    }
 
     final cycle = _runMoltbookCycle(
       ownerHex: ownerHex,
       accountBindingId: binding.accountId,
       startedAtUtc: DateTime.now().toUtc(),
+      cycleEpoch: cycleEpoch,
     );
     _moltbookCycles[scope] = cycle;
+    _moltbookCycleEpochs[scope] = cycleEpoch;
     void releaseCycle() {
       if (identical(_moltbookCycles[scope], cycle)) {
         _moltbookCycles.remove(scope);
+        _moltbookCycleEpochs.remove(scope);
       }
     }
 
@@ -691,10 +728,13 @@ class PluginRuntimeModule {
     }
   }
 
-  void stopMoltbookCycles() => moltbookCycleTriggers.stopAll();
+  void stopMoltbookCycles() {
+    _moltbookCycleEpoch++;
+    moltbookCycleTriggers.stopAll();
+  }
 
   Future<void> stopMoltbookCyclesAndDisable() async {
-    moltbookCycleTriggers.stopAll();
+    stopMoltbookCycles();
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) return;
     await _ambassadorConfiguration.save(
@@ -720,12 +760,17 @@ class PluginRuntimeModule {
     required String ownerHex,
     required String accountBindingId,
     required DateTime startedAtUtc,
+    required int cycleEpoch,
   }) async {
     await uiLog.log(
       'moltbook.cycle',
       'wake owner=$ownerHex account=$accountBindingId',
     );
-    await _ensureMoltbookCycleScope(ownerHex, accountBindingId);
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
     final before = await moltbookFeedCheckpoint.load();
     var reconciledCount = 0;
     var challengedCount = 0;
@@ -734,7 +779,11 @@ class PluginRuntimeModule {
         .where((operation) => operation.state == ExternalEffectState.unresolved)
         .toList(growable: false);
     for (final operation in unresolved) {
-      await _ensureMoltbookCycleScope(ownerHex, accountBindingId);
+      await _ensureMoltbookCycleScope(
+        ownerHex,
+        accountBindingId,
+        cycleEpoch: cycleEpoch,
+      );
       try {
         final resolved = await moltbookPublications.process(
           operation.operationId,
@@ -752,10 +801,18 @@ class PluginRuntimeModule {
         );
       }
     }
-    await _ensureMoltbookCycleScope(ownerHex, accountBindingId);
-    final heartbeatPlan = await planMoltbookHeartbeat();
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    final heartbeatPlan = await _planMoltbookHeartbeat(cycleEpoch: cycleEpoch);
     final checkpoint = await moltbookFeedCheckpoint.load();
-    await _ensureMoltbookCycleScope(ownerHex, accountBindingId);
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
     final inspectedCount = checkpoint.processedPostIdSet
         .difference(before.processedPostIdSet)
         .length
@@ -791,8 +848,12 @@ class PluginRuntimeModule {
 
   Future<void> _ensureMoltbookCycleScope(
     String ownerHex,
-    String accountBindingId,
-  ) async {
+    String accountBindingId, {
+    required int cycleEpoch,
+  }) async {
+    if (cycleEpoch != _moltbookCycleEpoch) {
+      throw StateError('Moltbook cycle was stopped');
+    }
     if (!_isStillOwnedBy(ownerHex)) {
       throw StateError('Moltbook cycle stopped because the Capsule changed');
     }

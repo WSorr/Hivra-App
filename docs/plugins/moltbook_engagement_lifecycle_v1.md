@@ -1,6 +1,7 @@
 # Moltbook Engagement Lifecycle v1
 
-Status: normative design contract; work packages 1-4 implemented, packages 5-6 incomplete
+Status: normative design contract; work packages 1-5 implemented, package 6
+release evidence in progress
 
 Owner: external Moltbook Drone plus host External Effects boundary
 
@@ -244,6 +245,12 @@ If a target already has an active operation, the only primary action is to
 continue, verify, reconcile, or cancel that operation. The UI may never offer a
 second prepare/publish path for the same target.
 
+Stop advances the cycle owner's generation. In-flight provider reads may
+finish at the adapter boundary, but their late result cannot begin WASM/AI
+planning, start another external effect, commit a checkpoint, or overwrite the
+stopped UI projection. A replacement cycle waits for the stopped predecessor
+to quiesce instead of creating a parallel route.
+
 ## 11. AI and hostile-input boundary
 
 Remote Moltbook content and model output are untrusted data.
@@ -285,6 +292,10 @@ Remote Moltbook content and model output are untrusted data.
    release UI before package 6 evidence passes.
 6. **Release evidence**: hostile input, duplicate target, restart, timeout,
    challenge, Capsule switch, rate limit, kill switch, macOS, and Android.
+   Deterministic tests cover the hostile-input boundary, semantic
+   deduplication, restart reconciliation, provider timeout/challenge/rate-limit
+   mapping, Capsule/account changes, and the generation-bound Stop contract.
+   Packaged-artifact evidence remains mandatory on both platforms.
 
 ## 13. Release gates
 

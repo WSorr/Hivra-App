@@ -35,21 +35,16 @@ void main() {
   late _MemoryCheckpoint checkpoint;
   late _CyclePublications publications;
   late _EnabledConfiguration configuration;
+  late _HeartbeatHost heartbeatHost;
   late MoltbookCycleTriggerService triggers;
   late PluginRuntimeModule module;
 
-  setUp(() {
-    activeRoot = _rootA;
-    connection = _CycleConnection();
-    checkpoint = _MemoryCheckpoint();
-    publications = _CyclePublications();
-    configuration = _EnabledConfiguration();
-    triggers = MoltbookCycleTriggerService();
-    module = PluginRuntimeModule(
+  PluginRuntimeModule buildModule(MoltbookCycleTriggerService cycleTriggers) {
+    return PluginRuntimeModule(
       registry: _UnusedRegistry(),
       sourceCatalog: _UnusedCatalog(),
       manualChecks: _UnusedManualChecks(),
-      pluginHostApi: _HeartbeatHost(),
+      pluginHostApi: heartbeatHost,
       attestationExchange: _UnusedAttestationExchange(),
       chatDelivery: _UnusedChatDelivery(),
       contactLabels: _UnusedContactLabels(),
@@ -60,12 +55,23 @@ void main() {
       moltbookFeedCheckpoint: checkpoint,
       moltbookPublications: publications,
       moltbookPublicBulletinAi: _UnusedAi(),
-      moltbookCycleTriggers: triggers,
+      moltbookCycleTriggers: cycleTriggers,
       ambassadorConfiguration: configuration,
       fileStore: _UnusedFileStore(),
       secretVault: _UnusedSecretVault(),
       readActiveCapsuleRootHex: () => activeRoot,
     );
+  }
+
+  setUp(() {
+    activeRoot = _rootA;
+    connection = _CycleConnection();
+    checkpoint = _MemoryCheckpoint();
+    publications = _CyclePublications();
+    configuration = _EnabledConfiguration();
+    heartbeatHost = _HeartbeatHost();
+    triggers = MoltbookCycleTriggerService();
+    module = buildModule(triggers);
   });
 
   test('duplicate wake shares one in-flight Capsule account cycle', () async {
@@ -113,6 +119,64 @@ void main() {
     await expectLater(module.runMoltbookCycle(), throwsA(isA<StateError>()));
 
     expect(checkpoint.commitCount, 0);
+  });
+
+  test(
+    'stop rejects late observation before WASM planning or checkpoint',
+    () async {
+      final gate = Completer<void>();
+      connection.observationGate = gate.future;
+
+      final cycle = module.runMoltbookOnDemandCycle();
+      while (connection.observeCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      module.stopMoltbookCycles();
+      gate.complete();
+
+      await expectLater(cycle, throwsA(isA<StateError>()));
+      expect(checkpoint.commitCount, 0);
+      expect(heartbeatHost.executeCount, 0);
+    },
+  );
+
+  test('replacement cycle waits for stopped predecessor to quiesce', () async {
+    final gate = Completer<void>();
+    connection.observationGate = gate.future;
+
+    final stopped = module.runMoltbookOnDemandCycle();
+    while (connection.observeCount == 0) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    module.stopMoltbookCycles();
+    final replacement = module.runMoltbookOnDemandCycle();
+    await Future<void>.delayed(Duration.zero);
+    expect(connection.observeCount, 1);
+
+    gate.complete();
+    await expectLater(stopped, throwsA(isA<StateError>()));
+    final summary = await replacement;
+
+    expect(connection.observeCount, 2);
+    expect(heartbeatHost.executeCount, 1);
+    expect(summary.inspectedCount, 2);
+  });
+
+  test('recreated module stops an older shared in-flight cycle', () async {
+    final gate = Completer<void>();
+    connection.observationGate = gate.future;
+
+    final cycle = module.runMoltbookOnDemandCycle();
+    while (connection.observeCount == 0) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    final replacementModule = buildModule(MoltbookCycleTriggerService());
+    replacementModule.stopMoltbookCycles();
+    gate.complete();
+
+    await expectLater(cycle, throwsA(isA<StateError>()));
+    expect(checkpoint.commitCount, 0);
+    expect(heartbeatHost.executeCount, 0);
   });
 
   test('account rotation rejects late observation before checkpoint', () async {
@@ -241,10 +305,13 @@ class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
 }
 
 class _HeartbeatHost implements PluginHostApiService {
+  int executeCount = 0;
+
   @override
   Future<PluginHostApiResponse> executeWithRuntimeHook(
     PluginHostApiRequest request,
   ) async {
+    executeCount++;
     final observedAt = request.args['observed_at_utc'] as String;
     final feed = request.args['feed'] as List<dynamic>;
     final candidates = feed

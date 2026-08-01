@@ -686,8 +686,8 @@ require_present "$PLUGIN_RUNTIME_MODULE" 'Future<MoltbookCycleSummary> runMoltbo
   "Moltbook runtime exposes one wake-run-sleep cycle port"
 require_present "$PLUGIN_RUNTIME_MODULE" "operation.state == ExternalEffectState.unresolved" \
   "Moltbook cycle reconciles unresolved effects before new observation"
-require_present "$PLUGIN_RUNTIME_MODULE" 'final heartbeatPlan = await planMoltbookHeartbeat\(\);' \
-  "Moltbook cycle reuses deterministic heartbeat planning"
+require_present "$PLUGIN_RUNTIME_MODULE" 'final heartbeatPlan = await _planMoltbookHeartbeat\(cycleEpoch: cycleEpoch\);' \
+  "Moltbook cycle reuses generation-bound deterministic heartbeat planning"
 require_present "$PLUGIN_RUNTIME_MODULE" "'sleep inspected=" \
   "Moltbook cycle publishes one bounded local summary"
 require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Trigger policies \(implemented\)' \

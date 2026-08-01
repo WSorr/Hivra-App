@@ -105,6 +105,32 @@ void main() {
   });
 
   test(
+    'stop keeps a late on-demand result from overwriting stopped state',
+    () async {
+      final cycle = Completer<MoltbookCycleSummary>();
+      final service = MoltbookCycleTriggerService();
+
+      final result = service.runOnDemand(
+        scope: _scopeA,
+        runCycle: () => cycle.future,
+      );
+      await _pumpUntil(
+        () =>
+            service.snapshot(_scopeA)?.phase ==
+            MoltbookCycleTriggerPhase.running,
+      );
+      service.stopAll();
+      cycle.complete(_summary(1));
+      await result;
+
+      expect(
+        service.snapshot(_scopeA)?.phase,
+        MoltbookCycleTriggerPhase.stopped,
+      );
+    },
+  );
+
+  test(
     'continuous failure stops its driver without scheduling retry',
     () async {
       var delays = 0;
