@@ -61,7 +61,7 @@ class CapsuleSelectorService {
       var summary = await _withSelectorTimeout(
         'summary',
         shortHex,
-        () => _runtime.loadCapsuleSummary(entry.pubKeyHex),
+        () => _runtime.loadPublicCapsuleSummary(entry.pubKeyHex),
         fallback: CapsuleLedgerSummary.empty(),
       );
       await _uiLog.log(

@@ -40,6 +40,39 @@ class _ActivationRuntime implements CapsuleSelectorRuntime {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _PublicSummaryRuntime implements CapsuleSelectorRuntime {
+  final List<CapsuleIndexEntry> entries;
+  int publicSummaryCalls = 0;
+  int activationCalls = 0;
+
+  _PublicSummaryRuntime(this.entries);
+
+  @override
+  Future<List<CapsuleIndexEntry>> listCapsules() async => entries;
+
+  @override
+  Future<CapsuleLedgerSummary> loadPublicCapsuleSummary(
+    String pubKeyHex,
+  ) async {
+    publicSummaryCalls += 1;
+    return CapsuleLedgerSummary(
+      starterCount: 5,
+      relationshipCount: 2,
+      pendingInvitations: 1,
+      ledgerVersion: 7,
+      ledgerHashHex: 'abc',
+    );
+  }
+
+  @override
+  Future<void> activateCapsule(String pubKeyHex) async {
+    activationCalls += 1;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   test('prefers bootstrap-derived network label over stale index value', () {
     final label = CapsuleSelectorService.networkLabelForCapsule(
@@ -58,6 +91,38 @@ void main() {
 
     expect(label, equals('NESTE'));
   });
+
+  test(
+    'loads selector rows from public summaries without activation',
+    () async {
+      final now = DateTime.utc(2026, 8, 1, 12);
+      final runtime = _PublicSummaryRuntime(<CapsuleIndexEntry>[
+        CapsuleIndexEntry(
+          pubKeyHex: List.filled(32, 'aa').join(),
+          createdAt: now,
+          lastActive: now,
+          isGenesis: true,
+          isNeste: true,
+          identityMode: 'root_owner',
+        ),
+        CapsuleIndexEntry(
+          pubKeyHex: List.filled(32, 'bb').join(),
+          createdAt: now.add(const Duration(minutes: 1)),
+          lastActive: now,
+          isGenesis: false,
+          isNeste: true,
+          identityMode: 'root_owner',
+        ),
+      ]);
+
+      final capsules = await CapsuleSelectorService(runtime).loadCapsules();
+
+      expect(capsules, hasLength(2));
+      expect(runtime.publicSummaryCalls, equals(2));
+      expect(runtime.activationCalls, isZero);
+      expect(capsules.every((capsule) => capsule.starterCount == 5), isTrue);
+    },
+  );
 
   test('collapses duplicate display entries and prefers seeded root_owner', () {
     final now = DateTime.utc(2026, 3, 31, 10, 0, 0);

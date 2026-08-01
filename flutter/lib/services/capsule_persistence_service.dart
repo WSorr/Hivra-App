@@ -826,7 +826,7 @@ class CapsulePersistenceService {
     return entries;
   }
 
-  Future<CapsuleLedgerSummary> loadCapsuleSummary(
+  Future<CapsuleLedgerSummary> loadPublicCapsuleSummary(
     String pubKeyHex, {
     CapsulePersistenceBindings? hivra,
   }) async {
@@ -836,9 +836,8 @@ class CapsulePersistenceService {
       return CapsuleLedgerSummary.empty();
     }
     try {
-      final localTransportPublicKey = await _deriveSummaryTransportPublicKey(
+      final localTransportPublicKey = await _loadPublicSummaryTransportKey(
         pubKeyHex,
-        hivra: hivra,
       );
       final state = await _fileStore.readState(capsuleDir);
       return _summaryParser.parse(
@@ -856,10 +855,7 @@ class CapsulePersistenceService {
     }
   }
 
-  Future<Uint8List?> _deriveSummaryTransportPublicKey(
-    String pubKeyHex, {
-    CapsulePersistenceBindings? hivra,
-  }) async {
+  Future<Uint8List?> _loadPublicSummaryTransportKey(String pubKeyHex) async {
     final index = await _readIndex();
     final identityMode = _identityModeForCapsule(
       indexEntry: index.capsules[pubKeyHex],
@@ -867,18 +863,25 @@ class CapsulePersistenceService {
     if (identityMode == 'legacy_nostr_owner') {
       return _hexToBytes(pubKeyHex);
     }
-    if (hivra == null) {
+
+    final root = await _userVisibleDirs.rootDirectory();
+    final cardsFile = File('${root.path}/capsule_contact_cards.json');
+    if (!await cardsFile.exists()) return null;
+    final cards = await _readContactCards(cardsFile);
+    final normalizedRoot = pubKeyHex.trim().toLowerCase();
+    final rawCard = cards[normalizedRoot];
+    if (rawCard is! Map) return null;
+    final card = Map<String, dynamic>.from(rawCard);
+    if (card['rootHex']?.toString().trim().toLowerCase() != normalizedRoot) {
       return null;
     }
-    final seed = await _loadSeedForCapsule(pubKeyHex);
-    if (seed == null || seed.length != 32) {
-      return null;
-    }
-    final nostr = hivra.seedNostrPublicKey(seed);
-    if (nostr == null || nostr.length != 32) {
-      return null;
-    }
-    return Uint8List.fromList(nostr);
+    final transports = card['transports'];
+    if (transports is! Map) return null;
+    final nostr = transports['nostr'];
+    if (nostr is! Map) return null;
+    final transportHex = nostr['hex']?.toString().trim().toLowerCase() ?? '';
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(transportHex)) return null;
+    return _hexToBytes(transportHex);
   }
 
   Future<String?> loadCapsuleLedgerOwnerHex(String pubKeyHex) async {

@@ -13,7 +13,7 @@ abstract class CapsuleSelectorRuntime {
 
   Future<CapsuleRuntimeBootstrap?> loadRuntimeBootstrap(String pubKeyHex);
 
-  Future<CapsuleLedgerSummary> loadCapsuleSummary(String pubKeyHex);
+  Future<CapsuleLedgerSummary> loadPublicCapsuleSummary(String pubKeyHex);
 
   Future<bool> refreshCapsuleSnapshot(String pubKeyHex);
 
@@ -72,8 +72,8 @@ class HivraCapsuleSelectorRuntime implements CapsuleSelectorRuntime {
   }
 
   @override
-  Future<CapsuleLedgerSummary> loadCapsuleSummary(String pubKeyHex) {
-    return _persistence.loadCapsuleSummary(pubKeyHex, hivra: _hivra);
+  Future<CapsuleLedgerSummary> loadPublicCapsuleSummary(String pubKeyHex) {
+    return _persistence.loadPublicCapsuleSummary(pubKeyHex, hivra: _hivra);
   }
 
   @override
