@@ -1331,10 +1331,23 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         derived-projection write failures retain the authoritative ledger
         generation without inventing a second truth. Packaged macOS/Android
         restart and restore smoke remains required before pass 3 closes.
-    - Next ordered 12.3 item is the cryptographically continuous ledger
-      implementation. Event-scoped delivery records, transport-health UI,
-      plugin transactionality, encrypted backup envelopes, and
-      deprecated-envelope migration remain subsequent items.
+      - local Android continuity smoke completed on 2026-08-01 at `39ba870`
+        (`versionCode=100000317`): an explicit seed plus backup restore after
+        uninstall reconstructed the same owner and ledger `v74` projection,
+        and a cold restart preserved it. This narrows the remaining blocker but
+        does not replace packaged macOS/Android evidence for the next release
+        candidate.
+      - local macOS cold-restart smoke completed on 2026-08-01 from the same
+        runtime checkpoint: the selector reconstructed three existing capsules
+        at ledger versions `94`, `49`, and `111`; all three canonical
+        `ledger.json` SHA-256 values were byte-identical before and after the
+        restart. This is continuity evidence only, not packaged restore signoff.
+    - Current ordered 12.3 item is closure of packaged macOS/Android restart
+      and restore evidence for continuous-ledger pass 3. Canonical Core
+      projection convergence (`5.1`) follows that closure. Event-scoped
+      delivery records, transport-health UI, plugin transactionality,
+      encrypted backup envelopes, and deprecated-envelope migration remain
+      subsequent items.
   - Status: active; pass 1 and pass 2 are completed.
 
 ## Planned Product Tracks
