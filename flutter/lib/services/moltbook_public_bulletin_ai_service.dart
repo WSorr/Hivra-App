@@ -28,6 +28,19 @@ class MoltbookPublicBulletinAiService {
   }) : _credentialStore = credentialStore,
        _adapterFactory = adapterFactory ?? inferenceProviderAdapterFor;
 
+  bool get isSessionUnlocked => _credentialStore.isPreferredProviderUnlocked;
+
+  String? get sessionProviderLabel =>
+      _credentialStore.sessionPreferredProvider?.label;
+
+  Future<InferenceProviderKind> unlockSession() {
+    return _credentialStore.unlockPreferredProviderSession();
+  }
+
+  void lockSession() {
+    _credentialStore.lockSession();
+  }
+
   Future<MoltbookPublicBulletinProposal> propose({
     required String sourceNotes,
     required String category,
@@ -48,22 +61,7 @@ class MoltbookPublicBulletinAiService {
       throw ArgumentError('Ambassador persona is invalid');
     }
 
-    final provider =
-        await _credentialStore.loadPreferredProvider() ??
-        InferenceProviderKind.gemini;
-    final apiKey = await _credentialStore.loadApiKey(provider);
-    if (provider.requiresApiKey && (apiKey == null || apiKey.isEmpty)) {
-      throw StateError(
-        '${provider.label} API key is not saved. Configure it in Capsule Analyst.',
-      );
-    }
-    final baseUrl = await _credentialStore.loadBaseUrl(provider);
-    if (provider == InferenceProviderKind.localOpenAiCompatible &&
-        (baseUrl == null || baseUrl.isEmpty)) {
-      throw StateError(
-        '${provider.label} base URL is not saved. Configure it in Capsule Analyst.',
-      );
-    }
+    final (:provider, :apiKey, :baseUrl) = _sessionCredentials();
 
     final input = <String, dynamic>{
       'schema_version': 1,
@@ -137,22 +135,7 @@ class MoltbookPublicBulletinAiService {
       throw ArgumentError('Ambassador persona is invalid');
     }
 
-    final provider =
-        await _credentialStore.loadPreferredProvider() ??
-        InferenceProviderKind.gemini;
-    final apiKey = await _credentialStore.loadApiKey(provider);
-    if (provider.requiresApiKey && (apiKey == null || apiKey.isEmpty)) {
-      throw StateError(
-        '${provider.label} API key is not saved. Configure it in Capsule Analyst.',
-      );
-    }
-    final baseUrl = await _credentialStore.loadBaseUrl(provider);
-    if (provider == InferenceProviderKind.localOpenAiCompatible &&
-        (baseUrl == null || baseUrl.isEmpty)) {
-      throw StateError(
-        '${provider.label} base URL is not saved. Configure it in Capsule Analyst.',
-      );
-    }
+    final (:provider, :apiKey, :baseUrl) = _sessionCredentials();
 
     final selectedComments = _boundedReplyComments(
       conversation.comments,
@@ -217,6 +200,21 @@ class MoltbookPublicBulletinAiService {
     );
     proposal.validate();
     return proposal;
+  }
+
+  ({InferenceProviderKind provider, String? apiKey, String? baseUrl})
+  _sessionCredentials() {
+    final provider = _credentialStore.sessionPreferredProvider;
+    if (provider == null || !_credentialStore.isPreferredProviderUnlocked) {
+      throw StateError(
+        'AI access is locked for this app session. Unlock it in Moltbook Ambassador.',
+      );
+    }
+    return (
+      provider: provider,
+      apiKey: _credentialStore.sessionApiKey(provider),
+      baseUrl: _credentialStore.sessionBaseUrl(provider),
+    );
   }
 
   static MoltbookPublicBulletinProposal _parseProposal(

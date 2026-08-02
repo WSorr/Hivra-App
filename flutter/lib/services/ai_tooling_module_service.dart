@@ -41,12 +41,12 @@ class AiToolingModuleService {
   }
 
   AiDoctorChatService buildCapsuleAnalystChatService() {
-    return AiDoctorChatService(credentialStore: AiDoctorCredentialStore());
+    return AiDoctorChatService(credentialStore: AiDoctorCredentialStore.shared);
   }
 
   CapsuleHistoryAiAdvisorService buildCapsuleHistoryAiAdvisorService() {
     return CapsuleHistoryAiAdvisorService(
-      credentialStore: AiDoctorCredentialStore(),
+      credentialStore: AiDoctorCredentialStore.shared,
     );
   }
 
@@ -60,7 +60,7 @@ class AiToolingModuleService {
 
   AiDeveloperEngineerService buildDeveloperEngineerService() {
     return AiDeveloperEngineerService(
-      credentialStore: AiDoctorCredentialStore(),
+      credentialStore: AiDoctorCredentialStore.shared,
     );
   }
 

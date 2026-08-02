@@ -136,6 +136,17 @@ Contains:
 - Observe, Assisted, and Bounded Delegation release requirements
 - reference mappings for Moltbook, trading, and staking drones
 
+### 10.3) `architecture/capsule-ai-runtime.md` (shared inference runtime)
+
+Use this when adding an AI-enabled feature, provider, local model, credential
+flow, inference scheduler, or WASM inference host capability.
+
+Contains:
+- the single Capsule AI Runtime owner and public request path
+- provider/session, disclosure, scheduling, and proposal boundaries
+- the rule that WASM receives inference capability but never credentials
+- the incremental 1.x convergence path and mandatory Hivra 2.0 contract
+
 ### 11) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
 Use this when implementing TVH/signal logic for the BingX futures plugin.
 

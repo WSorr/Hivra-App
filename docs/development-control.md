@@ -1,9 +1,10 @@
 # Hivra Development Control
 
-Status date: 2026-08-01
+Status date: 2026-08-02
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: unreleased Moltbook external-effect reconciliation
-and operator UI; no new Core path is introduced.
+Current development focus: finish the unreleased Moltbook lifecycle pass and
+incrementally converge duplicated 1.x inference plumbing behind Capsule AI
+Runtime; no new Core path or parallel AI runtime is introduced.
 
 This is the short operational map for deciding what Hivra work is happening
 now. It is not a second specification, backlog, or release record. It points
@@ -31,6 +32,7 @@ table, then open only the linked authority for the selected work item.
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |
+| **Capsule AI Runtime** | 1.x convergence / 2.0 contract | 1.x has one process-scoped credential lease; existing AI consumers must migrate one at a time to one provider-independent inference port. 2.0 treats it as a first-class host capability outside Core. | Each pass deletes or seals one feature-local provider/credential/scheduler path; runtime, proposal-boundary, isolation, and hostile-input tests pass. | Freeze request/result contract and inventory remaining direct provider paths before another AI-enabled feature is added. |
 | **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects and a foreground bounded-reply experiment exist, but automatic modes are blocked by the canonical engagement lifecycle gates. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |
 
 `12.3` is deliberately an ordered remediation program, not a grab bag. Its

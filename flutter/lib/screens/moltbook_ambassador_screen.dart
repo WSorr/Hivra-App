@@ -73,12 +73,49 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   bool _publicFactsBusy = false;
   bool _publicationBusy = false;
   bool _replyBusy = false;
+  bool _aiSessionBusy = false;
+  bool _aiSessionUnlocked = false;
+  String? _aiSessionProviderLabel;
   String? _loadError;
 
   @override
   void initState() {
     super.initState();
+    _syncAiSessionState();
     _load();
+  }
+
+  void _syncAiSessionState() {
+    _aiSessionUnlocked = widget.module.isMoltbookAiSessionUnlocked;
+    _aiSessionProviderLabel = widget.module.moltbookAiSessionProviderLabel;
+  }
+
+  Future<void> _unlockAiSession() async {
+    setState(() => _aiSessionBusy = true);
+    try {
+      final provider = await widget.module.unlockMoltbookAiSession();
+      if (!mounted) return;
+      setState(() {
+        _aiSessionUnlocked = true;
+        _aiSessionProviderLabel = provider;
+      });
+      _showNotice('$provider unlocked for this app session');
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not unlock AI: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _aiSessionBusy = false);
+    }
+  }
+
+  void _lockAiSession() {
+    widget.module.lockMoltbookAiSession();
+    setState(() {
+      _aiSessionUnlocked = false;
+      _aiSessionProviderLabel = null;
+    });
+    _showNotice('AI access removed from this app session');
   }
 
   @override
@@ -243,11 +280,13 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     setState(() => _connectionBusy = true);
     try {
       final summary = await widget.module.runMoltbookOnDemandCycle();
+      final publications = await widget.module.loadMoltbookPublications();
       if (!mounted) return;
       setState(() {
         _cycleSummary = summary;
         _heartbeatPlan = summary.heartbeatPlan;
         _feedCheckpoint = summary.checkpoint;
+        _publications = publications;
       });
       await _refreshCycleProjection();
       _showNotice(
@@ -270,10 +309,13 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       final summary = await widget.module.startConfiguredMoltbookCycles();
       if (!mounted) return;
       if (summary != null) {
+        final publications = await widget.module.loadMoltbookPublications();
+        if (!mounted) return;
         setState(() {
           _cycleSummary = summary;
           _heartbeatPlan = summary.heartbeatPlan;
           _feedCheckpoint = summary.checkpoint;
+          _publications = publications;
         });
       }
       await _refreshCycleProjection();
@@ -307,6 +349,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _resumeCycles() async {
+    setState(() => _enabled = true);
+    await _save();
+    await _refreshCycleProjection();
   }
 
   Future<void> _refreshCycleProjection() async {
@@ -587,6 +635,79 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           'Could not prepare reply publication: $error',
           isError: true,
         );
+      }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
+  Future<void> _reviewPreparedReplyOperation(
+    ExternalEffectOperation operation,
+  ) async {
+    if (operation.state != ExternalEffectState.prepared) {
+      _showNotice('This reply is no longer awaiting review', isError: true);
+      return;
+    }
+    final payload = MoltbookPublicationService.decodePayload(operation);
+    setState(() => _publicationBusy = true);
+    try {
+      final approved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (dialogContext) => AlertDialog(
+              title: const Text('Approve permanent public reply?'),
+              content: SizedBox(
+                width: 620,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Account: ${payload['account_name']}\n'
+                        'Post: ${payload['post_id']}\n'
+                        'Reply target: ${payload['parent_comment_id'] ?? "post root"}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 14),
+                      SelectableText(payload['content'].toString()),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Gemini proposed this text from bounded public conversation data, and WASM bound it to the selected thread. Nothing has been published. Approving creates a permanent public external effect.',
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Keep local'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Approve exact reply'),
+                ),
+              ],
+            ),
+      );
+      if (!mounted) return;
+      if (approved == true) {
+        await widget.module.approveMoltbookPublication(operation);
+        _showNotice('Reply approved and queued locally');
+      } else {
+        _showNotice('Reply remains local and unapproved');
+      }
+      final publications = await widget.module.loadMoltbookPublications();
+      if (mounted) setState(() => _publications = publications);
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not approve reply: $error', isError: true);
       }
     } finally {
       if (mounted) setState(() => _publicationBusy = false);
@@ -1110,17 +1231,20 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           operation.state == ExternalEffectState.unresolved &&
           operation.requiredAction == null,
     );
-    final terminalRecheckOperation = _latestOperationWhere(
-      (operation) =>
-          operation.state == ExternalEffectState.terminalFailure &&
-          operation.receipt == null &&
-          operation.attemptCount > 0,
-    );
-    final reconciliationOperation =
-        recoverableOperation ?? terminalRecheckOperation;
+    final reconciliationOperation = recoverableOperation;
     final queuedOperation = _latestOperationWhere(
       (operation) => operation.state == ExternalEffectState.queued,
     );
+    final preparedReplyOperation = _latestOperationWhere((operation) {
+      if (operation.state != ExternalEffectState.prepared) return false;
+      try {
+        return MoltbookPublicationService.decodePayload(
+          operation,
+        ).containsKey('post_id');
+      } catch (_) {
+        return false;
+      }
+    });
     final latestDraft = _storedDrafts.isEmpty ? null : _storedDrafts.first;
     final challengedCount =
         _publications
@@ -1156,10 +1280,14 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       hasVerification: verificationOperation != null,
       hasRecoverableEffect: reconciliationOperation != null,
       hasQueuedEffect: queuedOperation != null,
-      hasReplyDraft: _replyDraftPreview != null,
+      hasReplyDraft:
+          _replyDraftPreview != null || preparedReplyOperation != null,
       hasLocalDraft: latestDraft != null,
       proposedCount:
-          _storedDrafts.length + (_replyDraftPreview == null ? 0 : 1),
+          _storedDrafts.length +
+          (preparedReplyOperation != null || _replyDraftPreview != null
+              ? 1
+              : 0),
       publishedCount:
           _publications
               .where(
@@ -1169,20 +1297,22 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       challengedCount: projectedChallengedCount,
       blockedCount: projectedBlockedCount,
     );
-    final VoidCallback? nextAction = switch (projection.nextAction) {
+    final VoidCallback nextAction = switch (projection.nextAction) {
+      MoltbookWorkspaceNextAction.connect => _connect,
       MoltbookWorkspaceNextAction.verify =>
         () => _resolvePublicationVerification(verificationOperation!),
       MoltbookWorkspaceNextAction.reconcile =>
-        reconciliationOperation!.state == ExternalEffectState.terminalFailure
-            ? () => _reconcilePublication(reconciliationOperation)
-            : () => _processPublication(reconciliationOperation),
+        () => _processPublication(reconciliationOperation!),
       MoltbookWorkspaceNextAction.publish =>
         () => _processPublication(queuedOperation!),
-      MoltbookWorkspaceNextAction.reviewReply => _reviewReplyPublication,
+      MoltbookWorkspaceNextAction.reviewReply =>
+        preparedReplyOperation == null
+            ? _reviewReplyPublication
+            : () => _reviewPreparedReplyOperation(preparedReplyOperation),
       MoltbookWorkspaceNextAction.reviewDraft =>
         () => _reviewPublication(latestDraft!),
       MoltbookWorkspaceNextAction.runCycle => _planHeartbeat,
-      _ => null,
+      MoltbookWorkspaceNextAction.none => _resumeCycles,
     };
     return Scaffold(
       appBar: AppBar(title: const Text('Moltbook Ambassador')),
@@ -1226,6 +1356,14 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                             _saving,
                         onNextAction: nextAction,
                         onStop: _saving ? null : _stopCycles,
+                      ),
+                      const SizedBox(height: 14),
+                      _MoltbookAiSessionCard(
+                        unlocked: _aiSessionUnlocked,
+                        providerLabel: _aiSessionProviderLabel,
+                        busy: _aiSessionBusy,
+                        onUnlock: _unlockAiSession,
+                        onLock: _lockAiSession,
                       ),
                       const SizedBox(height: 20),
                       _MoltbookWorkspaceSection(
@@ -1470,6 +1608,99 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   }
 }
 
+class _MoltbookAiSessionCard extends StatelessWidget {
+  final bool unlocked;
+  final String? providerLabel;
+  final bool busy;
+  final VoidCallback onUnlock;
+  final VoidCallback onLock;
+
+  const _MoltbookAiSessionCard({
+    required this.unlocked,
+    required this.providerLabel,
+    required this.busy,
+    required this.onUnlock,
+    required this.onLock,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final accent = unlocked ? const Color(0xFF49C57A) : colors.tertiary;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.55)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.18),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                unlocked ? Icons.lock_open_rounded : Icons.key_rounded,
+                color: accent,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    unlocked
+                        ? 'AI available · ${providerLabel ?? "provider"}'
+                        : 'AI locked for this session',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    unlocked
+                        ? 'The credential is held in host memory only. WASM never receives it.'
+                        : 'Unlock once to let foreground cycles prepare drafts. Locked cycles pause before inference.',
+                    style: const TextStyle(
+                      color: Color(0xFF9CA7B5),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            if (busy)
+              const SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              )
+            else if (unlocked)
+              TextButton.icon(
+                onPressed: onLock,
+                icon: const Icon(Icons.lock_outline_rounded),
+                label: const Text('Lock'),
+              )
+            else
+              FilledButton.icon(
+                onPressed: onUnlock,
+                icon: const Icon(Icons.lock_open_rounded),
+                label: const Text('Unlock AI'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MoltbookWorkspaceSection extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1571,9 +1802,9 @@ class _MoltbookWorkflowCard extends StatelessWidget {
       ),
       MoltbookWorkspaceNextAction.none => (
         'Ambassador is stopped',
-        'Existing journals and receipts are preserved. Enable and save the profile to resume.',
-        null,
-        Icons.stop_circle_outlined,
+        'Existing journals and receipts are preserved. Resume locally when you are ready.',
+        'Enable ambassador',
+        Icons.play_circle_outline_rounded,
       ),
     };
 
@@ -1707,12 +1938,16 @@ class _MoltbookWorkflowCard extends StatelessWidget {
                       label: Text(busy ? 'Working…' : actionLabel),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  OutlinedButton.icon(
-                    onPressed: onStop,
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    label: const Text('Stop'),
-                  ),
+                  if (onStop != null &&
+                      projection.phase !=
+                          MoltbookWorkspaceCyclePhase.stopped) ...[
+                    const SizedBox(width: 10),
+                    OutlinedButton.icon(
+                      onPressed: onStop,
+                      icon: const Icon(Icons.stop_circle_outlined),
+                      label: const Text('Stop'),
+                    ),
+                  ],
                 ],
               ),
             ],
@@ -1924,9 +2159,9 @@ class _MoltbookPublicationCard extends StatelessWidget {
                   '';
               final status = _publicationStatus(operation, postUri);
               final canRecheck =
-                  operation.state == ExternalEffectState.terminalFailure &&
-                  operation.receipt == null &&
-                  operation.attemptCount > 0;
+                  MoltbookPublicationService.canManuallyReconcileTerminalFailure(
+                    operation,
+                  );
               return ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 12),

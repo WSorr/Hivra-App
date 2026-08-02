@@ -51,6 +51,7 @@ CONTINUOUS_LEDGER_PROTOCOL="$ROOT/docs/architecture/continuous-ledger-protocol-v
 DELIVERY_LIFECYCLE_DOC="$ROOT/docs/architecture/transport-delivery-lifecycle.md"
 EXTERNAL_EFFECT_LIFECYCLE_DOC="$ROOT/docs/architecture/external-effect-lifecycle.md"
 AI_PROPOSAL_BOUNDARY_DOC="$ROOT/docs/architecture/ai-proposal-boundary.md"
+CAPSULE_AI_RUNTIME_DOC="$ROOT/docs/architecture/capsule-ai-runtime.md"
 MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC="$ROOT/docs/plugins/moltbook_engagement_lifecycle_v1.md"
 CAPSULE_SECRET_LIFECYCLE_DOC="$ROOT/docs/architecture/capsule-scoped-secret-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
@@ -270,10 +271,24 @@ require_present "$AI_PROPOSAL_BOUNDARY_DOC" 'Inference ends before authority beg
   "AI proposal boundary separates inference from authority"
 require_present "$AI_PROPOSAL_BOUNDARY_DOC" 'prompt wording is cited as the primary security boundary' \
   "AI proposal boundary rejects prompt-only security"
+require_present "$CAPSULE_AI_RUNTIME_DOC" '^# Capsule AI Runtime' \
+  "Capsule AI Runtime architecture contract exists"
+require_present "$CAPSULE_AI_RUNTIME_DOC" 'There is no direct `drone -> Gemini`, `screen -> OpenAI`' \
+  "Capsule AI Runtime forbids direct feature-to-provider paths"
+require_present "$CAPSULE_AI_RUNTIME_DOC" 'A locked automatic cycle stops before inference' \
+  "Capsule AI Runtime defines fail-closed credential sessions"
+require_present "$CAPSULE_AI_RUNTIME_DOC" 'A global `AiDto` layer and pass-through feature wrappers' \
+  "Capsule AI Runtime forbids global AI DTO prostheses"
+require_present "$CAPSULE_AI_RUNTIME_DOC" 'AI Runtime imports Core mutation or an external-effect adapter' \
+  "Capsule AI Runtime cannot acquire Core or effect authority"
 require_present "$SPEC" 'architecture/ai-proposal-boundary\.md' \
   "specification binds AI-enabled capabilities to proposal boundary"
+require_present "$SPEC" 'architecture/capsule-ai-runtime\.md' \
+  "specification binds inference to Capsule AI Runtime"
 require_present "$DOCS_README" 'architecture/ai-proposal-boundary\.md' \
   "docs index references AI proposal boundary"
+require_present "$DOCS_README" 'architecture/capsule-ai-runtime\.md' \
+  "docs index references Capsule AI Runtime"
 require_present "$CONTINUOUS_LEDGER_PROTOCOL" '^# Cryptographically Continuous Ledger Protocol v5' \
   "continuous-ledger v5 protocol contract exists"
 require_present "$CONTINUOUS_LEDGER_PROTOCOL" 'Local history acceptance' \
@@ -742,8 +757,8 @@ require_present "$PLUGIN_RUNTIME_MODULE" 'Future<MoltbookCycleSummary> runMoltbo
   "Moltbook runtime exposes one wake-run-sleep cycle port"
 require_present "$PLUGIN_RUNTIME_MODULE" "operation.state == ExternalEffectState.unresolved" \
   "Moltbook cycle reconciles unresolved effects before new observation"
-require_present "$PLUGIN_RUNTIME_MODULE" 'final heartbeatPlan = await _planMoltbookHeartbeat\(cycleEpoch: cycleEpoch\);' \
-  "Moltbook cycle reuses generation-bound deterministic heartbeat planning"
+require_present "$PLUGIN_RUNTIME_MODULE" 'final heartbeat = await _observeAndPlanMoltbookHeartbeat\(' \
+  "Moltbook cycle uses generation-bound deterministic heartbeat observation and planning"
 require_present "$PLUGIN_RUNTIME_MODULE" "'sleep inspected=" \
   "Moltbook cycle publishes one bounded local summary"
 require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Trigger policies \(implemented\)' \

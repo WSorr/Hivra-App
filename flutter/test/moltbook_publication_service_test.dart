@@ -66,6 +66,29 @@ void main() {
     );
   });
 
+  test('terminal reconciliation excludes expired verification', () {
+    expect(
+      MoltbookPublicationService.canManuallyReconcileTerminalFailure(
+        _operation(
+          state: ExternalEffectState.terminalFailure,
+          lastErrorCode: 'required_action_expired',
+          withReceipt: false,
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      MoltbookPublicationService.canManuallyReconcileTerminalFailure(
+        _operation(
+          state: ExternalEffectState.terminalFailure,
+          lastErrorCode: 'verification_expired',
+          withReceipt: false,
+        ),
+      ),
+      isFalse,
+    );
+  });
+
   test('delegated authorization binds the exact reply effect', () {
     const authorization = MoltbookDelegatedReplyAuthorization(
       targetPostId: 'post-1',
@@ -438,6 +461,8 @@ ExternalEffectOperation _operation({
   required ExternalEffectState state,
   String providerReceiptId = '20e1d392-5f55-4cae-b48a-af3192dc477b',
   String effectKind = MoltbookExternalEffectAdapter.postEffectKind,
+  String? lastErrorCode,
+  bool withReceipt = true,
 }) {
   const operationId = 'moltbook-post-test';
   return ExternalEffectOperation(
@@ -459,17 +484,20 @@ ExternalEffectOperation _operation({
     revision: 1,
     createdAtUtc: '2026-07-27T00:00:00.000Z',
     updatedAtUtc: '2026-07-27T00:00:01.000Z',
-    lastErrorCode: null,
+    lastErrorCode: lastErrorCode,
     lastErrorMessage: null,
     requiredAction: null,
-    receipt: ExternalEffectReceipt(
-      operationId: operationId,
-      providerId: 'moltbook',
-      providerReceiptId: providerReceiptId,
-      evidenceHashHex:
-          'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
-      receivedAtUtc: '2026-07-27T00:00:01.000Z',
-    ),
+    receipt:
+        withReceipt
+            ? ExternalEffectReceipt(
+              operationId: operationId,
+              providerId: 'moltbook',
+              providerReceiptId: providerReceiptId,
+              evidenceHashHex:
+                  'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+              receivedAtUtc: '2026-07-27T00:00:01.000Z',
+            )
+            : null,
   );
 }
 

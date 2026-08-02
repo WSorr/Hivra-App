@@ -1,9 +1,9 @@
 # Moltbook Agent Drone - Design Contract v1
 
 Status: deterministic drafts, read-only account/home/feed observation,
-restart-safe feed identity checkpoints, and assisted publication lifecycle
+restart-safe feed identity checkpoints, and one-target Assisted reply cycles
 implemented; foreground bounded reply authorization is available for exact
-prepared replies, while unattended autonomy remains disabled
+prepared replies, while unattended publication remains disabled
 Runtime impact: bounded WASM contracts plus host-owned Assisted effects and a
 fail-closed delegation authorization boundary
 Primary owner: External Moltbook Drone
@@ -122,7 +122,7 @@ The initial registration flow is explicit:
 | --- | --- | --- |
 | Moltbook profile, posts, comments, votes, follows, reputation | Moltbook | Moltbook |
 | Moltbook API credential | platform secure storage | local Capsule binding |
-| AI provider credential | platform secure storage | local provider binding |
+| AI provider credential | platform secure storage plus explicit process-memory lease | host inference provider binding |
 | private persona/policy, allowed topics, autonomy limits | isolated plugin state | Moltbook Drone |
 | unpublished drafts and approval state | isolated plugin state | Moltbook Drone |
 | feed cursor, processed remote ids, bounded cache | isolated plugin state | Moltbook Drone |
@@ -175,8 +175,9 @@ explicit public source notes
 Future remote mode:
 
 remote feed -> Moltbook Adapter -> normalized untrusted content
-  -> deterministic eligibility/policy gate -> canonical draft
-  -> approval/autonomy gate -> durable publish operation
+  -> deterministic eligibility/policy gate -> one selected conversation
+  -> optional bounded inference proposal -> WASM-bound canonical draft
+  -> local prepared effect -> exact human approval
   -> Moltbook Adapter -> remote receipt -> local plugin projection
 ```
 
@@ -201,6 +202,20 @@ contradictions such as `relationship-first` or `concept system`. The user must
 review or edit every field before the existing deterministic WASM draft method
 can run. The WASM contract rejects a mechanical newline fact dump and must
 preserve the exact reviewed title and body.
+
+The remote-engagement cycle is a separate input path. In Assisted mode it may
+send one selected public post, at most 20 recent public comments, the local
+public persona/topic policy, and the deterministic engagement plan to the
+configured inference provider. Its output is validated, rebound by WASM, and
+stored only as a local prepared external effect. The cycle cannot approve,
+queue, or publish it.
+
+Automatic product-news generation is not implemented by reading Capsule
+Analyst output, the Core ledger, or repository files. A future
+`PublicChangeFeed` must be an explicit versioned export of user-approved public
+facts. It must redact private Capsule state at its producer boundary and feed
+the existing Public Bulletin path; it must not create another draft journal,
+effect queue, or direct Analyst-to-Moltbook dependency.
 
 ## 7. Operating Modes
 
@@ -233,6 +248,10 @@ routes or state machines.
 
 There is no background-service promise in v1. Closing the application stops
 new reads and decisions. Moltbook retains already-published remote state.
+Closing the application also destroys the in-memory AI lease. Session and
+continuous Assisted cycles can request inference only after the user explicitly
+unlocks the configured provider once for that foreground process. A locked
+cycle pauses before inference and leaves its selected candidate retryable.
 
 ## 8. Method Scopes
 
@@ -498,12 +517,15 @@ Deleting it removes only the local draft. It neither reads the credential nor
 creates a remote effect. The screen retains only non-secret account metadata
 and does not imply remote write execution.
 
-For assisted replies, the selected bounded public conversation and deterministic
-engagement plan may be sent to the configured inference provider only after a
-separate user confirmation. Remote prose remains explicitly untrusted. The AI
-returns advisory reply text plus bounded grounding points in memory. The user
-may edit the proposal; `prepare_moltbook_reply` then binds the exact reviewed
-text to the target and plan hash. Any later edit invalidates that bound draft.
+For manually selected assisted replies, the bounded public conversation and
+deterministic engagement plan are sent to the configured inference provider
+after a separate confirmation. Both manual and trigger paths require an
+explicit foreground AI-session unlock. For an enabled Assisted trigger cycle,
+the saved policy authorizes the same bounded inference input without another
+per-item modal while that lease remains active. Both paths stop at one local
+prepared effect and require exact human approval before queueing. Remote prose
+remains explicitly untrusted, and neither the Moltbook WASM module nor its
+provider adapter receives the inference credential.
 
 The complete workspace will contain:
 
@@ -602,10 +624,11 @@ not an acceptable duplicate-click edge case. The normative remediation and
 mode model are defined in `moltbook_engagement_lifecycle_v1.md`.
 
 Canonical engagement identity, the single orchestration port, serialized
-wake-run-sleep execution, three trigger policies, and a persistent local stop
-are implemented. Bounded/automatic release still requires the unified cycle
-projection plus replay, prompt-injection, revocation, Capsule-switch,
-rate-limit, and unattended-restart evidence. Trigger configuration alone does
-not grant write authority or make Bounded mode releasable.
+wake-run-sleep execution, one-target Assisted proposal preparation, three
+trigger policies, and a persistent local stop are implemented. Bounded
+publication still requires replay, prompt-injection, revocation,
+Capsule-switch, rate-limit, and unattended-restart evidence. Trigger
+configuration alone does not grant write authority or make Bounded mode
+releasable.
 
 No phase may add direct network or secure-storage access to WASM.

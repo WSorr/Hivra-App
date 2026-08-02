@@ -442,6 +442,30 @@ Switching:
 
 Diagnostics:
 
+- All inference in Hivra MUST enter through the single host-owned Capsule AI
+  Runtime contract defined by `architecture/capsule-ai-runtime.md`.
+- A screen, drone, or feature service MUST NOT construct a provider adapter,
+  read an inference credential, or own a parallel AI scheduler directly.
+- Capsule AI Runtime MUST remain outside Core. It MUST NOT append ledger facts,
+  mutate Capsule state, execute effects, approve operations, or grant host
+  capabilities.
+- Inference requests MUST preserve active Capsule and requesting-capability
+  scope through disclosure, provider execution, validation, and completion.
+- WASM drones MAY request bounded inference only through a declared host
+  capability and drone-owned proposal schema. They MUST NOT receive provider
+  credentials or generic AI tools.
+- The configured provider MAY be unlocked into host process memory by an
+  explicit user action. A locked automatic cycle MUST stop before inference,
+  MUST NOT open an operating-system credential prompt, and MUST NOT consume its
+  pending input checkpoint.
+- Closing the application MUST clear the process-memory AI lease. Hivra 1.x
+  does not promise app-closed AI execution.
+- During incremental 1.x convergence, the existing named Analyst, Developer,
+  history-advisor, and Moltbook AI services are legacy implementation paths.
+  They MUST NOT be copied or extended with another provider/session/scheduler
+  path. A change that touches their provider dispatch MUST migrate that path to
+  Capsule AI Runtime and delete or seal the replaced entrypoint.
+
 - Capsule Analyst is the canonical user-facing local diagnostic surface.
 - Capsule Analyst MAY summarize bootstrap state, filesystem traces, ledger
   projection, invitations, relationships, outbox, consensus, and plugin state.

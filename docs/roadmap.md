@@ -63,6 +63,18 @@ Current 2.0 program:
 - `V2-3` define the capability-scoped WASM host and projection-only app shell;
 - `V2-4` migrate one capability at a time and delete each replaced 1.x path.
 
+Capsule AI Runtime is a named cross-version architecture program governed by
+`docs/architecture/capsule-ai-runtime.md`:
+
+- 1.x incrementally consolidates existing Capsule Analyst, Developer Mode,
+  history-advisor, and drone inference behind one process session owner and one
+  provider-independent request port;
+- each 1.x migration must delete or seal the replaced feature-local credential,
+  provider-dispatch, disclosure, or scheduling path;
+- 2.0 treats Capsule AI Runtime as a first-class host capability beside WASM
+  Drone Runtime and the effect runtimes, never as part of Core;
+- no new AI-enabled feature may add a direct Gemini/OpenAI/local-model path.
+
 2.0 design constraints also include:
 
 - separate Genesis/Proto birth mode from Leaf/Relay runtime role;

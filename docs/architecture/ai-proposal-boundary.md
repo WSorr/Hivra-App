@@ -4,8 +4,9 @@ Status: normative architecture contract for AI-assisted Hivra capabilities in
 the maintained 1.x line and the design of Hivra 2.0.
 
 This contract refines `product-axis.md` and
-`architecture-execution-discipline.md`. It does not add an AI capability to
-Core and does not create a third workflow lane.
+`architecture-execution-discipline.md`. The single inference owner and runtime
+contract are defined by `capsule-ai-runtime.md`. This document does not add an
+AI capability to Core and does not create a third workflow lane.
 
 ## 1. Purpose
 
@@ -61,15 +62,24 @@ a trading or staking proposal merely because all three may contain text.
 
 ### 3.3 Host
 
-The host owns:
+Capsule AI Runtime is the sole host owner of:
 
 - explicit disclosure and redaction before inference;
 - inference-provider credential access;
-- schema, size, encoding, and safety validation;
-- capability grants and local approval/autonomy policy;
-- durable external-effect lifecycle and receipt reconciliation.
+- inference scheduling, provider dispatch, and request budgets;
+- schema, size, encoding, and safety validation.
 
-The host does not move provider business policy into Core or generic UI.
+The capability host and originating feature retain capability grants, approval
+policy, deterministic decisions, and normal effect lifecycle composition.
+Neither side moves provider business policy into Core or generic UI.
+
+Inference credentials have one process-scoped host owner. A user action may
+unlock the configured provider into host memory for the current foreground app
+session. Feature modules reuse that session lease; they do not reread Keychain,
+copy the credential, or pass it into WASM. Closing the app or explicitly
+locking the lease clears the in-memory credential. A locked automatic cycle
+must stop before inference without opening an operating-system credential
+dialog, creating an effect, or consuming its input checkpoint.
 
 ### 3.4 Adapters
 

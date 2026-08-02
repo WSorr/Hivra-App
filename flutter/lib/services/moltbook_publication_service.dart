@@ -256,6 +256,15 @@ class MoltbookPublicationService {
     );
   }
 
+  static bool canManuallyReconcileTerminalFailure(
+    ExternalEffectOperation operation,
+  ) {
+    return operation.state == ExternalEffectState.terminalFailure &&
+        operation.receipt == null &&
+        operation.attemptCount > 0 &&
+        operation.lastErrorCode == 'required_action_expired';
+  }
+
   Future<ExternalEffectOperation> resolveVerification({
     required String operationId,
     required String answer,

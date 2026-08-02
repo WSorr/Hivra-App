@@ -108,7 +108,8 @@ The map is organized by ownership, not by a growing global `services/` or
 | Pair Consensus | Core Consensus | pair snapshot/attestation | ledger + verified evidence | signing/delivery ports |
 | Delivery | Runtime Delivery | enqueue/status/receipt | durable operation journal | transport adapters |
 | External service effects | Runtime External Effects | provider-scoped operation/status/receipt | durable operation journal | allowlisted provider adapters |
-| AI proposals | External drone + host disclosure gate | drone-owned proposal contract | private bounded drone state or none | inference adapter only; no direct capability effect |
+| Capsule AI Runtime | Host AI capability | bounded inference request/result port | process lease + bounded request evidence; never Core truth | pinned inference adapters only |
+| AI proposal semantics | External drone/capability | drone-owned proposal contract | private bounded drone state or none | no direct capability effect |
 | Drone execution | WASM Host | capability-scoped host ABI | plugin registry/evidence | sandbox/runtime ports |
 | Application projection | App Shell | screen projections/intents | no independent truth | capability APIs only |
 | Trading/chat/AI/staking | External drones | declared WASM contracts | drone-owned state | granted host capabilities |
@@ -131,10 +132,10 @@ External WASM drones        Application UI
           +------ capability APIs +
                           |
                   Application use cases
-                          |
-               Core contracts + effect ports
-                          |
-              Pure Core (Capsule/Ledger/Trust/Consensus)
+                    /             \
+       Capsule AI Runtime      Core contracts + effect ports
+               |                         |
+      inference adapters       Pure Core (Capsule/Ledger/Trust/Consensus)
 
 Platform composition root -> concrete storage/crypto/transport/WASM adapters
 ```
@@ -142,6 +143,11 @@ Platform composition root -> concrete storage/crypto/transport/WASM adapters
 The arrows above mean "may depend on" toward the stable contract. Concrete
 adapters are connected by the composition root; they do not become lateral
 dependencies of capability owners.
+
+Capsule AI Runtime is a sibling host capability, not a Core service and not a
+generic tool bus. Drones own proposal meaning while the runtime owns provider
+sessions, disclosure, scheduling, budgets, and dispatch. Its complete contract
+and 1.x migration evidence are defined in `architecture/capsule-ai-runtime.md`.
 
 ## 6. Contract Placement Rules
 

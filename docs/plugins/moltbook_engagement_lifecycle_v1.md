@@ -1,7 +1,7 @@
 # Moltbook Engagement Lifecycle v1
 
-Status: normative design contract; work packages 1-5 implemented, package 6
-release evidence in progress
+Status: normative design contract; Assisted remote-engagement cycle implemented,
+package 6 release evidence in progress
 
 Owner: external Moltbook Drone plus host External Effects boundary
 
@@ -187,7 +187,9 @@ One cycle executes in this order:
 8. Ask WASM to rank/plan a bounded candidate set.
 9. For selected targets only, request an AI proposal if configured.
 10. Validate and bind exact prose through WASM.
-11. Apply Assisted or Bounded write policy.
+11. Under Assisted policy, prepare one immutable local effect and stop for exact
+    human review. Under a separately released Bounded policy, apply the current
+    delegation authorization.
 12. Process authorized effects through the common adapter and record receipts.
 13. Commit the checkpoint only through the newest safely observed boundary.
 14. Publish a local cycle summary and stop.
@@ -263,6 +265,17 @@ Remote Moltbook content and model output are untrusted data.
   secrets, tool syntax, and policy-changing instructions fail closed.
 - AI unavailability may fall back to a manual local draft, never to unreviewed
   publication or a different model with broader authority.
+- An Assisted cycle may send the bounded public conversation to the explicitly
+  configured inference provider. Enabling Assisted cycle execution is consent
+  for that bounded transfer; it is not consent to publish the response.
+- Inference also requires an explicit process-memory AI lease. Automatic cycles
+  never trigger an operating-system credential prompt. If the lease is locked,
+  the cycle stops before inference and keeps the selected target retryable.
+- The host owns the lease and clears it when the application exits. Moltbook
+  state, WASM, provider adapters, and persisted plugin state never receive the
+  inference credential.
+- If inference or draft binding fails, the selected feed target is excluded
+  from the committed checkpoint so a later cycle may retry it.
 
 ## 12. Implementation work packages
 
@@ -274,9 +287,10 @@ Remote Moltbook content and model output are untrusted data.
    queue, deliver, or compensate an engagement through a parallel route.
 3. **Cycle engine (implemented)**: one Capsule/account-scoped in-flight cycle
    reconciles unresolved effects, performs paginated heartbeat observation and
-   deterministic WASM planning, commits the checkpoint only after ownership
-   checks, and returns one bounded local summary. It grants no new write
-   authority; candidate engagement is mounted by the trigger-policy package.
+   deterministic WASM planning, selects at most one target, obtains one bounded
+   AI proposal in Assisted mode, binds it through WASM, and prepares one local
+   immutable effect. It commits the checkpoint only after ownership checks and
+   never approves, queues, delivers, or solves a challenge automatically.
 4. **Trigger policies (implemented)**: a single application controller mounts
    `on_demand`, once-per-process `session`, and sequential
    `continuous_while_running` triggers over the same cycle port. Continuous

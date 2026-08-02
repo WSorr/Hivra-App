@@ -4,6 +4,8 @@ import 'hivra_secure_storage_options.dart';
 import 'inference_provider_adapter.dart';
 
 class AiDoctorCredentialStore {
+  static final AiDoctorCredentialStore shared = AiDoctorCredentialStore();
+
   static const String _openAiApiKeyKey = 'hivra.ai_doctor.openai.api_key.v1';
   static const String _geminiApiKeyKey = 'hivra.ai_doctor.gemini.api_key.v1';
   static const String _localOpenAiApiKeyKey =
@@ -16,18 +18,16 @@ class AiDoctorCredentialStore {
   final FlutterSecureStorage _secureStorage;
   final Map<InferenceProviderKind, String> _sessionApiKeys =
       <InferenceProviderKind, String>{};
+  final Map<InferenceProviderKind, String> _sessionBaseUrls =
+      <InferenceProviderKind, String>{};
+  InferenceProviderKind? _sessionPreferredProvider;
 
-  AiDoctorCredentialStore({
-    FlutterSecureStorage? secureStorage,
-  }) : _secureStorage = secureStorage ??
-            const FlutterSecureStorage(
-              mOptions: hivraMacOsSecureStorageOptions,
-            );
+  AiDoctorCredentialStore({FlutterSecureStorage? secureStorage})
+    : _secureStorage =
+          secureStorage ??
+          const FlutterSecureStorage(mOptions: hivraMacOsSecureStorageOptions);
 
-  Future<void> saveApiKey(
-    InferenceProviderKind provider,
-    String apiKey,
-  ) async {
+  Future<void> saveApiKey(InferenceProviderKind provider, String apiKey) async {
     final normalized = apiKey.trim();
     if (normalized.isEmpty) {
       throw ArgumentError('${provider.label} API key is empty');
@@ -40,10 +40,7 @@ class AiDoctorCredentialStore {
         await savePreferredProvider(provider);
         return;
       }
-      await _secureStorage.write(
-        key: key,
-        value: normalized,
-      );
+      await _secureStorage.write(key: key, value: normalized);
       final stored = await _secureStorage.read(key: key);
       if (stored != normalized) {
         throw StateError('Secure ${provider.label} key read-back mismatch');
@@ -98,14 +95,12 @@ class AiDoctorCredentialStore {
       throw ArgumentError('${provider.label} does not support base URL');
     }
     try {
-      await _secureStorage.write(
-        key: key,
-        value: normalized,
-      );
+      await _secureStorage.write(key: key, value: normalized);
       final stored = await _secureStorage.read(key: key);
       if (stored != normalized) {
         throw StateError('${provider.label} base URL read-back mismatch');
       }
+      _sessionBaseUrls[provider] = normalized;
       await savePreferredProvider(provider);
     } catch (error) {
       throw StateError('Secure AI endpoint storage is unavailable: $error');
@@ -118,18 +113,24 @@ class AiDoctorCredentialStore {
         key: _preferredProviderKey,
         value: provider.id,
       );
+      _sessionPreferredProvider = provider;
     } catch (error) {
       throw StateError('Secure AI provider preference storage failed: $error');
     }
   }
 
   Future<InferenceProviderKind?> loadPreferredProvider() async {
+    final cached = _sessionPreferredProvider;
+    if (cached != null) return cached;
     try {
       final stored = await _secureStorage.read(key: _preferredProviderKey);
       final normalized = stored?.trim();
       if (normalized == null || normalized.isEmpty) return null;
       for (final provider in InferenceProviderKind.values) {
-        if (provider.id == normalized) return provider;
+        if (provider.id == normalized) {
+          _sessionPreferredProvider = provider;
+          return provider;
+        }
       }
       return null;
     } catch (error) {
@@ -138,6 +139,8 @@ class AiDoctorCredentialStore {
   }
 
   Future<String?> loadBaseUrl(InferenceProviderKind provider) async {
+    final cached = _sessionBaseUrls[provider];
+    if (cached != null && cached.isNotEmpty) return cached;
     final key = _baseUrlKeyForProvider(provider);
     if (key == null) return null;
     try {
@@ -146,6 +149,7 @@ class AiDoctorCredentialStore {
       if (normalized == null || normalized.isEmpty) {
         return null;
       }
+      _sessionBaseUrls[provider] = normalized;
       return normalized;
     } catch (error) {
       throw StateError('Secure AI endpoint storage is unavailable: $error');
@@ -153,6 +157,7 @@ class AiDoctorCredentialStore {
   }
 
   Future<void> clearBaseUrl(InferenceProviderKind provider) async {
+    _sessionBaseUrls.remove(provider);
     final key = _baseUrlKeyForProvider(provider);
     if (key == null) return;
     try {
@@ -167,6 +172,56 @@ class AiDoctorCredentialStore {
     final preferred = await loadPreferredProvider();
     if (preferred != provider) return;
     await _secureStorage.delete(key: _preferredProviderKey);
+    _sessionPreferredProvider = null;
+  }
+
+  InferenceProviderKind? get sessionPreferredProvider =>
+      _sessionPreferredProvider;
+
+  String? sessionApiKey(InferenceProviderKind provider) =>
+      _sessionApiKeys[provider];
+
+  String? sessionBaseUrl(InferenceProviderKind provider) =>
+      _sessionBaseUrls[provider];
+
+  bool get isPreferredProviderUnlocked {
+    final provider = _sessionPreferredProvider;
+    if (provider == null) return false;
+    if (provider.requiresApiKey &&
+        (_sessionApiKeys[provider]?.isNotEmpty != true)) {
+      return false;
+    }
+    if (provider == InferenceProviderKind.localOpenAiCompatible &&
+        (_sessionBaseUrls[provider]?.isNotEmpty != true)) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<InferenceProviderKind> unlockPreferredProviderSession() async {
+    final provider =
+        await loadPreferredProvider() ?? InferenceProviderKind.gemini;
+    final apiKey = await loadApiKey(provider);
+    if (provider.requiresApiKey && (apiKey == null || apiKey.isEmpty)) {
+      throw StateError(
+        '${provider.label} API key is not saved. Configure it in Capsule Analyst.',
+      );
+    }
+    final baseUrl = await loadBaseUrl(provider);
+    if (provider == InferenceProviderKind.localOpenAiCompatible &&
+        (baseUrl == null || baseUrl.isEmpty)) {
+      throw StateError(
+        '${provider.label} base URL is not saved. Configure it in Capsule Analyst.',
+      );
+    }
+    _sessionPreferredProvider = provider;
+    return provider;
+  }
+
+  void lockSession() {
+    _sessionApiKeys.clear();
+    _sessionBaseUrls.clear();
+    _sessionPreferredProvider = null;
   }
 
   Future<void> saveOpenAiApiKey(String apiKey) {

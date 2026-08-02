@@ -105,6 +105,21 @@ class PluginRuntimeModule {
        _secretVault = secretVault,
        _readActiveCapsuleRootHex = readActiveCapsuleRootHex;
 
+  bool get isMoltbookAiSessionUnlocked =>
+      moltbookPublicBulletinAi.isSessionUnlocked;
+
+  String? get moltbookAiSessionProviderLabel =>
+      moltbookPublicBulletinAi.sessionProviderLabel;
+
+  Future<String> unlockMoltbookAiSession() async {
+    final provider = await moltbookPublicBulletinAi.unlockSession();
+    return provider.label;
+  }
+
+  void lockMoltbookAiSession() {
+    moltbookPublicBulletinAi.lockSession();
+  }
+
   Future<MoltbookAmbassadorConfiguration> loadAmbassadorConfiguration() =>
       _ambassadorConfiguration.load();
 
@@ -538,6 +553,31 @@ class PluginRuntimeModule {
   Future<MoltbookHeartbeatPlan> _planMoltbookHeartbeat({
     required int cycleEpoch,
   }) async {
+    final result = await _observeAndPlanMoltbookHeartbeat(
+      cycleEpoch: cycleEpoch,
+    );
+    await moltbookFeedCheckpoint.commit(
+      result.observation.feed,
+      observedAt: result.observedAt,
+    );
+    await _ensureMoltbookCycleScope(
+      result.ownerHex,
+      result.accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    return result.plan;
+  }
+
+  Future<
+    ({
+      String ownerHex,
+      String accountBindingId,
+      MoltbookHeartbeatObservation observation,
+      MoltbookHeartbeatPlan plan,
+      DateTime observedAt,
+    })
+  >
+  _observeAndPlanMoltbookHeartbeat({required int cycleEpoch}) async {
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) {
       throw StateError('Moltbook Ambassador is disabled');
@@ -625,22 +665,19 @@ class PluginRuntimeModule {
       binding.accountId,
       cycleEpoch: cycleEpoch,
     );
-    await moltbookFeedCheckpoint.commit(
-      observation.feed,
-      observedAt: DateTime.parse(observedAtUtc),
-    );
-    await _ensureMoltbookCycleScope(
-      ownerHex,
-      binding.accountId,
-      cycleEpoch: cycleEpoch,
-    );
     await uiLog.log(
       'moltbook.heartbeat.plan',
       'success priority=${plan.priority} '
           'candidates=${plan.candidatePostIds.length} '
           'hash=${plan.planHashHex.substring(0, 12)}..',
     );
-    return plan;
+    return (
+      ownerHex: ownerHex,
+      accountBindingId: binding.accountId,
+      observation: observation,
+      plan: plan,
+      observedAt: DateTime.parse(observedAtUtc),
+    );
   }
 
   Future<MoltbookCycleSummary> runMoltbookCycle() async {
@@ -806,7 +843,123 @@ class PluginRuntimeModule {
       accountBindingId,
       cycleEpoch: cycleEpoch,
     );
-    final heartbeatPlan = await _planMoltbookHeartbeat(cycleEpoch: cycleEpoch);
+    final heartbeat = await _observeAndPlanMoltbookHeartbeat(
+      cycleEpoch: cycleEpoch,
+    );
+    final heartbeatPlan = heartbeat.plan;
+    String? deferredFeedPostId;
+    final candidatePostId = heartbeatPlan.candidatePostIds.firstOrNull;
+    if (candidatePostId != null) {
+      try {
+        final selectionKind =
+            heartbeatPlan.priority == 'review_activity'
+                ? 'own_activity'
+                : 'feed_candidate';
+        final conversation = await observeMoltbookConversation(candidatePostId);
+        await _ensureMoltbookCycleScope(
+          ownerHex,
+          accountBindingId,
+          cycleEpoch: cycleEpoch,
+        );
+        final engagementPlan = await planMoltbookEngagement(
+          conversation: conversation,
+          selectionKind: selectionKind,
+        );
+        await _ensureMoltbookCycleScope(
+          ownerHex,
+          accountBindingId,
+          cycleEpoch: cycleEpoch,
+        );
+        if (const <String>{
+          'reply_draft',
+          'comment_draft',
+        }.contains(engagementPlan.actionClass)) {
+          final existing = await moltbookPublications.findReplyOperations(
+            accountBindingId: accountBindingId,
+            postId: engagementPlan.targetPostId,
+            parentCommentId: engagementPlan.targetCommentId,
+          );
+          await _ensureMoltbookCycleScope(
+            ownerHex,
+            accountBindingId,
+            cycleEpoch: cycleEpoch,
+          );
+          if (existing.isEmpty) {
+            final configuration = await _ambassadorConfiguration.load();
+            if (configuration.approvalMode ==
+                MoltbookAmbassadorConfiguration.approvalAssisted) {
+              final proposal = await proposeMoltbookReply(
+                conversation: conversation,
+                engagementPlan: engagementPlan,
+              );
+              await _ensureMoltbookCycleScope(
+                ownerHex,
+                accountBindingId,
+                cycleEpoch: cycleEpoch,
+              );
+              final draft = await prepareMoltbookReply(
+                engagementPlan: engagementPlan,
+                reviewedBody: proposal.body,
+              );
+              await _ensureMoltbookCycleScope(
+                ownerHex,
+                accountBindingId,
+                cycleEpoch: cycleEpoch,
+              );
+              final operation = await advanceMoltbookEngagement(
+                engagementPlan: engagementPlan,
+                draft: draft,
+                policy: MoltbookEngagementWritePolicy.assisted,
+                exactApproval: false,
+              );
+              await _ensureMoltbookCycleScope(
+                ownerHex,
+                accountBindingId,
+                cycleEpoch: cycleEpoch,
+              );
+              await uiLog.log(
+                'moltbook.cycle.propose',
+                'prepared operation=${operation.operationId} '
+                    'post=${engagementPlan.targetPostId}',
+              );
+            }
+          }
+        } else if (engagementPlan.actionClass != 'no_action') {
+          throw StateError(
+            'Cycle action ${engagementPlan.actionClass} is not mounted',
+          );
+        }
+      } catch (error) {
+        blockedCount++;
+        if (heartbeatPlan.priority != 'review_activity') {
+          deferredFeedPostId = candidatePostId;
+        }
+        await uiLog.log(
+          'moltbook.cycle.propose',
+          'deferred post=$candidatePostId ${_safeError(error)}',
+        );
+      }
+    }
+    await _ensureMoltbookCycleScope(
+      ownerHex,
+      accountBindingId,
+      cycleEpoch: cycleEpoch,
+    );
+    final committedFeed =
+        deferredFeedPostId == null
+            ? heartbeat.observation.feed
+            : MoltbookFeedObservation(
+              posts: heartbeat.observation.feed.posts
+                  .where((post) => post.postId != deferredFeedPostId)
+                  .toList(growable: false),
+              hasMore: heartbeat.observation.feed.hasMore,
+              nextCursor: heartbeat.observation.feed.nextCursor,
+              rateLimit: heartbeat.observation.feed.rateLimit,
+            );
+    await moltbookFeedCheckpoint.commit(
+      committedFeed,
+      observedAt: heartbeat.observedAt,
+    );
     final checkpoint = await moltbookFeedCheckpoint.load();
     await _ensureMoltbookCycleScope(
       ownerHex,
@@ -1471,7 +1624,7 @@ class PluginRuntimeModuleService {
         effects: effects,
       ),
       moltbookPublicBulletinAi: MoltbookPublicBulletinAiService(
-        credentialStore: AiDoctorCredentialStore(),
+        credentialStore: AiDoctorCredentialStore.shared,
       ),
       moltbookCycleTriggers: _moltbookCycleTriggers,
       ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(

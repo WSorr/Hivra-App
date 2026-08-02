@@ -127,6 +127,16 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 
 ## AI Proposal Boundary
 
+- [ ] Every inference path enters the single Capsule AI Runtime contract in
+      `docs/architecture/capsule-ai-runtime.md`.
+- [ ] No screen, drone, or feature service reads a provider credential,
+      constructs a concrete inference adapter, or owns a parallel scheduler.
+- [ ] The process-memory provider lease is host-owned, explicitly unlocked,
+      cleared on lock/exit, and never exposed to WASM.
+- [ ] A locked automatic cycle opens no OS credential dialog, creates no
+      effect, and consumes no input checkpoint.
+- [ ] Request/result scope binds Capsule, requesting capability, disclosure
+      hash, proposal schema, budgets, and stale-completion cancellation.
 - [ ] The AI path follows `docs/architecture/ai-proposal-boundary.md`; inference
       is an untrusted proposal source, not a capability owner.
 - [ ] The inference adapter has no direct reference to Core mutation, effect

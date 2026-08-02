@@ -36,6 +36,7 @@ void main() {
   late _CyclePublications publications;
   late _EnabledConfiguration configuration;
   late _HeartbeatHost heartbeatHost;
+  late _CycleAi ai;
   late MoltbookCycleTriggerService triggers;
   late PluginRuntimeModule module;
 
@@ -54,7 +55,7 @@ void main() {
       moltbookDrafts: _UnusedDraftStore(),
       moltbookFeedCheckpoint: checkpoint,
       moltbookPublications: publications,
-      moltbookPublicBulletinAi: _UnusedAi(),
+      moltbookPublicBulletinAi: ai,
       moltbookCycleTriggers: cycleTriggers,
       ambassadorConfiguration: configuration,
       fileStore: _UnusedFileStore(),
@@ -70,6 +71,7 @@ void main() {
     publications = _CyclePublications();
     configuration = _EnabledConfiguration();
     heartbeatHost = _HeartbeatHost();
+    ai = _CycleAi();
     triggers = MoltbookCycleTriggerService();
     module = buildModule(triggers);
   });
@@ -158,7 +160,7 @@ void main() {
     final summary = await replacement;
 
     expect(connection.observeCount, 2);
-    expect(heartbeatHost.executeCount, 1);
+    expect(heartbeatHost.executeCount, 2);
     expect(summary.inspectedCount, 2);
   });
 
@@ -198,6 +200,57 @@ void main() {
     expect(summary.blockedCount, 0);
     expect(checkpoint.commitCount, 1);
   });
+
+  test('assisted cycle prepares one local reply without publishing', () async {
+    heartbeatHost.engagementAction = 'reply_draft';
+
+    final summary = await module.runMoltbookCycle();
+
+    expect(ai.proposalCount, 1);
+    expect(publications.preparedReplies, hasLength(1));
+    expect(
+      publications.preparedReplies.single.state,
+      ExternalEffectState.prepared,
+    );
+    expect(publications.processedIds, isEmpty);
+    expect(summary.blockedCount, 0);
+    expect(summary.checkpoint.processedPostIds, <String>['post-2', 'post-1']);
+  });
+
+  test('AI failure defers selected feed candidate from checkpoint', () async {
+    heartbeatHost.engagementAction = 'reply_draft';
+    ai.error = StateError('provider unavailable');
+
+    final summary = await module.runMoltbookCycle();
+
+    expect(summary.blockedCount, 1);
+    expect(summary.inspectedCount, 1);
+    expect(summary.checkpoint.processedPostIds, <String>['post-1']);
+    expect(publications.preparedReplies, isEmpty);
+  });
+
+  test('unsupported remote write class stays deferred', () async {
+    heartbeatHost.engagementAction = 'upvote_candidate';
+
+    final summary = await module.runMoltbookCycle();
+
+    expect(summary.blockedCount, 1);
+    expect(summary.checkpoint.processedPostIds, <String>['post-1']);
+    expect(ai.proposalCount, 0);
+  });
+
+  test(
+    'Capsule switch during AI cannot prepare effect or checkpoint',
+    () async {
+      heartbeatHost.engagementAction = 'reply_draft';
+      ai.afterProposal = () => activeRoot = _rootB;
+
+      await expectLater(module.runMoltbookCycle(), throwsA(isA<StateError>()));
+
+      expect(publications.preparedReplies, isEmpty);
+      expect(checkpoint.commitCount, 0);
+    },
+  );
 
   test('configured on-demand policy never starts implicitly', () async {
     configuration.triggerPolicy =
@@ -280,6 +333,41 @@ class _CycleConnection implements MoltbookConnectionService {
   }
 
   @override
+  Future<MoltbookConversationObservation> observeConversation(
+    String postId,
+  ) async => MoltbookConversationObservation(
+    post: MoltbookPostObservation(
+      postId: postId,
+      title: 'Post $postId',
+      content: 'Public content',
+      authorId: 'author-1',
+      authorName: 'Agent',
+      submoltName: 'hivra',
+      score: 1,
+      commentCount: 1,
+      isVerified: true,
+      isSpam: false,
+      isLocked: false,
+      createdAtUtc: '2026-08-01T00:00:00.000Z',
+      updatedAtUtc: '2026-08-01T00:05:00.000Z',
+    ),
+    comments: <MoltbookCommentObservation>[
+      MoltbookCommentObservation(
+        commentId: 'comment-1',
+        postId: postId,
+        parentCommentId: null,
+        content: 'What changed?',
+        authorId: 'reader-1',
+        authorName: 'Reader',
+        score: 0,
+        createdAtUtc: '2026-08-01T00:04:00.000Z',
+      ),
+    ],
+    hasMoreComments: false,
+    rateLimit: _rateLimit,
+  );
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -306,12 +394,19 @@ class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
 
 class _HeartbeatHost implements PluginHostApiService {
   int executeCount = 0;
+  String engagementAction = 'no_action';
 
   @override
   Future<PluginHostApiResponse> executeWithRuntimeHook(
     PluginHostApiRequest request,
   ) async {
     executeCount++;
+    if (request.method == planMoltbookEngagementMethod) {
+      return _engagementResponse(request);
+    }
+    if (request.method == prepareMoltbookReplyMethod) {
+      return _replyDraftResponse(request);
+    }
     final observedAt = request.args['observed_at_utc'] as String;
     final feed = request.args['feed'] as List<dynamic>;
     final candidates = feed
@@ -377,6 +472,93 @@ class _HeartbeatHost implements PluginHostApiService {
     );
   }
 
+  PluginHostApiResponse _engagementResponse(PluginHostApiRequest request) {
+    final observedAt = request.args['observed_at_utc'] as String;
+    final post = request.args['post'] as Map<String, dynamic>;
+    final comments = request.args['comments'] as List<dynamic>;
+    final targetCommentId =
+        engagementAction == 'reply_draft' && comments.isNotEmpty
+            ? (comments.first as Map<String, dynamic>)['comment_id'] as String
+            : null;
+    final canonical = jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'plugin_id': moltbookAmbassadorPluginId,
+      'contract_kind': 'moltbook_ambassador_engagement_plan',
+      'observed_at_utc': observedAt,
+      'action_class': engagementAction,
+      'target_post_id': post['post_id'],
+      'target_comment_id': targetCommentId,
+      'reason':
+          engagementAction == 'no_action'
+              ? 'No useful reply is required.'
+              : 'A factual reply may be useful.',
+      'publish_allowed': false,
+      'human_review_required': true,
+      'safety_flags': <String>[
+        'remote_content_untrusted',
+        'no_external_effect',
+        'ai_text_not_generated',
+      ],
+    });
+    return _response(request, <String, dynamic>{
+      ...jsonDecode(canonical) as Map<String, dynamic>,
+      'canonical_plan_json': canonical,
+      'plan_hash_hex': sha256.convert(utf8.encode(canonical)).toString(),
+    }, canonical);
+  }
+
+  PluginHostApiResponse _replyDraftResponse(PluginHostApiRequest request) {
+    final canonical = jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'plugin_id': moltbookAmbassadorPluginId,
+      'contract_kind': 'moltbook_ambassador_reply_draft',
+      'target_post_id': request.args['target_post_id'],
+      'target_comment_id': request.args['target_comment_id'],
+      'engagement_plan_hash_hex': request.args['engagement_plan_hash_hex'],
+      'body': request.args['reviewed_body'],
+      'approval_required': true,
+      'safety_flags': <String>[
+        'exact_reply_draft_bound',
+        'engagement_plan_bound',
+      ],
+    });
+    return _response(request, <String, dynamic>{
+      ...jsonDecode(canonical) as Map<String, dynamic>,
+      'canonical_draft_json': canonical,
+      'draft_hash_hex': sha256.convert(utf8.encode(canonical)).toString(),
+    }, canonical);
+  }
+
+  PluginHostApiResponse _response(
+    PluginHostApiRequest request,
+    Map<String, dynamic> result,
+    String canonical,
+  ) => PluginHostApiResponse(
+    status: PluginHostApiStatus.executed,
+    pluginId: moltbookAmbassadorPluginId,
+    method: request.method,
+    executionSource: 'test',
+    executionPackageId: null,
+    executionPackageVersion: null,
+    executionPackageKind: null,
+    executionPackageDigestHex: null,
+    executionContractKind: null,
+    executionRuntimeMode: null,
+    executionRuntimeAbi: null,
+    executionRuntimeEntryExport: null,
+    executionRuntimeModulePath: null,
+    executionRuntimeModuleSelection: null,
+    executionRuntimeModuleDigestHex: null,
+    executionRuntimeInvokeDigestHex: null,
+    executionCapabilities: const <String>[],
+    errorCode: null,
+    errorMessage: null,
+    blockingFacts: const <ConsensusBlockingFact>[],
+    result: result,
+    canonicalJson: canonical,
+    responseHashHex: sha256.convert(utf8.encode(canonical)).toString(),
+  );
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -410,6 +592,8 @@ class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
 class _CyclePublications implements MoltbookPublicationService {
   List<ExternalEffectOperation> operations = <ExternalEffectOperation>[];
   final List<String> processedIds = <String>[];
+  final List<ExternalEffectOperation> preparedReplies =
+      <ExternalEffectOperation>[];
 
   @override
   Future<List<ExternalEffectOperation>> list() async => operations;
@@ -418,6 +602,50 @@ class _CyclePublications implements MoltbookPublicationService {
   Future<ExternalEffectOperation> process(String operationId) async {
     processedIds.add(operationId);
     return _operation(challenged: true);
+  }
+
+  @override
+  Future<List<ExternalEffectOperation>> findReplyOperations({
+    required String accountBindingId,
+    required String postId,
+    required String? parentCommentId,
+  }) async => preparedReplies;
+
+  @override
+  Future<ExternalEffectOperation> prepareReply({
+    required MoltbookReplyDraftPreview draft,
+  }) async {
+    if (preparedReplies.isNotEmpty) return preparedReplies.single;
+    final operation = ExternalEffectOperation(
+      ownerCapsuleHex: _rootA,
+      operationId: 'reply-effect-1',
+      pluginId: moltbookAmbassadorPluginId,
+      providerId: 'moltbook',
+      accountBindingId: 'agent-1',
+      effectKind: 'comment.create',
+      canonicalPayloadJson: jsonEncode(<String, dynamic>{
+        'schema_version': 2,
+        'account_name': 'Hivra Agent',
+        'post_id': draft.targetPostId,
+        'parent_comment_id': draft.targetCommentId,
+        'content': draft.body,
+      }),
+      payloadHashHex:
+          'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+      state: ExternalEffectState.prepared,
+      approvalEvidenceHashHex: null,
+      attemptCount: 0,
+      revision: 0,
+      createdAtUtc: '2026-08-01T00:00:00.000Z',
+      updatedAtUtc: '2026-08-01T00:00:00.000Z',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      requiredAction: null,
+      receipt: null,
+    );
+    preparedReplies.add(operation);
+    operations.add(operation);
+    return operation;
   }
 
   @override
@@ -531,7 +759,29 @@ class _UnusedDraftStore implements MoltbookDraftStore {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _UnusedAi implements MoltbookPublicBulletinAiService {
+class _CycleAi implements MoltbookPublicBulletinAiService {
+  int proposalCount = 0;
+  Object? error;
+  void Function()? afterProposal;
+
+  @override
+  Future<MoltbookReplyProposal> proposeReply({
+    required MoltbookConversationObservation conversation,
+    required MoltbookEngagementPlan engagementPlan,
+    required String personaSummary,
+  }) async {
+    proposalCount++;
+    final failure = error;
+    if (failure != null) throw failure;
+    afterProposal?.call();
+    return const MoltbookReplyProposal(
+      body: 'This is a bounded factual reply.',
+      groundingPoints: <String>['Public post and recent comment'],
+      providerLabel: 'Gemini',
+      model: 'test-model',
+    );
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

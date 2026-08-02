@@ -270,14 +270,17 @@ class _FakeCredentialStore extends AiDoctorCredentialStore {
   _FakeCredentialStore({this.apiKey = 'gemini-key'});
 
   @override
-  Future<InferenceProviderKind?> loadPreferredProvider() async =>
+  InferenceProviderKind? get sessionPreferredProvider =>
       InferenceProviderKind.gemini;
 
   @override
-  Future<String?> loadApiKey(InferenceProviderKind provider) async => apiKey;
+  bool get isPreferredProviderUnlocked => apiKey?.isNotEmpty == true;
 
   @override
-  Future<String?> loadBaseUrl(InferenceProviderKind provider) async => null;
+  String? sessionApiKey(InferenceProviderKind provider) => apiKey;
+
+  @override
+  String? sessionBaseUrl(InferenceProviderKind provider) => null;
 }
 
 class _RecordingAdapter implements InferenceProviderAdapter {

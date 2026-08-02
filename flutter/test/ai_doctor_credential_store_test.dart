@@ -5,6 +5,7 @@ import 'package:hivra_app/services/inference_provider_adapter.dart';
 
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
+  final Map<String, int> readCounts = <String, int>{};
 
   @override
   Future<void> write({
@@ -34,6 +35,7 @@ class _FakeSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    readCounts.update(key, (count) => count + 1, ifAbsent: () => 1);
     return values[key];
   }
 
@@ -76,10 +78,7 @@ void main() {
       await store.saveOpenAiApiKey(' sk-test ');
 
       expect(await store.loadOpenAiApiKey(), 'sk-test');
-      expect(
-        await store.loadPreferredProvider(),
-        InferenceProviderKind.openAi,
-      );
+      expect(await store.loadPreferredProvider(), InferenceProviderKind.openAi);
       expect(secureStorage.values.values, contains('sk-test'));
       expect(secureStorage.values.values, contains('openai'));
     });
@@ -107,10 +106,7 @@ void main() {
         ' http://127.0.0.1:11434 ',
       );
 
-      expect(
-        await store.loadApiKey(InferenceProviderKind.openAi),
-        'sk-openai',
-      );
+      expect(await store.loadApiKey(InferenceProviderKind.openAi), 'sk-openai');
       expect(
         await store.loadApiKey(InferenceProviderKind.gemini),
         'gemini-key',
@@ -135,6 +131,38 @@ void main() {
       expect(await store.loadPreferredProvider(), InferenceProviderKind.gemini);
       expect(secureStorage.values.length, 1);
       expect(secureStorage.values.values.single, 'gemini');
+    });
+
+    test('unlocks provider once and reuses the in-memory session', () async {
+      final secureStorage = _FakeSecureStorage();
+      final writer = AiDoctorCredentialStore(secureStorage: secureStorage);
+      await writer.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+      writer.lockSession();
+      secureStorage.readCounts.clear();
+
+      final provider = await writer.unlockPreferredProviderSession();
+      expect(provider, InferenceProviderKind.gemini);
+      expect(writer.isPreferredProviderUnlocked, isTrue);
+      expect(writer.sessionApiKey(InferenceProviderKind.gemini), 'gemini-key');
+
+      await writer.unlockPreferredProviderSession();
+      expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 2);
+    });
+
+    test('locking clears only the process session', () async {
+      final secureStorage = _FakeSecureStorage();
+      final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+      await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+
+      store.lockSession();
+
+      expect(store.isPreferredProviderUnlocked, isFalse);
+      expect(store.sessionPreferredProvider, isNull);
+      expect(secureStorage.values.values, contains('gemini-key'));
+      expect(
+        await store.unlockPreferredProviderSession(),
+        InferenceProviderKind.gemini,
+      );
     });
 
     test('fails closed when secure storage is unavailable', () async {

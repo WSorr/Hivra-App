@@ -51,6 +51,30 @@ void main() {
       expect(projection.phase, MoltbookWorkspaceCyclePhase.delivering);
     });
 
+    test('local prepared reply is reviewed before another cycle runs', () {
+      final projection = MoltbookWorkspaceProjection.resolve(
+        connected: true,
+        enabled: true,
+        triggerPhase: MoltbookCycleTriggerPhase.waiting,
+        cycleSummary: null,
+        observing: false,
+        proposing: false,
+        delivering: false,
+        hasVerification: false,
+        hasRecoverableEffect: false,
+        hasQueuedEffect: false,
+        hasReplyDraft: true,
+        hasLocalDraft: false,
+        proposedCount: 1,
+        publishedCount: 0,
+        challengedCount: 0,
+        blockedCount: 0,
+      );
+
+      expect(projection.nextAction, MoltbookWorkspaceNextAction.reviewReply);
+      expect(projection.proposedCount, 1);
+    });
+
     test('projects cycle evidence without inventing effect counts', () {
       final summary = MoltbookCycleSummary(
         ownerCapsuleHex: 'a' * 64,

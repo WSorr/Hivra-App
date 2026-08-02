@@ -126,9 +126,13 @@ become a deterministic decision or Core fact.
 
 Inference is an untrusted proposal source, never a capability owner or effect
 executor. The drone owns proposal semantics and deterministic policy; the host
-owns disclosure, grants, approval, and lifecycle; the adapter owns one pinned
-provider boundary. AI output reaches an external effect only through
-`architecture/ai-proposal-boundary.md` and the existing Effect Lane.
+Capsule AI Runtime solely owns provider sessions, disclosure, inference
+scheduling, budgets, and adapter dispatch; the adapter owns one pinned provider
+boundary. AI output reaches an external effect only through
+`architecture/capsule-ai-runtime.md`, `architecture/ai-proposal-boundary.md`,
+and the existing Effect Lane. A new AI-enabled feature extends the shared
+runtime contract; it does not construct another credential, provider, or
+scheduler path.
 
 ## 5. Pre-Implementation Capability Closure
 
@@ -213,7 +217,7 @@ Known feature families have these default closure expectations:
 | Group contract/DAO | Drone-owned group semantics plus versioned quorum and membership evidence | `NEEDS_PROTOCOL`; Pair Consensus composition is not assumed sufficient |
 | New transport | Runtime Delivery port -> authenticated adapter; no Core projection changes | `NEEDS_CONTRACT` until the reliable delivery port is event-scoped |
 | Distributed backup | Recovery owner -> encrypted shard/envelope port -> consented peers -> deterministic restore proof | `NEEDS_PROTOCOL`; must not reuse invitation/chat internals |
-| AI advisory | Redacted snapshot -> inference port -> untrusted advisory result | `READY`; result has no mutation authority |
+| AI advisory | Redacted snapshot -> Capsule AI Runtime -> untrusted capability-owned proposal | `READY` when it reuses the shared runtime and has no mutation authority |
 | AI-initiated action | AI proposal -> deterministic capability command -> normal guard/effect lane | `NEEDS_CONTRACT`; direct AI execution is `REJECTED` |
 | Staking drone | Drone policy -> wallet/exchange capability port -> risk and tracking lifecycle | `NEEDS_CONTRACT`; no key or raw wallet access |
 | Relay runtime role | Capsule role contract -> scoped storage/delivery ports -> explicit resource policy | `NEEDS_PROTOCOL` |
