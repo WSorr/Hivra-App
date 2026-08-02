@@ -29,12 +29,15 @@ else
   pass "local backups and ledger exports are not tracked in git"
 fi
 
-if rg -n '(BEGIN (RSA|EC|OPENSSH|PRIVATE KEY)|ghp_|github_pat_|AKIA|sk_live|pk_live|xoxb-|nsec1)' \
-  "$ROOT" \
-  --glob '!tools/review/**' \
-  --glob '!dist/**' \
-  --glob '!target/**' \
-  --glob '!flutter/build/**' >/dev/null; then
+if (
+  cd "$ROOT"
+  rg -n '(BEGIN (RSA|EC|OPENSSH|PRIVATE KEY)|ghp_|github_pat_|AKIA|sk_live|pk_live|xoxb-|nsec1)' \
+    . \
+    --glob '!tools/review/**' \
+    --glob '!dist/**' \
+    --glob '!target/**' \
+    --glob '!flutter/build/**' >/dev/null
+); then
   fail "secret-like tokens or private key material detected in repository content"
 else
   pass "no obvious secret-like tokens detected in repository content"
