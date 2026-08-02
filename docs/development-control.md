@@ -2,9 +2,10 @@
 
 Status date: 2026-08-02
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: finish the unreleased Moltbook lifecycle pass and
-incrementally converge duplicated 1.x inference plumbing behind Capsule AI
-Runtime; no new Core path or parallel AI runtime is introduced.
+Current development focus: begin `12.3 / pass 6` by designing and validating
+the authenticated confidential transport-envelope migration. Preserve adapter
+isolation, replay/idempotence rules, delivery correlation, and the single Core
+truth path; no new Core path or parallel transport route is introduced.
 
 This is the short operational map for deciding what Hivra work is happening
 now. It is not a second specification, backlog, or release record. It points
