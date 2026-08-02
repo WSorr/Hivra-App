@@ -1,7 +1,10 @@
 # Identity Decoupling Migration
 
-This note records how Hivra moved from the legacy identity exposure path to the
-target architecture where capsule identity is transport-agnostic.
+This implementation note records the completed 1.x move from the legacy
+identity exposure path to a transport-agnostic Ed25519 root-signing key. It is
+not the target 2.0 identity contract. The crypto-agility canon in
+`product-axis.md`, `specification.md`, and `architecture-v2-blueprint.md` is
+authoritative for `CapsuleId`, suite migration, and variable-length proofs.
 
 Use this note before changing root identity derivation, capsule public key exposure, or transport key generation.
 
@@ -9,10 +12,10 @@ Use this note before changing root identity derivation, capsule public key expos
 
 Make the canonical capsule root identity independent from transport adapters.
 
-Target derivation order:
+Maintained 1.x derivation order:
 
 1. recovery seed
-2. canonical capsule root identity (`ed25519`)
+2. Capsule root-signing key (`ed25519`)
 3. transport-specific derived keys
 
 This must preserve:
@@ -48,9 +51,11 @@ runtime state with a transport owner.
 
 The migration must keep these rules true:
 
-1. Core remains curve-agnostic.
-   - `PubKey` stays a raw 32-byte value.
-   - Core does not learn what `ed25519` or `secp256k1` means.
+1. Maintained 1.x Core remains algorithm-implementation agnostic.
+   - `PubKey` stays a raw 32-byte compatibility value in 1.x.
+   - This fixed shape is registered crypto-agility debt and is not the target
+     2.0 `CapsuleId`/`KeyDescriptor` contract.
+   - Core does not implement `ed25519` or `secp256k1` algorithms.
 
 2. Engine remains transport-agnostic.
    - Engine signs and exposes a root public key through its keystore interface.
@@ -71,6 +76,10 @@ The migration must keep these rules true:
    - legacy-owner test ledgers fail closed under protocol v4
 
 ## Proposed Shape
+
+The following sections are the historical 1.x migration shape that was
+implemented. They do not authorize post-quantum runtime work or define the 2.0
+hybrid migration checkpoint.
 
 ### A. Introduce canonical root derivation in keystore/platform
 
@@ -189,6 +198,11 @@ The root/transport split is complete for v1:
 3. runtime diagnostics continue to expose the detected identity mode
 4. protocol v4 ledger import verifies hash chain plus Ed25519 event signatures
 5. legacy-owner runtime initialization fails closed
+
+This decision establishes role separation only. It does not define Capsule
+domain identity as Ed25519 forever, does not permit history rewriting, and does
+not claim post-quantum support. A future suite transition must use the one
+append-only hybrid checkpoint and proof path defined by the canonical docs.
 
 ## What Not To Do
 

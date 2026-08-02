@@ -93,6 +93,39 @@ testable.
 - The platform composition root is the only owner allowed to connect concrete
   implementations.
 
+### Cross-Cutting Invariant: Cryptographic Agility
+
+Domain identity, authority, and Capsule continuity do not depend on one
+algorithm, public-key size, or signature size. `CapsuleId` is a Core domain
+identifier, while algorithms and key material belong to role-specific
+crypto/platform adapters.
+
+The 2.0 contract uses versioned, suite-tagged, key-id-bound,
+length-delimited `KeyDescriptor` and `SignatureProof` values. Root signing,
+transport signing, and transport encryption/KEM are separate roles and may
+migrate independently. Nostr secp256k1 identity remains transport-only.
+
+Migration is hybrid and append-only:
+
+- an existing Capsule appends one mutually bound migration checkpoint signed
+  by the active classical root and proven by the new post-quantum key;
+- the checkpoint commits to the exact prior Ledger head, Capsule, roles,
+  descriptors, suite policy, and activation version;
+- prior Ledger events are never rewritten or re-signed;
+- subsequent verification uses one canonical policy/result path rather than a
+  classical Core plus a post-quantum Core;
+- a later protocol version may define hybrid genesis for new Capsules only
+  after deterministic genesis and recovery vectors exist.
+
+Confidentiality migration uses a hybrid KEM envelope behind the existing
+delivery port so classical and post-quantum encapsulations bind to one sender,
+recipient, suite set, and ciphertext. Capsule Effect Proof uses suite-tagged
+signatures and remains independently verifiable from transport and provider
+receipts.
+
+This section is a contract target, not a claim of 1.x post-quantum runtime
+support. Ed25519 replacement is deliberately gradual and controlled.
+
 ## 4. Capability Map
 
 The map is organized by ownership, not by a growing global `services/` or
@@ -100,7 +133,7 @@ The map is organized by ownership, not by a growing global `services/` or
 
 | Capability | Sole owner | Public surface | Persisted truth | External effects |
 | --- | --- | --- | --- | --- |
-| Capsule identity | Core Capsule | identity commands/facts | ledger | key port |
+| Capsule identity | Core Capsule | `CapsuleId`, key-authorization commands/facts, migration checkpoint | ledger | role-specific key/signing ports |
 | Network isolation | Core Capsule | network scope contract | isolated network-scoped state | transport scope validation |
 | Ledger | Core Ledger | append, verify, replay | signed ledger | storage port |
 | Invitations | Core Trust | invite decisions/facts | ledger | delivery port |
@@ -355,6 +388,9 @@ mode. Compatibility adapters may read old data, but they emit one canonical
   before choosing new Core contracts or effect ports;
 - record `READY`, `NEEDS_CONTRACT`, `NEEDS_PROTOCOL`, or `REJECTED` together
   with every missing boundary;
+- inventory every fixed-size public-key/signature contract in
+  Core/Engine/FFI/Flutter and keep the 1.x compatibility-boundary gate
+  non-increasing;
 - record the baseline entropy report without changing runtime behavior.
 
 ### V2-1: Core contract proofs
@@ -366,11 +402,16 @@ mode. Compatibility adapters may read old data, but they emit one canonical
   ledger, slots, operational stores, drone state, delivery, and consensus
   evidence; no shared-state network toggle is permitted;
 - define canonical errors and value objects;
+- define `CapsuleId`, suite registry rules, `KeyDescriptor`, `SignatureProof`,
+  migration checkpoint, mutual key binding, hybrid genesis, downgrade, and
+  recovery contracts without adding 2.0 production runtime to 1.x;
 - prove deterministic replay with golden vectors.
 
 ### V2-2: Effect ports and durable delivery
 
 - define storage, key, signing, clock, and delivery ports;
+- define the hybrid KEM envelope and independently verifiable suite-tagged
+  Capsule Effect Proof behind the existing delivery/effect lanes;
 - bind each operation to one capsule and stable operation id;
 - prove restart/retry/receipt idempotence.
 
@@ -383,6 +424,8 @@ mode. Compatibility adapters may read old data, but they emit one canonical
 ### V2-4: Capability-by-capability migration
 
 - migrate one owner at a time;
+- migrate root signing, transport signing, and transport encryption as
+  separate role-scoped units under one checkpoint/verification policy;
 - switch only at the composition root;
 - delete each replaced 1.x path;
 - require macOS and Android parity before calling a capability migrated.
@@ -396,5 +439,10 @@ Implementation of Hivra 2.0 may begin only when:
 - event and effect lifecycles have canonical identifiers;
 - the forbidden dependency matrix is executable as a gate;
 - 1.x compatibility fixtures and migration failure behavior are defined;
+- suite registry, variable-length encoding, mutual-binding checkpoint, hybrid
+  genesis, hybrid KEM, Capsule Effect Proof, downgrade, and recovery golden
+  vectors are reviewed;
+- the first crypto migration preserves one CapsuleId, one Ledger history, and
+  one Core verification path without rewriting or re-signing old events;
 - the first migration unit names the exact code paths it will retire;
 - 1.x release work can continue without importing 2.0 production code.

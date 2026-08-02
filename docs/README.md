@@ -13,6 +13,8 @@ Contains:
 - the Person-First Runtime (PFR) architectural category
 - the permanent product axis and two canonical workflow lanes
 - user-ownership, replay, effect-lifecycle, and isolation invariants
+- cryptographic agility as a permanent algorithm- and size-independent
+  identity/authority invariant
 - predictable extension rules for drones, transports, Core, and networks
 - a pre-implementation capability-closure proof and architecture runway
 - a mandatory change scorecard and comparable improvement evidence
@@ -23,6 +25,8 @@ Use this as the source of truth for implementation and review.
 Contains:
 - protocol architecture and dependency rules
 - Core/Engine/Transport boundaries
+- `CapsuleId`, suite-tagged proof, hybrid migration, and fixed-size 1.x
+  compatibility-debt rules
 - domain events, invariants, serialization rules
 - role and network rules
 - UI Screen Contract requirements
@@ -61,11 +65,13 @@ Contains:
 - implementation constraints and rollout checkpoints
 
 ### 6) `identity-decoupling-migration.md` (implementation note)
-Use this when working on canonical capsule identity and transport-key separation.
+Use this for the completed 1.x root/transport-key separation. Use
+`product-axis.md`, `specification.md`, and `architecture-v2-blueprint.md` for
+the target crypto-agile identity contract.
 
 Contains:
 - current legacy coupling between capsule identity and Nostr identity
-- target root-identity model
+- maintained 1.x Ed25519 root-signing model and its 2.0 limitation
 - phased migration plan
 - upgrade-safety decision points and constraints
 

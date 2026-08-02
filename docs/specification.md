@@ -62,6 +62,80 @@ contracts. Operational state remains outside the Ledger unless this
 specification defines it as a Core fact, and private keys remain inside their
 declared secure cryptographic boundary.
 
+### 0.3 Cryptographic Agility
+
+The permanent invariant is:
+
+> Domain identity, authority, and Capsule continuity MUST NOT depend on a
+> specific cryptographic algorithm, public-key size, or signature size.
+> Algorithms belong to crypto/platform adapters; protocol proofs are
+> versioned, suite-tagged, and length-delimited.
+
+`CapsuleId` is conceptually separate from any public key. A key authorizes a
+Capsule under a versioned protocol rule; it is not the enduring domain identity
+itself. The maintained 1.x runtime still uses fixed-size Ed25519 root keys and
+signatures and, in several compatibility structures, aliases Capsule identity
+to root-key bytes. That is registered compatibility debt, not the target 2.0
+contract and not permission to introduce a second identity path in 1.x.
+
+Future algorithm-neutral protocol values have this conceptual shape:
+
+```text
+KeyDescriptor {
+  version,
+  suite_id,
+  key_id,
+  key_bytes: length-delimited bytes
+}
+
+SignatureProof {
+  version,
+  suite_id,
+  key_id,
+  signature_bytes: length-delimited bytes
+}
+```
+
+`suite_id` selects a reviewed cryptographic suite and role. `key_id` binds a
+proof to one key descriptor without assuming that the key bytes are 32 bytes.
+Unknown versions, suites, roles, malformed lengths, or unbound key IDs fail
+closed.
+
+Migration is controlled and hybrid, not an instantaneous replacement of
+Ed25519:
+
+1. An existing Capsule appends one migration checkpoint authorized by its
+   currently active root key and bound to the exact accumulated Ledger head.
+2. The checkpoint contains the new key descriptor and mutual binding proofs:
+   the old key authorizes the new key, and the new key proves possession and
+   binds itself to the same Capsule, role, checkpoint, and history commitment.
+3. During the declared hybrid epoch, validation follows one canonical proof
+   policy and requires the configured classical and post-quantum evidence. It
+   MUST NOT fork into a second Core or Ledger path.
+4. Existing Ledger events are never rewritten or re-signed. The checkpoint
+   anchors the complete prior history and governs only subsequent proofs.
+5. A later protocol version MAY permit new Capsules to use hybrid genesis, but
+   only after deterministic genesis vectors, recovery, downgrade, and suite
+   lifecycle rules are normative.
+
+Root signing, transport signing, and transport encryption are distinct roles.
+They may adopt suites on different schedules. Nostr remains a replaceable
+transport adapter; its secp256k1 routing/signing identity MUST NOT become
+`CapsuleId` or Capsule root authority.
+
+Confidential transports require a future hybrid KEM envelope that combines the
+current classical mechanism with a reviewed post-quantum KEM and binds both to
+the same sender, recipient, protocol version, suite set, and ciphertext. This
+is intended to reduce harvest-now/decrypt-later exposure. It is architecture
+work only: the maintained 1.x runtime does not implement or claim
+post-quantum confidentiality.
+
+A future Capsule Effect Proof uses the same versioned `KeyDescriptor` and
+`SignatureProof` model. It binds Capsule, capability, operation, payload or
+result commitment, role, and verification context so an independent verifier
+can validate Capsule authorization without trusting the provider receipt,
+transport adapter, or Hivra process that produced the effect.
+
 ---
 
 ## 1. Philosophy and Fundamental Principles
@@ -198,6 +272,10 @@ Core operates only on:
 
 ### 3.2 Core Primitives
 
+The following types describe the maintained 1.x wire and in-memory
+compatibility boundary. Their fixed sizes MUST NOT be treated as the target
+2.0 identity/proof contract:
+
 ```rust
 /// Public key — 32 bytes.
 /// Core DOES NOT KNOW which curve is used (secp256k1, ed25519...).
@@ -217,7 +295,8 @@ pub struct StarterId([u8; 32]);
 
 Each capsule has one canonical root identity.
 
-- The canonical capsule root identity curve is `ed25519`.
+- The maintained 1.x root-signing suite is `ed25519`; this is a compatibility
+  suite, not the permanent definition of `CapsuleId`.
 - This identity is transport-agnostic.
 - Transport-specific keys MUST be derived from the same recovery seed using explicit domain separation.
 - A transport key MUST NOT replace the canonical capsule identity in the architecture.
@@ -229,6 +308,10 @@ Examples:
 - Matrix transport identity: derived `ed25519` using a transport-specific derivation label
 
 UI, documentation, and cross-capsule semantics should refer to capsule identity at the root-identity layer unless a transport-specific key is explicitly required.
+
+For 2.0 contract design, `CapsuleId` remains stable while one or more
+role-specific `KeyDescriptor` values authorize it. No production 1.x code may
+pretend that this target model is already implemented.
 
 ### 3.3 Core Entities
 
@@ -710,7 +793,10 @@ Transport adapters operate on transport-specific keys only.
 
 They MUST NOT redefine or replace the canonical capsule root identity.
 
-The existence of a Nostr public key, Matrix public key, or any other transport key does not change the fact that capsule identity is rooted in the canonical `ed25519` identity layer.
+The existence of a Nostr public key, Matrix public key, or any other transport
+key does not change Capsule domain identity or root authority. In maintained
+1.x, root authority uses Ed25519. In the target agile contract, `CapsuleId` is
+independent of every transport key and root-signing suite.
 
 ### 5.3 Unified Delivery Envelope
 
@@ -796,6 +882,11 @@ secrecy or post-compromise security. Hivra therefore treats it as the current
 adapter wire envelope, not as a replacement for Capsule root signatures,
 Ledger truth, domain replay protection, or delivery correlation.
 
+NIP-44 is also not the target post-quantum confidentiality contract. A future
+hybrid KEM envelope MUST be layered behind the same transport delivery port,
+must bind the classical and post-quantum encapsulations to one recipient and
+one ciphertext, and must not introduce a Nostr-specific Core path.
+
 ```rust
 // NostrTransport uses NostrCryptoProvider (secp256k1)
 pub struct NostrCryptoProvider {
@@ -819,19 +910,51 @@ impl CryptoProvider for NostrCryptoProvider {
 
 ### 6.1 Architectural Position
 
-CryptoProvider is implemented per transport. It lives in Engine, NOT in Core.
+Crypto providers are implemented by role-specific crypto/platform adapters and
+are orchestrated through Engine ports, not Core. Root signing, transport
+signing, transport encryption/KEM, and independent effect-proof verification
+remain distinct roles even when an implementation library supports more than
+one of them.
 
 ### 6.2 Why Core Knows Nothing About Crypto
 
-- Core operates on raw bytes ([u8; 32], [u8; 64]).
-- Interpreting those bytes as public keys or signatures happens only in CryptoProvider.
-- This enables any curve (secp256k1, ed25519, ...) without changing Core.
+- Core owns domain identity, proof role, protocol version, and deterministic
+  proof-selection rules, not algorithm implementations.
+- Crypto/platform adapters interpret `suite_id` and the length-delimited key or
+  signature bytes selected by the protocol.
+- Maintained 1.x Core/Engine/FFI/Flutter still expose `[u8; 32]`, `[u8; 64]`,
+  `pubkey32`, and `signature64` at explicit compatibility boundaries. These
+  shapes are architecture debt and MUST NOT spread into new production files.
+- Hashes and deterministic IDs may remain fixed-size when their protocol
+  definition requires it; a fixed hash length is not permission to encode a
+  public-key or signature suite implicitly.
 
 ### 6.3 Example Implementations
 
 - NostrCryptoProvider: secp256k1 (Schnorr signatures)
-- MatrixCryptoProvider: ed25519
+- Root Ed25519 provider: maintained 1.x Capsule root signing
+- MatrixCryptoProvider: transport-scoped ed25519
 - MockCryptoProvider: tests (always succeeds)
+
+### 6.4 Capsule Effect Proof
+
+`CapsuleEffectProof` is the target independently verifiable authorization
+envelope for an external effect. It is not a provider receipt and is not a Core
+fact merely because verification succeeds.
+
+The proof binds at least:
+
+- proof schema version and verification context;
+- `CapsuleId`, capability id, operation id, and effect role;
+- canonical request or result commitment;
+- one or more suite-tagged `SignatureProof` values and their `key_id` bindings;
+- the applicable migration or hybrid-policy checkpoint.
+
+Verification selects suites through the same crypto adapter boundary and fails
+closed on unknown suites, malformed lengths, missing role evidence, downgrade,
+or a proof that is not bound to the canonical effect commitment. Classical and
+post-quantum verification MUST compose in one result path; they do not create
+parallel effect lifecycles.
 
 ---
 
@@ -1239,13 +1362,20 @@ SHA256(version || kind || payload_bytes)
 
 ### 10.3 Identity Derivation Rule
 
-Identity derivation must follow this order:
+Maintained 1.x derivation follows this compatibility order:
 
 1. recovery seed phrase
-2. canonical capsule root identity (`ed25519`)
+2. Capsule root-signing key (`ed25519`)
 3. transport-specific derived keys
 
 Transport-specific keys MUST be treated as adapter-level identities, not as the canonical capsule identity.
+
+Target 2.0 contracts separate `CapsuleId` from each role-specific
+`KeyDescriptor`. A migration checkpoint or hybrid genesis binds the applicable
+root-signing descriptors to the Capsule without changing its domain identity.
+Recovery derivation, hardware-backed generation, and imported keys may evolve
+independently only when they produce the same canonical descriptor and
+checkpoint semantics.
 
 ### 10.4 Legacy Identity Note
 
@@ -1253,16 +1383,28 @@ Older test capsules may expose the Nostr transport key as the capsule public key
 This is a legacy test format, not the intended architecture. Protocol v4 runtime
 state rejects new legacy-owner initialization.
 
-The target architecture is:
+The maintained 1.x architecture is:
 
-- canonical capsule identity on `ed25519`
+- root authority on `ed25519`
 - transport-specific keys derived afterward for Nostr, Matrix, and future adapters
+
+The target agile architecture is:
+
+- stable `CapsuleId` independent of key algorithm and byte length;
+- versioned, suite-tagged, length-delimited key descriptors and signature
+  proofs;
+- append-only hybrid migration checkpoints that bind old authority, new
+  authority, and the exact accumulated Ledger head;
+- no rewrite or re-signing of historical events;
+- independently migratable root-signing, transport-signing, and
+  transport-encryption roles.
 
 Any migration or refactor in this area must preserve:
 
 - seed compatibility
 - ledger ownership consistency
 - capsule identity stability across upgrades
+- one canonical Ledger and verification path across suite migration
 
 ---
 
@@ -1334,6 +1476,8 @@ Rules:
 - Temporary starters
 - Group capsules
 - Economy and tokens
+- Post-quantum root signing, hybrid genesis, migration checkpoints, hybrid KEM
+  transport envelopes, and suite-tagged Capsule Effect Proof runtime
 
 ---
 
@@ -1343,6 +1487,10 @@ Term | Definition
 --- | ---
 Person-First Runtime (PFR) | Local-first architecture whose persistent execution context belongs to the person rather than an application
 Capsule | Persistent, recoverable execution context of a person in Hivra
+CapsuleId | Stable domain identifier of a Capsule; conceptually independent of every public key and signature suite
+KeyDescriptor | Versioned, suite-tagged, key-id-bound, length-delimited public-key description for one cryptographic role
+SignatureProof | Versioned, suite-tagged, key-id-bound, length-delimited signature evidence
+Capsule Effect Proof | Independently verifiable suite-tagged Capsule authorization evidence for one canonical external-effect commitment
 Starter | Unique non-fungible identifier
 Slot | Place for your starter (exactly 5)
 Ledger | Local signed log of events
@@ -1352,7 +1500,7 @@ Trusted peer | Capsule allowed to store messages
 Neste | Main network
 Hood | Test network
 Burning | Destroying a starter after empty-slot rejection
-CryptoProvider | Cryptography interface in Engine (transport-specific)
+CryptoProvider | Role-specific cryptography interface implemented by crypto/platform adapters and orchestrated through Engine
 
 ---
 
@@ -1368,6 +1516,12 @@ The current status is:
 - Core/Engine dependency isolation is enforced by automated review gates.
 - Ledger-first state, signed Core events, deterministic slot projection, and
   pair-attestation guard rules are normative v1 behavior.
+- Ed25519 root signing, secp256k1 Nostr signing, NIP-44 transport encryption,
+  and fixed-size key/signature FFI shapes remain the maintained 1.x
+  compatibility baseline; this is not a claim of post-quantum runtime support.
+- Crypto agility is a 2.0 contract and migration program. Runtime work cannot
+  begin until suite registry, descriptor/proof encoding, hybrid checkpoint,
+  downgrade, recovery, and golden-vector contracts are closed.
 - Canonical invitation and relationship projection convergence remains an
   active implementation debt tracked in `docs/roadmap.md`; until it is closed,
   Flutter projection services are compatibility implementations and MUST NOT

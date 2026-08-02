@@ -1,6 +1,9 @@
 # Capsule Addressing Model
 
-This note defines the addressing model after root identity became the canonical capsule identity.
+This implementation note defines the maintained 1.x addressing model after the
+root-signing key replaced Nostr identity as the Capsule authority/routing
+anchor. It does not define the target 2.0 `CapsuleId`; the crypto-agility canon
+in `product-axis.md` and `specification.md` remains authoritative.
 
 It explains:
 - why `v1.0.0` invitation send felt simpler
@@ -17,12 +20,16 @@ That meant:
 - identity and routing were collapsed into the same value
 
 After identity decoupling, this is no longer true:
-- the capsule's canonical identity is the root `ed25519` key
+- maintained 1.x Capsule authority is represented by the root `ed25519` key
 - transport identities are service-specific derived keys
 - routing information is no longer implied by the root key alone
 
 This is the correct architecture, but it introduces a new requirement:
 - capsule identity must be separate from capsule addressing
+
+For target 2.0 contracts, `CapsuleId` is also separate from that Ed25519
+root-signing key. This note covers addressing only; it does not authorize a
+second identity or migration path.
 
 ## 2. Core Principle
 

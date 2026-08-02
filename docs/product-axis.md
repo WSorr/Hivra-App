@@ -106,6 +106,10 @@ must re-enter the same operation. They must not create another effect path.
    or successful state.
 10. **Replacement with deletion:** a new path replaces, seals, or narrows the
     old path in the same migration unit.
+11. **Cryptographic agility:** domain identity, authority, and Capsule
+    continuity do not depend on one cryptographic algorithm, public-key size,
+    or signature size. Algorithms belong to crypto/platform adapters;
+    protocol proofs are versioned, suite-tagged, and length-delimited.
 
 ## 4. Predictable Extension Rules
 
@@ -138,6 +142,21 @@ be isolated by network scope.
 An adapter implements a capability port and keeps native DTOs inside the
 adapter boundary. Provider output is input or evidence; it cannot silently
 become a deterministic decision or Core fact.
+
+### New cryptographic suite
+
+A cryptographic suite extends the existing signing, verification, or
+encryption port; it does not create another Core, Ledger, identity, or effect
+path. `CapsuleId` is a domain identifier, not a public key. Root signing,
+transport signing, and transport encryption are separate roles and may migrate
+independently. Existing Capsules cross a suite boundary only through one
+append-only, mutually bound migration checkpoint; accumulated history is never
+rewritten or re-signed.
+
+Post-quantum work follows a controlled hybrid migration. It does not require or
+authorize a rapid replacement of Ed25519 in the maintained 1.x runtime. Until
+the versioned descriptor, proof, checkpoint, downgrade, recovery, and fixture
+contracts are closed, post-quantum runtime implementation is `NEEDS_PROTOCOL`.
 
 ### New AI-enabled capability
 

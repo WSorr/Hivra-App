@@ -35,6 +35,69 @@ require_absent() {
   fi
 }
 
+check_crypto_fixed_size_compatibility_boundary() {
+  local pattern='(?i)(pubkey|public_key|private_key|secret_key|signer|sign(?:ature)?|seed).{0,100}\[u8;\s*(32|64)\]|\[u8;\s*(32|64)\].{0,100}(pubkey|public_key|private_key|secret_key|signer|sign(?:ature)?|seed)|pubkey32|signature64|cardSignature64'
+  local matches
+  matches="$({
+    cd "$ROOT"
+    rg --pcre2 -n \
+      --glob '!**/test/**' \
+      --glob '!**/tests/**' \
+      --glob '!**/tests.rs' \
+      --glob '!**/*_test.dart' \
+      --glob '!target/**' \
+      --glob '!flutter/build/**' \
+      "$pattern" core engine adapters platform flutter/lib || true
+  })"
+
+  local match_count
+  match_count="$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')"
+  if (( match_count <= 100 )); then
+    pass "fixed-size crypto compatibility debt is non-increasing ($match_count/100)"
+  else
+    fail "fixed-size crypto compatibility debt grew ($match_count/100)"
+  fi
+
+  local unexpected=""
+  local file
+  while IFS=: read -r file _; do
+    [[ -z "$file" ]] && continue
+    case "$file" in
+      adapters/hivra-ed25519-crypto/src/lib.rs | \
+        adapters/hivra-nostr-crypto/src/lib.rs | \
+        adapters/hivra-transport/src/lib.rs | \
+        adapters/hivra-transport/src/nostr/mod.rs | \
+        core/hivra-core/src/capsule.rs | \
+        core/hivra-core/src/invitation.rs | \
+        core/hivra-core/src/primitives.rs | \
+        core/hivra-core/src/relationship.rs | \
+        engine/hivra-engine/src/lib.rs | \
+        flutter/lib/ffi/app_runtime_runtime.dart | \
+        flutter/lib/ffi/capsule_address_runtime.dart | \
+        flutter/lib/ffi/hivra_bindings.dart | \
+        flutter/lib/ffi/invitation_actions_runtime.dart | \
+        flutter/lib/services/capsule_address_service.dart | \
+        platform/hivra-ffi/src/capsule_api.rs | \
+        platform/hivra-ffi/src/chat_api.rs | \
+        platform/hivra-ffi/src/consensus_attestation_api.rs | \
+        platform/hivra-ffi/src/invitation_api.rs | \
+        platform/hivra-ffi/src/invitation_support.rs | \
+        platform/hivra-ffi/src/runtime_support.rs | \
+        platform/hivra-ffi/src/seed_api.rs | \
+        platform/hivra-ffi/src/selfcheck_api.rs | \
+        platform/hivra-keystore/src/lib.rs) ;;
+      *) unexpected+="$file"$'\n' ;;
+    esac
+  done <<< "$matches"
+
+  if [[ -z "$unexpected" ]]; then
+    pass "fixed-size crypto shapes stay inside the explicit 1.x compatibility boundary"
+  else
+    fail "fixed-size crypto shapes escaped the explicit 1.x compatibility boundary"
+    printf '%s' "$unexpected" | sort -u >&2
+  fi
+}
+
 TRANSPORT_TOML="$ROOT/adapters/hivra-transport/Cargo.toml"
 TRANSPORT_SRC="$ROOT/adapters/hivra-transport/src"
 NOSTR_TRANSPORT="$TRANSPORT_SRC/nostr/mod.rs"
@@ -152,6 +215,29 @@ require_present "$SPEC" 'PFR is not a second runtime layer, a new Core entity, o
   "specification keeps PFR on the canonical architecture path"
 require_present "$CHECKLIST" 'preserves the Person-First Runtime \(PFR\)' \
   "architecture review protects person-first ownership"
+require_present "$PRODUCT_AXIS" 'Cryptographic agility' \
+  "product axis defines cryptographic agility as a permanent invariant"
+require_present "$SPEC" '^### 0\.3 Cryptographic Agility' \
+  "specification defines the canonical crypto-agility contract"
+require_present "$SPEC" '`CapsuleId` is conceptually separate from any public key' \
+  "specification separates CapsuleId from concrete public keys"
+require_present "$SPEC" '^KeyDescriptor \{' \
+  "specification defines versioned key descriptors"
+require_present "$SPEC" '^SignatureProof \{' \
+  "specification defines suite-tagged signature proofs"
+require_present "$SPEC" 'Existing Ledger events are never rewritten or re-signed' \
+  "specification preserves append-only history across suite migration"
+require_present "$SPEC" 'hybrid KEM envelope' \
+  "specification records hybrid KEM confidentiality migration"
+require_present "$SPEC" '^### 6\.4 Capsule Effect Proof' \
+  "specification defines independently verifiable Capsule Effect Proof"
+require_present "$V2_BLUEPRINT" '^### Cross-Cutting Invariant: Cryptographic Agility' \
+  "v2 blueprint carries the crypto-agility migration contract"
+require_present "$CHECKLIST" '^## Cryptographic Agility' \
+  "architecture checklist reviews crypto agility"
+require_present "$ROADMAP" '^\- `12\.4 Cryptographic Agility Compatibility Debt`' \
+  "roadmap registers fixed-size crypto compatibility debt"
+check_crypto_fixed_size_compatibility_boundary
 require_present "$PRODUCT_AXIS" '^## 2\. Two Canonical Lanes' \
   "product axis defines truth and effect lanes"
 require_present "$PRODUCT_AXIS" '^## 3\. Permanent Product Invariants' \

@@ -58,6 +58,39 @@ Use this checklist when reviewing structural changes, not just feature behavior.
       `docs/checklists/transport-health-policy.md` instead of being duplicated
       inside screens or feature-specific services.
 
+## Cryptographic Agility
+
+- [ ] Domain identity uses `CapsuleId` semantics and does not define a Capsule
+      as one public key, algorithm, public-key length, or signature length.
+- [ ] Algorithm implementations remain in crypto/platform adapters; Core owns
+      only versioned proof roles and deterministic acceptance policy.
+- [ ] New key and signature protocol contracts use versioned, suite-tagged,
+      key-id-bound, length-delimited `KeyDescriptor` and `SignatureProof`
+      semantics.
+- [ ] Root signing, transport signing, and transport encryption/KEM are
+      separate roles with independent migration schedules.
+- [ ] Nostr secp256k1 identity remains a replaceable transport identity and is
+      never promoted to Capsule identity or root authority.
+- [ ] Existing-Capsule migration is hybrid and append-only: one mutually bound
+      checkpoint authorizes the new key and anchors the exact prior Ledger
+      head; historical events are neither rewritten nor re-signed.
+- [ ] Hybrid genesis is version-gated and cannot be claimed before genesis,
+      recovery, downgrade, and deterministic vector contracts exist.
+- [ ] A hybrid KEM transport envelope binds classical and post-quantum
+      encapsulations to one sender, recipient, suite set, and ciphertext and
+      reuses the canonical delivery path.
+- [ ] Capsule Effect Proof uses suite-tagged signatures and can be verified
+      independently from provider receipts, transport evidence, and the
+      producing Hivra process.
+- [ ] The change preserves one Core, one Ledger, one proof-selection path, and
+      one effect lifecycle; hybrid verification does not become parallel
+      classical and post-quantum owners.
+- [ ] Fixed-size cryptographic compatibility shapes (`[u8; 32]`, `[u8; 64]`,
+      `pubkey32`, `signature64`) do not spread beyond the explicit 1.x
+      compatibility boundary enforced by the architecture gate.
+- [ ] No documentation, UI, test, or release claim implies that the maintained
+      1.x runtime already provides post-quantum signing or confidentiality.
+
 ## Modularity
 
 - [ ] Domain rules live in core/engine, not inside UI widgets.

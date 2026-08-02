@@ -1504,6 +1504,54 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       and durable sender-rate quarantine remain separately tracked debt.
   - Status: active; passes 1-7 are completed.
 
+- `12.4 Cryptographic Agility Compatibility Debt`
+  - Permanent invariant:
+    - domain identity, authority, and Capsule continuity do not depend on one
+      cryptographic algorithm, public-key size, or signature size;
+    - algorithms stay in crypto/platform adapters, while protocol proofs are
+      versioned, suite-tagged, key-id-bound, and length-delimited.
+  - Maintained 1.x boundary:
+    - Ed25519 root signing, secp256k1 Nostr transport signing, NIP-44 transport
+      encryption, and current fixed-size key/signature contracts remain the
+      compatibility baseline;
+    - `[u8; 32]`, `[u8; 64]`, `pubkey32`, and `signature64` usages that encode
+      keys or signatures across Core/Engine/FFI/Flutter are registered debt,
+      not the target 2.0 contract;
+    - an architecture gate prevents those shapes from spreading into new
+      production files and keeps the compatibility-match count
+      non-increasing;
+    - no post-quantum runtime, hybrid proof acceptance, or release claim is
+      authorized in 1.x by this documentation pass.
+  - 2.0 contract work before implementation:
+    1. Define stable `CapsuleId` separately from every public key.
+    2. Define suite registry, `KeyDescriptor`, `SignatureProof`, role binding,
+       variable-length encoding, canonical errors, and golden vectors.
+    3. Define an append-only migration checkpoint mutually bound by the active
+       classical root and new post-quantum key and anchored to the exact prior
+       Ledger head.
+    4. Prove that historical events remain byte-identical and are neither
+       rewritten nor re-signed; subsequent hybrid verification uses the same
+       Core history and result path.
+    5. Define version-gated hybrid genesis for new Capsules, including recovery
+       and downgrade behavior.
+    6. Migrate root signing, transport signing, and transport encryption as
+       independent roles; Nostr remains a replaceable adapter and its
+       secp256k1 identity never becomes `CapsuleId`.
+    7. Define a hybrid KEM delivery envelope that binds classical and
+       post-quantum encapsulations to one ciphertext to reduce
+       harvest-now/decrypt-later exposure.
+    8. Define independently verifiable suite-tagged Capsule Effect Proof over
+       the canonical effect commitment and lifecycle identity.
+  - Sequencing rule:
+    - this debt does not preempt the active ordered `12.3` remediation passes;
+    - crypto runtime implementation remains `NEEDS_PROTOCOL` until every
+      descriptor, checkpoint, downgrade, recovery, fixture, and removal target
+      is reviewed;
+    - migration is controlled and hybrid, never a rapid full Ed25519 swap,
+      second Core path, dual Ledger, or history rewrite.
+  - Status: architecture canon and executable debt gate only; runtime not
+    started.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
