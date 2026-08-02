@@ -128,6 +128,20 @@ provider, account binding, effect kind, or payload hash also fails closed.
 10. Required-action tokens are never logged or exposed as UI state. The
     adapter consumes the persisted action, and success still requires matching
     remote evidence rather than a successful challenge response alone.
+11. Once the provider accepts a required action, that action is cleared even
+    when its resulting receipt is not immediately observable. The operation
+    remains unresolved and reconciliation-only; expiry of the completed action
+    cannot turn it into failure or authorize another delivery.
+12. An operator may explicitly recheck an unresolved or terminal operation by
+    calling the adapter reconciliation path only. This read-only recovery may
+    attach a matching receipt, but a missing receipt preserves the existing
+    state and can never queue or repeat provider delivery.
+13. A provider-issued content identifier may be retained as a non-secret,
+    operation-bound reconciliation reference. It is not a receipt: success
+    still requires a direct provider read proving the exact approved payload,
+    account, destination, and provider visibility policy. A legacy operation
+    may bind a missing reference once through explicit operator input; the
+    reference cannot later be replaced.
 
 Adapter receipts prove only the external provider outcome represented by the
 adapter. They are not Core truth and do not imply transport delivery or peer
@@ -171,6 +185,8 @@ Provider integrations implemented above this generic phase:
 - exact post receipt and bounded recent-profile reconciliation;
 - durable verification challenge, explicit numeric response, and post
   visibility confirmation;
+- reconciliation-only recovery for a public receipt that became visible after
+  a legacy challenge state had already failed locally;
 - fail-closed handling for expired challenges and ambiguous delivery.
 
 Provider workflows may define a semantic target identity above this generic

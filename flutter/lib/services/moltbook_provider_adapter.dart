@@ -374,6 +374,35 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     return json;
   }
 
+  Future<MoltbookPostObservation> observePost(
+    String apiKey, {
+    required String postId,
+  }) async {
+    final normalizedId = postId.trim();
+    if (!RegExp(r'^[A-Za-z0-9-]{1,256}$').hasMatch(normalizedId)) {
+      throw const MoltbookProviderException(
+        code: 'invalid_post_id',
+        message: 'Moltbook post id is invalid',
+        retryable: false,
+      );
+    }
+    final response = await _get(
+      'posts/${Uri.encodeComponent(normalizedId)}',
+      apiKey,
+    );
+    final json = _decodeObject(response);
+    _rejectProviderFailure(json, response);
+    final rawPost = json['post'];
+    if (rawPost is! Map) {
+      throw _malformed('Post response has no post object');
+    }
+    final post = _parsePostObservation(Map<String, dynamic>.from(rawPost));
+    if (post.postId != normalizedId) {
+      throw _malformed('Post response identity does not match request');
+    }
+    return post;
+  }
+
   Future<Map<String, dynamic>> verifyContent({
     required String apiKey,
     required String verificationCode,

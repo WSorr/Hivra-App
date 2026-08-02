@@ -158,6 +158,7 @@ class ExternalEffectOperation {
   final String updatedAtUtc;
   final String? lastErrorCode;
   final String? lastErrorMessage;
+  final String? providerReferenceId;
   final ExternalEffectRequiredAction? requiredAction;
   final ExternalEffectReceipt? receipt;
 
@@ -178,6 +179,7 @@ class ExternalEffectOperation {
     required this.updatedAtUtc,
     required this.lastErrorCode,
     required this.lastErrorMessage,
+    this.providerReferenceId,
     required this.requiredAction,
     required this.receipt,
   });
@@ -206,6 +208,7 @@ class ExternalEffectOperation {
       updatedAtUtc: json['updated_at_utc']?.toString() ?? '',
       lastErrorCode: json['last_error_code']?.toString(),
       lastErrorMessage: json['last_error_message']?.toString(),
+      providerReferenceId: json['provider_reference_id']?.toString(),
       requiredAction:
           rawRequiredAction is Map
               ? ExternalEffectRequiredAction.fromJson(
@@ -241,6 +244,7 @@ class ExternalEffectOperation {
     'updated_at_utc': updatedAtUtc,
     'last_error_code': lastErrorCode,
     'last_error_message': lastErrorMessage,
+    'provider_reference_id': providerReferenceId,
     'required_action': requiredAction?.toJson(),
     'receipt': receipt?.toJson(),
   };
@@ -269,6 +273,9 @@ class ExternalEffectOperation {
     }
     if (lastErrorMessage != null) {
       _validateBounded('last_error_message', lastErrorMessage!, 1, 1000);
+    }
+    if (providerReferenceId != null) {
+      _validateBounded('provider_reference_id', providerReferenceId!, 1, 256);
     }
     receipt?.validate();
     requiredAction?.validate();
@@ -304,6 +311,7 @@ class ExternalEffectAdapterRequest {
   final String effectKind;
   final String canonicalPayloadJson;
   final String payloadHashHex;
+  final String? providerReferenceId;
 
   const ExternalEffectAdapterRequest({
     required this.ownerCapsuleHex,
@@ -314,6 +322,7 @@ class ExternalEffectAdapterRequest {
     required this.effectKind,
     required this.canonicalPayloadJson,
     required this.payloadHashHex,
+    this.providerReferenceId,
   });
 
   void validate() {
@@ -325,6 +334,9 @@ class ExternalEffectAdapterRequest {
     _validateIdentifier('effect_kind', effectKind);
     _validateBounded('canonical_payload_json', canonicalPayloadJson, 2, 65536);
     _validateHash('payload_hash_hex', payloadHashHex);
+    if (providerReferenceId != null) {
+      _validateBounded('provider_reference_id', providerReferenceId!, 1, 256);
+    }
   }
 }
 
@@ -332,6 +344,8 @@ class ExternalEffectAdapterResult {
   final ExternalEffectAdapterStatus status;
   final ExternalEffectReceipt? receipt;
   final ExternalEffectRequiredAction? requiredAction;
+  final bool requiredActionResolved;
+  final String? providerReferenceId;
   final String? errorCode;
   final String? errorMessage;
 
@@ -339,6 +353,8 @@ class ExternalEffectAdapterResult {
     required this.status,
     this.receipt,
     this.requiredAction,
+    this.requiredActionResolved = false,
+    this.providerReferenceId,
     this.errorCode,
     this.errorMessage,
   });
@@ -358,6 +374,20 @@ class ExternalEffectAdapterResult {
       throw const FormatException(
         'Only an unresolved adapter result may require provider action',
       );
+    }
+    if (requiredActionResolved && requiredAction != null) {
+      throw const FormatException(
+        'A resolved provider action cannot remain required',
+      );
+    }
+    if (requiredActionResolved &&
+        status != ExternalEffectAdapterStatus.unresolved) {
+      throw const FormatException(
+        'A resolved provider action may only await reconciliation',
+      );
+    }
+    if (providerReferenceId != null) {
+      _validateBounded('provider_reference_id', providerReferenceId!, 1, 256);
     }
     if (errorCode != null) {
       _validateIdentifier('error_code', errorCode!);

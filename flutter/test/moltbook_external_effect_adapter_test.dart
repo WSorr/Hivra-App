@@ -189,6 +189,9 @@ void main() {
               'content_id': 'hidden-post-123',
             });
           }
+          if (request.uri.path.endsWith('/posts/hidden-post-123')) {
+            return _postResponse('hidden-post-123');
+          }
           throw StateError('Unexpected request: ${request.uri}');
         },
       ),
@@ -208,6 +211,7 @@ void main() {
     expect(result.receipt?.providerReceiptId, 'hidden-post-123');
     expect(requests.map((request) => request.uri.path), <String>[
       '/api/v1/verify',
+      '/api/v1/posts/hidden-post-123',
     ]);
     final verifyBody = jsonDecode(utf8.decode(requests.first.bodyBytes!));
     expect(verifyBody['answer'], '4.00');
@@ -240,7 +244,63 @@ void main() {
     expect(result.errorCode, 'verification_rejected');
     expect(result.receipt, isNull);
     expect(result.requiredAction, action);
+    expect(result.requiredActionResolved, isFalse);
   });
+
+  test(
+    'accepted verification clears challenge while receipt visibility catches up',
+    () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            if (request.uri.path.endsWith('/verify')) {
+              return _jsonResponse(<String, dynamic>{
+                'success': true,
+                'content_type': 'post',
+                'content_id': 'hidden-post-123',
+              });
+            }
+            if (request.uri.path.endsWith('/posts/hidden-post-123')) {
+              return _postResponse(
+                'hidden-post-123',
+                verificationStatus: 'pending',
+              );
+            }
+            throw StateError('Unexpected request: ${request.uri}');
+          },
+        ),
+        clock: () => DateTime.utc(2026, 7, 26, 14, 1),
+      );
+      const action = ExternalEffectRequiredAction(
+        kind: 'numeric_challenge',
+        providerReferenceId: 'hidden-post-123',
+        actionToken: 'verify-123',
+        prompt: 'two plus two',
+        expiresAtUtc: '2026-07-26T14:05:00.000Z',
+      );
+
+      final result = await adapter.resolveRequiredAction(
+        _request(),
+        action,
+        '4',
+      );
+
+      expect(result.status, ExternalEffectAdapterStatus.unresolved);
+      expect(result.errorCode, 'receipt_not_observed');
+      expect(result.requiredAction, isNull);
+      expect(result.requiredActionResolved, isTrue);
+      expect(result.providerReferenceId, 'hidden-post-123');
+      expect(requests.map((request) => request.uri.path), <String>[
+        '/api/v1/verify',
+        '/api/v1/posts/hidden-post-123',
+      ]);
+      final verifyBody = jsonDecode(utf8.decode(requests.first.bodyBytes!));
+      expect(verifyBody['answer'], '4.00');
+    },
+  );
 
   test('missing reconciliation marker blocks blind resubmission', () async {
     final adapter = MoltbookExternalEffectAdapter(
@@ -284,6 +344,8 @@ void main() {
                     'content':
                         'Public fact\n\n'
                         '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
+                    'verification_status': 'verified',
+                    'is_spam': false,
                   },
                 ],
               }),
@@ -294,6 +356,52 @@ void main() {
 
       expect(result.status, ExternalEffectAdapterStatus.succeeded);
       expect(result.receipt?.providerReceiptId, 'matched-post');
+    },
+  );
+
+  test(
+    'reconciles a durable provider reference by exact post lookup',
+    () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            return _postResponse('matched-post');
+          },
+        ),
+      );
+
+      final result = await adapter.reconcile(
+        _request(providerReferenceId: 'matched-post'),
+      );
+
+      expect(result.status, ExternalEffectAdapterStatus.succeeded);
+      expect(result.receipt?.providerReceiptId, 'matched-post');
+      expect(requests.single.uri.path, '/api/v1/posts/matched-post');
+    },
+  );
+
+  test(
+    'rejects a provider reference whose exact post payload differs',
+    () async {
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send:
+              (_) async =>
+                  _postResponse('wrong-post', title: 'Different title'),
+        ),
+      );
+
+      final result = await adapter.reconcile(
+        _request(providerReferenceId: 'wrong-post'),
+      );
+
+      expect(result.status, ExternalEffectAdapterStatus.unresolved);
+      expect(result.errorCode, 'receipt_not_observed');
+      expect(result.receipt, isNull);
     },
   );
 
@@ -314,6 +422,8 @@ void main() {
                       '[Hivra on GitHub]'
                       '(https://github.com/WSorr/Hivra-App#'
                       'hivra-effect:post-1)',
+                  'verification_status': 'verified',
+                  'is_spam': false,
                 },
               ],
             }),
@@ -324,6 +434,45 @@ void main() {
 
     expect(result.status, ExternalEffectAdapterStatus.succeeded);
     expect(result.receipt?.providerReceiptId, 'legacy-matched-post');
+  });
+
+  test('does not reconcile hidden or spam-moderated posts', () async {
+    final adapter = MoltbookExternalEffectAdapter(
+      secretVault: vault,
+      provider: MoltbookProviderAdapter(
+        send:
+            (_) async => _jsonResponse(<String, dynamic>{
+              'success': true,
+              'agent': <String, dynamic>{'name': 'HivraAgent'},
+              'recentPosts': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'id': 'hidden-match',
+                  'title': 'Release note',
+                  'content':
+                      'Public fact\n\n'
+                      '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
+                  'verification_status': 'pending',
+                  'is_spam': false,
+                },
+                <String, dynamic>{
+                  'id': 'spam-match',
+                  'title': 'Release note',
+                  'content':
+                      'Public fact\n\n'
+                      '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
+                  'verification_status': 'verified',
+                  'is_spam': true,
+                },
+              ],
+            }),
+      ),
+    );
+
+    final result = await adapter.reconcile(_request());
+
+    expect(result.status, ExternalEffectAdapterStatus.unresolved);
+    expect(result.errorCode, 'receipt_not_observed');
+    expect(result.receipt, isNull);
   });
 
   test('reconciles reply only by exact target, author, and content', () async {
@@ -435,7 +584,10 @@ void main() {
   );
 }
 
-ExternalEffectAdapterRequest _request({String owner = _owner}) {
+ExternalEffectAdapterRequest _request({
+  String owner = _owner,
+  String? providerReferenceId,
+}) {
   const payload =
       '{"schema_version":2,"account_name":"HivraAgent",'
       '"submolt_name":"general","title":"Release note",'
@@ -454,6 +606,7 @@ ExternalEffectAdapterRequest _request({String owner = _owner}) {
     canonicalPayloadJson: payload,
     payloadHashHex:
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    providerReferenceId: providerReferenceId,
   );
 }
 
@@ -533,6 +686,33 @@ MoltbookHttpResponse _jsonResponse(Map<String, dynamic> body) {
     headers: const <String, String>{},
     bodyBytes: Uint8List.fromList(utf8.encode(jsonEncode(body))),
   );
+}
+
+MoltbookHttpResponse _postResponse(
+  String postId, {
+  String title = 'Release note',
+  String verificationStatus = 'verified',
+  bool isSpam = false,
+}) {
+  return _jsonResponse(<String, dynamic>{
+    'success': true,
+    'post': <String, dynamic>{
+      'id': postId,
+      'title': title,
+      'content':
+          'Public fact\n\n'
+          '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
+      'verification_status': verificationStatus,
+      'is_spam': isSpam,
+      'is_locked': false,
+      'score': 0,
+      'comment_count': 0,
+      'created_at': '2026-07-26T14:00:00.000Z',
+      'updated_at': '2026-07-26T14:01:00.000Z',
+      'author': <String, dynamic>{'id': 'account-1', 'name': 'HivraAgent'},
+      'submolt': <String, dynamic>{'name': 'general'},
+    },
+  });
 }
 
 class _FakeSecureStorage extends FlutterSecureStorage {

@@ -1,10 +1,9 @@
 # Hivra Development Control
 
 Status date: 2026-08-01
-Current released baseline: `main` at `b1756df` (`v1.0.3-test14`, macOS and Android manual signoff recorded)
-Current runtime checkpoint: `c91cd81` (not released; canonical Core views,
-public selector summaries, stable peer identity hints, and terminal delivery
-projection reconciliation completed)
+Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
+Current development focus: unreleased Moltbook external-effect reconciliation
+and operator UI; no new Core path is introduced.
 
 This is the short operational map for deciding what Hivra work is happening
 now. It is not a second specification, backlog, or release record. It points
@@ -18,7 +17,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation pass? | Close packaged macOS/Android restart and restore evidence for `12.3 / pass 3`. Canonical Core projection convergence (`5.1`) is complete; no Flutter lifecycle reducer may be reintroduced. | `roadmap.md`, `specification.md` |
+| What is the next 1.x remediation pass? | Finish the scoped Moltbook external-effect pass without weakening explicit approval or effect isolation. Then begin event-scoped delivery records. Canonical Core projection convergence (`5.1`) is complete; no Flutter lifecycle reducer may be reintroduced. | `roadmap.md`, `specification.md`, `architecture/external-effect-lifecycle.md` |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -28,8 +27,8 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `12.3 / pass 3`: cryptographically continuous ledger. Automated P3-C backup and partial-write recovery evidence is present. Local Android reinstall/recovery and macOS cold-restart continuity passed at runtime checkpoint `39ba870`; Android update plus two cold restarts also preserved the same Capsule and ledger `v74` from current source `9df510c`. Current source `1d12554` additionally passed clean Android uninstall, backup import, mandatory recovery-seed binding, and cold restart with the same owner and ledger `v74`. Checkpoint `c91cd81` keeps selector summaries seed-free and repairs missing `RelationshipEstablished` derivations from replayed signed `InvitationAccepted` facts without rewriting history. Packaged cross-platform restart/restore evidence remains. Canonical Core projection convergence (`5.1`) is complete at `29bb78a`. | Current released baseline is `b1756df`; guarded packaged macOS/Android smoke passed for `v1.0.3-test14`. Runtime checkpoint `c91cd81` layers selector, identity-display, and accepted-terminal reconciliation fixes over the canonical Core views and previously recorded v5 continuity evidence. It is not a release candidate until fresh packaged platform smoke is recorded. | Close packaged macOS/Android pass 3 evidence on `v1.0.3-test15`; then begin event-scoped delivery records. Durable sender-rate quarantine remains `NEEDS_CONTRACT`; do not hide it in an adapter. |
-| **1.x release** | Released | `v1.0.3-test14` is the current test release on macOS and Android. | Tag, guarded GitHub release, clean worktree, platform signoff, and artifact evidence are recorded. | The development checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
+| **1.x maintained runtime** | Active | `12.3 / pass 3`: cryptographically continuous ledger. Automated P3-C backup and partial-write recovery evidence is present. Local Android reinstall/recovery and macOS cold-restart continuity passed at runtime checkpoint `39ba870`; Android update plus two cold restarts also preserved the same Capsule and ledger `v74` from current source `9df510c`. Current source `1d12554` additionally passed clean Android uninstall, backup import, mandatory recovery-seed binding, and cold restart with the same owner and ledger `v74`. Checkpoint `c91cd81` keeps selector summaries seed-free and repairs missing `RelationshipEstablished` derivations from replayed signed `InvitationAccepted` facts without rewriting history. Packaged cross-platform restart/restore evidence remains. Canonical Core projection convergence (`5.1`) is complete at `29bb78a`. | Released baseline `9953b02` completed guarded packaged macOS/Android smoke for `v1.0.3-test15`, including Capsule continuity, canonical selector identity, trading, and Moltbook evidence. | Begin event-scoped delivery records. Durable sender-rate quarantine remains `NEEDS_CONTRACT`; do not hide it in an adapter. |
+| **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |
 | **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects and a foreground bounded-reply experiment exist, but automatic modes are blocked by the canonical engagement lifecycle gates. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |

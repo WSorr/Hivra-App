@@ -161,6 +161,118 @@ void main() {
     },
   );
 
+  test(
+    'reconcile-only recovers a terminal receipt without redelivery',
+    () async {
+      final adapter = _FakeExternalEffectAdapter(
+        deliverResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.terminalFailure,
+            errorCode: 'required_action_expired',
+            errorMessage: 'Legacy challenge state expired',
+          ),
+        ],
+        reconcileResults: <Object>[_success('post-1')],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+      final failed = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(failed.state, ExternalEffectState.terminalFailure);
+
+      final recovered = await service.reconcileOnly(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+
+      expect(recovered.state, ExternalEffectState.succeeded);
+      expect(recovered.receipt?.providerReceiptId, 'receipt-post-1');
+      expect(adapter.deliverCount, 1);
+      expect(adapter.reconcileCount, 1);
+    },
+  );
+
+  test(
+    'reconcile-only never redelivers when receipt is still absent',
+    () async {
+      final adapter = _FakeExternalEffectAdapter(
+        deliverResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.terminalFailure,
+            errorCode: 'required_action_expired',
+            errorMessage: 'Legacy challenge state expired',
+          ),
+        ],
+        reconcileResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.notFound,
+          ),
+        ],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+      await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+
+      final unchanged = await service.reconcileOnly(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+
+      expect(unchanged.state, ExternalEffectState.terminalFailure);
+      expect(adapter.deliverCount, 1);
+      expect(adapter.reconcileCount, 1);
+    },
+  );
+
+  test(
+    'reconcile-only persists and binds an exact provider reference',
+    () async {
+      final adapter = _FakeExternalEffectAdapter(
+        deliverResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.terminalFailure,
+            errorCode: 'required_action_expired',
+            errorMessage: 'Legacy challenge state expired',
+          ),
+        ],
+        reconcileResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.notFound,
+          ),
+        ],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+      await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+
+      final unchanged = await service.reconcileOnly(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+        providerReferenceId: 'provider-post-1',
+      );
+
+      expect(unchanged.state, ExternalEffectState.terminalFailure);
+      expect(unchanged.providerReferenceId, 'provider-post-1');
+      expect(
+        adapter.lastReconcileRequest?.providerReferenceId,
+        'provider-post-1',
+      );
+      final restarted = build(_FakeExternalEffectAdapter());
+      final restored = await restarted.list(
+        pluginId: moltbookAmbassadorPluginId,
+      );
+      expect(restored.single.providerReferenceId, 'provider-post-1');
+    },
+  );
+
   test('required provider action survives restart and resolves once', () async {
     const action = ExternalEffectRequiredAction(
       kind: 'numeric_challenge',
@@ -256,6 +368,68 @@ void main() {
       );
       expect(restored.single.state, ExternalEffectState.terminalFailure);
       expect(restored.single.requiredAction, isNull);
+    },
+  );
+
+  test(
+    'completed provider action waits for receipt without expiring again',
+    () async {
+      const action = ExternalEffectRequiredAction(
+        kind: 'numeric_challenge',
+        providerReferenceId: 'post-1',
+        actionToken: 'verify-accepted',
+        prompt: 'two plus two',
+        expiresAtUtc: '2026-07-26T12:10:00.000Z',
+      );
+      final adapter = _FakeExternalEffectAdapter(
+        deliverResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.unresolved,
+            errorCode: 'verification_required',
+            errorMessage: 'Verification required',
+            requiredAction: action,
+          ),
+        ],
+        resolveResults: const <Object>[
+          ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.unresolved,
+            requiredActionResolved: true,
+            errorCode: 'receipt_not_observed',
+            errorMessage: 'Receipt is not visible yet',
+          ),
+        ],
+        reconcileResults: <Object>[_success('post-1')],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+      await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+
+      final pendingReceipt = await service.resolveRequiredAction(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+        response: '4',
+      );
+      expect(pendingReceipt.state, ExternalEffectState.unresolved);
+      expect(pendingReceipt.requiredAction, isNull);
+      expect(pendingReceipt.lastErrorCode, 'receipt_not_observed');
+
+      now = DateTime.utc(2026, 7, 26, 12, 11);
+      final afterChallengeExpiry = await service.list(
+        pluginId: moltbookAmbassadorPluginId,
+      );
+      expect(afterChallengeExpiry.single.state, ExternalEffectState.unresolved);
+      expect(afterChallengeExpiry.single.requiredAction, isNull);
+
+      final reconciled = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(reconciled.state, ExternalEffectState.succeeded);
+      expect(adapter.deliverCount, 1);
+      expect(adapter.reconcileCount, 1);
     },
   );
 
@@ -584,6 +758,7 @@ class _FakeExternalEffectAdapter implements ExternalEffectAdapter {
   int deliverCount = 0;
   int reconcileCount = 0;
   int resolveCount = 0;
+  ExternalEffectAdapterRequest? lastReconcileRequest;
 
   _FakeExternalEffectAdapter({
     List<Object>? deliverResults,
@@ -608,6 +783,7 @@ class _FakeExternalEffectAdapter implements ExternalEffectAdapter {
     ExternalEffectAdapterRequest request,
   ) async {
     reconcileCount += 1;
+    lastReconcileRequest = request;
     return _take(reconcileResults, 'reconcile');
   }
 

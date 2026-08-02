@@ -894,6 +894,88 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
+  Future<void> _reconcilePublication(ExternalEffectOperation operation) async {
+    var providerReferenceId = operation.providerReferenceId;
+    final payload = MoltbookPublicationService.decodePayload(operation);
+    final isPost = !payload.containsKey('post_id');
+    if (providerReferenceId == null && isPost) {
+      providerReferenceId = await _requestPublishedPostReference();
+      if (providerReferenceId == null) return;
+    }
+    setState(() => _publicationBusy = true);
+    try {
+      final result = await widget.module.reconcileMoltbookPublication(
+        operation.operationId,
+        providerReferenceId: providerReferenceId,
+      );
+      final publications = await widget.module.loadMoltbookPublications();
+      if (!mounted) return;
+      setState(() => _publications = publications);
+      _showNotice(
+        result.state == ExternalEffectState.succeeded
+            ? 'Published post found and receipt restored'
+            : 'The exact public post is not visible yet',
+        isError: result.state != ExternalEffectState.succeeded,
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Publication recheck failed: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
+  Future<String?> _requestPublishedPostReference() async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Locate the published post'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Paste the Moltbook post link. Hivra will only verify the exact approved title and text; it will not publish again.',
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Moltbook post link',
+                    hintText: 'https://www.moltbook.com/post/…',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed:
+                    () => Navigator.pop(dialogContext, controller.text.trim()),
+                child: const Text('Verify exact post'),
+              ),
+            ],
+          ),
+    );
+    controller.dispose();
+    if (value == null || value.isEmpty) return null;
+    final match = RegExp(
+      r'(?:^|/post/)([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})(?:$|[/?#])',
+    ).firstMatch(value);
+    if (match == null) {
+      _showNotice('Enter a valid Moltbook post link', isError: true);
+      return null;
+    }
+    return match.group(1)!.toLowerCase();
+  }
+
   Future<void> _openPublishedPost(Uri uri) async {
     try {
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -1028,6 +1110,14 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           operation.state == ExternalEffectState.unresolved &&
           operation.requiredAction == null,
     );
+    final terminalRecheckOperation = _latestOperationWhere(
+      (operation) =>
+          operation.state == ExternalEffectState.terminalFailure &&
+          operation.receipt == null &&
+          operation.attemptCount > 0,
+    );
+    final reconciliationOperation =
+        recoverableOperation ?? terminalRecheckOperation;
     final queuedOperation = _latestOperationWhere(
       (operation) => operation.state == ExternalEffectState.queued,
     );
@@ -1064,7 +1154,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       proposing: _replyBusy || _draftBusy || _publicFactsBusy,
       delivering: _publicationBusy,
       hasVerification: verificationOperation != null,
-      hasRecoverableEffect: recoverableOperation != null,
+      hasRecoverableEffect: reconciliationOperation != null,
       hasQueuedEffect: queuedOperation != null,
       hasReplyDraft: _replyDraftPreview != null,
       hasLocalDraft: latestDraft != null,
@@ -1083,7 +1173,9 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       MoltbookWorkspaceNextAction.verify =>
         () => _resolvePublicationVerification(verificationOperation!),
       MoltbookWorkspaceNextAction.reconcile =>
-        () => _processPublication(recoverableOperation!),
+        reconciliationOperation!.state == ExternalEffectState.terminalFailure
+            ? () => _reconcilePublication(reconciliationOperation)
+            : () => _processPublication(reconciliationOperation),
       MoltbookWorkspaceNextAction.publish =>
         () => _processPublication(queuedOperation!),
       MoltbookWorkspaceNextAction.reviewReply => _reviewReplyPublication,
@@ -1099,215 +1191,316 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
               ? const Center(child: CircularProgressIndicator())
               : _loadError != null
               ? _ConfigurationLoadError(message: _loadError!, onRetry: _load)
-              : ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  const Text(
-                    'Local profile and policy',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Drafts stay local until an exact post is reviewed, approved, queued, and explicitly published.',
-                    style: TextStyle(color: Color(0xFF9CA7B5), height: 1.35),
-                  ),
-                  const SizedBox(height: 16),
-                  _MoltbookWorkflowCard(
-                    projection: projection,
-                    writePolicy: _approvalMode,
-                    triggerPolicy: _triggerPolicy,
-                    busy:
-                        _connectionBusy ||
-                        _replyBusy ||
-                        _draftBusy ||
-                        _publicFactsBusy ||
-                        _publicationBusy ||
-                        _saving,
-                    onNextAction: nextAction,
-                    onStop: _saving ? null : _stopCycles,
-                  ),
-                  const SizedBox(height: 20),
-                  _MoltbookConnectionCard(
-                    binding: _binding,
-                    apiKeyController: _apiKeyController,
-                    busy: _connectionBusy,
-                    homeObservation: _homeObservation,
-                    feedObservation: _feedObservation,
-                    conversationObservation: _conversationObservation,
-                    engagementPlan: _engagementPlan,
-                    replyBodyController: _replyBodyController,
-                    replyProposal: _replyProposal,
-                    replyDraftPreview: _replyDraftPreview,
-                    heartbeatPlan: _heartbeatPlan,
-                    feedCheckpoint: _feedCheckpoint,
-                    replyBusy: _replyBusy || _publicationBusy,
-                    onConnect: _connect,
-                    onRefresh: _refreshConnection,
-                    onObserveHome: _observeHome,
-                    onObserveFeed: _observeFeed,
-                    onObserveConversation: _observeConversation,
-                    onPlanEngagement: _planEngagement,
-                    onProposeReply: _proposeReply,
-                    onPrepareReply: _prepareReply,
-                    onReplyChanged:
-                        () => setState(() => _replyDraftPreview = null),
-                    onDisconnect: _disconnect,
-                  ),
-                  const SizedBox(height: 20),
-                  _MoltbookDraftCard(
-                    bulletinIdController: _bulletinIdController,
-                    releaseTagController: _releaseTagController,
-                    categoryController: _categoryController,
-                    titleHintController: _titleHintController,
-                    reviewedBodyController: _reviewedBodyController,
-                    audienceController: _audienceController,
-                    publicSourceNotesController: _publicSourceNotesController,
-                    factsController: _factsController,
-                    busy: _draftBusy || _publicFactsBusy,
-                    publicFactsBusy: _publicFactsBusy,
-                    publicBulletinProposal: _publicBulletinProposal,
-                    preview: _draftPreview,
-                    onProposePublicBulletin: _proposePublicBulletin,
-                    onPrepare: _prepareDraft,
-                  ),
-                  if (_storedDrafts.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    _MoltbookDraftHistoryCard(
-                      drafts: _storedDrafts,
-                      busy: _draftBusy || _publicationBusy,
-                      submoltController: _submoltController,
-                      onDelete: _deleteDraft,
-                      onReviewPublication: _reviewPublication,
-                    ),
-                  ],
-                  if (_publications.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    _MoltbookPublicationCard(
-                      operations: _publications,
-                      onOpenPost: _openPublishedPost,
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  const Divider(),
-                  const SizedBox(height: 18),
-                  TextField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Agent name',
-                      helperText: 'Names the Moltbook agent, not the Capsule.',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _descriptionController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Agent description',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _personaController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Persona summary',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _topicsController,
-                    decoration: const InputDecoration(
-                      labelText: 'Allowed topics',
-                      helperText:
-                          'Comma-separated ids, for example hivra-development.',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _approvalMode,
-                    decoration: const InputDecoration(
-                      labelText: 'Approval mode',
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: MoltbookAmbassadorConfiguration.approvalDraft,
-                        child: Text('Draft only'),
-                      ),
-                      DropdownMenuItem(
-                        value: MoltbookAmbassadorConfiguration.approvalAssisted,
-                        child: Text('Assisted approval'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _approvalMode = value);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _triggerPolicy,
-                    decoration: const InputDecoration(
-                      labelText: 'Cycle trigger',
-                      helperText:
-                          'Automatic triggers are experimental until release evidence passes.',
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: MoltbookAmbassadorConfiguration.triggerOnDemand,
-                        child: Text('On demand'),
-                      ),
-                      DropdownMenuItem(
-                        value: MoltbookAmbassadorConfiguration.triggerSession,
-                        child: Text('Once per app session (experimental)'),
-                      ),
-                      DropdownMenuItem(
-                        value:
-                            MoltbookAmbassadorConfiguration.triggerContinuous,
-                        child: Text('Continuous while running (experimental)'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _triggerPolicy = value);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Enabled'),
-                    subtitle: const Text('Immediate local stop control'),
-                    value: _enabled,
-                    onChanged: (value) {
-                      setState(() => _enabled = value);
-                      if (!value) widget.module.stopMoltbookCycles();
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 10,
-                    runSpacing: 10,
+              : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1100),
+                  child: ListView(
+                    padding: const EdgeInsets.all(20),
                     children: [
-                      FilledButton.icon(
-                        onPressed: _saving ? null : _save,
-                        icon:
-                            _saving
-                                ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
+                      const Text(
+                        'Your Moltbook agent',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'See what needs attention, then open a section only when you need it. Nothing is published without your approval.',
+                        style: TextStyle(
+                          color: Color(0xFF9CA7B5),
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _MoltbookWorkflowCard(
+                        projection: projection,
+                        writePolicy: _approvalMode,
+                        triggerPolicy: _triggerPolicy,
+                        busy:
+                            _connectionBusy ||
+                            _replyBusy ||
+                            _draftBusy ||
+                            _publicFactsBusy ||
+                            _publicationBusy ||
+                            _saving,
+                        onNextAction: nextAction,
+                        onStop: _saving ? null : _stopCycles,
+                      ),
+                      const SizedBox(height: 20),
+                      _MoltbookWorkspaceSection(
+                        icon: Icons.account_circle_outlined,
+                        title: 'Moltbook account',
+                        subtitle:
+                            _binding == null
+                                ? 'Connect an account to read and publish'
+                                : 'Connected as ${_binding!.accountName}',
+                        initiallyExpanded: _binding == null,
+                        child: _MoltbookConnectionCard(
+                          binding: _binding,
+                          apiKeyController: _apiKeyController,
+                          busy: _connectionBusy,
+                          homeObservation: _homeObservation,
+                          feedObservation: _feedObservation,
+                          conversationObservation: _conversationObservation,
+                          engagementPlan: _engagementPlan,
+                          replyBodyController: _replyBodyController,
+                          replyProposal: _replyProposal,
+                          replyDraftPreview: _replyDraftPreview,
+                          heartbeatPlan: _heartbeatPlan,
+                          feedCheckpoint: _feedCheckpoint,
+                          replyBusy: _replyBusy || _publicationBusy,
+                          onConnect: _connect,
+                          onRefresh: _refreshConnection,
+                          onObserveHome: _observeHome,
+                          onObserveFeed: _observeFeed,
+                          onObserveConversation: _observeConversation,
+                          onPlanEngagement: _planEngagement,
+                          onProposeReply: _proposeReply,
+                          onPrepareReply: _prepareReply,
+                          onReplyChanged:
+                              () => setState(() => _replyDraftPreview = null),
+                          onDisconnect: _disconnect,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _MoltbookWorkspaceSection(
+                        icon: Icons.edit_note_rounded,
+                        title: 'Create a post',
+                        subtitle:
+                            'Write with AI assistance, review the exact text, then prepare a safe WASM draft',
+                        child: _MoltbookDraftCard(
+                          bulletinIdController: _bulletinIdController,
+                          releaseTagController: _releaseTagController,
+                          categoryController: _categoryController,
+                          titleHintController: _titleHintController,
+                          reviewedBodyController: _reviewedBodyController,
+                          audienceController: _audienceController,
+                          publicSourceNotesController:
+                              _publicSourceNotesController,
+                          factsController: _factsController,
+                          busy: _draftBusy || _publicFactsBusy,
+                          publicFactsBusy: _publicFactsBusy,
+                          publicBulletinProposal: _publicBulletinProposal,
+                          preview: _draftPreview,
+                          onProposePublicBulletin: _proposePublicBulletin,
+                          onPrepare: _prepareDraft,
+                        ),
+                      ),
+                      if (_storedDrafts.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        _MoltbookWorkspaceSection(
+                          icon: Icons.drafts_outlined,
+                          title: 'Local drafts',
+                          subtitle:
+                              '${_storedDrafts.length} waiting for review',
+                          child: _MoltbookDraftHistoryCard(
+                            drafts: _storedDrafts,
+                            busy: _draftBusy || _publicationBusy,
+                            submoltController: _submoltController,
+                            onDelete: _deleteDraft,
+                            onReviewPublication: _reviewPublication,
+                          ),
+                        ),
+                      ],
+                      if (_publications.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        _MoltbookWorkspaceSection(
+                          icon: Icons.public_rounded,
+                          title: 'Publication history',
+                          subtitle:
+                              '${_publications.length} publication ${_publications.length == 1 ? "record" : "records"}',
+                          child: _MoltbookPublicationCard(
+                            operations: _publications,
+                            busy: _publicationBusy,
+                            onOpenPost: _openPublishedPost,
+                            onRecheck: _reconcilePublication,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      _MoltbookWorkspaceSection(
+                        icon: Icons.tune_rounded,
+                        title: 'Agent settings',
+                        subtitle: 'Name, topics, approval and run mode',
+                        child: Column(
+                          children: [
+                            TextField(
+                              controller: _nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Agent name',
+                                helperText:
+                                    'Names the Moltbook agent, not the Capsule.',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _descriptionController,
+                              maxLines: 2,
+                              decoration: const InputDecoration(
+                                labelText: 'Agent description',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _personaController,
+                              maxLines: 2,
+                              decoration: const InputDecoration(
+                                labelText: 'Persona summary',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _topicsController,
+                              decoration: const InputDecoration(
+                                labelText: 'Allowed topics',
+                                helperText:
+                                    'Comma-separated ids, for example hivra-development.',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: _approvalMode,
+                              decoration: const InputDecoration(
+                                labelText: 'Approval mode',
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value:
+                                      MoltbookAmbassadorConfiguration
+                                          .approvalDraft,
+                                  child: Text('Draft only'),
+                                ),
+                                DropdownMenuItem(
+                                  value:
+                                      MoltbookAmbassadorConfiguration
+                                          .approvalAssisted,
+                                  child: Text('Assisted approval'),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() => _approvalMode = value);
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: _triggerPolicy,
+                              decoration: const InputDecoration(
+                                labelText: 'Cycle trigger',
+                                helperText:
+                                    'Automatic triggers are experimental until release evidence passes.',
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value:
+                                      MoltbookAmbassadorConfiguration
+                                          .triggerOnDemand,
+                                  child: Text('On demand'),
+                                ),
+                                DropdownMenuItem(
+                                  value:
+                                      MoltbookAmbassadorConfiguration
+                                          .triggerSession,
+                                  child: Text(
+                                    'Once per app session (experimental)',
                                   ),
-                                )
-                                : const Icon(Icons.save_outlined),
-                        label: Text(_saving ? 'Saving' : 'Save profile'),
+                                ),
+                                DropdownMenuItem(
+                                  value:
+                                      MoltbookAmbassadorConfiguration
+                                          .triggerContinuous,
+                                  child: Text(
+                                    'Continuous while running (experimental)',
+                                  ),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() => _triggerPolicy = value);
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            SwitchListTile.adaptive(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Enabled'),
+                              subtitle: const Text(
+                                'Immediate local stop control',
+                              ),
+                              value: _enabled,
+                              onChanged: (value) {
+                                setState(() => _enabled = value);
+                                if (!value) widget.module.stopMoltbookCycles();
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            Wrap(
+                              alignment: WrapAlignment.end,
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                FilledButton.icon(
+                                  onPressed: _saving ? null : _save,
+                                  icon:
+                                      _saving
+                                          ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                          : const Icon(Icons.save_outlined),
+                                  label: Text(
+                                    _saving ? 'Saving' : 'Save profile',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
+    );
+  }
+}
+
+class _MoltbookWorkspaceSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget child;
+  final bool initiallyExpanded;
+
+  const _MoltbookWorkspaceSection({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+    this.initiallyExpanded = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: initiallyExpanded,
+        leading: Icon(icon),
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(subtitle),
+        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        children: [child],
+      ),
     );
   }
 }
@@ -1347,9 +1540,9 @@ class _MoltbookWorkflowCard extends StatelessWidget {
         Icons.verified_user_outlined,
       ),
       MoltbookWorkspaceNextAction.reconcile => (
-        'Next: reconcile the unresolved effect',
-        'Check provider evidence before any retry. No second effect path is available.',
-        'Reconcile effect',
+        'Next: recheck the publication',
+        'Verify the exact post on Moltbook without publishing it again.',
+        'Recheck publication',
         Icons.sync_problem_outlined,
       ),
       MoltbookWorkspaceNextAction.publish => (
@@ -1447,29 +1640,51 @@ class _MoltbookWorkflowCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            const SizedBox(height: 8),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 4),
+              dense: true,
+              title: const Text(
+                'Status and activity',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text(
+                '${projection.publishedCount} published · '
+                '${projection.proposedCount} drafts · '
+                '${projection.blockedCount} blocked',
+              ),
               children: [
-                _CycleMetric(label: 'Read', value: projection.readCount),
-                _CycleMetric(
-                  label: 'Eligible',
-                  value: projection.eligibleCount,
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _CycleMetric(label: 'Read', value: projection.readCount),
+                      _CycleMetric(
+                        label: 'Eligible',
+                        value: projection.eligibleCount,
+                      ),
+                      _CycleMetric(
+                        label: 'Proposed',
+                        value: projection.proposedCount,
+                      ),
+                      _CycleMetric(
+                        label: 'Published',
+                        value: projection.publishedCount,
+                      ),
+                      _CycleMetric(
+                        label: 'Challenged',
+                        value: projection.challengedCount,
+                      ),
+                      _CycleMetric(
+                        label: 'Blocked',
+                        value: projection.blockedCount,
+                      ),
+                    ],
+                  ),
                 ),
-                _CycleMetric(
-                  label: 'Proposed',
-                  value: projection.proposedCount,
-                ),
-                _CycleMetric(
-                  label: 'Published',
-                  value: projection.publishedCount,
-                ),
-                _CycleMetric(
-                  label: 'Challenged',
-                  value: projection.challengedCount,
-                ),
-                _CycleMetric(label: 'Blocked', value: projection.blockedCount),
               ],
             ),
             if (actionLabel != null) ...[
@@ -1661,11 +1876,15 @@ class _MoltbookDraftHistoryCard extends StatelessWidget {
 
 class _MoltbookPublicationCard extends StatelessWidget {
   final List<ExternalEffectOperation> operations;
+  final bool busy;
   final Future<void> Function(Uri uri) onOpenPost;
+  final Future<void> Function(ExternalEffectOperation operation) onRecheck;
 
   const _MoltbookPublicationCard({
     required this.operations,
+    required this.busy,
     required this.onOpenPost,
+    required this.onRecheck,
   });
 
   @override
@@ -1703,17 +1922,32 @@ class _MoltbookPublicationCard extends StatelessWidget {
                   payload['content']?.toString() ??
                   payload['body']?.toString() ??
                   '';
+              final status = _publicationStatus(operation, postUri);
+              final canRecheck =
+                  operation.state == ExternalEffectState.terminalFailure &&
+                  operation.receipt == null &&
+                  operation.attemptCount > 0;
               return ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 12),
-                title: Text(
-                  '${isReply ? "Reply" : "Post"} to $target · '
-                  '${operation.state.wireName.replaceAll('_', ' ')}',
-                ),
-                subtitle: Text(
-                  exactText,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                title: Text('${isReply ? "Reply" : "Post"} to $target'),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      exactText,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      status.label,
+                      style: TextStyle(
+                        color: status.color,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
                 trailing:
                     postUri != null
@@ -1722,17 +1956,27 @@ class _MoltbookPublicationCard extends StatelessWidget {
                           onPressed: () => onOpenPost(postUri),
                           icon: const Icon(Icons.open_in_new),
                         )
-                        : Icon(
-                          operation.state == ExternalEffectState.succeeded
-                              ? Icons.verified_outlined
-                              : Icons.info_outline,
-                        ),
+                        : canRecheck
+                        ? IconButton(
+                          tooltip: 'Check Moltbook for this exact publication',
+                          onPressed: busy ? null : () => onRecheck(operation),
+                          icon: const Icon(Icons.sync_rounded),
+                        )
+                        : Icon(status.icon, color: status.color),
                 children: [
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (canRecheck) ...[
+                          OutlinedButton.icon(
+                            onPressed: busy ? null : () => onRecheck(operation),
+                            icon: const Icon(Icons.sync_rounded),
+                            label: const Text('Recheck publication'),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         const Text(
                           'Exact public text',
                           style: TextStyle(fontWeight: FontWeight.w800),
@@ -1761,6 +2005,58 @@ class _MoltbookPublicationCard extends StatelessWidget {
       ),
     );
   }
+}
+
+({String label, IconData icon, Color color}) _publicationStatus(
+  ExternalEffectOperation operation,
+  Uri? postUri,
+) {
+  if (postUri != null) {
+    return (
+      label: 'Published and verified',
+      icon: Icons.verified_rounded,
+      color: Colors.green,
+    );
+  }
+  if (operation.requiredAction != null) {
+    return (
+      label: 'Action required: complete verification',
+      icon: Icons.verified_user_outlined,
+      color: Colors.orange,
+    );
+  }
+  return switch (operation.state) {
+    ExternalEffectState.prepared => (
+      label: 'Local draft',
+      icon: Icons.edit_note_rounded,
+      color: const Color(0xFF9CA7B5),
+    ),
+    ExternalEffectState.approved || ExternalEffectState.queued => (
+      label: 'Approved locally, waiting to publish',
+      icon: Icons.schedule_send_outlined,
+      color: Colors.orange,
+    ),
+    ExternalEffectState.delivering || ExternalEffectState.unresolved => (
+      label: 'Waiting for provider confirmation',
+      icon: Icons.sync_rounded,
+      color: Colors.orange,
+    ),
+    ExternalEffectState.succeeded => (
+      label: 'Verified receipt has no usable post link',
+      icon: Icons.link_off_rounded,
+      color: Colors.orange,
+    ),
+    ExternalEffectState.terminalFailure => (
+      label: 'Not confirmed. Recheck without republishing',
+      icon: Icons.sync_problem_rounded,
+      color: Colors.redAccent,
+    ),
+    ExternalEffectState.cancelled => (
+      label: 'Cancelled locally',
+      icon: Icons.cancel_outlined,
+      color: const Color(0xFF9CA7B5),
+    ),
+  };
 }
 
 class _MoltbookDraftCard extends StatelessWidget {

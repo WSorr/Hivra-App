@@ -66,6 +66,7 @@ class ExternalEffectService {
       updatedAtUtc: now,
       lastErrorCode: null,
       lastErrorMessage: null,
+      providerReferenceId: null,
       requiredAction: null,
       receipt: null,
     );
@@ -206,6 +207,100 @@ class ExternalEffectService {
     });
   }
 
+  Future<ExternalEffectOperation> reconcileOnly({
+    required String pluginId,
+    required String operationId,
+    String? providerReferenceId,
+  }) {
+    final ownerHex = _requireActiveOwner();
+    final key = '$ownerHex::$pluginId::$operationId';
+    final existing = _inFlight[key];
+    if (existing != null) return existing;
+    final future = _reconcileOnlyOwned(
+      ownerHex: ownerHex,
+      pluginId: pluginId,
+      operationId: operationId,
+      providerReferenceId: providerReferenceId,
+    );
+    _inFlight[key] = future;
+    return future.whenComplete(() {
+      _inFlight.remove(key);
+    });
+  }
+
+  Future<ExternalEffectOperation> _reconcileOnlyOwned({
+    required String ownerHex,
+    required String pluginId,
+    required String operationId,
+    String? providerReferenceId,
+  }) async {
+    var current = await _readRequired(ownerHex, pluginId, operationId);
+    final normalizedReference = providerReferenceId?.trim();
+    if (normalizedReference != null && normalizedReference.isNotEmpty) {
+      if (current.providerReferenceId != null &&
+          current.providerReferenceId != normalizedReference) {
+        throw StateError('External effect provider reference changed');
+      }
+      if (current.providerReferenceId == null) {
+        current = await _replace(
+          ownerHex,
+          pluginId,
+          operationId,
+          expectedState: current.state,
+          expectedRevision: current.revision,
+          update:
+              (value) => _copy(
+                value,
+                state: value.state,
+                providerReferenceId: normalizedReference,
+              ),
+        );
+      }
+    }
+    if (current.state == ExternalEffectState.succeeded) return current;
+    if (current.requiredAction != null) {
+      throw StateError('Required provider action must be completed first');
+    }
+    if (current.state != ExternalEffectState.unresolved &&
+        current.state != ExternalEffectState.terminalFailure) {
+      throw StateError(
+        'External effect ${current.operationId} cannot be reconciled from '
+        '${current.state.wireName}',
+      );
+    }
+    final adapter = _resolveAdapter(current.providerId);
+    if (adapter == null) {
+      throw StateError(
+        'No external effect adapter for provider ${current.providerId}',
+      );
+    }
+    final result = await _callAdapter(
+      () => adapter.reconcile(_request(current)),
+    );
+    result.validate();
+    if (result.status == ExternalEffectAdapterStatus.succeeded) {
+      return _applyAdapterResult(
+        ownerHex,
+        pluginId,
+        operationId,
+        result,
+        expectedState: current.state,
+        expectedRevision: current.revision,
+      );
+    }
+    if (current.state == ExternalEffectState.terminalFailure) {
+      return current;
+    }
+    return _applyAdapterResult(
+      ownerHex,
+      pluginId,
+      operationId,
+      result,
+      expectedState: ExternalEffectState.unresolved,
+      expectedRevision: current.revision,
+    );
+  }
+
   Future<List<ExternalEffectOperation>> list({required String pluginId}) {
     final ownerHex = _requireActiveOwner();
     return _withJournalLock(ownerHex, pluginId, () async {
@@ -284,7 +379,8 @@ class ExternalEffectService {
     );
     if ((result.status == ExternalEffectAdapterStatus.unresolved ||
             result.status == ExternalEffectAdapterStatus.retryableFailure) &&
-        result.requiredAction == null) {
+        result.requiredAction == null &&
+        !result.requiredActionResolved) {
       result = ExternalEffectAdapterResult(
         status: result.status,
         requiredAction: current.requiredAction,
@@ -414,6 +510,8 @@ class ExternalEffectService {
         status: result.status,
         receipt: result.receipt,
         requiredAction: result.requiredAction,
+        requiredActionResolved: result.requiredActionResolved,
+        providerReferenceId: result.providerReferenceId,
         errorCode: result.errorCode,
         errorMessage:
             result.errorMessage == null
@@ -479,7 +577,12 @@ class ExternalEffectService {
                 result.errorMessage ?? 'Provider outcome is unresolved',
               ),
               requiredAction: result.requiredAction,
-              clearRequiredAction: result.requiredAction == null,
+              providerReferenceId:
+                  result.providerReferenceId ??
+                  result.requiredAction?.providerReferenceId,
+              clearRequiredAction:
+                  result.requiredAction == null ||
+                  result.requiredActionResolved,
             );
           case ExternalEffectAdapterStatus.terminalFailure:
             return _copy(
@@ -711,6 +814,7 @@ class ExternalEffectService {
     String? lastErrorMessage,
     ExternalEffectRequiredAction? requiredAction,
     ExternalEffectReceipt? receipt,
+    String? providerReferenceId,
     bool clearError = false,
     bool clearRequiredAction = false,
   }) {
@@ -733,6 +837,7 @@ class ExternalEffectService {
       lastErrorCode: clearError ? null : lastErrorCode ?? current.lastErrorCode,
       lastErrorMessage:
           clearError ? null : lastErrorMessage ?? current.lastErrorMessage,
+      providerReferenceId: providerReferenceId ?? current.providerReferenceId,
       requiredAction:
           clearRequiredAction ? null : requiredAction ?? current.requiredAction,
       receipt: receipt,
@@ -749,6 +854,7 @@ class ExternalEffectService {
       effectKind: operation.effectKind,
       canonicalPayloadJson: operation.canonicalPayloadJson,
       payloadHashHex: operation.payloadHashHex,
+      providerReferenceId: operation.providerReferenceId,
     );
     request.validate();
     return request;

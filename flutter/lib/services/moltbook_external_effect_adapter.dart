@@ -55,6 +55,7 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
           errorMessage:
               'Moltbook created hidden content that requires verification',
           requiredAction: _requiredAction(response, contentId),
+          providerReferenceId: contentId,
         );
       }
       if (contentId == null) {
@@ -158,7 +159,33 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
           requiredAction: action,
         );
       }
-      return _success(request, contentId!);
+      final verifiedContentId = contentId!;
+      // A successful challenge response is not proof that the content became
+      // publicly visible. Re-observe the provider before minting a receipt.
+      try {
+        final reconciliation = switch (payload) {
+          _MoltbookPostPayload post => await _reconcilePostById(
+            request,
+            apiKey,
+            post,
+            verifiedContentId,
+          ),
+          _MoltbookCommentPayload comment => await _reconcileComment(
+            request,
+            apiKey,
+            comment,
+          ),
+        };
+        return _afterResolvedRequiredAction(
+          reconciliation,
+          providerReferenceId: verifiedContentId,
+        );
+      } on MoltbookProviderException catch (error) {
+        return _afterResolvedRequiredAction(
+          _providerFailure(error),
+          providerReferenceId: verifiedContentId,
+        );
+      }
     } on MoltbookProviderException catch (error) {
       if (error.code == 'provider_rejected' &&
           _clock().toUtc().isBefore(DateTime.parse(action.expiresAtUtc))) {
@@ -229,6 +256,10 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     String apiKey,
     _MoltbookPostPayload payload,
   ) async {
+    final providerReferenceId = request.providerReferenceId;
+    if (providerReferenceId != null) {
+      return _reconcilePostById(request, apiKey, payload, providerReferenceId);
+    }
     final profile = await _provider.observeProfile(
       apiKey: apiKey,
       accountName: payload.accountName,
@@ -252,12 +283,30 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
               ? content.contains(payload.operationMarker) &&
                   title == payload.title
               : content == payload.content && title == payload.title;
-      if (matches) {
+      if (matches && _isVerifiedPublicPost(post)) {
         final postId = _stringId(post['id'] ?? post['post_id']);
         if (postId != null) return _success(request, postId);
       }
     }
     return _receiptNotObserved();
+  }
+
+  Future<ExternalEffectAdapterResult> _reconcilePostById(
+    ExternalEffectAdapterRequest request,
+    String apiKey,
+    _MoltbookPostPayload payload,
+    String postId,
+  ) async {
+    final post = await _provider.observePost(apiKey, postId: postId);
+    final matches =
+        post.authorName == payload.accountName &&
+        post.submoltName == payload.submoltName &&
+        post.title == payload.title &&
+        post.content == payload.content;
+    if (!matches || !post.isVerified || post.isSpam) {
+      return _receiptNotObserved();
+    }
+    return _success(request, post.postId);
   }
 
   Future<ExternalEffectAdapterResult> _reconcileComment(
@@ -286,6 +335,20 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
       errorCode: 'receipt_not_observed',
       errorMessage:
           'No matching receipt is visible yet; automatic resubmission is blocked',
+    );
+  }
+
+  static ExternalEffectAdapterResult _afterResolvedRequiredAction(
+    ExternalEffectAdapterResult result, {
+    required String providerReferenceId,
+  }) {
+    if (result.status == ExternalEffectAdapterStatus.succeeded) return result;
+    return ExternalEffectAdapterResult(
+      status: ExternalEffectAdapterStatus.unresolved,
+      requiredActionResolved: true,
+      providerReferenceId: result.providerReferenceId ?? providerReferenceId,
+      errorCode: result.errorCode,
+      errorMessage: result.errorMessage,
     );
   }
 
@@ -400,6 +463,12 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
       );
     }
     return number.toStringAsFixed(2);
+  }
+
+  static bool _isVerifiedPublicPost(Map<String, dynamic> post) {
+    final verificationStatus =
+        post['verification_status']?.toString().trim().toLowerCase();
+    return verificationStatus == 'verified' && post['is_spam'] == false;
   }
 
   static String? _stringId(Object? value) {

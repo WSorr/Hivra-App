@@ -1076,6 +1076,23 @@ class PluginRuntimeModule {
     return result;
   }
 
+  Future<ExternalEffectOperation> reconcileMoltbookPublication(
+    String operationId, {
+    String? providerReferenceId,
+  }) async {
+    final result = await moltbookPublications.reconcileOnly(
+      operationId,
+      providerReferenceId: providerReferenceId,
+    );
+    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[result]);
+    await uiLog.log(
+      'moltbook.publication.reconcile',
+      'operation=$operationId state=${result.state.wireName} '
+          'error=${result.lastErrorCode ?? "none"}',
+    );
+    return result;
+  }
+
   Future<void> _archiveSucceededMoltbookDrafts(
     Iterable<ExternalEffectOperation> operations,
   ) async {

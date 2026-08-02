@@ -245,6 +245,17 @@ class MoltbookPublicationService {
     );
   }
 
+  Future<ExternalEffectOperation> reconcileOnly(
+    String operationId, {
+    String? providerReferenceId,
+  }) {
+    return _effects.reconcileOnly(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: operationId,
+      providerReferenceId: providerReferenceId,
+    );
+  }
+
   Future<ExternalEffectOperation> resolveVerification({
     required String operationId,
     required String answer,
