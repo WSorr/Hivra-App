@@ -12,6 +12,12 @@ void main() {
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const capsuleB =
       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const completeReceipt =
+      '"accepted_by":"wss://relay.example","envelope_id":"event-1",'
+      '"message_kind":1,"recipient":['
+      '17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,'
+      '17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17],'
+      '"failed_before_accept":0';
 
   group('CapsuleDeliveryLifecycleService', () {
     late Directory tempHome;
@@ -43,7 +49,7 @@ void main() {
               code: 0,
               deliveryReceiptsJson:
                   capsuleHex == capsuleA
-                      ? '{"receipts":[{"label":"InvitationSent","receipt":{"transport":"nostr"}}]}'
+                      ? '{"receipts":[{"label":"InvitationSent","receipt":{"transport":"nostr",$completeReceipt}}]}'
                       : null,
             ),
       );
@@ -83,7 +89,7 @@ void main() {
             return const CapsuleDeliveryCycleResult(
               code: 0,
               deliveryReceiptsJson:
-                  '{"receipts":[{"label":"RelationshipBrokenRetry","receipt":{"transport":"nostr"}}]}',
+                  '{"receipts":[{"label":"RelationshipBrokenRetry","receipt":{"transport":"nostr",$completeReceipt}}]}',
             );
           },
         );
@@ -141,7 +147,7 @@ void main() {
             (_, _) async => const CapsuleDeliveryCycleResult(
               code: 0,
               deliveryReceiptsJson:
-                  '{"receipts":[{"label":"InvitationExpired","receipt":{"transport":"nostr"}}]}',
+                  '{"receipts":[{"label":"InvitationExpired","receipt":{"transport":"nostr",$completeReceipt}}]}',
             ),
       );
       await lifecycle.enqueue(
@@ -167,7 +173,7 @@ void main() {
             (_, _) async => const CapsuleDeliveryCycleResult(
               code: 0,
               deliveryReceiptsJson:
-                  '{"receipts":[{"label":"InvitationSent","receipt":{"transport":"nostr"}}]}',
+                  '{"receipts":[{"label":"InvitationSent","receipt":{"transport":"nostr",$completeReceipt}}]}',
             ),
       );
       await lifecycle.enqueue(
@@ -180,6 +186,10 @@ void main() {
       var item = (await outbox.load(capsuleA)).single;
       expect(item.status, DeliveryOutboxStatus.published);
       expect(item.attempts, 1);
+      expect(item.recipientHex, '11' * 32);
+      expect(item.adapterAcceptedBy, 'wss://relay.example');
+      expect(item.adapterEnvelopeId, 'event-1');
+      expect(item.publishedAt, now);
       expect(
         await outbox.due(
           capsuleHex: capsuleA,
@@ -187,6 +197,31 @@ void main() {
         ),
         isEmpty,
       );
+    });
+
+    test('incomplete adapter receipt cannot resolve a delivery fact', () async {
+      final lifecycle = CapsuleDeliveryLifecycleService(
+        outbox: outbox,
+        now: () => now,
+        retryRunner:
+            (_, _) async => const CapsuleDeliveryCycleResult(
+              code: 0,
+              deliveryReceiptsJson:
+                  '{"receipts":[{"label":"InvitationSent","receipt":{"transport":"nostr"}}]}',
+            ),
+      );
+      await lifecycle.enqueue(
+        capsuleHex: capsuleA,
+        kind: DeliveryOutboxKind.invitationSent,
+        reason: DeliveryOutboxReason.sendInvitationRetry,
+      );
+
+      await lifecycle.pumpDueNow(capsuleHex: capsuleA);
+
+      final item = (await outbox.load(capsuleA)).single;
+      expect(item.status, DeliveryOutboxStatus.pending);
+      expect(item.recipientHex, isNull);
+      expect(item.adapterEnvelopeId, isNull);
     });
 
     test(
@@ -229,7 +264,7 @@ void main() {
             (_, _) async => const CapsuleDeliveryCycleResult(
               code: 0,
               deliveryReceiptsJson:
-                  '{"receipts":[{"label":"InvitationSent","correlation_id_hex":"$invitationA","receipt":{"transport":"nostr"}}]}',
+                  '{"receipts":[{"label":"InvitationSent","correlation_id_hex":"$invitationA","receipt":{"transport":"nostr",$completeReceipt}}]}',
             ),
       );
       await lifecycle.enqueue(

@@ -98,11 +98,21 @@ void main() {
         capsuleHex: capsuleHex,
         itemId: due.single.id,
         nextAttemptAt: now.add(const Duration(minutes: 1)),
+        recipientHex: '11' * 32,
+        adapterAcceptedBy: 'wss://relay.example',
+        adapterEnvelopeId: 'event-1',
+        adapterMessageKind: 1,
+        adapterFailedBeforeAccept: 0,
+        publishedAt: now,
       );
-      expect(
-        (await store.load(capsuleHex)).single.status,
-        DeliveryOutboxStatus.published,
-      );
+      final published = (await store.load(capsuleHex)).single;
+      expect(published.status, DeliveryOutboxStatus.published);
+      expect(published.recipientHex, '11' * 32);
+      expect(published.adapterAcceptedBy, 'wss://relay.example');
+      expect(published.adapterEnvelopeId, 'event-1');
+      expect(published.adapterMessageKind, 1);
+      expect(published.adapterFailedBeforeAccept, 0);
+      expect(published.publishedAt, now);
     });
 
     test('migrates legacy delivered state to relay publication', () {
@@ -191,6 +201,12 @@ void main() {
         capsuleHex: capsuleHex,
         itemId: item.id,
         nextAttemptAt: now.add(const Duration(minutes: 1)),
+        recipientHex: '22' * 32,
+        adapterAcceptedBy: 'wss://relay.example',
+        adapterEnvelopeId: 'event-2',
+        adapterMessageKind: 2,
+        adapterFailedBeforeAccept: 1,
+        publishedAt: now,
       );
 
       final inserted = await store.enqueueIfAbsent(

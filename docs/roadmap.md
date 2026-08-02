@@ -91,15 +91,19 @@ the blueprint design exit criteria are satisfied.
 The two lines share one product axis but cannot share a second runtime path.
 The ordering below is deliberate:
 
-1. **1.x integrity before new lifecycle behavior.** The next remediation pass
-   is `12.3 / pass 3`, the cryptographically continuous ledger protocol.
+1. **1.x integrity before new lifecycle behavior.** Remediation passes
+   `12.3 / pass 3-4`, cryptographic ledger continuity and event-scoped
+   delivery records, are complete. The next ordered pass is `12.3 / pass 5`,
+   persisted realized-loss inputs for Trading Drone risk policy.
    `5.1 Canonical Core Projection Convergence` remains a hard boundary: new
    invitation, relationship, consensus, or Capsule Map behavior must consume a
    canonical projection rather than add another Flutter event reducer.
-2. **One operational lifecycle.** After the ledger and projection boundary,
-   `12.3 / pass 4` replaces aggregate recovery markers with event-scoped
-   delivery records. Transport health, plugin transactions, and backup work
-   remain behind that lifecycle rather than creating their own queues.
+2. **One operational lifecycle.** `12.3 / pass 4` replaced aggregate recovery
+   markers for current facts with event-scoped delivery records carrying exact
+   immutable correlation and normalized adapter publication evidence.
+   Transport health, plugin transactions, and backup work remain behind that
+   lifecycle rather than creating their own queues. Unreferenced legacy
+   records remain quarantine debt and MUST NOT be replayed as a batch.
 3. **2.0 proves the map before it migrates code.** `V2-0` may inventory owners,
    contracts, entrypoints, and dependency edges in parallel. It may not add a
    v2 event, DTO, storage format, facade, or executable runtime path to 1.x.
@@ -1327,9 +1331,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - documented the hard boundary between Ledger truth, the recovery index,
         lifecycle scheduling, transport adapters, and UI projection in
         `docs/architecture/transport-delivery-lifecycle.md`.
-      - this intentionally does not close execution-order item 4: the current
-        outbox is still an aggregate recovery index and must gain event-scoped
-        identifiers and matching receipts before it can be a reliable queue.
+      - this initial extraction did not close execution-order item 4; the later
+        pass now binds current invitation and relationship-break obligations to
+        immutable event references and persists matching adapter publication
+        evidence in the same outbox record. Legacy unreferenced records remain
+        quarantined migration debt rather than a second retry path.
     - Capsule Selection Ownership remediation completed on 2026-07-14:
       - explicit create/recover/select flows remain the only writers allowed to
         change `capsules_index.active`;

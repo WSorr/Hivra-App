@@ -157,6 +157,10 @@ identity, capsule/network scope, retry eligibility, expiry, and diagnostics.
 - Completed: aggregate FFI retry entrypoints were removed. The mounted ABI
   exposes only exact invitation-offer, invitation-terminal, and
   relationship-break publication by immutable reference.
+- Completed: a published outbox record persists normalized adapter evidence
+  in place: exact recipient endpoint, adapter endpoint, envelope identifier,
+  message kind, failed-endpoint count, and observation time. Receipt evidence
+  never means peer receipt or ledger acceptance.
 - Completed: the transport-neutral inbound envelope guard rejects unsupported
   schema versions, wrong recipients, and payloads above 256 KiB before domain
   routing; deterministic rejects are adapter-deduplicated.

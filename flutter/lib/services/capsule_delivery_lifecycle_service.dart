@@ -104,11 +104,21 @@ class CapsuleDeliveryLifecycleService {
     required CapsuleDeliveryCycleResult result,
   }) async {
     final now = _now();
-    if (_receiptsContainItem(result.deliveryReceiptsJson, item)) {
+    final evidence = _matchingReceiptEvidence(
+      result.deliveryReceiptsJson,
+      item,
+    );
+    if (evidence != null) {
       await _outbox.markPublished(
         capsuleHex: capsuleHex,
         itemId: item.id,
         nextAttemptAt: now.add(_backoffFor(item.attempts + 1)),
+        recipientHex: evidence.recipientHex,
+        adapterAcceptedBy: evidence.acceptedBy,
+        adapterEnvelopeId: evidence.envelopeId,
+        adapterMessageKind: evidence.messageKind,
+        adapterFailedBeforeAccept: evidence.failedBeforeAccept,
+        publishedAt: now,
       );
       return;
     }
@@ -187,16 +197,23 @@ class CapsuleDeliveryLifecycleService {
     return _retryDelays[index];
   }
 
-  bool _receiptsContainItem(
+  ({
+    String recipientHex,
+    String acceptedBy,
+    String envelopeId,
+    int messageKind,
+    int failedBeforeAccept,
+  })?
+  _matchingReceiptEvidence(
     String? deliveryReceiptsJson,
     DeliveryOutboxItem item,
   ) {
     if (deliveryReceiptsJson == null || deliveryReceiptsJson.isEmpty) {
-      return false;
+      return null;
     }
     try {
       final decoded = jsonDecode(deliveryReceiptsJson);
-      if (decoded is! Map || decoded['receipts'] is! List) return false;
+      if (decoded is! Map || decoded['receipts'] is! List) return null;
       for (final raw in decoded['receipts'] as List) {
         if (raw is! Map) continue;
         final receipt = raw['receipt'];
@@ -206,13 +223,48 @@ class CapsuleDeliveryLifecycleService {
         }
         if (_labelMatchesKind(raw['label']?.toString() ?? '', item.kind) &&
             _referenceMatches(raw['correlation_id_hex']?.toString(), item)) {
-          return true;
+          final recipientHex = _recipientHex(receipt['recipient']);
+          final acceptedBy = _boundedText(receipt['accepted_by']);
+          final envelopeId = _boundedText(receipt['envelope_id']);
+          final messageKind = receipt['message_kind'];
+          final failedBeforeAccept = receipt['failed_before_accept'];
+          if (recipientHex == null ||
+              acceptedBy == null ||
+              envelopeId == null ||
+              messageKind is! int ||
+              messageKind < 0 ||
+              failedBeforeAccept is! int ||
+              failedBeforeAccept < 0) {
+            continue;
+          }
+          return (
+            recipientHex: recipientHex,
+            acceptedBy: acceptedBy,
+            envelopeId: envelopeId,
+            messageKind: messageKind,
+            failedBeforeAccept: failedBeforeAccept,
+          );
         }
       }
     } catch (_) {
-      return false;
+      return null;
     }
-    return false;
+    return null;
+  }
+
+  String? _recipientHex(Object? raw) {
+    if (raw is! List || raw.length != 32) return null;
+    final bytes = <int>[];
+    for (final value in raw) {
+      if (value is! int || value < 0 || value > 255) return null;
+      bytes.add(value);
+    }
+    return bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  String? _boundedText(Object? raw) {
+    final value = raw?.toString().trim() ?? '';
+    return value.isEmpty || value.length > 1024 ? null : value;
   }
 
   bool _hasAnyReceipt(String? deliveryReceiptsJson) {
