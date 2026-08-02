@@ -1452,12 +1452,40 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         `074b586`: selector rows read public summaries without activating a
         Capsule or unlocking its seed, while local peer labels retain a
         separate shortened root Capsule ID in operational UI.
-    - Current ordered 12.3 item is closure of packaged macOS/Android restart
-      and restore evidence for continuous-ledger pass 3. Canonical Core
-      projection convergence (`5.1`) is complete. Event-scoped delivery
-      records, transport-health UI, plugin transactionality, encrypted backup
-      envelopes, and deprecated-envelope migration remain subsequent items.
-  - Status: active; pass 1 and pass 2 are completed.
+    - pass 4 event-scoped delivery records completed at `7297948`:
+      - current invitation and relationship-break obligations are bound to one
+        immutable domain reference and one exact retry endpoint;
+      - normalized adapter publication evidence updates only the matching
+        outbox item through its correlation id;
+      - ambiguous legacy aggregate records remain quarantined instead of
+        replaying a batch.
+    - pass 5 persisted Trading Drone risk history completed at `bdabae8`:
+      - exchange-derived `REALIZED_PNL` history now supplies UTC daily loss,
+        consecutive loss count, and last-loss time through one Capsule-scoped
+        risk projection;
+      - unavailable, conflicting, malformed, or unpageable history fails
+        closed and never becomes Core ledger truth.
+    - pass 6 authenticated confidential transport envelope completed on
+      2026-08-02:
+      - the canonical Nostr write path now emits signed regular kind `9444`
+        events containing NIP-44 v2 authenticated `DeliveryEnvelope v1`
+        ciphertext;
+      - receive verifies the outer NIP-01 id/signature before decryption,
+        requires exactly one local recipient tag, binds the decoded sender to
+        the event signer, and preserves the existing common envelope guard;
+      - kind `9444` never falls back to NIP-04 after an authentication or
+        version failure, preventing wire-format downgrade;
+      - deprecated kind `4`/NIP-04 remains only as an isolated read-only
+        rolling-compatibility decoder and cannot send, translate, retry, or
+        create another transport lifecycle;
+      - focused regression coverage proves NIP-44 round-trip, MAC rejection,
+        sender spoof rejection, exact recipient binding, schema rejection, and
+        strict downgrade isolation while preserving correlation metadata.
+    - Current ordered 12.3 item is pass 7 transactional and serialized plugin
+      install/update/remove. Transport-health UI, encrypted backup envelopes,
+      legacy aggregate delivery reconciliation, and durable sender-rate
+      quarantine remain subsequent or separately tracked items.
+  - Status: active; passes 1-6 are completed.
 
 ## Planned Product Tracks
 

@@ -37,6 +37,7 @@ require_absent() {
 
 TRANSPORT_TOML="$ROOT/adapters/hivra-transport/Cargo.toml"
 TRANSPORT_SRC="$ROOT/adapters/hivra-transport/src"
+NOSTR_TRANSPORT="$TRANSPORT_SRC/nostr/mod.rs"
 DEP_CHECK="$ROOT/tools/review/dependency_check.sh"
 SPEC="$ROOT/docs/specification.md"
 README="$ROOT/README.md"
@@ -127,6 +128,12 @@ require_absent "$TRANSPORT_SRC" 'hivra_core::|use hivra_core' \
   "hivra-transport source does not import hivra_core"
 require_absent "$TRANSPORT_SRC" 'hivra_engine::|use hivra_engine' \
   "hivra-transport source does not import hivra_engine"
+require_present "$NOSTR_TRANSPORT" 'const APP_EVENT_KIND: Kind = Kind::Custom\(9444\)' \
+  "Nostr transport emits the canonical Hivra authenticated-envelope kind"
+require_present "$NOSTR_TRANSPORT" 'nip44::Version::V2' \
+  "Nostr transport encrypts new envelopes with NIP-44 v2"
+require_present "$NOSTR_TRANSPORT" 'const LEGACY_NIP04_EVENT_KIND: Kind = Kind::Custom\(4\)' \
+  "deprecated NIP-04 input remains explicitly isolated from the write kind"
 
 # 2) Dependency law must be present in checks and docs.
 require_present "$DEP_CHECK" 'hivra-transport must not depend on hivra-core' \

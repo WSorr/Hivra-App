@@ -164,6 +164,13 @@ identity, capsule/network scope, retry eligibility, expiry, and diagnostics.
 - Completed: the transport-neutral inbound envelope guard rejects unsupported
   schema versions, wrong recipients, and payloads above 256 KiB before domain
   routing; deterministic rejects are adapter-deduplicated.
+- Completed: the Nostr adapter emits signed kind `9444` events containing
+  NIP-44 v2 authenticated `DeliveryEnvelope v1` ciphertext. It verifies the
+  outer event before decrypt, requires exactly one matching recipient tag,
+  binds the decoded sender to the event signer, and never falls back from a
+  failed NIP-44 decode to NIP-04. Deprecated kind `4`/NIP-04 is isolated to a
+  read-only rolling-compatibility decoder with the same ingress and replay
+  guards; it cannot publish or create another lifecycle path.
 - Pending: define one shared passive receive scheduler for invitations,
   pair-attestations, chat, relationship notifications, and trading signals.
   Until then, screen-triggered receives are serialized but can still perform

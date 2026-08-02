@@ -733,15 +733,42 @@ relay cursor has advanced past it. A future sender-class rate limit therefore
 requires a bounded durable quarantine/deferred-inbox contract before it can be
 enabled in production.
 
-### 5.4 Nostr Adapter (Example)
+### 5.4 Nostr Adapter
 
-```
-Core bytes → base64 → Nostr content
+The maintained Nostr adapter carries the canonical `DeliveryEnvelope v1` in
+one signed regular application event:
+
+```text
+DeliveryEnvelope v1 JSON
+  -> NIP-44 v2 authenticated encryption for one recipient
+  -> Nostr kind 9444 with exactly one matching `p` tag
+  -> NIP-01 event id and Schnorr signature
 ```
 
-After NIP-04 decryption, the adapter MUST require the embedded
-`Message.from` key to equal the public key that signed the outer Nostr event.
-Self-declared sender identity inside encrypted JSON is never authoritative.
+The adapter MUST verify the outer NIP-01 event id and signature before
+decryption. It MUST then authenticate the NIP-44 v2 payload, decode the same
+transport-neutral `DeliveryEnvelope v1`, require `DeliveryEnvelope.from` to
+equal the outer event signer, and apply the common ingress guard. The sole
+recipient in the outer `p` tag, the NIP-44 ECDH recipient, and
+`DeliveryEnvelope.to` MUST all identify the active local Nostr endpoint.
+
+Wire-format downgrade is forbidden. Kind `9444` is decoded only as NIP-44 v2;
+an authentication or version failure MUST fail closed and MUST NOT fall back to
+NIP-04. New sends, retries, and outbox recovery MUST emit only kind `9444`.
+
+For rolling compatibility with retained pre-migration relay history, the
+maintained 1.x receiver MAY decode a signed kind `4` event through one isolated
+read-only NIP-04 path. That path MUST apply the same exact-recipient,
+outer-signature, sender-binding, envelope-schema, payload-size, replay, and
+domain idempotence checks. It MUST NOT send NIP-04, translate an old event into
+a new outbound event, or become a second transport route. Removal of this
+read-only decoder requires an explicit compatibility decision after supported
+peers no longer depend on pre-migration kind `4` history.
+
+NIP-44 authenticates the confidential payload but does not provide forward
+secrecy or post-compromise security. Hivra therefore treats it as the current
+adapter wire envelope, not as a replacement for Capsule root signatures,
+Ledger truth, domain replay protection, or delivery correlation.
 
 ```rust
 // NostrTransport uses NostrCryptoProvider (secp256k1)
