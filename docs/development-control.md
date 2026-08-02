@@ -2,11 +2,12 @@
 
 Status date: 2026-08-02
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: begin `12.3 / pass 7` by designing transactional,
-serialized plugin install/update/remove. The authenticated confidential
-transport-envelope migration is complete: new Nostr delivery uses signed kind
-`9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 is isolated to guarded
-read-only compatibility input.
+Current development focus: begin `12.3 / pass 8` with encrypted backup
+envelopes, temporary-export cleanup, stale protocol/WASM documentation repair,
+and UI splitting only at existing module boundaries. Transactional serialized
+plugin install/update/remove is complete; authenticated Nostr delivery uses
+signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
+isolated to guarded read-only compatibility input.
 
 This is the short operational map for deciding what Hivra work is happening
 now. It is not a second specification, backlog, or release record. It points
@@ -20,7 +21,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation pass? | `12.3 / pass 7`: make plugin install/update/remove transactional and serialized without weakening package/registry isolation or release gates. Authenticated confidential transport migration is complete; legacy delivery records without immutable references remain quarantined migration debt. | `roadmap.md`, `specification.md`, plugin host contracts |
+| What is the next 1.x remediation pass? | `12.3 / pass 8`: add encrypted backup envelopes and temporary-export cleanup, repair stale protocol/WASM documentation, and split oversized UI only at existing module boundaries. Transactional serialized plugin package lifecycle is complete; legacy delivery records without immutable references remain quarantined migration debt. | `roadmap.md`, `specification.md`, backup and plugin host contracts |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -30,7 +31,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `12.3 / passes 3-6`: cryptographically continuous ledger, event-scoped delivery records, persisted exchange-derived Trading Drone risk history, and authenticated Nostr confidential envelopes. New delivery writes signed kind `9444` with NIP-44 v2; guarded kind `4`/NIP-04 compatibility is receive-only. Invitation offers, terminal facts, and relationship breaks retain immutable references, exact retry endpoints, and persisted adapter publication evidence. | Released baseline `9953b02` completed guarded packaged macOS/Android smoke for `v1.0.3-test15`. Focused delivery, trading-risk, NIP-44 authentication, downgrade, sender-binding, and recipient-binding tests pass on the current checkpoint. | Begin `12.3 / pass 7` plugin transactionality. Legacy aggregate delivery quarantine and durable sender-rate quarantine remain explicit transport debts; do not hide either in an adapter. |
+| **1.x maintained runtime** | Active | `12.3 / passes 3-7`: cryptographically continuous ledger, event-scoped delivery records, persisted exchange-derived Trading Drone risk history, authenticated Nostr confidential envelopes, and transactional serialized plugin package lifecycle. New delivery writes signed kind `9444` with NIP-44 v2; guarded kind `4`/NIP-04 compatibility is receive-only. Plugin registry commit now precedes destructive package cleanup, and interrupted orphan files are recovered on serialized load. | Released baseline `9953b02` completed guarded packaged macOS/Android smoke for `v1.0.3-test15`. Focused delivery, trading-risk, NIP-44 authentication, plugin concurrency, failed-commit, rollback, and recovery tests pass on the current checkpoint. | Begin `12.3 / pass 8` backup-envelope/export cleanup and documentation/UI boundary repair. Legacy aggregate delivery quarantine and durable sender-rate quarantine remain explicit transport debts; do not hide either in an adapter. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |

@@ -1481,11 +1481,28 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - focused regression coverage proves NIP-44 round-trip, MAC rejection,
         sender spoof rejection, exact recipient binding, schema rejection, and
         strict downgrade isolation while preserving correlation metadata.
-    - Current ordered 12.3 item is pass 7 transactional and serialized plugin
-      install/update/remove. Transport-health UI, encrypted backup envelopes,
-      legacy aggregate delivery reconciliation, and durable sender-rate
-      quarantine remain subsequent or separately tracked items.
-  - Status: active; passes 1-6 are completed.
+    - pass 7 transactional and serialized plugin package lifecycle completed
+      on 2026-08-02:
+      - `WasmPluginRegistryService` serializes load/install/update/remove across
+        service instances and remains the only registry/package owner;
+      - install and update stage and validate the candidate before an atomic
+        registry commit, while source-catalog metadata rejection preserves the
+        previously active version;
+      - remove commits deregistration before deleting package bytes, so an
+        interruption can leave only a recoverable orphan and never a new dead
+        registry pointer;
+      - serialized load removes orphan packages and atomic temporary files,
+        while mutations fail closed on malformed registry state;
+      - concurrency, failed update/remove commit, interruption recovery, and
+        catalog-mismatch regression tests cover the reviewed weakness;
+      - the normative lifecycle is recorded in
+        `docs/architecture/plugin-package-lifecycle.md`.
+    - Current ordered 12.3 item is pass 8 encrypted backup envelopes,
+      temporary-export cleanup, stale protocol/WASM documentation repair, and
+      UI surface splitting only at existing module boundaries. Transport
+      health policy remains pass 9; legacy aggregate delivery reconciliation
+      and durable sender-rate quarantine remain separately tracked debt.
+  - Status: active; passes 1-7 are completed.
 
 ## Planned Product Tracks
 

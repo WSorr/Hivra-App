@@ -74,7 +74,7 @@ void main() {
           'abi': 'hivra_host_abi_v2',
           'entry_export': 'hivra_evaluate_v1',
         },
-        'capabilities': ['capsule.chat.post'],
+        'capabilities': ['content.draft.prepare'],
       }),
       'plugin/module.wasm': const <int>[0, 97, 115, 109, 1, 0, 0, 0],
     },
@@ -720,6 +720,13 @@ void main() {
   );
 
   test('installFromSourceEntry rolls back on metadata mismatch', () async {
+    final activePackage = File('${tempDocsDir.path}/active-plugin.zip');
+    await activePackage.writeAsBytes(mismatchPluginPackageBytes, flush: true);
+    final activeRecord = await registry.installPluginFromFile(activePackage);
+    final pluginsDir = await registry.pluginsDirectory();
+    final activeStoredFile = File(
+      '${pluginsDir.path}/${activeRecord.storedFileName}',
+    );
     final sourceDir = Directory('${tempDocsDir.path}/source')..createSync();
     final packagePath = '${sourceDir.path}/metadata-mismatch-plugin.zip';
     File(packagePath).writeAsBytesSync(mismatchPluginPackageBytes, flush: true);
@@ -740,7 +747,9 @@ void main() {
     );
 
     final installed = await registry.loadPlugins();
-    expect(installed, isEmpty);
+    expect(installed, hasLength(1));
+    expect(installed.single.id, activeRecord.id);
+    expect(await activeStoredFile.exists(), isTrue);
   });
 }
 

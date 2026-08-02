@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/services/wasm_plugin_registry_service.dart';
 
@@ -28,6 +30,37 @@ class _TestUserVisibleDataDirectoryService
       await dir.create(recursive: true);
     }
     return dir;
+  }
+}
+
+class _BlockingRegistryWriteService extends AtomicFileWriteService {
+  final Completer<void> firstRegistryWriteStarted = Completer<void>();
+  final Completer<void> _releaseFirstRegistryWrite = Completer<void>();
+  bool _blocked = false;
+
+  void release() => _releaseFirstRegistryWrite.complete();
+
+  @override
+  Future<void> writeString(File target, String contents) async {
+    if (!_blocked && target.path.endsWith('/registry.json')) {
+      _blocked = true;
+      firstRegistryWriteStarted.complete();
+      await _releaseFirstRegistryWrite.future;
+    }
+    await super.writeString(target, contents);
+  }
+}
+
+class _FailingRegistryWriteService extends AtomicFileWriteService {
+  bool failNextRegistryWrite = false;
+
+  @override
+  Future<void> writeString(File target, String contents) async {
+    if (failNextRegistryWrite && target.path.endsWith('/registry.json')) {
+      failNextRegistryWrite = false;
+      throw FileSystemException('Injected registry write failure', target.path);
+    }
+    await super.writeString(target, contents);
   }
 }
 
@@ -285,6 +318,98 @@ void main() {
     },
   );
 
+  test('serializes concurrent installs across registry instances', () async {
+    final firstSource = File('${tempDocsDir.path}/first.wasm');
+    final secondSource = File('${tempDocsDir.path}/second.wasm');
+    await firstSource.writeAsBytes(_wasmBytes, flush: true);
+    await secondSource.writeAsBytes(_wasmBytes, flush: true);
+    final blockingWrites = _BlockingRegistryWriteService();
+    final firstService = WasmPluginRegistryService(
+      dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      atomicWrites: blockingWrites,
+    );
+    final secondService = WasmPluginRegistryService(
+      dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+    );
+
+    final firstInstall = firstService.installPluginFromFile(firstSource);
+    await blockingWrites.firstRegistryWriteStarted.future;
+    final secondInstall = secondService.installPluginFromFile(secondSource);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    blockingWrites.release();
+    await Future.wait([firstInstall, secondInstall]);
+
+    final installed = await service.loadPlugins();
+    expect(installed, hasLength(2));
+    expect(
+      installed.map((record) => record.originalFileName),
+      containsAll(<String>['first.wasm', 'second.wasm']),
+    );
+  });
+
+  test('failed update preserves the active record and package', () async {
+    final oldSource = await _createPluginPackage(tempDocsDir, version: '0.4.0');
+    final oldRecord = await service.installPluginFromFile(oldSource);
+    final pluginsDir = await service.pluginsDirectory();
+    final oldStoredFile = File(
+      '${pluginsDir.path}/${oldRecord.storedFileName}',
+    );
+    final failingWrites = _FailingRegistryWriteService();
+    final failingService = WasmPluginRegistryService(
+      dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      atomicWrites: failingWrites,
+    );
+    failingWrites.failNextRegistryWrite = true;
+
+    await expectLater(
+      () => failingService.installPluginFromFile(
+        _createPluginPackageSync(tempDocsDir, version: '0.5.0'),
+      ),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    final installed = await service.loadPlugins();
+    expect(installed, hasLength(1));
+    expect(installed.single.id, oldRecord.id);
+    expect(installed.single.pluginVersion, '0.4.0');
+    expect(await oldStoredFile.exists(), isTrue);
+  });
+
+  test('failed remove preserves the active record and package', () async {
+    final source = File('${tempDocsDir.path}/remove-me.wasm');
+    await source.writeAsBytes(_wasmBytes, flush: true);
+    final record = await service.installPluginFromFile(source);
+    final pluginsDir = await service.pluginsDirectory();
+    final storedFile = File('${pluginsDir.path}/${record.storedFileName}');
+    final failingWrites = _FailingRegistryWriteService();
+    final failingService = WasmPluginRegistryService(
+      dataDirs: _TestUserVisibleDataDirectoryService(tempDocsDir),
+      atomicWrites: failingWrites,
+    );
+    failingWrites.failNextRegistryWrite = true;
+
+    await expectLater(
+      () => failingService.removePlugin(record.id),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    final installed = await service.loadPlugins();
+    expect(installed.map((entry) => entry.id), contains(record.id));
+    expect(await storedFile.exists(), isTrue);
+  });
+
+  test('loadPlugins removes interrupted package and temp orphans', () async {
+    final pluginsDir = await service.pluginsDirectory(create: true);
+    final orphanPackage = File('${pluginsDir.path}/orphan.zip');
+    final orphanTemp = File('${pluginsDir.path}/registry.json.tmp.123.456');
+    await orphanPackage.writeAsString('orphan', flush: true);
+    await orphanTemp.writeAsString('temp', flush: true);
+
+    expect(await service.loadPlugins(), isEmpty);
+    expect(await orphanPackage.exists(), isFalse);
+    expect(await orphanTemp.exists(), isFalse);
+  });
+
   test(
     'loadPlugins self-heals duplicate plugin_id records across versions',
     () async {
@@ -380,6 +505,42 @@ void main() {
       );
     },
   );
+}
+
+const List<int> _wasmBytes = <int>[0, 97, 115, 109, 1, 0, 0, 0];
+
+Future<File> _createPluginPackage(
+  Directory root, {
+  required String version,
+}) async {
+  final file = _createPluginPackageSync(root, version: version);
+  await file.parent.create(recursive: true);
+  return file;
+}
+
+File _createPluginPackageSync(Directory root, {required String version}) {
+  final file = File('${root.path}/transactional-demo-$version.zip');
+  file.writeAsBytesSync(
+    _zipBytes(
+      files: {
+        'plugin/manifest.json': jsonEncode({
+          'schema': 'hivra.plugin.manifest',
+          'version': 1,
+          'release_version': version,
+          'plugin_id': 'hivra.contract.transactional-demo.v1',
+          'contract': {'kind': 'transactional_demo'},
+          'runtime': {
+            'abi': 'hivra_host_abi_v2',
+            'entry_export': 'hivra_evaluate_v1',
+          },
+          'capabilities': ['content.draft.prepare'],
+        }),
+        'plugin/module.wasm': _wasmBytes,
+      },
+    ),
+    flush: true,
+  );
+  return file;
 }
 
 List<int> _zipBytes({required Map<String, Object> files}) {

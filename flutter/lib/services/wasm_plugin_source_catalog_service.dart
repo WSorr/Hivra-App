@@ -143,12 +143,14 @@ class WasmPluginSourceCatalogService {
         expectedSha256Hex: entry.sha256Hex,
         file: sourceFile,
       );
-      final record = await _registry.installPluginFromFile(sourceFile);
-      await _validateInstalledRecordAgainstCatalogEntry(
-        entry: entry,
-        record: record,
+      return _registry.installPluginFromFile(
+        sourceFile,
+        validateRecord:
+            (record) => _validateInstalledRecordAgainstCatalogEntry(
+              entry: entry,
+              record: record,
+            ),
       );
-      return record;
     }
     if (uri.scheme != 'http' && uri.scheme != 'https') {
       throw const FormatException(
@@ -185,12 +187,14 @@ class WasmPluginSourceCatalogService {
         expectedSha256Hex: entry.sha256Hex,
         file: tempFile,
       );
-      final record = await _registry.installPluginFromFile(tempFile);
-      await _validateInstalledRecordAgainstCatalogEntry(
-        entry: entry,
-        record: record,
+      return await _registry.installPluginFromFile(
+        tempFile,
+        validateRecord:
+            (record) => _validateInstalledRecordAgainstCatalogEntry(
+              entry: entry,
+              record: record,
+            ),
       );
-      return record;
     } finally {
       client.close(force: true);
       if (await tempDir.exists()) {
@@ -502,7 +506,6 @@ class WasmPluginSourceCatalogService {
       return;
     }
 
-    await _registry.removePlugin(record.id);
     throw FormatException(
       'Installed package metadata mismatch for source entry: ${entry.id}',
     );

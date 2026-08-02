@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,6 +9,7 @@ import 'wasm_plugin_package_preflight_service.dart';
 
 class WasmPluginRegistryService {
   static const String _registryFileName = 'registry.json';
+  static Future<void> _mutationTail = Future<void>.value();
   final UserVisibleDataDirectoryService _dataDirs;
   final WasmPluginPackagePreflightService _preflight;
   final AtomicFileWriteService _atomicWrites;
@@ -32,12 +34,23 @@ class WasmPluginRegistryService {
   }
 
   Future<List<WasmPluginRecord>> loadPlugins() async {
+    return _serialized(() => _loadPluginsUnlocked());
+  }
+
+  Future<List<WasmPluginRecord>> _loadPluginsUnlocked({
+    bool failClosed = false,
+  }) async {
     final file = await _registryFile();
-    if (!await file.exists()) return const <WasmPluginRecord>[];
+    if (!await file.exists()) {
+      await _cleanupUnreferencedFiles(const <WasmPluginRecord>[]);
+      return const <WasmPluginRecord>[];
+    }
 
     try {
       final decoded = _parseJsonList(await file.readAsString());
-      if (decoded == null) return const <WasmPluginRecord>[];
+      if (decoded == null) {
+        throw const FormatException('Plugin registry must be a JSON list');
+      }
       final records =
           decoded
               .map(_coerceJsonMap)
@@ -54,11 +67,13 @@ class WasmPluginRegistryService {
                   (record) => !existingOnly.any((kept) => kept.id == record.id),
                 )
                 .toList();
-        await _deleteStoredFilesForRecords(stale);
         await _writeRegistry(existingOnly);
+        await _deleteStoredFilesForRecords(stale);
       }
+      await _cleanupUnreferencedFiles(existingOnly);
       return existingOnly;
     } catch (_) {
+      if (failClosed) rethrow;
       return const <WasmPluginRecord>[];
     }
   }
@@ -69,7 +84,22 @@ class WasmPluginRegistryService {
     await _atomicWrites.writeString(file, jsonEncode(payload));
   }
 
-  Future<WasmPluginRecord> installPluginFromFile(File sourceFile) async {
+  Future<WasmPluginRecord> installPluginFromFile(
+    File sourceFile, {
+    FutureOr<void> Function(WasmPluginRecord record)? validateRecord,
+  }) async {
+    return _serialized(
+      () => _installPluginFromFileUnlocked(
+        sourceFile,
+        validateRecord: validateRecord,
+      ),
+    );
+  }
+
+  Future<WasmPluginRecord> _installPluginFromFileUnlocked(
+    File sourceFile, {
+    FutureOr<void> Function(WasmPluginRecord record)? validateRecord,
+  }) async {
     final sourceName = _fileNameOnly(sourceFile.path);
     final extension = _fileExtension(sourceName).toLowerCase();
     if (extension != '.wasm' && extension != '.zip') {
@@ -77,77 +107,84 @@ class WasmPluginRegistryService {
         'Only .wasm or .zip plugin packages are supported',
       );
     }
-    final preflight = await _preflight.inspect(sourceFile);
-    final existing = await loadPlugins();
-    final resolvedVersion = _resolvePluginVersion(
-      preflightVersion: preflight.pluginVersion,
-      sourceFileName: sourceName,
-    );
-    final replaced = _recordsToReplace(
-      existing: existing,
-      incomingPluginId: preflight.pluginId,
-    );
-
     final pluginsDir = await pluginsDirectory(create: true);
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     final storedFileName = '$id$extension';
     final storedFile = File('${pluginsDir.path}/$storedFileName');
-    await _atomicWrites.writeBytes(storedFile, await sourceFile.readAsBytes());
-    final sizeBytes = await storedFile.length();
-
-    final record = WasmPluginRecord(
-      id: id,
-      displayName: _displayNameFromFile(
-        preflight.pluginId?.isNotEmpty == true
-            ? preflight.pluginId!
-            : sourceName,
-      ),
-      originalFileName: sourceName,
-      storedFileName: storedFileName,
-      sizeBytes: sizeBytes,
-      installedAtIso: DateTime.now().toUtc().toIso8601String(),
-      packageKind: preflight.packageKind,
-      pluginId: preflight.pluginId,
-      pluginVersion: resolvedVersion,
-      contractKind: preflight.contractKind,
-      runtimeAbi: preflight.runtimeAbi,
-      runtimeEntryExport: preflight.runtimeEntryExport,
-      runtimeModulePath: preflight.runtimeModulePath,
-      capabilities: preflight.capabilities,
-    );
-
-    for (final stale in replaced) {
-      final staleFile = File('${pluginsDir.path}/${stale.storedFileName}');
-      if (await staleFile.exists()) {
-        await staleFile.delete();
+    var registryCommitted = false;
+    try {
+      final existing = await _loadPluginsUnlocked(failClosed: true);
+      await _atomicWrites.writeBytes(
+        storedFile,
+        await sourceFile.readAsBytes(),
+      );
+      final preflight = await _preflight.inspect(storedFile);
+      final resolvedVersion = _resolvePluginVersion(
+        preflightVersion: preflight.pluginVersion,
+        sourceFileName: sourceName,
+      );
+      final replaced = _recordsToReplace(
+        existing: existing,
+        incomingPluginId: preflight.pluginId,
+      );
+      final record = WasmPluginRecord(
+        id: id,
+        displayName: _displayNameFromFile(
+          preflight.pluginId?.isNotEmpty == true
+              ? preflight.pluginId!
+              : sourceName,
+        ),
+        originalFileName: sourceName,
+        storedFileName: storedFileName,
+        sizeBytes: await storedFile.length(),
+        installedAtIso: DateTime.now().toUtc().toIso8601String(),
+        packageKind: preflight.packageKind,
+        pluginId: preflight.pluginId,
+        pluginVersion: resolvedVersion,
+        contractKind: preflight.contractKind,
+        runtimeAbi: preflight.runtimeAbi,
+        runtimeEntryExport: preflight.runtimeEntryExport,
+        runtimeModulePath: preflight.runtimeModulePath,
+        capabilities: preflight.capabilities,
+      );
+      await validateRecord?.call(record);
+      final kept =
+          existing
+              .where((entry) => !replaced.any((stale) => stale.id == entry.id))
+              .toList();
+      await _writeRegistry(<WasmPluginRecord>[record, ...kept]);
+      registryCommitted = true;
+      await _deleteStoredFilesForRecords(replaced);
+      await _cleanupUnreferencedFiles(<WasmPluginRecord>[record, ...kept]);
+      return record;
+    } catch (_) {
+      if (!registryCommitted) {
+        await _deleteFileIfPresent(storedFile);
       }
+      rethrow;
     }
-    final kept =
-        existing
-            .where((entry) => !replaced.any((stale) => stale.id == entry.id))
-            .toList();
-    await _writeRegistry(<WasmPluginRecord>[record, ...kept]);
-    return record;
   }
 
   Future<void> removePlugin(String id) async {
-    final records = await loadPlugins();
+    return _serialized(() => _removePluginUnlocked(id));
+  }
+
+  Future<void> _removePluginUnlocked(String id) async {
+    final records = await _loadPluginsUnlocked(failClosed: true);
     final kept = <WasmPluginRecord>[];
+    final removed = <WasmPluginRecord>[];
 
     for (final record in records) {
       if (record.id != id) {
         kept.add(record);
         continue;
       }
-
-      final dir = await pluginsDirectory();
-      final file = File('${dir.path}/${record.storedFileName}');
-      if (await file.exists()) {
-        await file.delete();
-      }
+      removed.add(record);
     }
 
     await _writeRegistry(kept);
+    await _deleteStoredFilesForRecords(removed);
+    await _cleanupUnreferencedFiles(kept);
   }
 
   String _fileNameOnly(String path) {
@@ -234,13 +271,66 @@ class WasmPluginRegistryService {
     List<WasmPluginRecord> records,
   ) async {
     if (records.isEmpty) return;
-    final dir = await pluginsDirectory();
-    for (final record in records) {
-      final file = File('${dir.path}/${record.storedFileName}');
+    try {
+      final dir = await pluginsDirectory();
+      for (final record in records) {
+        final file = File('${dir.path}/${record.storedFileName}');
+        await _deleteFileIfPresent(file);
+      }
+    } on FileSystemException {
+      // Registry commit is authoritative; orphan cleanup retries on next load.
+    }
+  }
+
+  Future<void> _cleanupUnreferencedFiles(List<WasmPluginRecord> records) async {
+    try {
+      final dir = await pluginsDirectory();
+      if (!await dir.exists()) return;
+      final referenced = records.map((record) => record.storedFileName).toSet();
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final name = _fileNameOnly(entity.path);
+        if (name == _registryFileName || referenced.contains(name)) continue;
+        final isPackage = name.endsWith('.wasm') || name.endsWith('.zip');
+        final isAtomicTemp =
+            name.startsWith('$_registryFileName.tmp.') ||
+            name.contains('.wasm.tmp.') ||
+            name.contains('.zip.tmp.');
+        if (isPackage || isAtomicTemp) {
+          await _deleteFileIfPresent(entity);
+        }
+      }
+    } on FileSystemException {
+      // Registry commit is authoritative; orphan cleanup retries on next load.
+    }
+  }
+
+  Future<void> _deleteFileIfPresent(File file) async {
+    try {
       if (await file.exists()) {
         await file.delete();
       }
+    } on FileSystemException {
+      // Registry commit is authoritative; orphan cleanup retries on next load.
     }
+  }
+
+  Future<T> _serialized<T>(Future<T> Function() operation) {
+    final previous = _mutationTail;
+    final release = Completer<void>();
+    _mutationTail = release.future;
+    return (() async {
+      try {
+        await previous;
+      } catch (_) {
+        // A failed transaction must not poison the process-wide queue.
+      }
+      try {
+        return await operation();
+      } finally {
+        release.complete();
+      }
+    })();
   }
 
   List<dynamic>? _parseJsonList(String rawJson) {
