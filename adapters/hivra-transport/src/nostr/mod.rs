@@ -67,6 +67,11 @@ fn looks_like_nip04_content(content: &str) -> bool {
 }
 
 fn has_exact_recipient_tag(event: &Event, recipient: PublicKey) -> bool {
+    let mut raw_recipient_tags = event.tags.filter(TagKind::p());
+    if raw_recipient_tags.next().is_none() || raw_recipient_tags.next().is_some() {
+        return false;
+    }
+
     let mut recipients = event.tags.public_keys();
     recipients.next().copied() == Some(recipient) && recipients.next().is_none()
 }
@@ -1111,6 +1116,59 @@ mod tests {
                         Tag::public_key(receiver.public_key),
                         Tag::public_key(other_keys.public_key()),
                     ],
+                )
+                .sign(&sender_keys),
+            )
+            .expect("signed event");
+
+        assert_eq!(
+            receiver.decode_event(event),
+            Err(TransportError::InvalidMessage),
+        );
+    }
+
+    #[test]
+    fn rejects_authenticated_envelope_with_malformed_additional_recipient_tag() {
+        let receiver_secret = [60u8; 32];
+        let sender_secret = [61u8; 32];
+        let receiver = NostrTransport::new(
+            NostrConfig {
+                relays: Vec::new(),
+                ephemeral: true,
+                timeout: 2,
+                publish_timeout: 2,
+            },
+            &receiver_secret,
+        )
+        .expect("receiver transport");
+        let sender_keys = Keys::new(SecretKey::from_slice(&sender_secret).expect("sender key"));
+        let message = DeliveryEnvelope {
+            schema_version: 1,
+            from: sender_keys.public_key().to_bytes(),
+            to: receiver.public_key_bytes(),
+            kind: 1,
+            payload: vec![1, 2, 3],
+            timestamp: 1,
+            correlation_id: None,
+            domain_event: None,
+        };
+        let plaintext = serde_json::to_string(&message).expect("message json");
+        let content = nip44::encrypt(
+            sender_keys.secret_key(),
+            &receiver.public_key,
+            plaintext.as_bytes(),
+            nip44::Version::V2,
+        )
+        .expect("encrypt");
+        let malformed_recipient =
+            Tag::parse(&["p", "not-a-public-key"]).expect("raw malformed recipient tag");
+        let event = receiver
+            .runtime
+            .block_on(
+                EventBuilder::new(
+                    APP_EVENT_KIND,
+                    content,
+                    [Tag::public_key(receiver.public_key), malformed_recipient],
                 )
                 .sign(&sender_keys),
             )
