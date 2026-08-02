@@ -9,6 +9,7 @@ import '../models/wasm_plugin_models.dart';
 import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
+import 'bingx_futures_risk_history_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_contact_label_store.dart';
 import 'capsule_diagnostics_service.dart';
@@ -250,6 +251,12 @@ class AppRuntimeService {
 
   BingxFuturesOrderTrackingStore buildBingxFuturesOrderTrackingStore() {
     return BingxFuturesOrderTrackingStore(
+      readActiveCapsuleRootHex: activeCapsuleRootHex,
+    );
+  }
+
+  BingxFuturesRiskHistoryService buildBingxFuturesRiskHistoryService() {
+    return BingxFuturesRiskHistoryService(
       readActiveCapsuleRootHex: activeCapsuleRootHex,
     );
   }

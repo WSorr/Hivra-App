@@ -33,6 +33,7 @@ class BingxFuturesExchangeService {
   static const String _forceOrdersPath = '/openApi/swap/v2/trade/forceOrders';
   static const String _userBalancePath = '/openApi/swap/v2/user/balance';
   static const String _userPositionsPath = '/openApi/swap/v2/user/positions';
+  static const String _userIncomePath = '/openApi/swap/v2/user/income';
 
   final BingxHttpRequestSender _requestSender;
   final int Function() _clockMs;
@@ -909,6 +910,63 @@ class BingxFuturesExchangeService {
     );
   }
 
+  Future<BingxFuturesIncomeResult> getUserIncome({
+    required BingxFuturesApiCredentials credentials,
+    required int startTimeMs,
+    required int endTimeMs,
+    String incomeType = 'REALIZED_PNL',
+    int limit = 1000,
+  }) async {
+    if (startTimeMs <= 0 || endTimeMs < startTimeMs) {
+      throw const FormatException('Invalid income time range');
+    }
+    if (limit < 1 || limit > 1000) {
+      throw const FormatException('Income limit must be in range 1..1000');
+    }
+    const supportedTypes = <String>{
+      'REALIZED_PNL',
+      'FUNDING_FEE',
+      'TRADING_FEE',
+      'INSURANCE_CLEAR',
+      'TRIAL_FUND',
+      'ADL',
+      'SYSTEM_DEDUCTION',
+      'GTD_PRICE',
+      'TRANSFER',
+    };
+    final normalizedType = incomeType.trim().toUpperCase();
+    if (!supportedTypes.contains(normalizedType)) {
+      throw const FormatException('Unsupported income type');
+    }
+    final timestampMs = _clockMs();
+    final response = await _executeSignedGet(
+      credentials: credentials.normalized(),
+      endpointPath: _userIncomePath,
+      params: <String, String>{
+        'incomeType': normalizedType,
+        'startTime': startTimeMs.toString(),
+        'endTime': endTimeMs.toString(),
+        'limit': limit.toString(),
+        'recvWindow': recvWindowMs.toString(),
+        'timestamp': timestampMs.toString(),
+      },
+    );
+    final decoded = _tryDecodeMap(response.body);
+    final sourceRows = _extractIncomeRows(decoded);
+    return BingxFuturesIncomeResult(
+      isSuccess: response.isSuccess,
+      httpStatusCode: response.httpStatusCode,
+      exchangeCode: response.exchangeCode,
+      exchangeMessage: response.exchangeMessage,
+      endpointPath: _userIncomePath,
+      signedPayloadHashHex: response.signedPayloadHashHex,
+      responseBody: response.body,
+      sourceRecordsShapeValid: sourceRows != null,
+      sourceRecordCount: sourceRows?.length ?? 0,
+      records: _extractIncomeRecords(sourceRows ?? const <dynamic>[]),
+    );
+  }
+
   Future<BingxFuturesPerpetualSymbolsResult> getPerpetualSymbols() async {
     final requestUri = Uri.parse('$_baseUrl$_publicContractsPath');
     final response = await _requestSender(
@@ -1759,6 +1817,54 @@ class BingxFuturesExchangeService {
       );
     }
     return List<BingxFuturesUserPosition>.unmodifiable(parsed);
+  }
+
+  static List<dynamic>? _extractIncomeRows(Map<String, dynamic>? decoded) {
+    final data = decoded?['data'];
+    if (data is List) return data;
+    if (data is Map && data['list'] is List) {
+      return data['list'] as List;
+    }
+    return null;
+  }
+
+  static List<BingxFuturesIncomeRecord> _extractIncomeRecords(
+    List<dynamic> rows,
+  ) {
+    final records = <BingxFuturesIncomeRecord>[];
+    for (final raw in rows) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      final symbol = _readStringField(map, const <String>['symbol']);
+      final incomeType = _readStringField(map, const <String>['incomeType']);
+      final income = _readStringField(map, const <String>['income']);
+      final asset = _readStringField(map, const <String>['asset']);
+      final timestampMs = int.tryParse(
+        _readStringField(map, const <String>['time']) ?? '',
+      );
+      final transactionId =
+          _readStringField(map, const <String>['tranId']) ?? '';
+      final tradeId = _readStringField(map, const <String>['tradeId']) ?? '';
+      if (symbol == null ||
+          incomeType == null ||
+          income == null ||
+          asset == null ||
+          timestampMs == null) {
+        continue;
+      }
+      records.add(
+        BingxFuturesIncomeRecord(
+          symbol: symbol.toUpperCase(),
+          incomeType: incomeType.toUpperCase(),
+          incomeQuoteDecimal: income,
+          asset: asset.toUpperCase(),
+          timestampMs: timestampMs,
+          transactionId: transactionId,
+          tradeId: tradeId,
+        ),
+      );
+    }
+    return List.unmodifiable(records);
   }
 
   static Map<String, dynamic>? _extractFirstRow(dynamic data) {

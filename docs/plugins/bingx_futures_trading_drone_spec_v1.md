@@ -458,6 +458,21 @@ Runtime execution behavior (v1):
 - risk governor and idempotency/TTL guards are mandatory pre-execution checks,
 - decision/execution envelopes are emitted for traceability.
 
+Risk-history boundary:
+
+- account equity and concurrent positions are read from authenticated BingX
+  account endpoints,
+- daily realized PnL, consecutive losses, and last-loss time are projected from
+  authenticated `REALIZED_PNL` income records, not inferred from the account
+  balance summary,
+- the normalized 90-day projection is stored atomically inside the active
+  Capsule runtime directory and remains outside the Core ledger,
+- account-wide loss scope is intentional because manual losses reduce the same
+  capital available to the drone,
+- incomplete, conflicting, unsupported, unavailable, or unpersistable income
+  history blocks live execution; test-order paths may expose fallback behavior
+  only for explicit diagnostics.
+
 Broadcast behavior:
 
 - signal envelope may be shared with consensus peers as plugin-domain message,

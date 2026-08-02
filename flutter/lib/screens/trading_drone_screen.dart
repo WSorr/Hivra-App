@@ -1310,7 +1310,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     try {
       final riskInput = await _module.exchangeRiskInput.read(
         exchangeService: _module.exchangeService,
+        riskHistoryService: _module.riskHistory,
         credentials: credentials,
+        nowUtc: DateTime.now().toUtc(),
         fallbackEquityQuote: _fallbackRiskEquityQuote,
       );
       if (riskInput.usedBalanceFallback) {

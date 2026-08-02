@@ -12,6 +12,7 @@ import 'bingx_futures_order_revalidation_service.dart';
 import 'bingx_futures_order_sizing_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
 import 'bingx_futures_risk_governor_service.dart';
+import 'bingx_futures_risk_history_service.dart';
 import 'bingx_futures_signal_rank_use_case_service.dart';
 import 'bingx_futures_strategy_naming_service.dart';
 import 'bingx_futures_volume_growth_filter_service.dart';
@@ -31,6 +32,7 @@ class TradingDroneModule {
   final BingxFuturesExchangeRiskInputService exchangeRiskInput;
   final BingxFuturesOrderSizingService orderSizing;
   final BingxFuturesRiskGovernorService riskGovernor;
+  final BingxFuturesRiskHistoryService riskHistory;
   final BingxFuturesObservabilityEnvelopeService observability;
   final BingxFuturesIntentUseCaseService intentUseCase;
   final BingxFuturesExchangeExecutionUseCaseService executionUseCase;
@@ -55,6 +57,7 @@ class TradingDroneModule {
     required this.exchangeRiskInput,
     required this.orderSizing,
     required this.riskGovernor,
+    required this.riskHistory,
     required this.observability,
     required this.intentUseCase,
     required this.executionUseCase,
@@ -86,6 +89,7 @@ class TradingDroneModuleService {
     );
     final exchangeRiskInput = const BingxFuturesExchangeRiskInputService();
     final riskGovernor = const BingxFuturesRiskGovernorService();
+    final riskHistory = runtime.buildBingxFuturesRiskHistoryService();
     return TradingDroneModule(
       pluginHostApi: pluginHostApi,
       manualChecks: runtime.buildManualConsensusCheckService(),
@@ -95,6 +99,7 @@ class TradingDroneModuleService {
       exchangeRiskInput: exchangeRiskInput,
       orderSizing: BingxFuturesOrderSizingService(exchange: exchangeService),
       riskGovernor: riskGovernor,
+      riskHistory: riskHistory,
       observability: observability,
       intentUseCase: BingxFuturesIntentUseCaseService(
         hostApi: pluginHostApi,
@@ -105,6 +110,7 @@ class TradingDroneModuleService {
         queue: executionQueue,
         riskInput: exchangeRiskInput,
         riskGovernor: riskGovernor,
+        riskHistory: riskHistory,
         observability: observability,
       ),
       signalRankUseCase: BingxFuturesSignalRankUseCaseService(

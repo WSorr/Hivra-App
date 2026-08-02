@@ -1245,6 +1245,19 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     5. Connect Trading Drone risk policy to persisted realized-loss history so
        loss-streak cooldown and last-loss time are real production inputs, not
        constant placeholders.
+       - Complete for the maintained 1.x runtime: the host reads BingX
+         `REALIZED_PNL` income records over the supported 90-day window,
+         normalizes and deduplicates them by stable exchange transaction/trade
+         identity, and atomically persists a Capsule-scoped risk projection.
+       - The risk governor receives the current UTC-day account-wide realized
+         PnL, consecutive non-zero loss count, and actual last-loss time.
+         Account-wide scope is intentional: manual losses also reduce the
+         capital available to an autonomous drone.
+       - This projection is plugin/external-effect state. It is not written to
+         the Capsule Core ledger and is not a second order journal.
+       - Live execution fails closed when exchange history is unavailable,
+         malformed, non-USDT, conflicting, cannot be persisted, or reaches the
+         unpageable 1000-record response limit.
     6. Migrate confidential transport payloads away from deprecated NIP-04 to
        an authenticated current envelope while preserving the transport adapter
        boundary and replay/idempotence rules.
@@ -1839,6 +1852,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       with explicit `risk_allowed` / `risk_blocked` log events and user-visible reject feedback.
     - Decision output now includes canonical envelope + stable hash for audit and replay checks.
     - Added regression coverage in `flutter/test/bingx_futures_risk_governor_service_test.dart` for allow path and each block branch plus hash determinism.
+    - Replaced the balance-summary/constant-placeholder risk inputs with a
+      Capsule-scoped atomic projection of authenticated BingX `REALIZED_PNL`
+      income records. The governor now receives real UTC-day PnL, loss streak,
+      and last-loss time; incomplete history fails closed for live orders.
   - Scope:
     - implement hard gates:
       - `max_risk_per_trade`,

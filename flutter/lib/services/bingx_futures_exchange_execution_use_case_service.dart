@@ -8,12 +8,14 @@ import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_execution_queue_service.dart';
 import 'bingx_futures_observability_envelope_service.dart';
 import 'bingx_futures_risk_governor_service.dart';
+import 'bingx_futures_risk_history_service.dart';
 
 class BingxFuturesExchangeExecutionUseCaseService {
   final BingxFuturesExchangeService _exchange;
   final BingxFuturesExecutionQueueService _queue;
   final BingxFuturesExchangeRiskInputService _riskInput;
   final BingxFuturesRiskGovernorService _riskGovernor;
+  final BingxFuturesRiskHistoryService _riskHistory;
   final BingxFuturesObservabilityEnvelopeService _observability;
 
   const BingxFuturesExchangeExecutionUseCaseService({
@@ -23,12 +25,14 @@ class BingxFuturesExchangeExecutionUseCaseService {
         const BingxFuturesExchangeRiskInputService(),
     BingxFuturesRiskGovernorService riskGovernor =
         const BingxFuturesRiskGovernorService(),
+    required BingxFuturesRiskHistoryService riskHistory,
     BingxFuturesObservabilityEnvelopeService observability =
         const BingxFuturesObservabilityEnvelopeService(),
   }) : _exchange = exchange,
        _queue = queue,
        _riskInput = riskInput,
        _riskGovernor = riskGovernor,
+       _riskHistory = riskHistory,
        _observability = observability;
 
   Future<BingxFuturesExchangeExecutionUseCaseResult> execute({
@@ -198,9 +202,12 @@ class BingxFuturesExchangeExecutionUseCaseService {
     );
     stopLossDecimal ??= entryPriceDecimal;
 
+    final nowUtc = DateTime.now().toUtc();
     final exchangeRiskInput = await _riskInput.read(
       exchangeService: _exchange,
+      riskHistoryService: _riskHistory,
       credentials: credentials,
+      nowUtc: nowUtc,
       fallbackEquityQuote: fallbackEquityQuote,
     );
     diagnostics.add(
@@ -208,6 +215,8 @@ class BingxFuturesExchangeExecutionUseCaseService {
       'equity=${exchangeRiskInput.accountEquityQuoteDecimal} '
       'pnl=${exchangeRiskInput.realizedDailyPnlQuoteDecimal} '
       'positions=${exchangeRiskInput.concurrentPositions} '
+      'loss_streak=${exchangeRiskInput.lossStreakCount} '
+      'last_loss_at=${exchangeRiskInput.lastLossAtUtc ?? "-"} '
       'fallbacks=${exchangeRiskInput.usedBalanceFallback ? "balance" : "-"},'
       '${exchangeRiskInput.usedPnlFallback ? "pnl" : "-"},'
       '${exchangeRiskInput.usedPositionsFallback ? "positions" : "-"} '
@@ -238,9 +247,9 @@ class BingxFuturesExchangeExecutionUseCaseService {
         realizedDailyPnlQuoteDecimal:
             exchangeRiskInput.realizedDailyPnlQuoteDecimal,
         concurrentPositions: exchangeRiskInput.concurrentPositions,
-        lossStreakCount: 0,
-        lastLossAtUtc: null,
-        nowUtc: DateTime.now().toUtc().toIso8601String(),
+        lossStreakCount: exchangeRiskInput.lossStreakCount,
+        lastLossAtUtc: exchangeRiskInput.lastLossAtUtc,
+        nowUtc: nowUtc.toIso8601String(),
         exchangeMinimumQuantityDecimal: rules?.minimumQuantityDecimal,
         exchangeMinimumNotionalQuoteDecimal: rules?.minimumNotionalQuoteDecimal,
         exchangeReferencePriceDecimal: referencePriceDecimal,

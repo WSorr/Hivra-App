@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/models/bingx_futures_exchange_execution_models.dart';
@@ -6,9 +9,29 @@ import 'package:hivra_app/services/bingx_futures_exchange_execution_use_case_ser
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_execution_queue_service.dart';
+import 'package:hivra_app/services/bingx_futures_risk_history_service.dart';
+import 'package:hivra_app/services/capsule_file_store.dart';
+import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 void main() {
   group('BingxFuturesExchangeExecutionUseCaseService', () {
+    late Directory tempHome;
+    late BingxFuturesRiskHistoryService riskHistory;
+
+    setUp(() async {
+      tempHome = await Directory.systemTemp.createTemp('hivra-risk-execution-');
+      riskHistory = BingxFuturesRiskHistoryService(
+        readActiveCapsuleRootHex: () => List.filled(64, 'a').join(),
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        ),
+      );
+    });
+
+    tearDown(() async {
+      if (await tempHome.exists()) await tempHome.delete(recursive: true);
+    });
+
     test('rejects invalid intent before exchange execution', () async {
       var placeOrderCalled = false;
       final exchange = BingxFuturesExchangeService();
@@ -25,6 +48,7 @@ void main() {
             throw StateError('must not execute');
           },
         ),
+        riskHistory: riskHistory,
       );
 
       final result = await service.execute(
@@ -65,6 +89,7 @@ void main() {
             throw StateError('must not execute');
           },
         ),
+        riskHistory: riskHistory,
       );
 
       final result = await service.execute(
@@ -120,6 +145,7 @@ void main() {
             throw StateError('must not execute');
           },
         ),
+        riskHistory: riskHistory,
       );
 
       final result = await service.execute(
@@ -198,6 +224,7 @@ void main() {
             throw StateError('must not execute');
           },
         ),
+        riskHistory: riskHistory,
       );
 
       final result = await service.execute(
@@ -225,8 +252,111 @@ void main() {
       );
       expect(placeOrderCalled, isFalse);
     });
+
+    test('blocks live execution from persisted exchange loss streak', () async {
+      var placeOrderCalled = false;
+      final now = DateTime.now().toUtc();
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          if (request.uri.path.endsWith('/quote/contracts')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","tradeMinQuantity":0.001,"tradeMinUSDT":2,"quantityPrecision":3,"pricePrecision":2}]}',
+            );
+          }
+          if (request.uri.path.endsWith('/quote/price')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":{"price":"100"}}',
+            );
+          }
+          if (request.uri.path.endsWith('/user/balance')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":{"balance":{"equity":"100"}}}',
+            );
+          }
+          if (request.uri.path.endsWith('/user/positions')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":[]}',
+            );
+          }
+          if (request.uri.path.endsWith('/user/income')) {
+            return BingxHttpResponse(
+              statusCode: 200,
+              body: jsonEncode(<String, dynamic>{
+                'code': 0,
+                'msg': 'ok',
+                'data': <Map<String, dynamic>>[
+                  _incomeRow(
+                    'loss-1',
+                    -1,
+                    now.subtract(const Duration(minutes: 2)),
+                  ),
+                  _incomeRow(
+                    'loss-2',
+                    -1,
+                    now.subtract(const Duration(minutes: 1)),
+                  ),
+                ],
+              }),
+            );
+          }
+          return const BingxHttpResponse(
+            statusCode: 404,
+            body: '{"code":404,"msg":"unexpected"}',
+          );
+        },
+      );
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            placeOrderCalled = true;
+            throw StateError('must not execute');
+          },
+        ),
+        riskHistory: riskHistory,
+      );
+
+      final result = await service.execute(
+        screen: 'test',
+        rawIntentResult: _marketIntent,
+        credentials: _credentials,
+        riskPolicy: _policy,
+        fallbackEquityQuote: 100,
+        testOrder: false,
+      );
+
+      expect(
+        result.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.riskBlocked,
+      );
+      expect(result.riskDecision!.reasonCode, 'risk_loss_streak_cooldown');
+      expect(result.diagnostics, contains(contains('loss_streak=2')));
+      expect(placeOrderCalled, isFalse);
+      expect(await riskHistory.load(), isNotNull);
+    });
   });
 }
+
+Map<String, dynamic> _incomeRow(String id, num income, DateTime time) =>
+    <String, dynamic>{
+      'symbol': 'BTC-USDT',
+      'incomeType': 'REALIZED_PNL',
+      'income': income.toString(),
+      'asset': 'USDT',
+      'time': time.millisecondsSinceEpoch,
+      'tranId': id,
+      'tradeId': 'trade-$id',
+    };
 
 const BingxFuturesApiCredentials _credentials = BingxFuturesApiCredentials(
   apiKey: 'key',

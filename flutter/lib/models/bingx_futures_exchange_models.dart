@@ -618,6 +618,52 @@ class BingxFuturesUserBalanceResult {
   });
 }
 
+class BingxFuturesIncomeRecord {
+  final String symbol;
+  final String incomeType;
+  final String incomeQuoteDecimal;
+  final String asset;
+  final int timestampMs;
+  final String transactionId;
+  final String tradeId;
+
+  const BingxFuturesIncomeRecord({
+    required this.symbol,
+    required this.incomeType,
+    required this.incomeQuoteDecimal,
+    required this.asset,
+    required this.timestampMs,
+    required this.transactionId,
+    required this.tradeId,
+  });
+}
+
+class BingxFuturesIncomeResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String signedPayloadHashHex;
+  final String responseBody;
+  final bool sourceRecordsShapeValid;
+  final int sourceRecordCount;
+  final List<BingxFuturesIncomeRecord> records;
+
+  const BingxFuturesIncomeResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.signedPayloadHashHex,
+    required this.responseBody,
+    required this.sourceRecordsShapeValid,
+    required this.sourceRecordCount,
+    required this.records,
+  });
+}
+
 class BingxFuturesUserPosition {
   final String symbol;
   final String? quantityDecimal;
