@@ -1,7 +1,8 @@
 # Plugin Host API v1 (WASM Execution Boundary)
 
-This document defines the deterministic host API boundary used by the current
-bounded WASM runtime and retained host-side adapters.
+This document defines version 1 of the deterministic plugin request/response
+contract. It is not the WASM ABI version: current external packages use
+`hivra_host_abi_v2` and the `hivra_*_v1` exported function names listed below.
 
 ## Scope
 
@@ -119,6 +120,9 @@ bounded WASM runtime and retained host-side adapters.
   - external packages must expose a non-empty `execution_contract_kind`; missing or mismatched values are rejected (`runtime_contract_kind_mismatch`)
   - external packages must expose capability metadata; host validates all required capabilities for requested `(plugin_id, method)` and rejects missing/unsupported grants (`runtime_capability_mismatch`)
   - no legacy fail-open path exists for missing contract or capability metadata
+  - `host_fallback` is retained compatibility behavior only for explicitly
+    allowed methods; it is not a second WASM evaluator and must not duplicate
+    plugin-owned semantics
   - host canonical response includes normalized runtime capability metadata (`execution_capabilities`) for deterministic diagnostics
 - Runtime capability requirements are method-scoped:
   - `place_bingx_futures_order_intent` requires `consensus_guard.read` and `exchange.trade.bingx.futures`

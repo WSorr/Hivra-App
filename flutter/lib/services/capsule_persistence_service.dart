@@ -326,7 +326,6 @@ class CapsulePersistenceService {
   Future<String?> exportBackupEnvelope(CapsulePersistenceBindings hivra) async {
     final ledger = hivra.exportLedger();
     if (ledger == null || ledger.isEmpty) return null;
-
     final state = await _readStateForCurrentCapsule(hivra);
     final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
       ledgerJson: ledger,
@@ -340,37 +339,22 @@ class CapsulePersistenceService {
     return _fileStore.backupPath(dir);
   }
 
-  Future<String?> exportBackupEnvelopeToUserDirectory(
-    CapsulePersistenceBindings hivra,
-  ) async {
-    final ledger = hivra.exportLedger();
-    if (ledger == null || ledger.isEmpty) return null;
-
-    final state = await _readStateForCurrentCapsule(hivra);
-    final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
-      ledgerJson: ledger,
-      isGenesis: state?['isGenesis'] == true,
-      isNeste: state?['isNeste'] != false,
-    );
-
-    final backupsDir = await _userVisibleDirs.backupsDirectory(create: true);
-    final file = File(
-      '${backupsDir.path}/capsule-backup-${DateTime.now().toIso8601String()}.json',
-    );
-    await _atomicWrites.writeString(file, backupJson);
-    return file.path;
-  }
-
   Future<String?> exportBackupEnvelopeToPath(
     CapsulePersistenceBindings hivra,
     String targetPath,
+    Uint8List seed,
   ) async {
     final ledger = hivra.exportLedger();
     if (ledger == null || ledger.isEmpty) return null;
+    final ownerHex = _extractOwnerHex(ledger);
+    if (ownerHex == null || !await seedMatchesCapsule(hivra, seed, ownerHex)) {
+      throw StateError('Backup seed does not match the active Capsule');
+    }
 
     final state = await _readStateForCurrentCapsule(hivra);
-    final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
+    final backupJson = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
       ledgerJson: ledger,
+      seed: seed,
       isGenesis: state?['isGenesis'] == true,
       isNeste: state?['isNeste'] != false,
     );
@@ -1016,8 +1000,13 @@ class CapsulePersistenceService {
     final ledgerJson = await _fileStore.readLedger(capsuleDir);
     if (ledgerJson == null) return null;
 
-    final backupJson = CapsuleBackupCodec.encodeBackupEnvelope(
+    final seed = await _loadSeedForCapsule(pubKeyHex);
+    if (seed == null) {
+      throw StateError('Capsule seed is required for encrypted export');
+    }
+    final backupJson = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
       ledgerJson: ledgerJson,
+      seed: seed,
     );
     final outFile = File(targetPath);
     await _atomicWrites.writeString(outFile, backupJson);
@@ -1039,26 +1028,49 @@ class CapsulePersistenceService {
     );
   }
 
-  Future<String?> importCapsuleFromBackupJson(String rawJson) async {
-    final ledgerJson = CapsuleBackupCodec.tryExtractLedgerJson(rawJson);
-    if (ledgerJson == null) return null;
+  Future<String?> importCapsuleFromBackupJson(
+    String rawJson, {
+    Uint8List? seed,
+    CapsulePersistenceBindings? hivra,
+  }) async {
+    final contents =
+        CapsuleBackupCodec.isEncryptedEnvelope(rawJson)
+            ? seed == null
+                ? null
+                : await CapsuleBackupCodec.tryDecodeBackup(rawJson, seed)
+            : await CapsuleBackupCodec.tryDecodeBackup(rawJson, Uint8List(0));
+    if (contents == null) return null;
+    final ledgerJson = contents.ledgerJson;
 
     final ownerHex = _extractOwnerHex(ledgerJson);
     if (ownerHex == null) return null;
+    if (seed != null &&
+        hivra != null &&
+        !await seedMatchesCapsule(hivra, seed, ownerHex)) {
+      return null;
+    }
 
     final capsuleDir = await _capsuleDirForHex(ownerHex, create: true);
+    final localBackupJson = CapsuleBackupCodec.encodeBackupEnvelope(
+      ledgerJson: ledgerJson,
+      isGenesis: contents.isGenesis,
+      isNeste: contents.isNeste,
+    );
     await _fileStore.writeLedgerSnapshot(
       capsuleDir,
       ledgerJson: ledgerJson,
-      backupJson: rawJson,
+      backupJson: localBackupJson,
     );
 
     final meta = _extractBackupMeta(rawJson);
     await _upsertCapsuleIndex(
       ownerHex,
-      isGenesis: meta?.isGenesis,
-      isNeste: meta?.isNeste,
+      isGenesis: contents.isGenesis ?? meta?.isGenesis,
+      isNeste: contents.isNeste ?? meta?.isNeste,
     );
+    if (seed != null) {
+      await _storeSeedForCapsule(ownerHex, seed);
+    }
     await _setActiveCapsule(ownerHex);
     return ownerHex;
   }

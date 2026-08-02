@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -131,6 +132,74 @@ void main() {
 
       expect(extracted, isNotNull);
       expect(jsonDecode(extracted!), equals(ledger));
+    });
+  });
+
+  group('CapsuleBackupCodec encrypted v2', () {
+    final seed = Uint8List.fromList(List<int>.generate(32, (index) => index));
+    final ledger = jsonEncode(<String, dynamic>{
+      'owner': List<int>.filled(32, 0x42),
+      'events': <Object>[],
+    });
+
+    test('round-trips authenticated ledger and hides plaintext', () async {
+      final backup = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
+        ledgerJson: ledger,
+        seed: seed,
+        isGenesis: true,
+        salt: List<int>.filled(32, 1),
+        nonce: List<int>.filled(12, 2),
+      );
+
+      expect(CapsuleBackupCodec.isEncryptedEnvelope(backup), isTrue);
+      expect(backup, isNot(contains('events')));
+      expect(CapsuleBackupCodec.tryExtractLedgerJson(backup), isNull);
+      final decoded = await CapsuleBackupCodec.tryDecodeBackup(backup, seed);
+      expect(jsonDecode(decoded!.ledgerJson), jsonDecode(ledger));
+      expect(decoded.isGenesis, isTrue);
+    });
+
+    test('rejects wrong seed without plaintext fallback', () async {
+      final backup = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
+        ledgerJson: ledger,
+        seed: seed,
+      );
+
+      final decoded = await CapsuleBackupCodec.tryDecodeBackup(
+        backup,
+        Uint8List.fromList(List<int>.filled(32, 9)),
+      );
+
+      expect(decoded, isNull);
+    });
+
+    test('rejects tampered suite and ciphertext', () async {
+      final backup = await CapsuleBackupCodec.encodeEncryptedBackupEnvelope(
+        ledgerJson: ledger,
+        seed: seed,
+      );
+      final suiteTampered =
+          jsonDecode(backup) as Map<String, dynamic>..['suite'] = 'legacy';
+      expect(
+        await CapsuleBackupCodec.tryDecodeBackup(
+          jsonEncode(suiteTampered),
+          seed,
+        ),
+        isNull,
+      );
+
+      final ciphertextTampered = jsonDecode(backup) as Map<String, dynamic>;
+      final cipher = ciphertextTampered['cipher'] as Map<String, dynamic>;
+      final bytes = base64Decode(cipher['ciphertext'] as String);
+      bytes[0] ^= 1;
+      cipher['ciphertext'] = base64Encode(bytes);
+      expect(
+        await CapsuleBackupCodec.tryDecodeBackup(
+          jsonEncode(ciphertextTampered),
+          seed,
+        ),
+        isNull,
+      );
     });
   });
 }

@@ -23,7 +23,7 @@ abstract class CapsuleSelectorRuntime {
 
   Future<void> activateCapsule(String pubKeyHex);
 
-  Future<String?> importCapsuleFromBackupJson(String raw);
+  Future<String?> importCapsuleFromBackupJson(String raw, {Uint8List? seed});
 
   Future<String?> exportCapsuleBackupToPath(
     String pubKeyHex,
@@ -95,8 +95,12 @@ class HivraCapsuleSelectorRuntime implements CapsuleSelectorRuntime {
   }
 
   @override
-  Future<String?> importCapsuleFromBackupJson(String raw) {
-    return _persistence.importCapsuleFromBackupJson(raw);
+  Future<String?> importCapsuleFromBackupJson(String raw, {Uint8List? seed}) {
+    return _persistence.importCapsuleFromBackupJson(
+      raw,
+      seed: seed,
+      hivra: _hivra,
+    );
   }
 
   @override

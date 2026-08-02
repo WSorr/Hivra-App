@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 import '../services/backup_service.dart';
 import '../services/hivra_file_picker_service.dart';
+import '../services/temporary_backup_share_service.dart';
 
 class BackupScreen extends StatefulWidget {
   final Uint8List seed;
@@ -24,6 +24,8 @@ class BackupScreen extends StatefulWidget {
 
 class _BackupScreenState extends State<BackupScreen> {
   final BackupService _backup = BackupService();
+  final TemporaryBackupShareService _backupShare =
+      TemporaryBackupShareService();
   String? _mnemonic;
   String? _backupPath;
   bool _isSavingBackup = false;
@@ -86,7 +88,10 @@ class _BackupScreenState extends State<BackupScreen> {
         });
       }
 
-      final path = await _backup.exportBackupEnvelopeToPath(targetPath);
+      final path = await _backup.exportBackupEnvelopeToPath(
+        targetPath,
+        widget.seed,
+      );
       if (!mounted) return;
       if (path == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -131,31 +136,32 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<void> _shareBackup() async {
+    if (_isSavingBackup) return;
     try {
-      final tempFile = File(
-        '${Directory.systemTemp.path}/capsule-backup-${DateTime.now().millisecondsSinceEpoch}.json',
+      setState(() {
+        _isSavingBackup = true;
+      });
+      final shared = await _backupShare.share(
+        exportToPath:
+            (path) => _backup.exportBackupEnvelopeToPath(path, widget.seed),
       );
-      final path = await _backup.exportBackupEnvelopeToPath(tempFile.path);
       if (!mounted) return;
-      if (path == null) {
+      if (!shared) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to prepare capsule backup')),
         );
-        return;
       }
-
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(path)], text: 'Hivra capsule backup'),
-      );
-      if (!mounted) return;
-      setState(() {
-        _backupPath = path;
-      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Backup share failed: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingBackup = false;
+        });
+      }
     }
   }
 

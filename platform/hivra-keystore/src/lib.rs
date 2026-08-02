@@ -4,6 +4,7 @@
 #![warn(missing_docs)]
 
 use std::fmt;
+use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
 /// Errors that can occur in keystore operations
@@ -108,6 +109,15 @@ fn derive_key_with_label(seed: &Seed, info: &[u8]) -> Result<[u8; 32]> {
     Ok(okm)
 }
 
+fn android_keystore_dir(files_dir: &Path) -> Result<PathBuf> {
+    if !files_dir.is_absolute() {
+        return Err(Error::PlatformError(
+            "Android app-private files directory must be absolute".to_string(),
+        ));
+    }
+    Ok(files_dir.join("hivra-keystore"))
+}
+
 #[cfg(target_os = "macos")]
 pub mod macos;
 
@@ -149,5 +159,14 @@ mod tests {
             derive_root_public_key(&seed).unwrap(),
             derive_nostr_keypair(&seed).unwrap()
         );
+    }
+
+    #[test]
+    fn android_keystore_directory_follows_the_runtime_user_files_directory() {
+        assert_eq!(
+            android_keystore_dir(Path::new("/data/user/11/com.hivra.hivra_app/files",)).unwrap(),
+            PathBuf::from("/data/user/11/com.hivra.hivra_app/files/hivra-keystore"),
+        );
+        assert!(android_keystore_dir(Path::new("relative/files")).is_err());
     }
 }

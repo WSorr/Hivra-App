@@ -6,7 +6,7 @@ import 'hivra_bindings.dart';
 abstract class BackupRuntime {
   String mnemonicFromSeed(Uint8List seed, {int wordCount = 24});
 
-  Future<String?> exportBackupEnvelopeToPath(String targetPath);
+  Future<String?> exportBackupEnvelopeToPath(String targetPath, Uint8List seed);
 
   Future<void> persistAfterCreate({
     required Uint8List seed,
@@ -22,8 +22,8 @@ class HivraBackupRuntime implements BackupRuntime {
   HivraBackupRuntime({
     HivraBindings? hivra,
     CapsulePersistenceService? persistence,
-  })  : _hivra = hivra ?? HivraBindings(),
-        _persistence = persistence ?? CapsulePersistenceService();
+  }) : _hivra = hivra ?? HivraBindings(),
+       _persistence = persistence ?? CapsulePersistenceService();
 
   @override
   String mnemonicFromSeed(Uint8List seed, {int wordCount = 24}) {
@@ -31,8 +31,11 @@ class HivraBackupRuntime implements BackupRuntime {
   }
 
   @override
-  Future<String?> exportBackupEnvelopeToPath(String targetPath) {
-    return _persistence.exportBackupEnvelopeToPath(_hivra, targetPath);
+  Future<String?> exportBackupEnvelopeToPath(
+    String targetPath,
+    Uint8List seed,
+  ) {
+    return _persistence.exportBackupEnvelopeToPath(_hivra, targetPath, seed);
   }
 
   @override

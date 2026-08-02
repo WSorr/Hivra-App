@@ -116,6 +116,25 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] AI/provider tooling remains outside Core and outside generic runtime
       services; it is composed through an application-level AI tooling module.
 
+## Backup Boundary
+
+- [ ] New user-visible Capsule exports emit only authenticated encrypted backup
+      envelopes; plaintext v1/raw Ledger input remains read-only compatibility.
+- [ ] A recognized encrypted envelope fails closed on suite, shape, seed, or
+      authentication failure without plaintext downgrade.
+- [ ] Backup codec, filesystem writer, and temporary-share cleanup each have
+      one named owner; screens only collect intent and render results.
+- [ ] Temporary backup artifacts are removed on success, cancellation, and
+      failure, and their paths are never presented as durable saved backups.
+- [ ] Seed-to-Ledger owner binding is checked before export and after decrypt;
+      backup handling never mutates Core truth outside canonical Ledger import.
+- [ ] Android manifest, legacy backup rules, and Android 12+ data extraction
+      rules exclude all private runtime domains from cloud restore and
+      device-to-device transfer; OS backup is not a second recovery path.
+- [ ] Android secure-storage paths come from the active process
+      `Context.filesDir`; adapters do not hardcode owner-user paths such as
+      `/data/user/0`.
+
 ## Determinism
 
 - [ ] Ledger remains the single source of truth for confirmed state.

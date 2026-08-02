@@ -1497,12 +1497,58 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         catalog-mismatch regression tests cover the reviewed weakness;
       - the normative lifecycle is recorded in
         `docs/architecture/plugin-package-lifecycle.md`.
-    - Current ordered 12.3 item is pass 8 encrypted backup envelopes,
-      temporary-export cleanup, stale protocol/WASM documentation repair, and
-      UI surface splitting only at existing module boundaries. Transport
-      health policy remains pass 9; legacy aggregate delivery reconciliation
-      and durable sender-rate quarantine remain separately tracked debt.
-  - Status: active; passes 1-7 are completed.
+    - pass 8 encrypted backup/export and boundary repair implementation
+      completed on 2026-08-03:
+      - new user-visible exports use authenticated `hivra.capsule_backup` v2
+        envelopes with HKDF-SHA256 seed derivation, fresh salt/nonce, and
+        AES-256-GCM; Ledger and metadata remain encrypted;
+      - recognized v2 input rejects wrong seed, tampering, malformed fields,
+        and unsupported suites without plaintext downgrade;
+      - plaintext v1/raw Ledger remains read-only compatibility input and the
+        local v1 snapshot remains internal recovery state, not a new export;
+      - one temporary-share lifecycle deletes its directory in `finally` and
+        both backup screens delegate export/share orchestration to services;
+      - recovery decrypts only after mnemonic validation, and selector import
+        binds the decrypted owner to the supplied seed before persistence;
+      - Android disables OS Auto Backup and excludes every private storage
+        domain from both legacy backup and Android 12+ cloud/device-transfer
+        extraction, so the authenticated v2 envelope remains the sole
+        cross-install recovery route;
+      - the normative specification, architecture gate, and plugin host API
+        now distinguish plugin contract v1 from semantic WASM ABI v2 and lock
+        the current import-free bounded runtime contract.
+    - Fresh macOS manual smoke on 2026-08-03 proved a v2 export with no visible
+      Ledger fields, recursive temporary-share cleanup, byte-identical
+      105-event recovery, and zero imported Capsules for wrong-seed and
+      modified-ciphertext attempts.
+    - Android export/cancel smoke on 2026-08-03 kept the release process alive
+      and returned from the system chooser without crash or ANR. An attempted
+      ephemeral-user recovery exposed that the previous manifest default
+      allowed OS restoration of private Capsule state; the test was stopped,
+      user `0` returned intact at owner `5996bcbe...0d6e` and Ledger `v82`, and
+      the implicit OS recovery route is now sealed by manifest and extraction
+      rules.
+    - The next fresh-profile attempt exposed a hardcoded owner-user keystore
+      path. The existing JNI initialization boundary now supplies the active
+      process `Context.filesDir`; a host regression test covers secondary-user
+      path derivation and the architecture gate forbids `/data/user/0` and
+      `/data/data` hardcodes. This keeps one secure-store adapter route and
+      adds no Core recovery path.
+    - Fresh Android release artifact `versionCode=100000319`, SHA-256
+      `d7268dbd2d26fa79c22175b78fdda353f7d0d7c20ab626a61ca904ab4fe52b46`,
+      completed pass 8 smoke on 2026-08-03. A clean secondary profile started
+      without restored Capsule state, explicitly recovered the six-event test
+      Ledger through the v2 envelope, and retained Ledger `v6` after a cold
+      restart, proving seed persistence through that profile's app-private
+      path. Wrong-seed and modified-ciphertext attempts each failed
+      authentication and left zero local Capsules. The temporary profile was
+      removed, and owner user `0` remained intact on Ledger `v82` after the
+      package update. No crash, ANR, or old app-private-path error was present.
+    - Pass 8 is closed. Pass 9 shared Transport Health Policy is the next
+      ordered unit. Legacy aggregate delivery reconciliation and durable
+      sender-rate quarantine remain separately tracked debt.
+  - Status: active; passes 1-8 are completed with automated and cross-platform
+    manual evidence; pass 9 is next.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

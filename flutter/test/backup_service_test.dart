@@ -25,8 +25,12 @@ class _FakeBackupRuntime implements BackupRuntime {
   }
 
   @override
-  Future<String?> exportBackupEnvelopeToPath(String targetPath) async {
+  Future<String?> exportBackupEnvelopeToPath(
+    String targetPath,
+    Uint8List seed,
+  ) async {
     exportPathArg = targetPath;
+    mnemonicSeed = seed;
     return exportResult;
   }
 
@@ -43,29 +47,35 @@ class _FakeBackupRuntime implements BackupRuntime {
 }
 
 void main() {
-  test('delegates mnemonic/export/persist operations to backup runtime',
-      () async {
-    final runtime = _FakeBackupRuntime()
-      ..mnemonicResult = 'alpha beta gamma'
-      ..exportResult = '/tmp/capsule-backup.json';
-    final service = BackupService(runtime);
-    final seed = Uint8List.fromList(List<int>.filled(32, 7));
+  test(
+    'delegates mnemonic/export/persist operations to backup runtime',
+    () async {
+      final runtime =
+          _FakeBackupRuntime()
+            ..mnemonicResult = 'alpha beta gamma'
+            ..exportResult = '/tmp/capsule-backup.json';
+      final service = BackupService(runtime);
+      final seed = Uint8List.fromList(List<int>.filled(32, 7));
 
-    final mnemonic = service.mnemonicFromSeed(seed, wordCount: 12);
-    final exported = await service.exportBackupEnvelopeToPath('/tmp/out.json');
-    await service.persistAfterCreate(
-      seed: seed,
-      isGenesis: true,
-      isNeste: false,
-    );
+      final mnemonic = service.mnemonicFromSeed(seed, wordCount: 12);
+      final exported = await service.exportBackupEnvelopeToPath(
+        '/tmp/out.json',
+        seed,
+      );
+      await service.persistAfterCreate(
+        seed: seed,
+        isGenesis: true,
+        isNeste: false,
+      );
 
-    expect(mnemonic, 'alpha beta gamma');
-    expect(runtime.mnemonicSeed, seed);
-    expect(runtime.mnemonicWordCount, 12);
-    expect(exported, '/tmp/capsule-backup.json');
-    expect(runtime.exportPathArg, '/tmp/out.json');
-    expect(runtime.persistSeed, seed);
-    expect(runtime.persistIsGenesis, isTrue);
-    expect(runtime.persistIsNeste, isFalse);
-  });
+      expect(mnemonic, 'alpha beta gamma');
+      expect(runtime.mnemonicSeed, seed);
+      expect(runtime.mnemonicWordCount, 12);
+      expect(exported, '/tmp/capsule-backup.json');
+      expect(runtime.exportPathArg, '/tmp/out.json');
+      expect(runtime.persistSeed, seed);
+      expect(runtime.persistIsGenesis, isTrue);
+      expect(runtime.persistIsNeste, isFalse);
+    },
+  );
 }

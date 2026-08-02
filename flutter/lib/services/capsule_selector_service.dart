@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../ffi/capsule_selector_runtime.dart';
 import '../utils/hivra_id_format.dart';
 import 'capsule_persistence_models.dart';
+import 'capsule_backup_codec.dart';
 import 'ui_event_log_service.dart';
 
 class CapsuleSelectorItem {
@@ -240,8 +241,12 @@ class CapsuleSelectorService {
     }
   }
 
-  Future<String?> importCapsuleFromBackupJson(String raw) {
-    return _runtime.importCapsuleFromBackupJson(raw);
+  bool backupRequiresSeed(String raw) {
+    return CapsuleBackupCodec.isEncryptedEnvelope(raw);
+  }
+
+  Future<String?> importCapsuleFromBackupJson(String raw, {Uint8List? seed}) {
+    return _runtime.importCapsuleFromBackupJson(raw, seed: seed);
   }
 
   Future<bool> hasStoredSeed(String pubKeyHex) {

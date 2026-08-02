@@ -169,6 +169,11 @@ CONSENSUS_ATTESTATION_STORE="$ROOT/flutter/lib/services/consensus_attestation_st
 CAPSULE_FILE_STORE="$ROOT/flutter/lib/services/capsule_file_store.dart"
 CAPSULE_FILE_STORE_TEST="$ROOT/flutter/test/capsule_file_store_test.dart"
 CAPSULE_BACKUP_CODEC_TEST="$ROOT/flutter/test/capsule_backup_codec_test.dart"
+ANDROID_MANIFEST="$ROOT/flutter/android/app/src/main/AndroidManifest.xml"
+ANDROID_BACKUP_RULES="$ROOT/flutter/android/app/src/main/res/xml/backup_rules.xml"
+ANDROID_DATA_EXTRACTION_RULES="$ROOT/flutter/android/app/src/main/res/xml/data_extraction_rules.xml"
+ANDROID_KEYSTORE_BRIDGE="$ROOT/flutter/android/app/src/main/kotlin/com/hivra/hivra_app/HivraKeystoreBridge.kt"
+ANDROID_KEYSTORE_ADAPTER="$ROOT/platform/hivra-keystore/src/android/mod.rs"
 CAPSULE_INDEX_STORE="$ROOT/flutter/lib/services/capsule_index_store.dart"
 CAPSULE_PERSISTENCE="$ROOT/flutter/lib/services/capsule_persistence_service.dart"
 CAPSULE_SECRET_VAULT="$ROOT/flutter/lib/services/capsule_scoped_secret_vault.dart"
@@ -238,6 +243,36 @@ require_present "$CHECKLIST" '^## Cryptographic Agility' \
 require_present "$ROADMAP" '^\- `12\.4 Cryptographic Agility Compatibility Debt`' \
   "roadmap registers fixed-size crypto compatibility debt"
 check_crypto_fixed_size_compatibility_boundary
+require_present "$ROOT/flutter/lib/services/capsule_backup_codec.dart" 'encryptedVersion = 2' \
+  "backup codec defines encrypted envelope v2"
+require_present "$ROOT/flutter/lib/services/capsule_backup_codec.dart" 'AesGcm\.with256bits' \
+  "backup codec uses authenticated AES-256-GCM"
+require_present "$ROOT/flutter/lib/services/capsule_backup_codec.dart" 'Hkdf\(hmac: Hmac\.sha256\(\)' \
+  "backup codec derives a domain-separated export key"
+require_present "$ROOT/flutter/lib/services/temporary_backup_share_service.dart" 'finally' \
+  "temporary backup share lifecycle always enters cleanup"
+require_present "$ANDROID_MANIFEST" 'android:allowBackup="false"' \
+  "Android disables implicit OS backup of Capsule runtime state"
+require_present "$ANDROID_MANIFEST" 'android:fullBackupContent="@xml/backup_rules"' \
+  "Android 11-and-lower backup exclusions are explicit"
+require_present "$ANDROID_MANIFEST" 'android:dataExtractionRules="@xml/data_extraction_rules"' \
+  "Android 12+ cloud and device-transfer exclusions are explicit"
+require_present "$ANDROID_BACKUP_RULES" '<exclude domain="device_sharedpref" path="\." />' \
+  "legacy Android backup rules exclude device-protected private state"
+require_present "$ANDROID_DATA_EXTRACTION_RULES" '<device-transfer>' \
+  "Android data extraction rules govern device-to-device transfer"
+require_present "$ANDROID_DATA_EXTRACTION_RULES" '<exclude domain="device_sharedpref" path="\." />' \
+  "Android cloud and device transfer exclude device-protected private state"
+require_present "$ANDROID_KEYSTORE_BRIDGE" 'nativeInit\(requireNotNull\(appContext\)\.filesDir\.absolutePath\)' \
+  "Android keystore initializes from the active runtime user's app-private files directory"
+require_present "$ANDROID_KEYSTORE_ADAPTER" 'APP_FILES_DIR' \
+  "Android keystore adapter consumes the canonical app-private files directory"
+require_absent "$ANDROID_KEYSTORE_ADAPTER" '/data/user/0|/data/data/' \
+  "Android keystore adapter does not hardcode owner-user storage paths"
+require_absent "$ROOT/flutter/lib/screens/backup_screen.dart" 'Directory\.systemTemp|SharePlus\.instance\.share' \
+  "backup screen does not own temporary export or share effects"
+require_absent "$ROOT/flutter/lib/screens/capsule_selector_screen.dart" 'Directory\.systemTemp|SharePlus\.instance\.share' \
+  "capsule selector does not own temporary export or share effects"
 require_present "$PRODUCT_AXIS" '^## 2\. Two Canonical Lanes' \
   "product axis defines truth and effect lanes"
 require_present "$PRODUCT_AXIS" '^## 3\. Permanent Product Invariants' \

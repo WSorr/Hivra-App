@@ -5,15 +5,14 @@
 //! migration rules stable while delegating Android-specific secure storage
 //! semantics to Kotlin via JNI.
 
-use crate::{Error, Result, Seed};
+use crate::{android_keystore_dir, Error, Result, Seed};
 use jni::objects::{GlobalRef, JClass, JObject, JString, JValue};
 use jni::{JNIEnv, JavaVM};
 use once_cell::sync::OnceCell;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-const PACKAGE_NAME: &str = "com.hivra.hivra_app";
 const ACTIVE_SEED_ACCOUNT: &str = "active_capsule_seed_account";
 const LEGACY_SEED_FILE: &str = "capsule_seed";
 
@@ -24,12 +23,14 @@ const EXISTS_METHOD: &str = "seedBlobExists";
 
 static JVM: OnceCell<JavaVM> = OnceCell::new();
 static BRIDGE_OBJECT_REF: OnceCell<GlobalRef> = OnceCell::new();
+static APP_FILES_DIR: OnceCell<PathBuf> = OnceCell::new();
 
 #[no_mangle]
 #[allow(missing_docs)]
 pub extern "system" fn Java_com_hivra_hivra_1app_HivraKeystoreBridge_nativeInit(
     mut env: JNIEnv,
     class: JClass,
+    files_dir: JString,
 ) {
     if let Ok(vm) = env.get_java_vm() {
         let _ = JVM.set(vm);
@@ -44,6 +45,12 @@ pub extern "system" fn Java_com_hivra_hivra_1app_HivraKeystoreBridge_nativeInit(
         .and_then(|obj| env.new_global_ref(obj))
     {
         let _ = BRIDGE_OBJECT_REF.set(instance);
+    }
+    if let Ok(path) = env
+        .get_string(&files_dir)
+        .map(|value| PathBuf::from(value.to_string_lossy().as_ref()))
+    {
+        let _ = APP_FILES_DIR.set(path);
     }
 }
 
@@ -136,25 +143,10 @@ fn load_seed_from_account(account: &str) -> Result<Seed> {
 }
 
 fn keystore_dir() -> Result<PathBuf> {
-    let candidates = [
-        format!("/data/user/0/{PACKAGE_NAME}/files/hivra-keystore"),
-        format!("/data/data/{PACKAGE_NAME}/files/hivra-keystore"),
-    ];
-
-    for candidate in candidates {
-        let path = PathBuf::from(candidate);
-        if path.exists() || parent_exists(&path) {
-            return Ok(path);
-        }
-    }
-
-    Err(Error::PlatformError(
-        "Android app-private files directory not available".to_string(),
-    ))
-}
-
-fn parent_exists(path: &Path) -> bool {
-    path.parent().is_some_and(Path::exists)
+    let files_dir = APP_FILES_DIR.get().ok_or_else(|| {
+        Error::PlatformError("Android app-private files directory not initialized".to_string())
+    })?;
+    android_keystore_dir(files_dir)
 }
 
 fn seed_account(seed: &Seed) -> String {

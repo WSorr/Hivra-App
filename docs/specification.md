@@ -520,6 +520,33 @@ Storage:
   Flutter secure storage is the single per-capsule persistence authority.
 - Recovery seeds MUST NOT be persisted in plaintext files. If platform secure
   storage is unavailable, seed persistence fails closed.
+- User-visible Capsule backup exports MUST use the versioned authenticated
+  `hivra.capsule_backup` v2 envelope. The maintained 1.x suite derives a
+  domain-separated export key from the Capsule seed with HKDF-SHA256 and a
+  fresh 32-byte salt, then encrypts the complete v1 recovery payload with
+  AES-256-GCM and a fresh 12-byte nonce. The schema, version, and suite id are
+  authenticated associated data; Ledger bytes and Capsule metadata remain
+  inside the ciphertext.
+- `CapsuleBackupCodec` is the sole backup wire-format owner and
+  `CapsulePersistenceService` is the sole backup filesystem writer. Screens
+  MUST NOT serialize, encrypt, decrypt, or persist backup payloads directly.
+- An envelope recognized as v2 MUST fail closed on an unsupported suite,
+  malformed field, wrong seed, or authentication failure. It MUST NOT fall
+  back to v1 or raw-Ledger parsing after v2 recognition.
+- Plaintext `capsule-backup.v1.json` remains an internal per-Capsule recovery
+  snapshot and read-only import compatibility format. New user-visible exports
+  MUST NOT emit v1 or raw Ledger JSON.
+- Temporary files created for a system share sheet MUST have one lifecycle
+  owner and MUST be deleted in `finally` after success, cancellation, export
+  failure, or share failure. A temporary share path MUST NOT be retained as a
+  user-visible saved-backup location.
+- Android OS Auto Backup, cloud restore, and device-to-device extraction MUST
+  NOT copy Hivra private runtime state. The application manifest and both
+  legacy and Android 12+ extraction rules MUST exclude every private storage
+  domain. An explicit authenticated `hivra.capsule_backup` v2 envelope plus
+  matching seed is the only supported cross-install Capsule recovery path.
+  Android secure storage MUST derive its filesystem boundary from the active
+  process `Context.filesDir`; adapters MUST NOT assume owner user `0`.
 - Legacy plaintext seed files MAY be consumed only for one-time migration:
   every valid entry is written to secure storage, verified by read-back, and
   the plaintext file is deleted before normal use continues.
@@ -786,6 +813,15 @@ Mandatory constraints:
 4. Plugins MUST NOT bypass Engine validation or Core invariants.
 5. Pair-scoped plugin execution MUST be blocked when consensus guard is not signable.
 6. Plugin host inputs/outputs MUST be deterministic for identical inputs.
+7. Current external packages use semantic ABI `hivra_host_abi_v2` with the
+   exact exports `hivra_alloc_v1`, `hivra_evaluate_v1`, and
+   `hivra_dealloc_v1`; the contract version and export suffix do not imply ABI
+   v1.
+8. The runtime rejects imports and enforces package, module, archive, input,
+   output, and fuel bounds before accepting semantic output.
+9. Plugin-owned deterministic semantics execute in WASM. Host fallback is a
+   compatibility path only where explicitly allowed and MUST NOT mirror or
+   replace semantics for contracts that require an external package.
 
 ### 5.2.3 Identity Separation Rule
 

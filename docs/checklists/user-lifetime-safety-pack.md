@@ -25,8 +25,13 @@ Run it on the release candidate build.
 ## Scenario 3: Recovery On New Device Path
 
 - [ ] Export backup for capsule A.
+- [ ] Confirm the exported backup is authenticated envelope v2 and does not
+      expose plaintext Ledger owner/events.
 - [ ] On clean runtime (or clean machine/profile), recover capsule A using seed + backup.
+- [ ] Confirm wrong-seed and tampered-backup recovery fail closed.
 - [ ] Recovered capsule shows the same ledger truth (starters, relationships, pending counts) as before recovery.
+- [ ] Android fresh install/profile receives no private Capsule state from OS
+      Auto Backup or device transfer before explicit authenticated recovery.
 
 ## Scenario 4: Update Truth Preservation
 

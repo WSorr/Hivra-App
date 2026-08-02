@@ -1,10 +1,9 @@
 # Hivra Development Control
 
-Status date: 2026-08-02
+Status date: 2026-08-03
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: begin `12.3 / pass 8` with encrypted backup
-envelopes, temporary-export cleanup, stale protocol/WASM documentation repair,
-and UI splitting only at existing module boundaries. Transactional serialized
+Current development focus: begin `12.3 / pass 9`, shared Transport Health
+Policy, after pass 8 cross-platform closure. Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
 signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
 isolated to guarded read-only compatibility input.
@@ -21,7 +20,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation pass? | `12.3 / pass 8`: add encrypted backup envelopes and temporary-export cleanup, repair stale protocol/WASM documentation, and split oversized UI only at existing module boundaries. Transactional serialized plugin package lifecycle is complete; legacy delivery records without immutable references remain quarantined migration debt. | `roadmap.md`, `specification.md`, backup and plugin host contracts |
+| What is the next 1.x remediation pass? | Begin `12.3 / pass 9` shared Transport Health Policy. Pass 8 encrypted user exports, temporary cleanup, recovery binding, Android OS-backup exclusion, and active-user keystore paths are closed with macOS/Android evidence; legacy delivery records without immutable references remain quarantined migration debt. | `roadmap.md`, `specification.md`, transport health and delivery lifecycle contracts |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -31,7 +30,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `12.3 / passes 3-7`: cryptographically continuous ledger, event-scoped delivery records, persisted exchange-derived Trading Drone risk history, authenticated Nostr confidential envelopes, and transactional serialized plugin package lifecycle. New delivery writes signed kind `9444` with NIP-44 v2; guarded kind `4`/NIP-04 compatibility is receive-only. Plugin registry commit now precedes destructive package cleanup, and interrupted orphan files are recovered on serialized load. | Released baseline `9953b02` completed guarded packaged macOS/Android smoke for `v1.0.3-test15`. Focused delivery, trading-risk, NIP-44 authentication, plugin concurrency, failed-commit, rollback, and recovery tests pass on the current checkpoint. | Begin `12.3 / pass 8` backup-envelope/export cleanup and documentation/UI boundary repair. Legacy aggregate delivery quarantine and durable sender-rate quarantine remain explicit transport debts; do not hide either in an adapter. |
+| **1.x maintained runtime** | Active | `12.3 / passes 3-8` complete: cryptographically continuous ledger, event-scoped delivery records, persisted exchange-derived Trading Drone risk history, authenticated Nostr confidential envelopes, transactional plugin package lifecycle, and authenticated encrypted user backup exports with temporary-share and Android OS-backup exclusion. | Released baseline `9953b02` completed guarded packaged macOS/Android smoke for `v1.0.3-test15`. Pass 8 automated gates and macOS/Android manual recovery, restart, wrong-seed, tamper, and preservation evidence pass; Android `100000319` derives secure storage from the active process `Context.filesDir`. | Begin pass 9 shared Transport Health Policy without reopening pass 8 or creating another transport route. Legacy aggregate delivery quarantine and durable sender-rate quarantine remain explicit transport debts. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |

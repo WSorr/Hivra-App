@@ -16,6 +16,19 @@ docs/checklists/release-manual-signoff-log.md
 - [ ] Create or recover a second capsule.
 - [ ] Switch between capsules successfully.
 - [ ] Capsule selector shows expected summaries.
+- [ ] Export a user-visible Capsule backup and confirm the JSON identifies
+      `hivra.capsule_backup` version `2` without visible Ledger `owner` or
+      `events` fields.
+- [ ] Recover with the matching seed and encrypted backup; confirm owner and
+      Ledger history match the source Capsule.
+- [ ] Confirm a wrong seed or modified ciphertext fails without importing any
+      Capsule, then confirm no `hivra-backup-share-*` directory remains after
+      share success or cancellation.
+- [ ] On Android, confirm a fresh install/profile starts without any Capsule
+      restored by OS backup or device transfer; Capsule state appears only
+      after explicit seed + authenticated v2 backup recovery.
+- [ ] On Android, complete explicit recovery in a fresh secondary profile and
+      confirm seed persistence uses that profile's app-private path.
 
 ## Invitation Flow
 

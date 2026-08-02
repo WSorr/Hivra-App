@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 import '../services/capsule_selector_service.dart';
 import '../services/hivra_file_picker_service.dart';
+import '../services/temporary_backup_share_service.dart';
 import '../services/ui_event_log_service.dart';
 import 'main_screen.dart';
 import 'first_launch_screen.dart';
@@ -26,6 +27,8 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   late final CapsuleSelectorService _service =
       widget.service ?? CapsuleSelectorService();
   final UiEventLogService _uiLog = const UiEventLogService();
+  final TemporaryBackupShareService _backupShare =
+      TemporaryBackupShareService();
   List<CapsuleSelectorItem> _capsules = [];
   bool _isLoading = true;
   String? _selectingCapsuleHex;
@@ -159,7 +162,15 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       if (file == null) return;
 
       final raw = await File(file.path).readAsString();
-      final importedHex = await _service.importCapsuleFromBackupJson(raw);
+      Uint8List? importSeed;
+      if (_service.backupRequiresSeed(raw)) {
+        importSeed = await _requestSeedForEncryptedBackup();
+        if (importSeed == null) return;
+      }
+      final importedHex = await _service.importCapsuleFromBackupJson(
+        raw,
+        seed: importSeed,
+      );
       if (importedHex == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -200,23 +211,19 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
   Future<void> _exportCapsule(CapsuleSelectorItem capsule) async {
     try {
       if (Platform.isMacOS || Platform.isAndroid) {
-        final tempDir = Directory.systemTemp;
-        final tempPath =
-            '${tempDir.path}/capsule-backup-${capsule.publicKeyHex.substring(0, 8)}.json';
-        final path = await _service.exportCapsuleBackupToPath(
-          capsule.publicKeyHex,
-          tempPath,
+        final shared = await _backupShare.share(
+          exportToPath:
+              (path) => _service.exportCapsuleBackupToPath(
+                capsule.publicKeyHex,
+                path,
+              ),
         );
-        if (path == null) {
+        if (!shared) {
           if (!mounted) return;
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('Export failed')));
-          return;
         }
-        await SharePlus.instance.share(
-          ShareParams(files: [XFile(path)], text: 'Hivra capsule backup'),
-        );
         return;
       }
 
@@ -338,6 +345,45 @@ class _CapsuleSelectorScreenState extends State<CapsuleSelectorScreen> {
       context,
     ).showSnackBar(const SnackBar(content: Text('Recovery seed restored')));
     return true;
+  }
+
+  Future<Uint8List?> _requestSeedForEncryptedBackup() async {
+    _seedController.clear();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Decrypt Capsule Backup'),
+            content: TextField(
+              controller: _seedController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Enter seed phrase (12 or 24 words)',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Decrypt'),
+              ),
+            ],
+          ),
+    );
+    if (confirm != true) return null;
+    final phrase = _seedController.text.trim();
+    if (!_service.validateMnemonic(phrase)) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Invalid seed phrase')));
+      }
+      return null;
+    }
+    return _service.mnemonicToSeed(phrase);
   }
 
   @override

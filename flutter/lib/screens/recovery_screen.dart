@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../services/capsule_backup_codec.dart';
 import '../services/hivra_file_picker_service.dart';
 import '../services/recovery_service.dart';
 
@@ -19,8 +18,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
   final TextEditingController _phraseController = TextEditingController();
   String? _errorMessage;
   String? _selectedBackupName;
-  String? _selectedBackupLedgerJson;
-  bool? _selectedBackupIsGenesis;
+  String? _selectedBackupJson;
   bool _isValid = false;
   bool _isRecovering = false;
   bool _showAdvancedOptions = false;
@@ -58,8 +56,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
 
     final result = await widget.service.recover(
       phrase: _phraseController.text.trim(),
-      selectedBackupLedgerJson: _selectedBackupLedgerJson,
-      selectedBackupIsGenesis: _selectedBackupIsGenesis,
+      selectedBackupJson: _selectedBackupJson,
     );
 
     if (!mounted) return;
@@ -80,21 +77,10 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       if (file == null) return;
 
       final raw = await File(file.path).readAsString();
-      final ledgerJson = CapsuleBackupCodec.tryExtractLedgerJson(raw);
-      if (ledgerJson == null) {
-        if (!mounted) return;
-        setState(() {
-          _errorMessage = 'Invalid backup file format';
-        });
-        return;
-      }
-
       if (!mounted) return;
       setState(() {
-        _selectedBackupLedgerJson = ledgerJson;
+        _selectedBackupJson = raw;
         _selectedBackupName = file.name;
-        _selectedBackupIsGenesis = widget.service
-            .extractGenesisHintFromBackupJson(raw);
         _errorMessage = null;
       });
     } catch (e) {
@@ -118,22 +104,10 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
         return;
       }
 
-      final ledgerJson = CapsuleBackupCodec.tryExtractLedgerJson(raw);
-      if (ledgerJson == null) {
-        if (!mounted) return;
-        setState(() {
-          _errorMessage =
-              'Clipboard does not contain backup JSON. Choose a backup file or copy the full backup JSON and try again.';
-        });
-        return;
-      }
-
       if (!mounted) return;
       setState(() {
-        _selectedBackupLedgerJson = ledgerJson;
+        _selectedBackupJson = raw;
         _selectedBackupName = 'Pasted from clipboard';
-        _selectedBackupIsGenesis = widget.service
-            .extractGenesisHintFromBackupJson(raw);
         _errorMessage = null;
       });
 

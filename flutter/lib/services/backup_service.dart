@@ -6,14 +6,17 @@ class BackupService {
   final BackupRuntime _runtime;
 
   BackupService([BackupRuntime? runtime])
-      : _runtime = runtime ?? HivraBackupRuntime();
+    : _runtime = runtime ?? HivraBackupRuntime();
 
   String mnemonicFromSeed(Uint8List seed, {int wordCount = 24}) {
     return _runtime.mnemonicFromSeed(seed, wordCount: wordCount);
   }
 
-  Future<String?> exportBackupEnvelopeToPath(String targetPath) {
-    return _runtime.exportBackupEnvelopeToPath(targetPath);
+  Future<String?> exportBackupEnvelopeToPath(
+    String targetPath,
+    Uint8List seed,
+  ) {
+    return _runtime.exportBackupEnvelopeToPath(targetPath, seed);
   }
 
   Future<void> persistAfterCreate({

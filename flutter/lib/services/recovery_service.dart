@@ -1,7 +1,7 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import '../ffi/recovery_runtime.dart';
+import 'capsule_backup_codec.dart';
 import 'capsule_ledger_summary_parser.dart';
 import 'ledger_view_support.dart';
 
@@ -9,15 +9,12 @@ class RecoveryExecutionResult {
   final bool isSuccess;
   final String? errorMessage;
 
-  const RecoveryExecutionResult._({
-    required this.isSuccess,
-    this.errorMessage,
-  });
+  const RecoveryExecutionResult._({required this.isSuccess, this.errorMessage});
 
   const RecoveryExecutionResult.success() : this._(isSuccess: true);
 
   const RecoveryExecutionResult.failure(String message)
-      : this._(isSuccess: false, errorMessage: message);
+    : this._(isSuccess: false, errorMessage: message);
 }
 
 class RecoveryService {
@@ -29,9 +26,9 @@ class RecoveryService {
     RecoveryRuntime? runtime,
     LedgerViewSupport? support,
     CapsuleLedgerSummaryParser? summaryParser,
-  ])  : _runtime = runtime ?? HivraRecoveryRuntime(),
-        _support = support ?? const LedgerViewSupport(),
-        _summaryParser = summaryParser ?? const CapsuleLedgerSummaryParser();
+  ]) : _runtime = runtime ?? HivraRecoveryRuntime(),
+       _support = support ?? const LedgerViewSupport(),
+       _summaryParser = summaryParser ?? const CapsuleLedgerSummaryParser();
 
   bool validateMnemonic(String phrase) {
     final trimmed = phrase.trim();
@@ -39,29 +36,26 @@ class RecoveryService {
     return _runtime.validateMnemonic(trimmed);
   }
 
-  bool? extractGenesisHintFromBackupJson(String rawJson) {
-    try {
-      final decoded = jsonDecode(rawJson);
-      if (decoded is! Map) return null;
-      final map = Map<String, dynamic>.from(decoded);
-      final meta = map['meta'];
-      if (meta is! Map) return null;
-      final isGenesis = meta['is_genesis'];
-      if (isGenesis is bool) return isGenesis;
-    } catch (_) {
-      // no-op
-    }
-    return null;
-  }
-
   Future<RecoveryExecutionResult> recover({
     required String phrase,
-    required String? selectedBackupLedgerJson,
-    required bool? selectedBackupIsGenesis,
+    required String? selectedBackupJson,
   }) async {
     try {
       final seed = _runtime.mnemonicToSeed(phrase.trim());
-      bool isGenesisRecovered = selectedBackupIsGenesis ?? false;
+      final selectedBackup =
+          selectedBackupJson == null
+              ? null
+              : await CapsuleBackupCodec.tryDecodeBackup(
+                selectedBackupJson,
+                seed,
+              );
+      if (selectedBackupJson != null && selectedBackup == null) {
+        return const RecoveryExecutionResult.failure(
+          'Backup authentication failed or the seed phrase does not match',
+        );
+      }
+      final selectedBackupLedgerJson = selectedBackup?.ledgerJson;
+      bool isGenesisRecovered = selectedBackup?.isGenesis ?? false;
 
       final createError = _runtime.createCapsuleError(
         seed,
@@ -72,8 +66,9 @@ class RecoveryService {
       }
 
       if (selectedBackupLedgerJson != null) {
-        final expectedOwner =
-            _extractOwnerHexFromLedger(selectedBackupLedgerJson);
+        final expectedOwner = _extractOwnerHexFromLedger(
+          selectedBackupLedgerJson,
+        );
         final currentPubKey = _runtime.capsuleRuntimeOwnerPublicKey();
         final currentOwner =
             currentPubKey == null ? null : _bytesToHex(currentPubKey);
@@ -86,9 +81,10 @@ class RecoveryService {
         }
       }
 
-      final importedLedger = selectedBackupLedgerJson != null
-          ? _runtime.importLedger(selectedBackupLedgerJson)
-          : await _runtime.importLedgerIfExists();
+      final importedLedger =
+          selectedBackupLedgerJson != null
+              ? _runtime.importLedger(selectedBackupLedgerJson)
+              : await _runtime.importLedgerIfExists();
 
       if (selectedBackupLedgerJson != null && !importedLedger) {
         return const RecoveryExecutionResult.failure(

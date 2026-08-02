@@ -29,12 +29,12 @@ object HivraKeystoreBridge {
             appContext = context.applicationContext
         }
         System.loadLibrary("hivra_ffi")
-        nativeInit()
+        nativeInit(requireNotNull(appContext).filesDir.absolutePath)
     }
 
     @JvmStatic
     @Keep
-    external fun nativeInit()
+    external fun nativeInit(filesDirPath: String)
 
     @Keep
     fun storeSeedBlob(account: String, encodedSeed: String): Boolean {
