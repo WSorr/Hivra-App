@@ -4,6 +4,10 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 
 ## Product Axis
 
+- [ ] The change preserves the Person-First Runtime (PFR): no application,
+      drone, provider, or transport becomes the owner of the person's Capsule
+      identity, signed history, trusted relationships, recovery authority, or
+      continuity.
 - [ ] The change names the `product-axis.md` invariant it strengthens or the
       measured risk it removes.
 - [ ] The change maps to the truth lane, effect lane, or both; no third state or

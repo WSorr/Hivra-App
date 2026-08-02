@@ -64,9 +64,27 @@ Commits containing non-English documentation or comments (in production-bound fi
 
 ## 0. Introduction
 
-Hivra is a local-first runtime for user-owned Capsules.
+For decades, software has been built around applications. Each application
+creates its own account, identity, contacts, permissions, and history. A person
+enters that architecture as a record inside someone else's system, and the
+application defines which actions and states are available.
 
-A Capsule is a persistent digital extension of a user. It can exist and work alone: it keeps its own ledger, owns its recovery path, runs WASM drones, and does not require relationships to be useful.
+Hivra begins from the opposite direction: the person exists before any
+application. Relationships, trust, history, intentions, and continuity are not
+application features. They are the foundation on which applications should
+operate.
+
+Hivra calls this architecture a **Person-First Runtime (PFR)**: a local-first
+runtime whose primary durable execution context is the person rather than the
+application. `Person` names the enduring owner, `user` is a temporary role
+inside an application, and the Capsule is the persistent, recoverable execution
+context of the PFR.
+
+A Capsule can exist and work alone: it keeps its own ledger, owns its recovery
+path, runs WASM drones, and does not require relationships to be useful. It
+binds identity, signed history, trusted relationships, rules, and recovery
+authority without exposing raw private keys, transport sessions, or ledger
+mutation to applications.
 
 Hivra is not a global shared computer. It is closer to a pocket capsule computer:
 
@@ -75,6 +93,16 @@ Hivra is not a global shared computer. It is closer to a pocket capsule computer
 - a Core Trust Layer built from optional trusted links, not discovery
 
 The important architectural point is that capsule state is primary. Transport exists to exchange messages between capsules, but capsule identity, ledger truth, and recovery must remain owned by the capsule itself.
+
+In a Person-First Runtime, applications are tools rather than destinations.
+Chat is a drone. AI is a replaceable capability. Transport is an adapter. Any
+of them may appear, evolve, or disappear without breaking the person's digital
+continuity.
+
+Applications no longer define the person. The person's runtime defines the
+boundaries within which applications may operate.
+
+**Apps are temporary. The person is not.**
 
 The permanent product axis is therefore simple: a user-owned Capsule turns
 explicit intent and authenticated input into reproducible local truth through
@@ -111,7 +139,9 @@ If you invite someone who does not have that slipper and they refuse to create i
 
 ### 2.1 Capsule
 
-Capsule is you. An application instance, your identity.
+Capsule is your persistent runtime context. It is not an application account:
+it is the recoverable execution context through which you retain identity,
+history, relationships, rules, and authority across changing applications.
 
 What a capsule has:
 

@@ -10,6 +10,7 @@ Use this before designing or reviewing any material product or architecture
 change.
 
 Contains:
+- the Person-First Runtime (PFR) architectural category
 - the permanent product axis and two canonical workflow lanes
 - user-ownership, replay, effect-lifecycle, and isolation invariants
 - predictable extension rules for drones, transports, Core, and networks
@@ -32,6 +33,7 @@ If there is any conflict, `specification.md` wins.
 Use this to understand product intent, user-facing mechanics, and behavior scenarios.
 
 Contains:
+- the Person-First Runtime (PFR) definition and person/user/Capsule distinction
 - conceptual framing of Capsules, Starters, the Core Trust Layer, and drones
 - invitation mechanics and edge-case behavior
 - relay and trust model from product perspective

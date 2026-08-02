@@ -7,6 +7,19 @@ must be reconciled in the same change.
 
 ## 1. Axis Statement
 
+Hivra defines a **Person-First Runtime (PFR)**: a software architecture in
+which the person's durable execution context exists before, outside, and
+beyond any individual application account. In this terminology, `person`
+names the enduring architectural owner; `user` names a temporary role assigned
+to that person by an application; and the `Capsule` is the persistent,
+recoverable execution context through which the person exercises authority.
+
+PFR does not grant applications raw access to a person's keys, ledger, or
+transport sessions. Applications and drones connect through bounded capability
+contracts. They may be installed, replaced, or removed without taking
+ownership of Capsule identity, signed history, trusted relationships, recovery
+authority, or continuity.
+
 Hivra advances along one product axis:
 
 > A user-owned Capsule turns explicit intent and authenticated input into
@@ -20,6 +33,10 @@ keys, transport sessions, or recovery.
 This axis is stricter than a feature list. A feature is useful to Hivra only when
 it improves Capsule autonomy, truth integrity, safe capability extension, or
 reliable interaction without creating a second owner or a second path.
+
+The durable product consequence is:
+
+> Applications are temporary. The person is not.
 
 ## 2. Two Canonical Lanes
 

@@ -39,6 +39,29 @@ first, inspect existing seams, design the smallest new contract, then run
 adversarial and regression passes. Existing patterns are compatibility
 constraints, not default architecture for new behavior.
 
+### 0.2 Person-First Runtime
+
+Hivra defines a **Person-First Runtime (PFR)**. PFR is an architectural model in
+which the primary durable execution context belongs to the person and survives
+the installation, replacement, or removal of any individual application or
+drone.
+
+Within this model:
+
+- `person` means the enduring architectural owner;
+- `user` means a role assigned to that person within an application boundary;
+- `Capsule` means the persistent, recoverable execution context of the PFR;
+- applications and drones are capability consumers, not owners of Capsule
+  identity, Ledger truth, cryptographic authority, recovery, or transport
+  sessions.
+
+PFR is not a second runtime layer, a new Core entity, or a separate execution
+path. It names the architecture formed by the existing Capsule, Core
+projection, capability, effect-lifecycle, adapter, secure-storage, and recovery
+contracts. Operational state remains outside the Ledger unless this
+specification defines it as a Core fact, and private keys remain inside their
+declared secure cryptographic boundary.
+
 ---
 
 ## 1. Philosophy and Fundamental Principles
@@ -211,7 +234,10 @@ UI, documentation, and cross-capsule semantics should refer to capsule identity 
 
 #### 3.3.1 Capsule
 
-Capsule is an application instance, the user identity.
+Capsule is the persistent, recoverable execution context of a person in Hivra.
+It is not an account owned by an application. Its canonical identity and
+Ledger continuity remain stable across replaceable application, drone, and
+transport integrations.
 
 ```rust
 struct Capsule {
@@ -1315,7 +1341,8 @@ Rules:
 
 Term | Definition
 --- | ---
-Capsule | App instance, user identity
+Person-First Runtime (PFR) | Local-first architecture whose persistent execution context belongs to the person rather than an application
+Capsule | Persistent, recoverable execution context of a person in Hivra
 Starter | Unique non-fungible identifier
 Slot | Place for your starter (exactly 5)
 Ledger | Local signed log of events

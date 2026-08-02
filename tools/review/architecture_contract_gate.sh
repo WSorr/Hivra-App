@@ -146,6 +146,12 @@ require_present "$README" '`hivra-transport` is adapter-only and does \*\*not\*\
 # 3) Spec/checklist anti-sprawl + engine/plugin contracts.
 require_present "$PRODUCT_AXIS" '^## 1\. Axis Statement' \
   "product axis defines one permanent evaluation direction"
+require_present "$PRODUCT_AXIS" 'Person-First Runtime \(PFR\)' \
+  "product axis defines the Person-First Runtime category"
+require_present "$SPEC" 'PFR is not a second runtime layer, a new Core entity, or a separate execution' \
+  "specification keeps PFR on the canonical architecture path"
+require_present "$CHECKLIST" 'preserves the Person-First Runtime \(PFR\)' \
+  "architecture review protects person-first ownership"
 require_present "$PRODUCT_AXIS" '^## 2\. Two Canonical Lanes' \
   "product axis defines truth and effect lanes"
 require_present "$PRODUCT_AXIS" '^## 3\. Permanent Product Invariants' \

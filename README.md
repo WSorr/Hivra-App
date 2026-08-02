@@ -1,8 +1,12 @@
 # Hivra
 
-Hivra is a local-first runtime for user-owned Capsules.
+Hivra defines a **Person-First Runtime (PFR)**: a local-first architecture in
+which the primary durable execution context belongs to the person, not to an
+application account.
 
-A Capsule is a persistent digital extension of a user. It can operate independently, keep its own ledger, run WASM drones, and optionally establish trusted links with other Capsules through invitations.
+A Capsule is the persistent, recoverable execution context of that runtime. It
+can operate independently, keep its own ledger, run WASM drones, and optionally
+establish trusted links with other Capsules through invitations.
 
 Hivra is best understood as a personal capsule computer:
 
@@ -12,6 +16,12 @@ Hivra is best understood as a personal capsule computer:
 - but a local-first runtime for your own capsule state, history, recovery, drones, and optional trusted links
 
 The capsule is the center of truth. Transport adapters move messages, but they do not define identity or replace local truth.
+
+Applications connect through bounded runtime capabilities. They may appear,
+evolve, or disappear without becoming owners of the person's identity, signed
+history, trusted relationships, recovery authority, or continuity.
+
+**Apps are temporary. The person is not.**
 
 Trusted links form a **Core Trust Layer**, not a social network. They are internal trust facts created only through real-world invitations. There is no global discovery, no people search, and no public network map.
 
