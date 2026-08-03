@@ -2,14 +2,14 @@
 
 Status date: 2026-08-03
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: implement the audited `12.3 / pass 18` bounded
-pair-attestation response lifecycle. Pass-17 cross-platform evidence exposed a
-stable-snapshot ping-pong: duplicate verified evidence can trigger blind
-re-announcement on successive periodic receives. Pass 18 may add only one
-durable pair/snapshot/evidence response checkpoint inside the existing
-attestation store and must remove the blind ready-state path. Core, Ledger,
-passive scheduling, transport routing, and delivery outbox ownership do not
-change.
+Current development focus: begin guarded platform unit `T0` only after the
+completed `12.3 / pass 18` attestation convergence checkpoint is committed and
+pushed. Pass 18 added schema-v2 bounded response checkpoints, removed blind
+ready-state re-announcement, passed all automated gates, and passed fresh
+macOS/Android build `100000326` smoke across cold restart without changing
+Core, Ledger, passive scheduling, transport routing, or delivery outbox
+ownership. T0 records and verifies the current environment baseline; it does
+not upgrade Flutter, Rust, Android, or Xcode.
 Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
 signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
@@ -27,7 +27,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation step? | Implement `12.3 / pass 18`: exact durable attestation response identity, bounded retry, duplicate-store distinction, and deletion of blind ready-state re-announcement. | `roadmap.md`, transport delivery lifecycle contract |
+| What is the next 1.x remediation step? | Execute `T0`: check in environment verification and repository-owned pins for the reproducible baseline without upgrading toolchains. | `docs/platform-toolchain-evolution.md`, `docs/roadmap.md` |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -37,7 +37,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `12.3 / pass 18` bounds pair-attestation automatic responses after pass-17 smoke exposed cross-device ping-pong. | Required: v1 store migration, exact-key idempotence, persisted retry boundary, success terminality, new-snapshot, corruption/capacity, concurrency, cross-Capsule, full gates, then macOS/Android zero-repeat evidence. | Extend the existing exchange/store owner and delete blind re-announcement; no Core fact, receiver-ack protocol, timer, scheduler, outbox, or transport route. |
+| **1.x maintained runtime** | Checkpoint complete | `12.3 / pass 18` bounded pair-attestation responses passed full gates and cross-platform cold-restart smoke. | Build `100000326`: Flutter `737/737`, Rust workspace and review gates pass; macOS schema v1→v2 with unchanged Ledger `105/62/119`; Android Ledger `v82`; repeated attestation receives store `0`. | Start only the bounded T0 environment-baseline unit; do not bundle runtime behavior. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |
@@ -53,15 +53,12 @@ work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P0 — `12.3 / pass 18`:** implement the audited durable response
-   checkpoint and remove pair-attestation blind re-announcement; prove stable
-   snapshots stop producing automatic response traffic across restart.
-2. **P1 — `T0`:** add checked-in environment verification and repository-owned
+1. **P1 — `T0`:** add checked-in environment verification and repository-owned
    pins for the reproducible baseline. Do not upgrade Flutter, Rust, Android,
    or Xcode in T0.
-3. **P1 — release decision:** only a named release candidate may trigger fresh
+2. **P1 — release decision:** only a named release candidate may trigger fresh
    macOS and Android packaged-artifact signoff.
-4. **P2 — design and parked work:** `V2-0`, crypto-agility protocol design,
+3. **P2 — design and parked work:** `V2-0`, crypto-agility protocol design,
    dependency upgrades, AI trading advice, distributed backup, and staking
    remain non-runtime or parked until the P0 sequence permits selection.
 

@@ -320,11 +320,16 @@ void main() {
       );
 
       final result = await service.drainAndStore();
+      final duplicate = await service.drainAndStore();
       final stored = await store.load(localRoot);
 
       expect(result.receivedCount, 2);
       expect(result.storedCount, 1);
       expect(result.rejectedCount, 1);
+      expect(duplicate.receivedCount, 2);
+      expect(duplicate.storedCount, 0);
+      expect(duplicate.storedEvidence, isEmpty);
+      expect(duplicate.rejectedCount, 1);
       expect(
         stored.map((item) => item.signerRootHex),
         containsAll(<String>[localRoot, peerRoot]),

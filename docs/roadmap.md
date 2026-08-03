@@ -1838,14 +1838,18 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - response identity binds exact pair, snapshot, peer evidence, and local
         evidence; adapter success is terminal and failure retries no sooner
         than the persisted 15-minute boundary;
-      - v1 evidence migrates byte-preservingly with empty checkpoints;
+      - v1 evidence migrates without changing evidence records and with empty
+        checkpoints;
         corruption or the 4096-checkpoint bound suppresses automatic send;
       - delete blind ready-state re-announcement and prevent duplicate receives
         from being reported as newly stored;
       - do not add Core facts, a receiver-ack protocol, another outbox,
         scheduler, timer, transport route, or DTO family.
-  - Status: passes 1-17 complete; pass 18 selected by post-pass audit and not
-    yet implemented.
+  - Status: passes 1-18 complete (2026-08-03). Pass 18 passed its focused
+    `31`-test matrix, all repository gates, and fresh build `100000326`
+    macOS/Android smoke. Stable snapshots produced no newly stored attestation
+    on repeated receive or cold restart; macOS Ledger files remained
+    byte-identical and Android preserved Ledger `v82`.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

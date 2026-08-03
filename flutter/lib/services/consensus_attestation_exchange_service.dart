@@ -73,13 +73,7 @@ class ConsensusAttestationExchangeService {
 
     var verified = await _sync.loadVerifiedForPair(peerRootHex: normalizedPeer);
     if (_hasTwoRootEvidence(verified)) {
-      final peerTransportHex = await _resolvePeerTransportHex(normalizedPeer);
-      if (peerTransportHex != null) {
-        _announceReadyEvidence(
-          peerRootHex: normalizedPeer,
-          peerTransportHex: peerTransportHex,
-        );
-      }
+      _answerReadyEvidence(verified);
       return ConsensusAttestationExchangeResult(
         status: ConsensusAttestationExchangeStatus.ready,
         message: null,
@@ -93,13 +87,7 @@ class ConsensusAttestationExchangeService {
     final received = await _sync.drainAndStore();
     verified = await _sync.loadVerifiedForPair(peerRootHex: normalizedPeer);
     if (_hasTwoRootEvidence(verified)) {
-      final peerTransportHex = await _resolvePeerTransportHex(normalizedPeer);
-      if (peerTransportHex != null) {
-        _announceReadyEvidence(
-          peerRootHex: normalizedPeer,
-          peerTransportHex: peerTransportHex,
-        );
-      }
+      _answerReadyEvidence(verified);
       return ConsensusAttestationExchangeResult(
         status: ConsensusAttestationExchangeStatus.ready,
         message: null,
@@ -168,74 +156,65 @@ class ConsensusAttestationExchangeService {
     );
   }
 
-  Future<ConsensusAttestationSendResult> announceForPeer(
-    String peerRootHex,
-  ) async {
-    final normalizedPeer = _normalizeHex64(peerRootHex);
-    if (normalizedPeer == null) {
-      return const ConsensusAttestationSendResult(
-        isSuccess: false,
-        code: -1,
-        errorMessage: 'Invalid consensus peer',
-        evidence: null,
-      );
-    }
-    final peerTransportHex = await _resolvePeerTransportHex(normalizedPeer);
-    if (peerTransportHex == null) {
-      return const ConsensusAttestationSendResult(
-        isSuccess: false,
-        code: -1,
-        errorMessage: 'No transport endpoint mapped for consensus peer',
-        evidence: null,
-      );
-    }
-    return _sync.sendLocalEvidence(
-      peerRootHex: normalizedPeer,
-      peerTransportHex: peerTransportHex,
-    );
-  }
-
   Future<void> answerStoredEvidence(
     List<ConsensusAttestationEvidence> storedEvidence,
   ) async {
     if (storedEvidence.isEmpty) return;
     final localRootHex = _sync.localRootHex();
     if (localRootHex == null) return;
-    final peers = <String>{};
     for (final evidence in storedEvidence) {
       if (evidence.pairRootsSorted.length != 2 ||
-          !evidence.pairRootsSorted.contains(localRootHex)) {
+          !evidence.pairRootsSorted.contains(localRootHex) ||
+          evidence.signerRootHex == localRootHex) {
         continue;
       }
-      for (final root in evidence.pairRootsSorted) {
-        if (root != localRootHex) {
-          peers.add(root);
-        }
-      }
-    }
-    for (final peerRootHex in peers) {
-      await announceForPeer(peerRootHex);
+      await _respondToPeerEvidence(evidence);
     }
   }
 
-  void _announceReadyEvidence({
-    required String peerRootHex,
-    required String peerTransportHex,
-  }) {
-    unawaited(
-      _sync
-          .sendLocalEvidence(
-            peerRootHex: peerRootHex,
-            peerTransportHex: peerTransportHex,
-          )
-          .catchError(
-            (_) => const ConsensusAttestationSendResult(
-              isSuccess: false,
-              code: -1,
-              errorMessage: 'Pair consensus attestation announce failed',
-              evidence: null,
-            ),
-          ),
+  void _answerReadyEvidence(
+    List<ConsensusAttestationEvidence> verifiedEvidence,
+  ) {
+    unawaited(answerStoredEvidence(verifiedEvidence).catchError((_) {}));
+  }
+
+  Future<void> _respondToPeerEvidence(
+    ConsensusAttestationEvidence peerEvidence,
+  ) async {
+    final localRootHex = _sync.localRootHex();
+    if (localRootHex == null ||
+        peerEvidence.signerRootHex == localRootHex ||
+        peerEvidence.pairRootsSorted.length != 2 ||
+        !peerEvidence.pairRootsSorted.contains(localRootHex)) {
+      return;
+    }
+    final peerRootHex = peerEvidence.signerRootHex;
+    final peerTransportHex = await _resolvePeerTransportHex(peerRootHex);
+    if (peerTransportHex == null) return;
+    final localEvidence = await _sync.createLocalEvidence(
+      peerRootHex: peerRootHex,
+    );
+    if (localEvidence == null ||
+        localEvidence.snapshotHashHex != peerEvidence.snapshotHashHex ||
+        localEvidence.commitmentHashHex != peerEvidence.commitmentHashHex ||
+        localEvidence.pairRootsSorted.length != 2 ||
+        localEvidence.pairRootsSorted[0] != peerEvidence.pairRootsSorted[0] ||
+        localEvidence.pairRootsSorted[1] != peerEvidence.pairRootsSorted[1]) {
+      return;
+    }
+    final reservation = await _sync.reserveAutomaticResponse(
+      peerEvidence: peerEvidence,
+      localEvidence: localEvidence,
+    );
+    if (!reservation.canSend) return;
+    final sent = await _sync.sendEvidence(
+      evidence: localEvidence,
+      peerTransportHex: peerTransportHex,
+    );
+    if (!sent.isSuccess) return;
+    await _sync.markAutomaticResponseDelivered(
+      peerEvidence: peerEvidence,
+      localEvidence: localEvidence,
     );
   }
 

@@ -146,6 +146,13 @@ class ConsensusAttestationSyncService {
         evidence: null,
       );
     }
+    return sendEvidence(evidence: evidence, peerTransportHex: peerTransportHex);
+  }
+
+  Future<ConsensusAttestationSendResult> sendEvidence({
+    required ConsensusAttestationEvidence evidence,
+    required String peerTransportHex,
+  }) async {
     final peerBytes = _hexToBytes(peerTransportHex);
     if (peerBytes == null) {
       return ConsensusAttestationSendResult(
@@ -191,6 +198,38 @@ class ConsensusAttestationSyncService {
       errorMessage: code == 0 ? null : error,
       evidence: evidence,
       deliveryReceiptsJson: receipts,
+    );
+  }
+
+  Future<ConsensusAttestationResponseReservation> reserveAutomaticResponse({
+    required ConsensusAttestationEvidence peerEvidence,
+    required ConsensusAttestationEvidence localEvidence,
+  }) async {
+    final localRootHex = _localRootHex();
+    if (localRootHex == null) {
+      return const ConsensusAttestationResponseReservation(
+        status: ConsensusAttestationResponseReservationStatus.unavailable,
+      );
+    }
+    return _store.reserveResponse(
+      capsuleRootHex: localRootHex,
+      peerEvidenceRecordKey: peerEvidence.recordKey,
+      localEvidenceRecordKey: localEvidence.recordKey,
+      nowUtc: _nowUtc(),
+    );
+  }
+
+  Future<bool> markAutomaticResponseDelivered({
+    required ConsensusAttestationEvidence peerEvidence,
+    required ConsensusAttestationEvidence localEvidence,
+  }) async {
+    final localRootHex = _localRootHex();
+    if (localRootHex == null) return false;
+    return _store.markResponseDelivered(
+      capsuleRootHex: localRootHex,
+      peerEvidenceRecordKey: peerEvidence.recordKey,
+      localEvidenceRecordKey: localEvidence.recordKey,
+      nowUtc: _nowUtc(),
     );
   }
 
@@ -295,16 +334,17 @@ class ConsensusAttestationSyncService {
       }
       verified.add(payload);
     }
-    if (verified.isNotEmpty) {
-      await _store.merge(localRootHex, verified);
-    }
+    final stored =
+        verified.isEmpty
+            ? const <ConsensusAttestationEvidence>[]
+            : await _store.merge(localRootHex, verified);
     return ConsensusAttestationReceiveResult(
       code: code,
       errorMessage: null,
       receivedCount: decoded.length,
-      storedCount: verified.length,
+      storedCount: stored.length,
       rejectedCount: rejected,
-      storedEvidence: List<ConsensusAttestationEvidence>.unmodifiable(verified),
+      storedEvidence: List<ConsensusAttestationEvidence>.unmodifiable(stored),
     );
   }
 

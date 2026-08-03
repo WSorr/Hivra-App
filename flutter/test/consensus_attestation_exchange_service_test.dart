@@ -12,11 +12,169 @@ import 'package:hivra_app/models/starter.dart';
 import 'package:hivra_app/services/capsule_address_service.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
+import 'package:hivra_app/services/consensus_attestation_store.dart';
 import 'package:hivra_app/services/consensus_attestation_sync_service.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
 
 void main() {
   group('ConsensusAttestationExchangeService', () {
+    test(
+      'answers exact peer evidence once through durable reservation',
+      () async {
+        const localRootHex =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        const peerRootHex =
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        const peerTransportHex =
+            'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+        const snapshotHashHex =
+            '3333333333333333333333333333333333333333333333333333333333333333';
+        final localEvidence = _evidence(
+          localRootHex: localRootHex,
+          peerRootHex: peerRootHex,
+          snapshotHashHex: snapshotHashHex,
+          signerRootHex: localRootHex,
+        );
+        final peerEvidence = _evidence(
+          localRootHex: localRootHex,
+          peerRootHex: peerRootHex,
+          snapshotHashHex: snapshotHashHex,
+          signerRootHex: peerRootHex,
+        );
+        final sync = _FakeConsensusAttestationSyncService(
+          localRootHex: localRootHex,
+          localEvidence: localEvidence,
+          reservationStatuses:
+              const <ConsensusAttestationResponseReservationStatus>[
+                ConsensusAttestationResponseReservationStatus.reserved,
+                ConsensusAttestationResponseReservationStatus.delivered,
+              ],
+        );
+        final service = ConsensusAttestationExchangeService(
+          sync: sync,
+          loadRelationships: () => <Relationship>[],
+          listTrustedCards:
+              () async => const <CapsuleAddressCard>[
+                CapsuleAddressCard(
+                  rootKey: 'h1peer',
+                  rootHex: peerRootHex,
+                  nostrNpub: 'npub1peer',
+                  nostrHex: peerTransportHex,
+                ),
+              ],
+        );
+
+        await service.answerStoredEvidence(<ConsensusAttestationEvidence>[
+          peerEvidence,
+        ]);
+        await service.answerStoredEvidence(<ConsensusAttestationEvidence>[
+          peerEvidence,
+        ]);
+
+        expect(sync.reserveCalls, 2);
+        expect(sync.preparedSendCalls, 1);
+        expect(sync.markDeliveredCalls, 1);
+        expect(sync.sentPeerTransportHex, peerTransportHex);
+      },
+    );
+
+    test('does not answer stale snapshot or local evidence', () async {
+      const localRootHex =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const peerRootHex =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      const peerTransportHex =
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+      final localEvidence = _evidence(
+        localRootHex: localRootHex,
+        peerRootHex: peerRootHex,
+        snapshotHashHex: '1' * 64,
+        signerRootHex: localRootHex,
+      );
+      final stalePeerEvidence = _evidence(
+        localRootHex: localRootHex,
+        peerRootHex: peerRootHex,
+        snapshotHashHex: '2' * 64,
+        signerRootHex: peerRootHex,
+      );
+      final sync = _FakeConsensusAttestationSyncService(
+        localRootHex: localRootHex,
+        localEvidence: localEvidence,
+      );
+      final service = ConsensusAttestationExchangeService(
+        sync: sync,
+        loadRelationships: () => <Relationship>[],
+        listTrustedCards:
+            () async => const <CapsuleAddressCard>[
+              CapsuleAddressCard(
+                rootKey: 'h1peer',
+                rootHex: peerRootHex,
+                nostrNpub: 'npub1peer',
+                nostrHex: peerTransportHex,
+              ),
+            ],
+      );
+
+      await service.answerStoredEvidence(<ConsensusAttestationEvidence>[
+        stalePeerEvidence,
+        localEvidence,
+      ]);
+
+      expect(sync.reserveCalls, 0);
+      expect(sync.preparedSendCalls, 0);
+      expect(sync.markDeliveredCalls, 0);
+    });
+
+    test('failed automatic send keeps response unconfirmed', () async {
+      const localRootHex =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const peerRootHex =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      final localEvidence = _evidence(
+        localRootHex: localRootHex,
+        peerRootHex: peerRootHex,
+        snapshotHashHex: '3' * 64,
+        signerRootHex: localRootHex,
+      );
+      final peerEvidence = _evidence(
+        localRootHex: localRootHex,
+        peerRootHex: peerRootHex,
+        snapshotHashHex: '3' * 64,
+        signerRootHex: peerRootHex,
+      );
+      final sync = _FakeConsensusAttestationSyncService(
+        localRootHex: localRootHex,
+        localEvidence: localEvidence,
+        preparedSendSuccess: false,
+        reservationStatuses:
+            const <ConsensusAttestationResponseReservationStatus>[
+              ConsensusAttestationResponseReservationStatus.reserved,
+            ],
+      );
+      final service = ConsensusAttestationExchangeService(
+        sync: sync,
+        loadRelationships: () => <Relationship>[],
+        listTrustedCards:
+            () async => const <CapsuleAddressCard>[
+              CapsuleAddressCard(
+                rootKey: 'h1peer',
+                rootHex: peerRootHex,
+                nostrNpub: 'npub1peer',
+                nostrHex:
+                    'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+              ),
+            ],
+      );
+
+      await service.answerStoredEvidence(<ConsensusAttestationEvidence>[
+        peerEvidence,
+      ]);
+
+      expect(sync.reserveCalls, 1);
+      expect(sync.preparedSendCalls, 1);
+      expect(sync.markDeliveredCalls, 0);
+    });
+
     test('uses current verified evidence without transport receive', () async {
       const localRootHex =
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -24,22 +182,27 @@ void main() {
           'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
       const snapshotHashHex =
           '3333333333333333333333333333333333333333333333333333333333333333';
+      final localEvidence = _evidence(
+        localRootHex: localRootHex,
+        peerRootHex: peerRootHex,
+        snapshotHashHex: snapshotHashHex,
+        signerRootHex: localRootHex,
+      );
+      final peerEvidence = _evidence(
+        localRootHex: localRootHex,
+        peerRootHex: peerRootHex,
+        snapshotHashHex: snapshotHashHex,
+        signerRootHex: peerRootHex,
+      );
       final sync = _FakeConsensusAttestationSyncService(
+        localRootHex: localRootHex,
+        localEvidence: localEvidence,
+        reservationStatuses:
+            const <ConsensusAttestationResponseReservationStatus>[
+              ConsensusAttestationResponseReservationStatus.reserved,
+            ],
         verifiedResponses: <List<ConsensusAttestationEvidence>>[
-          <ConsensusAttestationEvidence>[
-            _evidence(
-              localRootHex: localRootHex,
-              peerRootHex: peerRootHex,
-              snapshotHashHex: snapshotHashHex,
-              signerRootHex: localRootHex,
-            ),
-            _evidence(
-              localRootHex: localRootHex,
-              peerRootHex: peerRootHex,
-              snapshotHashHex: snapshotHashHex,
-              signerRootHex: peerRootHex,
-            ),
-          ],
+          <ConsensusAttestationEvidence>[localEvidence, peerEvidence],
         ],
       );
       final service = ConsensusAttestationExchangeService(
@@ -58,9 +221,13 @@ void main() {
       );
 
       final result = await service.ensureForPeer(peerRootHex);
+      await Future<void>.delayed(Duration.zero);
 
       expect(result.status, ConsensusAttestationExchangeStatus.ready);
       expect(sync.receiveCalls, 0);
+      expect(sync.reserveCalls, 1);
+      expect(sync.preparedSendCalls, 1);
+      expect(sync.markDeliveredCalls, 1);
     });
 
     test('prefers contact-card transport for root-addressed peer', () async {
@@ -316,10 +483,17 @@ class _FakeConsensusAttestationSyncService
   final List<ConsensusAttestationEvidence> pairEvidence;
   final List<List<ConsensusAttestationEvidence>> verifiedResponses;
   final List<ConsensusAttestationReceiveResult> receiveResults;
+  final String? configuredLocalRootHex;
+  final ConsensusAttestationEvidence? localEvidence;
+  final List<ConsensusAttestationResponseReservationStatus> reservationStatuses;
+  final bool preparedSendSuccess;
   String? sentPeerRootHex;
   String? sentPeerTransportHex;
   int receiveCalls = 0;
   int verifiedCalls = 0;
+  int reserveCalls = 0;
+  int preparedSendCalls = 0;
+  int markDeliveredCalls = 0;
 
   _FakeConsensusAttestationSyncService({
     this.pairEvidence = const <ConsensusAttestationEvidence>[],
@@ -335,7 +509,15 @@ class _FakeConsensusAttestationSyncService
         rejectedCount: 0,
       ),
     ],
-  }) : super(
+    String? localRootHex,
+    this.localEvidence,
+    this.preparedSendSuccess = true,
+    this.reservationStatuses =
+        const <ConsensusAttestationResponseReservationStatus>[
+          ConsensusAttestationResponseReservationStatus.unavailable,
+        ],
+  }) : configuredLocalRootHex = localRootHex,
+       super(
          runtime: _FakeRuntime(),
          consensus: ConsensusRuntimeService(
            exportLedger: () => null,
@@ -385,6 +567,53 @@ class _FakeConsensusAttestationSyncService
       errorMessage: null,
       evidence: null,
     );
+  }
+
+  @override
+  String? localRootHex() => configuredLocalRootHex;
+
+  @override
+  Future<ConsensusAttestationEvidence?> createLocalEvidence({
+    required String peerRootHex,
+  }) async => localEvidence;
+
+  @override
+  Future<ConsensusAttestationResponseReservation> reserveAutomaticResponse({
+    required ConsensusAttestationEvidence peerEvidence,
+    required ConsensusAttestationEvidence localEvidence,
+  }) async {
+    final index =
+        reserveCalls < reservationStatuses.length
+            ? reserveCalls
+            : reservationStatuses.length - 1;
+    reserveCalls += 1;
+    return ConsensusAttestationResponseReservation(
+      status: reservationStatuses[index],
+    );
+  }
+
+  @override
+  Future<ConsensusAttestationSendResult> sendEvidence({
+    required ConsensusAttestationEvidence evidence,
+    required String peerTransportHex,
+  }) async {
+    preparedSendCalls += 1;
+    sentPeerTransportHex = peerTransportHex;
+    return ConsensusAttestationSendResult(
+      isSuccess: preparedSendSuccess,
+      code: preparedSendSuccess ? 0 : -1,
+      errorMessage: preparedSendSuccess ? null : 'transport send failed',
+      evidence: evidence,
+    );
+  }
+
+  @override
+  Future<bool> markAutomaticResponseDelivered({
+    required ConsensusAttestationEvidence peerEvidence,
+    required ConsensusAttestationEvidence localEvidence,
+  }) async {
+    markDeliveredCalls += 1;
+    return true;
   }
 }
 

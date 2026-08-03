@@ -180,6 +180,7 @@ CONSENSUS="$ROOT/flutter/lib/services/consensus_processor.dart"
 HISTORY_PROJECTION="$ROOT/flutter/lib/services/capsule_history_projection_service.dart"
 CONSENSUS_ATTESTATION_SYNC="$ROOT/flutter/lib/services/consensus_attestation_sync_service.dart"
 CONSENSUS_ATTESTATION_STORE="$ROOT/flutter/lib/services/consensus_attestation_store.dart"
+CONSENSUS_ATTESTATION_EXCHANGE="$ROOT/flutter/lib/services/consensus_attestation_exchange_service.dart"
 CAPSULE_FILE_STORE="$ROOT/flutter/lib/services/capsule_file_store.dart"
 CAPSULE_FILE_STORE_TEST="$ROOT/flutter/test/capsule_file_store_test.dart"
 CAPSULE_BACKUP_CODEC_TEST="$ROOT/flutter/test/capsule_backup_codec_test.dart"
@@ -585,6 +586,20 @@ require_present "$CONSENSUS_ATTESTATION_SYNC" '_verifyEvidence\(payload\)' \
   "pair-consensus attestation receive verifies evidence before storing"
 require_present "$CONSENSUS_ATTESTATION_SYNC" 'await _store\.merge\(localRootHex, verified\)' \
   "pair-consensus attestation sync stores only verified evidence"
+require_present "$CONSENSUS_ATTESTATION_STORE" 'consensusAttestationStoreSchemaVersion = 2' \
+  "pair-consensus attestation store owns the schema-v2 response checkpoint"
+require_present "$CONSENSUS_ATTESTATION_STORE" 'consensusAttestationResponseCheckpointLimit = 4096' \
+  "pair-consensus automatic responses have a bounded durable checkpoint set"
+require_present "$CONSENSUS_ATTESTATION_EXCHANGE" 'reserveAutomaticResponse\(' \
+  "pair-consensus automatic response reserves durable state before transport send"
+require_present "$CONSENSUS_ATTESTATION_EXCHANGE" 'await _sync\.sendEvidence\(' \
+  "pair-consensus automatic response sends the exact prepared evidence"
+require_present "$CONSENSUS_ATTESTATION_EXCHANGE" 'markAutomaticResponseDelivered\(' \
+  "pair-consensus automatic response records terminal adapter success"
+require_absent "$CONSENSUS_ATTESTATION_EXCHANGE" '_announceReadyEvidence|announceForPeer' \
+  "pair-consensus ready state has no blind reannouncement route"
+require_present "$CONSENSUS_ATTESTATION_SYNC" 'storedCount: stored\.length' \
+  "pair-consensus receive reports only newly persisted evidence"
 require_present "$RUNTIME" 'buildConsensusAttestationSyncService' \
   "runtime exposes pair-consensus attestation sync module"
 require_present "$FFI_INVITATION_API" 'queue_incoming_attestation_if_match' \

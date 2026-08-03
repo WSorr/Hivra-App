@@ -516,7 +516,7 @@ evidence, never hidden payload copies.
   - response identity binds the local Capsule, sorted pair roots, exact
     snapshot hash, peer signer/peer evidence `recordKey`, and local evidence
     `recordKey`;
-  - store schema v1 migrates to v2 with unchanged evidence bytes and an empty
+  - store schema v1 migrates to v2 with unchanged evidence records and an empty
     response-checkpoint set; Ledger/Core history is not rewritten;
   - an automatic response reserves its checkpoint atomically before send. If
     storage is corrupt, unavailable, or at the `4096`-checkpoint bound, the
@@ -543,6 +543,27 @@ evidence, never hidden payload copies.
   retry-boundary, success-terminal, new-snapshot, corruption/capacity,
   concurrency, and cross-Capsule regressions plus macOS/Android runtime logs
   showing that a stable snapshot reaches zero repeated automatic responses.
+- Implemented on 2026-08-03: schema-v2 checkpoint persistence, atomic
+  reserve-before-send, 15-minute failed-send cooldown, terminal adapter
+  success, exact peer/local evidence validation, duplicate-store distinction,
+  and ready-path reuse of the bounded exchange owner. Focused migration,
+  identity, failure, capacity, concurrency, restart, Capsule-isolation, sync,
+  exchange, and passive-coordinator tests pass (`31` tests).
+- Completed on 2026-08-03 with all repository gates and fresh build
+  `100000326` smoke evidence. `flutter analyze` reported no issues, all `737`
+  Flutter tests passed, `cargo test --workspace` passed, and
+  `tools/review/review_all.sh` passed. The macOS release bundle fingerprint was
+  `004bcb5b25a1be0e191d81ee1b59fda4d30954f605363d39ab016b5da9352541`;
+  the Android APK SHA-256 was
+  `5c283e9b85d2a9fb132b5ce7979e3c41ef931a062933ab9de00e1eccabac943a`.
+  macOS migrated the active store from schema v1 to v2, received `19` duplicate
+  attestations with `0` newly stored, then produced resume/follow-up/periodic
+  evidence with `0` newly stored. After cold restart it received `21` with `0`
+  newly stored and the next periodic cycle remained `0/0`. Android preserved
+  Ledger `v82`, observed `135` pre-restart receive cycles with no newly stored
+  attestation, and after cold restart received `44` with `0` newly stored
+  followed by periodic `0/0`. macOS Ledger files remained byte-identical at
+  `105`, `62`, and `119` events.
 - Completed in `12.3 / pass 10`: schema v5 explicitly quarantines every
   unreferenced retryable outbox record. Quarantine is durable diagnostic
   evidence, never a second delivery route or a source of domain truth.

@@ -828,6 +828,26 @@ follow-up. Pause and Capsule switch invalidate delayed passive work for the old
 lifecycle context; persisted results remain bound to the Capsule that produced
 them, while stale UI projection is discarded. Scheduler state is not durable.
 
+#### Pair-Attestation Automatic Response
+
+Pair-attestation convergence is best-effort transport behavior, not domain
+truth, a receiver acknowledgement, or a delivery-outbox obligation.
+`ConsensusAttestationExchangeService` is the sole automatic-response owner and
+`ConsensusAttestationStore` is the sole Capsule-scoped persistence owner.
+
+An automatic response MUST bind the local Capsule, sorted pair roots, current
+snapshot and commitment, exact peer evidence `recordKey`, and exact local
+evidence `recordKey`. The store MUST reserve this identity durably before the
+network effect. Adapter success makes the identity terminal; adapter failure
+MAY become eligible only after the persisted bounded retry delay. Corrupt,
+unavailable, or full checkpoint storage MUST fail closed without sending.
+
+Verified duplicate envelopes remain valid input but MUST NOT be reported as
+newly stored or trigger another response. Ready-state checks reuse this bounded
+owner and MUST NOT blind-reannounce. Response checkpoints remain bounded local
+operational evidence in the existing attestation store; they MUST NOT create a
+Core fact, another outbox, scheduler, timer, transport route, or DTO family.
+
 ### 5.2.3 WASM Plugin Host Contract
 
 WASM plugin execution is allowed only through a host boundary with explicit capabilities.
