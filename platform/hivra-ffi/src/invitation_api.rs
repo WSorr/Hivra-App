@@ -62,25 +62,27 @@ fn load_invitation_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32]),
 fn send_delivery_message(
     transport: &NostrTransport,
     message: &DeliveryEnvelope,
+    publish_timeout_secs: u64,
     failure_code: i32,
     debug_label: &str,
 ) -> Result<DeliveryReceipt, (i32, Option<String>)> {
-    let receipt = match transport.send_with_receipt(message.clone()) {
-        Ok(receipt) => receipt,
-        Err(err) => {
-            let reason = describe_transport_error(&err);
-            eprintln!(
-                "[Delivery/Nostr] {} failed: {:?}{}",
-                debug_label,
-                err,
-                reason
-                    .as_deref()
-                    .map(|value| format!(" | reason={value}"))
-                    .unwrap_or_default()
-            );
-            return Err((map_delivery_error(err, failure_code), reason));
-        }
-    };
+    let receipt =
+        match transport.send_with_receipt_with_timeout(message.clone(), publish_timeout_secs) {
+            Ok(receipt) => receipt,
+            Err(err) => {
+                let reason = describe_transport_error(&err);
+                eprintln!(
+                    "[Delivery/Nostr] {} failed: {:?}{}",
+                    debug_label,
+                    err,
+                    reason
+                        .as_deref()
+                        .map(|value| format!(" | reason={value}"))
+                        .unwrap_or_default()
+                );
+                return Err((map_delivery_error(err, failure_code), reason));
+            }
+        };
 
     eprintln!(
         "[Delivery/Nostr] {} accepted envelope={} by={}",
@@ -161,6 +163,7 @@ fn retry_outgoing_relationship_break_by_event_id_over_transport(
     engine: &FfiEngine,
     sender_pubkey: [u8; 32],
     event_id: [u8; 32],
+    publish_timeout_secs: u64,
 ) -> Result<i32, i32> {
     let Some(pending_delivery) =
         crate::invitation_support::pending_outgoing_relationship_break_deliveries_in_runtime(
@@ -197,8 +200,14 @@ fn retry_outgoing_relationship_break_by_event_id_over_transport(
         correlation_id: Some(event_id),
         domain_event: Some(domain_event_proof(&remote_prepared.event)),
     };
-    send_delivery_message(transport, &message, -7, "RelationshipBrokenRetry")
-        .map_err(|(code, _reason)| code)?;
+    send_delivery_message(
+        transport,
+        &message,
+        publish_timeout_secs,
+        -7,
+        "RelationshipBrokenRetry",
+    )
+    .map_err(|(code, _reason)| code)?;
     Ok(1)
 }
 
@@ -214,6 +223,7 @@ fn retry_pending_outgoing_invitations_over_transport(
     sender_pubkey: [u8; 32],
     only_invitation_id: Option<[u8; 32]>,
     mode: InvitationDeliveryMode,
+    publish_timeout_secs: u64,
 ) -> Result<i32, i32> {
     let pending = if mode == InvitationDeliveryMode::Terminal {
         Vec::new()
@@ -268,7 +278,13 @@ fn retry_pending_outgoing_invitations_over_transport(
             domain_event: Some(domain_event_proof(&remote_prepared.event)),
         };
 
-        match send_delivery_message(transport, &message, -7, "InvitationSentRetry") {
+        match send_delivery_message(
+            transport,
+            &message,
+            publish_timeout_secs,
+            -7,
+            "InvitationSentRetry",
+        ) {
             Ok(_) => {
                 delivered_count += 1;
             }
@@ -308,7 +324,7 @@ fn retry_pending_outgoing_invitations_over_transport(
             domain_event: Some(domain_event_proof(&remote_prepared.event)),
         };
 
-        match send_delivery_message(transport, &message, -7, retry_label) {
+        match send_delivery_message(transport, &message, publish_timeout_secs, -7, retry_label) {
             Ok(_) => {
                 delivered_count += 1;
             }
@@ -357,12 +373,14 @@ pub unsafe extern "C" fn hivra_retry_outgoing_relationship_break_by_event_id(
         Err(code) => return code,
     };
     let engine = build_engine(&seed);
-    match with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
+    let profile = TransportProfile::Quick;
+    match with_cached_nostr_transport(sender_secret, profile, -5, |transport| {
         retry_outgoing_relationship_break_by_event_id_over_transport(
             transport,
             &engine,
             sender_pubkey,
             event_id,
+            profile.publish_timeout_secs(),
         )
     }) {
         Ok(delivered) => delivered,
@@ -406,13 +424,15 @@ unsafe fn retry_outgoing_invitation_by_id(
         Err(code) => return code,
     };
     let engine = build_engine(&seed);
-    match with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
+    let profile = TransportProfile::Quick;
+    match with_cached_nostr_transport(sender_secret, profile, -5, |transport| {
         retry_pending_outgoing_invitations_over_transport(
             transport,
             &engine,
             sender_pubkey,
             Some(invitation_id),
             mode,
+            profile.publish_timeout_secs(),
         )
     }) {
         Ok(delivered) => delivered,
@@ -609,7 +629,9 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
             // owned by the capsule-scoped delivery coordinator, which selects one
             // immutable outbox item at a time. Mixing it into receive() caused a
             // read operation to replay every unresolved relationship break.
-            let received = transport.receive().map_err(|_| -5)?;
+            let received = transport
+                .receive_with_timeout(profile.receive_timeout_secs())
+                .map_err(|_| -5)?;
             Ok((received, transport.last_receive_diagnostic()))
         }) {
             Ok(result) => result,

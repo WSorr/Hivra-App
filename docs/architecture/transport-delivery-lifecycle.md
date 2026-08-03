@@ -129,6 +129,12 @@ Sender rate limiting remains `NEEDS_CONTRACT`. It cannot silently drop an
 otherwise valid envelope after a relay cursor advances. The required follow-up
 is a bounded durable quarantine/deferred-inbox contract with stable envelope
 identity, capsule/network scope, retry eligibility, expiry, and diagnostics.
+The audit for `12.3 / pass 11` proved that this also requires an acknowledged
+ingress handoff: the adapter currently advances its per-relay cursor and marks
+an event seen before FFI routing. A future limiter must not acknowledge an
+authenticated envelope until it is either consumed by the canonical ingress
+owner or durably quarantined. Capacity exhaustion must apply backpressure and
+remain visible; it must not evict an unconsumed valid envelope silently.
 
 ## Ownership Rules
 
@@ -178,14 +184,14 @@ identity, capsule/network scope, retry eligibility, expiry, and diagnostics.
   failed NIP-44 decode to NIP-04. Deprecated kind `4`/NIP-04 is isolated to a
   read-only rolling-compatibility decoder with the same ingress and replay
   guards; it cannot publish or create another lifecycle path.
+- Completed in `12.3 / pass 11`: default and quick operations share one
+  Capsule transport-key-owned Nostr session, relay pool, seen set, and
+  per-relay cursor map. Profiles select only bounded operation timeouts; they
+  cannot create a second receive session or cursor owner.
 - Pending: define one shared passive receive scheduler for invitations,
   pair-attestations, chat, relationship notifications, and trading signals.
   Until then, screen-triggered receives are serialized but can still perform
   redundant relay polls.
-- Pending: consolidate the native default and quick Nostr session/cursor
-  caches behind one capsule-owned transport session with explicit operation
-  budgets. They are safe under the global queue, but currently retain
-  duplicate relay connections and independent cursors.
 - Pending: pair-attestation re-announcement needs a pair/snapshot-scoped
   rate-limit or a durable acknowledgement policy. It is currently an
   intentionally best-effort convergence aid, not a Core outbox effect.
@@ -195,8 +201,9 @@ identity, capsule/network scope, retry eligibility, expiry, and diagnostics.
 - Pending: decide whether product requirements justify a true end-to-end
   reliable queue with receiver acknowledgements beyond engine retry.
 - Pending: complete transport-neutral spam protection with a durable bounded
-  quarantine/deferred inbox. Sender throttling must never turn a valid retained
-  envelope into silent data loss after cursor advancement.
+  quarantine/deferred inbox and acknowledged ingress handoff. Sender
+  throttling must never turn a valid retained envelope into silent data loss
+  after cursor advancement.
 
 ## Review Exit Criteria
 

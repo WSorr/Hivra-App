@@ -212,34 +212,33 @@ pub unsafe extern "C" fn hivra_send_pair_consensus_attestation(
     };
 
     let delivery_reason = Mutex::new(None::<String>);
-    if let Err(code) =
-        with_cached_nostr_transport(sender_secret, TransportProfile::Quick, -5, |transport| {
-            transport
-                .send_with_receipt(message.clone())
-                .map(|receipt| {
-                    eprintln!(
-                        "[ConsensusAttestation/Nostr] accepted envelope={} by={}",
-                        receipt.envelope_id, receipt.accepted_by
-                    );
-                    record_delivery_receipt("PairConsensusAttestation", receipt);
-                })
-                .map_err(|err| {
-                    let reason = describe_transport_error(&err);
-                    eprintln!(
-                        "[ConsensusAttestation/Nostr] send failed: {:?}{}",
-                        err,
-                        reason
-                            .as_deref()
-                            .map(|value| format!(" | reason={value}"))
-                            .unwrap_or_default()
-                    );
-                    if let Ok(mut guard) = delivery_reason.lock() {
-                        *guard = reason;
-                    }
-                    map_delivery_error(err, -6)
-                })
-        })
-    {
+    let profile = TransportProfile::Quick;
+    if let Err(code) = with_cached_nostr_transport(sender_secret, profile, -5, |transport| {
+        transport
+            .send_with_receipt_with_timeout(message.clone(), profile.publish_timeout_secs())
+            .map(|receipt| {
+                eprintln!(
+                    "[ConsensusAttestation/Nostr] accepted envelope={} by={}",
+                    receipt.envelope_id, receipt.accepted_by
+                );
+                record_delivery_receipt("PairConsensusAttestation", receipt);
+            })
+            .map_err(|err| {
+                let reason = describe_transport_error(&err);
+                eprintln!(
+                    "[ConsensusAttestation/Nostr] send failed: {:?}{}",
+                    err,
+                    reason
+                        .as_deref()
+                        .map(|value| format!(" | reason={value}"))
+                        .unwrap_or_default()
+                );
+                if let Ok(mut guard) = delivery_reason.lock() {
+                    *guard = reason;
+                }
+                map_delivery_error(err, -6)
+            })
+    }) {
         let reason_suffix = delivery_reason
             .lock()
             .ok()

@@ -105,6 +105,11 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] No new cross-cutting timer, watcher, or hidden background pipeline was introduced.
 - [ ] New transport retry/receive loops share the common transport health
       policy and cannot spin independently under degraded network conditions.
+- [ ] Default and quick transport operations share one Capsule-owned adapter
+      session and cursor owner; profiles alter bounded operation budgets only.
+- [ ] Sender throttling acknowledges an authenticated envelope only after
+      canonical consumption or durable quarantine; full quarantine capacity
+      applies visible backpressure instead of silent loss.
 - [ ] Delivery recovery follows
       `docs/architecture/transport-delivery-lifecycle.md`: one lifecycle owns
       retry timing, receipt reconciliation, and capsule-scoped pump lifetime.

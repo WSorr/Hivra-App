@@ -24,9 +24,7 @@ use hivra_keystore::{
     mnemonic_to_seed, seed_exists, seed_to_mnemonic, store_seed, Seed,
 };
 use hivra_transport::nostr::{NostrConfig, NostrTransport};
-use hivra_transport::{
-    DeliveryEnvelope, DeliveryReceipt, DomainEventProof, Transport, TransportError,
-};
+use hivra_transport::{DeliveryEnvelope, DeliveryReceipt, DomainEventProof, TransportError};
 use nostr_sdk::prelude::{Keys, SecretKey};
 use once_cell::sync::Lazy;
 use rand::RngCore;

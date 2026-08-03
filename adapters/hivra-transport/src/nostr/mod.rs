@@ -268,12 +268,12 @@ impl NostrTransport {
         prioritize_read_relay_urls(relay_urls)
     }
 
-    fn ensure_connected_relays(&self) -> bool {
+    fn ensure_connected_relays(&self, receive_timeout_secs: u64) -> bool {
         // A fetch launched as soon as the first relay connects can complete
         // against an empty relay before the relays that retained the event
         // finish their handshakes. Wait briefly for a second reader, but keep
         // degraded one-relay operation available after the settle window.
-        let settle_secs = self.timeout_secs.min(RECEIVE_RELAY_SETTLE_SECS).max(1);
+        let settle_secs = receive_timeout_secs.min(RECEIVE_RELAY_SETTLE_SECS).max(1);
         let deadline = Instant::now() + Duration::from_secs(settle_secs);
         loop {
             let connected = Self::connected_relay_count(&self.runtime, &self.client);
@@ -400,11 +400,16 @@ impl NostrTransport {
     }
 
     pub fn send_event(&self, event: Event) -> Result<(), TransportError> {
-        self.publish_event(event).map(|_| ())
+        self.publish_event_with_timeout(event, self.publish_timeout_secs)
+            .map(|_| ())
     }
 
-    fn publish_event(&self, event: Event) -> Result<(String, String, u32), TransportError> {
-        let publish_timeout_secs = self.publish_timeout_secs.max(MIN_PUBLISH_TIMEOUT_SECS);
+    fn publish_event_with_timeout(
+        &self,
+        event: Event,
+        publish_timeout_secs: u64,
+    ) -> Result<(String, String, u32), TransportError> {
+        let publish_timeout_secs = publish_timeout_secs.max(MIN_PUBLISH_TIMEOUT_SECS);
         // Connection and relay acknowledgement share one interactive budget.
         // Giving each phase the full duration made a nominal 3s publish wait
         // for up to 6s before its caller could hand durable work to the outbox.
@@ -504,6 +509,107 @@ impl NostrTransport {
         let reason = format!("no relay accepted event; {}", failure_details.join(" | "));
         eprintln!("[Nostr] Send failed: {}", reason);
         Err(TransportError::Other(reason))
+    }
+
+    pub fn send_with_receipt_with_timeout(
+        &self,
+        envelope: DeliveryEnvelope,
+        publish_timeout_secs: u64,
+    ) -> Result<DeliveryReceipt, TransportError> {
+        eprintln!("[Nostr] Sending message...");
+        let message_kind = envelope.kind;
+        let recipient = envelope.to.to_vec();
+        let event = self.encode_message(envelope)?;
+        let (accepted_by, envelope_id, failed_before_accept) =
+            self.publish_event_with_timeout(event, publish_timeout_secs)?;
+        Ok(DeliveryReceipt {
+            transport: self.name().to_string(),
+            accepted_by,
+            envelope_id,
+            message_kind,
+            recipient,
+            failed_before_accept,
+        })
+    }
+
+    pub fn receive_with_timeout(
+        &self,
+        receive_timeout_secs: u64,
+    ) -> Result<Vec<DeliveryEnvelope>, TransportError> {
+        eprintln!("[Nostr] Receiving messages...");
+
+        if !self.ensure_connected_relays(receive_timeout_secs) {
+            eprintln!("[Nostr] No connected relays available for receive");
+            return Ok(Vec::new());
+        }
+
+        let query_now = Timestamp::now().as_u64();
+        let relay_urls = self.configured_relay_urls();
+        if relay_urls.is_empty() {
+            return Err(TransportError::ReceiveFailed);
+        }
+        let fetch_timeout = Duration::from_secs(receive_timeout_secs);
+        let (events, successful_reads, relay_diagnostics) =
+            self.fetch_events_from_relays(relay_urls, query_now, fetch_timeout);
+
+        if successful_reads == 0 {
+            return Err(TransportError::ReceiveFailed);
+        }
+
+        let fetched_count = events.len();
+        eprintln!("[Nostr] Received {} events", fetched_count);
+
+        let mut seen_guard = seen_event_ids().lock().expect("seen ids mutex poisoned");
+        let seen_for_pubkey = seen_guard
+            .entry(self.public_key_bytes())
+            .or_insert_with(HashSet::new);
+
+        let mut messages = Vec::new();
+        let mut replayed = 0usize;
+        let mut dropped: HashMap<String, usize> = HashMap::new();
+        for event in events {
+            let event_id = event.id.to_hex();
+            if seen_for_pubkey.contains(&event_id) {
+                replayed += 1;
+                continue;
+            }
+
+            // Decoding and ingress validation are deterministic for a signed
+            // wire event. Remember rejected event ids too, otherwise one
+            // malformed relay event is reprocessed on every overlapping poll.
+            let decoded = self.decode_event(event);
+            if seen_for_pubkey.len() >= RECEIVE_SEEN_CAPACITY {
+                seen_for_pubkey.clear();
+            }
+            seen_for_pubkey.insert(event_id);
+
+            match decoded {
+                Ok(message) => messages.push(message),
+                Err(err) => {
+                    *dropped.entry(format!("{err:?}")).or_insert(0) += 1;
+                    eprintln!("[Nostr] Dropped invalid inbound event: {err:?}");
+                }
+            }
+        }
+        let decoded_count = messages.len();
+        let dropped_summary = if dropped.is_empty() {
+            "none".to_string()
+        } else {
+            let mut entries = dropped
+                .into_iter()
+                .map(|(reason, count)| format!("{reason}:{count}"))
+                .collect::<Vec<_>>();
+            entries.sort();
+            entries.join(",")
+        };
+        let diagnostic = format!(
+            "reads={successful_reads}; relays=[{}]; fetched={fetched_count}; decoded={decoded_count}; replayed={replayed}; dropped=[{dropped_summary}]",
+            relay_diagnostics.join(", ")
+        );
+        if let Ok(mut current) = self.last_receive_diagnostic.lock() {
+            *current = diagnostic;
+        }
+        Ok(messages)
     }
 
     fn decode_event(&self, event: Event) -> Result<DeliveryEnvelope, TransportError> {
@@ -652,96 +758,11 @@ impl Transport for NostrTransport {
         &self,
         envelope: DeliveryEnvelope,
     ) -> Result<DeliveryReceipt, TransportError> {
-        eprintln!("[Nostr] Sending message...");
-        let message_kind = envelope.kind;
-        let recipient = envelope.to.to_vec();
-        let event = self.encode_message(envelope)?;
-        let (accepted_by, envelope_id, failed_before_accept) = self.publish_event(event)?;
-        Ok(DeliveryReceipt {
-            transport: self.name().to_string(),
-            accepted_by,
-            envelope_id,
-            message_kind,
-            recipient,
-            failed_before_accept,
-        })
+        self.send_with_receipt_with_timeout(envelope, self.publish_timeout_secs)
     }
 
     fn receive(&self) -> Result<Vec<DeliveryEnvelope>, TransportError> {
-        eprintln!("[Nostr] Receiving messages...");
-
-        if !self.ensure_connected_relays() {
-            eprintln!("[Nostr] No connected relays available for receive");
-            return Ok(Vec::new());
-        }
-
-        let query_now = Timestamp::now().as_u64();
-        let relay_urls = self.configured_relay_urls();
-        if relay_urls.is_empty() {
-            return Err(TransportError::ReceiveFailed);
-        }
-        let fetch_timeout = Duration::from_secs(self.timeout_secs);
-        let (events, successful_reads, relay_diagnostics) =
-            self.fetch_events_from_relays(relay_urls, query_now, fetch_timeout);
-
-        if successful_reads == 0 {
-            return Err(TransportError::ReceiveFailed);
-        }
-
-        let fetched_count = events.len();
-        eprintln!("[Nostr] Received {} events", fetched_count);
-
-        let mut seen_guard = seen_event_ids().lock().expect("seen ids mutex poisoned");
-        let seen_for_pubkey = seen_guard
-            .entry(self.public_key_bytes())
-            .or_insert_with(HashSet::new);
-
-        let mut messages = Vec::new();
-        let mut replayed = 0usize;
-        let mut dropped: HashMap<String, usize> = HashMap::new();
-        for event in events {
-            let event_id = event.id.to_hex();
-            if seen_for_pubkey.contains(&event_id) {
-                replayed += 1;
-                continue;
-            }
-
-            // Decoding and ingress validation are deterministic for a signed
-            // wire event. Remember rejected event ids too, otherwise one
-            // malformed relay event is reprocessed on every overlapping poll.
-            let decoded = self.decode_event(event);
-            if seen_for_pubkey.len() >= RECEIVE_SEEN_CAPACITY {
-                seen_for_pubkey.clear();
-            }
-            seen_for_pubkey.insert(event_id);
-
-            match decoded {
-                Ok(message) => messages.push(message),
-                Err(err) => {
-                    *dropped.entry(format!("{err:?}")).or_insert(0) += 1;
-                    eprintln!("[Nostr] Dropped invalid inbound event: {err:?}");
-                }
-            }
-        }
-        let decoded_count = messages.len();
-        let dropped_summary = if dropped.is_empty() {
-            "none".to_string()
-        } else {
-            let mut entries = dropped
-                .into_iter()
-                .map(|(reason, count)| format!("{reason}:{count}"))
-                .collect::<Vec<_>>();
-            entries.sort();
-            entries.join(",")
-        };
-        let diagnostic = format!(
-            "reads={successful_reads}; relays=[{}]; fetched={fetched_count}; decoded={decoded_count}; replayed={replayed}; dropped=[{dropped_summary}]",
-            relay_diagnostics.join(", ")
-        );
-        if let Ok(mut current) = self.last_receive_diagnostic.lock() {
-            *current = diagnostic;
-        }
-        Ok(messages)
+        self.receive_with_timeout(self.timeout_secs)
     }
 
     fn is_connected(&self) -> bool {

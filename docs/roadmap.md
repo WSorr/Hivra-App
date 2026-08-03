@@ -1592,10 +1592,39 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         receive, and showed no crash, ANR, or retry storm.
     - Durable sender-rate quarantine remains separately tracked
       `NEEDS_CONTRACT` debt and is not part of pass 10.
-  - Status: active; passes 1-10 are completed with automated and
-    cross-platform runtime evidence. Durable sender-rate quarantine is the
-    next audit target and remains `NEEDS_CONTRACT`; implementation is not yet
-    authorized.
+    - Pass 11 single transport session ownership completed on 2026-08-03:
+      - the sender-quarantine audit found that default and quick Nostr caches
+        owned independent relay cursor maps while sharing one process seen set;
+      - one transport-key-owned cache now owns the relay pool, seen set, and
+        per-relay cursors for both operation profiles;
+      - default `12s/6s` and quick `8s/3s` receive/publish budgets remain
+        explicit operation policy and no longer select session identity;
+      - wire format, Core, domain routing, outbox, and transport health paths
+        are unchanged;
+      - `git diff --check`, `flutter analyze`, full `flutter test`,
+        `cargo test --workspace`, and `tools/review/review_all.sh` passed;
+      - fresh macOS release launch reconstructed Capsule ledgers `105`, `62`,
+        and `119` without process fault;
+      - fresh Android release APK `versionCode=100000321`, SHA-256
+        `1e7a02994f93a11a2a43473ad37be73dc66525c926ddef70d78a55874884773a`,
+        updated in place while preserving the original install/data boundary,
+        activated Capsule Ledger `v82`, completed canonical receive and
+        `98/98` pair-attestation receive, sent three successful attestation
+        answers, and showed no crash, ANR, or retry storm.
+    - The same audit proved that durable sender quarantine additionally needs
+      an acknowledged ingress handoff. The current adapter marks events seen
+      and advances relay cursors before FFI routing, so limiter implementation
+      remains unauthorized until consume-or-durable-quarantine acknowledgement,
+      bounded capacity backpressure, retention, expiry, and replay ownership
+      are complete.
+    - Pass 12 is contract-first and not yet authorized for implementation. It
+      must define the single acknowledged adapter-to-FFI handoff, stable event
+      identity, consume/quarantine terminal states, bounded-capacity
+      backpressure, retention, expiry, replay ownership, and restart recovery
+      before sender limiting or quarantine storage is added.
+  - Status: active; passes 1-11 are complete. Pass 12 contract preparation is
+    next; sender-rate quarantine remains `NEEDS_CONTRACT` until that contract
+    and its architecture gates are reviewed.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

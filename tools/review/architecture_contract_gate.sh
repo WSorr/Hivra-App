@@ -135,6 +135,7 @@ DELIVERY_LIFECYCLE="$ROOT/flutter/lib/services/capsule_delivery_lifecycle_servic
 DELIVERY_OUTBOX="$ROOT/flutter/lib/services/delivery_outbox_store.dart"
 FFI_INVITATION_API="$ROOT/platform/hivra-ffi/src/invitation_api.rs"
 FFI_CHAT_API="$ROOT/platform/hivra-ffi/src/chat_api.rs"
+FFI_TRANSPORT_CACHE="$ROOT/platform/hivra-ffi/src/transport_cache.rs"
 PLUGIN_GUARD="$ROOT/flutter/lib/services/plugin_execution_guard_service.dart"
 PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
 PLUGIN_CONTRACT_HANDLERS="$ROOT/flutter/lib/services/plugin_contract_handlers.dart"
@@ -612,6 +613,14 @@ require_present "$DELIVERY_LIFECYCLE" 'if \(expected == null\) return false' \
   "aggregate outbox records cannot bind adapter receipts"
 require_present "$DELIVERY_LIFECYCLE_DOC" 'excluded from every due-item query' \
   "delivery lifecycle records non-due quarantine semantics"
+require_present "$FFI_TRANSPORT_CACHE" 'static NOSTR_TRANSPORT:' \
+  "default and quick operations share one Nostr session cache"
+require_absent "$FFI_TRANSPORT_CACHE" 'DEFAULT_NOSTR_TRANSPORT|QUICK_NOSTR_TRANSPORT|cache_for_profile' \
+  "transport profiles do not own separate sessions or cursors"
+require_present "$FFI_INVITATION_API" 'receive_with_timeout\(profile\.receive_timeout_secs\(\)\)' \
+  "receive profile selects an operation budget on the shared session"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'acknowledged ingress handoff' \
+  "sender quarantine remains gated on durable ingress acknowledgement"
 require_absent "$INV_ACTIONS" '_pendingRetryPumpByCapsule|_schedulePendingOutgoingRetryPump' \
   "invitation actions do not own a parallel retry pump"
 require_present "$INV_ACTIONS" 'await _applyWorkerLedgerResult\(' \

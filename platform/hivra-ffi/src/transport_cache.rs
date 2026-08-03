@@ -13,22 +13,21 @@ struct CachedNostrTransport {
     transport: Arc<NostrTransport>,
 }
 
-static DEFAULT_NOSTR_TRANSPORT: Lazy<Mutex<Option<CachedNostrTransport>>> =
-    Lazy::new(|| Mutex::new(None));
-static QUICK_NOSTR_TRANSPORT: Lazy<Mutex<Option<CachedNostrTransport>>> =
-    Lazy::new(|| Mutex::new(None));
+static NOSTR_TRANSPORT: Lazy<Mutex<Option<CachedNostrTransport>>> = Lazy::new(|| Mutex::new(None));
 
-fn cache_for_profile(profile: TransportProfile) -> &'static Mutex<Option<CachedNostrTransport>> {
-    match profile {
-        TransportProfile::Default => &DEFAULT_NOSTR_TRANSPORT,
-        TransportProfile::Quick => &QUICK_NOSTR_TRANSPORT,
+impl TransportProfile {
+    pub(crate) fn receive_timeout_secs(self) -> u64 {
+        match self {
+            Self::Default => NostrConfig::default().timeout,
+            Self::Quick => NostrConfig::quick_launch().timeout,
+        }
     }
-}
 
-fn config_for_profile(profile: TransportProfile) -> NostrConfig {
-    match profile {
-        TransportProfile::Default => NostrConfig::default(),
-        TransportProfile::Quick => NostrConfig::quick_launch(),
+    pub(crate) fn publish_timeout_secs(self) -> u64 {
+        match self {
+            Self::Default => NostrConfig::default().publish_timeout,
+            Self::Quick => NostrConfig::quick_launch().publish_timeout,
+        }
     }
 }
 
@@ -46,11 +45,9 @@ fn should_retry_with_fresh_transport(profile: TransportProfile, code: i32) -> bo
 
 fn rebuild_transport_for_profile(
     sender_secret: [u8; 32],
-    profile: TransportProfile,
     init_failure_code: i32,
 ) -> Result<CachedNostrTransport, i32> {
-    let config = config_for_profile(profile);
-    let transport = match NostrTransport::new(config, &sender_secret) {
+    let transport = match NostrTransport::new(NostrConfig::default(), &sender_secret) {
         Ok(transport) => transport,
         Err(_) => return Err(init_failure_code),
     };
@@ -69,7 +66,7 @@ pub(crate) fn with_cached_nostr_transport<R, F>(
 where
     F: Fn(&NostrTransport) -> Result<R, i32>,
 {
-    let cache = cache_for_profile(profile);
+    let cache = &NOSTR_TRANSPORT;
     {
         let mut cached = cache.lock().unwrap();
         let must_recreate = cached
@@ -78,7 +75,7 @@ where
             .unwrap_or(true);
 
         if must_recreate {
-            let rebuilt = rebuild_transport_for_profile(sender_secret, profile, init_failure_code)?;
+            let rebuilt = rebuild_transport_for_profile(sender_secret, init_failure_code)?;
             *cached = Some(rebuilt);
         }
     }
@@ -97,8 +94,7 @@ where
         Err(code) if should_retry_with_fresh_transport(profile, code) => {
             {
                 let mut cached = cache.lock().unwrap();
-                let rebuilt =
-                    rebuild_transport_for_profile(sender_secret, profile, init_failure_code)?;
+                let rebuilt = rebuild_transport_for_profile(sender_secret, init_failure_code)?;
                 *cached = Some(rebuilt);
             }
             let transport = {
@@ -113,8 +109,7 @@ where
 }
 
 pub(crate) fn clear_cached_nostr_transports() {
-    *DEFAULT_NOSTR_TRANSPORT.lock().unwrap() = None;
-    *QUICK_NOSTR_TRANSPORT.lock().unwrap() = None;
+    *NOSTR_TRANSPORT.lock().unwrap() = None;
 }
 
 #[cfg(test)]
@@ -149,5 +144,13 @@ mod tests {
                 code
             ));
         }
+    }
+
+    #[test]
+    fn profiles_change_operation_budgets_not_session_ownership() {
+        assert_eq!(TransportProfile::Default.receive_timeout_secs(), 12);
+        assert_eq!(TransportProfile::Default.publish_timeout_secs(), 6);
+        assert_eq!(TransportProfile::Quick.receive_timeout_secs(), 8);
+        assert_eq!(TransportProfile::Quick.publish_timeout_secs(), 3);
     }
 }

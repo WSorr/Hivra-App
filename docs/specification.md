@@ -907,6 +907,16 @@ relay cursor has advanced past it. A future sender-class rate limit therefore
 requires a bounded durable quarantine/deferred-inbox contract before it can be
 enabled in production.
 
+One Capsule transport endpoint owns one mounted Nostr session regardless of
+whether the caller requests a default or quick operation. Those profiles alter
+only receive/publish time budgets; they MUST NOT create independent relay
+pools, seen sets, or cursor maps. Before sender throttling can ship, receive
+must additionally expose an acknowledged ingress handoff: an authenticated
+envelope becomes cursor/seen-terminal only after canonical routing consumes it
+or the Capsule-scoped quarantine durably accepts it. Full quarantine capacity
+must produce visible backpressure, never silent eviction or a second receive
+route.
+
 ### 5.4 Nostr Adapter
 
 The maintained Nostr adapter carries the canonical `DeliveryEnvelope v1` in
