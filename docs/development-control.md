@@ -2,12 +2,13 @@
 
 Status date: 2026-08-03
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: Capsule AI Runtime convergence. AI-0 is complete:
-the provider-independent request/result contract and executable inventory gate
-are frozen without runtime behavior changes, and full repository gates pass.
-Four legacy feature-owned dispatch paths remain callable and may only decrease.
-The next bounded implementation unit is AI-1: migrate only
-`CapsuleHistoryAiAdvisorService` and delete its direct credential/adapter path.
+Current development focus: Capsule AI Runtime convergence. AI-1 is complete:
+the history advisor now uses the provider-independent runtime, and its direct
+credential/adapter path is deleted and gated against return. Three legacy
+feature-owned dispatch paths remain callable and may only decrease. The next
+bounded implementation unit is AI-2: migrate only
+`AiDeveloperEngineerService` while preserving its disclosure and denylist
+policy.
 T1 or any other toolchain upgrade is not selected.
 Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
@@ -26,7 +27,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation step? | Execute AI-1: migrate only the history advisor through Capsule AI Runtime and delete its direct credential/adapter path. | `docs/architecture/capsule-ai-runtime.md`, `docs/roadmap.md` |
+| What is the next 1.x remediation step? | Execute AI-2: migrate only Developer Engineer through Capsule AI Runtime and delete its direct credential/adapter path. | `docs/architecture/capsule-ai-runtime.md`, `docs/roadmap.md` |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -40,7 +41,7 @@ table, then open only the linked authority for the selected work item.
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Checkpoint complete | `T0`: one baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Build `100000327`: all gates pass; macOS universal and Android three-ABI layouts verified; both artifacts cold-start without fatal evidence. | Select any later toolchain unit explicitly; do not activate T1 by implication. |
-| **Capsule AI Runtime** | AI-0 checkpoint complete | Four legacy feature-owned dispatch paths are registered behind a non-increasing executable boundary; request/result semantics are frozen before runtime work. | Flutter `737/737`, Rust workspace, analyze, and review gates pass; no runtime behavior changed. | AI-1 migrates only history advisor and deletes that direct path. |
+| **Capsule AI Runtime** | AI-1 checkpoint complete | History advisor uses the canonical runtime for Capsule binding, disclosure evidence, provider dispatch, budgets, serialization, supersession, and stale-completion rejection. | Build `100000328`: focused runtime/history `12/12`, Flutter `748/748`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | AI-2 migrates only Developer Engineer and deletes that direct path. |
 | **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects and a foreground bounded-reply experiment exist, but automatic modes are blocked by the canonical engagement lifecycle gates. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |
 
 `12.3` passes 1-18 are complete. Any later transport remediation requires a
@@ -51,8 +52,8 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — Capsule AI Runtime AI-1:** migrate only history advisor through the
-   single runtime owner and remove its direct credential/provider path.
+1. **P1 — Capsule AI Runtime AI-2:** migrate only Developer Engineer through
+   the single runtime owner and remove its direct credential/provider path.
 2. **P1 — release decision:** only a named release candidate may trigger fresh
    macOS and Android packaged-artifact signoff.
 3. **P2 — design and parked work:** `V2-0`, crypto-agility protocol design,

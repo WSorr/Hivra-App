@@ -69,6 +69,7 @@ class _CapsuleHistoryScreenState extends State<CapsuleHistoryScreen> {
       _aiError = null;
     });
     try {
+      await advisor.unlockSession();
       final result = await advisor.explain(_projection);
       if (!mounted) return;
       setState(() => _aiResult = result);
@@ -265,7 +266,7 @@ class _AiExplanationCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  result.provider.label,
+                  result.providerLabel,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],

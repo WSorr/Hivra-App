@@ -10,6 +10,7 @@ import 'ai_plugin_audit_service.dart';
 import 'ai_plugin_scaffold_draft_service.dart';
 import 'ai_review_gate_integration_service.dart';
 import 'app_runtime_service.dart';
+import 'capsule_ai_runtime_service.dart';
 
 class AiToolingModuleService {
   final AppRuntimeService _runtime;
@@ -46,7 +47,10 @@ class AiToolingModuleService {
 
   CapsuleHistoryAiAdvisorService buildCapsuleHistoryAiAdvisorService() {
     return CapsuleHistoryAiAdvisorService(
-      credentialStore: AiDoctorCredentialStore.shared,
+      runtime: CapsuleAiRuntimeService(
+        credentialStore: AiDoctorCredentialStore.shared,
+        readActiveCapsuleRootHex: _runtime.activeCapsuleRootHex,
+      ),
     );
   }
 

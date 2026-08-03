@@ -223,16 +223,9 @@ callable paths or duplicated ownership and preserve current release behavior.
 
 ### 9.1 AI-0 Inventory Baseline
 
-Four legacy feature-owned dispatch paths remain callable:
-
-1. `AiDoctorChatService`;
-2. `AiDeveloperEngineerService`;
-3. `CapsuleHistoryAiAdvisorService`;
-4. `MoltbookPublicBulletinAiService`.
-
-Each currently resolves provider credentials and constructs or selects an
-`InferenceProviderAdapter` outside the future sole runtime owner. The only
-allowed composition access to the shared process lease remains
+AI-0 registered four legacy feature-owned dispatch paths: Capsule Analyst,
+Developer Engineer, history advisor, and Moltbook. The only allowed
+composition access to the shared process lease remains
 `AiToolingModuleService` and `PluginRuntimeModuleService`.
 
 `tools/review/capsule_ai_runtime_gate.sh` makes this compatibility debt
@@ -241,11 +234,30 @@ adapter, or platform path. A migration passes only when it routes one listed
 feature through the single runtime owner and deletes that feature's direct
 credential and adapter access in the same unit.
 
-The first selected migration unit is AI-1, `CapsuleHistoryAiAdvisorService`.
-It is advisory-only, has no effect authority, and therefore provides the
-smallest proof of Capsule binding, disclosure hashing, budgets, stale
-completion rejection, and provider substitution before higher-risk Analyst,
-Developer, or Moltbook paths move.
+### 9.2 AI-1 History Advisor Checkpoint
+
+AI-1 routes `CapsuleHistoryAiAdvisorService` through
+`CapsuleAiRuntimeService`. The runtime now owns canonical JSON and request
+identity, explicit process-session unlock, provider dispatch, process-wide
+serialization, same-scope supersession, input/output/time budgets, provider
+evidence validation, Capsule binding, and stale-completion rejection.
+
+The history advisor retains only its redacted ledger-history disclosure and
+advisory proposal semantics. Its direct credential and adapter imports are
+deleted, and the executable gate rejects their return. No Core, FFI, truth, or
+effect path changed.
+
+Three legacy feature-owned dispatch paths remain callable:
+
+1. `AiDoctorChatService`;
+2. `AiDeveloperEngineerService`;
+3. `MoltbookPublicBulletinAiService`.
+
+AI-2 is bounded to `AiDeveloperEngineerService`. It is selected before the
+Capsule Analyst because it is advisory-only, already has explicit redacted
+context and denylisted-path policy, and has no credential-configuration UI
+ownership. Moltbook remains last because its proposals feed an effect-owning
+plugin lifecycle and require the strongest regression evidence.
 
 ## 10. Hivra 2.0 Contract
 

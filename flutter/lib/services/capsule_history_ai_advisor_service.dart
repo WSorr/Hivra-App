@@ -1,34 +1,29 @@
-import 'dart:convert';
-
-import 'ai_doctor_credential_store.dart';
+import 'capsule_ai_runtime_service.dart';
 import 'capsule_history_projection_service.dart';
-import 'inference_provider_adapter.dart';
 
 class CapsuleHistoryAiResult {
   final String text;
   final String model;
-  final InferenceProviderKind provider;
+  final String providerLabel;
 
   const CapsuleHistoryAiResult({
     required this.text,
     required this.model,
-    required this.provider,
+    required this.providerLabel,
   });
 }
 
 class CapsuleHistoryAiAdvisorService {
   static const int maxHistoryEvents = 100;
+  static const String capabilityId = 'hivra.capsule_history.advisor';
+  static const String proposalSchemaId = 'hivra.capsule_history.explanation.v1';
 
-  final AiDoctorCredentialStore _credentialStore;
-  final InferenceProviderAdapter Function(InferenceProviderKind provider)
-  _adapterFactory;
+  final CapsuleInferenceRuntime _runtime;
 
-  CapsuleHistoryAiAdvisorService({
-    required AiDoctorCredentialStore credentialStore,
-    InferenceProviderAdapter Function(InferenceProviderKind provider)?
-    adapterFactory,
-  }) : _credentialStore = credentialStore,
-       _adapterFactory = adapterFactory ?? inferenceProviderAdapterFor;
+  CapsuleHistoryAiAdvisorService({required CapsuleInferenceRuntime runtime})
+    : _runtime = runtime;
+
+  Future<void> unlockSession() => _runtime.unlockPreferredProviderSession();
 
   Future<CapsuleHistoryAiResult> explain(
     CapsuleHistoryProjection projection,
@@ -36,23 +31,6 @@ class CapsuleHistoryAiAdvisorService {
     if (projection.entries.isEmpty) {
       throw StateError('No confirmed ledger history exists for this item');
     }
-    final provider =
-        await _credentialStore.loadPreferredProvider() ??
-        InferenceProviderKind.gemini;
-    final apiKey = await _credentialStore.loadApiKey(provider);
-    if (provider.requiresApiKey && (apiKey == null || apiKey.isEmpty)) {
-      throw StateError(
-        '${provider.label} API key is not saved. Configure it in Capsule Analyst.',
-      );
-    }
-    final baseUrl = await _credentialStore.loadBaseUrl(provider);
-    if (provider == InferenceProviderKind.localOpenAiCompatible &&
-        (baseUrl == null || baseUrl.isEmpty)) {
-      throw StateError(
-        '${provider.label} base URL is not saved. Configure it in Capsule Analyst.',
-      );
-    }
-
     final events =
         projection.entries.length <= maxHistoryEvents
             ? projection.entries
@@ -82,19 +60,25 @@ class CapsuleHistoryAiAdvisorService {
         'credentials_included': false,
       },
     };
-    final response = await _adapterFactory(provider).ask(
-      apiKey: apiKey ?? '',
-      model: provider.defaultModel,
-      baseUrl: baseUrl,
-      prompt: InferencePrompt(
-        instructions: _instructions,
-        inputJson: const JsonEncoder.withIndent('  ').convert(payload),
-      ),
+    final capsuleRootHex = _runtime.requireActiveCapsuleRootHex();
+    final request = CapsuleInferenceRequestV1.create(
+      capsuleRootHex: capsuleRootHex,
+      capabilityId: capabilityId,
+      disclosureSchemaVersion: 1,
+      disclosedSectionIds: const <String>['ledger_history_projection'],
+      proposalSchemaId: proposalSchemaId,
+      proposalSchemaVersion: 1,
+      cancellationScope: '$capabilityId:$capsuleRootHex',
+      instructions: _instructions,
+      input: payload,
+      maxInputBytes: 65536,
+      maxOutputBytes: 12000,
     );
+    final response = await _runtime.infer(request);
     return CapsuleHistoryAiResult(
-      text: response.text,
+      text: response.proposalText,
       model: response.model,
-      provider: response.provider,
+      providerLabel: response.providerLabel,
     );
   }
 

@@ -1925,11 +1925,31 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `tools/review/review_all.sh` passed;
     - no runtime behavior, provider request, credential storage, Core path, or
       effect path changed.
-  - Next selected unit: AI-1 migrates only
-    `CapsuleHistoryAiAdvisorService` through the single runtime owner and
-    deletes its direct credential and adapter access in the same pass.
-  - Status: AI-0 contract and executable inventory gate implemented; AI-1 not
-    started.
+  - AI-1 completed on 2026-08-03:
+    - implemented the host-owned `CapsuleAiRuntimeService` without adding a
+      Core, FFI, truth, or effect path;
+    - migrated only `CapsuleHistoryAiAdvisorService` and deleted its direct
+      credential-store and provider-adapter ownership;
+    - enforced canonical disclosure/request hashing, explicit session unlock,
+      one process-wide scheduler, same-scope supersession, byte/time budgets,
+      provider evidence, Capsule binding, and stale-completion rejection;
+    - reduced callable legacy dispatch and credential-reader paths from four
+      to three, and hardened the gate against restoring the history path;
+    - added focused provider substitution, locked-session, wrong-Capsule,
+      stale-completion, supersession, budget, timeout, serialization, evidence,
+      key-confusion, and redaction regressions;
+    - focused runtime/history tests pass `12/12`; `flutter analyze`, all `748`
+      Flutter tests, `cargo test --workspace`, and
+      `tools/review/review_all.sh` pass;
+    - build `100000328` produces a universal macOS bundle and Android APK with
+      `arm64-v8a`, `armeabi-v7a`, and `x86_64`; both fresh artifacts cold-start
+      without fatal terminal evidence. Live provider use remains an explicit
+      credentialed user action rather than an automated gate.
+  - Next selected unit: AI-2 migrates only `AiDeveloperEngineerService` while
+    preserving its selected-context disclosure, denylisted-path checks, and
+    advisory-only result semantics.
+  - Status: AI-1 implementation complete; three legacy feature-owned provider
+    paths remain and may only decrease.
 
 ## Planned Product Tracks
 

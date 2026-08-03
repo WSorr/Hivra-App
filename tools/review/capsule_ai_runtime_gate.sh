@@ -52,18 +52,25 @@ dispatch_files="$({
   rg -l \
     --glob '*.dart' \
     --glob '!inference_provider_adapter.dart' \
+    --glob '!capsule_ai_runtime_service.dart' \
     'inferenceProviderAdapterFor|_adapterFactory\(|_providerAdapterFactory\(' \
     flutter/lib/services || true
 } | sort -u)"
 
 check_bounded_files \
   "legacy feature-owned provider dispatch" \
-  4 \
+  3 \
   "$dispatch_files" \
   flutter/lib/services/ai_developer_engineer_service.dart \
   flutter/lib/services/ai_doctor_chat_service.dart \
-  flutter/lib/services/capsule_history_ai_advisor_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart
+
+if rg -q 'inferenceProviderAdapterFor' \
+  flutter/lib/services/capsule_ai_runtime_service.dart; then
+  pass "Capsule AI Runtime owns canonical provider dispatch"
+else
+  fail "Capsule AI Runtime canonical provider dispatch is missing"
+fi
 
 adapter_import_files="$({
   rg -l \
@@ -81,25 +88,33 @@ check_bounded_files \
   flutter/lib/services/ai_doctor_credential_store.dart \
   flutter/lib/services/ai_doctor_prompt_service.dart \
   flutter/lib/services/ai_doctor_provider_adapter.dart \
-  flutter/lib/services/capsule_history_ai_advisor_service.dart \
+  flutter/lib/services/capsule_ai_runtime_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart
 
 credential_reader_files="$({
   rg -l \
     --glob '*.dart' \
     --glob '!ai_doctor_credential_store.dart' \
+    --glob '!capsule_ai_runtime_service.dart' \
     'loadApiKey\(|sessionApiKey\(|loadBaseUrl\(|sessionBaseUrl\(' \
     flutter/lib/services || true
 } | sort -u)"
 
 check_bounded_files \
   "legacy feature-owned credential reads" \
-  4 \
+  3 \
   "$credential_reader_files" \
   flutter/lib/services/ai_developer_engineer_service.dart \
   flutter/lib/services/ai_doctor_chat_service.dart \
-  flutter/lib/services/capsule_history_ai_advisor_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart
+
+if rg -q \
+  "ai_doctor_credential_store\.dart|inference_provider_adapter\.dart|inferenceProviderAdapterFor|loadApiKey\(|sessionApiKey\(|loadBaseUrl\(|sessionBaseUrl\(" \
+  flutter/lib/services/capsule_history_ai_advisor_service.dart; then
+  fail "history advisor must remain behind Capsule AI Runtime"
+else
+  pass "history advisor remains behind Capsule AI Runtime"
+fi
 
 credential_import_files="$({
   rg -l \
@@ -115,7 +130,7 @@ check_bounded_files \
   flutter/lib/services/ai_developer_engineer_service.dart \
   flutter/lib/services/ai_doctor_chat_service.dart \
   flutter/lib/services/ai_tooling_module_service.dart \
-  flutter/lib/services/capsule_history_ai_advisor_service.dart \
+  flutter/lib/services/capsule_ai_runtime_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart \
   flutter/lib/services/plugin_runtime_module_service.dart
 
