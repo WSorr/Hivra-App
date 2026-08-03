@@ -116,6 +116,7 @@ DELIVERY_LIFECYCLE_DOC="$ROOT/docs/architecture/transport-delivery-lifecycle.md"
 EXTERNAL_EFFECT_LIFECYCLE_DOC="$ROOT/docs/architecture/external-effect-lifecycle.md"
 AI_PROPOSAL_BOUNDARY_DOC="$ROOT/docs/architecture/ai-proposal-boundary.md"
 CAPSULE_AI_RUNTIME_DOC="$ROOT/docs/architecture/capsule-ai-runtime.md"
+CAPSULE_AI_RUNTIME_GATE="$ROOT/tools/review/capsule_ai_runtime_gate.sh"
 MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC="$ROOT/docs/plugins/moltbook_engagement_lifecycle_v1.md"
 TRANSPORT_HEALTH_CHECKLIST="$ROOT/docs/checklists/transport-health-policy.md"
 CAPSULE_SECRET_LIFECYCLE_DOC="$ROOT/docs/architecture/capsule-scoped-secret-lifecycle.md"
@@ -430,6 +431,16 @@ require_present "$CAPSULE_AI_RUNTIME_DOC" 'A global `AiDto` layer and pass-throu
   "Capsule AI Runtime forbids global AI DTO prostheses"
 require_present "$CAPSULE_AI_RUNTIME_DOC" 'AI Runtime imports Core mutation or an external-effect adapter' \
   "Capsule AI Runtime cannot acquire Core or effect authority"
+require_present "$CAPSULE_AI_RUNTIME_DOC" 'CapsuleInferenceRequestV1' \
+  "Capsule AI Runtime freezes the provider-independent request contract"
+require_present "$CAPSULE_AI_RUNTIME_DOC" 'CapsuleInferenceResultV1' \
+  "Capsule AI Runtime freezes the provider-independent result contract"
+require_present "$CAPSULE_AI_RUNTIME_DOC" 'Four legacy feature-owned dispatch paths remain callable' \
+  "Capsule AI Runtime records the exact 1.x migration inventory"
+require_present "$ROOT/tools/review/review_all.sh" 'capsule_ai_runtime_gate\.sh' \
+  "review_all enforces the Capsule AI Runtime debt boundary"
+require_present "$CAPSULE_AI_RUNTIME_GATE" 'legacy feature-owned provider dispatch' \
+  "Capsule AI Runtime gate keeps provider dispatch debt non-increasing"
 require_present "$SPEC" 'architecture/ai-proposal-boundary\.md' \
   "specification binds AI-enabled capabilities to proposal boundary"
 require_present "$SPEC" 'architecture/capsule-ai-runtime\.md' \

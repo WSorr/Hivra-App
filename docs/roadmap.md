@@ -1393,9 +1393,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - the Nostr adapter authenticates the outer signer first and records
         deterministically rejected event ids in its overlap dedup set, so one
         malformed retained event cannot be reprocessed on every fetch;
-      - sender-class rate limiting remains `NEEDS_CONTRACT`: cursor-safe spam
-        control requires a bounded durable quarantine/deferred inbox rather
-        than silently dropping valid envelopes after relay cursor advancement.
+      - at this audit point sender-class rate limiting remained
+        `NEEDS_CONTRACT`; passes 12-16 later closed the acknowledged handoff,
+        bounded encrypted quarantine, and persisted sender policy without
+        silently dropping valid envelopes after relay cursor advancement.
     - pass 3 protocol contract completed on 2026-07-24:
       - `docs/architecture/continuous-ledger-protocol-v5.md` defines distinct
         signed domain provenance and locally signed sequential ledger-entry
@@ -1604,8 +1605,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         updated in place while preserving install/data scope and Capsule
         Ledger `v82`, completed canonical receive and `98/98` pair-attestation
         receive, and showed no crash, ANR, or retry storm.
-    - Durable sender-rate quarantine remains separately tracked
-      `NEEDS_CONTRACT` debt and is not part of pass 10.
+    - At pass 10, durable sender-rate quarantine remained separately tracked
+      `NEEDS_CONTRACT` debt; passes 12-16 subsequently closed that debt.
     - Pass 11 single transport session ownership completed on 2026-08-03:
       - the sender-quarantine audit found that default and quick Nostr caches
         owned independent relay cursor maps while sharing one process seen set;
@@ -1902,6 +1903,32 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - migration is controlled and hybrid, never a rapid full Ed25519 swap,
       second Core path, dual Ledger, or history rewrite.
   - Status: architecture canon and executable debt gate only; runtime not
+    started.
+
+- `12.5 Capsule AI Runtime Convergence`
+  - Owner: host Capsule AI Runtime outside Core and effect owners.
+  - Permanent invariant:
+    - every inference request uses one provider-independent runtime port;
+    - features own disclosure selection and proposal meaning, but never
+      credentials, provider dispatch, or an AI scheduler;
+    - inference remains untrusted and cannot mutate truth or execute effects.
+  - AI-0 completed on 2026-08-03:
+    - froze `CapsuleInferenceRequestV1` and `CapsuleInferenceResultV1` semantic
+      contracts, canonicalization, typed failure, budget, Capsule binding, and
+      stale-completion rules;
+    - inventoried four callable legacy dispatch paths: Capsule Analyst,
+      Developer Engineer, history advisor, and Moltbook;
+    - added `tools/review/capsule_ai_runtime_gate.sh` so direct credential and
+      adapter ownership can only decrease and cannot spread into screens,
+      widgets, Core, Engine, adapters, or platform crates;
+    - `flutter analyze`, all `737` Flutter tests, `cargo test --workspace`, and
+      `tools/review/review_all.sh` passed;
+    - no runtime behavior, provider request, credential storage, Core path, or
+      effect path changed.
+  - Next selected unit: AI-1 migrates only
+    `CapsuleHistoryAiAdvisorService` through the single runtime owner and
+    deletes its direct credential and adapter access in the same pass.
+  - Status: AI-0 contract and executable inventory gate implemented; AI-1 not
     started.
 
 ## Planned Product Tracks

@@ -15,6 +15,7 @@ run_check() {
 run_check "topology_check.sh"
 run_check "dependency_check.sh"
 run_check "architecture_contract_gate.sh"
+run_check "capsule_ai_runtime_gate.sh"
 run_check "ui_ffi_boundary_gate.sh"
 run_check "docs_integrity_gate.sh"
 run_check "release_discipline_gate.sh"

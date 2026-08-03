@@ -106,6 +106,41 @@ Provider-native request, response, token, safety, and billing DTOs remain
 inside their adapters. A global `AiDto` layer and pass-through feature wrappers
 are forbidden.
 
+### 4.1 Frozen 1.x Contract V1
+
+The provider-independent 1.x boundary is frozen before implementation as two
+semantic records. This is one runtime contract, not a provider DTO family.
+
+`CapsuleInferenceRequestV1` binds:
+
+- `request_id`, `capsule_root`, and `capability_id`;
+- disclosure schema version, canonical disclosure hash, explicitly disclosed
+  section ids, and exact UTF-8 byte count;
+- capability-owned proposal schema id and version;
+- provider policy and model policy without a provider-native request object;
+- input, output, timeout, and concurrency budgets;
+- cancellation/supersession scope;
+- bounded instructions and canonical input JSON.
+
+`CapsuleInferenceResultV1` binds:
+
+- the same request, Capsule, capability, disclosure, and proposal-schema
+  identity;
+- terminal status or one typed visible failure;
+- validated untrusted proposal bytes owned by the requesting capability;
+- provider and model evidence plus response hash and timing evidence.
+
+Canonicalization uses UTF-8, sorted JSON object keys, preserved array order,
+no insignificant whitespace, and lowercase hexadecimal SHA-256 evidence.
+Unknown fields, unknown schema versions, scope changes, oversized input or
+output, unavailable unlocked credentials, timeout, cancellation, and stale
+Capsule completion fail closed. A retry cannot change provider policy, model
+policy, disclosure hash, proposal schema, or request identity.
+
+The runtime validates only the common envelope and declared size/schema
+boundary. The feature or drone still parses and validates its exact proposal
+meaning; no generic AI response acquires capability semantics.
+
 ## 5. Drone Boundary
 
 A drone may declare an inference capability and a drone-owned proposal schema.
@@ -185,6 +220,32 @@ Mode, history-advisor, and Moltbook AI services. The safe convergence path is:
 
 No broad 1.x rewrite or parallel runtime is authorized. Each step must reduce
 callable paths or duplicated ownership and preserve current release behavior.
+
+### 9.1 AI-0 Inventory Baseline
+
+Four legacy feature-owned dispatch paths remain callable:
+
+1. `AiDoctorChatService`;
+2. `AiDeveloperEngineerService`;
+3. `CapsuleHistoryAiAdvisorService`;
+4. `MoltbookPublicBulletinAiService`.
+
+Each currently resolves provider credentials and constructs or selects an
+`InferenceProviderAdapter` outside the future sole runtime owner. The only
+allowed composition access to the shared process lease remains
+`AiToolingModuleService` and `PluginRuntimeModuleService`.
+
+`tools/review/capsule_ai_runtime_gate.sh` makes this compatibility debt
+non-increasing and rejects any new screen, widget, feature, Core, Engine,
+adapter, or platform path. A migration passes only when it routes one listed
+feature through the single runtime owner and deletes that feature's direct
+credential and adapter access in the same unit.
+
+The first selected migration unit is AI-1, `CapsuleHistoryAiAdvisorService`.
+It is advisory-only, has no effect authority, and therefore provides the
+smallest proof of Capsule binding, disclosure hashing, budgets, stale
+completion rejection, and provider substitution before higher-risk Analyst,
+Developer, or Moltbook paths move.
 
 ## 10. Hivra 2.0 Contract
 
