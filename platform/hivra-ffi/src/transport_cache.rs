@@ -108,6 +108,25 @@ where
     }
 }
 
+pub(crate) fn with_current_nostr_transport<R, F>(
+    sender_secret: [u8; 32],
+    missing_code: i32,
+    operation: F,
+) -> Result<R, i32>
+where
+    F: FnOnce(&NostrTransport) -> Result<R, i32>,
+{
+    let transport = {
+        let cached = NOSTR_TRANSPORT.lock().unwrap();
+        let entry = cached.as_ref().ok_or(missing_code)?;
+        if entry.sender_secret != sender_secret {
+            return Err(missing_code);
+        }
+        Arc::clone(&entry.transport)
+    };
+    operation(transport.as_ref())
+}
+
 pub(crate) fn clear_cached_nostr_transports() {
     *NOSTR_TRANSPORT.lock().unwrap() = None;
 }

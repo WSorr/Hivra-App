@@ -2,10 +2,10 @@
 
 Status date: 2026-08-03
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: prepare `12.3 / pass 13`, implementing the
-acknowledged ingress handoff defined by pass 12 without adding sender limiting
-or quarantine storage. Quarantine remains blocked until retention, expiry,
-capacity backpressure, replay, and recovery ownership are implemented.
+Current development focus: define `12.3 / pass 14`, the bounded durable
+quarantine repository and sender-policy contract. Pass 13 implements the
+acknowledged ingress handoff. Limiting/storage remain blocked until scope,
+schema, capacity, retention, expiry, replay, and recovery are complete.
 Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
 signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
@@ -23,7 +23,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation pass? | `12.3 / pass 13`: implement the pass 12 resolve-once adapter-to-FFI handoff while preserving one router and leaving unresolved relay prefixes uncommitted. Do not add sender limiting, quarantine storage, or PQ runtime work in this pass. | `roadmap.md`, `specification.md`, transport delivery lifecycle contract |
+| What is the next 1.x remediation pass? | Define `12.3 / pass 14`: one bounded Capsule/network-scoped quarantine repository and sender-policy contract, including schema, capacity, retention, expiry evidence, replay, and restart recovery. Do not implement limiter/storage or PQ runtime work before those gates close. | `roadmap.md`, `specification.md`, transport delivery lifecycle contract |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -33,7 +33,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `12.3 / pass 12` defines one resolve-once acknowledged ingress batch, terminal dispositions, relay-prefix cursor commit, visible backpressure, and same-router quarantine replay. | Normative lifecycle, specification, architecture checklist, roadmap, and executable architecture gate agree; runtime remains unchanged. | Pass 13 may implement only the handoff and regressions. Limiter/storage remain blocked and Core/domain routing remain unchanged. |
+| **1.x maintained runtime** | Active | `12.3 / pass 13` implements one pending adapter batch, stable event identity, exact FFI dispositions, terminal-prefix cursor commit, and retry backpressure without adding storage or limiter policy. | Full automated gates pass. Fresh macOS release preserved ledgers `105/62/119`; Android `100000322` preserved Ledger `82`, completed canonical batch receive and attestation, then repeated cold replay without crash, ANR, retry, or cursor-loss symptoms. | Pass 14 is contract-only. Define the one quarantine repository and sender policy before any persistence or throttling code. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |

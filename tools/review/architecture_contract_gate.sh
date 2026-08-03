@@ -135,6 +135,7 @@ DELIVERY_LIFECYCLE="$ROOT/flutter/lib/services/capsule_delivery_lifecycle_servic
 DELIVERY_OUTBOX="$ROOT/flutter/lib/services/delivery_outbox_store.dart"
 FFI_INVITATION_API="$ROOT/platform/hivra-ffi/src/invitation_api.rs"
 FFI_CHAT_API="$ROOT/platform/hivra-ffi/src/chat_api.rs"
+FFI_ATTESTATION_API="$ROOT/platform/hivra-ffi/src/consensus_attestation_api.rs"
 FFI_TRANSPORT_CACHE="$ROOT/platform/hivra-ffi/src/transport_cache.rs"
 PLUGIN_GUARD="$ROOT/flutter/lib/services/plugin_execution_guard_service.dart"
 PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
@@ -617,7 +618,7 @@ require_present "$FFI_TRANSPORT_CACHE" 'static NOSTR_TRANSPORT:' \
   "default and quick operations share one Nostr session cache"
 require_absent "$FFI_TRANSPORT_CACHE" 'DEFAULT_NOSTR_TRANSPORT|QUICK_NOSTR_TRANSPORT|cache_for_profile' \
   "transport profiles do not own separate sessions or cursors"
-require_present "$FFI_INVITATION_API" 'receive_with_timeout\(profile\.receive_timeout_secs\(\)\)' \
+require_present "$FFI_INVITATION_API" 'receive_batch_with_timeout\(profile\.receive_timeout_secs\(\)\)' \
   "receive profile selects an operation budget on the shared session"
 require_present "$DELIVERY_LIFECYCLE_DOC" 'acknowledged ingress handoff' \
   "sender quarantine remains gated on durable ingress acknowledgement"
@@ -635,6 +636,28 @@ require_present "$SPEC" '^### 5\.5 Acknowledged Ingress Handoff' \
   "specification binds acknowledged ingress to the canonical lifecycle"
 require_present "$CHECKLIST" 'original event identity' \
   "architecture review preserves event identity across quarantine replay"
+require_present "$NOSTR_TRANSPORT" 'pending_receive_batch: Mutex<Option<PendingReceiveBatch>>' \
+  "Nostr adapter retains one unresolved ingress batch"
+require_present "$NOSTR_TRANSPORT" 'pub fn resolve_receive_batch\(' \
+  "Nostr adapter exposes one resolve-once batch acknowledgement"
+require_absent "$NOSTR_TRANSPORT" 'advance_receive_cursor_for_relay' \
+  "relay fetch cannot advance a cursor before ingress resolution"
+require_present "$NOSTR_TRANSPORT" 'Err\(TransportError::NotImplemented\)' \
+  "legacy aggregate Nostr receive route is sealed"
+require_present "$FFI_INVITATION_API" 'InboundDeliveryResolution' \
+  "canonical FFI ingress returns per-event dispositions"
+require_present "$FFI_INVITATION_API" 'resolve_receive_batch' \
+  "canonical FFI ingress resolves the fetched batch"
+require_present "$FFI_TRANSPORT_CACHE" 'with_current_nostr_transport' \
+  "batch resolution cannot rebuild away pending session state"
+require_absent "$FFI_CHAT_API" 'messages\.drain\(0\.\.overflow\)' \
+  "full chat inbox cannot silently evict an unconsumed envelope"
+require_absent "$FFI_ATTESTATION_API" 'messages\.drain\(0\.\.overflow\)' \
+  "full attestation inbox cannot silently evict an unconsumed envelope"
+require_present "$FFI_CHAT_API" 'return InboundRouteResult::Retry;' \
+  "full chat inbox applies retry backpressure"
+require_present "$FFI_ATTESTATION_API" 'return InboundRouteResult::Retry;' \
+  "full attestation inbox applies retry backpressure"
 require_absent "$INV_ACTIONS" '_pendingRetryPumpByCapsule|_schedulePendingOutgoingRetryPump' \
   "invitation actions do not own a parallel retry pump"
 require_present "$INV_ACTIONS" 'await _applyWorkerLedgerResult\(' \

@@ -1,8 +1,9 @@
 //! Nostr transport adapter
 
 use crate::{
-    DeliveryEnvelope, DeliveryReceipt, InboundEnvelopeGuard, Transport, TransportError,
-    MAX_DELIVERY_ENVELOPE_PAYLOAD_BYTES,
+    DeliveryEnvelope, DeliveryReceipt, InboundDeliveryBatch, InboundDeliveryDisposition,
+    InboundDeliveryItem, InboundDeliveryPayload, InboundDeliveryResolution, InboundEnvelopeGuard,
+    Transport, TransportError, MAX_DELIVERY_ENVELOPE_PAYLOAD_BYTES,
 };
 use futures::future::join_all;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -144,12 +145,30 @@ pub struct NostrTransport {
     client: Client,
     keys: Keys,
     public_key: PublicKey,
-    timeout_secs: u64,
     publish_timeout_secs: u64,
     // Relay histories replicate asynchronously. A cursor shared by every
     // relay can skip a valid event that arrives late on a second relay.
     receive_since_by_relay: Mutex<HashMap<String, u64>>,
+    next_receive_batch_id: Mutex<u64>,
+    pending_receive_batch: Mutex<Option<PendingReceiveBatch>>,
     last_receive_diagnostic: Mutex<String>,
+}
+
+#[derive(Clone)]
+struct PendingRelayCursor {
+    candidate: u64,
+    event_ids: HashSet<String>,
+}
+
+#[derive(Clone)]
+struct PendingReceiveBatch {
+    batch: InboundDeliveryBatch,
+    relay_cursors: HashMap<String, PendingRelayCursor>,
+}
+
+struct RelayFetch {
+    relay_url: String,
+    events: Vec<Event>,
 }
 
 impl NostrTransport {
@@ -178,9 +197,10 @@ impl NostrTransport {
             client,
             keys,
             public_key,
-            timeout_secs: config.timeout,
             publish_timeout_secs: config.publish_timeout,
             receive_since_by_relay: Mutex::new(HashMap::new()),
+            next_receive_batch_id: Mutex::new(1),
+            pending_receive_batch: Mutex::new(None),
             last_receive_diagnostic: Mutex::new(String::new()),
         })
     }
@@ -532,15 +552,39 @@ impl NostrTransport {
         })
     }
 
-    pub fn receive_with_timeout(
+    pub fn receive_batch_with_timeout(
         &self,
         receive_timeout_secs: u64,
-    ) -> Result<Vec<DeliveryEnvelope>, TransportError> {
+    ) -> Result<InboundDeliveryBatch, TransportError> {
         eprintln!("[Nostr] Receiving messages...");
+
+        if let Ok(pending) = self.pending_receive_batch.lock() {
+            if let Some(pending) = pending.as_ref() {
+                if let Ok(mut current) = self.last_receive_diagnostic.lock() {
+                    *current = format!(
+                        "pending_batch={}; unresolved={}",
+                        pending.batch.batch_id,
+                        pending.batch.items.len()
+                    );
+                }
+                return Ok(pending.batch.clone());
+            }
+        }
 
         if !self.ensure_connected_relays(receive_timeout_secs) {
             eprintln!("[Nostr] No connected relays available for receive");
-            return Ok(Vec::new());
+            let batch = InboundDeliveryBatch {
+                batch_id: self.take_next_receive_batch_id(),
+                items: Vec::new(),
+            };
+            *self
+                .pending_receive_batch
+                .lock()
+                .expect("pending receive batch mutex poisoned") = Some(PendingReceiveBatch {
+                batch: batch.clone(),
+                relay_cursors: HashMap::new(),
+            });
+            return Ok(batch);
         }
 
         let query_now = Timestamp::now().as_u64();
@@ -549,49 +593,101 @@ impl NostrTransport {
             return Err(TransportError::ReceiveFailed);
         }
         let fetch_timeout = Duration::from_secs(receive_timeout_secs);
-        let (events, successful_reads, relay_diagnostics) =
+        let (relay_fetches, successful_reads, relay_diagnostics) =
             self.fetch_events_from_relays(relay_urls, query_now, fetch_timeout);
 
         if successful_reads == 0 {
             return Err(TransportError::ReceiveFailed);
         }
 
-        let fetched_count = events.len();
+        let fetched_count = relay_fetches
+            .iter()
+            .map(|fetch| fetch.events.len())
+            .sum::<usize>();
         eprintln!("[Nostr] Received {} events", fetched_count);
 
         let mut seen_guard = seen_event_ids().lock().expect("seen ids mutex poisoned");
         let seen_for_pubkey = seen_guard
             .entry(self.public_key_bytes())
             .or_insert_with(HashSet::new);
-
-        let mut messages = Vec::new();
+        let mut events_by_id: HashMap<String, (Event, HashSet<String>)> = HashMap::new();
+        let mut relay_cursors = HashMap::new();
         let mut replayed = 0usize;
+        for fetch in relay_fetches {
+            let candidate = fetch
+                .events
+                .iter()
+                .map(|event| event.created_at.as_u64())
+                .max()
+                .map(|max_timestamp| {
+                    next_receive_cursor(
+                        self.receive_since_for_relay(&fetch.relay_url),
+                        query_now,
+                        max_timestamp,
+                    )
+                });
+            let mut unresolved_event_ids = HashSet::new();
+            for event in fetch.events {
+                let event_id = event.id.to_hex();
+                if seen_for_pubkey.contains(&event_id) {
+                    replayed += 1;
+                    continue;
+                }
+                unresolved_event_ids.insert(event_id.clone());
+                events_by_id
+                    .entry(event_id)
+                    .and_modify(|(_, relays)| {
+                        relays.insert(fetch.relay_url.clone());
+                    })
+                    .or_insert_with(|| {
+                        let mut relays = HashSet::new();
+                        relays.insert(fetch.relay_url.clone());
+                        (event, relays)
+                    });
+            }
+            if let Some(candidate) = candidate {
+                relay_cursors.insert(
+                    fetch.relay_url,
+                    PendingRelayCursor {
+                        candidate,
+                        event_ids: unresolved_event_ids,
+                    },
+                );
+            }
+        }
+        drop(seen_guard);
+
+        let mut event_ids = events_by_id.keys().cloned().collect::<Vec<_>>();
+        event_ids.sort();
+        let mut items = Vec::with_capacity(event_ids.len());
         let mut dropped: HashMap<String, usize> = HashMap::new();
-        for event in events {
-            let event_id = event.id.to_hex();
-            if seen_for_pubkey.contains(&event_id) {
-                replayed += 1;
-                continue;
-            }
-
-            // Decoding and ingress validation are deterministic for a signed
-            // wire event. Remember rejected event ids too, otherwise one
-            // malformed relay event is reprocessed on every overlapping poll.
+        for event_id in event_ids {
+            let (event, observed_by) = events_by_id
+                .remove(&event_id)
+                .expect("event id collected from the same map");
             let decoded = self.decode_event(event);
-            if seen_for_pubkey.len() >= RECEIVE_SEEN_CAPACITY {
-                seen_for_pubkey.clear();
-            }
-            seen_for_pubkey.insert(event_id);
-
-            match decoded {
-                Ok(message) => messages.push(message),
+            let payload = match decoded {
+                Ok(message) => InboundDeliveryPayload::Envelope(message),
                 Err(err) => {
                     *dropped.entry(format!("{err:?}")).or_insert(0) += 1;
                     eprintln!("[Nostr] Dropped invalid inbound event: {err:?}");
+                    InboundDeliveryPayload::AdapterRejected {
+                        reason: format!("{err:?}"),
+                    }
                 }
-            }
+            };
+            let mut observed_by = observed_by.into_iter().collect::<Vec<_>>();
+            observed_by.sort();
+            items.push(InboundDeliveryItem {
+                event_id,
+                observed_by,
+                payload,
+            });
         }
-        let decoded_count = messages.len();
+        let decoded_count = items
+            .iter()
+            .filter(|item| matches!(item.payload, InboundDeliveryPayload::Envelope(_)))
+            .count();
         let dropped_summary = if dropped.is_empty() {
             "none".to_string()
         } else {
@@ -609,7 +705,151 @@ impl NostrTransport {
         if let Ok(mut current) = self.last_receive_diagnostic.lock() {
             *current = diagnostic;
         }
-        Ok(messages)
+        let batch = InboundDeliveryBatch {
+            batch_id: self.take_next_receive_batch_id(),
+            items,
+        };
+        *self
+            .pending_receive_batch
+            .lock()
+            .expect("pending receive batch mutex poisoned") = Some(PendingReceiveBatch {
+            batch: batch.clone(),
+            relay_cursors,
+        });
+        Ok(batch)
+    }
+
+    pub fn resolve_receive_batch(
+        &self,
+        batch_id: u64,
+        resolutions: Vec<InboundDeliveryResolution>,
+    ) -> Result<(), TransportError> {
+        let mut pending_guard = self
+            .pending_receive_batch
+            .lock()
+            .map_err(|_| TransportError::ReceiveFailed)?;
+        let Some(pending) = pending_guard.as_ref() else {
+            return Err(TransportError::InvalidMessage);
+        };
+        if pending.batch.batch_id != batch_id {
+            return Err(TransportError::InvalidMessage);
+        }
+
+        let mut dispositions = HashMap::new();
+        for resolution in resolutions {
+            if dispositions
+                .insert(resolution.event_id, resolution.disposition)
+                .is_some()
+            {
+                return Err(TransportError::InvalidMessage);
+            }
+        }
+        if dispositions.len() != pending.batch.items.len()
+            || pending
+                .batch
+                .items
+                .iter()
+                .any(|item| !dispositions.contains_key(&item.event_id))
+        {
+            return Err(TransportError::InvalidMessage);
+        }
+        for item in &pending.batch.items {
+            let disposition = dispositions[&item.event_id];
+            match (&item.payload, disposition) {
+                (
+                    InboundDeliveryPayload::AdapterRejected { .. },
+                    InboundDeliveryDisposition::AdapterRejected,
+                ) => {}
+                (
+                    InboundDeliveryPayload::Envelope(_),
+                    InboundDeliveryDisposition::AdapterRejected,
+                )
+                | (
+                    InboundDeliveryPayload::AdapterRejected { .. },
+                    InboundDeliveryDisposition::Consumed | InboundDeliveryDisposition::Quarantined,
+                ) => return Err(TransportError::InvalidMessage),
+                _ => {}
+            }
+        }
+
+        let terminal_ids = dispositions
+            .iter()
+            .filter_map(|(event_id, disposition)| {
+                disposition.is_terminal().then(|| event_id.clone())
+            })
+            .collect::<HashSet<_>>();
+        {
+            let mut seen_guard = seen_event_ids().lock().expect("seen ids mutex poisoned");
+            let seen_for_pubkey = seen_guard
+                .entry(self.public_key_bytes())
+                .or_insert_with(HashSet::new);
+            for event_id in &terminal_ids {
+                if seen_for_pubkey.len() >= RECEIVE_SEEN_CAPACITY {
+                    seen_for_pubkey.clear();
+                }
+                seen_for_pubkey.insert(event_id.clone());
+            }
+        }
+
+        let retry_ids = dispositions
+            .iter()
+            .filter_map(|(event_id, disposition)| {
+                (*disposition == InboundDeliveryDisposition::Retry).then(|| event_id.clone())
+            })
+            .collect::<HashSet<_>>();
+        let mut remaining_relay_cursors = HashMap::new();
+        for (relay_url, relay_cursor) in &pending.relay_cursors {
+            if relay_cursor
+                .event_ids
+                .iter()
+                .all(|event_id| terminal_ids.contains(event_id))
+            {
+                self.commit_receive_cursor_for_relay(relay_url, relay_cursor.candidate);
+            } else {
+                let event_ids = relay_cursor
+                    .event_ids
+                    .intersection(&retry_ids)
+                    .cloned()
+                    .collect::<HashSet<_>>();
+                remaining_relay_cursors.insert(
+                    relay_url.clone(),
+                    PendingRelayCursor {
+                        candidate: relay_cursor.candidate,
+                        event_ids,
+                    },
+                );
+            }
+        }
+
+        if retry_ids.is_empty() {
+            *pending_guard = None;
+        } else {
+            let items = pending
+                .batch
+                .items
+                .iter()
+                .filter(|item| retry_ids.contains(&item.event_id))
+                .cloned()
+                .collect();
+            *pending_guard = Some(PendingReceiveBatch {
+                batch: InboundDeliveryBatch {
+                    batch_id: self.take_next_receive_batch_id(),
+                    items,
+                },
+                relay_cursors: remaining_relay_cursors,
+            });
+        }
+        Ok(())
+    }
+
+    fn take_next_receive_batch_id(&self) -> u64 {
+        let mut next = self
+            .next_receive_batch_id
+            .lock()
+            .expect("receive batch id mutex poisoned");
+        let current = *next;
+        *next = next.saturating_add(1);
+        current
     }
 
     fn decode_event(&self, event: Event) -> Result<DeliveryEnvelope, TransportError> {
@@ -667,23 +907,14 @@ impl NostrTransport {
             .unwrap_or(initial)
     }
 
-    fn advance_receive_cursor_for_relay(&self, relay_url: &str, query_now: u64, events: &[Event]) {
-        let Some(max_timestamp) = events.iter().map(|event| event.created_at.as_u64()).max() else {
-            return;
-        };
-
+    fn commit_receive_cursor_for_relay(&self, relay_url: &str, candidate: u64) {
         if let Ok(mut cursors) = self.receive_since_by_relay.lock() {
             let current = cursors.get(relay_url).copied().unwrap_or_else(|| {
                 Timestamp::now()
                     .as_u64()
                     .saturating_sub(RECEIVE_LOOKBACK_SECS)
             });
-            // Keep one second of overlap because multiple envelopes may share
-            // a relay timestamp; event-id dedupe handles the replay.
-            cursors.insert(
-                relay_url.to_string(),
-                next_receive_cursor(current, query_now, max_timestamp),
-            );
+            cursors.insert(relay_url.to_string(), current.max(candidate));
         }
     }
 
@@ -692,7 +923,7 @@ impl NostrTransport {
         relay_urls: Vec<String>,
         query_now: u64,
         timeout: Duration,
-    ) -> (Vec<Event>, usize, Vec<String>) {
+    ) -> (Vec<RelayFetch>, usize, Vec<String>) {
         let requests: Vec<_> = relay_urls
             .into_iter()
             .map(|relay_url| {
@@ -727,7 +958,7 @@ impl NostrTransport {
             .await
         });
 
-        let mut events = Vec::new();
+        let mut relay_fetches = Vec::new();
         let mut successful_reads = 0usize;
         let mut relay_diagnostics = Vec::new();
         for (relay_url, result) in results {
@@ -735,9 +966,11 @@ impl NostrTransport {
                 Ok(relay_events) => {
                     let relay_events = relay_events.to_vec();
                     relay_diagnostics.push(format!("{relay_url}={}", relay_events.len()));
-                    self.advance_receive_cursor_for_relay(&relay_url, query_now, &relay_events);
                     successful_reads += 1;
-                    events.extend(relay_events);
+                    relay_fetches.push(RelayFetch {
+                        relay_url,
+                        events: relay_events,
+                    });
                 }
                 Err(err) => {
                     relay_diagnostics.push(format!("{relay_url}=error:{err:?}"));
@@ -745,7 +978,7 @@ impl NostrTransport {
                 }
             }
         }
-        (events, successful_reads, relay_diagnostics)
+        (relay_fetches, successful_reads, relay_diagnostics)
     }
 }
 
@@ -762,7 +995,7 @@ impl Transport for NostrTransport {
     }
 
     fn receive(&self) -> Result<Vec<DeliveryEnvelope>, TransportError> {
-        self.receive_with_timeout(self.timeout_secs)
+        Err(TransportError::NotImplemented)
     }
 
     fn is_connected(&self) -> bool {
@@ -778,11 +1011,192 @@ impl Transport for NostrTransport {
 mod tests {
     use super::*;
 
+    fn ingress_test_transport(secret: u8) -> NostrTransport {
+        NostrTransport::new(
+            NostrConfig {
+                relays: Vec::new(),
+                ephemeral: true,
+                timeout: 2,
+                publish_timeout: 2,
+            },
+            &[secret; 32],
+        )
+        .expect("test transport")
+    }
+
+    fn ingress_test_item(event_id: &str, recipient: [u8; 32]) -> InboundDeliveryItem {
+        InboundDeliveryItem {
+            event_id: event_id.to_string(),
+            observed_by: vec!["wss://relay.test".to_string()],
+            payload: InboundDeliveryPayload::Envelope(DeliveryEnvelope {
+                schema_version: 1,
+                from: [99; 32],
+                to: recipient,
+                kind: 4097,
+                payload: b"{}".to_vec(),
+                timestamp: 1,
+                correlation_id: None,
+                domain_event: None,
+            }),
+        }
+    }
+
     #[test]
     fn receive_cursor_does_not_follow_future_dated_event() {
         assert_eq!(next_receive_cursor(100, 200, 10_000), 199);
         assert_eq!(next_receive_cursor(250, 200, 10_000), 250);
         assert_eq!(next_receive_cursor(100, 200, 150), 149);
+    }
+
+    #[test]
+    fn retry_resolution_keeps_cursor_and_seen_uncommitted() {
+        let transport = ingress_test_transport(79);
+        let event_id = "event-retry".to_string();
+        transport
+            .receive_since_by_relay
+            .lock()
+            .unwrap()
+            .insert("wss://relay.test".to_string(), 100);
+        *transport.pending_receive_batch.lock().unwrap() = Some(PendingReceiveBatch {
+            batch: InboundDeliveryBatch {
+                batch_id: 7,
+                items: vec![ingress_test_item(&event_id, transport.public_key_bytes())],
+            },
+            relay_cursors: HashMap::from([(
+                "wss://relay.test".to_string(),
+                PendingRelayCursor {
+                    candidate: 200,
+                    event_ids: HashSet::from([event_id.clone()]),
+                },
+            )]),
+        });
+
+        transport
+            .resolve_receive_batch(
+                7,
+                vec![InboundDeliveryResolution {
+                    event_id: event_id.clone(),
+                    disposition: InboundDeliveryDisposition::Retry,
+                }],
+            )
+            .expect("retry resolution");
+
+        assert_eq!(transport.receive_since_for_relay("wss://relay.test"), 100);
+        assert!(!seen_event_ids()
+            .lock()
+            .unwrap()
+            .get(&transport.public_key_bytes())
+            .is_some_and(|seen| seen.contains(&event_id)));
+        let pending = transport.pending_receive_batch.lock().unwrap();
+        assert_eq!(pending.as_ref().unwrap().batch.items.len(), 1);
+        assert_ne!(pending.as_ref().unwrap().batch.batch_id, 7);
+    }
+
+    #[test]
+    fn terminal_resolution_commits_seen_and_only_complete_relay_prefixes() {
+        let transport = ingress_test_transport(80);
+        let first = "event-first".to_string();
+        let second = "event-second".to_string();
+        {
+            let mut cursors = transport.receive_since_by_relay.lock().unwrap();
+            cursors.insert("wss://relay.mixed".to_string(), 100);
+            cursors.insert("wss://relay.complete".to_string(), 100);
+        }
+        *transport.pending_receive_batch.lock().unwrap() = Some(PendingReceiveBatch {
+            batch: InboundDeliveryBatch {
+                batch_id: 9,
+                items: vec![
+                    ingress_test_item(&first, transport.public_key_bytes()),
+                    ingress_test_item(&second, transport.public_key_bytes()),
+                ],
+            },
+            relay_cursors: HashMap::from([
+                (
+                    "wss://relay.mixed".to_string(),
+                    PendingRelayCursor {
+                        candidate: 300,
+                        event_ids: HashSet::from([first.clone(), second.clone()]),
+                    },
+                ),
+                (
+                    "wss://relay.complete".to_string(),
+                    PendingRelayCursor {
+                        candidate: 250,
+                        event_ids: HashSet::from([first.clone()]),
+                    },
+                ),
+            ]),
+        });
+
+        transport
+            .resolve_receive_batch(
+                9,
+                vec![
+                    InboundDeliveryResolution {
+                        event_id: first.clone(),
+                        disposition: InboundDeliveryDisposition::Consumed,
+                    },
+                    InboundDeliveryResolution {
+                        event_id: second.clone(),
+                        disposition: InboundDeliveryDisposition::Retry,
+                    },
+                ],
+            )
+            .expect("partial resolution");
+
+        assert_eq!(transport.receive_since_for_relay("wss://relay.mixed"), 100);
+        assert_eq!(
+            transport.receive_since_for_relay("wss://relay.complete"),
+            250
+        );
+        assert!(seen_event_ids()
+            .lock()
+            .unwrap()
+            .get(&transport.public_key_bytes())
+            .is_some_and(|seen| seen.contains(&first) && !seen.contains(&second)));
+
+        let retry_batch_id = transport
+            .pending_receive_batch
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .batch
+            .batch_id;
+        transport
+            .resolve_receive_batch(
+                retry_batch_id,
+                vec![InboundDeliveryResolution {
+                    event_id: second.clone(),
+                    disposition: InboundDeliveryDisposition::Consumed,
+                }],
+            )
+            .expect("terminal retry resolution");
+        assert_eq!(transport.receive_since_for_relay("wss://relay.mixed"), 300);
+        assert!(transport.pending_receive_batch.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn resolution_requires_exact_batch_identity_and_item_set() {
+        let transport = ingress_test_transport(81);
+        let event_id = "event-exact".to_string();
+        *transport.pending_receive_batch.lock().unwrap() = Some(PendingReceiveBatch {
+            batch: InboundDeliveryBatch {
+                batch_id: 11,
+                items: vec![ingress_test_item(&event_id, transport.public_key_bytes())],
+            },
+            relay_cursors: HashMap::new(),
+        });
+
+        assert_eq!(
+            transport.resolve_receive_batch(12, Vec::new()),
+            Err(TransportError::InvalidMessage)
+        );
+        assert_eq!(
+            transport.resolve_receive_batch(11, Vec::new()),
+            Err(TransportError::InvalidMessage)
+        );
+        assert!(transport.pending_receive_batch.lock().unwrap().is_some());
     }
 
     #[test]

@@ -24,7 +24,10 @@ use hivra_keystore::{
     mnemonic_to_seed, seed_exists, seed_to_mnemonic, store_seed, Seed,
 };
 use hivra_transport::nostr::{NostrConfig, NostrTransport};
-use hivra_transport::{DeliveryEnvelope, DeliveryReceipt, DomainEventProof, TransportError};
+use hivra_transport::{
+    DeliveryEnvelope, DeliveryReceipt, DomainEventProof, InboundDeliveryDisposition,
+    InboundDeliveryPayload, InboundDeliveryResolution, TransportError,
+};
 use nostr_sdk::prelude::{Keys, SecretKey};
 use once_cell::sync::Lazy;
 use rand::RngCore;
@@ -40,6 +43,13 @@ pub(crate) fn set_last_error(message: impl Into<String>) {
 
 pub(crate) fn clear_last_error() {
     *LAST_ERROR.lock().unwrap() = None;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InboundRouteResult {
+    NotMatched,
+    Consumed,
+    Retry,
 }
 
 mod capsule_api;
@@ -84,7 +94,8 @@ pub(crate) use runtime_support::{
     verify_ledger_event_signatures,
 };
 pub(crate) use transport_cache::{
-    clear_cached_nostr_transports, with_cached_nostr_transport, TransportProfile,
+    clear_cached_nostr_transports, with_cached_nostr_transport, with_current_nostr_transport,
+    TransportProfile,
 };
 
 #[cfg(test)]

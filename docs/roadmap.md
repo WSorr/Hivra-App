@@ -1639,8 +1639,40 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Pass 13 may implement only this acknowledged handoff and its regressions.
       Sender limiting and quarantine storage remain unauthorized until the
       handoff is proven and their separate retention/capacity contract closes.
-  - Status: active; passes 1-12 are complete. Pass 13 acknowledged-handoff
-    implementation is next; sender-rate quarantine remains `NEEDS_CONTRACT`.
+    - Pass 13 acknowledged ingress implementation completed on 2026-08-03:
+      - transport-neutral batch/item/disposition contracts carry stable event
+        identity while the Nostr adapter retains merged relay provenance and
+        per-relay cursor candidates in one pending batch;
+      - relay fetch no longer mutates cursor or seen state; exact batch/item
+        resolution is required before terminal ids and complete relay prefixes
+        commit;
+      - retry dispositions remain pending under a new batch id, stale-session
+        rebuild is forbidden during resolution, and the legacy aggregate Nostr
+        receive method is sealed;
+      - the existing FFI ingress router remains the sole capability/Core route;
+        append/projection and full chat/attestation inbox failures return retry
+        while deterministic policy rejects are terminal;
+      - capability inboxes use adapter event identity and no longer evict old
+        unconsumed items when full;
+      - focused regressions cover exact batch identity, retry seen/cursor
+        backpressure, per-relay terminal prefixes, stable capability identity,
+        and full-inbox behavior;
+      - `git diff --check`, `flutter analyze`, full `flutter test`,
+        `cargo test --workspace`, and `tools/review/review_all.sh` passed;
+      - fresh macOS release launch reconstructed Capsule ledgers `105`, `62`,
+        and `119` without process fault;
+      - fresh Android APK `versionCode=100000322`, SHA-256
+        `c6d5028e76b3f4d1299fe7c247f9ebaf31705bc2a8c659736be6e4929bcaf9bb`,
+        updated in place while preserving the original install/data boundary,
+        activated Capsule Ledger `v82`, resolved canonical ingress `batch=1`
+        with `retry=0`, received `98/98` attestations, and sent three answers;
+      - a second cold start preserved Ledger `v82`, replayed the same canonical
+        path with `retry=0`, received `97/97` attestations, and showed no crash,
+        ANR, or retry storm.
+    - Pass 14 is contract-first: define the bounded Capsule/network quarantine
+      repository and sender policy before adding persistence or throttling.
+  - Status: active; passes 1-13 are complete. Pass 14 quarantine contract is
+    next; sender-rate quarantine remains `NEEDS_CONTRACT`.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

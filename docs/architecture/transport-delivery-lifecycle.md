@@ -263,6 +263,15 @@ Threat closure required before implementation:
   only after canonical consumption or durable quarantine; unresolved capacity
   or persistence failure preserves the relay prefix and exposes backpressure.
   Runtime implementation and sender quarantine remain separate later passes.
+- Completed in `12.3 / pass 13`: the Nostr adapter returns one bounded pending
+  batch with stable event identity and merged relay provenance. Relay fetch no
+  longer advances cursors or inserts new seen ids. The canonical FFI ingress
+  router returns an exact per-event disposition and resolves the same cached
+  adapter session; only terminal relay prefixes commit. Retry items remain in
+  the pending batch under a new resolve-once batch id. The legacy aggregate
+  Nostr `Transport::receive` route is sealed. Full chat and attestation inboxes
+  return retry backpressure without evicting older unconsumed items, and their
+  in-process deduplication uses the adapter event id.
 - Pending: define one shared passive receive scheduler for invitations,
   pair-attestations, chat, relationship notifications, and trading signals.
   Until then, screen-triggered receives are serialized but can still perform

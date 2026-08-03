@@ -598,6 +598,213 @@ pub unsafe extern "C" fn hivra_transport_receive_quick() -> i32 {
     hivra_transport_receive_with_profile(TransportProfile::Quick)
 }
 
+#[derive(Default)]
+struct IngressCounters {
+    appended: i32,
+    loopback: usize,
+    routed_non_core: usize,
+    unsupported: usize,
+    not_addressed: usize,
+    proof_invalid: usize,
+    signer_mismatch: usize,
+    replayed: usize,
+    append_failed: usize,
+    capacity_backpressure: usize,
+    adapter_rejected: usize,
+    accepted_seen: usize,
+    accepted_replayed: usize,
+    accepted_appended: usize,
+    accepted_projection_reconciled: usize,
+}
+
+fn route_inbound_envelope(
+    event_id: &str,
+    message: DeliveryEnvelope,
+    local_pubkey: PubKey,
+    seed: &Seed,
+    counters: &mut IngressCounters,
+) -> InboundDeliveryDisposition {
+    let local_endpoint = *local_pubkey.as_bytes();
+    eprintln!(
+        "[Delivery/Nostr] Received message kind={} payload_len={} to_prefix={:02x?}",
+        message.kind,
+        message.payload.len(),
+        &message.to[..4]
+    );
+
+    if message.from == local_endpoint {
+        counters.loopback += 1;
+        eprintln!(
+            "[Delivery/Nostr] Skip loopback message kind={} from local pubkey",
+            message.kind
+        );
+        return InboundDeliveryDisposition::Consumed;
+    }
+
+    match crate::chat_api::queue_incoming_chat_if_match(&message, event_id, local_endpoint) {
+        InboundRouteResult::Consumed => {
+            counters.routed_non_core += 1;
+            return InboundDeliveryDisposition::Consumed;
+        }
+        InboundRouteResult::Retry => {
+            counters.capacity_backpressure += 1;
+            return InboundDeliveryDisposition::Retry;
+        }
+        InboundRouteResult::NotMatched => {}
+    }
+    match crate::consensus_attestation_api::queue_incoming_attestation_if_match(
+        &message,
+        event_id,
+        local_endpoint,
+    ) {
+        InboundRouteResult::Consumed => {
+            counters.routed_non_core += 1;
+            return InboundDeliveryDisposition::Consumed;
+        }
+        InboundRouteResult::Retry => {
+            counters.capacity_backpressure += 1;
+            return InboundDeliveryDisposition::Retry;
+        }
+        InboundRouteResult::NotMatched => {}
+    }
+
+    let kind_u8 = match u8::try_from(message.kind) {
+        Ok(value) => value,
+        Err(_) => {
+            counters.unsupported += 1;
+            eprintln!(
+                "[Delivery/Nostr] Skip message: unsupported kind value {}",
+                message.kind
+            );
+            return InboundDeliveryDisposition::Consumed;
+        }
+    };
+    let kind = match event_kind_from_u8(kind_u8) {
+        Some(value) => value,
+        None => {
+            counters.unsupported += 1;
+            eprintln!("[Delivery/Nostr] Skip message: unmapped kind {}", kind_u8);
+            return InboundDeliveryDisposition::Consumed;
+        }
+    };
+
+    let payload_targets_local = if kind == EventKind::InvitationSent && message.payload.len() >= 96
+    {
+        let mut to_from_payload = [0u8; 32];
+        to_from_payload.copy_from_slice(&message.payload[64..96]);
+        to_from_payload == local_endpoint
+    } else {
+        false
+    };
+    let expired_targets_local =
+        if kind == EventKind::InvitationExpired && message.payload.len() == 32 {
+            let mut invitation_id = [0u8; 32];
+            invitation_id.copy_from_slice(&message.payload);
+            incoming_invitation_expired_matches_runtime(&invitation_id, PubKey::from(message.from))
+        } else {
+            false
+        };
+    if message.to != local_endpoint && !payload_targets_local && !expired_targets_local {
+        counters.not_addressed += 1;
+        eprintln!("[Delivery/Nostr] Skip message: not addressed to local capsule");
+        return InboundDeliveryDisposition::Consumed;
+    }
+
+    let local_payload = message.payload.clone();
+    let local_kind = if kind == EventKind::InvitationSent {
+        EventKind::InvitationReceived
+    } else {
+        kind
+    };
+    let is_accepted = local_kind == EventKind::InvitationAccepted;
+    if is_accepted {
+        counters.accepted_seen += 1;
+    }
+
+    let verified_event = match verified_event_from_message(&message, local_kind) {
+        Ok(event) => event,
+        Err(err) => {
+            counters.proof_invalid += 1;
+            eprintln!("[Delivery/Nostr] Skip message: {}", err);
+            return InboundDeliveryDisposition::Consumed;
+        }
+    };
+    let message_signer = *verified_event.signer();
+    if !proof_signer_matches_payload(local_kind, &local_payload, message_signer) {
+        counters.signer_mismatch += 1;
+        eprintln!("[Delivery/Nostr] Skip message: proof signer does not match payload root");
+        return InboundDeliveryDisposition::Consumed;
+    }
+    if should_skip_incoming_delivery_append_with_timestamp(
+        local_kind,
+        &local_payload,
+        message_signer,
+        Some(message.timestamp),
+    ) {
+        counters.replayed += 1;
+        if is_accepted {
+            counters.accepted_replayed += 1;
+            match project_invitation_accepted_delivery(seed, message.from, &local_payload) {
+                Ok(()) => counters.accepted_projection_reconciled += 1,
+                Err(err) => {
+                    eprintln!(
+                        "[Delivery/Nostr] Failed to reconcile RelationshipEstablished from replayed InvitationAccepted ({})",
+                        err
+                    );
+                    return InboundDeliveryDisposition::Retry;
+                }
+            }
+        } else if local_kind == EventKind::InvitationRejected && local_payload.len() == 33 {
+            if let Ok(payload) = InvitationRejectedPayload::from_bytes(&local_payload) {
+                let engine = build_engine(seed);
+                if let Err(err) = project_effects_from_invitation_rejected(&engine, &payload) {
+                    eprintln!(
+                        "[Delivery/Nostr] Failed to reconcile local effects from replayed InvitationRejected ({})",
+                        err
+                    );
+                    return InboundDeliveryDisposition::Retry;
+                }
+            }
+        }
+        eprintln!("[Delivery/Nostr] Skip message: event already exists");
+        return InboundDeliveryDisposition::Consumed;
+    }
+
+    if let Err(err) = append_verified_runtime_event(verified_event) {
+        counters.append_failed += 1;
+        eprintln!("[Delivery/Nostr] Skip message: append failed ({})", err);
+        return InboundDeliveryDisposition::Retry;
+    }
+    counters.appended += 1;
+    if is_accepted {
+        counters.accepted_appended += 1;
+    }
+
+    if kind == EventKind::InvitationAccepted {
+        if let Err(err) = project_invitation_accepted_delivery(seed, message.from, &message.payload)
+        {
+            eprintln!(
+                "[Delivery/Nostr] Failed to project RelationshipEstablished from InvitationAccepted ({})",
+                err
+            );
+            return InboundDeliveryDisposition::Retry;
+        }
+    } else if kind == EventKind::InvitationRejected && message.payload.len() == 33 {
+        if let Ok(payload) = InvitationRejectedPayload::from_bytes(&message.payload) {
+            let engine = build_engine(seed);
+            if let Err(err) = project_effects_from_invitation_rejected(&engine, &payload) {
+                eprintln!(
+                    "[Delivery/Nostr] Failed to project local effects from InvitationRejected ({})",
+                    err
+                );
+                return InboundDeliveryDisposition::Retry;
+            }
+        }
+    }
+
+    InboundDeliveryDisposition::Consumed
+}
+
 fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
     clear_last_error();
     clear_delivery_receipts();
@@ -605,226 +812,92 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         Ok(seed) => seed,
         Err(_) => return -1,
     };
-
     let local_pubkey = match derive_nostr_public_key(&seed) {
         Ok(key) => key,
         Err(_) => return -2,
     };
-
     let sender_secret = match derive_nostr_keypair(&seed) {
         Ok(key) => key,
         Err(_) => return -2,
     };
-
-    {
-        let runtime = RUNTIME.lock().unwrap();
-        if runtime.capsule.is_none() {
-            return -3;
-        }
+    if RUNTIME.lock().unwrap().capsule.is_none() {
+        return -3;
     }
 
-    let (received, receive_diagnostic) =
+    let (batch, receive_diagnostic) =
         match with_cached_nostr_transport(sender_secret, profile, -4, |transport| {
-            // Receiving must never publish unrelated local facts. Outbound retry is
-            // owned by the capsule-scoped delivery coordinator, which selects one
-            // immutable outbox item at a time. Mixing it into receive() caused a
-            // read operation to replay every unresolved relationship break.
-            let received = transport
-                .receive_with_timeout(profile.receive_timeout_secs())
+            let batch = transport
+                .receive_batch_with_timeout(profile.receive_timeout_secs())
                 .map_err(|_| -5)?;
-            Ok((received, transport.last_receive_diagnostic()))
+            Ok((batch, transport.last_receive_diagnostic()))
         }) {
             Ok(result) => result,
             Err(code) => return code,
         };
-    let mut appended: i32 = 0;
-    let mut loopback = 0usize;
-    let mut routed_non_core = 0usize;
-    let mut unsupported = 0usize;
-    let mut not_addressed = 0usize;
-    let mut proof_invalid = 0usize;
-    let mut signer_mismatch = 0usize;
-    let mut replayed = 0usize;
-    let mut append_failed = 0usize;
-    let mut accepted_seen = 0usize;
-    let mut accepted_replayed = 0usize;
-    let mut accepted_appended = 0usize;
-    let mut accepted_projection_reconciled = 0usize;
-    for message in received {
-        eprintln!(
-            "[Delivery/Nostr] Received message kind={} payload_len={} to_prefix={:02x?}",
-            message.kind,
-            message.payload.len(),
-            &message.to[..4]
-        );
-
-        if message.from == local_pubkey {
-            loopback += 1;
-            eprintln!(
-                "[Delivery/Nostr] Skip loopback message kind={} from local pubkey",
-                message.kind
-            );
-            continue;
-        }
-
-        // Route chat messages before invitation kind parsing.
-        // Chat uses app-level kind=4097 inside DM payload, which does not map to core EventKind.
-        // If we parse EventKind first, chat messages are dropped as "unsupported kind"
-        // after already being marked as seen by transport receive.
-        if crate::chat_api::queue_incoming_chat_if_match(&message, local_pubkey) {
-            routed_non_core += 1;
-            continue;
-        }
-        if crate::consensus_attestation_api::queue_incoming_attestation_if_match(
-            &message,
-            local_pubkey,
-        ) {
-            routed_non_core += 1;
-            continue;
-        }
-
-        let to_matches = message.to == local_pubkey;
-
-        let kind_u8 = match u8::try_from(message.kind) {
-            Ok(value) => value,
-            Err(_) => {
-                unsupported += 1;
+    let batch_id = batch.batch_id;
+    let mut counters = IngressCounters::default();
+    let mut resolutions = Vec::with_capacity(batch.items.len());
+    for item in batch.items {
+        let disposition = match item.payload {
+            InboundDeliveryPayload::AdapterRejected { reason } => {
+                counters.adapter_rejected += 1;
                 eprintln!(
-                    "[Delivery/Nostr] Skip message: unsupported kind value {}",
-                    message.kind
+                    "[Delivery/Nostr] Adapter rejected event={} reason={}",
+                    item.event_id, reason
                 );
-                continue;
+                InboundDeliveryDisposition::AdapterRejected
             }
+            InboundDeliveryPayload::Envelope(message) => route_inbound_envelope(
+                &item.event_id,
+                message,
+                PubKey::from(local_pubkey),
+                &seed,
+                &mut counters,
+            ),
         };
-
-        let kind = match event_kind_from_u8(kind_u8) {
-            Some(value) => value,
-            None => {
-                unsupported += 1;
-                eprintln!("[Delivery/Nostr] Skip message: unmapped kind {}", kind_u8);
-                continue;
-            }
-        };
-
-        // Fallback routing check by payload for InvitationSent in case `message.to` encoding differs.
-        let payload_targets_local =
-            if kind == EventKind::InvitationSent && message.payload.len() >= 96 {
-                let mut to_from_payload = [0u8; 32];
-                to_from_payload.copy_from_slice(&message.payload[64..96]);
-                to_from_payload == local_pubkey
-            } else {
-                false
-            };
-
-        // InvitationExpired only carries invitation_id. Accept it as addressed
-        // to this capsule only when the local ledger already has the matching
-        // incoming offer from the same signer/root. Ledger remains the routing
-        // source of truth; unrelated cancel messages still fail closed.
-        let expired_targets_local = if kind == EventKind::InvitationExpired
-            && message.payload.len() == 32
-        {
-            let mut invitation_id = [0u8; 32];
-            invitation_id.copy_from_slice(&message.payload);
-            incoming_invitation_expired_matches_runtime(&invitation_id, PubKey::from(message.from))
-        } else {
-            false
-        };
-
-        if !to_matches && !payload_targets_local && !expired_targets_local {
-            not_addressed += 1;
-            eprintln!("[Delivery/Nostr] Skip message: not addressed to local capsule");
-            continue;
-        }
-
-        let local_payload = message.payload.clone();
-        let local_kind = if kind == EventKind::InvitationSent {
-            EventKind::InvitationReceived
-        } else {
-            kind
-        };
-        let is_accepted = local_kind == EventKind::InvitationAccepted;
-        if is_accepted {
-            accepted_seen += 1;
-        }
-
-        let verified_event = match verified_event_from_message(&message, local_kind) {
-            Ok(event) => event,
-            Err(err) => {
-                proof_invalid += 1;
-                eprintln!("[Delivery/Nostr] Skip message: {}", err);
-                continue;
-            }
-        };
-        let message_signer = *verified_event.signer();
-        if !proof_signer_matches_payload(local_kind, &local_payload, message_signer) {
-            signer_mismatch += 1;
-            eprintln!("[Delivery/Nostr] Skip message: proof signer does not match payload root");
-            continue;
-        }
-        if should_skip_incoming_delivery_append_with_timestamp(
-            local_kind,
-            &local_payload,
-            message_signer,
-            Some(message.timestamp),
-        ) {
-            replayed += 1;
-            if is_accepted {
-                accepted_replayed += 1;
-                match project_invitation_accepted_delivery(&seed, message.from, &local_payload) {
-                    Ok(()) => accepted_projection_reconciled += 1,
-                    Err(err) => eprintln!(
-                        "[Delivery/Nostr] Failed to reconcile RelationshipEstablished from replayed InvitationAccepted ({})",
-                        err
-                    ),
-                }
-            }
-            eprintln!("[Delivery/Nostr] Skip message: event already exists");
-            continue;
-        }
-
-        match append_verified_runtime_event(verified_event) {
-            Ok(_) => {
-                appended += 1;
-                if is_accepted {
-                    accepted_appended += 1;
-                }
-            }
-            Err(err) => {
-                append_failed += 1;
-                eprintln!("[Delivery/Nostr] Skip message: append failed ({})", err);
-                continue;
-            }
-        }
-
-        if kind == EventKind::InvitationAccepted {
-            if let Err(err) =
-                project_invitation_accepted_delivery(&seed, message.from, &message.payload)
-            {
-                eprintln!(
-                    "[Delivery/Nostr] Failed to project RelationshipEstablished from InvitationAccepted ({})",
-                    err
-                );
-            }
-        } else if kind == EventKind::InvitationRejected && message.payload.len() == 33 {
-            let Ok(payload) = InvitationRejectedPayload::from_bytes(&message.payload) else {
-                continue;
-            };
-
-            let engine = build_engine(&seed);
-            if let Err(err) = project_effects_from_invitation_rejected(&engine, &payload) {
-                eprintln!(
-                    "[Delivery/Nostr] Failed to project local effects from InvitationRejected ({})",
-                    err
-                );
-            }
-        }
+        resolutions.push(InboundDeliveryResolution {
+            event_id: item.event_id,
+            disposition,
+        });
     }
 
+    if with_current_nostr_transport(sender_secret, -6, |transport| {
+        transport
+            .resolve_receive_batch(batch_id, resolutions.clone())
+            .map_err(|_| -6)
+    })
+    .is_err()
+    {
+        set_last_error(format!(
+            "Transport receive diagnostic: {receive_diagnostic}; ingress resolution failed for batch={batch_id}"
+        ));
+        return -6;
+    }
+
+    let retry = resolutions
+        .iter()
+        .filter(|resolution| resolution.disposition == InboundDeliveryDisposition::Retry)
+        .count();
     set_last_error(format!(
-        "Transport receive diagnostic: {receive_diagnostic}; ingress=[appended={appended}, loopback={loopback}, non_core={routed_non_core}, unsupported={unsupported}, not_addressed={not_addressed}, proof_invalid={proof_invalid}, signer_mismatch={signer_mismatch}, replayed={replayed}, append_failed={append_failed}, accepted_seen={accepted_seen}, accepted_replayed={accepted_replayed}, accepted_appended={accepted_appended}, accepted_projection_reconciled={accepted_projection_reconciled}]"
+        "Transport receive diagnostic: {receive_diagnostic}; ingress=[batch={batch_id}, appended={}, loopback={}, non_core={}, unsupported={}, not_addressed={}, proof_invalid={}, signer_mismatch={}, replayed={}, append_failed={}, capacity_backpressure={}, adapter_rejected={}, retry={retry}, accepted_seen={}, accepted_replayed={}, accepted_appended={}, accepted_projection_reconciled={}]",
+        counters.appended,
+        counters.loopback,
+        counters.routed_non_core,
+        counters.unsupported,
+        counters.not_addressed,
+        counters.proof_invalid,
+        counters.signer_mismatch,
+        counters.replayed,
+        counters.append_failed,
+        counters.capacity_backpressure,
+        counters.adapter_rejected,
+        counters.accepted_seen,
+        counters.accepted_replayed,
+        counters.accepted_appended,
+        counters.accepted_projection_reconciled,
     ));
 
-    appended
+    counters.appended
 }
 
 /// Send and append InvitationAccepted through transport + local ledger.

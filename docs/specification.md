@@ -981,6 +981,14 @@ authorize sender-rate limiting or quarantine runtime in 1.x until their
 storage, retention, expiry, capacity, replay, and recovery owners are
 implemented behind that one handoff.
 
+The maintained 1.x Nostr implementation now mounts this handoff: one pending
+batch retains event ids and relay provenance, the FFI router returns exact
+dispositions, and relay cursor/seen commit occurs only during resolution.
+Retry items remain pending and are presented again; a stale-session rebuild is
+not permitted during resolution. The generic aggregate Nostr receive method is
+sealed so it cannot bypass acknowledgement. This implementation does not add a
+sender limiter, durable quarantine repository, or new Core path.
+
 ```rust
 // NostrTransport uses NostrCryptoProvider (secp256k1)
 pub struct NostrCryptoProvider {

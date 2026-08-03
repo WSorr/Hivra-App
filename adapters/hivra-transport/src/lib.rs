@@ -122,6 +122,48 @@ pub struct DeliveryEnvelope {
     pub domain_event: Option<DomainEventProof>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InboundDeliveryPayload {
+    Envelope(DeliveryEnvelope),
+    AdapterRejected { reason: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboundDeliveryItem {
+    pub event_id: String,
+    pub observed_by: Vec<String>,
+    pub payload: InboundDeliveryPayload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboundDeliveryBatch {
+    pub batch_id: u64,
+    pub items: Vec<InboundDeliveryItem>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InboundDeliveryDisposition {
+    Consumed,
+    Quarantined,
+    Retry,
+    AdapterRejected,
+}
+
+impl InboundDeliveryDisposition {
+    pub const fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            Self::Consumed | Self::Quarantined | Self::AdapterRejected
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboundDeliveryResolution {
+    pub event_id: String,
+    pub disposition: InboundDeliveryDisposition,
+}
+
 const fn default_delivery_envelope_schema_version() -> u16 {
     DELIVERY_ENVELOPE_SCHEMA_VERSION
 }

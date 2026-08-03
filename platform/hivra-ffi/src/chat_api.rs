@@ -8,6 +8,8 @@ const CHAT_INBOX_CAPACITY: usize = 512;
 
 #[derive(Clone, Serialize)]
 pub(crate) struct QueuedChatMessage {
+    #[serde(skip_serializing)]
+    event_id: String,
     from_hex: String,
     to_hex: String,
     payload_json: String,
@@ -91,22 +93,23 @@ fn load_chat_delivery_context(seed: &Seed) -> Result<([u8; 32], [u8; 32]), i32> 
 
 pub(crate) fn queue_incoming_chat_if_match(
     message: &DeliveryEnvelope,
+    event_id: &str,
     local_pubkey: [u8; 32],
-) -> bool {
+) -> InboundRouteResult {
     if message.kind != CAPSULE_CHAT_KIND {
-        return false;
+        return InboundRouteResult::NotMatched;
     }
 
     if message.to != local_pubkey || message.from == local_pubkey {
-        return true;
+        return InboundRouteResult::Consumed;
     }
 
     let Ok(payload_json) = std::str::from_utf8(&message.payload) else {
-        return true;
+        return InboundRouteResult::Consumed;
     };
     let payload_json = payload_json.trim();
     if payload_json.is_empty() {
-        return true;
+        return InboundRouteResult::Consumed;
     }
 
     let from_hex = bytes_to_hex(&message.from);
@@ -114,33 +117,104 @@ pub(crate) fn queue_incoming_chat_if_match(
     let mut inbox = CHAT_INBOX.lock().unwrap();
     let messages = inbox.entry(local_pubkey).or_insert_with(Vec::new);
 
-    let duplicate = messages.iter().any(|queued| {
-        queued.timestamp_ms == message.timestamp
-            && queued.from_hex == from_hex
-            && queued.payload_json == payload_json
-    });
+    let duplicate = messages.iter().any(|queued| queued.event_id == event_id);
     if duplicate {
-        return true;
+        return InboundRouteResult::Consumed;
     }
 
     if messages.len() >= CHAT_INBOX_CAPACITY {
-        let overflow = messages.len() + 1 - CHAT_INBOX_CAPACITY;
-        messages.drain(0..overflow);
+        return InboundRouteResult::Retry;
     }
 
     messages.push(QueuedChatMessage {
+        event_id: event_id.to_string(),
         from_hex,
         to_hex,
         payload_json: payload_json.to_string(),
         timestamp_ms: message.timestamp,
     });
 
-    true
+    InboundRouteResult::Consumed
 }
 
 fn drain_queued_chat(local_pubkey: [u8; 32]) -> Vec<QueuedChatMessage> {
     let mut inbox = CHAT_INBOX.lock().unwrap();
     inbox.remove(&local_pubkey).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod ingress_tests {
+    use super::*;
+
+    #[test]
+    fn full_chat_inbox_returns_retry_without_evicting() {
+        let local_pubkey = [201; 32];
+        CHAT_INBOX.lock().unwrap().insert(
+            local_pubkey,
+            (0..CHAT_INBOX_CAPACITY)
+                .map(|index| QueuedChatMessage {
+                    event_id: format!("event-{index}"),
+                    from_hex: format!("sender-{index}"),
+                    to_hex: "local".to_string(),
+                    payload_json: "{}".to_string(),
+                    timestamp_ms: index as u64,
+                })
+                .collect(),
+        );
+        let message = DeliveryEnvelope {
+            schema_version: 1,
+            from: [202; 32],
+            to: local_pubkey,
+            kind: CAPSULE_CHAT_KIND,
+            payload: b"{\"text\":\"retry\"}".to_vec(),
+            timestamp: 999,
+            correlation_id: None,
+            domain_event: None,
+        };
+
+        assert_eq!(
+            queue_incoming_chat_if_match(&message, "event-retry", local_pubkey),
+            InboundRouteResult::Retry
+        );
+        assert_eq!(
+            CHAT_INBOX.lock().unwrap().get(&local_pubkey).unwrap().len(),
+            CHAT_INBOX_CAPACITY
+        );
+        CHAT_INBOX.lock().unwrap().remove(&local_pubkey);
+    }
+
+    #[test]
+    fn chat_inbox_deduplicates_by_adapter_event_identity() {
+        let local_pubkey = [205; 32];
+        let message = DeliveryEnvelope {
+            schema_version: 1,
+            from: [206; 32],
+            to: local_pubkey,
+            kind: CAPSULE_CHAT_KIND,
+            payload: b"{\"text\":\"same\"}".to_vec(),
+            timestamp: 999,
+            correlation_id: None,
+            domain_event: None,
+        };
+
+        assert_eq!(
+            queue_incoming_chat_if_match(&message, "event-one", local_pubkey),
+            InboundRouteResult::Consumed
+        );
+        assert_eq!(
+            queue_incoming_chat_if_match(&message, "event-one", local_pubkey),
+            InboundRouteResult::Consumed
+        );
+        assert_eq!(
+            queue_incoming_chat_if_match(&message, "event-two", local_pubkey),
+            InboundRouteResult::Consumed
+        );
+        assert_eq!(
+            CHAT_INBOX.lock().unwrap().get(&local_pubkey).unwrap().len(),
+            2
+        );
+        CHAT_INBOX.lock().unwrap().remove(&local_pubkey);
+    }
 }
 
 #[no_mangle]
