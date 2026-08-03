@@ -688,8 +688,22 @@ require_present "$FFI_INVITATION_API" 'route_inbound_envelope' \
   "quarantine recovery reuses the canonical ingress router"
 require_present "$FFI_INVITATION_API" 'InboundDeliveryDisposition::Quarantined' \
   "durable quarantine produces the acknowledged ingress disposition"
-require_absent "$FFI_INBOUND_QUARANTINE" 'SenderIngressPolicyV1|token_bucket|refill' \
-  "pass 15 does not activate sender limiting"
+require_present "$FFI_INBOUND_QUARANTINE" 'struct SenderIngressPolicyV1' \
+  "sender policy state shares the canonical encrypted snapshot"
+require_present "$FFI_INBOUND_QUARANTINE" 'const SENDER_POLICY_BURST: u8 = 8' \
+  "runtime pins sender policy burst"
+require_present "$FFI_INBOUND_QUARANTINE" 'const SENDER_POLICY_REFILL_SECS: u64 = 15' \
+  "runtime pins sender policy refill"
+require_present "$FFI_INBOUND_QUARANTINE" 'const MAX_POLICY_SENDERS: usize = 1024' \
+  "runtime bounds active sender policy state"
+require_present "$FFI_INBOUND_QUARANTINE" 'apply_sender_policy' \
+  "repository exposes one sender policy activation path"
+require_present "$FFI_INVITATION_API" 'quarantine\.apply_sender_policy' \
+  "canonical ingress applies sender policy before routing"
+require_present "$FFI_INVITATION_API" 'recover_one_quarantined_envelope' \
+  "quarantine recovery remains outside sender policy charging"
+require_absent "$FFI_CHAT_API" 'SenderIngressPolicyV1|apply_sender_policy' \
+  "capability inbox cannot own a sender policy bypass"
 require_present "$HIVRA_BINDINGS" 'hivra_set_application_storage_root' \
   "Flutter initializes the canonical native application storage root"
 require_present "$CAPSULE_PERSISTENCE" 'deleteInboundQuarantine' \

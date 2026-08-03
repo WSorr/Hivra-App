@@ -280,6 +280,13 @@ permit every `15 seconds`, capped at `8`. The same event id is charged at most
 once; acknowledged replay and quarantine replay are not charged again. No
 sender, contact, plugin, or domain kind has a hidden bypass.
 
+The maintained v1 repository persists each sender bucket and exact recent
+charge evidence inside the same authenticated-encrypted snapshot. Charge
+evidence is retained for `8 days`, bounded to `65536` event ids and `8 MiB`
+per scope, with at most `40960` ids for one sender. Exhausting sender-state or
+charge-evidence capacity returns `retry`; it cannot silently forget evidence
+to grant a permit or create a second deduplication store.
+
 When no permit exists, the router may return `quarantined` only after the v1
 record commits atomically. Repository failure or full capacity returns `retry`.
 Adapter-invalid input follows deterministic rejection and never consumes
@@ -399,6 +406,15 @@ evidence, never hidden payload copies.
   update/restart evidence passed with preserved Ledger state and zero ingress
   retry. Pass 16 is the first pass authorized to activate only the specified
   sender policy behind this unchanged repository and router.
+- Completed in `12.3 / pass 16`: `SenderIngressPolicyV1` is activated only in
+  the canonical FFI ingress before routing. Burst/refill checkpoints and exact
+  bounded charge evidence persist in the pass-15 encrypted snapshot; pass-15
+  snapshots migrate with empty policy state without rewriting retained
+  quarantine evidence. Stable event replay and quarantine recovery do not
+  consume another permit. Throttled input becomes terminal only after atomic
+  quarantine, while repository, sender-state, or evidence capacity returns
+  cursor-safe `retry`. No capability, message kind, relationship, relay, UI,
+  plugin, Core, or scheduler bypass was added.
 - Pending: define one shared passive receive scheduler for invitations,
   pair-attestations, chat, relationship notifications, and trading signals.
   Until then, screen-triggered receives are serialized but can still perform

@@ -1013,6 +1013,14 @@ plugin identity provide no bypass. A throttled event becomes terminal only
 after atomic quarantine commit; otherwise its relay prefix remains
 unacknowledged.
 
+The maintained v1 implementation persists bucket checkpoints and exact recent
+charge evidence in the same authenticated-encrypted repository snapshot.
+Evidence retention is `8 days`, with at most `65536` event ids and `8 MiB` per
+scope and at most `40960` ids per sender. The repository supports at most
+`1024` sender states. Any state/evidence capacity failure returns `retry`
+instead of forgetting a charge, granting a bypass, or advancing a relay
+cursor.
+
 Quarantine recovery decrypts one eligible record and re-enters the same FFI
 ingress router with the original event id. It cannot append Core directly or
 create another scheduler/receive route. Storage encryption uses a distinct
@@ -1021,9 +1029,11 @@ encryption keys are not reused. The maintained implementation persists one
 authenticated-encrypted snapshot plus independently authenticated envelope
 ciphertexts through the platform crypto boundary, performs bounded recovery
 before new relay fetch, and removes the Capsule-scoped subtree through the
-existing deletion lifecycle. `SenderIngressPolicyV1` remains inactive until a
-separate pass proves policy persistence, restart resistance, and
-cross-platform behavior.
+existing deletion lifecycle. `SenderIngressPolicyV1` is activated at this same
+FFI boundary. Pass-15 snapshots migrate without rewriting quarantine records;
+restart preserves bucket/checkpoint and exact charge evidence; acknowledged
+replay and quarantine recovery do not consume another permit. No second
+transport, capability, scheduler, or Core path is introduced.
 
 ```rust
 // NostrTransport uses NostrCryptoProvider (secp256k1)

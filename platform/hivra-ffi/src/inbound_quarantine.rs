@@ -27,6 +27,13 @@ const INITIAL_RETRY_DELAY_SECS: u64 = 15;
 const MAX_RETRY_DELAY_SECS: u64 = 15 * 60;
 const MAX_EVENT_ID_LEN: usize = 128;
 const MAX_ENDPOINT_LEN: usize = 512;
+const SENDER_POLICY_BURST: u8 = 8;
+const SENDER_POLICY_REFILL_SECS: u64 = 15;
+const MAX_POLICY_SENDERS: usize = 1024;
+const CHARGE_EVIDENCE_RETENTION_SECS: u64 = 8 * 24 * 60 * 60;
+const MAX_CHARGE_EVIDENCE: usize = 65_536;
+const MAX_CHARGE_EVIDENCE_PER_SENDER: usize = 40_960;
+const MAX_SENDER_POLICY_BYTES: usize = 8 * 1024 * 1024;
 
 static APPLICATION_STORAGE_ROOT: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
 static REPOSITORY_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -116,6 +123,32 @@ struct InboundQuarantineSnapshotV1 {
     scope: InboundQuarantineScopeV1,
     records: Vec<InboundQuarantineRecordV1>,
     tombstones: Vec<InboundQuarantineTombstoneV1>,
+    sender_policies: Vec<SenderIngressPolicyV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InboundQuarantineSnapshotPass15V1 {
+    schema_version: u16,
+    scope: InboundQuarantineScopeV1,
+    records: Vec<InboundQuarantineRecordV1>,
+    tombstones: Vec<InboundQuarantineTombstoneV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SenderIngressPolicyV1 {
+    schema_version: u16,
+    scope: InboundQuarantineScopeV1,
+    authenticated_sender: String,
+    available_permits: u8,
+    last_refill_at: u64,
+    last_activity_at: u64,
+    charged_events: Vec<SenderChargeEvidenceV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SenderChargeEvidenceV1 {
+    adapter_event_id: String,
+    charged_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,6 +202,13 @@ pub(crate) struct RecoveredInboundEnvelope {
     pub(crate) envelope: DeliveryEnvelope,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SenderIngressDecision {
+    Permit,
+    AlreadyCharged,
+    Quarantined,
+}
+
 pub(crate) struct CapsuleInboundQuarantineRepository<'a> {
     seed: &'a Seed,
     scope: InboundQuarantineScopeV1,
@@ -217,6 +257,7 @@ impl<'a> CapsuleInboundQuarantineRepository<'a> {
                 scope: scope.clone(),
                 records: Vec::new(),
                 tombstones: Vec::new(),
+                sender_policies: Vec::new(),
             }
         };
         validate_snapshot(&snapshot, &scope)?;
@@ -236,73 +277,116 @@ impl<'a> CapsuleInboundQuarantineRepository<'a> {
         reason: &str,
         now: u64,
     ) -> Result<(), QuarantineError> {
+        let mut next = self.snapshot.clone();
+        append_quarantine_record(
+            &mut next,
+            &self.scope,
+            self.seed,
+            adapter_event_id,
+            observed_by,
+            envelope,
+            reason,
+            now,
+        )?;
+        self.snapshot = next;
+        self.persist()
+    }
+
+    pub(crate) fn apply_sender_policy(
+        &mut self,
+        adapter_event_id: &str,
+        observed_by: &[String],
+        envelope: &DeliveryEnvelope,
+        now: u64,
+    ) -> Result<SenderIngressDecision, QuarantineError> {
         validate_event_id(adapter_event_id)?;
         let authenticated_sender = encode_hex(&envelope.from);
-        if let Some(existing) = self
-            .snapshot
-            .records
-            .iter_mut()
-            .find(|record| record.adapter_event_id == adapter_event_id)
-        {
-            if existing.authenticated_sender != authenticated_sender
-                || existing.message_kind != envelope.kind
-            {
-                return Err(QuarantineError::InvalidRecord);
-            }
-            existing.observed_by = merge_observations(&existing.observed_by, observed_by);
-            return self.persist();
-        }
+        let mut next = self.snapshot.clone();
+        maintain_sender_policy_state(&mut next, now);
 
-        if self.snapshot.records.len() >= MAX_RECORDS
-            || self
-                .snapshot
-                .records
-                .iter()
-                .filter(|record| record.authenticated_sender == authenticated_sender)
-                .count()
-                >= MAX_RECORDS_PER_SENDER
-        {
-            return Err(QuarantineError::Capacity);
-        }
-
-        let stored_envelope = StoredInboundEnvelopeV1::from(envelope);
-        let envelope_bytes =
-            bincode::serialize(&stored_envelope).map_err(|_| QuarantineError::Corrupt)?;
-        let record_aad = record_associated_data(&self.scope, adapter_event_id);
-        let envelope_ciphertext =
-            seal_inbound_quarantine_record(self.seed, record_aad.as_bytes(), &envelope_bytes)
-                .map_err(|_| QuarantineError::Crypto)?;
-        let current_bytes = self
-            .snapshot
+        if next
             .records
             .iter()
-            .map(|record| record.envelope_ciphertext.len())
-            .sum::<usize>();
-        if current_bytes.saturating_add(envelope_ciphertext.len()) > MAX_CIPHERTEXT_BYTES {
-            return Err(QuarantineError::Capacity);
+            .any(|record| record.adapter_event_id == adapter_event_id)
+        {
+            append_quarantine_record(
+                &mut next,
+                &self.scope,
+                self.seed,
+                adapter_event_id,
+                observed_by,
+                envelope,
+                "sender_rate_limited",
+                now,
+            )?;
+            self.snapshot = next;
+            self.persist()?;
+            return Ok(SenderIngressDecision::Quarantined);
         }
 
-        self.snapshot.records.push(InboundQuarantineRecordV1 {
-            schema_version: SCHEMA_VERSION,
-            scope: self.scope.clone(),
-            adapter: ADAPTER.to_string(),
+        let policy_index = match next
+            .sender_policies
+            .iter()
+            .position(|policy| policy.authenticated_sender == authenticated_sender)
+        {
+            Some(index) => index,
+            None => {
+                make_sender_policy_capacity(&mut next)?;
+                next.sender_policies.push(SenderIngressPolicyV1 {
+                    schema_version: SCHEMA_VERSION,
+                    scope: self.scope.clone(),
+                    authenticated_sender: authenticated_sender.clone(),
+                    available_permits: SENDER_POLICY_BURST,
+                    last_refill_at: now,
+                    last_activity_at: now,
+                    charged_events: Vec::new(),
+                });
+                next.sender_policies.len() - 1
+            }
+        };
+
+        if next.sender_policies[policy_index]
+            .charged_events
+            .iter()
+            .any(|evidence| evidence.adapter_event_id == adapter_event_id)
+        {
+            next.sender_policies[policy_index].last_activity_at = now;
+            self.snapshot = next;
+            self.persist()?;
+            return Ok(SenderIngressDecision::AlreadyCharged);
+        }
+
+        if next.sender_policies[policy_index].available_permits == 0 {
+            append_quarantine_record(
+                &mut next,
+                &self.scope,
+                self.seed,
+                adapter_event_id,
+                observed_by,
+                envelope,
+                "sender_rate_limited",
+                now,
+            )?;
+            next.sender_policies[policy_index].last_activity_at = now;
+            self.snapshot = next;
+            self.persist()?;
+            return Ok(SenderIngressDecision::Quarantined);
+        }
+
+        ensure_charge_evidence_capacity(&next, policy_index)?;
+        let policy = &mut next.sender_policies[policy_index];
+        policy.available_permits -= 1;
+        policy.last_activity_at = now;
+        policy.charged_events.push(SenderChargeEvidenceV1 {
             adapter_event_id: adapter_event_id.to_string(),
-            authenticated_sender,
-            observed_by: merge_observations(&[], observed_by),
-            message_kind: envelope.kind,
-            reason: bounded_reason(reason),
-            first_observed_at: now,
-            quarantined_at: now,
-            eligible_after: now.saturating_add(INITIAL_RETRY_DELAY_SECS),
-            expires_at: now.saturating_add(PAYLOAD_RETENTION_SECS),
-            attempt_count: 0,
-            last_attempt_at: None,
-            envelope_ciphertext,
+            charged_at: now,
         });
-        self.snapshot
-            .records
+        policy
+            .charged_events
             .sort_by(|left, right| left.adapter_event_id.cmp(&right.adapter_event_id));
-        self.persist()
+        self.snapshot = next;
+        self.persist()?;
+        Ok(SenderIngressDecision::Permit)
     }
 
     pub(crate) fn has_terminal_evidence(&self, adapter_event_id: &str) -> bool {
@@ -439,6 +523,15 @@ impl<'a> CapsuleInboundQuarantineRepository<'a> {
         self.snapshot.tombstones.len()
     }
 
+    #[cfg(test)]
+    fn sender_policy(&self, sender: &[u8]) -> Option<&SenderIngressPolicyV1> {
+        let sender = encode_hex(sender);
+        self.snapshot
+            .sender_policies
+            .iter()
+            .find(|policy| policy.authenticated_sender == sender)
+    }
+
     fn persist(&self) -> Result<(), QuarantineError> {
         validate_snapshot(&self.snapshot, &self.scope)?;
         let _guard = REPOSITORY_LOCK.lock().map_err(|_| QuarantineError::Io)?;
@@ -453,6 +546,160 @@ impl<'a> CapsuleInboundQuarantineRepository<'a> {
             .map_err(|_| QuarantineError::Crypto)?;
         atomic_write(&self.snapshot_path, &sealed)
     }
+}
+
+fn append_quarantine_record(
+    snapshot: &mut InboundQuarantineSnapshotV1,
+    scope: &InboundQuarantineScopeV1,
+    seed: &Seed,
+    adapter_event_id: &str,
+    observed_by: &[String],
+    envelope: &DeliveryEnvelope,
+    reason: &str,
+    now: u64,
+) -> Result<(), QuarantineError> {
+    validate_event_id(adapter_event_id)?;
+    let authenticated_sender = encode_hex(&envelope.from);
+    if let Some(existing) = snapshot
+        .records
+        .iter_mut()
+        .find(|record| record.adapter_event_id == adapter_event_id)
+    {
+        if existing.authenticated_sender != authenticated_sender
+            || existing.message_kind != envelope.kind
+        {
+            return Err(QuarantineError::InvalidRecord);
+        }
+        existing.observed_by = merge_observations(&existing.observed_by, observed_by);
+        return Ok(());
+    }
+
+    if snapshot.records.len() >= MAX_RECORDS
+        || snapshot
+            .records
+            .iter()
+            .filter(|record| record.authenticated_sender == authenticated_sender)
+            .count()
+            >= MAX_RECORDS_PER_SENDER
+    {
+        return Err(QuarantineError::Capacity);
+    }
+
+    let stored_envelope = StoredInboundEnvelopeV1::from(envelope);
+    let envelope_bytes =
+        bincode::serialize(&stored_envelope).map_err(|_| QuarantineError::Corrupt)?;
+    let record_aad = record_associated_data(scope, adapter_event_id);
+    let envelope_ciphertext =
+        seal_inbound_quarantine_record(seed, record_aad.as_bytes(), &envelope_bytes)
+            .map_err(|_| QuarantineError::Crypto)?;
+    let current_bytes = snapshot
+        .records
+        .iter()
+        .map(|record| record.envelope_ciphertext.len())
+        .sum::<usize>();
+    if current_bytes.saturating_add(envelope_ciphertext.len()) > MAX_CIPHERTEXT_BYTES {
+        return Err(QuarantineError::Capacity);
+    }
+
+    snapshot.records.push(InboundQuarantineRecordV1 {
+        schema_version: SCHEMA_VERSION,
+        scope: scope.clone(),
+        adapter: ADAPTER.to_string(),
+        adapter_event_id: adapter_event_id.to_string(),
+        authenticated_sender,
+        observed_by: merge_observations(&[], observed_by),
+        message_kind: envelope.kind,
+        reason: bounded_reason(reason),
+        first_observed_at: now,
+        quarantined_at: now,
+        eligible_after: now.saturating_add(INITIAL_RETRY_DELAY_SECS),
+        expires_at: now.saturating_add(PAYLOAD_RETENTION_SECS),
+        attempt_count: 0,
+        last_attempt_at: None,
+        envelope_ciphertext,
+    });
+    snapshot
+        .records
+        .sort_by(|left, right| left.adapter_event_id.cmp(&right.adapter_event_id));
+    Ok(())
+}
+
+fn maintain_sender_policy_state(snapshot: &mut InboundQuarantineSnapshotV1, now: u64) {
+    for policy in &mut snapshot.sender_policies {
+        policy.charged_events.retain(|evidence| {
+            now.saturating_sub(evidence.charged_at) <= CHARGE_EVIDENCE_RETENTION_SECS
+        });
+        let elapsed = now.saturating_sub(policy.last_refill_at);
+        let refill = elapsed / SENDER_POLICY_REFILL_SECS;
+        if refill > 0 {
+            policy.available_permits = policy
+                .available_permits
+                .saturating_add(refill.min(u64::from(u8::MAX)) as u8)
+                .min(SENDER_POLICY_BURST);
+            policy.last_refill_at = policy
+                .last_refill_at
+                .saturating_add(refill.saturating_mul(SENDER_POLICY_REFILL_SECS));
+        }
+    }
+}
+
+fn make_sender_policy_capacity(
+    snapshot: &mut InboundQuarantineSnapshotV1,
+) -> Result<(), QuarantineError> {
+    if snapshot.sender_policies.len() < MAX_POLICY_SENDERS {
+        return Ok(());
+    }
+    let removable = snapshot
+        .sender_policies
+        .iter()
+        .enumerate()
+        .filter(|(_, policy)| {
+            policy.available_permits == SENDER_POLICY_BURST
+                && policy.charged_events.is_empty()
+                && !snapshot
+                    .records
+                    .iter()
+                    .any(|record| record.authenticated_sender == policy.authenticated_sender)
+        })
+        .min_by_key(|(_, policy)| policy.last_activity_at)
+        .map(|(index, _)| index);
+    if let Some(index) = removable {
+        snapshot.sender_policies.remove(index);
+        Ok(())
+    } else {
+        Err(QuarantineError::Capacity)
+    }
+}
+
+fn ensure_charge_evidence_capacity(
+    snapshot: &InboundQuarantineSnapshotV1,
+    policy_index: usize,
+) -> Result<(), QuarantineError> {
+    let policy = &snapshot.sender_policies[policy_index];
+    let total = snapshot
+        .sender_policies
+        .iter()
+        .map(|item| item.charged_events.len())
+        .sum::<usize>();
+    if total >= MAX_CHARGE_EVIDENCE || policy.charged_events.len() >= MAX_CHARGE_EVIDENCE_PER_SENDER
+    {
+        return Err(QuarantineError::Capacity);
+    }
+    let mut candidate = snapshot.sender_policies.clone();
+    candidate[policy_index]
+        .charged_events
+        .push(SenderChargeEvidenceV1 {
+            adapter_event_id: "capacity-probe".to_string(),
+            charged_at: 0,
+        });
+    if bincode::serialize(&candidate)
+        .map_err(|_| QuarantineError::Corrupt)?
+        .len()
+        > MAX_SENDER_POLICY_BYTES
+    {
+        return Err(QuarantineError::Capacity);
+    }
+    Ok(())
 }
 
 fn append_tombstone(
@@ -538,7 +785,18 @@ fn load_snapshot(
     let aad = snapshot_associated_data(scope);
     let plaintext = open_inbound_quarantine_snapshot(seed, aad.as_bytes(), &sealed)
         .map_err(|_| QuarantineError::Crypto)?;
-    bincode::deserialize(&plaintext).map_err(|_| QuarantineError::Corrupt)
+    if let Ok(snapshot) = bincode::deserialize::<InboundQuarantineSnapshotV1>(&plaintext) {
+        return Ok(snapshot);
+    }
+    let legacy: InboundQuarantineSnapshotPass15V1 =
+        bincode::deserialize(&plaintext).map_err(|_| QuarantineError::Corrupt)?;
+    Ok(InboundQuarantineSnapshotV1 {
+        schema_version: legacy.schema_version,
+        scope: legacy.scope,
+        records: legacy.records,
+        tombstones: legacy.tombstones,
+        sender_policies: Vec::new(),
+    })
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), QuarantineError> {
@@ -568,7 +826,10 @@ fn validate_snapshot(
     if snapshot.schema_version != SCHEMA_VERSION || &snapshot.scope != scope {
         return Err(QuarantineError::Corrupt);
     }
-    if snapshot.records.len() > MAX_RECORDS || snapshot.tombstones.len() > MAX_TOMBSTONES {
+    if snapshot.records.len() > MAX_RECORDS
+        || snapshot.tombstones.len() > MAX_TOMBSTONES
+        || snapshot.sender_policies.len() > MAX_POLICY_SENDERS
+    {
         return Err(QuarantineError::Corrupt);
     }
     let mut ids = BTreeSet::new();
@@ -616,6 +877,35 @@ fn validate_snapshot(
         .map_err(|_| QuarantineError::Corrupt)?
         .len()
         > MAX_TOMBSTONE_BYTES
+    {
+        return Err(QuarantineError::Corrupt);
+    }
+    let mut policy_senders = BTreeSet::new();
+    let mut charged_ids = BTreeSet::new();
+    let mut charged_count = 0usize;
+    for policy in &snapshot.sender_policies {
+        if policy.schema_version != SCHEMA_VERSION
+            || policy.scope != *scope
+            || policy.available_permits > SENDER_POLICY_BURST
+            || !policy_senders.insert(policy.authenticated_sender.as_str())
+            || policy.charged_events.len() > MAX_CHARGE_EVIDENCE_PER_SENDER
+        {
+            return Err(QuarantineError::Corrupt);
+        }
+        validate_hex32(&policy.authenticated_sender)?;
+        for evidence in &policy.charged_events {
+            validate_event_id(&evidence.adapter_event_id)?;
+            if !charged_ids.insert(evidence.adapter_event_id.as_str()) {
+                return Err(QuarantineError::Corrupt);
+            }
+        }
+        charged_count = charged_count.saturating_add(policy.charged_events.len());
+    }
+    if charged_count > MAX_CHARGE_EVIDENCE
+        || bincode::serialize(&snapshot.sender_policies)
+            .map_err(|_| QuarantineError::Corrupt)?
+            .len()
+            > MAX_SENDER_POLICY_BYTES
     {
         return Err(QuarantineError::Corrupt);
     }
@@ -917,5 +1207,164 @@ mod tests {
         delete_capsule_quarantine(&first.capsule_id).unwrap();
         assert!(!first_repository.snapshot_path.exists());
         assert!(second_repository.snapshot_path.exists());
+    }
+
+    #[test]
+    fn sender_policy_persists_burst_refill_and_exact_event_charging() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        set_application_storage_root(root.path()).unwrap();
+        let seed = Seed::new([12; 32]);
+        let scope = scope(12, 13);
+        let mut repository =
+            CapsuleInboundQuarantineRepository::open(scope.clone(), &seed).unwrap();
+
+        for index in 0..SENDER_POLICY_BURST {
+            assert_eq!(
+                repository
+                    .apply_sender_policy(
+                        &format!("policy-{index}"),
+                        &[],
+                        &envelope(14, 13, u32::from(index)),
+                        100,
+                    )
+                    .unwrap(),
+                SenderIngressDecision::Permit
+            );
+        }
+        assert_eq!(
+            repository
+                .apply_sender_policy("policy-throttled", &[], &envelope(14, 13, 9), 100)
+                .unwrap(),
+            SenderIngressDecision::Quarantined
+        );
+        assert_eq!(repository.record_count(), 1);
+        assert_eq!(
+            repository
+                .sender_policy(&[14; 32])
+                .unwrap()
+                .available_permits,
+            0
+        );
+
+        let mut reopened = CapsuleInboundQuarantineRepository::open(scope, &seed).unwrap();
+        assert_eq!(
+            reopened
+                .apply_sender_policy("policy-0", &[], &envelope(14, 13, 99), 100)
+                .unwrap(),
+            SenderIngressDecision::AlreadyCharged
+        );
+        assert_eq!(
+            reopened.sender_policy(&[14; 32]).unwrap().available_permits,
+            0
+        );
+        assert_eq!(
+            reopened
+                .apply_sender_policy("policy-after-refill", &[], &envelope(14, 13, 99), 115)
+                .unwrap(),
+            SenderIngressDecision::Permit
+        );
+        assert_eq!(
+            reopened.sender_policy(&[14; 32]).unwrap().available_permits,
+            0
+        );
+    }
+
+    #[test]
+    fn sender_policy_has_no_message_kind_or_sender_bypass() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        set_application_storage_root(root.path()).unwrap();
+        let seed = Seed::new([15; 32]);
+        let mut repository =
+            CapsuleInboundQuarantineRepository::open(scope(15, 16), &seed).unwrap();
+
+        for index in 0..SENDER_POLICY_BURST {
+            assert_eq!(
+                repository
+                    .apply_sender_policy(
+                        &format!("mixed-{index}"),
+                        &[],
+                        &envelope(17, 16, 4_096 + u32::from(index)),
+                        200,
+                    )
+                    .unwrap(),
+                SenderIngressDecision::Permit
+            );
+        }
+        assert_eq!(
+            repository
+                .apply_sender_policy("mixed-overflow", &[], &envelope(17, 16, 1), 200)
+                .unwrap(),
+            SenderIngressDecision::Quarantined
+        );
+        assert_eq!(
+            repository
+                .apply_sender_policy("other-sender", &[], &envelope(18, 16, 1), 200)
+                .unwrap(),
+            SenderIngressDecision::Permit
+        );
+    }
+
+    #[test]
+    fn pass15_snapshot_migrates_without_rewriting_quarantine_evidence() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        set_application_storage_root(root.path()).unwrap();
+        let seed = Seed::new([19; 32]);
+        let scope = scope(19, 20);
+        let mut repository =
+            CapsuleInboundQuarantineRepository::open(scope.clone(), &seed).unwrap();
+        repository
+            .quarantine("legacy-record", &[], &envelope(21, 20, 7), "retry", 10)
+            .unwrap();
+        let legacy = InboundQuarantineSnapshotPass15V1 {
+            schema_version: repository.snapshot.schema_version,
+            scope: repository.snapshot.scope.clone(),
+            records: repository.snapshot.records.clone(),
+            tombstones: repository.snapshot.tombstones.clone(),
+        };
+        let plaintext = bincode::serialize(&legacy).unwrap();
+        let aad = snapshot_associated_data(&scope);
+        let sealed = seal_inbound_quarantine_snapshot(&seed, aad.as_bytes(), &plaintext).unwrap();
+        atomic_write(&repository.snapshot_path, &sealed).unwrap();
+
+        let migrated = CapsuleInboundQuarantineRepository::open(scope, &seed).unwrap();
+        assert_eq!(migrated.record_count(), 1);
+        assert!(migrated.snapshot.sender_policies.is_empty());
+    }
+
+    #[test]
+    fn sender_policy_capacity_fails_closed_without_evicting_active_state() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        set_application_storage_root(root.path()).unwrap();
+        let seed = Seed::new([22; 32]);
+        let scope = scope(22, 23);
+        let mut repository =
+            CapsuleInboundQuarantineRepository::open(scope.clone(), &seed).unwrap();
+        repository.snapshot.sender_policies = (0..MAX_POLICY_SENDERS)
+            .map(|index| SenderIngressPolicyV1 {
+                schema_version: SCHEMA_VERSION,
+                scope: scope.clone(),
+                authenticated_sender: format!("{index:064x}"),
+                available_permits: SENDER_POLICY_BURST - 1,
+                last_refill_at: 500,
+                last_activity_at: 500,
+                charged_events: vec![SenderChargeEvidenceV1 {
+                    adapter_event_id: format!("active-{index}"),
+                    charged_at: 500,
+                }],
+            })
+            .collect();
+
+        assert!(matches!(
+            repository.apply_sender_policy("new-sender", &[], &envelope(24, 23, 1), 500),
+            Err(QuarantineError::Capacity)
+        ));
+        assert_eq!(
+            repository.snapshot.sender_policies.len(),
+            MAX_POLICY_SENDERS
+        );
     }
 }

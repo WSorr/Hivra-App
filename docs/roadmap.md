@@ -92,11 +92,10 @@ The two lines share one product axis but cannot share a second runtime path.
 The ordering below is deliberate:
 
 1. **1.x integrity before new lifecycle behavior.** Remediation passes
-   `12.3 / pass 1-15` are complete. The next ordered pass is
-   `12.3 / pass 16`, activating only the already-specified
-   `SenderIngressPolicyV1` behind the pass-15 repository and acknowledged
-   ingress handoff. It may not alter Core, create another receive scheduler,
-   or fork quarantine storage/recovery ownership.
+   `12.3 / pass 1-16` are complete. The next ordered action is an audit of the
+   remaining passive receive scheduling debt. It may name one future owner and
+   removal set, but it may not implement another scheduler or assign a runtime
+   pass before restart/concurrency and capability closure are proven.
    `5.1 Canonical Core Projection Convergence` remains a hard boundary: new
    invitation, relationship, consensus, or Capsule Map behavior must consume a
    canonical projection rather than add another Flutter event reducer.
@@ -1740,8 +1739,38 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       and handoff. Stable event charging, persisted bucket bounds, restart
       resistance, same-router replay exemption, and capacity backpressure are
       mandatory; Core and scheduler changes remain unauthorized.
-  - Status: active; passes 1-15 are complete. Pass 16 sender-policy activation
-    is next.
+    - Pass 16 sender-policy activation completed on 2026-08-03:
+      - sender buckets, refill checkpoints, and bounded exact charge evidence
+        persist in the same encrypted repository snapshot;
+      - v1 permits burst `8`, refills one permit every `15 seconds`, and bounds
+        state to `1024` senders, `65536` recent event ids, `8 MiB` per scope,
+        and `40960` ids per sender;
+      - stable event replay returns already-charged without another permit;
+        quarantine recovery bypasses policy charging and reuses the same FFI
+        router;
+      - throttled input is acknowledged only after atomic quarantine;
+        repository, sender-state, and evidence capacity preserve cursor-safe
+        `retry` without eviction or bypass;
+      - pass-15 snapshots migrate to empty policy state without rewriting
+        retained records or tombstones;
+      - focused regressions cover burst/refill, restart, double-charge,
+        message-kind and sender isolation, active-state capacity, pass-15
+        migration, and same-router recovery;
+      - `git diff --check`, Rust formatting, `flutter analyze`, all `718`
+        Flutter tests, `cargo test --workspace`, and
+        `tools/review/review_all.sh` passed;
+      - universal macOS launch preserved Ledger versions `105`, `62`, and
+        `119` without process or storage failure;
+      - Android APK `versionCode=100000324`, SHA-256
+        `c21541e3009bf681a6762a727c3e6ee6f5eebf0b42058839d7656b14d00b3225`,
+        updated in place and preserved Ledger `v82`;
+      - three Android cold starts showed bounded migration backpressure rather
+        than loss: initial history produced `55` durable quarantines and `37`
+        retries, then restart recovery and persisted charge evidence reduced
+        retry monotonically `37→32→25` while attestations continued to
+        converge and no crash, policy bypass, or storage failure appeared.
+  - Status: active; passes 1-16 are complete. Audit passive receive scheduling
+    ownership before selecting another runtime pass.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

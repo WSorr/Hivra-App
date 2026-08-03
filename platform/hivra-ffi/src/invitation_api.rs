@@ -615,6 +615,10 @@ struct IngressCounters {
     quarantine_expired: usize,
     quarantine_failed: usize,
     quarantine_terminal_replay: usize,
+    sender_policy_permitted: usize,
+    sender_policy_replayed: usize,
+    sender_policy_throttled: usize,
+    sender_policy_failed: usize,
     adapter_rejected: usize,
     accepted_seen: usize,
     accepted_replayed: usize,
@@ -924,36 +928,69 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
                     counters.quarantine_terminal_replay += 1;
                     InboundDeliveryDisposition::Consumed
                 } else {
-                    let route_disposition = route_inbound_envelope(
+                    match quarantine.apply_sender_policy(
                         &event_id,
-                        message.clone(),
-                        PubKey::from(local_pubkey),
-                        &seed,
-                        &mut counters,
-                    );
-                    if route_disposition == InboundDeliveryDisposition::Retry {
-                        match quarantine.quarantine(
-                            &event_id,
-                            &observed_by,
-                            &message,
-                            "canonical_route_retry",
-                            receive_now,
-                        ) {
-                            Ok(()) => {
-                                counters.quarantined += 1;
-                                InboundDeliveryDisposition::Quarantined
+                        &observed_by,
+                        &message,
+                        receive_now,
+                    ) {
+                        Ok(crate::inbound_quarantine::SenderIngressDecision::Quarantined) => {
+                            counters.quarantined += 1;
+                            counters.sender_policy_throttled += 1;
+                            InboundDeliveryDisposition::Quarantined
+                        }
+                        Ok(policy_decision) => {
+                            match policy_decision {
+                                crate::inbound_quarantine::SenderIngressDecision::Permit => {
+                                    counters.sender_policy_permitted += 1;
+                                }
+                                crate::inbound_quarantine::SenderIngressDecision::AlreadyCharged => {
+                                    counters.sender_policy_replayed += 1;
+                                }
+                                crate::inbound_quarantine::SenderIngressDecision::Quarantined => {
+                                    unreachable!()
+                                }
                             }
-                            Err(error) => {
-                                counters.quarantine_failed += 1;
-                                eprintln!(
-                                    "[Delivery/Nostr] Quarantine backpressure event={} reason={}",
-                                    event_id, error
-                                );
-                                InboundDeliveryDisposition::Retry
+                            let route_disposition = route_inbound_envelope(
+                                &event_id,
+                                message.clone(),
+                                PubKey::from(local_pubkey),
+                                &seed,
+                                &mut counters,
+                            );
+                            if route_disposition == InboundDeliveryDisposition::Retry {
+                                match quarantine.quarantine(
+                                    &event_id,
+                                    &observed_by,
+                                    &message,
+                                    "canonical_route_retry",
+                                    receive_now,
+                                ) {
+                                    Ok(()) => {
+                                        counters.quarantined += 1;
+                                        InboundDeliveryDisposition::Quarantined
+                                    }
+                                    Err(error) => {
+                                        counters.quarantine_failed += 1;
+                                        eprintln!(
+                                            "[Delivery/Nostr] Quarantine backpressure event={} reason={}",
+                                            event_id, error
+                                        );
+                                        InboundDeliveryDisposition::Retry
+                                    }
+                                }
+                            } else {
+                                route_disposition
                             }
                         }
-                    } else {
-                        route_disposition
+                        Err(error) => {
+                            counters.sender_policy_failed += 1;
+                            eprintln!(
+                                "[Delivery/Nostr] Sender policy backpressure event={} reason={}",
+                                event_id, error
+                            );
+                            InboundDeliveryDisposition::Retry
+                        }
                     }
                 }
             }
@@ -982,7 +1019,7 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         .filter(|resolution| resolution.disposition == InboundDeliveryDisposition::Retry)
         .count();
     set_last_error(format!(
-        "Transport receive diagnostic: {receive_diagnostic}; ingress=[batch={batch_id}, appended={}, loopback={}, non_core={}, unsupported={}, not_addressed={}, proof_invalid={}, signer_mismatch={}, replayed={}, append_failed={}, capacity_backpressure={}, quarantined={}, quarantine_recovered={}, quarantine_expired={}, quarantine_failed={}, quarantine_terminal_replay={}, adapter_rejected={}, retry={retry}, accepted_seen={}, accepted_replayed={}, accepted_appended={}, accepted_projection_reconciled={}]",
+        "Transport receive diagnostic: {receive_diagnostic}; ingress=[batch={batch_id}, appended={}, loopback={}, non_core={}, unsupported={}, not_addressed={}, proof_invalid={}, signer_mismatch={}, replayed={}, append_failed={}, capacity_backpressure={}, quarantined={}, quarantine_recovered={}, quarantine_expired={}, quarantine_failed={}, quarantine_terminal_replay={}, sender_policy_permitted={}, sender_policy_replayed={}, sender_policy_throttled={}, sender_policy_failed={}, adapter_rejected={}, retry={retry}, accepted_seen={}, accepted_replayed={}, accepted_appended={}, accepted_projection_reconciled={}]",
         counters.appended,
         counters.loopback,
         counters.routed_non_core,
@@ -998,6 +1035,10 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         counters.quarantine_expired,
         counters.quarantine_failed,
         counters.quarantine_terminal_replay,
+        counters.sender_policy_permitted,
+        counters.sender_policy_replayed,
+        counters.sender_policy_throttled,
+        counters.sender_policy_failed,
         counters.adapter_rejected,
         counters.accepted_seen,
         counters.accepted_replayed,
