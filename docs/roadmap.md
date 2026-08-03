@@ -92,11 +92,10 @@ The two lines share one product axis but cannot share a second runtime path.
 The ordering below is deliberate:
 
 1. **1.x integrity before new lifecycle behavior.** Remediation passes
-   `12.3 / pass 1-17` are complete. The next ordered action is a post-pass audit
-   of the remaining documented 1.x integrity debt. It may select one bounded
-   next pass only after proving its owner, removal/sealing target, dependency
-   direction, and compatibility boundary; it may not introduce another
-   scheduler, transport route, or Core path.
+   `12.3 / pass 1-17` are complete. The post-pass audit selected only pass 18:
+   bound pair-attestation automatic responses to one durable
+   pair/snapshot/evidence checkpoint and remove blind re-announcement. It may
+   not introduce another scheduler, outbox, transport route, or Core path.
    `5.1 Canonical Core Projection Convergence` remains a hard boundary: new
    invitation, relationship, consensus, or Capsule Map behavior must consume a
    canonical projection rather than add another Flutter event reducer.
@@ -1821,8 +1820,32 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         `ac0dd45dbd195f7094c83b151e68af2cffccded3c6faf8e1b07813b78661de3d`,
         updated in place, preserved Ledger `v82`, and passed launch, periodic,
         explicit manual retry, attestation drain, and cold restart.
-  - Status: passes 1-17 complete. No pass 18 is selected; the next action is a
-    post-pass audit of the remaining documented 1.x integrity debt.
+    - Post-pass audit completed on 2026-08-03:
+      - pass-17 macOS and Android evidence exposed a stable-snapshot
+        pair-attestation ping-pong under foreground periodic receive;
+      - duplicate verified evidence is currently counted as newly stored and
+        `answerStoredEvidence` responds without a durable response identity;
+      - `ensureForPeer` also performs blind ready-state fire-and-forget
+        re-announcement;
+      - no second native relay poll, screen-owned passive timer, channel-owned
+        receive route, or environment-baseline change was found;
+      - T0 remains the next platform unit, but it cannot preempt this active
+        network/crypto loop.
+    - Pass 18 may implement only bounded pair-attestation response convergence:
+      - `ConsensusAttestationExchangeService` owns response policy and
+        `ConsensusAttestationStore` owns schema-v2 checkpoint persistence in
+        the existing Capsule-scoped file;
+      - response identity binds exact pair, snapshot, peer evidence, and local
+        evidence; adapter success is terminal and failure retries no sooner
+        than the persisted 15-minute boundary;
+      - v1 evidence migrates byte-preservingly with empty checkpoints;
+        corruption or the 4096-checkpoint bound suppresses automatic send;
+      - delete blind ready-state re-announcement and prevent duplicate receives
+        from being reported as newly stored;
+      - do not add Core facts, a receiver-ack protocol, another outbox,
+        scheduler, timer, transport route, or DTO family.
+  - Status: passes 1-17 complete; pass 18 selected by post-pass audit and not
+    yet implemented.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

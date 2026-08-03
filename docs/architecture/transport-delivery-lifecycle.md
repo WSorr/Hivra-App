@@ -500,9 +500,49 @@ evidence, never hidden payload copies.
     updated in place, preserved Ledger `v82`, and completed launch, periodic,
     explicit manual retry, attestation drain, and cold restart without a fatal
     runtime error.
-- Pending: pair-attestation re-announcement needs a pair/snapshot-scoped
-  rate-limit or a durable acknowledgement policy. It is currently an
-  intentionally best-effort convergence aid, not a Core outbox effect.
+- Audited on 2026-08-03 for `12.3 / pass 18`: pair-attestation
+  re-announcement is a best-effort convergence aid, not a Core fact, transport
+  outbox obligation, or peer-delivery acknowledgement. Runtime evidence after
+  pass 17 showed the current blind response path can form a cross-device
+  ping-pong: a verified duplicate is reported as newly stored, answered, and
+  then answered again by the peer on a later periodic receive.
+- `ConsensusAttestationExchangeService` is the sole owner of the automatic
+  response decision. `ConsensusAttestationStore` remains the sole persistence
+  owner for verified evidence and may extend the same Capsule-scoped file with
+  bounded response checkpoints. The passive receive coordinator only hands
+  drained evidence to this owner; it MUST NOT interpret pair consensus or own
+  an attestation retry loop.
+- The pass-18 response contract is:
+  - response identity binds the local Capsule, sorted pair roots, exact
+    snapshot hash, peer signer/peer evidence `recordKey`, and local evidence
+    `recordKey`;
+  - store schema v1 migrates to v2 with unchanged evidence bytes and an empty
+    response-checkpoint set; Ledger/Core history is not rewritten;
+  - an automatic response reserves its checkpoint atomically before send. If
+    storage is corrupt, unavailable, or at the `4096`-checkpoint bound, the
+    response fails closed without a network effect;
+  - adapter-accepted send marks the checkpoint delivered. A failed or timed-out
+    send may become eligible only after a persisted `15 minute` retry boundary;
+    no process restart, relay overlap, screen refresh, or periodic receive may
+    bypass that boundary;
+  - a delivered checkpoint is terminal for that exact peer evidence and local
+    evidence pair. A different valid snapshot creates a different identity and
+    may converge independently;
+  - repeated verified envelopes remain valid evidence input but are not
+    described as newly stored and do not trigger another automatic response;
+  - explicit pair synchronization when current two-root evidence is missing
+    retains its existing user/capability path. The ready path loses blind
+    fire-and-forget re-announcement and reuses the same bounded response owner;
+  - no timer, scheduler, receiver acknowledgement protocol, second outbox,
+    second transport route, or Core event is added.
+- Pass-18 threat model covers duplicate/replayed peer evidence, concurrent
+  receive and guard calls, restart after reservation or send, failed adapter
+  delivery, stale snapshots, wrong pair/signer, corrupt or full checkpoint
+  storage, Capsule switch/deletion, and a trusted peer attempting checkpoint
+  exhaustion. Exit evidence requires v1 migration, exact-key idempotence,
+  retry-boundary, success-terminal, new-snapshot, corruption/capacity,
+  concurrency, and cross-Capsule regressions plus macOS/Android runtime logs
+  showing that a stable snapshot reaches zero repeated automatic responses.
 - Completed in `12.3 / pass 10`: schema v5 explicitly quarantines every
   unreferenced retryable outbox record. Quarantine is durable diagnostic
   evidence, never a second delivery route or a source of domain truth.

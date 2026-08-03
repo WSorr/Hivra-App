@@ -116,6 +116,13 @@ Use this checklist when reviewing structural changes, not just feature behavior.
       process-global FFI bootstrap queue.
 - [ ] Capsule switch and app pause invalidate stale delayed work, while any
       completed worker result remains persisted only for its bootstrap Capsule.
+- [ ] Pair-attestation automatic response is bound to the exact Capsule, pair,
+      snapshot, peer evidence, and local evidence through the sole exchange
+      owner; duplicate receive and ready-state guard checks cannot blind-send.
+- [ ] Pair-attestation response reservation/retry state is bounded and durable
+      in the existing Capsule-scoped attestation store, fails closed on corrupt
+      or full storage, and does not become a Core fact, transport outbox,
+      receiver acknowledgement, timer, or second scheduler.
 - [ ] Default and quick transport operations share one Capsule-owned adapter
       session and cursor owner; profiles alter bounded operation budgets only.
 - [ ] Sender throttling acknowledges an authenticated envelope only after
