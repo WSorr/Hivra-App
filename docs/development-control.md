@@ -2,10 +2,11 @@
 
 Status date: 2026-08-03
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: prepare `12.3 / pass 15`, implementing the bounded
-quarantine repository defined by pass 14 without activating sender limiting.
-Pass 13 implements acknowledged ingress; pass 14 fixes storage, capacity,
-retention, expiry, replay, key-role, and recovery contracts.
+Current development focus: prepare `12.3 / pass 16`, activating only the
+already-specified `SenderIngressPolicyV1` behind the pass-15 repository and
+acknowledged ingress handoff. Pass 15 completed bounded quarantine persistence,
+recovery, deletion, automated gates, and macOS/Android packaged smoke without
+activating sender limiting.
 Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
 signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
@@ -23,7 +24,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation pass? | `12.3 / pass 15`: implement only `CapsuleInboundQuarantineRepository` schema v1, atomic encrypted persistence, expiry/tombstones, deletion, and same-router recovery. Do not activate sender limiting or PQ runtime work in this pass. | `roadmap.md`, `specification.md`, transport delivery lifecycle contract |
+| What is the next 1.x remediation pass? | `12.3 / pass 16`: activate only `SenderIngressPolicyV1` behind the completed pass-15 repository, preserving acknowledged-ingress backpressure and same-router recovery. PQ runtime work remains disabled. | `roadmap.md`, `specification.md`, transport delivery lifecycle contract |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -33,7 +34,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `12.3 / pass 14` defines one bounded encrypted quarantine repository, exact schema/capacity/retention/tombstone limits, sender bucket policy, same-router recovery, and key/deletion ownership. | Normative lifecycle, specification, architecture checklist, roadmap, and executable gates agree; runtime remains unchanged. | Pass 15 may implement repository/storage/recovery only. Sender-policy activation remains a later isolated pass. |
+| **1.x maintained runtime** | Active | `12.3 / pass 15` implements one bounded encrypted quarantine repository, exact schema/capacity/retention/tombstone limits, same-router recovery, and Capsule deletion cleanup. | Focused regressions, full automated gates, universal macOS launch, Android update/cold-restart, preserved Ledgers, and zero-retry ingress evidence passed. | Pass 16 may activate only the specified sender policy; repository, router, Core, and transport ownership cannot fork. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |
@@ -49,13 +50,13 @@ work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P0 — `12.3 / pass 15`:** implement the bounded inbound quarantine
-   repository, persistence, expiry/tombstones, Capsule deletion, and
-   same-router recovery. Sender limiting remains disabled.
-2. **P0 — quarantine follow-up:** after pass 15 has cross-platform repository
-   evidence, select one isolated pass for `SenderIngressPolicyV1` activation
-   and backpressure behavior. Its exact pass number is assigned only when pass
-   15 closes.
+1. **P0 — `12.3 / pass 16`:** activate only `SenderIngressPolicyV1` using the
+   pass-14 burst/refill/state contract and pass-15 repository. Preserve stable
+   event charging, restart resistance, cursor-safe backpressure, and
+   same-router replay; do not alter Core or add another scheduler.
+2. **P0 — ingress follow-up:** after pass 16 cross-platform evidence, audit the
+   remaining passive receive scheduling debt before selecting another runtime
+   change.
 3. **P1 — `T0`:** add checked-in environment verification and repository-owned
    pins for the reproducible baseline. Do not upgrade Flutter, Rust, Android,
    or Xcode in T0.

@@ -204,10 +204,10 @@ Threat closure required before implementation:
 
 ### Inbound Quarantine Repository and Sender Policy Contract
 
-`12.3 / pass 14` defines this contract only. It does not authorize runtime
-storage or throttling.
+`12.3 / pass 14` defines this contract. `12.3 / pass 15` implements repository
+storage and recovery only; it does not authorize sender throttling.
 
-One future `CapsuleInboundQuarantineRepository` is the sole owner of retained
+One `CapsuleInboundQuarantineRepository` is the sole owner of retained
 authenticated envelopes. Its scope is the tuple `(Capsule, network,
 transport endpoint)`. It is application/platform state outside Core, Ledger,
 delivery outbox, capability inboxes, and transport adapters. The adapter owns
@@ -387,6 +387,18 @@ evidence, never hidden payload copies.
   capacity backpressure, sender policy, same-router replay, restart behavior,
   storage-key separation, and deletion are fixed. Runtime implementation and
   sender-policy activation remain separate later passes.
+- Completed in `12.3 / pass 15`:
+  one FFI-boundary repository persists an authenticated-encrypted snapshot and
+  separately authenticated envelope ciphertexts through distinct platform
+  crypto roles. It enforces schema-v1 bounds without eviction, recovers one
+  eligible item through the original `route_inbound_envelope` entrypoint,
+  creates metadata-only consumed/expired tombstones, fails closed on corrupt
+  storage, and participates in the existing Capsule deletion lifecycle.
+  `SenderIngressPolicyV1` remains inactive and no Core or adapter storage path
+  was added. Full automated gates, universal macOS launch, and Android
+  update/restart evidence passed with preserved Ledger state and zero ingress
+  retry. Pass 16 is the first pass authorized to activate only the specified
+  sender policy behind this unchanged repository and router.
 - Pending: define one shared passive receive scheduler for invitations,
   pair-attestations, chat, relationship notifications, and trading signals.
   Until then, screen-triggered receives are serialized but can still perform

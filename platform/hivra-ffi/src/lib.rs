@@ -57,6 +57,7 @@ mod chat_api;
 mod consensus_attestation_api;
 mod delivery_receipts_api;
 mod ffi_support;
+mod inbound_quarantine;
 mod invitation_api;
 mod invitation_support;
 mod ledger_api;

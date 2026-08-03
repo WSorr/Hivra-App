@@ -55,6 +55,15 @@ typedef HivraSeedLoadDart = int Function(Pointer<Uint8> outSeed);
 typedef HivraSeedDeleteC = Int32 Function();
 typedef HivraSeedDeleteDart = int Function();
 
+typedef HivraSetApplicationStorageRootC = Int32 Function(Pointer<Int8> path);
+typedef HivraSetApplicationStorageRootDart = int Function(Pointer<Int8> path);
+typedef HivraDeleteInboundQuarantineC = Int32 Function(
+  Pointer<Uint8> capsuleId,
+);
+typedef HivraDeleteInboundQuarantineDart = int Function(
+  Pointer<Uint8> capsuleId,
+);
+
 typedef HivraCapsuleCreateC =
     Int32 Function(
       Pointer<Uint8> seed,
@@ -326,6 +335,8 @@ class HivraBindings {
   late final HivraSeedSaveDart _seedSave;
   late final HivraSeedLoadDart _seedLoad;
   late final HivraSeedDeleteDart _seedDelete;
+  late final HivraSetApplicationStorageRootDart _setApplicationStorageRoot;
+  late final HivraDeleteInboundQuarantineDart _deleteInboundQuarantine;
   late final HivraCapsuleCreateDart _capsuleCreate;
   late final HivraCapsuleRuntimeOwnerPublicKeyDart
   _capsuleRuntimeOwnerPublicKey;
@@ -443,6 +454,20 @@ class HivraBindings {
     _seedDelete =
         _lib
             .lookup<NativeFunction<HivraSeedDeleteC>>('hivra_seed_delete')
+            .asFunction();
+
+    _setApplicationStorageRoot =
+        _lib
+            .lookup<NativeFunction<HivraSetApplicationStorageRootC>>(
+              'hivra_set_application_storage_root',
+            )
+            .asFunction();
+
+    _deleteInboundQuarantine =
+        _lib
+            .lookup<NativeFunction<HivraDeleteInboundQuarantineC>>(
+              'hivra_delete_inbound_quarantine',
+            )
             .asFunction();
 
     _capsuleCreate =
@@ -835,6 +860,28 @@ class HivraBindings {
   }
 
   bool deleteSeed() => _seedDelete() == 0;
+
+  bool setApplicationStorageRoot(String path) {
+    final normalized = path.trim();
+    if (normalized.isEmpty) return false;
+    final pointer = normalized.toNativeUtf8();
+    try {
+      return _setApplicationStorageRoot(pointer.cast<Int8>()) == 0;
+    } finally {
+      calloc.free(pointer);
+    }
+  }
+
+  bool deleteInboundQuarantine(Uint8List capsuleId) {
+    if (capsuleId.length != 32) return false;
+    final pointer = calloc<Uint8>(32);
+    try {
+      pointer.asTypedList(32).setAll(0, capsuleId);
+      return _deleteInboundQuarantine(pointer) == 0;
+    } finally {
+      calloc.free(pointer);
+    }
+  }
 
   bool createCapsule(
     Uint8List seed, {

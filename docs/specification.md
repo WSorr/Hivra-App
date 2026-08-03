@@ -976,23 +976,23 @@ domain truth or receipt evidence.
 
 Quarantined input re-enters the same canonical FFI ingress router with its
 original adapter event id. It MUST NOT call a capability handler directly,
-append Ledger facts, or create a second transport route. This contract does not
-authorize sender-rate limiting or quarantine runtime in 1.x until their
-storage, retention, expiry, capacity, replay, and recovery owners are
-implemented behind that one handoff.
+append Ledger facts, or create a second transport route. The maintained 1.x
+runtime implements this repository and recovery behind the acknowledged
+handoff. This does not authorize sender-rate limiting; policy activation
+requires its own later pass and evidence.
 
 The maintained 1.x Nostr implementation now mounts this handoff: one pending
 batch retains event ids and relay provenance, the FFI router returns exact
 dispositions, and relay cursor/seen commit occurs only during resolution.
 Retry items remain pending and are presented again; a stale-session rebuild is
 not permitted during resolution. The generic aggregate Nostr receive method is
-sealed so it cannot bypass acknowledgement. This implementation does not add a
-sender limiter, durable quarantine repository, or new Core path.
+sealed so it cannot bypass acknowledgement. The repository is mounted at this
+same FFI boundary and does not add a sender limiter or new Core path.
 
 ### 5.6 Inbound Quarantine and Sender Policy
 
 The normative repository and policy contract is defined in
-`docs/architecture/transport-delivery-lifecycle.md`. One future
+`docs/architecture/transport-delivery-lifecycle.md`. One
 `CapsuleInboundQuarantineRepository` owns encrypted retained envelopes under
 the `(Capsule, network, transport endpoint)` scope. It is application/platform
 state and MUST NOT reuse the delivery outbox, capability inboxes, Ledger, or an
@@ -1017,9 +1017,13 @@ Quarantine recovery decrypts one eligible record and re-enters the same FFI
 ingress router with the original event id. It cannot append Core directly or
 create another scheduler/receive route. Storage encryption uses a distinct
 Capsule-scoped platform key role; root, transport-signing, and transport-
-encryption keys are not reused. Runtime implementation and policy activation
-remain unauthorized until separate passes prove atomic persistence, restart,
-expiry, deletion, and cross-platform behavior.
+encryption keys are not reused. The maintained implementation persists one
+authenticated-encrypted snapshot plus independently authenticated envelope
+ciphertexts through the platform crypto boundary, performs bounded recovery
+before new relay fetch, and removes the Capsule-scoped subtree through the
+existing deletion lifecycle. `SenderIngressPolicyV1` remains inactive until a
+separate pass proves policy persistence, restart resistance, and
+cross-platform behavior.
 
 ```rust
 // NostrTransport uses NostrCryptoProvider (secp256k1)

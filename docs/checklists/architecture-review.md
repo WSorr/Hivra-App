@@ -127,6 +127,8 @@ Use this checklist when reviewing structural changes, not just feature behavior.
       evicting another retained payload.
 - [ ] Sender policy runs only after authenticated neutral guards, charges each
       event id once, and has no trust/domain/UI/relay/IP/plugin bypass.
+- [ ] A repository-only pass keeps `SenderIngressPolicyV1` absent from runtime
+      until its separately selected activation pass and platform evidence.
 - [ ] Expiry removes ciphertext only with bounded terminal tombstone evidence
       and never synthesizes a Core or peer-expiry fact.
 - [ ] Quarantine replay uses the original event id and canonical FFI router,

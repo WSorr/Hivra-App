@@ -137,6 +137,10 @@ FFI_INVITATION_API="$ROOT/platform/hivra-ffi/src/invitation_api.rs"
 FFI_CHAT_API="$ROOT/platform/hivra-ffi/src/chat_api.rs"
 FFI_ATTESTATION_API="$ROOT/platform/hivra-ffi/src/consensus_attestation_api.rs"
 FFI_TRANSPORT_CACHE="$ROOT/platform/hivra-ffi/src/transport_cache.rs"
+FFI_INBOUND_QUARANTINE="$ROOT/platform/hivra-ffi/src/inbound_quarantine.rs"
+PLATFORM_KEYSTORE="$ROOT/platform/hivra-keystore/src/lib.rs"
+HIVRA_BINDINGS="$ROOT/flutter/lib/ffi/hivra_bindings.dart"
+CAPSULE_PERSISTENCE="$ROOT/flutter/lib/services/capsule_persistence_service.dart"
 PLUGIN_GUARD="$ROOT/flutter/lib/services/plugin_execution_guard_service.dart"
 PLUGIN_HOST="$ROOT/flutter/lib/services/plugin_host_api_service.dart"
 PLUGIN_CONTRACT_HANDLERS="$ROOT/flutter/lib/services/plugin_contract_handlers.dart"
@@ -662,6 +666,34 @@ require_present "$SPEC" '^### 5\.6 Inbound Quarantine and Sender Policy' \
   "specification binds quarantine to the canonical lifecycle"
 require_present "$CHECKLIST" 'full capacity returns `retry`' \
   "architecture review enforces quarantine backpressure"
+require_present "$FFI_INBOUND_QUARANTINE" 'struct CapsuleInboundQuarantineRepository' \
+  "FFI boundary owns one inbound quarantine repository"
+require_present "$FFI_INBOUND_QUARANTINE" 'const MAX_RECORDS: usize = 256' \
+  "runtime pins the schema-v1 quarantine record bound"
+require_present "$FFI_INBOUND_QUARANTINE" 'const MAX_CIPHERTEXT_BYTES: usize = 32 \* 1024 \* 1024' \
+  "runtime pins the schema-v1 quarantine byte bound"
+require_present "$FFI_INBOUND_QUARANTINE" 'const PAYLOAD_RETENTION_SECS: u64 = 72 \* 60 \* 60' \
+  "runtime pins the schema-v1 quarantine retention"
+require_present "$FFI_INBOUND_QUARANTINE" 'seal_inbound_quarantine_record' \
+  "quarantine payloads are authenticated-encrypted at rest"
+require_present "$PLATFORM_KEYSTORE" 'HIVRA_INBOUND_QUARANTINE_RECORD_KEY_v1' \
+  "platform crypto owns a distinct quarantine record key role"
+require_present "$PLATFORM_KEYSTORE" 'HIVRA_INBOUND_QUARANTINE_SNAPSHOT_KEY_v1' \
+  "platform crypto owns a distinct quarantine snapshot key role"
+require_present "$FFI_INVITATION_API" 'CapsuleInboundQuarantineRepository::open' \
+  "canonical ingress opens the Capsule-scoped quarantine repository"
+require_present "$FFI_INVITATION_API" 'recover_one_quarantined_envelope' \
+  "canonical ingress owns bounded quarantine recovery"
+require_present "$FFI_INVITATION_API" 'route_inbound_envelope' \
+  "quarantine recovery reuses the canonical ingress router"
+require_present "$FFI_INVITATION_API" 'InboundDeliveryDisposition::Quarantined' \
+  "durable quarantine produces the acknowledged ingress disposition"
+require_absent "$FFI_INBOUND_QUARANTINE" 'SenderIngressPolicyV1|token_bucket|refill' \
+  "pass 15 does not activate sender limiting"
+require_present "$HIVRA_BINDINGS" 'hivra_set_application_storage_root' \
+  "Flutter initializes the canonical native application storage root"
+require_present "$CAPSULE_PERSISTENCE" 'deleteInboundQuarantine' \
+  "Capsule deletion includes native quarantine lifecycle cleanup"
 require_present "$NOSTR_TRANSPORT" 'pending_receive_batch: Mutex<Option<PendingReceiveBatch>>' \
   "Nostr adapter retains one unresolved ingress batch"
 require_present "$NOSTR_TRANSPORT" 'pub fn resolve_receive_batch\(' \

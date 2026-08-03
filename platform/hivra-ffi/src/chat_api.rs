@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Write;
 
-const CAPSULE_CHAT_KIND: u32 = 4097;
+pub(crate) const CAPSULE_CHAT_KIND: u32 = 4097;
 const CHAT_INBOX_CAPACITY: usize = 512;
 
 #[derive(Clone, Serialize)]
@@ -140,6 +140,38 @@ pub(crate) fn queue_incoming_chat_if_match(
 fn drain_queued_chat(local_pubkey: [u8; 32]) -> Vec<QueuedChatMessage> {
     let mut inbox = CHAT_INBOX.lock().unwrap();
     inbox.remove(&local_pubkey).unwrap_or_default()
+}
+
+#[cfg(test)]
+pub(crate) fn fill_chat_inbox_for_test(endpoint: &[u8]) {
+    let endpoint = endpoint.try_into().unwrap();
+    CHAT_INBOX.lock().unwrap().insert(
+        endpoint,
+        (0..CHAT_INBOX_CAPACITY)
+            .map(|index| QueuedChatMessage {
+                event_id: format!("event-{index}"),
+                from_hex: format!("sender-{index}"),
+                to_hex: "local".to_string(),
+                payload_json: "{}".to_string(),
+                timestamp_ms: index as u64,
+            })
+            .collect(),
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn clear_chat_inbox_for_test(endpoint: &[u8]) {
+    CHAT_INBOX.lock().unwrap().remove(endpoint);
+}
+
+#[cfg(test)]
+pub(crate) fn chat_inbox_len_for_test(endpoint: &[u8]) -> usize {
+    CHAT_INBOX
+        .lock()
+        .unwrap()
+        .get(endpoint)
+        .map(Vec::len)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

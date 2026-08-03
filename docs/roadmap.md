@@ -92,11 +92,11 @@ The two lines share one product axis but cannot share a second runtime path.
 The ordering below is deliberate:
 
 1. **1.x integrity before new lifecycle behavior.** Remediation passes
-   `12.3 / pass 1-14` are complete. The next ordered pass is
-   `12.3 / pass 15`, implementing only the bounded inbound quarantine
-   repository, persistence, expiry/tombstones, deletion, and same-router
-   recovery defined by pass 14. Sender-policy activation remains a later
-   isolated pass after cross-platform repository evidence.
+   `12.3 / pass 1-15` are complete. The next ordered pass is
+   `12.3 / pass 16`, activating only the already-specified
+   `SenderIngressPolicyV1` behind the pass-15 repository and acknowledged
+   ingress handoff. It may not alter Core, create another receive scheduler,
+   or fork quarantine storage/recovery ownership.
    `5.1 Canonical Core Projection Convergence` remains a hard boundary: new
    invitation, relationship, consensus, or Capsule Map behavior must consume a
    canonical projection rather than add another Flutter event reducer.
@@ -1702,8 +1702,46 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - Pass 15 may implement only repository persistence, expiry/tombstones,
       deletion, and same-router recovery. Sender-policy activation remains a
       later isolated pass after cross-platform repository evidence.
-  - Status: active; passes 1-14 are complete. Pass 15 repository implementation
-    is next; sender-rate quarantine remains inactive.
+    - Pass 15 repository implementation completed on 2026-08-03:
+      - `platform/hivra-ffi` owns one encrypted snapshot repository scoped by
+        Capsule, network, and local transport endpoint; neither Core nor the
+        Nostr adapter gained storage or routing authority;
+      - records and metadata enforce the pass-14 record, byte, per-sender,
+        provenance, retention, and tombstone bounds without eviction;
+      - platform crypto derives distinct authenticated record and snapshot
+        storage roles; plaintext envelopes do not enter the persisted file;
+      - retryable input is acknowledged as `quarantined` only after atomic
+        persistence; full, corrupt, undecryptable, or unavailable storage
+        returns visible retry/fail-closed behavior;
+      - one eligible record re-enters the existing FFI ingress router with its
+        original event id before a new fetch; consumed and expired payloads
+        become bounded metadata-only tombstones;
+      - Flutter supplies the canonical application root and the existing
+        Capsule deletion lifecycle removes only that Capsule's quarantine
+        subtree;
+      - focused regressions cover encryption-role separation, restart,
+        corruption, duplicate provenance, sender capacity, expiry,
+        consumption, deletion isolation, and same-router chat recovery;
+      - `git diff --check`, Rust formatting, `flutter analyze`, all `718`
+        Flutter tests, `cargo test --workspace`, and
+        `tools/review/review_all.sh` passed;
+      - the universal macOS release bundle exposed both new FFI symbols and
+        launched with Capsule Ledger versions `105`, `62`, and `119` without
+        process, storage-root, or quarantine failure;
+      - Android APK `versionCode=100000323`, SHA-256
+        `6c4d21afe514589dc2519e0bd24623cde945d6a6cc9fc8a10041ce4862a7b03e`,
+        contained all three required ABIs and both new FFI symbols, updated in
+        place while preserving Ledger `v82`, and completed two cold starts;
+      - both Android starts resolved canonical ingress with `fetched=123`,
+        `decoded=115`, `retry=0`, no quarantine/storage failure, and received
+        `96/96` attestations;
+      - `SenderIngressPolicyV1` remains absent from runtime code.
+    - Pass 16 may activate only `SenderIngressPolicyV1` behind this repository
+      and handoff. Stable event charging, persisted bucket bounds, restart
+      resistance, same-router replay exemption, and capacity backpressure are
+      mandatory; Core and scheduler changes remain unauthorized.
+  - Status: active; passes 1-15 are complete. Pass 16 sender-policy activation
+    is next.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

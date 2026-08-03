@@ -170,6 +170,7 @@ class CapsulePersistenceService {
     required bool isGenesis,
     required bool isNeste,
   }) async {
+    await _configureNativeQuarantineStorage(hivra);
     final pubKey = hivra.capsuleRuntimeOwnerPublicKey();
     final pubKeyHex = pubKey != null ? _bytesToHex(pubKey) : null;
     final index = await _readIndex();
@@ -237,6 +238,7 @@ class CapsulePersistenceService {
   Future<bool> bootstrapRuntimeFromDisk(
     CapsulePersistenceBindings hivra,
   ) async {
+    await _configureNativeQuarantineStorage(hivra);
     final seed = hivra.loadSeed();
     if (seed == null) return false;
 
@@ -442,6 +444,7 @@ class CapsulePersistenceService {
   Future<bool> bootstrapActiveCapsuleRuntime(
     CapsulePersistenceBindings hivra,
   ) async {
+    await _configureNativeQuarantineStorage(hivra);
     await _reconcileCapsuleIdentityIndex(hivra);
     final index = await _readIndex();
     final selectedActiveHex = index.activePubKeyHex?.trim().toLowerCase();
@@ -1080,12 +1083,24 @@ class CapsulePersistenceService {
     bool deleteLocalData = false,
     CapsulePersistenceBindings? hivra,
   }) async {
+    if (hivra != null) {
+      await _configureNativeQuarantineStorage(hivra);
+    }
     final index = await _readIndex();
     final keysToDelete = await _resolveDeleteKeys(
       pubKeyHex,
       index: index,
       hivra: hivra,
     );
+    if (hivra != null) {
+      for (final key in keysToDelete) {
+        if (!hivra.deleteInboundQuarantine(_hexToBytes(key))) {
+          throw StateError(
+            'Failed to delete inbound quarantine for Capsule $key',
+          );
+        }
+      }
+    }
     await _secretVault.deleteCapsules(keysToDelete);
 
     if (hivra != null) {
@@ -1842,6 +1857,15 @@ class CapsulePersistenceService {
       out[i ~/ 2] = int.parse(normalized.substring(i, i + 2), radix: 16);
     }
     return out;
+  }
+
+  Future<void> _configureNativeQuarantineStorage(
+    CapsulePersistenceBindings hivra,
+  ) async {
+    final root = await _fileStore.docsDirectory();
+    if (!hivra.setApplicationStorageRoot(root.absolute.path)) {
+      throw StateError('Failed to initialize native application storage root');
+    }
   }
 
   String _encodeCapsuleKey(Uint8List bytes) {

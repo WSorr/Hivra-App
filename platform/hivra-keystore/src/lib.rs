@@ -7,6 +7,11 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
+const QUARANTINE_RECORD_KEY_LABEL: &[u8] = b"HIVRA_INBOUND_QUARANTINE_RECORD_KEY_v1";
+const QUARANTINE_SNAPSHOT_KEY_LABEL: &[u8] = b"HIVRA_INBOUND_QUARANTINE_SNAPSHOT_KEY_v1";
+const SEALED_PAYLOAD_VERSION: u8 = 1;
+const AES_GCM_NONCE_LEN: usize = 12;
+
 /// Errors that can occur in keystore operations
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -99,6 +104,117 @@ pub fn derive_root_public_key(seed: &Seed) -> Result<[u8; 32]> {
     Ok(signing_key.verifying_key().to_bytes())
 }
 
+/// Authenticated-encrypts one inbound quarantine envelope with a key role
+/// distinct from root signing, transport signing, and transport encryption.
+pub fn seal_inbound_quarantine_record(
+    seed: &Seed,
+    associated_data: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8>> {
+    seal_with_label(
+        seed,
+        QUARANTINE_RECORD_KEY_LABEL,
+        associated_data,
+        plaintext,
+    )
+}
+
+/// Authenticated-decrypts one inbound quarantine envelope.
+pub fn open_inbound_quarantine_record(
+    seed: &Seed,
+    associated_data: &[u8],
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    open_with_label(seed, QUARANTINE_RECORD_KEY_LABEL, associated_data, sealed)
+}
+
+/// Authenticated-encrypts the complete quarantine snapshot and index.
+pub fn seal_inbound_quarantine_snapshot(
+    seed: &Seed,
+    associated_data: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8>> {
+    seal_with_label(
+        seed,
+        QUARANTINE_SNAPSHOT_KEY_LABEL,
+        associated_data,
+        plaintext,
+    )
+}
+
+/// Authenticated-decrypts the complete quarantine snapshot and index.
+pub fn open_inbound_quarantine_snapshot(
+    seed: &Seed,
+    associated_data: &[u8],
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    open_with_label(seed, QUARANTINE_SNAPSHOT_KEY_LABEL, associated_data, sealed)
+}
+
+fn seal_with_label(
+    seed: &Seed,
+    label: &[u8],
+    associated_data: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8>> {
+    use aes_gcm::aead::{Aead, Payload};
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
+    use rand::RngCore;
+
+    let mut key = derive_key_with_label(seed, label)?;
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|_| Error::PlatformError("Invalid quarantine storage key".to_string()))?;
+    let mut nonce_bytes = [0u8; AES_GCM_NONCE_LEN];
+    rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(
+            Nonce::from_slice(&nonce_bytes),
+            Payload {
+                msg: plaintext,
+                aad: associated_data,
+            },
+        )
+        .map_err(|_| Error::PlatformError("Quarantine encryption failed".to_string()))?;
+    key.zeroize();
+
+    let mut sealed = Vec::with_capacity(1 + nonce_bytes.len() + ciphertext.len());
+    sealed.push(SEALED_PAYLOAD_VERSION);
+    sealed.extend_from_slice(&nonce_bytes);
+    sealed.extend_from_slice(&ciphertext);
+    Ok(sealed)
+}
+
+fn open_with_label(
+    seed: &Seed,
+    label: &[u8],
+    associated_data: &[u8],
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    use aes_gcm::aead::{Aead, Payload};
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
+
+    if sealed.len() <= 1 + AES_GCM_NONCE_LEN || sealed[0] != SEALED_PAYLOAD_VERSION {
+        return Err(Error::PlatformError(
+            "Unsupported quarantine ciphertext framing".to_string(),
+        ));
+    }
+    let mut key = derive_key_with_label(seed, label)?;
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|_| Error::PlatformError("Invalid quarantine storage key".to_string()))?;
+    let nonce = Nonce::from_slice(&sealed[1..1 + AES_GCM_NONCE_LEN]);
+    let result = cipher
+        .decrypt(
+            nonce,
+            Payload {
+                msg: &sealed[1 + AES_GCM_NONCE_LEN..],
+                aad: associated_data,
+            },
+        )
+        .map_err(|_| Error::PlatformError("Quarantine authentication failed".to_string()));
+    key.zeroize();
+    result
+}
+
 fn derive_key_with_label(seed: &Seed, info: &[u8]) -> Result<[u8; 32]> {
     use hkdf::Hkdf;
     use sha2::Sha256;
@@ -159,6 +275,23 @@ mod tests {
             derive_root_public_key(&seed).unwrap(),
             derive_nostr_keypair(&seed).unwrap()
         );
+    }
+
+    #[test]
+    fn quarantine_storage_roles_are_authenticated_and_domain_separated() {
+        let seed = Seed([0x42; 32]);
+        let aad = b"capsule:neste:nostr";
+        let plaintext = b"authenticated envelope";
+        let record = seal_inbound_quarantine_record(&seed, aad, plaintext).unwrap();
+        let snapshot = seal_inbound_quarantine_snapshot(&seed, aad, plaintext).unwrap();
+
+        assert_ne!(record, snapshot);
+        assert_eq!(
+            open_inbound_quarantine_record(&seed, aad, &record).unwrap(),
+            plaintext
+        );
+        assert!(open_inbound_quarantine_record(&seed, b"wrong", &record).is_err());
+        assert!(open_inbound_quarantine_snapshot(&seed, aad, &record).is_err());
     }
 
     #[test]

@@ -610,11 +610,49 @@ struct IngressCounters {
     replayed: usize,
     append_failed: usize,
     capacity_backpressure: usize,
+    quarantined: usize,
+    quarantine_recovered: usize,
+    quarantine_expired: usize,
+    quarantine_failed: usize,
+    quarantine_terminal_replay: usize,
     adapter_rejected: usize,
     accepted_seen: usize,
     accepted_replayed: usize,
     accepted_appended: usize,
     accepted_projection_reconciled: usize,
+}
+
+fn recover_one_quarantined_envelope(
+    repository: &mut crate::inbound_quarantine::CapsuleInboundQuarantineRepository<'_>,
+    local_pubkey: PubKey,
+    seed: &Seed,
+    counters: &mut IngressCounters,
+    now: u64,
+) -> Result<(), crate::inbound_quarantine::QuarantineError> {
+    counters.quarantine_expired += repository.expire_due(now)?;
+    let Some(recovered) = repository.next_eligible(now)? else {
+        return Ok(());
+    };
+    let disposition = route_inbound_envelope(
+        &recovered.adapter_event_id,
+        recovered.envelope,
+        local_pubkey,
+        seed,
+        counters,
+    );
+    match disposition {
+        InboundDeliveryDisposition::Consumed => {
+            repository.mark_consumed(&recovered.adapter_event_id, now)?;
+            counters.quarantine_recovered += 1;
+        }
+        InboundDeliveryDisposition::Retry => {
+            repository.mark_retry(&recovered.adapter_event_id, now)?;
+        }
+        InboundDeliveryDisposition::Quarantined | InboundDeliveryDisposition::AdapterRejected => {
+            return Err(crate::inbound_quarantine::QuarantineError::InvalidRecord);
+        }
+    }
+    Ok(())
 }
 
 fn route_inbound_envelope(
@@ -820,8 +858,41 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         Ok(key) => key,
         Err(_) => return -2,
     };
-    if RUNTIME.lock().unwrap().capsule.is_none() {
-        return -3;
+    let capsule_state = match current_capsule_state() {
+        Some(state) => state,
+        None => return -3,
+    };
+    let scope = crate::inbound_quarantine::InboundQuarantineScopeV1::for_runtime(
+        &capsule_state.public_key,
+        capsule_state.network,
+        &local_pubkey,
+    );
+    let mut quarantine =
+        match crate::inbound_quarantine::CapsuleInboundQuarantineRepository::open(scope, &seed) {
+            Ok(repository) => repository,
+            Err(error) => {
+                set_last_error(format!(
+                    "Transport receive blocked: inbound quarantine unavailable ({error})"
+                ));
+                return -7;
+            }
+        };
+    let mut counters = IngressCounters::default();
+    let receive_now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    if let Err(error) = recover_one_quarantined_envelope(
+        &mut quarantine,
+        PubKey::from(local_pubkey),
+        &seed,
+        &mut counters,
+        receive_now,
+    ) {
+        set_last_error(format!(
+            "Transport receive blocked: inbound quarantine recovery failed ({error})"
+        ));
+        return -7;
     }
 
     let (batch, receive_diagnostic) =
@@ -835,28 +906,60 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
             Err(code) => return code,
         };
     let batch_id = batch.batch_id;
-    let mut counters = IngressCounters::default();
     let mut resolutions = Vec::with_capacity(batch.items.len());
     for item in batch.items {
+        let event_id = item.event_id;
+        let observed_by = item.observed_by;
         let disposition = match item.payload {
             InboundDeliveryPayload::AdapterRejected { reason } => {
                 counters.adapter_rejected += 1;
                 eprintln!(
                     "[Delivery/Nostr] Adapter rejected event={} reason={}",
-                    item.event_id, reason
+                    event_id, reason
                 );
                 InboundDeliveryDisposition::AdapterRejected
             }
-            InboundDeliveryPayload::Envelope(message) => route_inbound_envelope(
-                &item.event_id,
-                message,
-                PubKey::from(local_pubkey),
-                &seed,
-                &mut counters,
-            ),
+            InboundDeliveryPayload::Envelope(message) => {
+                if quarantine.has_terminal_evidence(&event_id) {
+                    counters.quarantine_terminal_replay += 1;
+                    InboundDeliveryDisposition::Consumed
+                } else {
+                    let route_disposition = route_inbound_envelope(
+                        &event_id,
+                        message.clone(),
+                        PubKey::from(local_pubkey),
+                        &seed,
+                        &mut counters,
+                    );
+                    if route_disposition == InboundDeliveryDisposition::Retry {
+                        match quarantine.quarantine(
+                            &event_id,
+                            &observed_by,
+                            &message,
+                            "canonical_route_retry",
+                            receive_now,
+                        ) {
+                            Ok(()) => {
+                                counters.quarantined += 1;
+                                InboundDeliveryDisposition::Quarantined
+                            }
+                            Err(error) => {
+                                counters.quarantine_failed += 1;
+                                eprintln!(
+                                    "[Delivery/Nostr] Quarantine backpressure event={} reason={}",
+                                    event_id, error
+                                );
+                                InboundDeliveryDisposition::Retry
+                            }
+                        }
+                    } else {
+                        route_disposition
+                    }
+                }
+            }
         };
         resolutions.push(InboundDeliveryResolution {
-            event_id: item.event_id,
+            event_id,
             disposition,
         });
     }
@@ -879,7 +982,7 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         .filter(|resolution| resolution.disposition == InboundDeliveryDisposition::Retry)
         .count();
     set_last_error(format!(
-        "Transport receive diagnostic: {receive_diagnostic}; ingress=[batch={batch_id}, appended={}, loopback={}, non_core={}, unsupported={}, not_addressed={}, proof_invalid={}, signer_mismatch={}, replayed={}, append_failed={}, capacity_backpressure={}, adapter_rejected={}, retry={retry}, accepted_seen={}, accepted_replayed={}, accepted_appended={}, accepted_projection_reconciled={}]",
+        "Transport receive diagnostic: {receive_diagnostic}; ingress=[batch={batch_id}, appended={}, loopback={}, non_core={}, unsupported={}, not_addressed={}, proof_invalid={}, signer_mismatch={}, replayed={}, append_failed={}, capacity_backpressure={}, quarantined={}, quarantine_recovered={}, quarantine_expired={}, quarantine_failed={}, quarantine_terminal_replay={}, adapter_rejected={}, retry={retry}, accepted_seen={}, accepted_replayed={}, accepted_appended={}, accepted_projection_reconciled={}]",
         counters.appended,
         counters.loopback,
         counters.routed_non_core,
@@ -890,6 +993,11 @@ fn hivra_transport_receive_with_profile(profile: TransportProfile) -> i32 {
         counters.replayed,
         counters.append_failed,
         counters.capacity_backpressure,
+        counters.quarantined,
+        counters.quarantine_recovered,
+        counters.quarantine_expired,
+        counters.quarantine_failed,
+        counters.quarantine_terminal_replay,
         counters.adapter_rejected,
         counters.accepted_seen,
         counters.accepted_replayed,
@@ -1145,5 +1253,75 @@ pub unsafe extern "C" fn hivra_expire_invitation(invitation_id_ptr: *const u8) -
     match append_prepared_event(prepared) {
         Ok(_) => 0,
         Err(_) => -3,
+    }
+}
+
+#[cfg(test)]
+mod quarantine_recovery_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn quarantined_chat_recovers_through_the_canonical_router() {
+        let _guard = crate::inbound_quarantine::TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        crate::inbound_quarantine::set_application_storage_root(root.path()).unwrap();
+        let seed = Seed::new([41; 32]);
+        let local_pubkey = [42; 32];
+        let scope = crate::inbound_quarantine::InboundQuarantineScopeV1::for_runtime(
+            &[43; 32],
+            1,
+            &local_pubkey,
+        );
+        let mut repository =
+            crate::inbound_quarantine::CapsuleInboundQuarantineRepository::open(scope, &seed)
+                .unwrap();
+        let envelope = DeliveryEnvelope {
+            schema_version: 1,
+            from: [44; 32],
+            to: local_pubkey,
+            kind: crate::chat_api::CAPSULE_CHAT_KIND,
+            payload: b"{\"text\":\"recover\"}".to_vec(),
+            timestamp: 100,
+            correlation_id: None,
+            domain_event: None,
+        };
+        crate::chat_api::fill_chat_inbox_for_test(&local_pubkey);
+        let mut counters = IngressCounters::default();
+        assert_eq!(
+            route_inbound_envelope(
+                "recover-event",
+                envelope.clone(),
+                PubKey::from(local_pubkey),
+                &seed,
+                &mut counters,
+            ),
+            InboundDeliveryDisposition::Retry
+        );
+        repository
+            .quarantine(
+                "recover-event",
+                &[],
+                &envelope,
+                "canonical_route_retry",
+                100,
+            )
+            .unwrap();
+
+        crate::chat_api::clear_chat_inbox_for_test(&local_pubkey);
+        recover_one_quarantined_envelope(
+            &mut repository,
+            PubKey::from(local_pubkey),
+            &seed,
+            &mut counters,
+            115,
+        )
+        .unwrap();
+
+        assert_eq!(crate::chat_api::chat_inbox_len_for_test(&local_pubkey), 1);
+        assert_eq!(repository.record_count(), 0);
+        assert_eq!(repository.tombstone_count(), 1);
+        assert_eq!(counters.quarantine_recovered, 1);
+        crate::chat_api::clear_chat_inbox_for_test(&local_pubkey);
     }
 }
