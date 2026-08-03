@@ -136,6 +136,72 @@ authenticated envelope until it is either consumed by the canonical ingress
 owner or durably quarantined. Capacity exhaustion must apply backpressure and
 remain visible; it must not evict an unconsumed valid envelope silently.
 
+### Acknowledged Ingress Handoff Contract
+
+This is the normative prerequisite established by `12.3 / pass 12`. It does
+not authorize sender limiting or quarantine storage by itself.
+
+The adapter MUST return one bounded ingress batch without mutating its
+committed cursor or acknowledged-event set. Every observation in that batch
+retains:
+
+- the stable adapter event id;
+- every relay/end-point that returned that event;
+- the signed wire timestamp and the candidate cursor for each observation;
+- either the authenticated transport-neutral `DeliveryEnvelope` or one
+  deterministic adapter rejection.
+
+The application-runtime ingress owner routes each authenticated envelope once
+through the existing FFI ingress path and returns exactly one disposition:
+
+- `consumed`: the canonical owner durably accepted the message, determined it
+  was an already-consumed replay, or completed an explicit terminal policy
+  rejection;
+- `quarantined`: the original event identity and envelope were durably stored
+  in the Capsule/network-scoped quarantine before acknowledgement;
+- `retry`: canonical consumption did not complete and durable quarantine did
+  not commit.
+
+Adapter-invalid wire input may receive a separate permanent-rejection
+disposition only after deterministic signature, recipient, envelope, and
+sender-binding checks have established that it is not a valid authenticated
+Hivra envelope. Bounded rejection evidence MAY retain its event id and reason;
+it is not a domain fact or quarantine payload.
+
+Acknowledgement is a resolve-once batch operation. The adapter may add an event
+id to its acknowledged set only for `consumed`, `quarantined`, or deterministic
+adapter rejection. It may advance one relay cursor only through the greatest
+candidate prefix for which every event observed from that relay has one of
+those terminal dispositions. Any `retry`, callback failure, panic, timeout,
+quarantine write failure, or full quarantine capacity leaves the affected
+prefix unacknowledged and applies visible backpressure. Partial success may
+deduplicate already acknowledged event ids, but it must not skip the unresolved
+relay prefix.
+
+The cursor is only a fetch optimization. It is not receipt evidence, domain
+truth, or proof of canonical consumption. Process restart may replay an
+overlap; Core idempotence, capability inbox identity, and durable quarantine
+identity must make that replay safe.
+
+Quarantine recovery MUST re-enter the same canonical FFI ingress router with
+the original adapter event id and envelope. It cannot invoke a capability
+handler directly, append Core facts itself, or become a second receive route.
+Expiry is an explicit terminal policy transition that leaves bounded evidence
+of event id, sender, scope, reason, and time; silent payload eviction is
+forbidden.
+
+Threat closure required before implementation:
+
+- spoofing and key confusion fail before authenticated-envelope disposition;
+- replay is keyed by stable adapter event id and then by the owning domain's
+  immutable identity;
+- wrong-recipient and cross-network input fail closed before routing;
+- downgrade input remains confined to the existing read-only compatibility
+  decoder and receives no alternate acknowledgement path;
+- sender throttling happens only after sender binding and can choose only
+  canonical consumption, durable quarantine, or visible backpressure;
+- a malicious sender cannot force unbounded memory, disk, or cursor growth.
+
 ## Ownership Rules
 
 1. `CapsuleDeliveryLifecycleService` is the only owner of retry delays,
@@ -157,6 +223,10 @@ remain visible; it must not evict an unconsumed valid envelope silently.
 6. Transport adapters are replaceable rails. They may optimize delivery, but
    they may not define Hivra truth, relationship state, consensus, or UI
    projection.
+7. The adapter owns wire verification, event identity, relay observations, and
+   cursor commit. The application-runtime FFI boundary owns ingress routing and
+   disposition. A future Capsule-scoped quarantine repository owns retention
+   bytes and expiry evidence; it owns no routing or domain interpretation.
 
 ## Migration Status
 
@@ -188,6 +258,11 @@ remain visible; it must not evict an unconsumed valid envelope silently.
   Capsule transport-key-owned Nostr session, relay pool, seen set, and
   per-relay cursor map. Profiles select only bounded operation timeouts; they
   cannot create a second receive session or cursor owner.
+- Contract completed in `12.3 / pass 12`: acknowledged ingress is a bounded
+  resolve-once batch handoff. Authenticated events become cursor/seen terminal
+  only after canonical consumption or durable quarantine; unresolved capacity
+  or persistence failure preserves the relay prefix and exposes backpressure.
+  Runtime implementation and sender quarantine remain separate later passes.
 - Pending: define one shared passive receive scheduler for invitations,
   pair-attestations, chat, relationship notifications, and trading signals.
   Until then, screen-triggered receives are serialized but can still perform
@@ -210,6 +285,12 @@ remain visible; it must not evict an unconsumed valid envelope silently.
 - A transport channel has exactly one retry owner.
 - A screen imports no worker runtime or outbox store.
 - A receive operation has no outbound transport side effect.
+- An authenticated envelope cannot become cursor/seen terminal before
+  canonical consumption or durable quarantine.
+- An unresolved batch disposition preserves its relay cursor prefix and
+  exposes backpressure.
+- Quarantine replay re-enters the same FFI ingress router and cannot call a
+  domain owner directly.
 - One outbox item can produce at most one matching envelope per attempt.
 - Every retryable outbox item has one immutable delivery reference; an
   unreferenced record is durable quarantine and is never due.

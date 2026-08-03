@@ -959,6 +959,28 @@ hybrid KEM envelope MUST be layered behind the same transport delivery port,
 must bind the classical and post-quantum encapsulations to one recipient and
 one ciphertext, and must not introduce a Nostr-specific Core path.
 
+### 5.5 Acknowledged Ingress Handoff
+
+The normative lifecycle is defined in
+`docs/architecture/transport-delivery-lifecycle.md`. A transport adapter MUST
+preserve stable adapter event identity and relay observation provenance until
+the application-runtime ingress owner returns one resolve-once disposition.
+An authenticated envelope becomes acknowledged/seen and cursor-terminal only
+after canonical consumption or durable Capsule/network-scoped quarantine.
+
+Retryable routing, persistence, timeout, panic, and capacity failures MUST
+leave the affected relay cursor prefix uncommitted and MUST expose
+backpressure. Adapter-invalid wire input may be permanently rejected only by
+deterministic pre-domain validation. Cursor state is a fetch optimization, not
+domain truth or receipt evidence.
+
+Quarantined input re-enters the same canonical FFI ingress router with its
+original adapter event id. It MUST NOT call a capability handler directly,
+append Ledger facts, or create a second transport route. This contract does not
+authorize sender-rate limiting or quarantine runtime in 1.x until their
+storage, retention, expiry, capacity, replay, and recovery owners are
+implemented behind that one handoff.
+
 ```rust
 // NostrTransport uses NostrCryptoProvider (secp256k1)
 pub struct NostrCryptoProvider {

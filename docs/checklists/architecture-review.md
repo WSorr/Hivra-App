@@ -110,6 +110,14 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Sender throttling acknowledges an authenticated envelope only after
       canonical consumption or durable quarantine; full quarantine capacity
       applies visible backpressure instead of silent loss.
+- [ ] Inbound adapter batches retain stable event identity and relay
+      provenance until one resolve-once application-runtime disposition.
+- [ ] A retryable ingress failure leaves the affected relay cursor prefix
+      uncommitted; cursor state is never treated as receipt or domain truth.
+- [ ] Quarantine recovery re-enters the canonical FFI ingress router with the
+      original event identity and cannot call a capability owner directly.
+- [ ] Adapter-invalid permanent rejection is limited to deterministic
+      pre-domain validation and cannot hide authenticated-envelope loss.
 - [ ] Delivery recovery follows
       `docs/architecture/transport-delivery-lifecycle.md`: one lifecycle owns
       retry timing, receipt reconciliation, and capsule-scoped pump lifetime.

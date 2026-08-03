@@ -1617,14 +1617,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       remains unauthorized until consume-or-durable-quarantine acknowledgement,
       bounded capacity backpressure, retention, expiry, and replay ownership
       are complete.
-    - Pass 12 is contract-first and not yet authorized for implementation. It
-      must define the single acknowledged adapter-to-FFI handoff, stable event
-      identity, consume/quarantine terminal states, bounded-capacity
-      backpressure, retention, expiry, replay ownership, and restart recovery
-      before sender limiting or quarantine storage is added.
-  - Status: active; passes 1-11 are complete. Pass 12 contract preparation is
-    next; sender-rate quarantine remains `NEEDS_CONTRACT` until that contract
-    and its architecture gates are reviewed.
+    - Pass 12 acknowledged ingress contract completed on 2026-08-03 without
+      runtime changes:
+      - adapter batches retain stable event identity, relay provenance, signed
+        timestamp, and per-relay cursor candidates until disposition;
+      - the existing application-runtime FFI ingress router owns one
+        resolve-once `consumed`, `quarantined`, or `retry` disposition;
+      - an adapter may commit seen identity or relay cursor prefix only after
+        canonical consumption, durable quarantine, or deterministic
+        adapter-invalid rejection;
+      - retryable routing, timeout, panic, capacity, and persistence failures
+        preserve the affected cursor prefix and expose backpressure;
+      - quarantine replay must use the original event identity and the same FFI
+        router, never a capability-direct or Core path;
+      - expiry requires bounded terminal evidence and cannot silently evict an
+        unconsumed authenticated envelope;
+      - architecture gates pin the ownership, cursor, rejection, and
+        single-route constraints;
+      - `git diff --check`, `flutter analyze`, full `flutter test`,
+        `cargo test --workspace`, and `tools/review/review_all.sh` passed.
+    - Pass 13 may implement only this acknowledged handoff and its regressions.
+      Sender limiting and quarantine storage remain unauthorized until the
+      handoff is proven and their separate retention/capacity contract closes.
+  - Status: active; passes 1-12 are complete. Pass 13 acknowledged-handoff
+    implementation is next; sender-rate quarantine remains `NEEDS_CONTRACT`.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

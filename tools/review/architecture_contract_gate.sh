@@ -621,6 +621,20 @@ require_present "$FFI_INVITATION_API" 'receive_with_timeout\(profile\.receive_ti
   "receive profile selects an operation budget on the shared session"
 require_present "$DELIVERY_LIFECYCLE_DOC" 'acknowledged ingress handoff' \
   "sender quarantine remains gated on durable ingress acknowledgement"
+require_present "$DELIVERY_LIFECYCLE_DOC" '^### Acknowledged Ingress Handoff Contract' \
+  "acknowledged ingress has one normative lifecycle contract"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'stable adapter event id' \
+  "ingress batch retains stable adapter event identity"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'greatest' \
+  "relay cursor advances only through a terminal disposition prefix"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'Quarantine recovery MUST re-enter the same canonical FFI ingress router' \
+  "quarantine recovery cannot create a second ingress route"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'full quarantine capacity leaves the affected' \
+  "full quarantine capacity applies cursor-safe backpressure"
+require_present "$SPEC" '^### 5\.5 Acknowledged Ingress Handoff' \
+  "specification binds acknowledged ingress to the canonical lifecycle"
+require_present "$CHECKLIST" 'original event identity' \
+  "architecture review preserves event identity across quarantine replay"
 require_absent "$INV_ACTIONS" '_pendingRetryPumpByCapsule|_schedulePendingOutgoingRetryPump' \
   "invitation actions do not own a parallel retry pump"
 require_present "$INV_ACTIONS" 'await _applyWorkerLedgerResult\(' \
