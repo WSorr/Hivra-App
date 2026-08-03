@@ -349,20 +349,27 @@ void main() {
         receiveWorkerRunner: (_) async {
           receiveCalls += 1;
           return <String, Object?>{
-            'result': -1003,
+            'result': receiveCalls == 1 ? -1003 : 0,
             'json': null,
-            'lastError': 'Pair consensus attestation fetch timed out',
+            'lastError':
+                receiveCalls == 1
+                    ? 'Pair consensus attestation fetch timed out'
+                    : null,
           };
         },
       );
 
       final first = await service.receiveAndStore();
       final second = await service.receiveAndStore();
+      final manual = await service.receiveAndStore(manualRetry: true);
+      final recovered = await service.receiveAndStore();
 
-      expect(receiveCalls, 1);
+      expect(receiveCalls, 3);
       expect(first.code, -1003);
       expect(second.code, -3101);
       expect(second.errorMessage, contains('cooling down'));
+      expect(manual.code, 0);
+      expect(recovered.code, 0);
     });
 
     test(

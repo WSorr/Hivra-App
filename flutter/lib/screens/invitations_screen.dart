@@ -431,6 +431,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
               )
               : await _module.intents.fetchInvitations(
                 capsuleHex: operationCapsuleHex,
+                manualRetry: !silent,
               );
     } finally {
       if (mounted) {

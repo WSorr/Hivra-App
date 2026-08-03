@@ -801,7 +801,23 @@ relay accepted a Nostr event). It MUST NOT be interpreted as proof that the peer
 capsule received, validated, or appended the domain event. Peer state is
 confirmed only by ledger events and deterministic replay/projection policy.
 
-### 5.2.2 WASM Plugin Host Contract
+### 5.2.2 Transport Health Policy
+
+All host receive paths share one application-level, capsule-scoped transport
+health policy above transport adapters and below UI. Invitations, relationship
+notifications, chat, trading signals, and pair attestations MUST use this one
+decision surface; relationship notifications remain part of the canonical
+domain-event receive route rather than introducing a second worker.
+
+Consecutive transport timeouts MAY increase a bounded cooldown that suppresses
+passive polling. One explicit user action MAY bypass the current cooldown for
+one receive attempt; it MUST NOT disable cooldown globally or turn a screen
+into an independent retry loop. A successful transport result clears the
+degraded state deterministically. UI MAY project the capsule-scoped degraded
+status and remaining cooldown, but Core, Ledger projection, relationship truth,
+and pair consensus MUST NOT read transport-health state as authority.
+
+### 5.2.3 WASM Plugin Host Contract
 
 WASM plugin execution is allowed only through a host boundary with explicit capabilities.
 

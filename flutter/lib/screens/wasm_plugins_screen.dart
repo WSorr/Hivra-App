@@ -579,7 +579,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     try {
       if (!mounted) return;
       final stopwatch = Stopwatch()..start();
-      final result = await _module.chatDelivery.receiveAndFilter();
+      final result = await _module.chatDelivery.receiveAndFilter(
+        manualRetry: !silentWhenEmpty,
+      );
       stopwatch.stop();
       _refreshAttestationsAfterTransportReceive('plugin_chat_fetch');
       await _module.uiLog.log(

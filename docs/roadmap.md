@@ -1329,9 +1329,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
           recovery and cross-capsule independence for invitations, pair
           attestations, and chat/trading-signal receive.
       - remaining follow-up:
-        - route relationship-notification receive through the same policy.
-        - expose degraded-transport status in UI instead of only returning
-          service-level cooldown errors.
+        - completed in pass 9 on 2026-08-03: relationship notification refresh
+          reuses the canonical invitation/domain receive worker with explicit
+          one-attempt manual retry; no relationship-specific route was added.
+        - completed in pass 9 on 2026-08-03: the shared policy exposes a
+          capsule-scoped degraded snapshot and the main UI renders actionable
+          cooldown diagnostics.
+        - explicit invitation, relationship, chat, and trading-signal refresh
+          can bypass one passive cooldown for one operation; lifecycle and
+          background receive remain gated, and success clears degradation.
     - Transport Delivery Lifecycle v1 consolidation slice completed on
       2026-07-11:
       - extracted retry timing, receipt reconciliation, and capsule-scoped
@@ -1544,11 +1550,28 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       authentication and left zero local Capsules. The temporary profile was
       removed, and owner user `0` remained intact on Ledger `v82` after the
       package update. No crash, ANR, or old app-private-path error was present.
-    - Pass 8 is closed. Pass 9 shared Transport Health Policy is the next
-      ordered unit. Legacy aggregate delivery reconciliation and durable
-      sender-rate quarantine remain separately tracked debt.
-  - Status: active; passes 1-8 are completed with automated and cross-platform
-    manual evidence; pass 9 is next.
+    - Pass 9 completed on 2026-08-03:
+      - all required automated gates pass: `git diff --check`, `flutter analyze`,
+        full `flutter test` (713 tests), `cargo test --workspace`, and
+        `tools/review/review_all.sh`.
+      - fresh macOS release smoke activated Capsule Ledger `v105`, completed
+        canonical transport receive and pair-attestation receive, and showed no
+        process crash, fault, or hidden receive loop.
+      - fresh Android release APK `versionCode=100000319`, SHA-256
+        `8d2ccfd07b337a01b21c20de46aab203f91298e2e3dda03fc1dbb90dcedce6f0`,
+        updated in place while preserving the original install/data boundary,
+        activated Capsule Ledger `v82`, completed canonical receive and
+        attestation, and showed no crash or retry storm.
+      - Android network-loss smoke restored airplane/Wi-Fi/mobile state;
+        transport send failures remained adapter-level (`-11`) and did not
+        alter Ledger truth or create a second retry route. Timeout/cooldown,
+        explicit one-attempt retry, success recovery, and cross-Capsule
+        isolation remain deterministically covered by focused regressions.
+    - Passes 1-9 are closed. Legacy aggregate delivery reconciliation and
+      durable sender-rate quarantine remain separately tracked debt and must be
+      audited and ordered before another pass is named.
+  - Status: active; passes 1-9 are completed with automated and cross-platform
+    manual evidence; the next bounded remediation pass is not yet named.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

@@ -301,9 +301,14 @@ class CapsuleChatDeliveryService {
     );
   }
 
-  Future<CapsuleChatDeliveryReceiveResult> receiveAndFilter() async {
+  Future<CapsuleChatDeliveryReceiveResult> receiveAndFilter({
+    bool manualRetry = false,
+  }) async {
     final localRootHex = _localCapsuleRootHex();
-    final health = _transportHealth.canRun(capsuleHex: localRootHex);
+    final health = _transportHealth.canRun(
+      capsuleHex: localRootHex,
+      manualRetry: manualRetry,
+    );
     if (!health.isAllowed) {
       return CapsuleChatDeliveryReceiveResult(
         code: health.code,

@@ -57,6 +57,9 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Transport health/backoff policy follows
       `docs/checklists/transport-health-policy.md` instead of being duplicated
       inside screens or feature-specific services.
+- [ ] Manual transport retry is a one-operation intent passed through an
+      existing application service; it does not disable shared cooldown or
+      create a screen-owned receive route.
 
 ## Cryptographic Agility
 

@@ -1934,7 +1934,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (_refreshingSignals) return;
     _refreshingSignals = true;
     try {
-      final result = await _module.chatDelivery.receiveAndFilter();
+      final result = await _module.chatDelivery.receiveAndFilter(
+        manualRetry: !silentWhenEmpty,
+      );
       _refreshAttestationsAfterTransportReceive('trading_signal_fetch');
       if (result.code < 0) {
         if (!silentWhenEmpty) {

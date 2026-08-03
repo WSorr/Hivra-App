@@ -185,20 +185,24 @@ void main() {
       receiveWorkerRunner: (_) async {
         receiveCalls += 1;
         return <String, Object?>{
-          'result': -1003,
+          'result': receiveCalls == 1 ? -1003 : 0,
           'json': null,
-          'lastError': 'Chat fetch timed out',
+          'lastError': receiveCalls == 1 ? 'Chat fetch timed out' : null,
         };
       },
     );
 
     final first = await service.receiveAndFilter();
     final second = await service.receiveAndFilter();
+    final manual = await service.receiveAndFilter(manualRetry: true);
+    final recovered = await service.receiveAndFilter();
 
-    expect(receiveCalls, 1);
+    expect(receiveCalls, 3);
     expect(first.code, -1003);
     expect(second.code, -3101);
     expect(second.errorMessage, contains('cooling down'));
+    expect(manual.code, 0);
+    expect(recovered.code, 0);
   });
 
   test(

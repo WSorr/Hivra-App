@@ -22,6 +22,24 @@ class TransportHealthDecision {
   );
 }
 
+class TransportHealthSnapshot {
+  final bool isDegraded;
+  final int timeoutStreak;
+  final Duration cooldownRemaining;
+
+  const TransportHealthSnapshot({
+    required this.isDegraded,
+    required this.timeoutStreak,
+    required this.cooldownRemaining,
+  });
+
+  static const healthy = TransportHealthSnapshot(
+    isDegraded: false,
+    timeoutStreak: 0,
+    cooldownRemaining: Duration.zero,
+  );
+}
+
 class TransportHealthPolicyService {
   static final TransportHealthPolicyService shared =
       TransportHealthPolicyService();
@@ -34,14 +52,15 @@ class TransportHealthPolicyService {
   TransportHealthPolicyService({
     TransportHealthNow now = _defaultTransportHealthNow,
     List<Duration>? timeoutBackoff,
-  })  : _now = now,
-        _timeoutBackoff = timeoutBackoff ??
-            const <Duration>[
-              Duration(seconds: 10),
-              Duration(seconds: 30),
-              Duration(minutes: 2),
-              Duration(minutes: 5),
-            ];
+  }) : _now = now,
+       _timeoutBackoff =
+           timeoutBackoff ??
+           const <Duration>[
+             Duration(seconds: 10),
+             Duration(seconds: 30),
+             Duration(minutes: 2),
+             Duration(minutes: 5),
+           ];
 
   TransportHealthDecision canRun({
     required String? capsuleHex,
@@ -72,10 +91,23 @@ class TransportHealthPolicyService {
     );
   }
 
-  void recordResult({
-    required String? capsuleHex,
-    required int code,
-  }) {
+  TransportHealthSnapshot snapshot({required String? capsuleHex}) {
+    final key = _normalizeCapsuleHex(capsuleHex);
+    if (key == null) return TransportHealthSnapshot.healthy;
+    final state = _states[key];
+    final until = state?.cooldownUntilUtc;
+    if (state == null || until == null) {
+      return TransportHealthSnapshot.healthy;
+    }
+    final remaining = until.difference(_now());
+    return TransportHealthSnapshot(
+      isDegraded: remaining > Duration.zero,
+      timeoutStreak: state.timeoutStreak,
+      cooldownRemaining: remaining > Duration.zero ? remaining : Duration.zero,
+    );
+  }
+
+  void recordResult({required String? capsuleHex, required int code}) {
     final key = _normalizeCapsuleHex(capsuleHex);
     if (key == null) return;
     final state = _states.putIfAbsent(key, _TransportHealthState.new);

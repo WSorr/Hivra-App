@@ -245,11 +245,23 @@ class InvitationIntentHandler {
     return '$capsuleHex|$starterSlot|${base64.encode(toPubkey)}';
   }
 
-  Future<InvitationIntentResult> fetchInvitations({String? capsuleHex}) async {
+  TransportHealthSnapshot transportHealthSnapshot({String? capsuleHex}) {
+    return _transportHealth.snapshot(
+      capsuleHex: _capsuleHexOrNull(explicitCapsuleHex: capsuleHex),
+    );
+  }
+
+  Future<InvitationIntentResult> fetchInvitations({
+    String? capsuleHex,
+    bool manualRetry = false,
+  }) async {
     final operationCapsuleHex = _capsuleHexOrNull(
       explicitCapsuleHex: capsuleHex,
     );
-    final health = _transportHealth.canRun(capsuleHex: operationCapsuleHex);
+    final health = _transportHealth.canRun(
+      capsuleHex: operationCapsuleHex,
+      manualRetry: manualRetry,
+    );
     if (!health.isAllowed) {
       return InvitationIntentResult(code: health.code, message: health.message);
     }
@@ -273,13 +285,14 @@ class InvitationIntentHandler {
 
   Future<InvitationIntentResult> fetchInvitationsQuick({
     String? capsuleHex,
+    bool manualRetry = false,
   }) async {
     final operationCapsuleHex = _capsuleHex(explicitCapsuleHex: capsuleHex);
     final isUnknownCapsule = _isUnknownCapsuleKey(operationCapsuleHex);
     if (isUnknownCapsule) {
       // Do not dedupe/cooldown unknown capsule identity: at startup or during
       // capsule switches this placeholder key can alias different capsules.
-      return _fetchInvitationsQuickUncached();
+      return _fetchInvitationsQuickUncached(manualRetry: manualRetry);
     }
 
     final now = _now();
@@ -298,7 +311,8 @@ class InvitationIntentHandler {
     final lastQuickFetchAt = _lastQuickFetchAtByCapsule[operationCapsuleHex];
     final cooldownElapsed =
         lastQuickFetchAt == null ? null : now.difference(lastQuickFetchAt);
-    if (cooldownElapsed != null &&
+    if (!manualRetry &&
+        cooldownElapsed != null &&
         !cooldownElapsed.isNegative &&
         cooldownElapsed < _quickFetchCooldown) {
       return const InvitationIntentResult(
@@ -311,6 +325,7 @@ class InvitationIntentHandler {
     final operation = _runQuickFetchOperation(
       capsuleHex: operationCapsuleHex,
       token: token,
+      manualRetry: manualRetry,
     );
     _quickFetchInFlightByCapsule[operationCapsuleHex] = operation;
     _quickFetchStartedAtByCapsule[operationCapsuleHex] = now;
@@ -321,10 +336,12 @@ class InvitationIntentHandler {
   Future<InvitationIntentResult> _runQuickFetchOperation({
     required String capsuleHex,
     required Object token,
+    required bool manualRetry,
   }) async {
     try {
       final result = await _fetchInvitationsQuickUncached(
         capsuleHex: capsuleHex,
+        manualRetry: manualRetry,
       );
       if (result.code >= 0) {
         _lastQuickFetchAtByCapsule[capsuleHex] = _now();
@@ -345,11 +362,15 @@ class InvitationIntentHandler {
 
   Future<InvitationIntentResult> _fetchInvitationsQuickUncached({
     String? capsuleHex,
+    bool manualRetry = false,
   }) async {
     final operationCapsuleHex = _capsuleHexOrNull(
       explicitCapsuleHex: capsuleHex,
     );
-    final health = _transportHealth.canRun(capsuleHex: operationCapsuleHex);
+    final health = _transportHealth.canRun(
+      capsuleHex: operationCapsuleHex,
+      manualRetry: manualRetry,
+    );
     if (!health.isAllowed) {
       return InvitationIntentResult(code: health.code, message: health.message);
     }

@@ -61,4 +61,15 @@ background delivery behavior.
     receive use shared capsule-scoped timeout cooldown.
   - Manual send paths record health outcomes but remain explicit user actions,
     not hidden background loops.
-  - Relationship notifications and visible degraded-transport UI remain open.
+  - Relationship notifications and visible degraded-transport UI were left
+    open for the completion slice.
+- 2026-08-03 completion slice:
+  - relationship refresh reuses the canonical invitation/domain receive worker
+    and does not add a relationship-specific transport route.
+  - explicit invitation, relationship, chat, and trading-signal refresh passes
+    one-attempt manual retry intent; background and lifecycle receive remains
+    cooldown-gated.
+  - pair-attestation receive exposes the same bounded retry contract while its
+    automatic synchronization remains passive.
+  - the shared policy exposes a read-only capsule-scoped health snapshot for
+    actionable UI diagnostics; the snapshot is not domain or consensus truth.

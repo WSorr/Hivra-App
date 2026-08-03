@@ -254,6 +254,37 @@ void main() {
     });
 
     test(
+      'relationship refresh uses canonical receive with explicit retry',
+      () async {
+        var calls = 0;
+        final health = TransportHealthPolicyService(
+          timeoutBackoff: const <Duration>[Duration(minutes: 1)],
+        );
+        final handler = InvitationIntentHandler(
+          delivery: const InvitationDeliveryService(),
+          activeCapsuleHexResolver: () => 'capsule-relationship',
+          transportHealth: health,
+          fetchInvitationsAction: () async {
+            calls += 1;
+            return InvitationWorkerResult(code: calls == 1 ? -1003 : 0);
+          },
+        );
+
+        final timeout = await handler.fetchInvitations();
+        final passive = await handler.fetchInvitations();
+        final manual = await handler.fetchInvitations(manualRetry: true);
+        final recovered = await handler.fetchInvitations();
+
+        expect(timeout.code, -1003);
+        expect(passive.code, -3101);
+        expect(manual.code, 0);
+        expect(recovered.code, 0);
+        expect(calls, 3);
+        expect(handler.transportHealthSnapshot().isDegraded, isFalse);
+      },
+    );
+
+    test(
       'does not let a backward clock hold quick fetch cooldown forever',
       () async {
         var calls = 0;

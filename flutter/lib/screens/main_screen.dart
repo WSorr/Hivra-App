@@ -8,6 +8,7 @@ import '../services/capsule_history_projection_service.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/invitation_intent_handler.dart';
 import '../services/main_screen_module_service.dart';
+import '../services/transport_health_policy_service.dart';
 import '../services/ui_feedback_service.dart';
 import '../services/ui_event_log_service.dart';
 import '../models/consensus_models.dart';
@@ -51,6 +52,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _ledgerVersion = 0;
   bool _hasLedgerHistory = false;
   String _activeCapsuleHex = '';
+  TransportHealthSnapshot _transportHealth = TransportHealthSnapshot.healthy;
 
   String get _shortPublicKey {
     if (_publicKeyText.isEmpty) return 'No key';
@@ -515,6 +517,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _activeCapsuleHex = activeCapsuleHex;
       _publicKeyText =
           displayKey.isEmpty ? '' : _encodeCapsulePublicKey(displayKey);
+      _transportHealth = _invitationIntents.transportHealthSnapshot(
+        capsuleHex: activeCapsuleHex,
+      );
     });
   }
 
@@ -562,21 +567,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _syncRelationshipsTransport() async {
     final operationCapsuleHex = _activeCapsuleHex;
-    final result = await _runQuickTransportSync(
-      reason: 'relationships_screen_refresh',
-      force: true,
+    await _invitationIntents.fetchInvitations(
       capsuleHex: operationCapsuleHex,
+      manualRetry: true,
     );
     if (!mounted) return;
-    if (result.code >= 0) {
-      _loadCapsuleData();
-    }
+    _loadCapsuleData();
   }
 
   Future<void> _refreshFromTopBar() async {
     if (_selectedIndex == 1) {
       final result = await _invitationIntents.fetchInvitations(
         capsuleHex: _activeCapsuleHex,
+        manualRetry: true,
       );
       if (!mounted) return;
       _loadCapsuleData();
@@ -771,7 +774,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         automaticallyImplyLeading: false,
         title: Text(_titles[_selectedIndex]),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(98),
+          preferredSize: Size.fromHeight(
+            _transportHealth.isDegraded ? 116 : 98,
+          ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             color: Colors.grey.shade900,
@@ -902,6 +907,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           fontFamily: 'monospace',
                         ),
                       ),
+                      if (_transportHealth.isDegraded) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Transport degraded · retry now or wait ${_transportHealth.cooldownRemaining.inSeconds}s',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.orange.shade300,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

@@ -10,58 +10,32 @@ void main() {
         timeoutBackoff: const <Duration>[Duration(seconds: 30)],
       );
 
-      expect(
-        service
-            .canRun(
-              capsuleHex: 'capsule-a',
-            )
-            .isAllowed,
-        isTrue,
-      );
+      expect(service.canRun(capsuleHex: 'capsule-a').isAllowed, isTrue);
 
-      service.recordResult(
-        capsuleHex: 'capsule-a',
-        code: -1003,
-      );
+      service.recordResult(capsuleHex: 'capsule-a', code: -1003);
 
-      final blocked = service.canRun(
-        capsuleHex: 'capsule-a',
-      );
+      final blocked = service.canRun(capsuleHex: 'capsule-a');
       expect(blocked.isAllowed, isFalse);
       expect(blocked.code, -3101);
       expect(blocked.cooldownRemaining.inSeconds, 30);
+      final degraded = service.snapshot(capsuleHex: 'capsule-a');
+      expect(degraded.isDegraded, isTrue);
+      expect(degraded.timeoutStreak, 1);
+      expect(degraded.cooldownRemaining.inSeconds, 30);
 
+      expect(service.canRun(capsuleHex: 'capsule-b').isAllowed, isTrue);
       expect(
-        service
-            .canRun(
-              capsuleHex: 'capsule-b',
-            )
-            .isAllowed,
-        isTrue,
-      );
-      expect(
-        service
-            .canRun(
-              capsuleHex: 'capsule-a',
-              manualRetry: true,
-            )
-            .isAllowed,
+        service.canRun(capsuleHex: 'capsule-a', manualRetry: true).isAllowed,
         isTrue,
       );
 
       now = now.add(const Duration(seconds: 10));
-      service.recordResult(
-        capsuleHex: 'capsule-a',
-        code: 0,
-      );
+      service.recordResult(capsuleHex: 'capsule-a', code: 0);
 
+      expect(service.canRun(capsuleHex: 'capsule-a').isAllowed, isTrue);
       expect(
-        service
-            .canRun(
-              capsuleHex: 'capsule-a',
-            )
-            .isAllowed,
-        isTrue,
+        service.snapshot(capsuleHex: 'capsule-a'),
+        same(TransportHealthSnapshot.healthy),
       );
     });
 
@@ -70,19 +44,9 @@ void main() {
         timeoutBackoff: const <Duration>[Duration(minutes: 1)],
       );
 
-      service.recordResult(
-        capsuleHex: 'unknown',
-        code: -1003,
-      );
+      service.recordResult(capsuleHex: 'unknown', code: -1003);
 
-      expect(
-        service
-            .canRun(
-              capsuleHex: 'unknown',
-            )
-            .isAllowed,
-        isTrue,
-      );
+      expect(service.canRun(capsuleHex: 'unknown').isAllowed, isTrue);
     });
   });
 }

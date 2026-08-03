@@ -117,9 +117,15 @@ EXTERNAL_EFFECT_LIFECYCLE_DOC="$ROOT/docs/architecture/external-effect-lifecycle
 AI_PROPOSAL_BOUNDARY_DOC="$ROOT/docs/architecture/ai-proposal-boundary.md"
 CAPSULE_AI_RUNTIME_DOC="$ROOT/docs/architecture/capsule-ai-runtime.md"
 MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC="$ROOT/docs/plugins/moltbook_engagement_lifecycle_v1.md"
+TRANSPORT_HEALTH_CHECKLIST="$ROOT/docs/checklists/transport-health-policy.md"
 CAPSULE_SECRET_LIFECYCLE_DOC="$ROOT/docs/architecture/capsule-scoped-secret-lifecycle.md"
 EXTERNAL_PLUGIN_SOURCE="$ROOT/docs/plugins/external_plugin_source.md"
 PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
+
+TRANSPORT_HEALTH_POLICY="$ROOT/flutter/lib/services/transport_health_policy_service.dart"
+CAPSULE_CHAT_DELIVERY="$ROOT/flutter/lib/services/capsule_chat_delivery_service.dart"
+ATTESTATION_SYNC="$ROOT/flutter/lib/services/consensus_attestation_sync_service.dart"
+MAIN_SCREEN="$ROOT/flutter/lib/screens/main_screen.dart"
 
 RUNTIME="$ROOT/flutter/lib/services/app_runtime_service.dart"
 INV_INTENT="$ROOT/flutter/lib/services/invitation_intent_handler.dart"
@@ -929,5 +935,21 @@ require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'Technical account controls' \
   "Moltbook manual provider controls remain secondary"
 require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'Technical cycle details' \
   "Moltbook raw cycle evidence remains secondary"
+
+# 11) Transport receive surfaces share one capsule-scoped health policy.
+require_present "$TRANSPORT_HEALTH_POLICY" 'class TransportHealthSnapshot' \
+  "transport health policy owns the capsule-scoped diagnostic snapshot"
+require_present "$INV_INTENT" '_transportHealth\.canRun\(' \
+  "invitation and relationship receive use shared transport health policy"
+require_present "$CAPSULE_CHAT_DELIVERY" '_transportHealth\.canRun\(' \
+  "chat and trading receive use shared transport health policy"
+require_present "$ATTESTATION_SYNC" '_transportHealth\.canRun\(' \
+  "pair attestation receive uses shared transport health policy"
+require_present "$MAIN_SCREEN" '_invitationIntents\.fetchInvitations\(' \
+  "relationship refresh reuses the canonical domain receive service"
+require_absent "$MAIN_SCREEN" 'RelationshipTransport|relationshipReceiveWorker' \
+  "relationship refresh has no second transport route"
+require_present "$TRANSPORT_HEALTH_CHECKLIST" 'one-attempt manual retry' \
+  "transport health checklist records bounded explicit retry semantics"
 
 exit "$STATUS"

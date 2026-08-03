@@ -199,7 +199,9 @@ class ConsensusAttestationSyncService {
     );
   }
 
-  Future<ConsensusAttestationReceiveResult> receiveAndStore() async {
+  Future<ConsensusAttestationReceiveResult> receiveAndStore({
+    bool manualRetry = false,
+  }) async {
     final localRootHex = _localRootHex();
     if (localRootHex == null) {
       return const ConsensusAttestationReceiveResult(
@@ -210,7 +212,10 @@ class ConsensusAttestationSyncService {
         rejectedCount: 0,
       );
     }
-    final health = _transportHealth.canRun(capsuleHex: localRootHex);
+    final health = _transportHealth.canRun(
+      capsuleHex: localRootHex,
+      manualRetry: manualRetry,
+    );
     if (!health.isAllowed) {
       return ConsensusAttestationReceiveResult(
         code: health.code,
