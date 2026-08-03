@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,8 @@ void main() {
     late DeliveryOutboxStore store;
     const capsuleHex =
         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const deliveryReference =
+        '1111111111111111111111111111111111111111111111111111111111111111';
 
     setUp(() async {
       tempHome = await Directory.systemTemp.createTemp('hivra_outbox_test_');
@@ -36,6 +39,7 @@ void main() {
         transport: DeliveryTransportId.nostr,
         kind: DeliveryOutboxKind.relationshipBroken,
         reason: DeliveryOutboxReason.localRelationshipBreak,
+        deliveryReference: deliveryReference,
         now: now,
       );
       await store.enqueue(
@@ -43,6 +47,7 @@ void main() {
         transport: DeliveryTransportId.nostr,
         kind: DeliveryOutboxKind.relationshipBroken,
         reason: DeliveryOutboxReason.localRelationshipBreak,
+        deliveryReference: deliveryReference,
         now: now.add(const Duration(seconds: 5)),
       );
 
@@ -68,6 +73,7 @@ void main() {
         transport: DeliveryTransportId.nostr,
         kind: DeliveryOutboxKind.invitationSent,
         reason: DeliveryOutboxReason.sendInvitationRetry,
+        deliveryReference: deliveryReference,
         now: now,
       );
 
@@ -132,7 +138,7 @@ void main() {
       expect(item?.status, DeliveryOutboxStatus.published);
     });
 
-    test('revives legacy retry-exhausted core delivery', () {
+    test('quarantines legacy retry-exhausted aggregate delivery', () {
       final item = DeliveryOutboxItem.fromJson(<String, Object?>{
         'id': 'legacy-dead',
         'capsule_hex': capsuleHex,
@@ -145,8 +151,97 @@ void main() {
         'status': 'dead',
       });
 
-      expect(item?.status, DeliveryOutboxStatus.pending);
+      expect(item?.status, DeliveryOutboxStatus.quarantined);
       expect(item?.attempts, 7);
+    });
+
+    test('quarantines legacy pending aggregate delivery', () {
+      final item = DeliveryOutboxItem.fromJson(<String, Object?>{
+        'id': 'legacy-pending',
+        'capsule_hex': capsuleHex,
+        'transport': DeliveryTransportId.nostr,
+        'kind': DeliveryOutboxKind.invitationSent,
+        'reason': DeliveryOutboxReason.sendInvitationRetry,
+        'created_at': '2026-07-05T10:00:00Z',
+        'next_attempt_at': '2026-07-05T10:00:00Z',
+        'attempts': 2,
+        'status': 'pending',
+      });
+
+      expect(item?.status, DeliveryOutboxStatus.quarantined);
+      expect(item?.attempts, 2);
+    });
+
+    test('load persists legacy aggregate quarantine as schema v5', () async {
+      final file = File(
+        '${tempHome.path}/Library/Application Support/Hivra/capsules/$capsuleHex/delivery_outbox.json',
+      );
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode(<String, Object?>{
+          'schema_version': 4,
+          'items': <Object?>[
+            <String, Object?>{
+              'id': 'legacy-pending-file',
+              'capsule_hex': capsuleHex,
+              'transport': DeliveryTransportId.nostr,
+              'kind': DeliveryOutboxKind.invitationSent,
+              'reason': DeliveryOutboxReason.sendInvitationRetry,
+              'created_at': '2026-07-05T10:00:00Z',
+              'next_attempt_at': '2026-07-05T10:00:00Z',
+              'attempts': 2,
+              'status': 'pending',
+            },
+          ],
+        }),
+      );
+
+      final loaded = await store.load(capsuleHex);
+      final migrated = jsonDecode(await file.readAsString()) as Map;
+      final migratedItem = (migrated['items'] as List).single as Map;
+
+      expect(loaded.single.status, DeliveryOutboxStatus.quarantined);
+      expect(migrated['schema_version'], deliveryOutboxSchemaVersion);
+      expect(migratedItem['status'], 'quarantined');
+    });
+
+    test('revives referenced legacy retry-exhausted core delivery', () {
+      final item = DeliveryOutboxItem.fromJson(<String, Object?>{
+        'id': 'legacy-dead-referenced',
+        'capsule_hex': capsuleHex,
+        'transport': DeliveryTransportId.nostr,
+        'kind': DeliveryOutboxKind.invitationSent,
+        'reason': DeliveryOutboxReason.sendInvitationRetry,
+        'delivery_reference': deliveryReference,
+        'created_at': '2026-07-05T10:00:00Z',
+        'next_attempt_at': '2026-07-05T10:00:00Z',
+        'attempts': 7,
+        'status': 'dead',
+      });
+
+      expect(item?.status, DeliveryOutboxStatus.pending);
+      expect(item?.deliveryReference, deliveryReference);
+    });
+
+    test('missing reference is durable quarantine and never due', () async {
+      final now = DateTime.utc(2026, 7, 5, 10);
+
+      await store.enqueue(
+        capsuleHex: capsuleHex,
+        transport: DeliveryTransportId.nostr,
+        kind: DeliveryOutboxKind.invitationSent,
+        reason: DeliveryOutboxReason.sendInvitationRetry,
+        now: now,
+      );
+
+      final item = (await store.load(capsuleHex)).single;
+      expect(item.status, DeliveryOutboxStatus.quarantined);
+      expect(item.deliveryReference, isNull);
+      expect(await store.due(capsuleHex: capsuleHex, now: now), isEmpty);
+      expect(
+        await store.due(capsuleHex: capsuleHex, now: DateTime.utc(9999)),
+        isEmpty,
+      );
     });
 
     test(

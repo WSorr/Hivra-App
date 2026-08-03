@@ -879,6 +879,16 @@ The only shared delivery DTOs are `DeliveryEnvelope` and `DeliveryReceipt`.
 No pass-through DTO may be added merely to mirror a domain payload across
 Core, adapters, host and drone layers.
 
+The Flutter delivery outbox is a recovery index, not a second domain queue.
+Every retryable obligation MUST be bound to one valid immutable
+`delivery_reference`, and adapter publication evidence MUST carry the exact
+matching `correlation_id`. Delivery outbox schema v5 retains any pending or
+legacy retry-exhausted aggregate record without that reference as explicit
+`quarantined` diagnostic evidence. Quarantined records are never due, never
+bind receipts, and MUST NOT trigger a ledger-wide reconstruction or batch
+replay. This migration changes only recovery eligibility; Ledger/Core truth is
+not rewritten.
+
 Before a decoded envelope reaches any receiving domain, one transport-neutral
 ingress guard MUST enforce:
 

@@ -12,6 +12,8 @@ void main() {
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const capsuleB =
       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const deliveryReference =
+      '1111111111111111111111111111111111111111111111111111111111111111';
   const completeReceipt =
       '"accepted_by":"wss://relay.example","envelope_id":"event-1",'
       '"message_kind":1,"recipient":['
@@ -49,7 +51,7 @@ void main() {
               code: 0,
               deliveryReceiptsJson:
                   capsuleHex == capsuleA
-                      ? '{"receipts":[{"label":"InvitationSent","receipt":{"transport":"nostr",$completeReceipt}}]}'
+                      ? '{"receipts":[{"label":"InvitationSent","correlation_id_hex":"$deliveryReference","receipt":{"transport":"nostr",$completeReceipt}}]}'
                       : null,
             ),
       );
@@ -57,11 +59,13 @@ void main() {
         capsuleHex: capsuleA,
         kind: DeliveryOutboxKind.invitationSent,
         reason: DeliveryOutboxReason.sendInvitationRetry,
+        deliveryReference: deliveryReference,
       );
       await lifecycle.enqueue(
         capsuleHex: capsuleB,
         kind: DeliveryOutboxKind.invitationSent,
         reason: DeliveryOutboxReason.sendInvitationRetry,
+        deliveryReference: deliveryReference,
       );
 
       await lifecycle.pumpDueNow(capsuleHex: capsuleA);
@@ -89,7 +93,7 @@ void main() {
             return const CapsuleDeliveryCycleResult(
               code: 0,
               deliveryReceiptsJson:
-                  '{"receipts":[{"label":"RelationshipBrokenRetry","receipt":{"transport":"nostr",$completeReceipt}}]}',
+                  '{"receipts":[{"label":"RelationshipBrokenRetry","correlation_id_hex":"$deliveryReference","receipt":{"transport":"nostr",$completeReceipt}}]}',
             );
           },
         );
@@ -97,6 +101,7 @@ void main() {
           capsuleHex: capsuleA,
           kind: DeliveryOutboxKind.relationshipBroken,
           reason: DeliveryOutboxReason.localRelationshipBreak,
+          deliveryReference: deliveryReference,
         );
 
         final result = await lifecycle.pumpDueNow(capsuleHex: capsuleA);
@@ -127,6 +132,7 @@ void main() {
           capsuleHex: capsuleA,
           kind: DeliveryOutboxKind.invitationTerminal,
           reason: DeliveryOutboxReason.invitationTerminalRetry,
+          deliveryReference: deliveryReference,
         );
 
         await lifecycle.pumpDueNow(capsuleHex: capsuleA);
@@ -147,13 +153,14 @@ void main() {
             (_, _) async => const CapsuleDeliveryCycleResult(
               code: 0,
               deliveryReceiptsJson:
-                  '{"receipts":[{"label":"InvitationExpired","receipt":{"transport":"nostr",$completeReceipt}}]}',
+                  '{"receipts":[{"label":"InvitationExpired","correlation_id_hex":"$deliveryReference","receipt":{"transport":"nostr",$completeReceipt}}]}',
             ),
       );
       await lifecycle.enqueue(
         capsuleHex: capsuleA,
         kind: DeliveryOutboxKind.invitationTerminal,
         reason: DeliveryOutboxReason.invitationTerminalRetry,
+        deliveryReference: deliveryReference,
       );
 
       await lifecycle.pumpDueNow(capsuleHex: capsuleA);
@@ -173,13 +180,14 @@ void main() {
             (_, _) async => const CapsuleDeliveryCycleResult(
               code: 0,
               deliveryReceiptsJson:
-                  '{"receipts":[{"label":"InvitationSent","receipt":{"transport":"nostr",$completeReceipt}}]}',
+                  '{"receipts":[{"label":"InvitationSent","correlation_id_hex":"$deliveryReference","receipt":{"transport":"nostr",$completeReceipt}}]}',
             ),
       );
       await lifecycle.enqueue(
         capsuleHex: capsuleA,
         kind: DeliveryOutboxKind.invitationSent,
         reason: DeliveryOutboxReason.sendInvitationRetry,
+        deliveryReference: deliveryReference,
       );
 
       await lifecycle.pumpDueNow(capsuleHex: capsuleA);
@@ -207,13 +215,14 @@ void main() {
             (_, _) async => const CapsuleDeliveryCycleResult(
               code: 0,
               deliveryReceiptsJson:
-                  '{"receipts":[{"label":"InvitationSent","receipt":{"transport":"nostr"}}]}',
+                  '{"receipts":[{"label":"InvitationSent","correlation_id_hex":"$deliveryReference","receipt":{"transport":"nostr"}}]}',
             ),
       );
       await lifecycle.enqueue(
         capsuleHex: capsuleA,
         kind: DeliveryOutboxKind.invitationSent,
         reason: DeliveryOutboxReason.sendInvitationRetry,
+        deliveryReference: deliveryReference,
       );
 
       await lifecycle.pumpDueNow(capsuleHex: capsuleA);
@@ -238,6 +247,7 @@ void main() {
           capsuleHex: capsuleA,
           kind: DeliveryOutboxKind.invitationSent,
           reason: DeliveryOutboxReason.sendInvitationRetry,
+          deliveryReference: deliveryReference,
         );
 
         for (var attempt = 0; attempt < 8; attempt++) {
@@ -251,6 +261,31 @@ void main() {
         expect(await outbox.due(capsuleHex: capsuleA, now: now), hasLength(1));
       },
     );
+
+    test('quarantined aggregate record never invokes retry runner', () async {
+      var calls = 0;
+      final lifecycle = CapsuleDeliveryLifecycleService(
+        outbox: outbox,
+        now: () => now,
+        retryDelays: const <Duration>[],
+        retryRunner: (_, _) async {
+          calls += 1;
+          return const CapsuleDeliveryCycleResult(code: -1004);
+        },
+      );
+      await lifecycle.enqueue(
+        capsuleHex: capsuleA,
+        kind: DeliveryOutboxKind.invitationSent,
+        reason: DeliveryOutboxReason.sendInvitationRetry,
+      );
+
+      expect(await lifecycle.pumpDueNow(capsuleHex: capsuleA), isNull);
+      expect(calls, 0);
+      expect(
+        (await outbox.load(capsuleA)).single.status,
+        DeliveryOutboxStatus.quarantined,
+      );
+    });
 
     test('receipt publishes only its correlated invitation fact', () async {
       const invitationA =

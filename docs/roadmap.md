@@ -1353,8 +1353,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - this initial extraction did not close execution-order item 4; the later
         pass now binds current invitation and relationship-break obligations to
         immutable event references and persists matching adapter publication
-        evidence in the same outbox record. Legacy unreferenced records remain
-        quarantined migration debt rather than a second retry path.
+        evidence in the same outbox record. Legacy unreferenced records were
+        classified as quarantine debt rather than a second retry path; pass 10
+        later enforced that state in the persisted recovery index.
     - Capsule Selection Ownership remediation completed on 2026-07-14:
       - explicit create/recover/select flows remain the only writers allowed to
         change `capsules_index.active`;
@@ -1463,8 +1464,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         immutable domain reference and one exact retry endpoint;
       - normalized adapter publication evidence updates only the matching
         outbox item through its correlation id;
-      - ambiguous legacy aggregate records remain quarantined instead of
-        replaying a batch.
+      - ambiguous legacy aggregate records were excluded from the new exact
+        retry contract and registered for explicit quarantine instead of batch
+        replay; pass 10 later made that quarantine executable and durable.
     - pass 5 persisted Trading Drone risk history completed at `bdabae8`:
       - exchange-derived `REALIZED_PNL` history now supplies UTC daily loss,
         consecutive loss count, and last-loss time through one Capsule-scoped
@@ -1567,11 +1569,33 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         alter Ledger truth or create a second retry route. Timeout/cooldown,
         explicit one-attempt retry, success recovery, and cross-Capsule
         isolation remain deterministically covered by focused regressions.
-    - Passes 1-9 are closed. Legacy aggregate delivery reconciliation and
-      durable sender-rate quarantine remain separately tracked debt and must be
-      audited and ordered before another pass is named.
-  - Status: active; passes 1-9 are completed with automated and cross-platform
-    manual evidence; the next bounded remediation pass is not yet named.
+    - Pass 10 legacy aggregate delivery quarantine completed on 2026-08-03:
+      - `delivery_outbox.json` schema v5 maps every unreferenced pending or
+        legacy retry-exhausted obligation to explicit durable `quarantined`
+        state and rewrites the migrated classification on first successful
+        store load;
+      - quarantined records are excluded from due-item selection and cannot
+        bind adapter receipts, so malformed aggregate debt cannot sustain a
+        hidden recovery wake loop;
+      - referenced legacy records remain recoverable through the same exact
+        retry lifecycle; no ledger scan, second transport route, Core change,
+        or speculative domain reconstruction is introduced;
+      - all required automated gates pass: `git diff --check`,
+        `flutter analyze`, full `flutter test` (718 tests),
+        `cargo test --workspace`, and `tools/review/review_all.sh`;
+      - fresh macOS release launch reconstructed Capsule ledgers `105`, `62`,
+        and `119` without process fault or retry loop;
+      - fresh Android release APK `versionCode=100000320`, SHA-256
+        `d6e09d1b07121211730aa54f0e15ef4576de1bc1b4b5c90f94785d0805de576d`,
+        updated in place while preserving install/data scope and Capsule
+        Ledger `v82`, completed canonical receive and `98/98` pair-attestation
+        receive, and showed no crash, ANR, or retry storm.
+    - Durable sender-rate quarantine remains separately tracked
+      `NEEDS_CONTRACT` debt and is not part of pass 10.
+  - Status: active; passes 1-10 are completed with automated and
+    cross-platform runtime evidence. Durable sender-rate quarantine is the
+    next audit target and remains `NEEDS_CONTRACT`; implementation is not yet
+    authorized.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

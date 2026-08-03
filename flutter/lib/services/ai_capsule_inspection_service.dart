@@ -352,6 +352,7 @@ class AiCapsuleInspectionService {
       // A relay publication is not peer delivery. Keep diagnostics aligned
       // with the transport contract rather than presenting a false success.
       'published_count': count(DeliveryOutboxStatus.published),
+      'quarantined_count': count(DeliveryOutboxStatus.quarantined),
       'dead_count': count(DeliveryOutboxStatus.dead),
       'max_attempts': items.fold<int>(
         0,

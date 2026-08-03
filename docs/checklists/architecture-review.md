@@ -110,6 +110,9 @@ Use this checklist when reviewing structural changes, not just feature behavior.
       retry timing, receipt reconciliation, and capsule-scoped pump lifetime.
 - [ ] The outbox is described accurately as a recovery index unless every item
       is bound to a concrete domain-event id and matching per-event receipt.
+- [ ] A retryable delivery outbox item has one immutable delivery reference;
+      unreferenced aggregate records remain durable, diagnostic, non-due
+      quarantine and cannot bind a receipt or trigger ledger-wide replay.
 - [ ] Any new module has explicit non-overlapping ownership.
 - [ ] Every fact, effect lifecycle, and projection rule has one named owner
       after the change; the prior owner/path was removed or narrowed.

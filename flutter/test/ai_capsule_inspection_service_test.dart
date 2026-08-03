@@ -67,6 +67,8 @@ void main() {
       expect(first.snapshot.redaction['provider_upload'], isFalse);
       expect(first.snapshot.ledgerSummary['has_history'], isTrue);
       expect(first.snapshot.pluginSummary['installed_count'], equals(1));
+      expect(first.snapshot.transportSummary['pending_count'], 1);
+      expect(first.snapshot.transportSummary['quarantined_count'], 1);
       expect(
         first.findings.map((finding) => finding.area),
         contains('transport'),
@@ -168,11 +170,26 @@ class _FakeOutboxStore extends DeliveryOutboxStore {
                 transport: 'nostr',
                 kind: 'InvitationSent',
                 reason: 'send_invitation_retry',
+                deliveryReference:
+                    '1111111111111111111111111111111111111111111111111111111111111111',
                 createdAt: DateTime.utc(2026, 7, 5),
                 nextAttemptAt: DateTime.utc(2026, 7, 5),
                 attempts: 2,
                 status: DeliveryOutboxStatus.pending,
                 lastError: 'timeout',
+              ),
+              DeliveryOutboxItem(
+                id: 'legacy-quarantine-1',
+                capsuleHex:
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                transport: 'nostr',
+                kind: 'InvitationSent',
+                reason: 'send_invitation_retry',
+                createdAt: DateTime.utc(2026, 7, 4),
+                nextAttemptAt: DateTime.utc(2026, 7, 4),
+                attempts: 7,
+                status: DeliveryOutboxStatus.quarantined,
+                lastError: 'missing immutable delivery reference',
               ),
             ];
 

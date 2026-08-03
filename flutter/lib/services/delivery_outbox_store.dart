@@ -4,7 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import 'capsule_file_store.dart';
 
-const int deliveryOutboxSchemaVersion = 4;
+const int deliveryOutboxSchemaVersion = 5;
 
 enum DeliveryOutboxStatus {
   pending,
@@ -18,6 +18,11 @@ enum DeliveryOutboxStatus {
   /// published. Keeping the audit record prevents a legacy retry from
   /// resurrecting it.
   superseded,
+
+  /// The obligation cannot be retried safely because it is not bound to one
+  /// immutable domain fact. It remains durable for diagnostics and explicit
+  /// reconciliation, but is never selected by the delivery pump.
+  quarantined,
 
   /// Legacy retry-exhausted state. New builds never write this state: core
   /// facts must remain recoverable across temporary transport failures.
@@ -177,7 +182,7 @@ class DeliveryOutboxItem {
     // Schema v1 used `delivered` for a single relay acknowledgement. Keep
     // those records recoverable, but do not misrepresent them as receiver
     // delivery in newer builds.
-    final status =
+    final parsedStatus =
         persistedStatus == 'delivered'
             ? DeliveryOutboxStatus.published
             // v2 incorrectly made a locally committed core fact terminal
@@ -188,6 +193,11 @@ class DeliveryOutboxItem {
             : DeliveryOutboxStatus.values
                 .where((value) => value.name == persistedStatus)
                 .firstOrNull;
+    final status =
+        deliveryReference == null &&
+                parsedStatus == DeliveryOutboxStatus.pending
+            ? DeliveryOutboxStatus.quarantined
+            : parsedStatus;
     if (id.isEmpty ||
         capsuleHex.isEmpty ||
         transport.isEmpty ||
@@ -244,10 +254,16 @@ class DeliveryOutboxStore {
       if (decoded is! Map) return const <DeliveryOutboxItem>[];
       final items = decoded['items'];
       if (items is! List) return const <DeliveryOutboxItem>[];
-      return items
+      final parsed = items
           .map(DeliveryOutboxItem.fromJson)
           .whereType<DeliveryOutboxItem>()
           .toList(growable: false);
+      final schemaVersion = decoded['schema_version'];
+      if (schemaVersion is! int ||
+          schemaVersion < deliveryOutboxSchemaVersion) {
+        await _write(capsuleHex, parsed);
+      }
+      return parsed;
     } catch (_) {
       return const <DeliveryOutboxItem>[];
     }
@@ -263,12 +279,17 @@ class DeliveryOutboxStore {
   }) async {
     final normalizedCapsuleHex = capsuleHex.trim().toLowerCase();
     if (normalizedCapsuleHex.isEmpty) return;
+    final normalizedReference = _normalizeDeliveryReference(deliveryReference);
+    final retryStatus =
+        normalizedReference == null
+            ? DeliveryOutboxStatus.quarantined
+            : DeliveryOutboxStatus.pending;
     final id = _stableId(
       capsuleHex: normalizedCapsuleHex,
       transport: transport,
       kind: kind,
       reason: reason,
-      deliveryReference: deliveryReference,
+      deliveryReference: normalizedReference,
     );
     final items = await load(normalizedCapsuleHex);
     final next = <DeliveryOutboxItem>[];
@@ -277,7 +298,7 @@ class DeliveryOutboxStore {
       if (item.id == id) {
         next.add(
           item.copyWith(
-            status: DeliveryOutboxStatus.pending,
+            status: retryStatus,
             nextAttemptAt: now.toUtc(),
             attempts: 0,
             clearLastError: true,
@@ -297,11 +318,11 @@ class DeliveryOutboxStore {
           transport: transport,
           kind: kind,
           reason: reason,
-          deliveryReference: _normalizeDeliveryReference(deliveryReference),
+          deliveryReference: normalizedReference,
           createdAt: now.toUtc(),
           nextAttemptAt: now.toUtc(),
           attempts: 0,
-          status: DeliveryOutboxStatus.pending,
+          status: retryStatus,
         ),
       );
     }
@@ -321,6 +342,10 @@ class DeliveryOutboxStore {
     final normalizedCapsuleHex = capsuleHex.trim().toLowerCase();
     if (normalizedCapsuleHex.isEmpty) return false;
     final normalizedReference = _normalizeDeliveryReference(deliveryReference);
+    final retryStatus =
+        normalizedReference == null
+            ? DeliveryOutboxStatus.quarantined
+            : DeliveryOutboxStatus.pending;
     final id = _stableId(
       capsuleHex: normalizedCapsuleHex,
       transport: transport,
@@ -343,7 +368,7 @@ class DeliveryOutboxStore {
         createdAt: now.toUtc(),
         nextAttemptAt: now.toUtc(),
         attempts: 0,
-        status: DeliveryOutboxStatus.pending,
+        status: retryStatus,
       ),
     ];
     await _write(normalizedCapsuleHex, next);

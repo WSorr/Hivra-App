@@ -132,6 +132,7 @@ INV_INTENT="$ROOT/flutter/lib/services/invitation_intent_handler.dart"
 INV_ACTIONS="$ROOT/flutter/lib/services/invitation_actions_service.dart"
 CAPSULE_FFI_WORKER_QUEUE="$ROOT/flutter/lib/services/capsule_ffi_worker_queue.dart"
 DELIVERY_LIFECYCLE="$ROOT/flutter/lib/services/capsule_delivery_lifecycle_service.dart"
+DELIVERY_OUTBOX="$ROOT/flutter/lib/services/delivery_outbox_store.dart"
 FFI_INVITATION_API="$ROOT/platform/hivra-ffi/src/invitation_api.rs"
 FFI_CHAT_API="$ROOT/platform/hivra-ffi/src/chat_api.rs"
 PLUGIN_GUARD="$ROOT/flutter/lib/services/plugin_execution_guard_service.dart"
@@ -601,6 +602,16 @@ require_present "$DELIVERY_LIFECYCLE" 'class CapsuleDeliveryLifecycleService' \
   "delivery lifecycle owns shared retry scheduling"
 require_present "$DELIVERY_LIFECYCLE" 'receipt-to-outbox' \
   "delivery lifecycle documents receipt reconciliation ownership"
+require_present "$DELIVERY_OUTBOX" 'const int deliveryOutboxSchemaVersion = 5' \
+  "delivery outbox uses explicit aggregate quarantine schema"
+require_present "$DELIVERY_OUTBOX" 'DeliveryOutboxStatus\.quarantined' \
+  "unreferenced retry obligations enter durable quarantine"
+require_present "$DELIVERY_OUTBOX" 'schemaVersion < deliveryOutboxSchemaVersion' \
+  "legacy outbox quarantine is rewritten under schema v5"
+require_present "$DELIVERY_LIFECYCLE" 'if \(expected == null\) return false' \
+  "aggregate outbox records cannot bind adapter receipts"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'excluded from every due-item query' \
+  "delivery lifecycle records non-due quarantine semantics"
 require_absent "$INV_ACTIONS" '_pendingRetryPumpByCapsule|_schedulePendingOutgoingRetryPump' \
   "invitation actions do not own a parallel retry pump"
 require_present "$INV_ACTIONS" 'await _applyWorkerLedgerResult\(' \

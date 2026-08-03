@@ -81,6 +81,13 @@ Likewise, a delivery retry accepts one exact outbox item. It must not infer a
 batch of unresolved work by re-scanning the ledger. A ledger scan is allowed
 only for deterministic recovery of a missing, uniquely identified outbox item;
 an ambiguous legacy item is quarantined for reconciliation rather than replayed.
+`delivery_outbox.json` schema v5 makes that quarantine explicit: a pending or
+legacy retry-exhausted record without one valid immutable `delivery_reference`
+is retained as `quarantined`, excluded from every due-item query, and exposed
+through diagnostics. The first successful store load rewrites an older schema
+to v5, making the classification explicit on disk. It cannot bind a receipt,
+wake a repeated retry loop, or be revived by aggregate ledger inference.
+Referenced legacy records may still resume through the one canonical lifecycle.
 
 This distinction matters because a Nostr `OK` is a relay acknowledgement, not
 receiver delivery. NIP-01 defines `OK` as acceptance or denial of an `EVENT`;
@@ -182,8 +189,9 @@ identity, capsule/network scope, retry eligibility, expiry, and diagnostics.
 - Pending: pair-attestation re-announcement needs a pair/snapshot-scoped
   rate-limit or a durable acknowledgement policy. It is currently an
   intentionally best-effort convergence aid, not a Core outbox effect.
-- Pending: legacy aggregate outbox entries need deterministic reconciliation
-  or explicit quarantine; they must not be replayed as a batch.
+- Completed in `12.3 / pass 10`: schema v5 explicitly quarantines every
+  unreferenced retryable outbox record. Quarantine is durable diagnostic
+  evidence, never a second delivery route or a source of domain truth.
 - Pending: decide whether product requirements justify a true end-to-end
   reliable queue with receiver acknowledgements beyond engine retry.
 - Pending: complete transport-neutral spam protection with a durable bounded
@@ -196,6 +204,8 @@ identity, capsule/network scope, retry eligibility, expiry, and diagnostics.
 - A screen imports no worker runtime or outbox store.
 - A receive operation has no outbound transport side effect.
 - One outbox item can produce at most one matching envelope per attempt.
+- Every retryable outbox item has one immutable delivery reference; an
+  unreferenced record is durable quarantine and is never due.
 - Every asynchronous worker result remains bound to its bootstrap capsule.
 - Ledger facts are persisted before an unresolved transport effect is queued.
 - A new channel declares whether its messages are `ephemeral`, `durable_inbox`,

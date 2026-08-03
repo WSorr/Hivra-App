@@ -283,9 +283,7 @@ class CapsuleDeliveryLifecycleService {
 
   bool _referenceMatches(String? receiptReference, DeliveryOutboxItem item) {
     final expected = item.deliveryReference;
-    // Legacy v1 entries did not retain an event reference. Keep them
-    // recoverable, while v2 entries require an exact immutable match.
-    if (expected == null) return true;
+    if (expected == null) return false;
     return receiptReference?.trim().toLowerCase() == expected;
   }
 
