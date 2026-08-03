@@ -125,6 +125,7 @@ PLUGIN_HOST_API_DOC="$ROOT/docs/plugins/plugin_host_api_v1.md"
 TRANSPORT_HEALTH_POLICY="$ROOT/flutter/lib/services/transport_health_policy_service.dart"
 CAPSULE_CHAT_DELIVERY="$ROOT/flutter/lib/services/capsule_chat_delivery_service.dart"
 ATTESTATION_SYNC="$ROOT/flutter/lib/services/consensus_attestation_sync_service.dart"
+PASSIVE_RECEIVE_COORDINATOR="$ROOT/flutter/lib/services/capsule_passive_receive_coordinator.dart"
 MAIN_SCREEN="$ROOT/flutter/lib/screens/main_screen.dart"
 
 RUNTIME="$ROOT/flutter/lib/services/app_runtime_service.dart"
@@ -590,10 +591,24 @@ require_present "$FFI_INVITATION_API" 'queue_incoming_attestation_if_match' \
   "invitation receive routes pair-consensus attestations before core event parsing"
 require_present "$FFI_INVITATION_API" 'queue_incoming_chat_if_match' \
   "single transport receive owner routes chat before core event parsing"
-require_present "$FFI_CHAT_API" 'hivra_transport_receive_quick' \
-  "chat receive delegates polling to the single transport receive owner"
+require_absent "$FFI_CHAT_API" 'hivra_transport_receive_quick' \
+  "chat inbox drain cannot initiate another relay poll"
+require_absent "$FFI_ATTESTATION_API" 'hivra_transport_receive_quick' \
+  "attestation inbox drain cannot initiate another relay poll"
 require_absent "$FFI_CHAT_API" '\.receive\(' \
   "chat receive does not own a parallel relay poll path"
+require_present "$PASSIVE_RECEIVE_COORDINATOR" 'class CapsulePassiveReceiveCoordinator' \
+  "one application coordinator owns passive receive trigger lifetime"
+require_present "$PASSIVE_RECEIVE_COORDINATOR" 'invitations\.fetchInvitationsQuick' \
+  "passive receive enters the canonical invitation/FFI ingress poll"
+require_present "$PASSIVE_RECEIVE_COORDINATOR" '_drainAttestations\(\)' \
+  "passive receive drains attestations after canonical ingress"
+require_present "$PASSIVE_RECEIVE_COORDINATOR" '_drainChat\(\)' \
+  "passive receive drains chat and trading after canonical ingress"
+require_absent "$SCREENS" 'receiveAndFilter|receiveAndAnswerStored|fetchInvitationsQuick\(|fetchInvitations\(' \
+  "screens cannot own direct passive receive routes"
+require_absent "$INVITATIONS_SCREEN" 'Timer\.periodic' \
+  "invitations screen cannot own the foreground transport poll timer"
 require_absent "$SCREENS" "import '../services/invitation_actions_service.dart';" \
   "screens do not import invitation_actions_service directly"
 require_absent "$SCREENS" "import '../services/consensus_runtime_service.dart';" \
@@ -1070,11 +1085,11 @@ require_present "$TRANSPORT_HEALTH_POLICY" 'class TransportHealthSnapshot' \
   "transport health policy owns the capsule-scoped diagnostic snapshot"
 require_present "$INV_INTENT" '_transportHealth\.canRun\(' \
   "invitation and relationship receive use shared transport health policy"
-require_present "$CAPSULE_CHAT_DELIVERY" '_transportHealth\.canRun\(' \
-  "chat and trading receive use shared transport health policy"
-require_present "$ATTESTATION_SYNC" '_transportHealth\.canRun\(' \
-  "pair attestation receive uses shared transport health policy"
-require_present "$MAIN_SCREEN" '_invitationIntents\.fetchInvitations\(' \
+require_absent "$CAPSULE_CHAT_DELIVERY" '_transportHealth\.canRun\(' \
+  "chat and trading drains cannot own a second receive health decision"
+require_absent "$ATTESTATION_SYNC" '_transportHealth\.canRun\(' \
+  "pair attestation drain cannot own a second receive health decision"
+require_present "$MAIN_SCREEN" '_passiveReceive\.trigger\(' \
   "relationship refresh reuses the canonical domain receive service"
 require_absent "$MAIN_SCREEN" 'RelationshipTransport|relationshipReceiveWorker' \
   "relationship refresh has no second transport route"

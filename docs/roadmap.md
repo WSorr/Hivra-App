@@ -92,10 +92,11 @@ The two lines share one product axis but cannot share a second runtime path.
 The ordering below is deliberate:
 
 1. **1.x integrity before new lifecycle behavior.** Remediation passes
-   `12.3 / pass 1-16` are complete. The next ordered action is an audit of the
-   remaining passive receive scheduling debt. It may name one future owner and
-   removal set, but it may not implement another scheduler or assign a runtime
-   pass before restart/concurrency and capability closure are proven.
+   `12.3 / pass 1-17` are complete. The next ordered action is a post-pass audit
+   of the remaining documented 1.x integrity debt. It may select one bounded
+   next pass only after proving its owner, removal/sealing target, dependency
+   direction, and compatibility boundary; it may not introduce another
+   scheduler, transport route, or Core path.
    `5.1 Canonical Core Projection Convergence` remains a hard boundary: new
    invitation, relationship, consensus, or Capsule Map behavior must consume a
    canonical projection rather than add another Flutter event reducer.
@@ -1786,7 +1787,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         and pair-attestation drain FFI functions;
       - restart, Capsule-switch, manual-retry, foreground, and cross-Capsule
         serialization semantics are fixed in the transport lifecycle contract.
-    - Pass 17 may implement only the audited passive receive convergence:
+    - Pass 17 passive receive convergence completed on 2026-08-03:
       - add one process-scoped application coordinator that coalesces automatic
         triggers per Capsule and permits at most one bounded forced manual
         follow-up;
@@ -1803,8 +1804,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - do not add Core facts, a second transport route, a second scheduler,
         durable scheduler state, a new adapter session, or a parallel DTO
         family.
-  - Status: active; passes 1-16 and the passive receive ownership audit are
-    complete. `12.3 / pass 17` is selected but not implemented.
+      - implementation preserved the existing ingress router, cached Nostr
+        session/cursors, shared FFI worker queue, Core/Ledger projection, and
+        capability inbox owners while deleting the audited redundant callers;
+      - focused and full automated regression suites cover trigger joining,
+        bounded manual follow-up, lifecycle/Capsule invalidation,
+        poll-before-drain ordering, drain-failure isolation, and
+        capsule-scoped connectivity cooldown.
+      - `git diff --check`, Rust formatting, `flutter analyze`, all `726`
+        Flutter tests, `cargo test --workspace`, and
+        `tools/review/review_all.sh` passed;
+      - universal macOS release smoke preserved Ledger versions `105`, `62`,
+        and `119` across launch/resume/follow-up/periodic receive with no
+        process error or fault;
+      - Android smoke build `versionCode=100000325`, SHA-256
+        `ac0dd45dbd195f7094c83b151e68af2cffccded3c6faf8e1b07813b78661de3d`,
+        updated in place, preserved Ledger `v82`, and passed launch, periodic,
+        explicit manual retry, attestation drain, and cold restart.
+  - Status: passes 1-17 complete. No pass 18 is selected; the next action is a
+    post-pass audit of the remaining documented 1.x integrity debt.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

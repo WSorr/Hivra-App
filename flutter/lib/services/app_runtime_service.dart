@@ -16,6 +16,7 @@ import 'capsule_diagnostics_service.dart';
 import 'capsule_delivery_lifecycle_service.dart';
 import 'capsule_state_manager.dart';
 import 'capsule_chat_delivery_service.dart';
+import 'capsule_passive_receive_coordinator.dart';
 import 'consensus_attested_guard_service.dart';
 import 'consensus_attestation_exchange_service.dart';
 import 'consensus_attestation_sync_service.dart';
@@ -41,6 +42,10 @@ class AppRuntimeService {
   late final InvitationActionsService _invitationActions;
   late final InvitationIntentHandler _invitationIntents;
   late final LedgerViewService _ledgerView;
+  late final ConsensusAttestationSyncService _consensusAttestations;
+  late final ConsensusAttestationExchangeService _attestationExchange;
+  late final CapsuleChatDeliveryService _chatDelivery;
+  late final CapsulePassiveReceiveCoordinator _passiveReceive;
 
   AppRuntimeService({AppRuntimeRuntime? runtime})
     : _runtime = runtime ?? HivraAppRuntimeRuntime() {
@@ -80,12 +85,39 @@ class AppRuntimeService {
       stateManager: _stateManager,
       ledgerView: _ledgerView,
     );
+    _consensusAttestations = ConsensusAttestationSyncService(
+      runtime: _runtime,
+      consensus: buildConsensusRuntimeService(),
+    );
+    _attestationExchange = ConsensusAttestationExchangeService(
+      sync: _consensusAttestations,
+      loadRelationships: _ledgerView.loadRelationships,
+      listTrustedCards: addressBook.listTrustedCards,
+      exportLedger: _runtime.exportLedger,
+    );
+    _chatDelivery = CapsuleChatDeliveryService(
+      runtime: _runtime,
+      manualChecks: buildManualConsensusCheckService(),
+      readAttestedSignable: buildConsensusAttestedGuardService().signable,
+      loadRelationships: _ledgerView.loadRelationships,
+      listTrustedCards: addressBook.listTrustedCards,
+    );
+    _passiveReceive = CapsulePassiveReceiveCoordinator(
+      invitations: _invitationIntents,
+      attestations: _consensusAttestations,
+      chat: _chatDelivery,
+      postProjection:
+          (result) => _attestationExchange.answerStoredEvidence(
+            result.attestations.storedEvidence,
+          ),
+    );
   }
 
   CapsuleStateManager get stateManager => _stateManager;
   InvitationIntentHandler get invitationIntents => _invitationIntents;
   LedgerViewService get ledgerView => _ledgerView;
   CapsuleDeliveryLifecycleService get deliveryLifecycle => _deliveryLifecycle;
+  CapsulePassiveReceiveCoordinator get passiveReceive => _passiveReceive;
 
   Future<bool> bootstrapActiveCapsuleRuntime() {
     return _runtime.bootstrapActiveCapsuleRuntime();
@@ -139,43 +171,26 @@ class AppRuntimeService {
       consensus: consensus,
       attestedGuard: ConsensusAttestedGuardService(
         consensus: consensus,
-        attestations: ConsensusAttestationSyncService(
-          runtime: _runtime,
-          consensus: consensus,
-        ),
+        attestations: _consensusAttestations,
       ),
     );
   }
 
   ConsensusAttestationSyncService buildConsensusAttestationSyncService() {
-    return ConsensusAttestationSyncService(
-      runtime: _runtime,
-      consensus: buildConsensusRuntimeService(),
-    );
+    return _consensusAttestations;
   }
 
   ConsensusAttestedGuardService buildConsensusAttestedGuardService() {
     final consensus = buildConsensusRuntimeService();
     return ConsensusAttestedGuardService(
       consensus: consensus,
-      attestations: ConsensusAttestationSyncService(
-        runtime: _runtime,
-        consensus: consensus,
-      ),
+      attestations: _consensusAttestations,
     );
   }
 
   ConsensusAttestationExchangeService
   buildConsensusAttestationExchangeService() {
-    final addressService = CapsuleAddressService(
-      runtime: _runtime.capsuleAddressRuntime,
-    );
-    return ConsensusAttestationExchangeService(
-      sync: buildConsensusAttestationSyncService(),
-      loadRelationships: _ledgerView.loadRelationships,
-      listTrustedCards: addressService.listTrustedCards,
-      exportLedger: _runtime.exportLedger,
-    );
+    return _attestationExchange;
   }
 
   CapsuleDiagnosticsService buildCapsuleDiagnosticsService() {
@@ -186,16 +201,7 @@ class AppRuntimeService {
   }
 
   CapsuleChatDeliveryService buildCapsuleChatDeliveryService() {
-    final addressService = CapsuleAddressService(
-      runtime: _runtime.capsuleAddressRuntime,
-    );
-    return CapsuleChatDeliveryService(
-      runtime: _runtime,
-      manualChecks: buildManualConsensusCheckService(),
-      readAttestedSignable: buildConsensusAttestedGuardService().signable,
-      loadRelationships: _ledgerView.loadRelationships,
-      listTrustedCards: addressService.listTrustedCards,
-    );
+    return _chatDelivery;
   }
 
   CapsuleAddressService buildCapsuleAddressService() {

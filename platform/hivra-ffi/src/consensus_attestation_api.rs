@@ -340,17 +340,8 @@ pub unsafe extern "C" fn hivra_receive_pair_consensus_attestations_json(
         }
     }
 
-    // The shared transport dispatcher owns receive and routes all message
-    // kinds. A consensus poll must not advance transport state ahead of
-    // invitations or chat.
-    let receive_code = unsafe { crate::invitation_api::hivra_transport_receive_quick() };
-    if receive_code < 0 {
-        set_last_error(format!(
-            "Pair consensus attestation receive failed: transport receive error (code {receive_code})"
-        ));
-        return receive_code;
-    }
-
+    // The application-level passive receive coordinator polls the canonical
+    // transport ingress exactly once before capability queues are drained.
     let queued = drain_queued_attestations(local_pubkey);
     let json = match serde_json::to_string(&queued) {
         Ok(value) => value,

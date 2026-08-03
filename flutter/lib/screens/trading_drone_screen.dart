@@ -17,6 +17,7 @@ import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../services/app_runtime_service.dart';
+import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
 import '../utils/peer_identity_format.dart';
@@ -1934,10 +1935,23 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (_refreshingSignals) return;
     _refreshingSignals = true;
     try {
-      final result = await _module.chatDelivery.receiveAndFilter(
+      final capsuleHex = _module.activeCapsuleRootHex();
+      if (capsuleHex == null) {
+        if (!silentWhenEmpty) {
+          await _showSnack('Active capsule identity is unavailable');
+        }
+        return;
+      }
+      final receive = await _module.passiveReceive.trigger(
+        capsuleHex: capsuleHex,
+        reason:
+            silentWhenEmpty
+                ? CapsulePassiveReceiveReason.screenActivation
+                : CapsulePassiveReceiveReason.manual,
+        quick: silentWhenEmpty,
         manualRetry: !silentWhenEmpty,
       );
-      _refreshAttestationsAfterTransportReceive('trading_signal_fetch');
+      final result = receive.chat;
       if (result.code < 0) {
         if (!silentWhenEmpty) {
           await _showSnack(
@@ -1973,16 +1987,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     } finally {
       _refreshingSignals = false;
     }
-  }
-
-  void _refreshAttestationsAfterTransportReceive(String reason) {
-    unawaited(() async {
-      final result = await _module.attestationExchange.receiveAndAnswerStored();
-      await _module.uiLog.log(
-        'attestation.receive',
-        'reason=$reason code=${result.code} received=${result.receivedCount} stored=${result.storedCount} rejected=${result.rejectedCount}',
-      );
-    }());
   }
 
   Future<void> _repeatSignalAsDraft(

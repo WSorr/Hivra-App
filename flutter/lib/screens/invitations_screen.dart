@@ -7,6 +7,7 @@ import '../models/invitation.dart';
 import '../widgets/invitation_card.dart';
 import '../widgets/invitation_recipient_field.dart';
 import '../services/app_runtime_service.dart';
+import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/capsule_history_projection_service.dart';
 import '../services/invitation_intent_handler.dart';
 import '../services/invitation_module_service.dart';
@@ -133,11 +134,8 @@ class InvitationsScreen extends StatefulWidget {
 }
 
 class _InvitationsScreenState extends State<InvitationsScreen> {
-  static const _invitationPollInterval = Duration(seconds: 15);
-
   late final InvitationModule _module;
   List<Invitation> _invitations = [];
-  Timer? _invitationPollTimer;
   bool _isFetchingDeliveries = false;
   String? _processingId;
   String? _processingAction;
@@ -158,18 +156,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     super.initState();
     _module = InvitationModuleService(runtime: widget.runtime).build();
     _loadInvitations();
-    unawaited(_fetchInvitationDeliveries(silent: true, quick: true));
-    _invitationPollTimer = Timer.periodic(
-      _invitationPollInterval,
-      (_) => unawaited(_fetchInvitationDeliveries(silent: true)),
-    );
-  }
-
-  @override
-  void dispose() {
-    _invitationPollTimer?.cancel();
-    _invitationPollTimer = null;
-    super.dispose();
   }
 
   @override
@@ -184,7 +170,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
     if (capsuleChanged) {
       _resetTransientStateForCapsuleSwitch();
-      unawaited(_fetchInvitationDeliveries(silent: true, quick: true));
     }
     unawaited(_loadInvitations());
   }
@@ -351,8 +336,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           ),
         );
         if (projectedPending.isEmpty) {
-          final quickResult = await _module.intents.fetchInvitationsQuick(
+          final quickResult = await widget.runtime.passiveReceive.trigger(
             capsuleHex: operationCapsuleHex,
+            reason: CapsulePassiveReceiveReason.postSend,
+            quick: true,
           );
           projectedPending = _module.intents
               .loadInvitations(capsuleHex: operationCapsuleHex)
@@ -367,7 +354,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
           unawaited(
             _module.uiLog.log(
               'invitations.send.ledger_projection.retry',
-              'slot=$slot quickFetchCode=${quickResult.code} pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
+              'slot=$slot quickFetchCode=${quickResult.ingress.code} pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
             ),
           );
         }
@@ -424,15 +411,16 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     );
 
     try {
-      result =
-          quick
-              ? await _module.intents.fetchInvitationsQuick(
-                capsuleHex: operationCapsuleHex,
-              )
-              : await _module.intents.fetchInvitations(
-                capsuleHex: operationCapsuleHex,
-                manualRetry: !silent,
-              );
+      final receive = await widget.runtime.passiveReceive.trigger(
+        capsuleHex: operationCapsuleHex,
+        reason:
+            silent
+                ? CapsulePassiveReceiveReason.screenActivation
+                : CapsulePassiveReceiveReason.manual,
+        quick: quick,
+        manualRetry: !silent,
+      );
+      result = receive.ingress;
     } finally {
       if (mounted) {
         setState(() => _isFetchingDeliveries = false);

@@ -344,9 +344,7 @@ class _FakeConsensusAttestationSyncService
        );
 
   @override
-  Future<ConsensusAttestationReceiveResult> receiveAndStore({
-    bool manualRetry = false,
-  }) async {
+  Future<ConsensusAttestationReceiveResult> drainAndStore() async {
     final index =
         receiveCalls < receiveResults.length
             ? receiveCalls

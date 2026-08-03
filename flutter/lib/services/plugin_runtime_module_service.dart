@@ -13,6 +13,7 @@ import 'capsule_file_store.dart';
 import 'capsule_scoped_secret_vault.dart';
 import 'capsule_chat_delivery_service.dart';
 import 'capsule_contact_label_store.dart';
+import 'capsule_passive_receive_coordinator.dart';
 import 'consensus_attestation_exchange_service.dart';
 import 'external_effect_service.dart';
 import 'manual_consensus_check_service.dart';
@@ -67,6 +68,7 @@ class PluginRuntimeModule {
   final PluginHostApiService pluginHostApi;
   final ConsensusAttestationExchangeService attestationExchange;
   final CapsuleChatDeliveryService chatDelivery;
+  final CapsulePassiveReceivePort passiveReceive;
   final CapsuleContactLabelStore contactLabels;
   final UiEventLogService uiLog;
   final ExternalEffectService externalEffects;
@@ -87,6 +89,7 @@ class PluginRuntimeModule {
     required this.pluginHostApi,
     required this.attestationExchange,
     required this.chatDelivery,
+    required this.passiveReceive,
     required this.contactLabels,
     required this.uiLog,
     required this.externalEffects,
@@ -107,6 +110,8 @@ class PluginRuntimeModule {
 
   bool get isMoltbookAiSessionUnlocked =>
       moltbookPublicBulletinAi.isSessionUnlocked;
+
+  String? activeCapsuleRootHex() => _readActiveCapsuleRootHex();
 
   String? get moltbookAiSessionProviderLabel =>
       moltbookPublicBulletinAi.sessionProviderLabel;
@@ -1607,6 +1612,7 @@ class PluginRuntimeModuleService {
       pluginHostApi: runtime.buildPluginHostApiService(),
       attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
+      passiveReceive: runtime.passiveReceive,
       contactLabels: runtime.buildCapsuleContactLabelStore(),
       uiLog: const UiEventLogService(),
       externalEffects: effects,

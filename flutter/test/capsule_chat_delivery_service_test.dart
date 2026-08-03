@@ -153,7 +153,7 @@ void main() {
         tradeSignalInboxStore: store,
       );
 
-      final received = await chatService.receiveAndFilter();
+      final received = await chatService.drainAndFilter();
 
       expect(received.tradeSignals, hasLength(1));
       expect(droneService.loadCachedTradeSignals(), hasLength(1));
@@ -163,47 +163,6 @@ void main() {
       );
     },
   );
-
-  test('chat receive honors shared transport timeout cooldown', () async {
-    const localRootHex =
-        '2222222222222222222222222222222222222222222222222222222222222222';
-    var receiveCalls = 0;
-    final health = TransportHealthPolicyService(
-      timeoutBackoff: const <Duration>[Duration(minutes: 1)],
-    );
-    final service = CapsuleChatDeliveryService(
-      runtime: _FakeRuntime(
-        capsuleRootKey: _hexToBytes(localRootHex),
-        workerBootstrap: const <String, Object?>{
-          'activeCapsuleHex': localRootHex,
-        },
-      ),
-      manualChecks: _FakeManualConsensusCheckService(
-        const <ManualConsensusCheck>[],
-      ),
-      transportHealth: health,
-      receiveWorkerRunner: (_) async {
-        receiveCalls += 1;
-        return <String, Object?>{
-          'result': receiveCalls == 1 ? -1003 : 0,
-          'json': null,
-          'lastError': receiveCalls == 1 ? 'Chat fetch timed out' : null,
-        };
-      },
-    );
-
-    final first = await service.receiveAndFilter();
-    final second = await service.receiveAndFilter();
-    final manual = await service.receiveAndFilter(manualRetry: true);
-    final recovered = await service.receiveAndFilter();
-
-    expect(receiveCalls, 3);
-    expect(first.code, -1003);
-    expect(second.code, -3101);
-    expect(second.errorMessage, contains('cooling down'));
-    expect(manual.code, 0);
-    expect(recovered.code, 0);
-  });
 
   test(
     'prefers contact-card transport when root also appears as relationship peer',
@@ -647,7 +606,7 @@ void main() {
           },
     );
 
-    final blocked = await blockedService.receiveAndFilter();
+    final blocked = await blockedService.drainAndFilter();
 
     expect(blocked.messages, isEmpty);
     expect(blocked.droppedByConsensus, 0);
@@ -700,7 +659,7 @@ void main() {
           },
     );
 
-    final ready = await readyService.receiveAndFilter();
+    final ready = await readyService.drainAndFilter();
 
     expect(ready.messages, hasLength(1));
     expect(ready.messages.single.messageText, equals('hello'));
@@ -776,7 +735,7 @@ void main() {
               },
         );
 
-        final result = await service.receiveAndFilter();
+        final result = await service.drainAndFilter();
 
         expect(result.code, equals(0));
         expect(result.messages, isEmpty);
@@ -841,7 +800,7 @@ void main() {
             },
       );
 
-      final result = await service.receiveAndFilter();
+      final result = await service.drainAndFilter();
 
       expect(result.code, equals(0));
       expect(result.executionDecisions, isEmpty);

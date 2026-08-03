@@ -90,7 +90,7 @@ class ConsensusAttestationExchangeService {
       );
     }
 
-    final received = await _sync.receiveAndStore();
+    final received = await _sync.drainAndStore();
     verified = await _sync.loadVerifiedForPair(peerRootHex: normalizedPeer);
     if (_hasTwoRootEvidence(verified)) {
       final peerTransportHex = await _resolvePeerTransportHex(normalizedPeer);
@@ -130,7 +130,7 @@ class ConsensusAttestationExchangeService {
     if (sent.isSuccess) {
       effectiveReceive = _combineReceiveResults(
         received,
-        await _sync.receiveAndStore(),
+        await _sync.drainAndStore(),
       );
     }
     verified = await _sync.loadVerifiedForPair(peerRootHex: normalizedPeer);
@@ -195,17 +195,14 @@ class ConsensusAttestationExchangeService {
     );
   }
 
-  Future<ConsensusAttestationReceiveResult> receiveAndAnswerStored() async {
-    final receive = await _sync.receiveAndStore();
-    if (receive.storedEvidence.isEmpty) {
-      return receive;
-    }
+  Future<void> answerStoredEvidence(
+    List<ConsensusAttestationEvidence> storedEvidence,
+  ) async {
+    if (storedEvidence.isEmpty) return;
     final localRootHex = _sync.localRootHex();
-    if (localRootHex == null) {
-      return receive;
-    }
+    if (localRootHex == null) return;
     final peers = <String>{};
-    for (final evidence in receive.storedEvidence) {
+    for (final evidence in storedEvidence) {
       if (evidence.pairRootsSorted.length != 2 ||
           !evidence.pairRootsSorted.contains(localRootHex)) {
         continue;
@@ -219,7 +216,6 @@ class ConsensusAttestationExchangeService {
     for (final peerRootHex in peers) {
       await announceForPeer(peerRootHex);
     }
-    return receive;
   }
 
   void _announceReadyEvidence({

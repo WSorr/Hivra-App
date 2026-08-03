@@ -806,8 +806,12 @@ confirmed only by ledger events and deterministic replay/projection policy.
 All host receive paths share one application-level, capsule-scoped transport
 health policy above transport adapters and below UI. Invitations, relationship
 notifications, chat, trading signals, and pair attestations MUST use this one
-decision surface; relationship notifications remain part of the canonical
-domain-event receive route rather than introducing a second worker.
+decision surface through one application-level passive receive coordinator.
+For each trigger wave, that coordinator performs at most one canonical relay
+poll and then invokes capability-owned drains. A capability drain MUST NOT poll
+the relay, create another transport-health decision, or become a second receive
+route. Relationship notifications remain part of the canonical domain-event
+receive route rather than introducing a second worker.
 
 Consecutive transport timeouts MAY increase a bounded cooldown that suppresses
 passive polling. One explicit user action MAY bypass the current cooldown for
@@ -816,6 +820,13 @@ into an independent retry loop. A successful transport result clears the
 degraded state deterministically. UI MAY project the capsule-scoped degraded
 status and remaining cooldown, but Core, Ledger projection, relationship truth,
 and pair consensus MUST NOT read transport-health state as authority.
+
+Automatic launch, resume, connectivity, periodic, screen-activation, and
+post-send triggers for the same Capsule join one active operation. An explicit
+manual retry arriving during passive work MAY schedule at most one forced
+follow-up. Pause and Capsule switch invalidate delayed passive work for the old
+lifecycle context; persisted results remain bound to the Capsule that produced
+them, while stale UI projection is discarded. Scheduler state is not durable.
 
 ### 5.2.3 WASM Plugin Host Contract
 

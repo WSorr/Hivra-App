@@ -48,7 +48,7 @@ Map<String, Object?> sendConsensusAttestationInWorker(
   };
 }
 
-Map<String, Object?> receiveConsensusAttestationsInWorker(
+Map<String, Object?> drainConsensusAttestationsInWorker(
   Map<String, Object?> args,
 ) {
   final hivra = HivraBindings();

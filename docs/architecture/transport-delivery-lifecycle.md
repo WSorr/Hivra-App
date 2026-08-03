@@ -415,7 +415,7 @@ evidence, never hidden payload copies.
   quarantine, while repository, sender-state, or evidence capacity returns
   cursor-safe `retry`. No capability, message kind, relationship, relay, UI,
   plugin, Core, or scheduler bypass was added.
-- Audited on 2026-08-03 for `12.3 / pass 17`: passive receive has one native
+- Audited before `12.3 / pass 17`: passive receive had one native
   router, one cached Capsule transport session/cursor owner, one shared
   process-global FFI worker queue, and one shared health policy, but it does
   not yet have one application-level scheduling owner. The current trigger map
@@ -433,7 +433,7 @@ evidence, never hidden payload copies.
     coalesce these requests. Both chat and pair-attestation FFI drain functions
     call `hivra_transport_receive_quick()` before draining their own keyed
     inbox, so one UI refresh can perform two sequential relay polls.
-- `CapsulePassiveReceiveCoordinator` is the sole future application-level
+- `CapsulePassiveReceiveCoordinator` is the sole application-level
   owner of passive receive trigger lifetime, per-Capsule in-flight joining,
   foreground periodic cadence, lifecycle/network follow-up coalescing, and one
   bounded manual-retry follow-up. It owns no transport session, cursor,
@@ -446,7 +446,7 @@ evidence, never hidden payload copies.
   attestation verifier/store. Chat and trading payloads continue through the
   chat delivery filter and their existing inbox owners. A channel drain MUST
   NOT poll a relay.
-- Pass-17 concurrency and lifecycle semantics are fixed before implementation:
+- Pass-17 concurrency and lifecycle semantics are implemented as follows:
   - automatic requests for the same Capsule join the active operation and do
     not queue another relay poll;
   - one explicit manual retry may bypass health cooldown and, if a passive
@@ -472,6 +472,34 @@ evidence, never hidden payload copies.
   `hivra_transport_receive_quick()` remain the only native poll entrypoints;
   no second transport route, Core path, DTO family, or durable scheduler store
   is authorized.
+- Completed in `12.3 / pass 17` on 2026-08-03:
+  - launch, resume, connectivity, foreground periodic, screen-activation,
+    post-send, and manual triggers enter one process-scoped coordinator;
+  - same-Capsule automatic work joins the active operation and manual work can
+    schedule only one bounded forced follow-up;
+  - the canonical invitation/relationship ingress performs the sole relay poll
+    and transport-health decision before attestation and chat/trading drains;
+  - chat and pair-attestation FFI drains no longer call
+    `hivra_transport_receive_quick()` and remain capability-owned projection
+    boundaries;
+  - the invitations-screen periodic timer, direct screen receive chains, and
+    MainScreen receive in-flight flags were removed or sealed;
+  - pause, Capsule-switch, connectivity cooldown, poll-before-drain ordering,
+    drain-failure isolation, and cross-capability convergence are covered by
+    regression tests;
+  - the existing FFI router, cached Nostr session/cursors, process-global FFI
+    queue, Core/Ledger projection, capability inboxes, and native poll
+    entrypoints remain unchanged as the only canonical path.
+  - `git diff --check`, Rust formatting, `flutter analyze`, all `726` Flutter
+    tests, `cargo test --workspace`, and `tools/review/review_all.sh` passed;
+    the universal macOS release bundle launched through launch, resume,
+    follow-up, and periodic receive while preserving Ledger versions `105`,
+    `62`, and `119`, and no process error/fault was emitted;
+  - Android smoke build `versionCode=100000325`, SHA-256
+    `ac0dd45dbd195f7094c83b151e68af2cffccded3c6faf8e1b07813b78661de3d`,
+    updated in place, preserved Ledger `v82`, and completed launch, periodic,
+    explicit manual retry, attestation drain, and cold restart without a fatal
+    runtime error.
 - Pending: pair-attestation re-announcement needs a pair/snapshot-scoped
   rate-limit or a durable acknowledgement policy. It is currently an
   intentionally best-effort convergence aid, not a Core outbox effect.

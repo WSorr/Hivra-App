@@ -8,6 +8,7 @@ import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import '../services/app_runtime_service.dart';
+import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/hivra_file_picker_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../utils/peer_identity_format.dart';
@@ -579,11 +580,27 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     try {
       if (!mounted) return;
       final stopwatch = Stopwatch()..start();
-      final result = await _module.chatDelivery.receiveAndFilter(
+      final capsuleHex = _module.activeCapsuleRootHex();
+      if (capsuleHex == null) {
+        if (mounted) {
+          setState(() {
+            _chatWorkspaceNotice = 'Active capsule identity is unavailable';
+            _chatWorkspaceNoticeIsError = true;
+          });
+        }
+        return;
+      }
+      final receive = await _module.passiveReceive.trigger(
+        capsuleHex: capsuleHex,
+        reason:
+            silentWhenEmpty
+                ? CapsulePassiveReceiveReason.screenActivation
+                : CapsulePassiveReceiveReason.manual,
+        quick: silentWhenEmpty,
         manualRetry: !silentWhenEmpty,
       );
+      final result = receive.chat;
       stopwatch.stop();
-      _refreshAttestationsAfterTransportReceive('plugin_chat_fetch');
       await _module.uiLog.log(
         'chat.fetch.result',
         'code=${result.code} elapsedMs=${stopwatch.elapsedMilliseconds} chat=${result.messages.length} trade=${result.tradeSignals.length} cmd=${result.executionDecisions.length} receipt=${result.executionReceipts.length} dropped=${result.droppedByConsensus} deferred=${result.deferredByConsensus}'
@@ -637,16 +654,6 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     } finally {
       _refreshingChatInbox = false;
     }
-  }
-
-  void _refreshAttestationsAfterTransportReceive(String reason) {
-    unawaited(() async {
-      final result = await _module.attestationExchange.receiveAndAnswerStored();
-      await _module.uiLog.log(
-        'attestation.receive',
-        'reason=$reason code=${result.code} received=${result.receivedCount} stored=${result.storedCount} rejected=${result.rejectedCount}',
-      );
-    }());
   }
 
   @override

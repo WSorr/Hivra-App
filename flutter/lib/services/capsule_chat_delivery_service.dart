@@ -20,10 +20,7 @@ import 'transport_health_policy_service.dart';
 // Keep timeout above a single slow relay cycle to avoid false -1003 while
 // transport still completes on a later relay.
 const Duration _chatSendWorkerTimeout = Duration(seconds: 35);
-// Quick Nostr receive can spend up to ~20 seconds on cold relay connection
-// plus event fetch. A shorter Dart timeout does not cancel the compute worker:
-// it can consume and mark events as seen after the caller has discarded them.
-const Duration _chatReceiveWorkerTimeout = Duration(seconds: 30);
+const Duration _chatDrainWorkerTimeout = Duration(seconds: 10);
 
 String tradeSignalInboxRecordId({
   required String fromHex,
@@ -63,7 +60,7 @@ Future<Map<String, Object?>> _defaultReceiveWorkerRunner(
   Map<String, Object?> args,
 ) {
   return compute<Map<String, Object?>, Map<String, Object?>>(
-    receiveCapsuleChatInWorker,
+    drainCapsuleChatInWorker,
     args,
   );
 }
@@ -301,24 +298,8 @@ class CapsuleChatDeliveryService {
     );
   }
 
-  Future<CapsuleChatDeliveryReceiveResult> receiveAndFilter({
-    bool manualRetry = false,
-  }) async {
+  Future<CapsuleChatDeliveryReceiveResult> drainAndFilter() async {
     final localRootHex = _localCapsuleRootHex();
-    final health = _transportHealth.canRun(
-      capsuleHex: localRootHex,
-      manualRetry: manualRetry,
-    );
-    if (!health.isAllowed) {
-      return CapsuleChatDeliveryReceiveResult(
-        code: health.code,
-        errorMessage: health.message,
-        droppedByConsensus: 0,
-        deferredByConsensus: 0,
-        messages: const <CapsuleChatInboxMessage>[],
-        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
-      );
-    }
     final bootstrap = await _runtime.loadWorkerBootstrapArgs();
     if (bootstrap == null) {
       return CapsuleChatDeliveryReceiveResult(
@@ -335,17 +316,16 @@ class CapsuleChatDeliveryService {
         bootstrap['activeCapsuleHex']?.toString().trim().toLowerCase() ?? '';
     final transport = await _workerQueue.run(_ffiQueueKey(bootstrapOwner), () {
       return _receiveWorkerRunner(bootstrap).timeout(
-        _chatReceiveWorkerTimeout,
+        _chatDrainWorkerTimeout,
         onTimeout:
             () => <String, Object?>{
               'result': -1003,
               'json': null,
-              'lastError': 'Chat fetch timed out',
+              'lastError': 'Chat inbox drain timed out',
             },
       );
     });
     final code = (transport['result'] as int?) ?? -1003;
-    _transportHealth.recordResult(capsuleHex: localRootHex, code: code);
     final rawJson = transport['json'] as String?;
     final transportError = transport['lastError'] as String?;
     if (code < 0) {

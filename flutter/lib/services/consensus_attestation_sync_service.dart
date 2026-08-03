@@ -9,10 +9,9 @@ import 'consensus_attestation_store.dart';
 import 'capsule_ffi_worker_queue.dart';
 import 'consensus_processor.dart';
 import 'consensus_runtime_service.dart';
-import 'transport_health_policy_service.dart';
 
 const Duration _attestationSendWorkerTimeout = Duration(seconds: 35);
-const Duration _attestationReceiveWorkerTimeout = Duration(seconds: 30);
+const Duration _attestationDrainWorkerTimeout = Duration(seconds: 10);
 
 typedef ConsensusAttestationWorkerRunner =
     Future<Map<String, Object?>> Function(Map<String, Object?> args);
@@ -31,7 +30,7 @@ Future<Map<String, Object?>> _defaultReceiveWorkerRunner(
   Map<String, Object?> args,
 ) {
   return compute<Map<String, Object?>, Map<String, Object?>>(
-    receiveConsensusAttestationsInWorker,
+    drainConsensusAttestationsInWorker,
     args,
   );
 }
@@ -81,7 +80,6 @@ class ConsensusAttestationSyncService {
   final ConsensusAttestationWorkerRunner _receiveWorkerRunner;
   final CapsuleFfiWorkerQueue _workerQueue;
   final ConsensusAttestationNowUtc _nowUtc;
-  final TransportHealthPolicyService _transportHealth;
 
   ConsensusAttestationSyncService({
     required AppRuntimeRuntime runtime,
@@ -94,7 +92,6 @@ class ConsensusAttestationSyncService {
         _defaultReceiveWorkerRunner,
     CapsuleFfiWorkerQueue? workerQueue,
     ConsensusAttestationNowUtc nowUtc = _defaultNowUtc,
-    TransportHealthPolicyService? transportHealth,
   }) : _runtime = runtime,
        _consensus = consensus,
        _store = store,
@@ -102,9 +99,7 @@ class ConsensusAttestationSyncService {
        _sendWorkerRunner = sendWorkerRunner,
        _receiveWorkerRunner = receiveWorkerRunner,
        _workerQueue = workerQueue ?? CapsuleFfiWorkerQueue.shared,
-       _nowUtc = nowUtc,
-       _transportHealth =
-           transportHealth ?? TransportHealthPolicyService.shared;
+       _nowUtc = nowUtc;
 
   Future<ConsensusAttestationEvidence?> createLocalEvidence({
     required String peerRootHex,
@@ -199,27 +194,12 @@ class ConsensusAttestationSyncService {
     );
   }
 
-  Future<ConsensusAttestationReceiveResult> receiveAndStore({
-    bool manualRetry = false,
-  }) async {
+  Future<ConsensusAttestationReceiveResult> drainAndStore() async {
     final localRootHex = _localRootHex();
     if (localRootHex == null) {
       return const ConsensusAttestationReceiveResult(
         code: -2002,
         errorMessage: 'Local root key unavailable',
-        receivedCount: 0,
-        storedCount: 0,
-        rejectedCount: 0,
-      );
-    }
-    final health = _transportHealth.canRun(
-      capsuleHex: localRootHex,
-      manualRetry: manualRetry,
-    );
-    if (!health.isAllowed) {
-      return ConsensusAttestationReceiveResult(
-        code: health.code,
-        errorMessage: health.message,
         receivedCount: 0,
         storedCount: 0,
         rejectedCount: 0,
@@ -240,17 +220,16 @@ class ConsensusAttestationSyncService {
         bootstrap['activeCapsuleHex']?.toString().trim().toLowerCase() ?? '';
     final transport = await _workerQueue.run(_ffiQueueKey(bootstrapOwner), () {
       return _receiveWorkerRunner(bootstrap).timeout(
-        _attestationReceiveWorkerTimeout,
+        _attestationDrainWorkerTimeout,
         onTimeout:
             () => <String, Object?>{
               'result': -1003,
               'json': null,
-              'lastError': 'Pair consensus attestation fetch timed out',
+              'lastError': 'Pair consensus attestation inbox drain timed out',
             },
       );
     });
     final code = (transport['result'] as int?) ?? -1003;
-    _transportHealth.recordResult(capsuleHex: localRootHex, code: code);
     final rawJson = transport['json'] as String?;
     final error = transport['lastError'] as String?;
     if (code < 0) {

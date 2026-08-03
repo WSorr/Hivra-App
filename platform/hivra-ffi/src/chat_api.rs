@@ -390,17 +390,8 @@ pub unsafe extern "C" fn hivra_receive_capsule_chat_json(out_json: *mut *mut c_c
         }
     }
 
-    // Transport polling has one owner. It routes every envelope before this
-    // channel drains its own queue, so a chat fetch cannot consume a Core
-    // invitation or consensus attestation.
-    let receive_code = unsafe { crate::invitation_api::hivra_transport_receive_quick() };
-    if receive_code < 0 {
-        set_last_error(format!(
-            "Capsule chat receive failed: transport receive error (code {receive_code})"
-        ));
-        return receive_code;
-    }
-
+    // The application-level passive receive coordinator polls the canonical
+    // transport ingress exactly once before capability queues are drained.
     let queued = drain_queued_chat(local_pubkey);
     let json = match serde_json::to_string(&queued) {
         Ok(value) => value,

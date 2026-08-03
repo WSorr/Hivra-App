@@ -5,13 +5,13 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import '../services/app_runtime_service.dart';
 import '../services/capsule_history_projection_service.dart';
+import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/capsule_state_manager.dart';
 import '../services/invitation_intent_handler.dart';
 import '../services/main_screen_module_service.dart';
 import '../services/transport_health_policy_service.dart';
 import '../services/ui_feedback_service.dart';
 import '../services/ui_event_log_service.dart';
-import '../models/consensus_models.dart';
 import '../models/invitation.dart';
 import 'starters_screen.dart';
 import 'capsule_history_screen.dart';
@@ -34,14 +34,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   late final MainScreenModule _module;
   late final CapsuleStateManager _stateManager;
   late final InvitationIntentHandler _invitationIntents;
+  late final CapsulePassiveReceiveCoordinator _passiveReceive;
 
   bool _bootstrapping = true;
   Stopwatch? _launchStopwatch;
-  bool _transportQuickSyncInFlight = false;
-  bool _attestationSyncInFlight = false;
-  DateTime? _lastTransportQuickSyncAt;
   StreamSubscription<dynamic>? _connectivitySubscription;
-  DateTime? _lastNetworkTriggeredSyncAt;
 
   String _publicKeyText = '';
   int _starterCount = 0;
@@ -81,6 +78,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _module = MainScreenModuleService(runtime: _runtime).build();
     _stateManager = _runtime.stateManager;
     _invitationIntents = _runtime.invitationIntents;
+    _passiveReceive = _module.passiveReceive;
+    _passiveReceive.setResultListener(_handlePassiveReceiveResult);
     _listenConnectivityChanges();
     Future.microtask(_bootstrapActiveRuntime);
   }
@@ -88,6 +87,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     _connectivitySubscription?.cancel();
+    _passiveReceive.setResultListener(null);
+    _passiveReceive.pauseForeground();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -100,7 +101,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       final hasTransport = _hasUsableTransport(result);
       if (!hasTransport) return;
       if (!mounted || _bootstrapping) return;
-      unawaited(_syncInvitationsOnNetworkChange());
+      unawaited(_receiveOnNetworkChange());
     });
   }
 
@@ -119,54 +120,29 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return true;
   }
 
-  Future<void> _syncInvitationsOnNetworkChange() async {
+  Future<void> _receiveOnNetworkChange() async {
     if (_activeCapsuleHex.isEmpty) return;
-    final now = DateTime.now();
-    final last = _lastNetworkTriggeredSyncAt;
-    if (last != null && now.difference(last) < const Duration(seconds: 8)) {
-      return;
-    }
-    _lastNetworkTriggeredSyncAt = now;
-
     final operationCapsuleHex = _activeCapsuleHex;
     debugPrint(
       '[StartupTiming] network_change_sync_start capsule=$operationCapsuleHex',
     );
-
-    final result = await _runQuickTransportSync(
-      reason: 'network_change',
+    await _passiveReceive.notifyConnectivityRestored(
       capsuleHex: operationCapsuleHex,
-    );
-    if (!mounted) return;
-    if (_isStaleCapsuleSyncRequest(operationCapsuleHex)) {
-      debugPrint(
-        '[StartupTiming] network_change_refresh_stale_skip '
-        'opCapsule=$operationCapsuleHex activeCapsule=$_activeCapsuleHex',
-      );
-      return;
-    }
-    if (result.code >= 0) {
-      _loadCapsuleData();
-    }
-    unawaited(
-      _runDelayedQuickTransportSync(
-        reason: 'network_change_follow_up',
-        delay: const Duration(seconds: 5),
-        capsuleHex: operationCapsuleHex,
-      ),
     );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_syncInvitationsOnResume());
-      unawaited(
-        _receiveAttestationsBestEffort(
-          reason: 'resume',
-          capsuleHex: _activeCapsuleHex,
-        ),
-      );
+      if (_activeCapsuleHex.isNotEmpty) {
+        unawaited(
+          _passiveReceive.activateForeground(
+            capsuleHex: _activeCapsuleHex,
+            reason: CapsulePassiveReceiveReason.resume,
+            followUpDelay: const Duration(seconds: 7),
+          ),
+        );
+      }
       _loadCapsuleData();
       return;
     }
@@ -174,6 +150,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      _passiveReceive.pauseForeground();
       _snapshotLedger();
     }
   }
@@ -189,13 +166,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     try {
       // Launch-time receive must stay lightweight so UI projection from ledger
       // remains responsive; full sync is still available via manual refresh.
-      final result = await _runQuickTransportSync(
-        reason: 'launch',
+      final result = await _passiveReceive.activateForeground(
         capsuleHex: operationCapsuleHex,
+        reason: CapsulePassiveReceiveReason.launch,
+        followUpDelay: const Duration(seconds: 7),
       );
       final staleAfterReceive = _isStaleCapsuleSyncRequest(operationCapsuleHex);
-      if (result.code < 0) {
-        debugPrint('[StartupTiming] launch_receive_failed_code=${result.code}');
+      if (result.ingress.code < 0) {
+        debugPrint(
+          '[StartupTiming] launch_receive_failed_code=${result.ingress.code}',
+        );
       }
       debugPrint(
         '[StartupTiming] launch_receive_done_ms='
@@ -214,18 +194,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (mounted) {
         UiFeedbackService.showSnackBar(
           context,
-          result.message,
+          result.ingress.message,
           source: 'transport.launch',
           enableCopy: false,
         );
       }
-      unawaited(
-        _runDelayedQuickTransportSync(
-          reason: 'launch_follow_up',
-          delay: const Duration(seconds: 7),
-          capsuleHex: operationCapsuleHex,
-        ),
-      );
       return true;
     } catch (_) {
       // Launch-time receive is best-effort only.
@@ -236,79 +209,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       );
       return !_isStaleCapsuleSyncRequest(operationCapsuleHex);
     }
-  }
-
-  Future<void> _syncInvitationsOnResume() async {
-    final operationCapsuleHex = _activeCapsuleHex;
-    try {
-      final result = await _runQuickTransportSync(
-        reason: 'resume',
-        capsuleHex: operationCapsuleHex,
-      );
-      if (!mounted) return;
-      if (_isStaleCapsuleSyncRequest(operationCapsuleHex)) {
-        debugPrint(
-          '[StartupTiming] resume_refresh_stale_skip '
-          'opCapsule=$operationCapsuleHex activeCapsule=$_activeCapsuleHex',
-        );
-        return;
-      }
-      if (result.code >= 0) {
-        _loadCapsuleData();
-      }
-      unawaited(
-        _runDelayedQuickTransportSync(
-          reason: 'resume_follow_up',
-          delay: const Duration(seconds: 7),
-          capsuleHex: operationCapsuleHex,
-        ),
-      );
-    } catch (_) {
-      // Resume sync is best-effort only.
-    }
-  }
-
-  Future<void> _runDelayedQuickTransportSync({
-    required String reason,
-    required Duration delay,
-    String? capsuleHex,
-  }) async {
-    await Future<void>.delayed(delay);
-    if (!mounted) return;
-    if (_isStaleCapsuleSyncRequest(capsuleHex)) {
-      debugPrint(
-        '[StartupTiming] quick_sync_delayed_stale_skip reason=$reason '
-        'opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
-      );
-      return;
-    }
-
-    final result = await _runQuickTransportSync(
-      reason: reason,
-      capsuleHex: capsuleHex,
-    );
-    if (!mounted) return;
-    if (_isStaleCapsuleSyncRequest(capsuleHex)) {
-      debugPrint(
-        '[StartupTiming] quick_sync_delayed_refresh_stale_skip reason=$reason '
-        'opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
-      );
-      return;
-    }
-    if (result.code >= 0) {
-      _loadCapsuleData();
-    }
-    unawaited(
-      _receiveAttestationsBestEffort(reason: reason, capsuleHex: capsuleHex),
-    );
-  }
-
-  bool _shouldSkipQuickTransportSync({required bool force}) {
-    if (force) return false;
-    if (_transportQuickSyncInFlight) return true;
-    final last = _lastTransportQuickSyncAt;
-    if (last == null) return false;
-    return DateTime.now().difference(last) < const Duration(seconds: 4);
   }
 
   bool _isStaleCapsuleSyncRequest(String? capsuleHex) {
@@ -322,123 +222,33 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return opCapsule != _activeCapsuleHex;
   }
 
-  Future<InvitationIntentResult> _runQuickTransportSync({
-    required String reason,
-    bool force = false,
-    String? capsuleHex,
-  }) async {
-    if (_isStaleCapsuleSyncRequest(capsuleHex)) {
-      debugPrint(
-        '[StartupTiming] quick_sync_stale_skip reason=$reason '
-        'opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
-      );
-      return const InvitationIntentResult(
-        code: 0,
-        message: 'Skipped stale capsule quick sync',
-      );
-    }
-
-    if (_shouldSkipQuickTransportSync(force: force)) {
-      debugPrint('[StartupTiming] quick_sync_skipped_reason=$reason');
-      return const InvitationIntentResult(
-        code: 0,
-        message: 'Skipped duplicate quick sync',
-      );
-    }
-
-    _transportQuickSyncInFlight = true;
-    try {
-      final quick = await _invitationIntents.fetchInvitationsQuick(
-        capsuleHex: capsuleHex,
-      );
-      if (quick.code == -1003) {
-        debugPrint(
-          '[StartupTiming] quick_sync_timeout_fallback_full reason=$reason',
-        );
-        return await _invitationIntents.fetchInvitations(
-          capsuleHex: capsuleHex,
-        );
-      }
-      return quick;
-    } finally {
-      _transportQuickSyncInFlight = false;
-      _lastTransportQuickSyncAt = DateTime.now();
-    }
-  }
-
-  Future<void> _receiveAttestationsBestEffort({
-    required String reason,
-    String? capsuleHex,
-  }) async {
-    if (_isStaleCapsuleSyncRequest(capsuleHex)) {
-      await _uiLog.log(
-        'attestation.receive',
-        'reason=$reason skipped=stale opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
-      );
-      return;
-    }
-    if (_attestationSyncInFlight) {
-      await _uiLog.log(
-        'attestation.receive',
-        'reason=$reason skipped=inflight',
-      );
-      return;
-    }
-
-    _attestationSyncInFlight = true;
-    try {
-      final result = await _module.consensusAttestations.receiveAndStore();
-      await _uiLog.log(
-        'attestation.receive',
-        'reason=$reason code=${result.code} received=${result.receivedCount} '
-            'stored=${result.storedCount} rejected=${result.rejectedCount}',
-      );
-      if (!mounted) return;
-      if (_isStaleCapsuleSyncRequest(capsuleHex)) {
-        await _uiLog.log(
-          'attestation.receive',
-          'reason=$reason skipped=stale_after_receive opCapsule=$capsuleHex activeCapsule=$_activeCapsuleHex',
-        );
-        return;
-      }
-      if (result.storedCount > 0) {
-        unawaited(_answerStoredAttestations(result.storedEvidence));
-        _loadCapsuleData();
-      }
-    } catch (error) {
-      await _uiLog.log('attestation.receive', 'reason=$reason error=$error');
-    } finally {
-      _attestationSyncInFlight = false;
-    }
-  }
-
-  Future<void> _answerStoredAttestations(
-    List<ConsensusAttestationEvidence> evidence,
+  Future<void> _handlePassiveReceiveResult(
+    CapsulePassiveReceiveResult result,
   ) async {
-    if (evidence.isEmpty || _activeCapsuleHex.isEmpty) return;
-    final peers = <String>{};
-    for (final item in evidence) {
-      if (!item.pairRootsSorted.contains(_activeCapsuleHex)) continue;
-      for (final root in item.pairRootsSorted) {
-        if (root != _activeCapsuleHex) peers.add(root);
-      }
+    final appliesAutomatically = switch (result.reason) {
+      CapsulePassiveReceiveReason.launch ||
+      CapsulePassiveReceiveReason.resume ||
+      CapsulePassiveReceiveReason.connectivity ||
+      CapsulePassiveReceiveReason.periodic ||
+      CapsulePassiveReceiveReason.followUp => true,
+      CapsulePassiveReceiveReason.screenActivation ||
+      CapsulePassiveReceiveReason.postSend ||
+      CapsulePassiveReceiveReason.manual => false,
+    };
+    if (appliesAutomatically) {
+      await _applyPassiveReceiveResult(result);
     }
-    for (final peerRootHex in peers) {
-      try {
-        final result = await _module.attestationExchange.announceForPeer(
-          peerRootHex,
-        );
-        await _uiLog.log(
-          'attestation.answer',
-          'peer=${peerRootHex.substring(0, 8)}.. code=${result.code} '
-              'sent=${result.isSuccess}',
-        );
-      } catch (error) {
-        await _uiLog.log(
-          'attestation.answer',
-          'peer=${peerRootHex.substring(0, 8)}.. error=$error',
-        );
-      }
+  }
+
+  Future<void> _applyPassiveReceiveResult(
+    CapsulePassiveReceiveResult result,
+  ) async {
+    if (!mounted || _isStaleCapsuleSyncRequest(result.capsuleHex)) return;
+    if (result.ingress.code >= 0 ||
+        result.attestations.storedCount > 0 ||
+        result.chat.messages.isNotEmpty ||
+        result.chat.tradeSignals.isNotEmpty) {
+      _loadCapsuleData();
     }
   }
 
@@ -451,15 +261,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       );
       final canRefreshAfterReceive = await _receiveTransportOnLaunch();
       if (!mounted) return;
-      if (canRefreshAfterReceive) {
-        _loadCapsuleData();
-      }
-      unawaited(
-        _receiveAttestationsBestEffort(
-          reason: 'launch',
-          capsuleHex: _activeCapsuleHex,
-        ),
-      );
+      if (!canRefreshAfterReceive) return;
       debugPrint(
         '[StartupTiming] post_receive_refresh_ms='
         '${_launchStopwatch?.elapsedMilliseconds ?? -1}',
@@ -567,8 +369,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _syncRelationshipsTransport() async {
     final operationCapsuleHex = _activeCapsuleHex;
-    await _invitationIntents.fetchInvitations(
+    await _passiveReceive.trigger(
       capsuleHex: operationCapsuleHex,
+      reason: CapsulePassiveReceiveReason.manual,
+      quick: false,
       manualRetry: true,
     );
     if (!mounted) return;
@@ -577,16 +381,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _refreshFromTopBar() async {
     if (_selectedIndex == 1) {
-      final result = await _invitationIntents.fetchInvitations(
+      final result = await _passiveReceive.trigger(
         capsuleHex: _activeCapsuleHex,
+        reason: CapsulePassiveReceiveReason.manual,
+        quick: false,
         manualRetry: true,
       );
       if (!mounted) return;
       _loadCapsuleData();
-      if (result.code < 0) {
+      if (result.ingress.code < 0) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(result.message)));
+        ).showSnackBar(SnackBar(content: Text(result.ingress.message)));
       }
       return;
     }

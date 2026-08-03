@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import '../models/invitation.dart';
 import '../services/app_runtime_service.dart';
 import '../services/capsule_history_projection_service.dart';
+import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/invitation_delivery_service.dart';
 import '../services/invitation_intent_handler.dart';
 import '../services/ui_event_log_service.dart';
@@ -250,9 +251,15 @@ class _StartersScreenState extends State<StartersScreen> {
                                   }
 
                                   if (projectedPending.isEmpty) {
-                                    final quickResult = await _intents
-                                        .fetchInvitationsQuick(
+                                    final quickResult = await widget
+                                        .runtime
+                                        .passiveReceive
+                                        .trigger(
                                           capsuleHex: operationCapsuleHex,
+                                          reason:
+                                              CapsulePassiveReceiveReason
+                                                  .postSend,
+                                          quick: true,
                                         );
                                     projectedPending = _intents
                                         .loadInvitations(
@@ -272,7 +279,7 @@ class _StartersScreenState extends State<StartersScreen> {
                                     unawaited(
                                       _uiLog.log(
                                         'starters.send.ledger_projection.retry',
-                                        'slot=$slotIndex quickFetchCode=${quickResult.code} pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
+                                        'slot=$slotIndex quickFetchCode=${quickResult.ingress.code} pendingMatches=${projectedPending.length} capsule=$operationCapsuleHex',
                                       ),
                                     );
                                   }

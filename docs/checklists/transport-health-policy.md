@@ -73,3 +73,15 @@ background delivery behavior.
     automatic synchronization remains passive.
   - the shared policy exposes a read-only capsule-scoped health snapshot for
     actionable UI diagnostics; the snapshot is not domain or consensus truth.
+- 2026-08-03 passive receive convergence:
+  - `CapsulePassiveReceiveCoordinator` is the sole application owner of
+    launch, resume, connectivity, foreground periodic, screen-activation,
+    post-send, and manual receive scheduling.
+  - one coordinator operation performs one canonical invitation/domain ingress
+    poll and therefore one shared health/backoff decision for invitations,
+    relationships, pair attestations, chat, and trading signals.
+  - pair-attestation and chat/trading receive functions are drain-only after
+    ingress; they do not poll a relay or repeat the health decision.
+  - automatic same-Capsule triggers join active work, while manual retry may
+    create at most one forced follow-up and remains the only bounded cooldown
+    bypass.

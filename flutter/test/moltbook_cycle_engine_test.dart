@@ -12,6 +12,7 @@ import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
 import 'package:hivra_app/services/capsule_contact_label_store.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
+import 'package:hivra_app/services/capsule_passive_receive_coordinator.dart';
 import 'package:hivra_app/services/capsule_scoped_secret_vault.dart';
 import 'package:hivra_app/services/consensus_attestation_exchange_service.dart';
 import 'package:hivra_app/services/external_effect_service.dart';
@@ -48,6 +49,7 @@ void main() {
       pluginHostApi: heartbeatHost,
       attestationExchange: _UnusedAttestationExchange(),
       chatDelivery: _UnusedChatDelivery(),
+      passiveReceive: _UnusedPassiveReceive(),
       contactLabels: _UnusedContactLabels(),
       uiLog: _SilentLog(),
       externalEffects: _UnusedExternalEffects(),
@@ -285,6 +287,16 @@ void main() {
     expect(summary, isNull);
     expect(connection.observeCount, 0);
   });
+}
+
+class _UnusedPassiveReceive implements CapsulePassiveReceivePort {
+  @override
+  Future<CapsulePassiveReceiveResult> trigger({
+    required String capsuleHex,
+    required CapsulePassiveReceiveReason reason,
+    bool quick = true,
+    bool manualRetry = false,
+  }) => throw UnsupportedError('passive receive is unused');
 }
 
 class _CycleConnection implements MoltbookConnectionService {

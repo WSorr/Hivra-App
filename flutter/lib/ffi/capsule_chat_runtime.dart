@@ -47,7 +47,7 @@ Map<String, Object?> sendCapsuleChatInWorker(Map<String, Object?> args) {
   };
 }
 
-Map<String, Object?> receiveCapsuleChatInWorker(Map<String, Object?> args) {
+Map<String, Object?> drainCapsuleChatInWorker(Map<String, Object?> args) {
   final hivra = HivraBindings();
   if (!_bootstrapWorkerRuntime(hivra, args)) {
     return <String, Object?>{

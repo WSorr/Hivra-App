@@ -2,8 +2,7 @@ import 'app_runtime_service.dart';
 import 'ai_tooling_module_service.dart';
 import 'capsule_history_ai_advisor_service.dart';
 import 'capsule_history_projection_service.dart';
-import 'consensus_attestation_exchange_service.dart';
-import 'consensus_attestation_sync_service.dart';
+import 'capsule_passive_receive_coordinator.dart';
 import 'relationship_service.dart';
 import 'settings_service.dart';
 
@@ -11,16 +10,14 @@ class MainScreenModule {
   final RelationshipService Function({String? activeCapsuleHex})
   relationshipService;
   final SettingsService Function() settingsService;
-  final ConsensusAttestationSyncService consensusAttestations;
-  final ConsensusAttestationExchangeService attestationExchange;
+  final CapsulePassiveReceiveCoordinator passiveReceive;
   final CapsuleHistoryProjectionService capsuleHistory;
   final CapsuleHistoryAiAdvisorService capsuleHistoryAi;
 
   const MainScreenModule({
     required this.relationshipService,
     required this.settingsService,
-    required this.consensusAttestations,
-    required this.attestationExchange,
+    required this.passiveReceive,
     required this.capsuleHistory,
     required this.capsuleHistoryAi,
   });
@@ -36,8 +33,7 @@ class MainScreenModuleService {
     return MainScreenModule(
       relationshipService: runtime.buildRelationshipService,
       settingsService: runtime.buildSettingsService,
-      consensusAttestations: runtime.buildConsensusAttestationSyncService(),
-      attestationExchange: runtime.buildConsensusAttestationExchangeService(),
+      passiveReceive: runtime.passiveReceive,
       capsuleHistory: CapsuleHistoryProjectionService(
         exportLedger: runtime.exportLedger,
         projectHistoryView: runtime.projectHistoryViewV1,
