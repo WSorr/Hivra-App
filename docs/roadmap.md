@@ -124,17 +124,22 @@ release-engineering axis, not an incidental local-machine detail and not a
 bridge migration. Its current matrix, invariants, dedicated update units, and
 required evidence are defined in `docs/platform-toolchain-evolution.md`.
 
-The active toolchain item is `T0`: make the verified baseline executable and
-reproducible. It must not be bundled with the current continuous-ledger pass.
-Future Flutter/Dart or Android build-stack updates are separate units and
-require fresh macOS and Android artifact smoke before publication.
+Toolchain item `T0` completed on 2026-08-03 without changing any toolchain
+version. The repository contains one non-secret compatibility manifest, an
+exact Rust toolchain and target pin, and one fail-closed verifier with static,
+full-local, and self-test modes. Release preflight and platform checklists
+require the full verifier; CI verifies the repository-owned subset and
+mismatch behavior.
 
-Environment audit on 2026-08-03 confirmed that the exercised baseline still
-builds on the documented stack, but T0 is not complete: Flutter and Rust are
-not repository-pinned, shell Gradle and Flutter resolve different supported
-JDKs, and no checked-in verification command rejects drift. Newer stable
-Flutter/Dart and Rust versions are available; they remain candidates for
-separate post-T0 upgrade units, not implicit updates.
+Flutter-resolved JBR 21 is the canonical Android build JDK. A direct shell
+Gradle invocation may inherit another host JDK, but that is diagnostic evidence
+and not a second build authority. Local SDK paths remain untracked and are
+resolved only by the full verifier. T0 does not activate T1 automatically:
+newer Flutter/Dart, Rust, or Android versions remain candidates for separately
+selected upgrade units with fresh macOS and Android artifact evidence. T0 exit
+evidence is fresh build `100000327`: all automated gates passed, macOS packaged
+`x86_64 + arm64`, Android packaged all three required ABIs, and both artifacts
+cold-started without fatal evidence.
 
 ## Current Priorities
 

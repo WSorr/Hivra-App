@@ -13,6 +13,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 
 - [ ] `main` contains the intended release commits.
 - [ ] Tracked worktree and index are clean before packaging.
+- [ ] `tools/toolchain/verify_environment.sh --full` passes against the checked-in baseline.
 - [ ] `tools/release/preflight.sh` passes before packaging.
 - [ ] `flutter build macos --release` succeeds.
 - [ ] Release packaging used `tools/release/macos_release.sh` with explicit `--channel` (`test` or `public`).

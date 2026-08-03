@@ -47,7 +47,7 @@ Release scripts remain the authority for embedded app version and packaging.
 | Android Gradle Plugin | 8.13.2 | Android build graph |
 | Gradle wrapper | 8.13 | Android build graph |
 | Kotlin plugin | 2.2.20 | Android embedding and keystore bridge |
-| JDK | Android Studio JBR 21 through Flutter; Homebrew OpenJDK 17 from a plain shell Gradle invocation | Android build execution; both are supported, but the unresolved selector is T0 drift |
+| JDK | Android Studio JBR 21 resolved through Flutter | Canonical Android build execution environment; plain shell Gradle JDK selection is noncanonical diagnostic evidence |
 | Android NDK | 28.2.13676358 | `cargo ndk` Rust FFI build |
 | Xcode | 26.6 | macOS packaging and native loading |
 | CocoaPods | 1.16.2 | macOS Flutter plugins |
@@ -62,19 +62,27 @@ Observed host evidence:
 - the connected Android device runs Android 16 / API 36;
 - all required Android Rust targets plus `wasm32-unknown-unknown` are installed.
 
-The baseline is **supported and recently exercised**, but it is not yet
-reproducible from repository state alone. T0 must close these gaps before an
-upgrade:
+The exercised baseline is now represented by one checked-in, non-secret
+contract:
 
-1. Flutter `3.41.2` is selected by the local Android properties SDK path, not
-   a checked-in repository pin.
-2. Rust `1.93.0` is the host default; there is no checked-in
-   `rust-toolchain.toml` selecting the toolchain and required targets.
-3. JDK selection differs between Flutter and a plain Gradle shell invocation.
-4. Android SDK paths correctly remain local, but no checked-in command verifies
-   the required package versions after resolving those paths.
-5. The repository has no single environment-verification command that reports
-   all supported mismatches before a build starts.
+1. `toolchains/hivra-baseline.conf` records the complete supported version
+   matrix without local paths, credentials, or signing identities.
+2. `rust-toolchain.toml` selects Rust `1.93.0`, the minimal profile, `rustfmt`,
+   and every required repository target.
+3. `tools/toolchain/verify_environment.sh --static` validates repository-owned
+   pins and build configuration; `--full` additionally resolves and validates
+   the complete local macOS and Android environment.
+4. `--self-test` proves that a mismatched version fails closed and reports both
+   expected and actual values.
+5. Flutter-resolved JBR 21 is the canonical Gradle JDK. A direct shell Gradle
+   invocation may resolve a different host JDK, but it is diagnostic evidence,
+   not a second supported build authority.
+
+Local Flutter and Android SDK paths correctly remain untracked. The full
+verifier resolves them from `flutter/android/local.properties` and rejects a
+missing path or package mismatch before release packaging. Simulator-runtime
+discovery remains an explicit warning because it does not affect the macOS or
+Android T0 artifact contract; it cannot support a future iOS evidence claim.
 
 ### Upstream Currency Snapshot
 
@@ -162,7 +170,22 @@ Exit evidence:
   native libraries;
 - no generated artifact or local machine path enters Git.
 
-Status: planned; this is the next platform-evolution unit.
+Completion evidence (2026-08-03):
+
+- verifier self-test, static verification, and full local verification passed;
+- `flutter analyze`, all `737` Flutter tests, `cargo test --workspace`, and
+  `tools/review/review_all.sh` passed;
+- fresh release build `100000327` packaged a universal macOS
+  `libhivra_ffi.dylib` with `x86_64 + arm64` and Android
+  `libhivra_ffi.so` for `arm64-v8a`, `armeabi-v7a`, and `x86_64`;
+- the macOS library SHA-256 was
+  `7b0bbba8f5e97d5369197be27a335b2d3c69e4db78cd86dc4d5d728928a84210`;
+- the Android APK SHA-256 was
+  `e9b778bb7cde5dc0fe01265a44af820450d6eb462461bdd11ab3946247b5be80`;
+- both fresh artifacts cold-started without fatal startup evidence, and the
+  smoke processes were stopped afterward.
+
+Status: completed. T1 is not activated automatically by T0 completion.
 
 ### T1: Flutter/Dart stable update
 

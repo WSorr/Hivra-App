@@ -172,6 +172,9 @@ main() {
   echo "Hivra release preflight"
   echo "Workspace: $ROOT"
 
+  run_step "Pinned Toolchain Environment" \
+    "$ROOT/tools/toolchain/verify_environment.sh" --full
+
   run_step "Topology / Dependency / Security Review" \
     "$ROOT/tools/review/review_all.sh"
 

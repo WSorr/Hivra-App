@@ -18,6 +18,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ripgrep
 
+      - name: Verify repository toolchain pins
+        run: |
+          bash tools/toolchain/verify_environment.sh --self-test
+          bash tools/toolchain/verify_environment.sh --static
+
       - name: Review gates
         run: bash tools/review/review_all.sh
 

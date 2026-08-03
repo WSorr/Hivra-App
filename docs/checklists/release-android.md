@@ -11,6 +11,7 @@ tools/release/check_manual_release_signoff.sh --build-tag <version-tag> --platfo
 
 ## Build
 
+- [ ] `tools/toolchain/verify_environment.sh --full` passes against the checked-in baseline.
 - [ ] `tools/release/preflight.sh` passes before packaging.
 - [ ] Tracked worktree and index are clean before packaging.
 - [ ] `tools/release/android_release.sh --version <version> --channel <test|public>` is used for packaging.

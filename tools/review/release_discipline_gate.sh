@@ -57,6 +57,9 @@ DRONE_EVIDENCE_CHECK="$ROOT/tools/release/check_trading_drone_evidence.sh"
 MANUAL_SIGNOFF_CHECK="$ROOT/tools/release/check_manual_release_signoff.sh"
 GITHUB_RELEASE_PUBLISH="$ROOT/tools/release/publish_github_release.sh"
 FLUTTER_VERSION_DERIVER="$ROOT/tools/release/derive_flutter_version.sh"
+TOOLCHAIN_VERIFY="$ROOT/tools/toolchain/verify_environment.sh"
+TOOLCHAIN_BASELINE="$ROOT/toolchains/hivra-baseline.conf"
+RUST_TOOLCHAIN="$ROOT/rust-toolchain.toml"
 
 require_file "$PRECHECK" "preflight script exists"
 require_file "$MAC_RELEASE_SCRIPT" "macOS release script exists"
@@ -79,6 +82,9 @@ require_file "$MANUAL_SIGNOFF_CHECK" "manual release signoff-check script exists
 require_file "$GITHUB_RELEASE_PUBLISH" "guarded GitHub release publish script exists"
 require_file "$FLUTTER_VERSION_DERIVER" "Flutter artifact version derivation exists"
 require_file "$CI_RELEASE_GATES" "root GitHub release-gates workflow exists"
+require_file "$TOOLCHAIN_VERIFY" "toolchain environment verifier exists"
+require_file "$TOOLCHAIN_BASELINE" "toolchain baseline manifest exists"
+require_file "$RUST_TOOLCHAIN" "Rust toolchain pin exists"
 
 require_present "$ROADMAP" '^### 6\. Release Preflight as a Gate' \
   "roadmap tracks release preflight gate"
@@ -91,6 +97,8 @@ require_present "$ROADMAP" '^### 8\.1 Android Runtime Hardening' \
 
 require_present "$CHECKLIST_MAC" 'tools/release/preflight\.sh' \
   "macOS checklist requires preflight run"
+require_present "$CHECKLIST_MAC" 'tools/toolchain/verify_environment\.sh --full' \
+  "macOS checklist requires pinned toolchain verification"
 require_present "$CHECKLIST_MAC" 'Tracked worktree and index are clean before packaging' \
   "macOS checklist requires clean tracked worktree"
 require_present "$MAC_RELEASE_SCRIPT" 'release_version_guard\.sh' \
@@ -177,6 +185,8 @@ require_present "$CHECKLIST_MAC" '`test` => pre-release, `public` => stable rele
   "macOS checklist requires pre-release flag/channel mapping"
 require_present "$CHECKLIST_ANDROID" 'Invitation send succeeds' \
   "Android checklist covers invitation send flow"
+require_present "$CHECKLIST_ANDROID" 'tools/toolchain/verify_environment\.sh --full' \
+  "Android checklist requires pinned toolchain verification"
 require_present "$CHECKLIST_ANDROID" 'Invitation accept succeeds' \
   "Android checklist covers invitation accept flow"
 require_present "$CHECKLIST_ANDROID" 'Trading Drone smoke gate completed' \
@@ -355,6 +365,8 @@ require_present "$CHECKLIST_AI_ENGINEER_SMOKE" 'AI advisory output is marked unv
 
 require_present "$PRECHECK" 'tools/review/review_all\.sh' \
   "preflight executes review_all"
+require_present "$PRECHECK" 'tools/toolchain/verify_environment\.sh' \
+  "preflight verifies the pinned toolchain environment"
 require_present "$PRECHECK" 'cargo test -p hivra-ffi' \
   "preflight executes Rust FFI tests"
 require_present "$PRECHECK" 'flutter analyze' \
@@ -435,6 +447,10 @@ require_present "$REVIEW_ALL" 'user_lifetime_safety_gate\.sh' \
   "review_all includes user lifetime safety gate"
 require_present "$CI_RELEASE_GATES" 'tools/review/review_all\.sh' \
   "GitHub release-gates workflow runs review gates"
+require_present "$CI_RELEASE_GATES" 'tools/toolchain/verify_environment\.sh --static' \
+  "GitHub release-gates workflow verifies repository toolchain pins"
+require_present "$CI_RELEASE_GATES" 'tools/toolchain/verify_environment\.sh --self-test' \
+  "GitHub release-gates workflow proves toolchain mismatch failure"
 require_present "$CI_RELEASE_GATES" 'tools/release/check_manual_release_signoff\.sh --self-test' \
   "GitHub release-gates workflow runs manual signoff self-test"
 
