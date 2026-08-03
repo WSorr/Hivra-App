@@ -1945,10 +1945,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `arm64-v8a`, `armeabi-v7a`, and `x86_64`; both fresh artifacts cold-start
       without fatal terminal evidence. Live provider use remains an explicit
       credentialed user action rather than an automated gate.
-  - Next selected unit: AI-2 migrates only `AiDeveloperEngineerService` while
-    preserving its selected-context disclosure, denylisted-path checks, and
-    advisory-only result semantics.
-  - Status: AI-1 implementation complete; three legacy feature-owned provider
+  - AI-2 completed on 2026-08-03:
+    - migrated only `AiDeveloperEngineerService` through the existing runtime
+      and deleted its direct credential, provider DTO, adapter, and dispatch
+      ownership;
+    - preserved selected-context disclosure, denylisted paths, payload preview,
+      provider/model controls, and advisory-only semantics;
+    - bound explicit provider and model policy into canonical request identity,
+      rejected mismatched response evidence, and separated temporary provider
+      unlock from persistent preferred-provider state;
+    - reduced callable legacy dispatch and credential-reader paths from three
+      to two and hardened the executable gate against restoring Developer
+      Engineer's old path;
+    - focused runtime/history/developer/credential tests pass `30/30`;
+      `flutter analyze`, all `751` Flutter tests, `cargo test --workspace`, and
+      `tools/review/review_all.sh` pass;
+    - build `100000329` produces a universal macOS bundle and Android APK with
+      `arm64-v8a`, `armeabi-v7a`, and `x86_64`; both fresh artifacts cold-start
+      without fatal terminal evidence. Live inference remains an explicit
+      credentialed user action rather than an automated gate.
+  - Next selected unit: AI-3 migrates only `AiDoctorChatService` while
+    preserving disclosure preview and consolidating provider configuration
+    without a second credential-management owner.
+  - Status: AI-2 implementation complete; two legacy feature-owned provider
     paths remain and may only decrease.
 
 ## Planned Product Tracks

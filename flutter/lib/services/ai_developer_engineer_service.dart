@@ -2,9 +2,7 @@ import 'dart:convert';
 
 import 'ai_capsule_inspection_service.dart';
 import 'ai_developer_workspace_service.dart';
-import 'ai_doctor_credential_store.dart';
-import 'ai_doctor_prompt_service.dart';
-import 'inference_provider_adapter.dart';
+import 'capsule_ai_runtime_service.dart';
 
 class AiDeveloperEngineerPreview {
   final String capsuleSnapshotHashHex;
@@ -22,42 +20,42 @@ class AiDeveloperEngineerPreview {
 
 class AiDeveloperEngineerResult {
   final AiDeveloperEngineerPreview preview;
-  final InferenceProviderResponse providerResponse;
+  final String text;
+  final String providerId;
+  final String providerLabel;
+  final String model;
 
   const AiDeveloperEngineerResult({
     required this.preview,
-    required this.providerResponse,
+    required this.text,
+    required this.providerId,
+    required this.providerLabel,
+    required this.model,
   });
 }
 
 class AiDeveloperEngineerService {
   static const String defaultModel = 'gpt-5.5';
+  static const String defaultProviderId = 'openai';
   static const int maxPayloadBytes = 96000;
+  static const String capabilityId = 'hivra.developer_engineer';
+  static const String proposalSchemaId = 'hivra.developer_engineer.advisory.v1';
   static final RegExp _denylistedPathPattern = RegExp(
     r'(^|/)(\.env[^/]*|.*\.pem|.*\.key|capsule_seeds\.json|bingx_futures_credentials\.json|.*credential.*\.json)$',
     caseSensitive: false,
   );
 
-  final AiDoctorCredentialStore _credentialStore;
-  final InferenceProviderAdapter Function(InferenceProviderKind provider)
-      _providerAdapterFactory;
+  final CapsuleInferenceRuntime _runtime;
 
-  AiDeveloperEngineerService({
-    required AiDoctorCredentialStore credentialStore,
-    InferenceProviderAdapter? providerAdapter,
-    InferenceProviderAdapter Function(InferenceProviderKind provider)?
-        providerAdapterFactory,
-  })  : _credentialStore = credentialStore,
-        _providerAdapterFactory = providerAdapterFactory ??
-            ((provider) =>
-                providerAdapter ?? inferenceProviderAdapterFor(provider));
+  AiDeveloperEngineerService({required CapsuleInferenceRuntime runtime})
+    : _runtime = runtime;
 
-  Future<void> savePreferredProvider(InferenceProviderKind provider) {
-    return _credentialStore.savePreferredProvider(provider);
+  Future<void> savePreferredProviderId(String providerId) {
+    return _runtime.savePreferredProviderId(providerId);
   }
 
-  Future<InferenceProviderKind?> loadPreferredProvider() {
-    return _credentialStore.loadPreferredProvider();
+  Future<String?> loadPreferredProviderId() {
+    return _runtime.loadPreferredProviderId();
   }
 
   AiDeveloperEngineerPreview preview({
@@ -77,42 +75,48 @@ class AiDeveloperEngineerService {
     required AiDeveloperWorkspaceSelectedContext selectedContext,
     required String question,
     String model = defaultModel,
-    InferenceProviderKind provider = InferenceProviderKind.openAi,
+    String providerId = defaultProviderId,
   }) async {
-    final apiKey = await _credentialStore.loadApiKey(provider);
-    if (provider.requiresApiKey && (apiKey == null || apiKey.trim().isEmpty)) {
-      throw StateError('${provider.label} API key is not saved');
-    }
-    final baseUrl = await _credentialStore.loadBaseUrl(provider);
-    if (provider == InferenceProviderKind.localOpenAiCompatible &&
-        (baseUrl == null || baseUrl.trim().isEmpty)) {
-      throw StateError('${provider.label} base URL is not saved');
-    }
     final prompt = _buildPrompt(
       snapshot: snapshot,
       selectedContext: selectedContext,
       question: question,
     );
-    final wrapped = AiDoctorPrompt(
-      instructions: prompt.instructions,
-      inputJson: prompt.inputJson,
-      preview: AiDoctorOutboundPreview(
-        snapshotHashHex: prompt.preview.capsuleSnapshotHashHex,
-        sections: const <AiDoctorContextSection>[],
-        payloadBytes: prompt.preview.payloadBytes,
-        userQueryBytes: utf8.encode(question.trim()).length,
-        secretsRedacted: true,
+    final capsuleRootHex = _runtime.requireActiveCapsuleRootHex();
+    await _runtime.unlockProviderSession(providerId);
+    final normalizedModel = model.trim();
+    final response = await _runtime.infer(
+      CapsuleInferenceRequestV1.create(
+        capsuleRootHex: capsuleRootHex,
+        capabilityId: capabilityId,
+        disclosureSchemaVersion: 1,
+        disclosedSectionIds: const <String>[
+          'capsule_snapshot',
+          'developer_context',
+          'question',
+        ],
+        proposalSchemaId: proposalSchemaId,
+        proposalSchemaVersion: 1,
+        cancellationScope: '$capabilityId:$capsuleRootHex',
+        instructions: prompt.instructions,
+        input: prompt.payload,
+        providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
+        providerId: providerId,
+        modelPolicy:
+            normalizedModel.isEmpty
+                ? CapsuleInferenceModelPolicyV1.providerDefault
+                : CapsuleInferenceModelPolicyV1.explicit,
+        model: normalizedModel.isEmpty ? null : normalizedModel,
+        maxInputBytes: maxPayloadBytes,
+        maxOutputBytes: CapsuleInferenceRequestV1.maxSupportedOutputBytes,
       ),
-    );
-    final response = await _providerAdapterFactory(provider).ask(
-      apiKey: apiKey ?? '',
-      model: model.trim().isEmpty ? provider.defaultModel : model,
-      prompt: wrapped,
-      baseUrl: baseUrl,
     );
     return AiDeveloperEngineerResult(
       preview: prompt.preview,
-      providerResponse: response,
+      text: response.proposalText,
+      providerId: response.providerId,
+      providerLabel: response.providerLabel,
+      model: response.model,
     );
   }
 
@@ -162,7 +166,7 @@ class AiDeveloperEngineerService {
         'selected_context_only': true,
       },
     };
-    final inputJson = const JsonEncoder.withIndent('  ').convert(payload);
+    final inputJson = CapsuleInferenceCanonicalJson.encode(payload);
     final payloadBytes = utf8.encode(inputJson).length;
     if (payloadBytes > maxPayloadBytes) {
       throw StateError(
@@ -171,7 +175,7 @@ class AiDeveloperEngineerService {
     }
     return _DeveloperEngineerPrompt(
       instructions: _instructions,
-      inputJson: inputJson,
+      payload: payload,
       preview: AiDeveloperEngineerPreview(
         capsuleSnapshotHashHex: snapshot.snapshotHashHex,
         developerContextHashHex: selectedContext.contextHashHex,
@@ -194,12 +198,12 @@ If evidence is insufficient, state exactly what selected evidence is missing.
 
 class _DeveloperEngineerPrompt {
   final String instructions;
-  final String inputJson;
+  final Object payload;
   final AiDeveloperEngineerPreview preview;
 
   const _DeveloperEngineerPrompt({
     required this.instructions,
-    required this.inputJson,
+    required this.payload,
     required this.preview,
   });
 }

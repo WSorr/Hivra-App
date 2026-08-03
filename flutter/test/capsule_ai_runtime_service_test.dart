@@ -27,6 +27,25 @@ void main() {
     expect(second.requestId, first.requestId);
   });
 
+  test('explicit provider and model are bound into request identity', () {
+    final first = _request(
+      providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
+      providerId: 'openai',
+      modelPolicy: CapsuleInferenceModelPolicyV1.explicit,
+      model: 'gpt-5.5',
+    );
+    final second = _request(
+      providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
+      providerId: 'gemini',
+      modelPolicy: CapsuleInferenceModelPolicyV1.explicit,
+      model: 'gemini-2.5-flash',
+    );
+
+    expect(first.requestId, isNot(second.requestId));
+    expect(first.providerId, 'openai');
+    expect(first.model, 'gpt-5.5');
+  });
+
   test(
     'routes one bound request through the unlocked preferred provider',
     () async {
@@ -175,6 +194,20 @@ void main() {
     );
   });
 
+  test('response model must match the bound request model', () async {
+    final runtime = CapsuleAiRuntimeService(
+      credentialStore: _SessionCredentialStore(),
+      readActiveCapsuleRootHex: () => _capsuleA,
+      adapterFactory:
+          (_) => _RecordingAdapter(responseModel: 'unexpected-model'),
+    );
+
+    await expectLater(
+      runtime.infer(_request()),
+      throwsA(_failure(CapsuleInferenceFailureCode.invalidResponse)),
+    );
+  });
+
   test('adapter key confusion fails before credential disclosure', () async {
     final adapter = _RecordingAdapter(
       adapterProvider: InferenceProviderKind.openAi,
@@ -192,6 +225,37 @@ void main() {
     expect(adapter.callCount, 0);
     expect(adapter.apiKey, isNull);
   });
+
+  test(
+    'explicit provider and model use the selected unlocked session',
+    () async {
+      final store = _SessionCredentialStore();
+      final adapter = _RecordingAdapter(
+        adapterProvider: InferenceProviderKind.openAi,
+        responseProvider: InferenceProviderKind.openAi,
+      );
+      final runtime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleA,
+        adapterFactory: (_) => adapter,
+      );
+      await runtime.unlockProviderSession('openai');
+
+      final result = await runtime.infer(
+        _request(
+          providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
+          providerId: 'openai',
+          modelPolicy: CapsuleInferenceModelPolicyV1.explicit,
+          model: 'gpt-test',
+        ),
+      );
+
+      expect(adapter.apiKey, 'openai-key');
+      expect(adapter.model, 'gpt-test');
+      expect(result.providerId, 'openai');
+      expect(result.model, 'gpt-test');
+    },
+  );
 
   test(
     'process scheduler serializes requests across runtime instances',
@@ -267,6 +331,12 @@ CapsuleInferenceRequestV1 _request({
   int maxOutputBytes = 1024,
   int timeoutMilliseconds = 60000,
   String cancellationScope = 'hivra.test.capability:$_capsuleA',
+  CapsuleInferenceProviderPolicyV1 providerPolicy =
+      CapsuleInferenceProviderPolicyV1.preferred,
+  String? providerId,
+  CapsuleInferenceModelPolicyV1 modelPolicy =
+      CapsuleInferenceModelPolicyV1.providerDefault,
+  String? model,
 }) {
   return CapsuleInferenceRequestV1.create(
     capsuleRootHex: _capsuleA,
@@ -278,6 +348,10 @@ CapsuleInferenceRequestV1 _request({
     cancellationScope: cancellationScope,
     instructions: 'Return one bounded advisory proposal.',
     input: input,
+    providerPolicy: providerPolicy,
+    providerId: providerId,
+    modelPolicy: modelPolicy,
+    model: model,
     maxInputBytes: maxInputBytes,
     maxOutputBytes: maxOutputBytes,
     timeoutMilliseconds: timeoutMilliseconds,
@@ -294,19 +368,20 @@ Matcher _failure(CapsuleInferenceFailureCode code) {
 
 class _SessionCredentialStore extends AiDoctorCredentialStore {
   bool unlocked;
+  InferenceProviderKind preferredProvider = InferenceProviderKind.gemini;
 
   _SessionCredentialStore({this.unlocked = true});
 
   @override
   InferenceProviderKind? get sessionPreferredProvider =>
-      unlocked ? InferenceProviderKind.gemini : null;
+      unlocked ? preferredProvider : null;
 
   @override
   bool get isPreferredProviderUnlocked => unlocked;
 
   @override
   String? sessionApiKey(InferenceProviderKind provider) =>
-      unlocked ? 'gemini-key' : null;
+      unlocked ? '${provider.id}-key' : null;
 
   @override
   String? sessionBaseUrl(InferenceProviderKind provider) => null;
@@ -314,7 +389,26 @@ class _SessionCredentialStore extends AiDoctorCredentialStore {
   @override
   Future<InferenceProviderKind> unlockPreferredProviderSession() async {
     unlocked = true;
-    return InferenceProviderKind.gemini;
+    return preferredProvider;
+  }
+
+  @override
+  Future<InferenceProviderKind> unlockProviderSession(
+    InferenceProviderKind provider,
+  ) async {
+    preferredProvider = provider;
+    unlocked = true;
+    return provider;
+  }
+
+  @override
+  Future<void> savePreferredProvider(InferenceProviderKind provider) async {
+    preferredProvider = provider;
+  }
+
+  @override
+  Future<InferenceProviderKind?> loadPreferredProvider() async {
+    return preferredProvider;
   }
 }
 
@@ -325,9 +419,11 @@ class _RecordingAdapter implements InferenceProviderAdapter {
   final void Function()? onComplete;
   final InferenceProviderKind adapterProvider;
   final InferenceProviderKind responseProvider;
+  final String? responseModel;
   final Completer<void> started = Completer<void>();
   final Completer<void> _release = Completer<void>();
   String? apiKey;
+  String? model;
   InferencePrompt? prompt;
   int callCount = 0;
 
@@ -338,6 +434,7 @@ class _RecordingAdapter implements InferenceProviderAdapter {
     this.onComplete,
     this.adapterProvider = InferenceProviderKind.gemini,
     this.responseProvider = InferenceProviderKind.gemini,
+    this.responseModel,
   });
 
   @override
@@ -352,6 +449,7 @@ class _RecordingAdapter implements InferenceProviderAdapter {
   }) async {
     callCount += 1;
     this.apiKey = apiKey;
+    this.model = model;
     this.prompt = prompt;
     onStart?.call();
     if (!started.isCompleted) started.complete();
@@ -359,7 +457,7 @@ class _RecordingAdapter implements InferenceProviderAdapter {
     onComplete?.call();
     return InferenceProviderResponse(
       text: text,
-      model: model,
+      model: responseModel ?? model,
       provider: responseProvider,
     );
   }

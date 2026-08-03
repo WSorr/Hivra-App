@@ -6,9 +6,9 @@ import 'package:crypto/crypto.dart';
 import 'ai_doctor_credential_store.dart';
 import 'inference_provider_adapter.dart';
 
-enum CapsuleInferenceProviderPolicyV1 { preferred }
+enum CapsuleInferenceProviderPolicyV1 { preferred, explicit }
 
-enum CapsuleInferenceModelPolicyV1 { providerDefault }
+enum CapsuleInferenceModelPolicyV1 { providerDefault, explicit }
 
 enum CapsuleInferenceFailureCode {
   invalidRequest,
@@ -48,7 +48,9 @@ class CapsuleInferenceRequestV1 {
   final String proposalSchemaId;
   final int proposalSchemaVersion;
   final CapsuleInferenceProviderPolicyV1 providerPolicy;
+  final String? providerId;
   final CapsuleInferenceModelPolicyV1 modelPolicy;
+  final String? model;
   final int maxInputBytes;
   final int maxOutputBytes;
   final int timeoutMilliseconds;
@@ -68,7 +70,9 @@ class CapsuleInferenceRequestV1 {
     required this.proposalSchemaId,
     required this.proposalSchemaVersion,
     required this.providerPolicy,
+    required this.providerId,
     required this.modelPolicy,
+    required this.model,
     required this.maxInputBytes,
     required this.maxOutputBytes,
     required this.timeoutMilliseconds,
@@ -88,6 +92,12 @@ class CapsuleInferenceRequestV1 {
     required String cancellationScope,
     required String instructions,
     required Object input,
+    CapsuleInferenceProviderPolicyV1 providerPolicy =
+        CapsuleInferenceProviderPolicyV1.preferred,
+    String? providerId,
+    CapsuleInferenceModelPolicyV1 modelPolicy =
+        CapsuleInferenceModelPolicyV1.providerDefault,
+    String? model,
     int maxInputBytes = maxSupportedInputBytes,
     int maxOutputBytes = maxSupportedOutputBytes,
     int timeoutMilliseconds = 60000,
@@ -97,6 +107,8 @@ class CapsuleInferenceRequestV1 {
     final normalizedProposalSchema = proposalSchemaId.trim();
     final normalizedCancellationScope = cancellationScope.trim();
     final normalizedInstructions = instructions.trim();
+    final normalizedProviderId = providerId?.trim().toLowerCase();
+    final normalizedModel = model?.trim();
     final normalizedSections = disclosedSectionIds
       .map((section) => section.trim())
       .where((section) => section.isNotEmpty)
@@ -116,8 +128,10 @@ class CapsuleInferenceRequestV1 {
       'disclosed_section_ids': normalizedSections,
       'proposal_schema_id': normalizedProposalSchema,
       'proposal_schema_version': proposalSchemaVersion,
-      'provider_policy': CapsuleInferenceProviderPolicyV1.preferred.name,
-      'model_policy': CapsuleInferenceModelPolicyV1.providerDefault.name,
+      'provider_policy': providerPolicy.name,
+      'provider_id': normalizedProviderId,
+      'model_policy': modelPolicy.name,
+      'model': normalizedModel,
       'max_input_bytes': maxInputBytes,
       'max_output_bytes': maxOutputBytes,
       'timeout_milliseconds': timeoutMilliseconds,
@@ -135,8 +149,10 @@ class CapsuleInferenceRequestV1 {
       disclosureByteCount: disclosureBytes.length,
       proposalSchemaId: normalizedProposalSchema,
       proposalSchemaVersion: proposalSchemaVersion,
-      providerPolicy: CapsuleInferenceProviderPolicyV1.preferred,
-      modelPolicy: CapsuleInferenceModelPolicyV1.providerDefault,
+      providerPolicy: providerPolicy,
+      providerId: normalizedProviderId,
+      modelPolicy: modelPolicy,
+      model: normalizedModel,
       maxInputBytes: maxInputBytes,
       maxOutputBytes: maxOutputBytes,
       timeoutMilliseconds: timeoutMilliseconds,
@@ -181,7 +197,13 @@ class CapsuleInferenceResultV1 {
 abstract class CapsuleInferenceRuntime {
   String requireActiveCapsuleRootHex();
 
+  Future<void> savePreferredProviderId(String providerId);
+
+  Future<String?> loadPreferredProviderId();
+
   Future<void> unlockPreferredProviderSession();
+
+  Future<void> unlockProviderSession(String providerId);
 
   Future<CapsuleInferenceResultV1> infer(CapsuleInferenceRequestV1 request);
 }
@@ -217,8 +239,24 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   }
 
   @override
+  Future<void> savePreferredProviderId(String providerId) async {
+    await _credentialStore.savePreferredProvider(_requireProvider(providerId));
+  }
+
+  @override
+  Future<String?> loadPreferredProviderId() async {
+    return (await _credentialStore.loadPreferredProvider())?.id;
+  }
+
+  @override
   Future<void> unlockPreferredProviderSession() async {
     await _credentialStore.unlockPreferredProviderSession();
+  }
+
+  @override
+  Future<void> unlockProviderSession(String providerId) async {
+    final provider = _requireProvider(providerId);
+    await _credentialStore.unlockProviderSession(provider);
   }
 
   @override
@@ -249,13 +287,18 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
     _validateRequest(request);
     _requireCurrentGeneration(scopeKey, generation);
     _requireMatchingCapsule(request.capsuleRootHex, stale: false);
-    final provider = _credentialStore.sessionPreferredProvider;
-    if (provider == null || !_credentialStore.isPreferredProviderUnlocked) {
+    final provider = _resolveProvider(request);
+    if (_credentialStore.sessionPreferredProvider != provider ||
+        !_credentialStore.isPreferredProviderUnlocked) {
       throw const CapsuleInferenceFailure(
         CapsuleInferenceFailureCode.sessionLocked,
         'AI access is locked for this app session',
       );
     }
+    final requestedModel = switch (request.modelPolicy) {
+      CapsuleInferenceModelPolicyV1.providerDefault => provider.defaultModel,
+      CapsuleInferenceModelPolicyV1.explicit => request.model!,
+    };
     final apiKey = _credentialStore.sessionApiKey(provider);
     final baseUrl = _credentialStore.sessionBaseUrl(provider);
     final adapter = _adapterFactory(provider);
@@ -271,7 +314,7 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
       response = await adapter
           .ask(
             apiKey: apiKey ?? '',
-            model: provider.defaultModel,
+            model: requestedModel,
             baseUrl: baseUrl,
             prompt: InferencePrompt(
               instructions: request.instructions,
@@ -290,8 +333,10 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
     _requireCurrentGeneration(scopeKey, generation);
     _requireMatchingCapsule(request.capsuleRootHex, stale: true);
     final proposalText = response.text.trim();
-    final model = response.model.trim();
-    if (response.provider != provider || model.isEmpty) {
+    final responseModel = response.model.trim();
+    if (response.provider != provider ||
+        responseModel.isEmpty ||
+        responseModel != requestedModel) {
       throw const CapsuleInferenceFailure(
         CapsuleInferenceFailureCode.invalidResponse,
         'AI provider response evidence is invalid',
@@ -315,7 +360,7 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
       proposalText: proposalText,
       providerId: response.provider.id,
       providerLabel: response.provider.label,
-      model: model,
+      model: responseModel,
       responseHashHex: sha256.convert(responseBytes).toString(),
       elapsedMilliseconds: stopwatch.elapsedMilliseconds,
     );
@@ -330,6 +375,8 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
         request.disclosedSectionIds.isEmpty ||
         request.proposalSchemaId.isEmpty ||
         request.proposalSchemaVersion != 1 ||
+        !_hasValidProviderPolicy(request) ||
+        !_hasValidModelPolicy(request) ||
         request.cancellationScope.isEmpty ||
         request.instructions.isEmpty ||
         request.maxConcurrentRequests != 1 ||
@@ -362,6 +409,50 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
         'Inference input exceeds ${request.maxInputBytes} UTF-8 bytes',
       );
     }
+  }
+
+  InferenceProviderKind _resolveProvider(CapsuleInferenceRequestV1 request) {
+    return switch (request.providerPolicy) {
+      CapsuleInferenceProviderPolicyV1.preferred =>
+        _credentialStore.sessionPreferredProvider ??
+            (throw const CapsuleInferenceFailure(
+              CapsuleInferenceFailureCode.sessionLocked,
+              'AI access is locked for this app session',
+            )),
+      CapsuleInferenceProviderPolicyV1.explicit => _requireProvider(
+        request.providerId!,
+      ),
+    };
+  }
+
+  static bool _hasValidProviderPolicy(CapsuleInferenceRequestV1 request) {
+    return switch (request.providerPolicy) {
+      CapsuleInferenceProviderPolicyV1.preferred => request.providerId == null,
+      CapsuleInferenceProviderPolicyV1.explicit =>
+        request.providerId != null && request.providerId!.isNotEmpty,
+    };
+  }
+
+  static bool _hasValidModelPolicy(CapsuleInferenceRequestV1 request) {
+    return switch (request.modelPolicy) {
+      CapsuleInferenceModelPolicyV1.providerDefault => request.model == null,
+      CapsuleInferenceModelPolicyV1.explicit =>
+        request.model != null &&
+            request.model!.isNotEmpty &&
+            utf8.encode(request.model!).length <= 256 &&
+            !RegExp(r'[\x00-\x1f\x7f]').hasMatch(request.model!),
+    };
+  }
+
+  static InferenceProviderKind _requireProvider(String providerId) {
+    final normalized = providerId.trim().toLowerCase();
+    for (final provider in InferenceProviderKind.values) {
+      if (provider.id == normalized) return provider;
+    }
+    throw const CapsuleInferenceFailure(
+      CapsuleInferenceFailureCode.invalidRequest,
+      'Inference provider is invalid or unsupported',
+    );
   }
 
   void _requireMatchingCapsule(String expected, {required bool stale}) {

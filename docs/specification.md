@@ -596,10 +596,10 @@ Diagnostics:
   pending input checkpoint.
 - Closing the application MUST clear the process-memory AI lease. Hivra 1.x
   does not promise app-closed AI execution.
-- During incremental 1.x convergence, the existing named Analyst, Developer,
-  and Moltbook AI services remain legacy implementation paths. The history
-  advisor is already routed through Capsule AI Runtime and MUST NOT regain
-  direct credential or provider access.
+- During incremental 1.x convergence, the named Analyst and Moltbook AI
+  services remain legacy implementation paths. History Advisor and Developer
+  Engineer are already routed through Capsule AI Runtime and MUST NOT regain
+  direct credential, provider DTO, or provider-adapter access.
   They MUST NOT be copied or extended with another provider/session/scheduler
   path. A change that touches their provider dispatch MUST migrate that path to
   Capsule AI Runtime and delete or seal the replaced entrypoint.

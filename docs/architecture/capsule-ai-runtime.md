@@ -118,6 +118,8 @@ semantic records. This is one runtime contract, not a provider DTO family.
   section ids, and exact UTF-8 byte count;
 - capability-owned proposal schema id and version;
 - provider policy and model policy without a provider-native request object;
+- either the persisted preferred provider/default model policy or an explicit
+  user-selected provider id and bounded model name;
 - input, output, timeout, and concurrency budgets;
 - cancellation/supersession scope;
 - bounded instructions and canonical input JSON.
@@ -175,6 +177,8 @@ user explicitly unlocks the selected provider into one process-memory lease.
 
 The process lease prevents repeated Keychain reads; it is not a global
 capability grant. Capability and disclosure checks still run for every request.
+An explicit one-shot provider unlock changes only the process session. It does
+not silently rewrite the persisted preferred-provider choice.
 
 ## 7. Determinism And Persistence
 
@@ -247,17 +251,31 @@ advisory proposal semantics. Its direct credential and adapter imports are
 deleted, and the executable gate rejects their return. No Core, FFI, truth, or
 effect path changed.
 
-Three legacy feature-owned dispatch paths remain callable:
+### 9.3 AI-2 Developer Engineer Checkpoint
+
+AI-2 routes `AiDeveloperEngineerService` through the same
+`CapsuleAiRuntimeService`. Developer Engineer retains selected-context
+construction, path denylisting, redaction constraints, payload preview, and
+advisory proposal semantics. The runtime now binds explicit provider and model
+selection into request identity, owns temporary session unlock, validates exact
+provider/model response evidence, and keeps persistent preference separate from
+the process session.
+
+The feature's direct credential, provider-adapter, provider DTO, and dispatch
+access are deleted and gated against return. Its existing provider/model UI
+remains available through semantic ids; no Core, FFI, repository-write, patch,
+git, release, truth, or effect authority was added.
+
+Two legacy feature-owned dispatch paths remain callable:
 
 1. `AiDoctorChatService`;
-2. `AiDeveloperEngineerService`;
-3. `MoltbookPublicBulletinAiService`.
+2. `MoltbookPublicBulletinAiService`.
 
-AI-2 is bounded to `AiDeveloperEngineerService`. It is selected before the
-Capsule Analyst because it is advisory-only, already has explicit redacted
-context and denylisted-path policy, and has no credential-configuration UI
-ownership. Moltbook remains last because its proposals feed an effect-owning
-plugin lifecycle and require the strongest regression evidence.
+AI-3 is bounded to `AiDoctorChatService`. It must move inference and provider
+configuration behind the runtime without weakening the existing user-approved
+disclosure preview or creating a second credential-management path. Moltbook
+remains last because its proposals feed an effect-owning plugin lifecycle and
+require the strongest regression evidence.
 
 ## 10. Hivra 2.0 Contract
 

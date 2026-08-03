@@ -20,6 +20,7 @@ class AiDoctorCredentialStore {
       <InferenceProviderKind, String>{};
   final Map<InferenceProviderKind, String> _sessionBaseUrls =
       <InferenceProviderKind, String>{};
+  InferenceProviderKind? _cachedPreferredProvider;
   InferenceProviderKind? _sessionPreferredProvider;
 
   AiDoctorCredentialStore({FlutterSecureStorage? secureStorage})
@@ -113,6 +114,7 @@ class AiDoctorCredentialStore {
         key: _preferredProviderKey,
         value: provider.id,
       );
+      _cachedPreferredProvider = provider;
       _sessionPreferredProvider = provider;
     } catch (error) {
       throw StateError('Secure AI provider preference storage failed: $error');
@@ -120,7 +122,7 @@ class AiDoctorCredentialStore {
   }
 
   Future<InferenceProviderKind?> loadPreferredProvider() async {
-    final cached = _sessionPreferredProvider;
+    final cached = _cachedPreferredProvider;
     if (cached != null) return cached;
     try {
       final stored = await _secureStorage.read(key: _preferredProviderKey);
@@ -128,7 +130,7 @@ class AiDoctorCredentialStore {
       if (normalized == null || normalized.isEmpty) return null;
       for (final provider in InferenceProviderKind.values) {
         if (provider.id == normalized) {
-          _sessionPreferredProvider = provider;
+          _cachedPreferredProvider = provider;
           return provider;
         }
       }
@@ -172,7 +174,10 @@ class AiDoctorCredentialStore {
     final preferred = await loadPreferredProvider();
     if (preferred != provider) return;
     await _secureStorage.delete(key: _preferredProviderKey);
-    _sessionPreferredProvider = null;
+    _cachedPreferredProvider = null;
+    if (_sessionPreferredProvider == provider) {
+      _sessionPreferredProvider = null;
+    }
   }
 
   InferenceProviderKind? get sessionPreferredProvider =>
@@ -201,6 +206,12 @@ class AiDoctorCredentialStore {
   Future<InferenceProviderKind> unlockPreferredProviderSession() async {
     final provider =
         await loadPreferredProvider() ?? InferenceProviderKind.gemini;
+    return unlockProviderSession(provider);
+  }
+
+  Future<InferenceProviderKind> unlockProviderSession(
+    InferenceProviderKind provider,
+  ) async {
     final apiKey = await loadApiKey(provider);
     if (provider.requiresApiKey && (apiKey == null || apiKey.isEmpty)) {
       throw StateError(

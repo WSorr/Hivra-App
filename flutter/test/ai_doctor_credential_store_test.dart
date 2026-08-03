@@ -146,8 +146,28 @@ void main() {
       expect(writer.sessionApiKey(InferenceProviderKind.gemini), 'gemini-key');
 
       await writer.unlockPreferredProviderSession();
-      expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 2);
+      expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 1);
     });
+
+    test(
+      'explicit session unlock does not rewrite preferred provider',
+      () async {
+        final secureStorage = _FakeSecureStorage();
+        final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+        await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
+        await store.saveApiKey(InferenceProviderKind.openAi, 'openai-key');
+        await store.savePreferredProvider(InferenceProviderKind.gemini);
+
+        await store.unlockProviderSession(InferenceProviderKind.openAi);
+
+        expect(store.sessionPreferredProvider, InferenceProviderKind.openAi);
+        expect(
+          await store.loadPreferredProvider(),
+          InferenceProviderKind.gemini,
+        );
+        expect(secureStorage.values.values, contains('gemini'));
+      },
+    );
 
     test('locking clears only the process session', () async {
       final secureStorage = _FakeSecureStorage();

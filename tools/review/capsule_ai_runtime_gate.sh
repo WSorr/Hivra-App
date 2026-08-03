@@ -59,9 +59,8 @@ dispatch_files="$({
 
 check_bounded_files \
   "legacy feature-owned provider dispatch" \
-  3 \
+  2 \
   "$dispatch_files" \
-  flutter/lib/services/ai_developer_engineer_service.dart \
   flutter/lib/services/ai_doctor_chat_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart
 
@@ -81,9 +80,8 @@ adapter_import_files="$({
 
 check_bounded_files \
   "legacy direct inference-adapter imports" \
-  7 \
+  6 \
   "$adapter_import_files" \
-  flutter/lib/services/ai_developer_engineer_service.dart \
   flutter/lib/services/ai_doctor_chat_service.dart \
   flutter/lib/services/ai_doctor_credential_store.dart \
   flutter/lib/services/ai_doctor_prompt_service.dart \
@@ -102,9 +100,8 @@ credential_reader_files="$({
 
 check_bounded_files \
   "legacy feature-owned credential reads" \
-  3 \
+  2 \
   "$credential_reader_files" \
-  flutter/lib/services/ai_developer_engineer_service.dart \
   flutter/lib/services/ai_doctor_chat_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart
 
@@ -116,6 +113,14 @@ else
   pass "history advisor remains behind Capsule AI Runtime"
 fi
 
+if rg -q \
+  "ai_doctor_credential_store\.dart|inference_provider_adapter\.dart|inferenceProviderAdapterFor|loadApiKey\(|sessionApiKey\(|loadBaseUrl\(|sessionBaseUrl\(" \
+  flutter/lib/services/ai_developer_engineer_service.dart; then
+  fail "Developer Engineer must remain behind Capsule AI Runtime"
+else
+  pass "Developer Engineer remains behind Capsule AI Runtime"
+fi
+
 credential_import_files="$({
   rg -l \
     --glob '*.dart' \
@@ -125,9 +130,8 @@ credential_import_files="$({
 
 check_bounded_files \
   "legacy direct credential-store imports" \
-  6 \
+  5 \
   "$credential_import_files" \
-  flutter/lib/services/ai_developer_engineer_service.dart \
   flutter/lib/services/ai_doctor_chat_service.dart \
   flutter/lib/services/ai_tooling_module_service.dart \
   flutter/lib/services/capsule_ai_runtime_service.dart \

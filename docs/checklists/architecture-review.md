@@ -241,7 +241,7 @@ Use this checklist when reviewing structural changes, not just feature behavior.
       `docs/architecture/capsule-ai-runtime.md`.
 - [ ] No screen, drone, or feature service reads a provider credential,
       constructs a concrete inference adapter, or owns a parallel scheduler.
-- [ ] `tools/review/capsule_ai_runtime_gate.sh` passes; the three remaining
+- [ ] `tools/review/capsule_ai_runtime_gate.sh` passes; the two remaining
       1.x feature-owned dispatch paths only decrease and no new path appears.
 - [ ] The process-memory provider lease is host-owned, explicitly unlocked,
       cleared on lock/exit, and never exposed to WASM.

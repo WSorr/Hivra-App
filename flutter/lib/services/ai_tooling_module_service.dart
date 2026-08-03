@@ -19,12 +19,13 @@ class AiToolingModuleService {
     : _runtime = runtime;
 
   AiToolingModule buildModule() {
+    final aiRuntime = _buildCapsuleAiRuntime();
     return AiToolingModule(
       capsuleInspection: buildCapsuleInspectionService(),
       capsuleAnalystChat: buildCapsuleAnalystChatService(),
       pluginAudit: buildPluginAuditService(),
       developerWorkspace: buildDeveloperWorkspaceService(),
-      developerEngineer: buildDeveloperEngineerService(),
+      developerEngineer: buildDeveloperEngineerService(runtime: aiRuntime),
       remoteRepositoryCache: buildDeveloperRemoteRepositoryCacheService(),
       pluginScaffoldDraft: buildPluginScaffoldDraftService(),
       patchProposal: buildPatchProposalService(),
@@ -46,12 +47,7 @@ class AiToolingModuleService {
   }
 
   CapsuleHistoryAiAdvisorService buildCapsuleHistoryAiAdvisorService() {
-    return CapsuleHistoryAiAdvisorService(
-      runtime: CapsuleAiRuntimeService(
-        credentialStore: AiDoctorCredentialStore.shared,
-        readActiveCapsuleRootHex: _runtime.activeCapsuleRootHex,
-      ),
-    );
+    return CapsuleHistoryAiAdvisorService(runtime: _buildCapsuleAiRuntime());
   }
 
   AiPluginAuditService buildPluginAuditService() {
@@ -62,9 +58,18 @@ class AiToolingModuleService {
     return const AiDeveloperWorkspaceService();
   }
 
-  AiDeveloperEngineerService buildDeveloperEngineerService() {
+  AiDeveloperEngineerService buildDeveloperEngineerService({
+    CapsuleInferenceRuntime? runtime,
+  }) {
     return AiDeveloperEngineerService(
+      runtime: runtime ?? _buildCapsuleAiRuntime(),
+    );
+  }
+
+  CapsuleAiRuntimeService _buildCapsuleAiRuntime() {
+    return CapsuleAiRuntimeService(
       credentialStore: AiDoctorCredentialStore.shared,
+      readActiveCapsuleRootHex: _runtime.activeCapsuleRootHex,
     );
   }
 

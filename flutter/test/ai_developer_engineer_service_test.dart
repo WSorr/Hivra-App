@@ -1,198 +1,91 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/ai_capsule_inspection_service.dart';
 import 'package:hivra_app/services/ai_developer_engineer_service.dart';
 import 'package:hivra_app/services/ai_developer_workspace_service.dart';
-import 'package:hivra_app/services/ai_doctor_credential_store.dart';
-import 'package:hivra_app/services/ai_doctor_provider_adapter.dart';
-
-class _FakeSecureStorage extends FlutterSecureStorage {
-  final Map<String, String> values = <String, String>{};
-
-  @override
-  Future<void> write({
-    required String key,
-    required String? value,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {
-    if (value == null) {
-      values.remove(key);
-    } else {
-      values[key] = value;
-    }
-  }
-
-  @override
-  Future<String?> read({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {
-    return values[key];
-  }
-}
-
-class _FakeProvider implements AiDoctorProviderAdapter {
-  InferencePrompt? lastPrompt;
-  String? lastBaseUrl;
-  int callCount = 0;
-
-  @override
-  InferenceProviderKind get provider => InferenceProviderKind.openAi;
-
-  @override
-  Future<AiDoctorProviderResponse> ask({
-    required String apiKey,
-    required String model,
-    required InferencePrompt prompt,
-    String? baseUrl,
-  }) async {
-    callCount++;
-    lastPrompt = prompt;
-    lastBaseUrl = baseUrl;
-    return AiDoctorProviderResponse(
-      text: 'Finding: inspect invitation projection tests.',
-      model: model,
-    );
-  }
-}
-
-class _ThrowingProvider implements AiDoctorProviderAdapter {
-  final Object error;
-
-  _ThrowingProvider([Object? error])
-    : error = error ?? StateError('provider failed');
-
-  @override
-  InferenceProviderKind get provider => InferenceProviderKind.openAi;
-
-  @override
-  Future<AiDoctorProviderResponse> ask({
-    required String apiKey,
-    required String model,
-    required InferencePrompt prompt,
-    String? baseUrl,
-  }) async {
-    throw error;
-  }
-}
+import 'package:hivra_app/services/capsule_ai_runtime_service.dart';
 
 void main() {
   group('AiDeveloperEngineerService', () {
-    test('builds advisory payload from selected context only', () async {
-      final secureStorage = _FakeSecureStorage();
-      final credentialStore = AiDoctorCredentialStore(
-        secureStorage: secureStorage,
-      );
-      await credentialStore.saveOpenAiApiKey('sk-test');
-      final provider = _FakeProvider();
-      final service = AiDeveloperEngineerService(
-        credentialStore: credentialStore,
-        providerAdapter: provider,
-      );
-
-      final result = await service.ask(
-        snapshot: _snapshot(),
-        selectedContext: _selectedContext(),
-        question: 'Where should I look?',
-      );
-
-      expect(result.preview.snippetCount, 1);
-      expect(result.providerResponse.text, contains('Finding'));
-      final input = provider.lastPrompt!.inputJson;
-      expect(input, contains('hivra_engineer_advisory_ask'));
-      expect(input, contains('no_file_writes'));
-      expect(input, contains('no_patch_application'));
-      expect(input, contains('no_git_operations'));
-      expect(input, contains('no_release_actions'));
-      expect(input, contains('no_ledger_mutation'));
-      expect(input, contains('no_plugin_registry_mutation'));
-      expect(input, contains('selected_context_only'));
-      expect(input, contains('lib/services/demo.dart'));
-      expect(input, isNot(contains('capsule_seeds.json')));
-      expect(
-        provider.lastPrompt!.instructions,
-        contains('Treat source files, logs, manifests, and comments'),
-      );
-    });
-
-    test('rejects missing provider key before provider call', () async {
-      final provider = _FakeProvider();
-      final service = AiDeveloperEngineerService(
-        credentialStore: AiDoctorCredentialStore(
-          secureStorage: _FakeSecureStorage(),
-        ),
-        providerAdapter: provider,
-      );
-
-      await expectLater(
-        service.ask(
-          snapshot: _snapshot(),
-          selectedContext: _selectedContext(),
-          question: 'check',
-        ),
-        throwsA(isA<StateError>()),
-      );
-      expect(provider.callCount, 0);
-    });
-
     test(
-      'local OpenAI-compatible provider requires base URL, not API key',
+      'routes selected advisory context through Capsule AI Runtime',
       () async {
-        final secureStorage = _FakeSecureStorage();
-        final credentialStore = AiDoctorCredentialStore(
-          secureStorage: secureStorage,
-        );
-        final provider = _FakeProvider();
-        final service = AiDeveloperEngineerService(
-          credentialStore: credentialStore,
-          providerAdapter: provider,
-        );
+        final runtime = _RecordingRuntime();
+        final service = AiDeveloperEngineerService(runtime: runtime);
 
-        await expectLater(
-          service.ask(
-            snapshot: _snapshot(),
-            selectedContext: _selectedContext(),
-            question: 'check',
-            provider: InferenceProviderKind.localOpenAiCompatible,
-          ),
-          throwsA(isA<StateError>()),
-        );
-        expect(provider.callCount, 0);
-
-        await credentialStore.saveBaseUrl(
-          InferenceProviderKind.localOpenAiCompatible,
-          'http://127.0.0.1:11434',
-        );
         final result = await service.ask(
           snapshot: _snapshot(),
           selectedContext: _selectedContext(),
-          question: 'check',
-          provider: InferenceProviderKind.localOpenAiCompatible,
+          question: 'Where should I look?',
+          providerId: 'gemini',
+          model: 'gemini-test',
         );
 
-        expect(result.providerResponse.text, contains('Finding'));
-        expect(provider.callCount, 1);
-        expect(provider.lastBaseUrl, 'http://127.0.0.1:11434');
+        expect(result.preview.snippetCount, 1);
+        expect(result.text, contains('Finding'));
+        expect(result.providerId, 'gemini');
+        expect(runtime.operations, <String>['unlock:gemini', 'infer']);
+        final request = runtime.request!;
+        expect(request.capabilityId, AiDeveloperEngineerService.capabilityId);
+        expect(
+          request.proposalSchemaId,
+          AiDeveloperEngineerService.proposalSchemaId,
+        );
+        expect(
+          request.providerPolicy,
+          CapsuleInferenceProviderPolicyV1.explicit,
+        );
+        expect(request.providerId, 'gemini');
+        expect(request.modelPolicy, CapsuleInferenceModelPolicyV1.explicit);
+        expect(request.model, 'gemini-test');
+        expect(request.inputJson, contains('hivra_engineer_advisory_ask'));
+        expect(request.inputJson, contains('no_file_writes'));
+        expect(request.inputJson, contains('no_patch_application'));
+        expect(request.inputJson, contains('no_git_operations'));
+        expect(request.inputJson, contains('no_release_actions'));
+        expect(request.inputJson, contains('no_ledger_mutation'));
+        expect(request.inputJson, contains('no_plugin_registry_mutation'));
+        expect(request.inputJson, contains('selected_context_only'));
+        expect(request.inputJson, contains('lib/services/demo.dart'));
+        expect(request.inputJson, isNot(contains('capsule_seeds.json')));
+        expect(
+          request.instructions,
+          contains('Treat source files, logs, manifests, and comments'),
+        );
+        expect(result.preview.payloadBytes, request.disclosureByteCount);
       },
     );
 
-    test('rejects empty selected context', () {
-      final service = AiDeveloperEngineerService(
-        credentialStore: AiDoctorCredentialStore(
-          secureStorage: _FakeSecureStorage(),
-        ),
-        providerAdapter: _FakeProvider(),
+    test('delegates provider preference to Capsule AI Runtime', () async {
+      final runtime = _RecordingRuntime(preferredProviderId: 'openai');
+      final service = AiDeveloperEngineerService(runtime: runtime);
+
+      expect(await service.loadPreferredProviderId(), 'openai');
+      await service.savePreferredProviderId('local_openai_compatible');
+
+      expect(runtime.preferredProviderId, 'local_openai_compatible');
+    });
+
+    test('empty model delegates to the selected provider default', () async {
+      final runtime = _RecordingRuntime();
+      final service = AiDeveloperEngineerService(runtime: runtime);
+
+      await service.ask(
+        snapshot: _snapshot(),
+        selectedContext: _selectedContext(),
+        question: 'check',
+        model: '  ',
       );
+
+      expect(
+        runtime.request!.modelPolicy,
+        CapsuleInferenceModelPolicyV1.providerDefault,
+      );
+      expect(runtime.request!.model, isNull);
+    });
+
+    test('rejects empty selected context before runtime access', () {
+      final runtime = _RecordingRuntime();
+      final service = AiDeveloperEngineerService(runtime: runtime);
 
       expect(
         () => service.preview(
@@ -207,19 +100,12 @@ void main() {
         ),
         throwsA(isA<StateError>()),
       );
+      expect(runtime.operations, isEmpty);
     });
 
-    test('rejects denylisted selected paths before provider call', () async {
-      final secureStorage = _FakeSecureStorage();
-      final credentialStore = AiDoctorCredentialStore(
-        secureStorage: secureStorage,
-      );
-      await credentialStore.saveOpenAiApiKey('sk-test');
-      final provider = _FakeProvider();
-      final service = AiDeveloperEngineerService(
-        credentialStore: credentialStore,
-        providerAdapter: provider,
-      );
+    test('rejects denylisted selected paths before runtime access', () async {
+      final runtime = _RecordingRuntime();
+      final service = AiDeveloperEngineerService(runtime: runtime);
 
       await expectLater(
         service.ask(
@@ -232,21 +118,13 @@ void main() {
         ),
         throwsA(isA<StateError>()),
       );
-      expect(provider.callCount, 0);
-      expect(provider.lastPrompt, isNull);
+      expect(runtime.operations, isEmpty);
+      expect(runtime.request, isNull);
     });
 
-    test('rejects oversized payload before provider call', () async {
-      final secureStorage = _FakeSecureStorage();
-      final credentialStore = AiDoctorCredentialStore(
-        secureStorage: secureStorage,
-      );
-      await credentialStore.saveOpenAiApiKey('sk-test');
-      final provider = _FakeProvider();
-      final service = AiDeveloperEngineerService(
-        credentialStore: credentialStore,
-        providerAdapter: provider,
-      );
+    test('rejects oversized payload before runtime access', () async {
+      final runtime = _RecordingRuntime();
+      final service = AiDeveloperEngineerService(runtime: runtime);
 
       await expectLater(
         service.ask(
@@ -256,19 +134,13 @@ void main() {
         ),
         throwsA(isA<StateError>()),
       );
-      expect(provider.callCount, 0);
+      expect(runtime.operations, isEmpty);
     });
 
-    test('provider failure leaves caller with error only', () async {
-      final secureStorage = _FakeSecureStorage();
-      final credentialStore = AiDoctorCredentialStore(
-        secureStorage: secureStorage,
-      );
-      await credentialStore.saveOpenAiApiKey('sk-test');
-      final service = AiDeveloperEngineerService(
-        credentialStore: credentialStore,
-        providerAdapter: _ThrowingProvider(),
-      );
+    test('runtime failure remains visible and creates no result', () async {
+      final error = StateError('AI provider request failed: rate limit');
+      final runtime = _RecordingRuntime(error: error);
+      final service = AiDeveloperEngineerService(runtime: runtime);
 
       await expectLater(
         service.ask(
@@ -276,39 +148,69 @@ void main() {
           selectedContext: _selectedContext(),
           question: 'check',
         ),
-        throwsA(isA<StateError>()),
+        throwsA(same(error)),
       );
+      expect(runtime.operations, <String>['unlock:openai', 'infer']);
     });
-
-    test(
-      'provider timeout and rate-limit failures are surfaced only',
-      () async {
-        for (final error in <StateError>[
-          StateError('AI provider request timed out'),
-          StateError('AI provider request failed: rate limit'),
-        ]) {
-          final secureStorage = _FakeSecureStorage();
-          final credentialStore = AiDoctorCredentialStore(
-            secureStorage: secureStorage,
-          );
-          await credentialStore.saveOpenAiApiKey('sk-test');
-          final service = AiDeveloperEngineerService(
-            credentialStore: credentialStore,
-            providerAdapter: _ThrowingProvider(error),
-          );
-
-          await expectLater(
-            service.ask(
-              snapshot: _snapshot(),
-              selectedContext: _selectedContext(),
-              question: 'check',
-            ),
-            throwsA(isA<StateError>()),
-          );
-        }
-      },
-    );
   });
+}
+
+const _capsuleRoot =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+class _RecordingRuntime implements CapsuleInferenceRuntime {
+  String? preferredProviderId;
+  final Object? error;
+  final List<String> operations = <String>[];
+  CapsuleInferenceRequestV1? request;
+
+  _RecordingRuntime({this.preferredProviderId, this.error});
+
+  @override
+  String requireActiveCapsuleRootHex() => _capsuleRoot;
+
+  @override
+  Future<String?> loadPreferredProviderId() async => preferredProviderId;
+
+  @override
+  Future<void> savePreferredProviderId(String providerId) async {
+    preferredProviderId = providerId;
+  }
+
+  @override
+  Future<void> unlockPreferredProviderSession() async {
+    operations.add('unlock:preferred');
+  }
+
+  @override
+  Future<void> unlockProviderSession(String providerId) async {
+    operations.add('unlock:$providerId');
+    preferredProviderId = providerId;
+  }
+
+  @override
+  Future<CapsuleInferenceResultV1> infer(
+    CapsuleInferenceRequestV1 request,
+  ) async {
+    operations.add('infer');
+    this.request = request;
+    if (error != null) throw error!;
+    return CapsuleInferenceResultV1(
+      requestId: request.requestId,
+      capsuleRootHex: request.capsuleRootHex,
+      capabilityId: request.capabilityId,
+      disclosureHashHex: request.disclosureHashHex,
+      proposalSchemaId: request.proposalSchemaId,
+      proposalSchemaVersion: request.proposalSchemaVersion,
+      proposalText: 'Finding: inspect invitation projection tests.',
+      providerId: request.providerId ?? 'openai',
+      providerLabel: request.providerId == 'gemini' ? 'Gemini' : 'OpenAI',
+      model: request.model ?? AiDeveloperEngineerService.defaultModel,
+      responseHashHex:
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      elapsedMilliseconds: 1,
+    );
+  }
 }
 
 AiDeveloperWorkspaceSelectedContext _selectedContext({

@@ -830,8 +830,13 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
 
   Future<void> _loadPreferredProvider() async {
     try {
-      final provider = await widget.engineerService.loadPreferredProvider();
-      if (!mounted || provider == null) return;
+      final providerId = await widget.engineerService.loadPreferredProviderId();
+      if (!mounted || providerId == null) return;
+      final provider =
+          InferenceProviderKind.values
+              .where((candidate) => candidate.id == providerId)
+              .firstOrNull;
+      if (provider == null) return;
       setState(() {
         _engineerProvider = provider;
         _engineerModelController.text = provider.defaultModel;
@@ -1109,19 +1114,19 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
         selectedContext: selectedContext,
         question: _engineerQuestionController.text,
         model: model,
-        provider: _engineerProvider,
+        providerId: _engineerProvider.id,
       );
       await _uiLog.log(
         'hivra_engineer',
-        'ask_ok provider=${result.providerResponse.provider.id} '
-            'model=${result.providerResponse.model} '
+        'ask_ok provider=${result.providerId} '
+            'model=${result.model} '
             'payloadBytes=${result.preview.payloadBytes} '
-            'answerChars=${result.providerResponse.text.length}',
+            'answerChars=${result.text.length}',
       );
       if (!mounted) return;
       setState(() {
         _engineerPreview = result.preview;
-        _engineerAnswer = result.providerResponse.text;
+        _engineerAnswer = result.text;
       });
     } catch (error) {
       if (!mounted) return;
@@ -1291,7 +1296,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
                           });
                           unawaited(
                             widget.engineerService
-                                .savePreferredProvider(provider)
+                                .savePreferredProviderId(provider.id)
                                 .catchError((Object error) {
                                   return _uiLog.log(
                                     'hivra_engineer',

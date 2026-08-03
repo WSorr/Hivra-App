@@ -69,13 +69,28 @@ const _projection = CapsuleHistoryProjection(
 class _RecordingRuntime implements CapsuleInferenceRuntime {
   CapsuleInferenceRequestV1? request;
   int unlockCount = 0;
+  String? preferredProviderId;
 
   @override
   String requireActiveCapsuleRootHex() =>
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
   @override
+  Future<String?> loadPreferredProviderId() async => preferredProviderId;
+
+  @override
+  Future<void> savePreferredProviderId(String providerId) async {
+    preferredProviderId = providerId;
+  }
+
+  @override
   Future<void> unlockPreferredProviderSession() async {
+    unlockCount += 1;
+  }
+
+  @override
+  Future<void> unlockProviderSession(String providerId) async {
+    preferredProviderId = providerId;
     unlockCount += 1;
   }
 
