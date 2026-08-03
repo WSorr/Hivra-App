@@ -989,6 +989,38 @@ not permitted during resolution. The generic aggregate Nostr receive method is
 sealed so it cannot bypass acknowledgement. This implementation does not add a
 sender limiter, durable quarantine repository, or new Core path.
 
+### 5.6 Inbound Quarantine and Sender Policy
+
+The normative repository and policy contract is defined in
+`docs/architecture/transport-delivery-lifecycle.md`. One future
+`CapsuleInboundQuarantineRepository` owns encrypted retained envelopes under
+the `(Capsule, network, transport endpoint)` scope. It is application/platform
+state and MUST NOT reuse the delivery outbox, capability inboxes, Ledger, or an
+adapter-local store.
+
+Schema v1 is keyed by adapter event id and is bounded to `256` records,
+`32 MiB` encrypted bytes, and `32` records per authenticated sender per scope.
+Payload retention is `72 hours`; metadata-only terminal tombstones are bounded
+to `30 days`, `1024` records, and `1 MiB`. Capacity, encryption, integrity,
+index, or tombstone failure returns ingress `retry` and cannot evict another
+retained envelope silently.
+
+`SenderIngressPolicyV1` is charged only after authenticated sender/recipient
+binding and neutral envelope guards. It uses a per-scope/per-sender bucket with
+burst `8` and one refill per `15 seconds`. Stable event identity prevents
+double charging. Relationship state, message kind, UI, relay, IP address, and
+plugin identity provide no bypass. A throttled event becomes terminal only
+after atomic quarantine commit; otherwise its relay prefix remains
+unacknowledged.
+
+Quarantine recovery decrypts one eligible record and re-enters the same FFI
+ingress router with the original event id. It cannot append Core directly or
+create another scheduler/receive route. Storage encryption uses a distinct
+Capsule-scoped platform key role; root, transport-signing, and transport-
+encryption keys are not reused. Runtime implementation and policy activation
+remain unauthorized until separate passes prove atomic persistence, restart,
+expiry, deletion, and cross-platform behavior.
+
 ```rust
 // NostrTransport uses NostrCryptoProvider (secp256k1)
 pub struct NostrCryptoProvider {

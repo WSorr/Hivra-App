@@ -118,6 +118,21 @@ Use this checklist when reviewing structural changes, not just feature behavior.
       original event identity and cannot call a capability owner directly.
 - [ ] Adapter-invalid permanent rejection is limited to deterministic
       pre-domain validation and cannot hide authenticated-envelope loss.
+- [ ] Inbound quarantine has exactly one Capsule/network/transport-endpoint
+      repository outside Core, outbox, capability inboxes, and adapters.
+- [ ] Quarantine records are keyed by stable adapter event id, encrypted with a
+      distinct Capsule-scoped storage-key role, and committed atomically.
+- [ ] Record, byte, per-sender, relay-provenance, retention, and tombstone
+      bounds match repository schema v1; full capacity returns `retry` without
+      evicting another retained payload.
+- [ ] Sender policy runs only after authenticated neutral guards, charges each
+      event id once, and has no trust/domain/UI/relay/IP/plugin bypass.
+- [ ] Expiry removes ciphertext only with bounded terminal tombstone evidence
+      and never synthesizes a Core or peer-expiry fact.
+- [ ] Quarantine replay uses the original event id and canonical FFI router,
+      cannot charge the sender again, and owns no parallel scheduler.
+- [ ] Capsule deletion removes quarantine ciphertext and sender-policy state
+      without hidden plaintext or temporary-file residue.
 - [ ] Delivery recovery follows
       `docs/architecture/transport-delivery-lifecycle.md`: one lifecycle owns
       retry timing, receipt reconciliation, and capsule-scoped pump lifetime.

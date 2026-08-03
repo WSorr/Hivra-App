@@ -202,6 +202,112 @@ Threat closure required before implementation:
   canonical consumption, durable quarantine, or visible backpressure;
 - a malicious sender cannot force unbounded memory, disk, or cursor growth.
 
+### Inbound Quarantine Repository and Sender Policy Contract
+
+`12.3 / pass 14` defines this contract only. It does not authorize runtime
+storage or throttling.
+
+One future `CapsuleInboundQuarantineRepository` is the sole owner of retained
+authenticated envelopes. Its scope is the tuple `(Capsule, network,
+transport endpoint)`. It is application/platform state outside Core, Ledger,
+delivery outbox, capability inboxes, and transport adapters. The adapter owns
+wire identity and cursor commit; the FFI ingress router owns disposition; this
+repository owns only encrypted retention, eligibility, expiry, and bounded
+diagnostic evidence.
+
+Repository schema v1 has one record per `(scope, adapter, adapter_event_id)`:
+
+```text
+InboundQuarantineRecordV1 {
+  schema_version = 1
+  scope { capsule_id, network, transport_endpoint }
+  adapter
+  adapter_event_id
+  authenticated_sender
+  observed_by[]
+  message_kind
+  reason
+  first_observed_at
+  quarantined_at
+  eligible_after
+  expires_at
+  attempt_count
+  last_attempt_at?
+  envelope_ciphertext
+}
+```
+
+`adapter_event_id` is the idempotency key. Re-observation merges bounded relay
+provenance and never creates another record or resets expiry. The complete
+transport-neutral envelope is authenticated-encrypted at rest with a
+Capsule-scoped storage key provided by the crypto/platform boundary. Root
+signing keys, transport signing keys, and transport encryption keys are not
+reused as storage keys. No plaintext envelope, key, or payload may enter logs,
+diagnostic tombstones, temporary files, or the Ledger.
+
+Schema-v1 bounds are protocol-operational constants, not UI preferences:
+
+- at most `256` retained records per scope;
+- at most `32 MiB` of encrypted envelope bytes per scope;
+- at most `32` retained records per authenticated sender per scope;
+- at most `16` distinct relay/end-point observations per record;
+- retained payload expiry is `72 hours` after first quarantine and is never
+  extended by replay;
+- terminal tombstones retain metadata only for at most `30 days`, with at most
+  `1024` tombstones or `1 MiB` per scope, whichever is reached first.
+
+Capacity is fail-closed. A record that cannot be committed atomically because
+of record, byte, sender, filesystem, encryption, or index capacity receives
+`retry`, keeps the affected relay prefix unacknowledged, and exposes a degraded
+transport diagnostic. The repository MUST NOT evict another retained payload
+to admit a newer one. Capacity can be released only by successful canonical
+consumption, explicit expiry, or an explicit user diagnostic action that
+creates the same terminal tombstone evidence.
+
+Expiry is a resolve-once transition. It securely removes ciphertext and writes
+a bounded tombstone containing only scope, adapter event id, sender, message
+kind, terminal reason, and timestamps. Expiry is neither a Core fact nor proof
+that the peer action expired. If tombstone capacity is unavailable, payload
+removal and ingress acknowledgement stop with visible backpressure rather than
+silently losing evidence.
+
+`SenderIngressPolicyV1` is transport-neutral and applies only after outer
+signature, recipient, envelope authentication, sender binding, schema, and
+payload-size checks. It uses authenticated transport sender plus scope, never
+IP address, relay, application screen, domain kind, social trust, or Capsule
+relationship state. V1 permits a burst of `8` new event ids and refills one
+permit every `15 seconds`, capped at `8`. The same event id is charged at most
+once; acknowledged replay and quarantine replay are not charged again. No
+sender, contact, plugin, or domain kind has a hidden bypass.
+
+When no permit exists, the router may return `quarantined` only after the v1
+record commits atomically. Repository failure or full capacity returns `retry`.
+Adapter-invalid input follows deterministic rejection and never consumes
+quarantine capacity. Sender policy state is bounded to `1024` active senders
+per scope and persists the last refill/checkpoint needed to prevent restart
+bypass. Evicting inactive sender-policy state may reduce throttling only after
+its bucket is fully refilled and it has no retained records.
+
+Recovery is deterministic and single-route:
+
+1. Validate and decrypt one eligible record ordered by `(eligible_after,
+   quarantined_at, adapter_event_id)`.
+2. Re-enter the same FFI ingress router with the original event id and envelope
+   under a `quarantine_replay` flag that prevents a second rate charge.
+3. On `consumed`, atomically remove ciphertext and write a consumed tombstone.
+4. On `retry`, increment the bounded attempt metadata and compute capped
+   transport-health backoff; no capability-specific scheduler is created.
+5. On process restart or Capsule switch, resume only the selected scope. A
+   corrupt, undecryptable, unsupported-schema, or partially committed record
+   fails closed as degraded quarantine evidence and cannot append a Core fact.
+
+Repository writes use one atomic snapshot/index owner with temporary-file
+cleanup and authenticated integrity. There is no second database, outbox
+status, relay cursor, receive worker, or Core event for quarantine. Deleting a
+Capsule must delete its quarantine ciphertext and policy state through the
+existing Capsule deletion lifecycle while retaining only user-approved export
+evidence, never hidden payload copies.
+
 ## Ownership Rules
 
 1. `CapsuleDeliveryLifecycleService` is the only owner of retry delays,
@@ -227,6 +333,9 @@ Threat closure required before implementation:
    cursor commit. The application-runtime FFI boundary owns ingress routing and
    disposition. A future Capsule-scoped quarantine repository owns retention
    bytes and expiry evidence; it owns no routing or domain interpretation.
+8. `CapsuleInboundQuarantineRepository` is the only future owner of retained
+   inbound ciphertext, sender buckets, expiry transitions, and tombstones. It
+   cannot own polling, routing, domain validation, Ledger append, or UI policy.
 
 ## Migration Status
 
@@ -272,6 +381,12 @@ Threat closure required before implementation:
   Nostr `Transport::receive` route is sealed. Full chat and attestation inboxes
   return retry backpressure without evicting older unconsumed items, and their
   in-process deduplication uses the adapter event id.
+- Contract completed in `12.3 / pass 14`: one bounded encrypted
+  Capsule/network/transport-endpoint repository owns quarantine records,
+  sender buckets, expiry, and tombstones. Exact schema-v1 limits, atomic
+  capacity backpressure, sender policy, same-router replay, restart behavior,
+  storage-key separation, and deletion are fixed. Runtime implementation and
+  sender-policy activation remain separate later passes.
 - Pending: define one shared passive receive scheduler for invitations,
   pair-attestations, chat, relationship notifications, and trading signals.
   Until then, screen-triggered receives are serialized but can still perform

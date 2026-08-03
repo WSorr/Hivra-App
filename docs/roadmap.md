@@ -1669,10 +1669,31 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       - a second cold start preserved Ledger `v82`, replayed the same canonical
         path with `retry=0`, received `97/97` attestations, and showed no crash,
         ANR, or retry storm.
-    - Pass 14 is contract-first: define the bounded Capsule/network quarantine
-      repository and sender policy before adding persistence or throttling.
-  - Status: active; passes 1-13 are complete. Pass 14 quarantine contract is
-    next; sender-rate quarantine remains `NEEDS_CONTRACT`.
+    - Pass 14 quarantine repository and sender-policy contract completed on
+      2026-08-03 without runtime changes:
+      - one future `CapsuleInboundQuarantineRepository` owns encrypted records,
+        sender buckets, expiry, and tombstones under Capsule/network/transport
+        endpoint scope; Core, outbox, inboxes, and adapters cannot own copies;
+      - schema v1 is keyed by adapter event id and fixes record, byte,
+        per-sender, relay-provenance, payload-retention, and tombstone bounds;
+      - capacity and persistence failure return cursor-safe `retry`; admitting a
+        newer envelope cannot evict another retained payload;
+      - `SenderIngressPolicyV1` uses authenticated sender only after neutral
+        guards, charges each event id once, fixes burst/refill bounds, and has
+        no trust, domain, relay, UI, IP, or plugin bypass;
+      - recovery re-enters the same FFI router with the original event id,
+        cannot charge replay again, and creates no parallel scheduler or Core
+        path;
+      - expiry, tombstone, storage-key separation, corruption, atomic write,
+        restart, Capsule switch, temporary cleanup, and deletion behavior are
+        explicit architecture gates;
+      - `git diff --check`, `flutter analyze`, full `flutter test`,
+        `cargo test --workspace`, and `tools/review/review_all.sh` passed.
+    - Pass 15 may implement only repository persistence, expiry/tombstones,
+      deletion, and same-router recovery. Sender-policy activation remains a
+      later isolated pass after cross-platform repository evidence.
+  - Status: active; passes 1-14 are complete. Pass 15 repository implementation
+    is next; sender-rate quarantine remains inactive.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

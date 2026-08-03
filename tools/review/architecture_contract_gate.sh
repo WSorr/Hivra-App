@@ -636,6 +636,32 @@ require_present "$SPEC" '^### 5\.5 Acknowledged Ingress Handoff' \
   "specification binds acknowledged ingress to the canonical lifecycle"
 require_present "$CHECKLIST" 'original event identity' \
   "architecture review preserves event identity across quarantine replay"
+require_present "$DELIVERY_LIFECYCLE_DOC" '^### Inbound Quarantine Repository and Sender Policy Contract' \
+  "inbound quarantine has one normative repository contract"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'CapsuleInboundQuarantineRepository' \
+  "one repository owns retained inbound quarantine"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'at most `256` retained records per scope' \
+  "quarantine record capacity is explicit"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'at most `32 MiB` of encrypted envelope bytes per scope' \
+  "quarantine byte capacity is explicit"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'retained payload expiry is `72 hours`' \
+  "quarantine retention is explicit"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'MUST NOT evict another retained payload' \
+  "full quarantine cannot silently evict retained input"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'SenderIngressPolicyV1' \
+  "sender policy is versioned"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'burst of `8` new event ids' \
+  "sender policy burst is explicit"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'permit every `15 seconds`' \
+  "sender policy refill is explicit"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'under a `quarantine_replay` flag' \
+  "quarantine replay cannot be charged twice"
+require_present "$DELIVERY_LIFECYCLE_DOC" 'reused as storage keys' \
+  "quarantine storage uses a distinct crypto role"
+require_present "$SPEC" '^### 5\.6 Inbound Quarantine and Sender Policy' \
+  "specification binds quarantine to the canonical lifecycle"
+require_present "$CHECKLIST" 'full capacity returns `retry`' \
+  "architecture review enforces quarantine backpressure"
 require_present "$NOSTR_TRANSPORT" 'pending_receive_batch: Mutex<Option<PendingReceiveBatch>>' \
   "Nostr adapter retains one unresolved ingress batch"
 require_present "$NOSTR_TRANSPORT" 'pub fn resolve_receive_batch\(' \
