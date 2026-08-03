@@ -258,6 +258,38 @@ void main() {
   );
 
   test(
+    'provider configuration is validated and owned by the runtime',
+    () async {
+      final store = _SessionCredentialStore();
+      final runtime = CapsuleAiRuntimeService(
+        credentialStore: store,
+        readActiveCapsuleRootHex: () => _capsuleA,
+      );
+
+      await runtime.savePreferredProviderId('openai');
+      await runtime.saveProviderApiKey('openai', 'new-key');
+      await runtime.saveProviderBaseUrl(
+        'local_openai_compatible',
+        'http://127.0.0.1:11434',
+      );
+      await runtime.clearProviderApiKey('openai');
+      await runtime.clearProviderBaseUrl('local_openai_compatible');
+
+      expect(store.configuration, <String>[
+        'preferred:openai',
+        'save-key:openai:new-key',
+        'save-url:local_openai_compatible:http://127.0.0.1:11434',
+        'clear-key:openai',
+        'clear-url:local_openai_compatible',
+      ]);
+      await expectLater(
+        runtime.saveProviderApiKey('unknown', 'key'),
+        throwsA(_failure(CapsuleInferenceFailureCode.invalidRequest)),
+      );
+    },
+  );
+
+  test(
     'process scheduler serializes requests across runtime instances',
     () async {
       var activeCalls = 0;
@@ -369,6 +401,7 @@ Matcher _failure(CapsuleInferenceFailureCode code) {
 class _SessionCredentialStore extends AiDoctorCredentialStore {
   bool unlocked;
   InferenceProviderKind preferredProvider = InferenceProviderKind.gemini;
+  final List<String> configuration = <String>[];
 
   _SessionCredentialStore({this.unlocked = true});
 
@@ -404,11 +437,35 @@ class _SessionCredentialStore extends AiDoctorCredentialStore {
   @override
   Future<void> savePreferredProvider(InferenceProviderKind provider) async {
     preferredProvider = provider;
+    configuration.add('preferred:${provider.id}');
   }
 
   @override
   Future<InferenceProviderKind?> loadPreferredProvider() async {
     return preferredProvider;
+  }
+
+  @override
+  Future<void> saveApiKey(InferenceProviderKind provider, String apiKey) async {
+    configuration.add('save-key:${provider.id}:$apiKey');
+  }
+
+  @override
+  Future<void> clearApiKey(InferenceProviderKind provider) async {
+    configuration.add('clear-key:${provider.id}');
+  }
+
+  @override
+  Future<void> saveBaseUrl(
+    InferenceProviderKind provider,
+    String baseUrl,
+  ) async {
+    configuration.add('save-url:${provider.id}:$baseUrl');
+  }
+
+  @override
+  Future<void> clearBaseUrl(InferenceProviderKind provider) async {
+    configuration.add('clear-url:${provider.id}');
   }
 }
 

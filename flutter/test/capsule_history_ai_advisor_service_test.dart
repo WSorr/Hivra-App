@@ -84,6 +84,18 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
   }
 
   @override
+  Future<void> saveProviderApiKey(String providerId, String apiKey) async {}
+
+  @override
+  Future<void> clearProviderApiKey(String providerId) async {}
+
+  @override
+  Future<void> saveProviderBaseUrl(String providerId, String baseUrl) async {}
+
+  @override
+  Future<void> clearProviderBaseUrl(String providerId) async {}
+
+  @override
   Future<void> unlockPreferredProviderSession() async {
     unlockCount += 1;
   }

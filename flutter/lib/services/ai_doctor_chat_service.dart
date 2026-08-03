@@ -1,74 +1,60 @@
 import 'ai_capsule_inspection_service.dart';
-import 'ai_doctor_credential_store.dart';
 import 'ai_doctor_prompt_service.dart';
-import 'inference_provider_adapter.dart';
+import 'capsule_ai_runtime_service.dart';
 
 class AiDoctorChatResult {
   final AiDoctorOutboundPreview preview;
-  final InferenceProviderResponse providerResponse;
+  final String text;
+  final String providerId;
+  final String providerLabel;
+  final String model;
 
   const AiDoctorChatResult({
     required this.preview,
-    required this.providerResponse,
+    required this.text,
+    required this.providerId,
+    required this.providerLabel,
+    required this.model,
   });
 }
 
 class AiDoctorChatService {
   static const String defaultModel = 'gpt-5.5';
+  static const String defaultProviderId = 'openai';
+  static const String capabilityId = 'hivra.capsule_analyst.chat';
+  static const String proposalSchemaId = 'hivra.capsule_analyst.advisory.v1';
 
-  final AiDoctorCredentialStore _credentialStore;
+  final CapsuleInferenceRuntime _runtime;
   final AiDoctorPromptService _promptService;
-  final InferenceProviderAdapter Function(InferenceProviderKind provider)
-      _providerAdapterFactory;
 
   AiDoctorChatService({
-    required AiDoctorCredentialStore credentialStore,
+    required CapsuleInferenceRuntime runtime,
     AiDoctorPromptService promptService = const AiDoctorPromptService(),
-    InferenceProviderAdapter? providerAdapter,
-    InferenceProviderAdapter Function(InferenceProviderKind provider)?
-        providerAdapterFactory,
-  })  : _credentialStore = credentialStore,
-        _promptService = promptService,
-        _providerAdapterFactory = providerAdapterFactory ??
-            ((provider) =>
-                providerAdapter ?? inferenceProviderAdapterFor(provider));
+  }) : _runtime = runtime,
+       _promptService = promptService;
 
-  Future<void> saveApiKey(
-    InferenceProviderKind provider,
-    String apiKey,
-  ) {
-    return _credentialStore.saveApiKey(provider, apiKey);
+  Future<void> saveProviderApiKey(String providerId, String apiKey) {
+    return _runtime.saveProviderApiKey(providerId, apiKey);
   }
 
-  Future<void> savePreferredProvider(InferenceProviderKind provider) {
-    return _credentialStore.savePreferredProvider(provider);
+  Future<void> savePreferredProviderId(String providerId) {
+    return _runtime.savePreferredProviderId(providerId);
   }
 
-  Future<InferenceProviderKind?> loadPreferredProvider() {
-    return _credentialStore.loadPreferredProvider();
+  Future<String?> loadPreferredProviderId() {
+    return _runtime.loadPreferredProviderId();
   }
 
-  Future<void> clearApiKey(InferenceProviderKind provider) {
-    return _credentialStore.clearApiKey(provider);
+  Future<void> clearProviderApiKey(String providerId) {
+    return _runtime.clearProviderApiKey(providerId);
   }
 
-  Future<void> saveBaseUrl(
-    InferenceProviderKind provider,
-    String baseUrl,
-  ) {
-    return _credentialStore.saveBaseUrl(provider, baseUrl);
+  Future<void> saveProviderBaseUrl(String providerId, String baseUrl) {
+    return _runtime.saveProviderBaseUrl(providerId, baseUrl);
   }
 
-  Future<void> clearBaseUrl(InferenceProviderKind provider) {
-    return _credentialStore.clearBaseUrl(provider);
-  }
-
-  Future<void> saveOpenAiApiKey(String apiKey) {
-    return saveApiKey(InferenceProviderKind.openAi, apiKey);
-  }
-
-  Future<void> clearOpenAiApiKey() {
-    return clearApiKey(InferenceProviderKind.openAi);
+  Future<void> clearProviderBaseUrl(String providerId) {
+    return _runtime.clearProviderBaseUrl(providerId);
   }
 
   AiDoctorOutboundPreview preview({
@@ -90,31 +76,47 @@ class AiDoctorChatService {
     required String userQuery,
     required Iterable<AiDoctorContextSection> sections,
     String model = defaultModel,
-    InferenceProviderKind provider = InferenceProviderKind.openAi,
+    String providerId = defaultProviderId,
   }) async {
-    final apiKey = await _credentialStore.loadApiKey(provider);
-    if (provider.requiresApiKey && (apiKey == null || apiKey.trim().isEmpty)) {
-      throw StateError('${provider.label} API key is not saved');
-    }
-    final baseUrl = await _credentialStore.loadBaseUrl(provider);
-    if (provider == InferenceProviderKind.localOpenAiCompatible &&
-        (baseUrl == null || baseUrl.trim().isEmpty)) {
-      throw StateError('${provider.label} base URL is not saved');
-    }
     final prompt = _promptService.buildPrompt(
       snapshot: snapshot,
       userQuery: userQuery,
       sections: sections,
     );
-    final response = await _providerAdapterFactory(provider).ask(
-      apiKey: apiKey ?? '',
-      model: model.trim().isEmpty ? provider.defaultModel : model,
-      prompt: prompt,
-      baseUrl: baseUrl,
+    final capsuleRootHex = _runtime.requireActiveCapsuleRootHex();
+    await _runtime.unlockProviderSession(providerId);
+    final normalizedModel = model.trim();
+    final response = await _runtime.infer(
+      CapsuleInferenceRequestV1.create(
+        capsuleRootHex: capsuleRootHex,
+        capabilityId: capabilityId,
+        disclosureSchemaVersion: 1,
+        disclosedSectionIds: <String>[
+          'user_query',
+          ...prompt.preview.sections.map((section) => section.key),
+        ],
+        proposalSchemaId: proposalSchemaId,
+        proposalSchemaVersion: 1,
+        cancellationScope: '$capabilityId:$capsuleRootHex',
+        instructions: prompt.instructions,
+        input: prompt.payload,
+        providerPolicy: CapsuleInferenceProviderPolicyV1.explicit,
+        providerId: providerId,
+        modelPolicy:
+            normalizedModel.isEmpty
+                ? CapsuleInferenceModelPolicyV1.providerDefault
+                : CapsuleInferenceModelPolicyV1.explicit,
+        model: normalizedModel.isEmpty ? null : normalizedModel,
+        maxInputBytes: AiDoctorPromptService.maxPayloadBytes,
+        maxOutputBytes: CapsuleInferenceRequestV1.maxSupportedOutputBytes,
+      ),
     );
     return AiDoctorChatResult(
       preview: prompt.preview,
-      providerResponse: response,
+      text: response.proposalText,
+      providerId: response.providerId,
+      providerLabel: response.providerLabel,
+      model: response.model,
     );
   }
 }

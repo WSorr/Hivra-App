@@ -201,6 +201,14 @@ abstract class CapsuleInferenceRuntime {
 
   Future<String?> loadPreferredProviderId();
 
+  Future<void> saveProviderApiKey(String providerId, String apiKey);
+
+  Future<void> clearProviderApiKey(String providerId);
+
+  Future<void> saveProviderBaseUrl(String providerId, String baseUrl);
+
+  Future<void> clearProviderBaseUrl(String providerId);
+
   Future<void> unlockPreferredProviderSession();
 
   Future<void> unlockProviderSession(String providerId);
@@ -246,6 +254,26 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   @override
   Future<String?> loadPreferredProviderId() async {
     return (await _credentialStore.loadPreferredProvider())?.id;
+  }
+
+  @override
+  Future<void> saveProviderApiKey(String providerId, String apiKey) async {
+    await _credentialStore.saveApiKey(_requireProvider(providerId), apiKey);
+  }
+
+  @override
+  Future<void> clearProviderApiKey(String providerId) async {
+    await _credentialStore.clearApiKey(_requireProvider(providerId));
+  }
+
+  @override
+  Future<void> saveProviderBaseUrl(String providerId, String baseUrl) async {
+    await _credentialStore.saveBaseUrl(_requireProvider(providerId), baseUrl);
+  }
+
+  @override
+  Future<void> clearProviderBaseUrl(String providerId) async {
+    await _credentialStore.clearBaseUrl(_requireProvider(providerId));
   }
 
   @override

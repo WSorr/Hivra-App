@@ -266,16 +266,28 @@ access are deleted and gated against return. Its existing provider/model UI
 remains available through semantic ids; no Core, FFI, repository-write, patch,
 git, release, truth, or effect authority was added.
 
-Two legacy feature-owned dispatch paths remain callable:
+### 9.4 AI-3 Capsule Analyst Checkpoint
 
-1. `AiDoctorChatService`;
-2. `MoltbookPublicBulletinAiService`.
+AI-3 routes `AiDoctorChatService` through the same
+`CapsuleAiRuntimeService`. Capsule Analyst retains selected-section disclosure,
+redaction, outbound preview, payload limits, and advisory proposal semantics.
+The runtime now owns provider preference, credential and base-URL
+configuration, explicit session unlock, canonical request identity, and exact
+provider/model response binding.
 
-AI-3 is bounded to `AiDoctorChatService`. It must move inference and provider
-configuration behind the runtime without weakening the existing user-approved
-disclosure preview or creating a second credential-management path. Moltbook
-remains last because its proposals feed an effect-owning plugin lifecycle and
-require the strongest regression evidence.
+The feature's direct credential, provider-adapter, provider DTO, and dispatch
+access are deleted and gated against return. Its provider/model UI uses
+semantic ids only; no Core, FFI, truth, effect, or second credential path was
+added.
+
+One legacy feature-owned dispatch path remains callable:
+
+1. `MoltbookPublicBulletinAiService`.
+
+AI-4 is bounded to that final path. Moltbook remains last because its proposals
+feed an effect-owning plugin lifecycle. Migration must preserve the plugin's
+proposal schema, durable input checkpoint, explicit session behavior, and
+normal effect owner while deleting direct provider and credential access.
 
 ## 10. Hivra 2.0 Contract
 

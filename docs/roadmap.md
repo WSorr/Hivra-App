@@ -1964,11 +1964,31 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `arm64-v8a`, `armeabi-v7a`, and `x86_64`; both fresh artifacts cold-start
       without fatal terminal evidence. Live inference remains an explicit
       credentialed user action rather than an automated gate.
-  - Next selected unit: AI-3 migrates only `AiDoctorChatService` while
-    preserving disclosure preview and consolidating provider configuration
-    without a second credential-management owner.
-  - Status: AI-2 implementation complete; two legacy feature-owned provider
-    paths remain and may only decrease.
+  - AI-3 completed on 2026-08-03:
+    - migrated only `AiDoctorChatService` through the existing runtime and
+      deleted its direct credential, provider DTO, adapter, and dispatch
+      ownership;
+    - preserved selected-section disclosure, redaction, outbound preview,
+      payload limits, provider/model controls, and advisory-only semantics;
+    - moved provider preference, key/base-URL configuration, explicit session
+      unlock, canonical request identity, and provider/model evidence binding
+      behind the runtime without creating a second credential owner;
+    - reduced callable legacy dispatch and credential-reader paths from two to
+      one and hardened the executable gate against restoring Capsule Analyst's
+      old path;
+    - focused runtime/history/developer/Analyst/credential tests pass `38/38`;
+      `flutter analyze`, all `757` Flutter tests, and
+      `cargo test --workspace` pass;
+    - build `100000330` produces a universal macOS bundle and Android APK with
+      `arm64-v8a`, `armeabi-v7a`, and `x86_64`; both fresh artifacts cold-start
+      without fatal terminal evidence. Live inference remains an explicit
+      credentialed user action rather than an automated gate.
+  - Next selected unit: AI-4 migrates only
+    `MoltbookPublicBulletinAiService` while preserving its proposal schema,
+    durable input checkpoint, explicit session behavior, and normal external
+    effect owner.
+  - Status: AI-3 implementation complete; one legacy feature-owned provider
+    path remains and may only decrease.
 
 ## Planned Product Tracks
 

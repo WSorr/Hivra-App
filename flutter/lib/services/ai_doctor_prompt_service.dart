@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'ai_capsule_inspection_service.dart';
-import 'inference_provider_adapter.dart';
+import 'capsule_ai_runtime_service.dart';
 
 enum AiDoctorContextSection {
   capsule('capsule', 'Capsule'),
@@ -39,12 +39,16 @@ class AiDoctorOutboundPreview {
       sections.map((section) => section.label).join(', ');
 }
 
-class AiDoctorPrompt extends InferencePrompt {
+class AiDoctorPrompt {
+  final String instructions;
+  final Object payload;
+  final String inputJson;
   final AiDoctorOutboundPreview preview;
 
   const AiDoctorPrompt({
-    required super.instructions,
-    required super.inputJson,
+    required this.instructions,
+    required this.payload,
+    required this.inputJson,
     required this.preview,
   });
 }
@@ -97,7 +101,7 @@ class AiDoctorPromptService {
         'plugin_credentials_included': false,
       },
     };
-    final inputJson = const JsonEncoder.withIndent('  ').convert(payload);
+    final inputJson = CapsuleInferenceCanonicalJson.encode(payload);
     final payloadBytes = utf8.encode(inputJson).length;
     if (payloadBytes > maxPayloadBytes) {
       throw StateError(
@@ -107,6 +111,7 @@ class AiDoctorPromptService {
 
     return AiDoctorPrompt(
       instructions: _instructions,
+      payload: payload,
       inputJson: inputJson,
       preview: AiDoctorOutboundPreview(
         snapshotHashHex: snapshot.snapshotHashHex,

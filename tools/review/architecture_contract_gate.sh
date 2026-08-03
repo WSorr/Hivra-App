@@ -435,7 +435,7 @@ require_present "$CAPSULE_AI_RUNTIME_DOC" 'CapsuleInferenceRequestV1' \
   "Capsule AI Runtime freezes the provider-independent request contract"
 require_present "$CAPSULE_AI_RUNTIME_DOC" 'CapsuleInferenceResultV1' \
   "Capsule AI Runtime freezes the provider-independent result contract"
-require_present "$CAPSULE_AI_RUNTIME_DOC" 'Two legacy feature-owned dispatch paths remain callable' \
+require_present "$CAPSULE_AI_RUNTIME_DOC" 'One legacy feature-owned dispatch path remains callable' \
   "Capsule AI Runtime records the exact 1.x migration inventory"
 require_present "$ROOT/tools/review/review_all.sh" 'capsule_ai_runtime_gate\.sh' \
   "review_all enforces the Capsule AI Runtime debt boundary"

@@ -236,8 +236,13 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
 
   Future<void> _loadPreferredProvider() async {
     try {
-      final provider = await widget.chatService.loadPreferredProvider();
-      if (!mounted || provider == null) return;
+      final providerId = await widget.chatService.loadPreferredProviderId();
+      if (!mounted || providerId == null) return;
+      final provider =
+          InferenceProviderKind.values
+              .where((candidate) => candidate.id == providerId)
+              .firstOrNull;
+      if (provider == null) return;
       setState(() {
         _provider = provider;
         _modelController.text = provider.defaultModel;
@@ -257,11 +262,14 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
     await _run(() async {
       if (_provider.requiresApiKey ||
           _apiKeyController.text.trim().isNotEmpty) {
-        await widget.chatService.saveApiKey(_provider, _apiKeyController.text);
+        await widget.chatService.saveProviderApiKey(
+          _provider.id,
+          _apiKeyController.text,
+        );
       }
       if (_provider == InferenceProviderKind.localOpenAiCompatible) {
-        await widget.chatService.saveBaseUrl(
-          _provider,
+        await widget.chatService.saveProviderBaseUrl(
+          _provider.id,
           _baseUrlController.text,
         );
       }
@@ -276,8 +284,8 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
 
   Future<void> _clearProviderSettings() async {
     await _run(() async {
-      await widget.chatService.clearApiKey(_provider);
-      await widget.chatService.clearBaseUrl(_provider);
+      await widget.chatService.clearProviderApiKey(_provider.id);
+      await widget.chatService.clearProviderBaseUrl(_provider.id);
       await _uiLog.log(
         'ai_capsule_analyst',
         'provider_settings_cleared provider=${_provider.id}',
@@ -321,18 +329,18 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
         userQuery: _queryController.text,
         sections: _sections,
         model: model,
-        provider: _provider,
+        providerId: _provider.id,
       );
       await _uiLog.log(
         'ai_capsule_analyst',
-        'ask_ok provider=${result.providerResponse.provider.id} '
-            'model=${result.providerResponse.model} '
+        'ask_ok provider=${result.providerId} '
+            'model=${result.model} '
             'payloadBytes=${result.preview.payloadBytes} '
-            'answerChars=${result.providerResponse.text.length}',
+            'answerChars=${result.text.length}',
       );
       setState(() {
         _preview = result.preview;
-        _answer = result.providerResponse.text;
+        _answer = result.text;
       });
     });
   }
@@ -434,7 +442,7 @@ class _AiDoctorChatCardState extends State<_AiDoctorChatCard> {
                         });
                         unawaited(
                           widget.chatService
-                              .savePreferredProvider(provider)
+                              .savePreferredProviderId(provider.id)
                               .catchError((Object error) {
                                 return _uiLog.log(
                                   'ai_capsule_analyst',

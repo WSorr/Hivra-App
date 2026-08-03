@@ -59,9 +59,8 @@ dispatch_files="$({
 
 check_bounded_files \
   "legacy feature-owned provider dispatch" \
-  2 \
+  1 \
   "$dispatch_files" \
-  flutter/lib/services/ai_doctor_chat_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart
 
 if rg -q 'inferenceProviderAdapterFor' \
@@ -80,11 +79,9 @@ adapter_import_files="$({
 
 check_bounded_files \
   "legacy direct inference-adapter imports" \
-  6 \
+  4 \
   "$adapter_import_files" \
-  flutter/lib/services/ai_doctor_chat_service.dart \
   flutter/lib/services/ai_doctor_credential_store.dart \
-  flutter/lib/services/ai_doctor_prompt_service.dart \
   flutter/lib/services/ai_doctor_provider_adapter.dart \
   flutter/lib/services/capsule_ai_runtime_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart
@@ -100,9 +97,8 @@ credential_reader_files="$({
 
 check_bounded_files \
   "legacy feature-owned credential reads" \
-  2 \
+  1 \
   "$credential_reader_files" \
-  flutter/lib/services/ai_doctor_chat_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart
 
 if rg -q \
@@ -111,6 +107,15 @@ if rg -q \
   fail "history advisor must remain behind Capsule AI Runtime"
 else
   pass "history advisor remains behind Capsule AI Runtime"
+fi
+
+if rg -q \
+  "ai_doctor_credential_store\.dart|inference_provider_adapter\.dart|InferenceProviderResponse|inferenceProviderAdapterFor|loadApiKey\(|sessionApiKey\(|loadBaseUrl\(|sessionBaseUrl\(" \
+  flutter/lib/services/ai_doctor_chat_service.dart \
+  flutter/lib/services/ai_doctor_prompt_service.dart; then
+  fail "Capsule Analyst must remain behind Capsule AI Runtime"
+else
+  pass "Capsule Analyst remains behind Capsule AI Runtime"
 fi
 
 if rg -q \
@@ -130,9 +135,8 @@ credential_import_files="$({
 
 check_bounded_files \
   "legacy direct credential-store imports" \
-  5 \
+  4 \
   "$credential_import_files" \
-  flutter/lib/services/ai_doctor_chat_service.dart \
   flutter/lib/services/ai_tooling_module_service.dart \
   flutter/lib/services/capsule_ai_runtime_service.dart \
   flutter/lib/services/moltbook_public_bulletin_ai_service.dart \

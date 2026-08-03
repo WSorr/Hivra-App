@@ -22,7 +22,7 @@ class AiToolingModuleService {
     final aiRuntime = _buildCapsuleAiRuntime();
     return AiToolingModule(
       capsuleInspection: buildCapsuleInspectionService(),
-      capsuleAnalystChat: buildCapsuleAnalystChatService(),
+      capsuleAnalystChat: buildCapsuleAnalystChatService(runtime: aiRuntime),
       pluginAudit: buildPluginAuditService(),
       developerWorkspace: buildDeveloperWorkspaceService(),
       developerEngineer: buildDeveloperEngineerService(runtime: aiRuntime),
@@ -42,8 +42,10 @@ class AiToolingModuleService {
     );
   }
 
-  AiDoctorChatService buildCapsuleAnalystChatService() {
-    return AiDoctorChatService(credentialStore: AiDoctorCredentialStore.shared);
+  AiDoctorChatService buildCapsuleAnalystChatService({
+    CapsuleInferenceRuntime? runtime,
+  }) {
+    return AiDoctorChatService(runtime: runtime ?? _buildCapsuleAiRuntime());
   }
 
   CapsuleHistoryAiAdvisorService buildCapsuleHistoryAiAdvisorService() {
