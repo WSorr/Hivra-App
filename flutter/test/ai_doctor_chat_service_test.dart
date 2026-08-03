@@ -143,6 +143,12 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
   final List<String> configuration = <String>[];
   CapsuleInferenceRequestV1? request;
 
+  @override
+  bool get isProviderSessionUnlocked => true;
+
+  @override
+  String? get sessionProviderLabel => 'OpenAI';
+
   _RecordingRuntime({this.preferredProviderId, this.error});
 
   @override
@@ -187,6 +193,9 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
     preferredProviderId = providerId;
     operations.add('unlock:$providerId');
   }
+
+  @override
+  void lockProviderSession() {}
 
   @override
   Future<CapsuleInferenceResultV1> infer(

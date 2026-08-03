@@ -280,14 +280,23 @@ access are deleted and gated against return. Its provider/model UI uses
 semantic ids only; no Core, FFI, truth, effect, or second credential path was
 added.
 
-One legacy feature-owned dispatch path remains callable:
+### 9.5 AI-4 Moltbook Checkpoint
 
-1. `MoltbookPublicBulletinAiService`.
+AI-4 routes `MoltbookPublicBulletinAiService` through the same
+`CapsuleAiRuntimeService`. Moltbook retains bounded public-note and untrusted
+conversation disclosure, strict bulletin/reply proposal schemas, prompt
+injection controls, and proposal validation. The runtime owns preferred-session
+status, unlock/lock, canonical request identity, budgets, provider dispatch,
+and provider/model evidence.
 
-AI-4 is bounded to that final path. Moltbook remains last because its proposals
-feed an effect-owning plugin lifecycle. Migration must preserve the plugin's
-proposal schema, durable input checkpoint, explicit session behavior, and
-normal effect owner while deleting direct provider and credential access.
+The automatic cycle, durable feed checkpoint, WASM draft preparation, approval
+policy, and `ExternalEffectService` path are unchanged. AI failure or Capsule
+change still defers the selected candidate before checkpoint advancement and
+cannot prepare or execute a publication effect.
+
+No legacy feature-owned provider dispatch or credential-read path remains
+callable. The executable gate fixes both inventories at zero and rejects their
+return. Capsule AI Runtime convergence is complete; no AI-5 is implied.
 
 ## 10. Hivra 2.0 Contract
 

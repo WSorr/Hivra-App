@@ -289,6 +289,23 @@ void main() {
     },
   );
 
+  test('provider session status and lock are owned by the runtime', () async {
+    final store = _SessionCredentialStore(unlocked: false);
+    final runtime = CapsuleAiRuntimeService(
+      credentialStore: store,
+      readActiveCapsuleRootHex: () => _capsuleA,
+    );
+
+    expect(runtime.isProviderSessionUnlocked, isFalse);
+    expect(runtime.sessionProviderLabel, isNull);
+    await runtime.unlockPreferredProviderSession();
+    expect(runtime.isProviderSessionUnlocked, isTrue);
+    expect(runtime.sessionProviderLabel, 'Gemini');
+    runtime.lockProviderSession();
+    expect(runtime.isProviderSessionUnlocked, isFalse);
+    expect(runtime.sessionProviderLabel, isNull);
+  });
+
   test(
     'process scheduler serializes requests across runtime instances',
     () async {
@@ -432,6 +449,11 @@ class _SessionCredentialStore extends AiDoctorCredentialStore {
     preferredProvider = provider;
     unlocked = true;
     return provider;
+  }
+
+  @override
+  void lockSession() {
+    unlocked = false;
   }
 
   @override

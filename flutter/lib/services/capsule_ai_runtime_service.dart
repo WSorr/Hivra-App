@@ -197,6 +197,10 @@ class CapsuleInferenceResultV1 {
 abstract class CapsuleInferenceRuntime {
   String requireActiveCapsuleRootHex();
 
+  bool get isProviderSessionUnlocked;
+
+  String? get sessionProviderLabel;
+
   Future<void> savePreferredProviderId(String providerId);
 
   Future<String?> loadPreferredProviderId();
@@ -212,6 +216,8 @@ abstract class CapsuleInferenceRuntime {
   Future<void> unlockPreferredProviderSession();
 
   Future<void> unlockProviderSession(String providerId);
+
+  void lockProviderSession();
 
   Future<CapsuleInferenceResultV1> infer(CapsuleInferenceRequestV1 request);
 }
@@ -245,6 +251,14 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
     }
     return capsule;
   }
+
+  @override
+  bool get isProviderSessionUnlocked =>
+      _credentialStore.isPreferredProviderUnlocked;
+
+  @override
+  String? get sessionProviderLabel =>
+      _credentialStore.sessionPreferredProvider?.label;
 
   @override
   Future<void> savePreferredProviderId(String providerId) async {
@@ -285,6 +299,11 @@ class CapsuleAiRuntimeService implements CapsuleInferenceRuntime {
   Future<void> unlockProviderSession(String providerId) async {
     final provider = _requireProvider(providerId);
     await _credentialStore.unlockProviderSession(provider);
+  }
+
+  @override
+  void lockProviderSession() {
+    _credentialStore.lockSession();
   }
 
   @override

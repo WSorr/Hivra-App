@@ -2,8 +2,7 @@ import 'dart:convert';
 
 import '../models/moltbook_ambassador_models.dart';
 import '../models/moltbook_provider_models.dart';
-import 'ai_doctor_credential_store.dart';
-import 'inference_provider_adapter.dart';
+import 'capsule_ai_runtime_service.dart';
 
 class MoltbookPublicBulletinAiService {
   static const String canonicalProductAnchor =
@@ -16,29 +15,33 @@ class MoltbookPublicBulletinAiService {
   static const int maxTitleCharacters = 120;
   static const int maxBodyCharacters = 1200;
   static const int maxReplyCharacters = 2000;
+  static const int maxInputBytes = 32768;
+  static const int maxOutputBytes = 8192;
+  static const String publicBulletinCapabilityId =
+      'hivra.moltbook.public_bulletin.propose';
+  static const String publicBulletinProposalSchemaId =
+      'hivra.moltbook.public_bulletin.proposal.v1';
+  static const String replyCapabilityId = 'hivra.moltbook.reply.propose';
+  static const String replyProposalSchemaId =
+      'hivra.moltbook.reply.proposal.v1';
 
-  final AiDoctorCredentialStore _credentialStore;
-  final InferenceProviderAdapter Function(InferenceProviderKind provider)
-  _adapterFactory;
+  final CapsuleInferenceRuntime _runtime;
 
-  MoltbookPublicBulletinAiService({
-    required AiDoctorCredentialStore credentialStore,
-    InferenceProviderAdapter Function(InferenceProviderKind provider)?
-    adapterFactory,
-  }) : _credentialStore = credentialStore,
-       _adapterFactory = adapterFactory ?? inferenceProviderAdapterFor;
+  MoltbookPublicBulletinAiService({required CapsuleInferenceRuntime runtime})
+    : _runtime = runtime;
 
-  bool get isSessionUnlocked => _credentialStore.isPreferredProviderUnlocked;
+  bool get isSessionUnlocked => _runtime.isProviderSessionUnlocked;
 
-  String? get sessionProviderLabel =>
-      _credentialStore.sessionPreferredProvider?.label;
+  String? get sessionProviderLabel => _runtime.sessionProviderLabel;
 
-  Future<InferenceProviderKind> unlockSession() {
-    return _credentialStore.unlockPreferredProviderSession();
+  Future<String> unlockSession() async {
+    await _runtime.unlockPreferredProviderSession();
+    return _runtime.sessionProviderLabel ??
+        (throw StateError('AI provider session did not expose its identity'));
   }
 
   void lockSession() {
-    _credentialStore.lockSession();
+    _runtime.lockProviderSession();
   }
 
   Future<MoltbookPublicBulletinProposal> propose({
@@ -60,8 +63,6 @@ class MoltbookPublicBulletinAiService {
     if (normalizedPersona.isEmpty || normalizedPersona.length > 500) {
       throw ArgumentError('Ambassador persona is invalid');
     }
-
-    final (:provider, :apiKey, :baseUrl) = _sessionCredentials();
 
     final input = <String, dynamic>{
       'schema_version': 1,
@@ -88,18 +89,29 @@ class MoltbookPublicBulletinAiService {
         'human_review_required': true,
       },
     };
-    final response = await _adapterFactory(provider).ask(
-      apiKey: apiKey ?? '',
-      model: provider.defaultModel,
-      baseUrl: baseUrl,
-      prompt: InferencePrompt(
+    final capsuleRootHex = _runtime.requireActiveCapsuleRootHex();
+    final response = await _runtime.infer(
+      CapsuleInferenceRequestV1.create(
+        capsuleRootHex: capsuleRootHex,
+        capabilityId: publicBulletinCapabilityId,
+        disclosureSchemaVersion: 1,
+        disclosedSectionIds: const <String>[
+          'source_notes',
+          'public_policy',
+          'constraints',
+        ],
+        proposalSchemaId: publicBulletinProposalSchemaId,
+        proposalSchemaVersion: 1,
+        cancellationScope: '$publicBulletinCapabilityId:$capsuleRootHex',
         instructions: _instructions,
-        inputJson: const JsonEncoder.withIndent('  ').convert(input),
+        input: input,
+        maxInputBytes: maxInputBytes,
+        maxOutputBytes: maxOutputBytes,
       ),
     );
     final proposal = _parseProposal(
-      response.text,
-      provider: response.provider,
+      response.proposalText,
+      providerLabel: response.providerLabel,
       model: response.model,
     );
     proposal.validate();
@@ -134,8 +146,6 @@ class MoltbookPublicBulletinAiService {
     if (normalizedPersona.isEmpty || normalizedPersona.length > 500) {
       throw ArgumentError('Ambassador persona is invalid');
     }
-
-    final (:provider, :apiKey, :baseUrl) = _sessionCredentials();
 
     final selectedComments = _boundedReplyComments(
       conversation.comments,
@@ -184,42 +194,41 @@ class MoltbookPublicBulletinAiService {
         'human_review_required': true,
       },
     };
-    final response = await _adapterFactory(provider).ask(
-      apiKey: apiKey ?? '',
-      model: provider.defaultModel,
-      baseUrl: baseUrl,
-      prompt: InferencePrompt(
+    final capsuleRootHex = _runtime.requireActiveCapsuleRootHex();
+    final targetScope =
+        '${engagementPlan.targetPostId}:${targetCommentId ?? "root"}';
+    final response = await _runtime.infer(
+      CapsuleInferenceRequestV1.create(
+        capsuleRootHex: capsuleRootHex,
+        capabilityId: replyCapabilityId,
+        disclosureSchemaVersion: 1,
+        disclosedSectionIds: const <String>[
+          'public_policy',
+          'engagement_plan',
+          'remote_context_untrusted',
+          'constraints',
+        ],
+        proposalSchemaId: replyProposalSchemaId,
+        proposalSchemaVersion: 1,
+        cancellationScope: '$replyCapabilityId:$capsuleRootHex:$targetScope',
         instructions: _replyInstructions,
-        inputJson: const JsonEncoder.withIndent('  ').convert(input),
+        input: input,
+        maxInputBytes: maxInputBytes,
+        maxOutputBytes: maxOutputBytes,
       ),
     );
     final proposal = _parseReplyProposal(
-      response.text,
-      provider: response.provider,
+      response.proposalText,
+      providerLabel: response.providerLabel,
       model: response.model,
     );
     proposal.validate();
     return proposal;
   }
 
-  ({InferenceProviderKind provider, String? apiKey, String? baseUrl})
-  _sessionCredentials() {
-    final provider = _credentialStore.sessionPreferredProvider;
-    if (provider == null || !_credentialStore.isPreferredProviderUnlocked) {
-      throw StateError(
-        'AI access is locked for this app session. Unlock it in Moltbook Ambassador.',
-      );
-    }
-    return (
-      provider: provider,
-      apiKey: _credentialStore.sessionApiKey(provider),
-      baseUrl: _credentialStore.sessionBaseUrl(provider),
-    );
-  }
-
   static MoltbookPublicBulletinProposal _parseProposal(
     String text, {
-    required InferenceProviderKind provider,
+    required String providerLabel,
     required String model,
   }) {
     var normalized = text.trim();
@@ -256,14 +265,14 @@ class MoltbookPublicBulletinAiService {
       title: rawTitle.trim(),
       body: rawBody.trim(),
       facts: rawFacts.cast<String>().map((fact) => fact.trim()).toList(),
-      providerLabel: provider.label,
+      providerLabel: providerLabel,
       model: model.trim(),
     );
   }
 
   static MoltbookReplyProposal _parseReplyProposal(
     String text, {
-    required InferenceProviderKind provider,
+    required String providerLabel,
     required String model,
   }) {
     var normalized = text.trim();
@@ -293,7 +302,7 @@ class MoltbookPublicBulletinAiService {
       body: rawBody.trim(),
       groundingPoints:
           rawPoints.cast<String>().map((point) => point.trim()).toList(),
-      providerLabel: provider.label,
+      providerLabel: providerLabel,
       model: model.trim(),
     );
   }

@@ -68,6 +68,12 @@ const _projection = CapsuleHistoryProjection(
 
 class _RecordingRuntime implements CapsuleInferenceRuntime {
   CapsuleInferenceRequestV1? request;
+
+  @override
+  bool get isProviderSessionUnlocked => true;
+
+  @override
+  String? get sessionProviderLabel => 'OpenAI';
   int unlockCount = 0;
   String? preferredProviderId;
 
@@ -105,6 +111,9 @@ class _RecordingRuntime implements CapsuleInferenceRuntime {
     preferredProviderId = providerId;
     unlockCount += 1;
   }
+
+  @override
+  void lockProviderSession() {}
 
   @override
   Future<CapsuleInferenceResultV1> infer(

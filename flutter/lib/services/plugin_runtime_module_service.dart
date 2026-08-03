@@ -9,6 +9,7 @@ import '../models/plugin_host_api_models.dart';
 import '../models/wasm_plugin_models.dart';
 import 'app_runtime_service.dart';
 import 'ai_doctor_credential_store.dart';
+import 'capsule_ai_runtime_service.dart';
 import 'capsule_file_store.dart';
 import 'capsule_scoped_secret_vault.dart';
 import 'capsule_chat_delivery_service.dart';
@@ -117,8 +118,7 @@ class PluginRuntimeModule {
       moltbookPublicBulletinAi.sessionProviderLabel;
 
   Future<String> unlockMoltbookAiSession() async {
-    final provider = await moltbookPublicBulletinAi.unlockSession();
-    return provider.label;
+    return moltbookPublicBulletinAi.unlockSession();
   }
 
   void lockMoltbookAiSession() {
@@ -1605,6 +1605,10 @@ class PluginRuntimeModuleService {
                   : null,
       fileStore: fileStore,
     );
+    final aiRuntime = CapsuleAiRuntimeService(
+      credentialStore: AiDoctorCredentialStore.shared,
+      readActiveCapsuleRootHex: activeCapsuleRootHex,
+    );
     return PluginRuntimeModule(
       registry: const WasmPluginRegistryService(),
       sourceCatalog: const WasmPluginSourceCatalogService(),
@@ -1630,7 +1634,7 @@ class PluginRuntimeModuleService {
         effects: effects,
       ),
       moltbookPublicBulletinAi: MoltbookPublicBulletinAiService(
-        credentialStore: AiDoctorCredentialStore.shared,
+        runtime: aiRuntime,
       ),
       moltbookCycleTriggers: _moltbookCycleTriggers,
       ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(

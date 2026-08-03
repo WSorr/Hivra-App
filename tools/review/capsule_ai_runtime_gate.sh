@@ -59,9 +59,8 @@ dispatch_files="$({
 
 check_bounded_files \
   "legacy feature-owned provider dispatch" \
-  1 \
-  "$dispatch_files" \
-  flutter/lib/services/moltbook_public_bulletin_ai_service.dart
+  0 \
+  "$dispatch_files"
 
 if rg -q 'inferenceProviderAdapterFor' \
   flutter/lib/services/capsule_ai_runtime_service.dart; then
@@ -79,12 +78,11 @@ adapter_import_files="$({
 
 check_bounded_files \
   "legacy direct inference-adapter imports" \
-  4 \
+  3 \
   "$adapter_import_files" \
   flutter/lib/services/ai_doctor_credential_store.dart \
   flutter/lib/services/ai_doctor_provider_adapter.dart \
-  flutter/lib/services/capsule_ai_runtime_service.dart \
-  flutter/lib/services/moltbook_public_bulletin_ai_service.dart
+  flutter/lib/services/capsule_ai_runtime_service.dart
 
 credential_reader_files="$({
   rg -l \
@@ -97,9 +95,8 @@ credential_reader_files="$({
 
 check_bounded_files \
   "legacy feature-owned credential reads" \
-  1 \
-  "$credential_reader_files" \
-  flutter/lib/services/moltbook_public_bulletin_ai_service.dart
+  0 \
+  "$credential_reader_files"
 
 if rg -q \
   "ai_doctor_credential_store\.dart|inference_provider_adapter\.dart|inferenceProviderAdapterFor|loadApiKey\(|sessionApiKey\(|loadBaseUrl\(|sessionBaseUrl\(" \
@@ -126,6 +123,14 @@ else
   pass "Developer Engineer remains behind Capsule AI Runtime"
 fi
 
+if rg -q \
+  "ai_doctor_credential_store\.dart|inference_provider_adapter\.dart|InferenceProviderResponse|inferenceProviderAdapterFor|loadApiKey\(|sessionApiKey\(|loadBaseUrl\(|sessionBaseUrl\(" \
+  flutter/lib/services/moltbook_public_bulletin_ai_service.dart; then
+  fail "Moltbook AI must remain behind Capsule AI Runtime"
+else
+  pass "Moltbook AI remains behind Capsule AI Runtime"
+fi
+
 credential_import_files="$({
   rg -l \
     --glob '*.dart' \
@@ -135,11 +140,10 @@ credential_import_files="$({
 
 check_bounded_files \
   "legacy direct credential-store imports" \
-  4 \
+  3 \
   "$credential_import_files" \
   flutter/lib/services/ai_tooling_module_service.dart \
   flutter/lib/services/capsule_ai_runtime_service.dart \
-  flutter/lib/services/moltbook_public_bulletin_ai_service.dart \
   flutter/lib/services/plugin_runtime_module_service.dart
 
 shared_lease_files="$({

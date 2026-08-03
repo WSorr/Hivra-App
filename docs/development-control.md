@@ -1,14 +1,13 @@
 # Hivra Development Control
 
-Status date: 2026-08-03
+Status date: 2026-08-04
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: Capsule AI Runtime convergence. AI-3 is complete:
-History Advisor, Developer Engineer, and Capsule Analyst now use the
-provider-independent runtime, and their direct credential/adapter paths are
-deleted and gated against return. One legacy feature-owned dispatch path
-remains callable and may only decrease. The next bounded implementation unit is
-AI-4: migrate only `MoltbookPublicBulletinAiService` while preserving its
-proposal schema, durable checkpoint, and external-effect ownership boundary.
+Current development focus: Capsule AI Runtime convergence. AI-4 is complete:
+History Advisor, Developer Engineer, Capsule Analyst, and Moltbook now use the
+provider-independent runtime. Feature-owned provider dispatch and credential
+reads are zero and gated against return. No AI-5 is implied. The next bounded
+unit must be selected from a fresh documentation/debt audit; a release remains
+a separate named-candidate decision.
 T1 or any other toolchain upgrade is not selected.
 Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
@@ -27,7 +26,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation step? | Execute AI-4: migrate only Moltbook inference through Capsule AI Runtime and delete its direct provider path without changing the plugin effect lifecycle. | `docs/architecture/capsule-ai-runtime.md`, `docs/roadmap.md` |
+| What is the next 1.x remediation step? | Reconcile the post-AI-4 documentation, debt, and environment checkpoint, then select one bounded maintenance unit. Do not infer AI-5 or a release candidate. | `docs/architecture/capsule-ai-runtime.md`, `docs/roadmap.md` |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -41,7 +40,7 @@ table, then open only the linked authority for the selected work item.
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Checkpoint complete | `T0`: one baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Build `100000327`: all gates pass; macOS universal and Android three-ABI layouts verified; both artifacts cold-start without fatal evidence. | Select any later toolchain unit explicitly; do not activate T1 by implication. |
-| **Capsule AI Runtime** | AI-3 checkpoint complete | History Advisor, Developer Engineer, and Capsule Analyst use one canonical runtime; Analyst disclosure preview and semantic provider controls remain feature-owned while credentials and dispatch are runtime-owned. | Build `100000330`: focused runtime/history/developer/Analyst/credential regressions `38/38`, Flutter `757/757`, Rust workspace and analyze pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | AI-4 migrates only Moltbook inference and deletes the final direct provider path without changing effect ownership. |
+| **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
 | **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects and a foreground bounded-reply experiment exist, but automatic modes are blocked by the canonical engagement lifecycle gates. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |
 
 `12.3` passes 1-18 are complete. Any later transport remediation requires a
@@ -52,9 +51,9 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — Capsule AI Runtime AI-4:** migrate only Moltbook inference through
-   the single runtime owner and remove its direct provider path without
-   changing proposal, checkpoint, or effect ownership.
+1. **P1 — post-AI-4 debt checkpoint:** reconcile documentation, executable
+   debt gates, and environment evidence, then select one bounded maintenance
+   unit without reopening the completed AI migration.
 2. **P1 — release decision:** only a named release candidate may trigger fresh
    macOS and Android packaged-artifact signoff.
 3. **P2 — design and parked work:** `V2-0`, crypto-agility protocol design,

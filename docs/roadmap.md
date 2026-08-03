@@ -1983,12 +1983,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `arm64-v8a`, `armeabi-v7a`, and `x86_64`; both fresh artifacts cold-start
       without fatal terminal evidence. Live inference remains an explicit
       credentialed user action rather than an automated gate.
-  - Next selected unit: AI-4 migrates only
-    `MoltbookPublicBulletinAiService` while preserving its proposal schema,
-    durable input checkpoint, explicit session behavior, and normal external
-    effect owner.
-  - Status: AI-3 implementation complete; one legacy feature-owned provider
-    path remains and may only decrease.
+  - AI-4 completed on 2026-08-04:
+    - migrated only `MoltbookPublicBulletinAiService` through the existing
+      runtime and deleted the final feature-owned credential, provider DTO,
+      adapter, and dispatch path;
+    - preserved bounded public-note and untrusted-conversation disclosure,
+      strict bulletin/reply schemas, prompt-injection controls, provider
+      session UI, and advisory-only proposal validation;
+    - preserved the automatic cycle, durable feed checkpoint, WASM draft,
+      approval policy, and canonical external-effect lifecycle; AI failure or
+      Capsule change still defers checkpoint advancement and creates no effect;
+    - reduced callable legacy provider dispatch and credential-reader paths
+      from one to zero and fixed both executable gate inventories at zero;
+    - focused AI/Moltbook/cycle tests pass `53/53`; `flutter analyze`, all
+      `760` Flutter tests, `cargo test --workspace`, and
+      `tools/review/review_all.sh` pass;
+    - build `100000331` produces a universal macOS bundle and Android APK with
+      `arm64-v8a`, `armeabi-v7a`, and `x86_64`; both fresh artifacts cold-start
+      without fatal terminal evidence. Live inference remains an explicit
+      credentialed user action rather than an automated gate.
+  - Next selected unit: post-AI-4 documentation, debt, and environment audit;
+    it may select one bounded maintenance unit but cannot infer AI-5 or a
+    release candidate.
+  - Status: AI-4 convergence complete; no legacy feature-owned provider
+    dispatch or credential-read path remains.
 
 ## Planned Product Tracks
 
