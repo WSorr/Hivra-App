@@ -105,6 +105,17 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] No new cross-cutting timer, watcher, or hidden background pipeline was introduced.
 - [ ] New transport retry/receive loops share the common transport health
       policy and cannot spin independently under degraded network conditions.
+- [ ] Launch, resume, connectivity, foreground-periodic, and manual receive
+      triggers enter one application-level passive receive coordinator; screens
+      and feature services own no passive transport timers or follow-up loops.
+- [ ] One passive trigger wave performs at most one default/quick FFI ingress
+      poll before capability-owned projection/drain, and a channel drain cannot
+      initiate another relay receive.
+- [ ] Automatic triggers join an in-flight Capsule operation; explicit manual
+      retry can create at most one forced follow-up and cannot overlap the
+      process-global FFI bootstrap queue.
+- [ ] Capsule switch and app pause invalidate stale delayed work, while any
+      completed worker result remains persisted only for its bootstrap Capsule.
 - [ ] Default and quick transport operations share one Capsule-owned adapter
       session and cursor owner; profiles alter bounded operation budgets only.
 - [ ] Sender throttling acknowledges an authenticated envelope only after

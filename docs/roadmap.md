@@ -1769,8 +1769,42 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
         retries, then restart recovery and persisted charge evidence reduced
         retry monotonically `37→32→25` while attestations continued to
         converge and no crash, policy bypass, or storage failure appeared.
-  - Status: active; passes 1-16 are complete. Audit passive receive scheduling
-    ownership before selecting another runtime pass.
+    - Passive receive ownership audit completed on 2026-08-03:
+      - the audit found one native FFI router, one cached Nostr session/cursor
+        owner, one process-global FFI worker queue, and one shared transport
+        health policy;
+      - redundant work is created above those boundaries: launch/resume/network
+        follow-ups, the invitations-screen 15-second timer, and chat/trading
+        plus pair-attestation refresh chains can serialize multiple full relay
+        polls for one trigger wave;
+      - `CapsulePassiveReceiveCoordinator` is the sole selected application
+        owner for trigger lifetime and coalescing. It owns neither transport
+        state nor domain/capability interpretation;
+      - the exact removal set is screen-owned passive timers/follow-ups and
+        in-flight flags, direct passive receive orchestration in invitations,
+        trading, and plugin-chat screens, and nested relay polling from chat
+        and pair-attestation drain FFI functions;
+      - restart, Capsule-switch, manual-retry, foreground, and cross-Capsule
+        serialization semantics are fixed in the transport lifecycle contract.
+    - Pass 17 may implement only the audited passive receive convergence:
+      - add one process-scoped application coordinator that coalesces automatic
+        triggers per Capsule and permits at most one bounded forced manual
+        follow-up;
+      - preserve one existing default/quick FFI ingress poll and the existing
+        canonical router, cached session/cursors, health policy, shared worker
+        queue, Ledger/Core projection, and capability inbox owners;
+      - separate chat and pair-attestation drain from relay polling, then
+        project/drain all current capabilities after the one canonical poll;
+      - move the existing foreground periodic cadence and lifecycle/network
+        trigger lifetime out of screens without increasing polling frequency;
+      - delete or seal every audited redundant caller in the same pass and add
+        launch/resume/network/periodic/manual, Capsule-switch, timeout, and
+        cross-capability coalescing regressions;
+      - do not add Core facts, a second transport route, a second scheduler,
+        durable scheduler state, a new adapter session, or a parallel DTO
+        family.
+  - Status: active; passes 1-16 and the passive receive ownership audit are
+    complete. `12.3 / pass 17` is selected but not implemented.
 
 - `12.4 Cryptographic Agility Compatibility Debt`
   - Permanent invariant:

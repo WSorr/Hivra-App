@@ -415,10 +415,63 @@ evidence, never hidden payload copies.
   quarantine, while repository, sender-state, or evidence capacity returns
   cursor-safe `retry`. No capability, message kind, relationship, relay, UI,
   plugin, Core, or scheduler bypass was added.
-- Pending: define one shared passive receive scheduler for invitations,
-  pair-attestations, chat, relationship notifications, and trading signals.
-  Until then, screen-triggered receives are serialized but can still perform
-  redundant relay polls.
+- Audited on 2026-08-03 for `12.3 / pass 17`: passive receive has one native
+  router, one cached Capsule transport session/cursor owner, one shared
+  process-global FFI worker queue, and one shared health policy, but it does
+  not yet have one application-level scheduling owner. The current trigger map
+  is:
+  - `MainScreen` requests invitation ingress on launch, resume, connectivity
+    restoration, and delayed follow-ups, then separately requests pair
+    attestation receive;
+  - `InvitationsScreen` requests an initial quick receive, a full receive every
+    15 seconds while mounted, and another quick receive after Capsule switch;
+  - trading and plugin-chat screens request chat/trading receive and then
+    independently request pair-attestation receive;
+  - relationship refresh reuses invitation ingress and trading signals reuse
+    chat ingress, so neither owns a distinct native route;
+  - `CapsuleFfiWorkerQueue.shared` prevents overlap, but serialization does not
+    coalesce these requests. Both chat and pair-attestation FFI drain functions
+    call `hivra_transport_receive_quick()` before draining their own keyed
+    inbox, so one UI refresh can perform two sequential relay polls.
+- `CapsulePassiveReceiveCoordinator` is the sole future application-level
+  owner of passive receive trigger lifetime, per-Capsule in-flight joining,
+  foreground periodic cadence, lifecycle/network follow-up coalescing, and one
+  bounded manual-retry follow-up. It owns no transport session, cursor,
+  message interpretation, Ledger fact, inbox, retry outbox, or attestation
+  response policy.
+- The canonical pass-17 operation is `trigger -> coordinator -> one existing
+  default/quick FFI ingress poll -> canonical FFI router -> capability-owned
+  projection/drain`. Invitation and relationship facts continue through the
+  existing Ledger/Core projection. Pair attestations continue through the
+  attestation verifier/store. Chat and trading payloads continue through the
+  chat delivery filter and their existing inbox owners. A channel drain MUST
+  NOT poll a relay.
+- Pass-17 concurrency and lifecycle semantics are fixed before implementation:
+  - automatic requests for the same Capsule join the active operation and do
+    not queue another relay poll;
+  - one explicit manual retry may bypass health cooldown and, if a passive
+    operation is active, becomes at most one forced follow-up rather than a
+    parallel operation;
+  - the existing process-global FFI queue remains the final cross-Capsule
+    serialization boundary;
+  - delayed and periodic passive work stops when the app is not foreground;
+    resume creates one coalesced trigger wave;
+  - a Capsule switch invalidates delayed work for the previous Capsule. Any
+    already completed worker result remains bound to and persisted for its
+    bootstrap Capsule, while stale UI projection is discarded;
+  - restart creates no durable scheduler state. Relay cursor, quarantine,
+    Ledger, and capability inbox owners retain their existing independent
+    persistence contracts.
+- Pass 17 removes or seals the exact redundant paths: screen-owned passive
+  timers and lifecycle/network follow-ups; `MainScreen` invitation-versus-
+  attestation in-flight flags; direct passive receive orchestration in
+  invitations, trading, and plugin-chat screens; and the nested transport poll
+  inside chat and pair-attestation drain FFI functions. Explicit user refresh
+  remains, but enters the same coordinator as a bounded manual-retry intent.
+  Existing `hivra_transport_receive()` and
+  `hivra_transport_receive_quick()` remain the only native poll entrypoints;
+  no second transport route, Core path, DTO family, or durable scheduler store
+  is authorized.
 - Pending: pair-attestation re-announcement needs a pair/snapshot-scoped
   rate-limit or a durable acknowledgement policy. It is currently an
   intentionally best-effort convergence aid, not a Core outbox effect.
@@ -437,6 +490,11 @@ evidence, never hidden payload copies.
 - A transport channel has exactly one retry owner.
 - A screen imports no worker runtime or outbox store.
 - A receive operation has no outbound transport side effect.
+- One passive trigger wave performs at most one relay poll before all current
+  capability inboxes are projected or drained.
+- A channel-specific drain cannot initiate transport receive or own a timer.
+- Launch, resume, connectivity, periodic, and manual triggers enter one
+  application-level coordinator and preserve bootstrap-Capsule result binding.
 - An authenticated envelope cannot become cursor/seen terminal before
   canonical consumption or durable quarantine.
 - An unresolved batch disposition preserves its relay cursor prefix and

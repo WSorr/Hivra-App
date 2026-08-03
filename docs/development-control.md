@@ -2,11 +2,11 @@
 
 Status date: 2026-08-03
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: audit the remaining passive receive scheduling debt
-after completing `12.3 / pass 16`. Pass 16 activates only the specified
-`SenderIngressPolicyV1` behind the pass-15 repository and acknowledged ingress
-handoff. No next runtime pass is selected until the audit proves one owner and
-one removal target.
+Current development focus: implement the audited passive receive convergence
+as `12.3 / pass 17`. The audit proved one application owner,
+`CapsulePassiveReceiveCoordinator`, and the exact redundant screen/channel
+paths that must be removed. Pass 17 may only coalesce existing triggers around
+the canonical FFI ingress and separate relay polling from capability drains.
 Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
 signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
@@ -24,7 +24,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation step? | Audit passive receive scheduling ownership after completed pass 16. Do not assign another runtime pass until one canonical scheduler owner and the redundant polling paths to remove are proven. | `roadmap.md`, transport delivery lifecycle contract |
+| What is the next 1.x remediation step? | Implement `12.3 / pass 17`: one `CapsulePassiveReceiveCoordinator`, one poll per trigger wave, capability-owned drains, and deletion of the audited screen/channel polling paths. | `roadmap.md`, transport delivery lifecycle contract |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -34,7 +34,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Active | `12.3 / pass 16` activates persisted sender buckets and exact bounded charge evidence inside the pass-15 repository. | Focused restart/replay/capacity/migration tests, full gates, macOS launch, and Android update plus three cold starts passed; migration backlog remained durable and `retry` decreased `37→32→25`. | Audit passive receive ownership before selecting another runtime pass; do not add a scheduler during the audit. |
+| **1.x maintained runtime** | Active | `12.3 / pass 17` converges passive receive scheduling around one application owner and one canonical FFI ingress poll. | Required: trigger coalescing, manual-follow-up, lifecycle, Capsule-switch, cross-capability, timeout, full automated gates, then macOS and Android smoke evidence. | Remove the audited screen-owned timers/follow-ups and nested channel polling without changing Core, adapter session ownership, or capability truth. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
 | **Platform toolchain** | Guarded maintenance | `T0`: record and verify the Flutter/Dart, Rust, Android, and macOS compatibility matrix. | One checked-in verification contract; no release behavior or bridge migration is bundled with it. | `T1` Flutter/Dart update only after T0 and outside active integrity work. |
@@ -50,13 +50,13 @@ work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P0 — ingress follow-up audit:** map every invitation, attestation, chat,
-   relationship, and trading passive receive trigger to the current shared FFI
-   queue and transport session. Name one future scheduler owner and exact
-   redundant paths to remove; do not implement during the audit.
-2. **P1 — next remediation selection:** assign a runtime pass only if the audit
-   closes capability ownership, restart/concurrency semantics, and removal
-   scope without creating a second receive route.
+1. **P0 — `12.3 / pass 17`:** implement the audited
+   `CapsulePassiveReceiveCoordinator`, one poll per trigger wave, and
+   capability-owned drain sequence; remove every named redundant caller in the
+   same pass.
+2. **P1 — post-pass audit:** select no further runtime debt until pass 17 proves
+   restart/concurrency semantics, packaged cross-platform behavior, and no
+   second receive route.
 3. **P1 — `T0`:** add checked-in environment verification and repository-owned
    pins for the reproducible baseline. Do not upgrade Flutter, Rust, Android,
    or Xcode in T0.
