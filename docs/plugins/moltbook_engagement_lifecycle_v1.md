@@ -1,7 +1,8 @@
 # Moltbook Engagement Lifecycle v1
 
-Status: normative design contract; Assisted remote-engagement cycle implemented,
-package 6 release evidence in progress
+Status: normative design contract; Assisted remote-engagement cycle implemented;
+packaged-artifact evidence recorded for the exercised `v1.0.3-test15` scope;
+automatic publication remains gated by the remaining package 6 cases
 
 Owner: external Moltbook Drone plus host External Effects boundary
 

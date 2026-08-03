@@ -92,9 +92,11 @@ The two lines share one product axis but cannot share a second runtime path.
 The ordering below is deliberate:
 
 1. **1.x integrity before new lifecycle behavior.** Remediation passes
-   `12.3 / pass 3-4`, cryptographic ledger continuity and event-scoped
-   delivery records, are complete. The next ordered pass is `12.3 / pass 5`,
-   persisted realized-loss inputs for Trading Drone risk policy.
+   `12.3 / pass 1-14` are complete. The next ordered pass is
+   `12.3 / pass 15`, implementing only the bounded inbound quarantine
+   repository, persistence, expiry/tombstones, deletion, and same-router
+   recovery defined by pass 14. Sender-policy activation remains a later
+   isolated pass after cross-platform repository evidence.
    `5.1 Canonical Core Projection Convergence` remains a hard boundary: new
    invitation, relationship, consensus, or Capsule Map behavior must consume a
    canonical projection rather than add another Flutter event reducer.
@@ -127,6 +129,13 @@ The active toolchain item is `T0`: make the verified baseline executable and
 reproducible. It must not be bundled with the current continuous-ledger pass.
 Future Flutter/Dart or Android build-stack updates are separate units and
 require fresh macOS and Android artifact smoke before publication.
+
+Environment audit on 2026-08-03 confirmed that the exercised baseline still
+builds on the documented stack, but T0 is not complete: Flutter and Rust are
+not repository-pinned, shell Gradle and Flutter resolve different supported
+JDKs, and no checked-in verification command rejects drift. Newer stable
+Flutter/Dart and Rust versions are available; they remain candidates for
+separate post-T0 upgrade units, not implicit updates.
 
 ## Current Priorities
 
@@ -1220,7 +1229,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - AI payload redaction/provider-boundary tests;
     - relationship, invitation, and occupied-starter card navigation smoke;
     - `tools/review/review_all.sh`, `flutter analyze`, and `flutter test`.
-  - Status: in progress (2026-07-21).
+  - Status: completed (2026-08-01). Core owns the canonical history view;
+    Flutter projects the typed subject and optional redacted AI explanation.
 
 - `12.3 Integrity and Reliability Remediation`
   - Goal:

@@ -123,7 +123,7 @@ Contains:
 - migration rules for durable and ephemeral transport channels
 - delivery lifecycle review exit criteria
 
-### 10.1) `architecture/external-effect-lifecycle.md` (provider effect architecture)
+### 12) `architecture/external-effect-lifecycle.md` (provider effect architecture)
 Use this when adding a durable non-Core action against an exchange, content
 provider, wallet, or another external system.
 
@@ -133,7 +133,7 @@ Contains:
 - timeout, restart, reconciliation, cancellation, and stale-result rules
 - the strict separation from Core truth and transport delivery
 
-### 10.2) `architecture/ai-proposal-boundary.md` (AI capability architecture)
+### 13) `architecture/ai-proposal-boundary.md` (AI capability architecture)
 
 Use this for every AI-assisted or delegated drone capability.
 
@@ -144,7 +144,7 @@ Contains:
 - Observe, Assisted, and Bounded Delegation release requirements
 - reference mappings for Moltbook, trading, and staking drones
 
-### 10.3) `architecture/capsule-ai-runtime.md` (shared inference runtime)
+### 14) `architecture/capsule-ai-runtime.md` (shared inference runtime)
 
 Use this when adding an AI-enabled feature, provider, local model, credential
 flow, inference scheduler, or WASM inference host capability.
@@ -155,7 +155,7 @@ Contains:
 - the rule that WASM receives inference capability but never credentials
 - the incremental 1.x convergence path and mandatory Hivra 2.0 contract
 
-### 11) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
+### 15) `plugins/bingx_futures_trading_drone_spec_v1.md` (trading drone spec)
 Use this when implementing TVH/signal logic for the BingX futures plugin.
 
 Contains:
@@ -164,7 +164,7 @@ Contains:
 - v1 entry criteria (long/short), risk filters, and output schema
 - host API and capability boundary for futures intent preparation
 
-### 12) `checklists/trading-drone-spec-runtime-parity.md` (drone parity checklist)
+### 16) `checklists/trading-drone-spec-runtime-parity.md` (drone parity checklist)
 Use this after any drone logic change and before release packaging.
 
 Contains:
@@ -173,7 +173,7 @@ Contains:
 - required automated test evidence list
 - required manual verification records for release candidates
 
-### 13) `checklists/trading-drone-evidence-log.md` (drone evidence journal)
+### 17) `checklists/trading-drone-evidence-log.md` (drone evidence journal)
 Use this to record build-tagged decision/execution evidence across macOS and Android release-candidate runs.
 
 Contains:
@@ -181,7 +181,7 @@ Contains:
 - decision/execution envelope hash traceability
 - risk-path coverage records
 - deterministic coverage check command
-### 14) `plugins/bingx_futures_trading_drone_goal_contract_v1.md` (drone goal contract)
+### 18) `plugins/bingx_futures_trading_drone_goal_contract_v1.md` (drone goal contract)
 Use this as the operational anchor for trading-drone development cadence.
 
 Contains:
@@ -190,7 +190,7 @@ Contains:
 - mandatory patch->test->smoke cadence
 - acceptance gates and ownership rule
 
-### 15) `architecture-v2-blueprint.md` (design-only architecture map)
+### 19) `architecture-v2-blueprint.md` (design-only architecture map)
 
 Use this when planning Hivra 2.0 in parallel with the maintained 1.x line.
 
@@ -204,7 +204,7 @@ Contains:
 This document is non-normative for 1.x. `specification.md` continues to win for
 all current runtime and release behavior.
 
-### 16) `development-control.md` (current-stage navigation)
+### 20) `development-control.md` (current-stage navigation)
 
 Use this at the start and end of every engineering session.
 
@@ -217,7 +217,7 @@ Contains:
 It is a navigation layer only. It links to the specification, roadmap, and
 architecture blueprint rather than duplicating their rules.
 
-### 17) `plugins/moltbook_agent_drone_design_v1.md` (Moltbook drone contract)
+### 21) `plugins/moltbook_agent_drone_design_v1.md` (Moltbook drone contract)
 
 Use this when evaluating an optional Capsule-operated Moltbook presence.
 
@@ -239,7 +239,7 @@ boundaries, the foreground bounded-reply experiment, and the gated automatic
 evolution track. WASM remains deterministic and effect-free; remote reads and
 writes run only through host-owned adapters and the External Effects lifecycle.
 
-### 18) `docs/platform-toolchain-evolution.md` (platform evolution contract)
+### 22) `docs/platform-toolchain-evolution.md` (platform evolution contract)
 
 Use this when changing or evaluating Flutter/Dart, Rust/Cargo, Android SDK,
 AGP/Gradle/Kotlin/JDK/NDK, Xcode, or CocoaPods.
@@ -252,9 +252,10 @@ Contains:
 
 It explicitly forbids hiding an SDK migration inside product or protocol work.
 
-### 19) `architecture/continuous-ledger-protocol-v5.md` (active protocol hardening)
+### 23) `architecture/continuous-ledger-protocol-v5.md` (ledger protocol contract)
 
-Use this for `12.3 / pass 3` only.
+Use this when reviewing the implemented v5 continuous-ledger protocol or its
+v4 compatibility boundary.
 
 Contains:
 - the v5 split between signed domain provenance and locally signed history
@@ -262,30 +263,58 @@ Contains:
 - v4 compatibility, migration-anchor, and read-only safety rules
 - implementation units and adversarial evidence required before release
 
-It is the approved replacement design for the current v4 replay checksum; it
-does not claim that v5 is implemented yet.
+It records the implemented replacement for the v4 replay checksum. Fresh
+runtimes and append paths use v5; v4 remains a guarded migration input.
 
 ## Recommended Reading Order
 
-1. `product-axis.md`
-2. `specification.md`
-3. `hivra-conceptual-model.md`
-4. `roadmap.md`
-5. `android-keystore-migration.md` when touching Android seed storage
-6. `identity-decoupling-migration.md` when touching root identity or transport key derivation
-7. `capsule-addressing-model.md` when touching invitation addressing or peer endpoint resolution
-8. `checklists/user-lifetime-safety-pack.md` when preparing release candidates
-9. `architecture-execution-discipline.md` when designing/refactoring module boundaries and async behavior
-10. `architecture/transport-delivery-lifecycle.md` when changing delivery or relay recovery
-11. `plugins/bingx_futures_trading_drone_spec_v1.md` when implementing trading-drone logic
-12. `plugins/bingx_futures_trading_drone_goal_contract_v1.md` to keep drone work aligned with one operational target
-13. `checklists/trading-drone-spec-runtime-parity.md` before drone release packaging and manual smoke sign-off
-14. `checklists/trading-drone-evidence-log.md` to capture build-tagged parity evidence
-15. `architecture-v2-blueprint.md` when designing 2.0 ownership, contracts, or migration units
-16. `development-control.md` before resuming, scoping, or closing any work item
+1. `development-control.md`
+2. `product-axis.md`
+3. `specification.md`
+4. the selected `roadmap.md` item and its owning architecture contract
+5. `hivra-conceptual-model.md` for product-language context
+6. `android-keystore-migration.md` when touching Android seed storage
+7. `identity-decoupling-migration.md` when touching root identity or transport key derivation
+8. `capsule-addressing-model.md` when touching invitation addressing or peer endpoint resolution
+9. `checklists/user-lifetime-safety-pack.md` when preparing release candidates
+10. `architecture-execution-discipline.md` when designing/refactoring module boundaries and async behavior
+11. `architecture/transport-delivery-lifecycle.md` when changing delivery or relay recovery
+12. `plugins/bingx_futures_trading_drone_spec_v1.md` when implementing trading-drone logic
+13. `plugins/bingx_futures_trading_drone_goal_contract_v1.md` to keep drone work aligned with one operational target
+14. `checklists/trading-drone-spec-runtime-parity.md` before drone release packaging and manual smoke sign-off
+15. `checklists/trading-drone-evidence-log.md` to capture build-tagged parity evidence
+16. `architecture-v2-blueprint.md` when designing 2.0 ownership, contracts, or migration units
 17. `plugins/moltbook_agent_drone_design_v1.md` when planning the Moltbook future track
 18. `docs/platform-toolchain-evolution.md` before changing the native build stack
 19. `architecture/continuous-ledger-protocol-v5.md` before changing ledger signing, import, or persistence
+
+## Supporting Index
+
+The detailed entries above cover the primary reading path. The remaining
+checked-in documents have these narrower owners:
+
+- `architecture/plugin-package-lifecycle.md`: transactional plugin package
+  install, update, removal, recovery, and registry/file ownership.
+- `plugins/plugin_host_api_v1.md`,
+  `plugins/bingx_futures_trading_test_plugin.md`, and
+  `plugins/external_plugin_source.md`: plugin ABI, test-package, and external
+  source contracts.
+- `checklists/architecture-review.md`: mandatory architecture review gate for
+  selected implementation work.
+- `checklists/manual-smoke.md`, `checklists/release-macos.md`,
+  `checklists/release-android.md`, and
+  `checklists/release-manual-signoff-log.md`: release-candidate execution and
+  evidence; unchecked boxes are templates until a candidate is named.
+- `checklists/device-migration.md`,
+  `checklists/android-runtime-hardening.md`, and
+  `checklists/transport-health-policy.md`: focused recovery, Android, and
+  transport-health evidence.
+- `checklists/ai-engineer-release-smoke.md` and
+  `checklists/moltbook-release-smoke.md`: feature-specific release smoke that
+  activates only when its surface changes or a release checklist requires it.
+
+No document in this supporting index owns the current priority. Current work
+selection remains exclusively in `development-control.md` and `roadmap.md`.
 20. `architecture/ai-proposal-boundary.md` before connecting inference to any drone capability or external effect
 
 ## Update Rules

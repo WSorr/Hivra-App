@@ -30,6 +30,8 @@ change. It must not be smuggled into feature work or a release candidate.
 
 ## 2. Current Verified Baseline
 
+Audit date: 2026-08-03.
+
 The baseline below is the currently exercised development environment. It is a
 compatibility matrix, not permission to distribute a manually built artifact.
 Release scripts remain the authority for embedded app version and packaging.
@@ -40,15 +42,74 @@ Release scripts remain the authority for embedded app version and packaging.
 | Dart | 3.11.0 | Flutter application code |
 | Rust / Cargo | 1.93.0 | Core, engine, adapters, FFI, WASM runtime |
 | Rust Android targets | `aarch64-linux-android`, `armv7-linux-androideabi`, `x86_64-linux-android` | Android FFI artifacts |
-| Android SDK | platform/build tools 36.1 | Android build environment |
+| Android SDK | platform 36.1 / build tools 36.1.0 | Android build environment |
 | App SDK contract | compile 36, target 36, min 24 | `flutter/android/app/build.gradle.kts` via Flutter defaults |
 | Android Gradle Plugin | 8.13.2 | Android build graph |
 | Gradle wrapper | 8.13 | Android build graph |
 | Kotlin plugin | 2.2.20 | Android embedding and keystore bridge |
-| JDK | Android Studio JBR 21 | Android build execution |
+| JDK | Android Studio JBR 21 through Flutter; Homebrew OpenJDK 17 from a plain shell Gradle invocation | Android build execution; both are supported, but the unresolved selector is T0 drift |
 | Android NDK | 28.2.13676358 | `cargo ndk` Rust FFI build |
 | Xcode | 26.6 | macOS packaging and native loading |
 | CocoaPods | 1.16.2 | macOS Flutter plugins |
+
+Observed host evidence:
+
+- macOS `26.5.2` on Apple Silicon;
+- Flutter doctor resolves JBR `21.0.9` and Android SDK `36.1.0`;
+- `./gradlew --version` from a plain shell resolves OpenJDK `17.0.18`;
+- Xcode `26.6` is selected and can package macOS, but simulator-runtime
+  discovery remains unhealthy;
+- the connected Android device runs Android 16 / API 36;
+- all required Android Rust targets plus `wasm32-unknown-unknown` are installed.
+
+The baseline is **supported and recently exercised**, but it is not yet
+reproducible from repository state alone. T0 must close these gaps before an
+upgrade:
+
+1. Flutter `3.41.2` is selected by the local Android properties SDK path, not
+   a checked-in repository pin.
+2. Rust `1.93.0` is the host default; there is no checked-in
+   `rust-toolchain.toml` selecting the toolchain and required targets.
+3. JDK selection differs between Flutter and a plain Gradle shell invocation.
+4. Android SDK paths correctly remain local, but no checked-in command verifies
+   the required package versions after resolving those paths.
+5. The repository has no single environment-verification command that reports
+   all supported mismatches before a build starts.
+
+### Upstream Currency Snapshot
+
+Currency is not adoption. This snapshot records available stable versions so
+that “current” does not silently become “approved”.
+
+| Surface | Stable available on audit date | Decision |
+| --- | --- | --- |
+| Flutter / Dart | Flutter 3.44.8 / Dart 3.12.2 | Candidate for T1 after T0; not adopted |
+| Rust / Cargo | Rust 1.97.1 | Separate post-T0 toolchain unit; not adopted |
+| Android NDK | r29 available; r28.2 remains Flutter 3.41.2 default | Keep r28.2 baseline until a dedicated compatibility pass |
+| AGP / Gradle | AGP 8.13.2 with Gradle 8.13 is an official compatible pair for API 36.1 | Keep baseline; AGP 9 remains a separate migration |
+| Xcode | Xcode 26.6 | Current exercised baseline; repair simulator discovery separately if iOS evidence is required |
+
+Primary audit sources:
+
+- Flutter stable archive and release notes:
+  `https://docs.flutter.dev/install/archive` and
+  `https://docs.flutter.dev/release/release-notes`;
+- Rust release channel: `https://blog.rust-lang.org/releases/` plus the local
+  `rustup check` result;
+- AGP 8.13 compatibility:
+  `https://developer.android.com/build/releases/agp-8-13-0-release-notes`;
+- Gradle Java compatibility:
+  `https://docs.gradle.org/current/userguide/compatibility.html`;
+- Android NDK history:
+  `https://developer.android.com/ndk/downloads/revision_history`;
+- Xcode 26.6 release notes:
+  `https://developer.apple.com/documentation/xcode-release-notes/xcode-26_6-release-notes`.
+
+`flutter pub outdated` also reports dependency drift. Patch-compatible updates
+and major constraint changes are not toolchain T0 work: each must be selected
+under the capability owner it can affect, with focused regression and platform
+evidence. In particular, secure storage, connectivity, scanning, sharing, and
+archive changes must not be bundled into an SDK update.
 
 The native library contract is deliberately stable across these tools:
 
@@ -109,7 +170,7 @@ Goal:
 - update Flutter and Dart only after T0 locks the prior baseline.
 
 Current candidate:
-- Flutter 3.44.x / Dart 3.12.x is newer than the verified 3.41.2 / 3.11.0
+- Flutter 3.44.8 / Dart 3.12.2 is newer than the verified 3.41.2 / 3.11.0
   baseline. It is not adopted by default.
 
 Required evidence:

@@ -45,6 +45,30 @@ remaining protocol and reliability passes are selected one at a time from
 `roadmap.md`; no pass is considered complete merely because a screen appears to
 work in one manual run.
 
+### Ordered Tail
+
+This is the current execution order, not a second backlog:
+
+1. **P0 — `12.3 / pass 15`:** implement the bounded inbound quarantine
+   repository, persistence, expiry/tombstones, Capsule deletion, and
+   same-router recovery. Sender limiting remains disabled.
+2. **P0 — quarantine follow-up:** after pass 15 has cross-platform repository
+   evidence, select one isolated pass for `SenderIngressPolicyV1` activation
+   and backpressure behavior. Its exact pass number is assigned only when pass
+   15 closes.
+3. **P1 — `T0`:** add checked-in environment verification and repository-owned
+   pins for the reproducible baseline. Do not upgrade Flutter, Rust, Android,
+   or Xcode in T0.
+4. **P1 — release decision:** only a named release candidate may trigger fresh
+   macOS and Android packaged-artifact signoff.
+5. **P2 — design and parked work:** `V2-0`, crypto-agility protocol design,
+   dependency upgrades, AI trading advice, distributed backup, and staking
+   remain non-runtime or parked until the P0 sequence permits selection.
+
+Unchecked boxes in reusable release/smoke checklists are execution templates,
+not automatically active debt. A checklist becomes active only for a named
+candidate or selected pass recorded here and in `roadmap.md`.
+
 ## 3. The Only Two Work Lanes
 
 ```text
