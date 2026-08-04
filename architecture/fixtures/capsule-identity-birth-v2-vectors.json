@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "contract_id": "capsule_identity_birth_contract_v2",
+  "design_status": "design-complete-no-runtime",
+  "vectors": [
+    {
+      "id": "proto_classical_key_accepted",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "1111111111111111111111111111111111111111111111111111111111111111"},
+        "network_id": "hivra.neste",
+        "birth_mode": "PROTO",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-1", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-1", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+      },
+      "verification": {"valid": true, "evidence_id": "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"},
+      "preexisting_capsule_ids": [],
+      "expected": {
+        "decision": "ACCEPTED",
+        "fact": {
+          "fact_version": 1,
+          "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "1111111111111111111111111111111111111111111111111111111111111111"},
+          "network_id": "hivra.neste",
+          "birth_mode": "PROTO",
+          "birth_operation_id": "0101010101010101010101010101010101010101010101010101010101010101",
+          "root_authority_ref": {"descriptor_version": 1, "suite_id": "ed25519-v1", "key_id": "root-1"}
+        },
+        "initial_starter_kinds": []
+      }
+    },
+    {
+      "id": "genesis_variable_length_authority_accepted",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "0202020202020202020202020202020202020202020202020202020202020202",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "222222222222222222222222222222222222222222222222"},
+        "network_id": "hivra.neste",
+        "birth_mode": "GENESIS",
+        "root_authority": {"version": 1, "suite_id": "hybrid-demo-v1", "key_id": "root-hybrid-1", "key_bytes_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+        "authorization_proof": {"version": 1, "suite_id": "hybrid-demo-v1", "key_id": "root-hybrid-1", "signature_bytes_hex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}
+      },
+      "verification": {"valid": true, "evidence_id": "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"},
+      "preexisting_capsule_ids": [],
+      "expected": {
+        "decision": "ACCEPTED",
+        "fact": {
+          "fact_version": 1,
+          "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "222222222222222222222222222222222222222222222222"},
+          "network_id": "hivra.neste",
+          "birth_mode": "GENESIS",
+          "birth_operation_id": "0202020202020202020202020202020202020202020202020202020202020202",
+          "root_authority_ref": {"descriptor_version": 1, "suite_id": "hybrid-demo-v1", "key_id": "root-hybrid-1"}
+        },
+        "initial_starter_kinds": ["JUICE", "SPARK", "SEED", "PULSE", "KICK"]
+      }
+    },
+    {
+      "id": "runtime_role_is_not_birth_input",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "0303030303030303030303030303030303030303030303030303030303030303",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "3333333333333333333333333333333333333333333333333333333333333333"},
+        "network_id": "hivra.neste",
+        "birth_mode": "PROTO",
+        "runtime_role": "LEAF",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-3", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa03"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-3", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb03"}
+      },
+      "verification": {"valid": true, "evidence_id": "e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3"},
+      "preexisting_capsule_ids": [],
+      "expected": {"decision": "REJECTED", "error_code": "UNEXPECTED_FIELD", "fact": null, "initial_starter_kinds": []}
+    },
+    {
+      "id": "leaf_is_not_a_birth_mode",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "0404040404040404040404040404040404040404040404040404040404040404",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "4444444444444444444444444444444444444444444444444444444444444444"},
+        "network_id": "hivra.neste",
+        "birth_mode": "LEAF",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-4", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa04"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-4", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb04"}
+      },
+      "verification": {"valid": true, "evidence_id": "e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4"},
+      "preexisting_capsule_ids": [],
+      "expected": {"decision": "REJECTED", "error_code": "INVALID_BIRTH_MODE", "fact": null, "initial_starter_kinds": []}
+    },
+    {
+      "id": "capsule_id_must_not_alias_root_key",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "0505050505050505050505050505050505050505050505050505050505050505",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+        "network_id": "hivra.neste",
+        "birth_mode": "PROTO",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-5", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-5", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb05"}
+      },
+      "verification": {"valid": true, "evidence_id": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5"},
+      "preexisting_capsule_ids": [],
+      "expected": {"decision": "REJECTED", "error_code": "CAPSULE_ID_KEY_ALIAS_FORBIDDEN", "fact": null, "initial_starter_kinds": []}
+    },
+    {
+      "id": "authority_binding_mismatch_rejected",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "0606060606060606060606060606060606060606060606060606060606060606",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "6666666666666666666666666666666666666666666666666666666666666666"},
+        "network_id": "hivra.neste",
+        "birth_mode": "PROTO",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-6", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa06"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "wrong-root", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb06"}
+      },
+      "verification": {"valid": true, "evidence_id": "e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6"},
+      "preexisting_capsule_ids": [],
+      "expected": {"decision": "REJECTED", "error_code": "AUTHORITY_BINDING_MISMATCH", "fact": null, "initial_starter_kinds": []}
+    },
+    {
+      "id": "invalid_authorization_rejected",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "0707070707070707070707070707070707070707070707070707070707070707",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "7777777777777777777777777777777777777777777777777777777777777777"},
+        "network_id": "hivra.neste",
+        "birth_mode": "PROTO",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-7", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa07"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-7", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb07"}
+      },
+      "verification": {"valid": false, "evidence_id": "e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7"},
+      "preexisting_capsule_ids": [],
+      "expected": {"decision": "REJECTED", "error_code": "AUTHORIZATION_INVALID", "fact": null, "initial_starter_kinds": []}
+    },
+    {
+      "id": "duplicate_capsule_rejected",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "0808080808080808080808080808080808080808080808080808080808080808",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "8888888888888888888888888888888888888888888888888888888888888888"},
+        "network_id": "hivra.neste",
+        "birth_mode": "GENESIS",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-8", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa08"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-8", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb08"}
+      },
+      "verification": {"valid": true, "evidence_id": "e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8"},
+      "preexisting_capsule_ids": ["8888888888888888888888888888888888888888888888888888888888888888"],
+      "expected": {"decision": "REJECTED", "error_code": "CAPSULE_ALREADY_EXISTS", "fact": null, "initial_starter_kinds": []}
+    },
+    {
+      "id": "unsupported_contract_version_rejected",
+      "request": {
+        "contract_version": 2,
+        "operation_id": "0909090909090909090909090909090909090909090909090909090909090909",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "9999999999999999999999999999999999999999999999999999999999999999"},
+        "network_id": "hivra.neste",
+        "birth_mode": "PROTO",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-9", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa09"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-9", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb09"}
+      },
+      "verification": {"valid": true, "evidence_id": "e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9"},
+      "preexisting_capsule_ids": [],
+      "expected": {"decision": "REJECTED", "error_code": "UNSUPPORTED_CONTRACT_VERSION", "fact": null, "initial_starter_kinds": []}
+    },
+    {
+      "id": "invalid_operation_id_rejected",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "0a",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa10"},
+        "network_id": "hivra.neste",
+        "birth_mode": "PROTO",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-10", "key_bytes_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc10"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-10", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb10"}
+      },
+      "verification": {"valid": true, "evidence_id": "1010101010101010101010101010101010101010101010101010101010101010"},
+      "preexisting_capsule_ids": [],
+      "expected": {"decision": "REJECTED", "error_code": "INVALID_OPERATION_ID", "fact": null, "initial_starter_kinds": []}
+    },
+    {
+      "id": "invalid_capsule_id_rejected",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "1111111111111111111111111111111111111111111111111111111111111111",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "not-hex"},
+        "network_id": "hivra.neste",
+        "birth_mode": "PROTO",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-11", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa11"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-11", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb11"}
+      },
+      "verification": {"valid": true, "evidence_id": "1212121212121212121212121212121212121212121212121212121212121212"},
+      "preexisting_capsule_ids": [],
+      "expected": {"decision": "REJECTED", "error_code": "INVALID_CAPSULE_ID", "fact": null, "initial_starter_kinds": []}
+    },
+    {
+      "id": "unsupported_network_rejected",
+      "request": {
+        "contract_version": 1,
+        "operation_id": "1313131313131313131313131313131313131313131313131313131313131313",
+        "capsule_id": {"version": 1, "scheme_id": "hivra.capsule-id.opaque.v1", "value_hex": "1313131313131313131313131313131313131313131313131313131313131313"},
+        "network_id": "hivra.hood",
+        "birth_mode": "PROTO",
+        "root_authority": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-13", "key_bytes_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa13"},
+        "authorization_proof": {"version": 1, "suite_id": "ed25519-v1", "key_id": "root-13", "signature_bytes_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb13"}
+      },
+      "verification": {"valid": true, "evidence_id": "1414141414141414141414141414141414141414141414141414141414141414"},
+      "preexisting_capsule_ids": [],
+      "expected": {"decision": "REJECTED", "error_code": "UNSUPPORTED_NETWORK", "fact": null, "initial_starter_kinds": []}
+    }
+  ]
+}

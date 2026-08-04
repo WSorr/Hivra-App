@@ -120,7 +120,7 @@
     "first_v2_1_design_contract": {
       "contract_id": "capsule_identity_birth_contract_v2",
       "capability_id": "capsule_birth",
-      "status": "SELECTED_DESIGN_ONLY",
+      "status": "DESIGN_COMPLETE_NO_RUNTIME",
       "rationale": "CapsuleId and immutable birth mode are foundational inputs for continuity, recovery, addressing, selection, and later crypto-agility migration proofs.",
       "unblocks": ["capsule_continuity", "capsule_recovery", "capsule_addressing", "capsule_selection"]
     }

@@ -469,8 +469,8 @@ def validate_v2_0_exit_audit(registry: dict, capability_ids: set[str]) -> None:
         {"contract_id", "capability_id", "status", "rationale", "unblocks"},
         "first_v2_1_design_contract",
     )
-    if first_contract["status"] != "SELECTED_DESIGN_ONLY":
-        raise RegistryError("first_v2_1_design_contract: only design selection is allowed")
+    if first_contract["status"] != "DESIGN_COMPLETE_NO_RUNTIME":
+        raise RegistryError("first_v2_1_design_contract: design must be complete without runtime authorization")
     if not ordered or first_contract["capability_id"] != ordered[0]:
         raise RegistryError("first_v2_1_design_contract: capability must be first in ordered non-ready work")
     if not first_contract["contract_id"].strip() or not first_contract["rationale"].strip():
@@ -810,6 +810,9 @@ def self_test(registry: dict) -> None:
     runtime_authorized = copy.deepcopy(registry)
     runtime_authorized["v2_0_exit_audit"]["runtime_implementation_authorized"] = True
     cases.append(("V2-0 runtime authorization", runtime_authorized))
+    contract_runtime_authorized = copy.deepcopy(registry)
+    contract_runtime_authorized["v2_0_exit_audit"]["first_v2_1_design_contract"]["status"] = "IMPLEMENTATION_AUTHORIZED"
+    cases.append(("V2-1 contract runtime authorization", contract_runtime_authorized))
     for name, mutated in cases:
         try:
             validate_registry(mutated)

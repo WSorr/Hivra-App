@@ -3,8 +3,9 @@
 Status: design-only draft. `V2-0 / passes A-E` is complete. The ownership
 registry, generated baseline, owner discovery, service-locator classification,
 explicit UI/Flutter-FFI surface mapping, bounded identity-family decomposition,
-and exit audit are fail-closed evidence. `V2-1 / pass A` is selected for the
-Capsule identity and birth contract design only. This document does not change the
+and exit audit are fail-closed evidence. `V2-1 / pass A` completed the Capsule
+identity and birth design contract. `V2-1 / pass B` is selected for the Starter
+inventory and Genesis seed-plan contract design only. This document does not change the
 normative Hivra 1.x protocol or authorize a 1.x runtime migration.
 
 ## 1. Objective
@@ -560,6 +561,239 @@ Selected `V2-1 / pass A` — `capsule_identity_birth_contract_v2`:
 Pass A is contract/schema/fixture design only. No Rust, Flutter, FFI, storage,
 crypto adapter, migration runtime, or production binding may be implemented
 until the contract review and its own exit criteria are complete.
+
+#### V2-1/A Capsule Identity and Birth Contract
+
+- Contract id: `capsule_identity_birth_contract_v2`
+- Contract version: `1`
+- Status: design complete; no production wire format or runtime binding.
+
+This section is the normative design source. The machine-readable schema at
+`architecture/contracts/capsule-identity-birth-v2.schema.json` and semantic
+vectors at `architecture/fixtures/capsule-identity-birth-v2-vectors.json` are
+generated-review evidence for this section; they are not a second architecture
+authority.
+
+##### Ownership and canonical path
+
+```text
+First Launch intent
+  -> BirthRequestV2
+  -> Engine/application authorization verification
+  -> VerifiedBirthCommandV2
+  -> Core Capsule Birth transition
+  -> CapsuleBornFactV2 + deterministic initial Starter plan
+  -> one atomic Ledger append/result boundary
+```
+
+- Capsule Birth owns the birth decision, immutable birth fact, and accepted or
+  rejected result.
+- Crypto/platform adapters own `KeyDescriptorV1` and `SignatureProofV1`
+  verification. They do not decide birth mode, network, Starter plan, or
+  Capsule truth.
+- Core receives `VerifiedBirthCommandV2`. It never receives a recovery seed,
+  private key, raw signature bytes, RNG, clock, transport identity, or provider
+  object.
+- Starter inventory owns Starter facts. The birth result exposes a deterministic
+  initial Starter plan; the later Starter contract must prove how that plan and
+  `CapsuleBornFactV2` enter one atomic Core transaction before implementation.
+- No runtime implementation is authorized by this contract design.
+
+##### Contract values
+
+`CapsuleIdV2` is an opaque, versioned, scheme-tagged, length-delimited domain
+identifier:
+
+```text
+CapsuleIdV2 {
+  version: 1,
+  scheme_id: "hivra.capsule-id.opaque.v1",
+  value: length-delimited bytes
+}
+```
+
+The identifier is generated outside Core and supplied as an explicit command
+value. Generation and recovery are platform/migration responsibilities and are
+not silently inferred from a root key. Core validates the identifier shape,
+stores it, compares it, and binds facts to it. `CapsuleIdV2.value` MUST NOT be
+the raw bytes of any root, transport, signing, encryption, or KEM key.
+
+`KeyDescriptorV1` and `SignatureProofV1` follow the permanent crypto-agility
+contract: each contains `version`, `suite_id`, `key_id`, and variable-length
+bytes. The proof and descriptor MUST bind the same suite and key id. Key and
+signature lengths are adapter concerns and have no branch in the Core birth
+transition.
+
+`BirthModeV2` has exactly two values:
+
+- `GENESIS`: the accepted result requests the ordered initial Starter kinds
+  `JUICE`, `SPARK`, `SEED`, `PULSE`, `KICK`;
+- `PROTO`: the accepted result requests no initial Starter.
+
+`runtime_role` is not a birth request, verified command, fact, or result field.
+Leaf and future Relay behavior belong to a separate runtime-role contract and
+cannot alter immutable birth mode or retroactively create initial Starters.
+
+Only `hivra.neste` is accepted by version 1. Hood remains a separately
+namespaced future network design and cannot be enabled through a birth flag.
+
+##### Request, verified command, fact, and result
+
+`BirthRequestV2` is the application-to-verifier boundary:
+
+```text
+BirthRequestV2 {
+  contract_version,
+  operation_id,
+  capsule_id,
+  network_id,
+  birth_mode,
+  root_authority: KeyDescriptorV1,
+  authorization_proof: SignatureProofV1
+}
+```
+
+After adapter verification, the application boundary creates exactly one
+`VerifiedBirthCommandV2`. It carries `RootAuthorityRefV1` and an opaque
+`authorization_evidence_id`; raw key and proof bytes do not cross into the Core
+command.
+
+An accepted transition produces exactly one `CapsuleBornFactV2` and one
+deterministic initial Starter plan. The fact binds:
+
+- contract/fact version;
+- `CapsuleIdV2`;
+- network id;
+- immutable birth mode;
+- birth operation id;
+- root authority descriptor version, suite id, and key id.
+
+It does not contain runtime role, transport identity, mutable settings, seed,
+private material, raw public-key bytes, or raw signature bytes.
+
+The transition is deterministic for the same verified command and existing
+Ledger projection. A Capsule id can be born once. Repeating the same or another
+operation against an existing Capsule id returns `CAPSULE_ALREADY_EXISTS`; it
+does not append another birth fact.
+
+##### Canonical errors
+
+Version 1 defines these closed error codes:
+
+- `UNEXPECTED_FIELD`;
+- `UNSUPPORTED_CONTRACT_VERSION`;
+- `INVALID_OPERATION_ID`;
+- `INVALID_CAPSULE_ID`;
+- `CAPSULE_ID_KEY_ALIAS_FORBIDDEN`;
+- `UNSUPPORTED_NETWORK`;
+- `INVALID_BIRTH_MODE`;
+- `AUTHORITY_BINDING_MISMATCH`;
+- `AUTHORIZATION_INVALID`;
+- `CAPSULE_ALREADY_EXISTS`.
+
+Unknown fields and unknown enum values fail closed. Adapter error text is
+diagnostic only and cannot become a Core decision branch or persisted fact.
+
+##### 1.x compatibility and migration
+
+The maintained 1.x payload remains unchanged and readable:
+
+```text
+CapsuleCreatedPayloadV1 = [network_byte, capsule_type_byte]
+network_byte 1 -> hivra.neste
+capsule_type_byte 1 -> GENESIS
+capsule_type_byte 0 -> PROTO
+```
+
+The current Rust names `Relay = 1` and `Leaf = 0` are compatibility labels for
+that byte only. They MUST NOT be copied into the V2 birth contract or used to
+infer runtime role.
+
+Existing Ledger events are never rewritten, re-signed, or replaced with
+`CapsuleBornFactV2`. An existing 1.x Capsule receives an opaque `CapsuleIdV2`
+only through a future append-only migration checkpoint mutually bound to the
+active classical authority and exact prior Ledger head. Until that checkpoint
+contract exists, the 1.x root-key identity alias remains isolated at the
+compatibility boundary and MUST NOT be presented as a native V2 CapsuleId.
+
+New V2 birth and 1.x import cannot be dual-written. A future composition switch
+must select one canonical result path after fixture parity, seal the old write
+entrypoint, and retain the old payload decoder for the declared read window.
+
+##### Replacement and sealing targets
+
+The future migration unit must replace or seal, not wrap indefinitely:
+
+- `FirstLaunchService.createCapsuleDraft(String type)` and its stringly typed
+  `genesis`/`proto` choice;
+- `CapsuleDraftRuntime.createCapsuleError(... isGenesis ...)`;
+- `HivraBindings.createCapsule(... isGenesis ...)` and direct
+  `capsuleType` byte construction;
+- `CapsuleType::Leaf/Relay` where it currently carries birth meaning;
+- writable uses of `CapsuleCreatedPayload.capsule_type`;
+- duplicated `isGenesis` bootstrap/cache truth once Ledger projection and the
+  migration window prove replacement safety.
+
+The old `CapsuleCreated` reader, old Ledger verification, and recovery of
+supported 1.x histories remain compatibility inputs. They do not become a
+second Core path.
+
+##### Semantic golden vectors and exit rule
+
+The checked-in vectors cover:
+
+- accepted Proto birth with a current classical key shape;
+- accepted Genesis birth with different key and signature lengths;
+- exact Genesis and Proto Starter plans;
+- rejection of `runtime_role` and `LEAF` as birth inputs;
+- rejection of CapsuleId/public-key aliasing;
+- proof/descriptor binding mismatch;
+- invalid authorization evidence;
+- duplicate Capsule birth;
+- unsupported contract version and network;
+- invalid operation and Capsule identifiers.
+
+These are semantic vectors, not a production JSON or binary wire-format
+commitment. A later implementation pass must choose canonical encoding only
+with schema versioning, length delimiting, cross-language fixtures, and removal
+targets approved together.
+
+Pass A exits only when the blueprint, schema, vectors, validator negative
+self-tests, ownership registry, and full repository review agree. Exit closes
+the design contract; it does not authorize implementation. The next design
+dependency is the standalone Starter inventory/current-view and Genesis seed
+plan contract required to make the accepted birth transaction atomic.
+
+Pass A completed on 2026-08-04 with:
+
+- the normative blueprint contract above;
+- a strict draft-2020-12 schema with opaque variable-length CapsuleId,
+  suite-tagged variable-length authority/proof values, exact birth modes,
+  closed errors, and no runtime-role field;
+- twelve semantic vectors covering accepted Genesis/Proto behavior, variable
+  key/proof sizes, exact Starter plans, identifier separation, authorization,
+  duplicate birth, version, operation id, network, and malformed Capsule id;
+- fail-closed schema/vector validation and negative self-tests for runtime
+  authorization, schema weakening, missing vectors, and semantic drift;
+- explicit 1.x read compatibility plus append-only migration and removal/sealing
+  targets;
+- zero Rust, Flutter, FFI, storage, adapter, persisted-format, or production
+  binding changes.
+
+Selected `V2-1 / pass B` — `starter_inventory_contract_v2`:
+
+- define one Core-owned Starter inventory current-view contract from Ledger
+  facts;
+- define the deterministic Genesis seed plan consumed by Capsule Birth without
+  giving Birth ownership of Starter lifecycle facts;
+- define Starter id/value shape, state transitions, ordering, errors, and
+  semantic golden vectors without spreading current fixed-size crypto debt;
+- define the atomic transaction boundary between `CapsuleBornFactV2` and the
+  five Genesis `StarterCreated` facts;
+- map current `Starter`, `StarterCreatedPayload`, `StarterBurnedPayload`,
+  LedgerView adapter, and Starters screen as compatibility/removal targets;
+- introduce no runtime implementation, V2 event in production Core, FFI binding,
+  storage format, or UI path.
 
 ### V2-1: Core contract proofs
 

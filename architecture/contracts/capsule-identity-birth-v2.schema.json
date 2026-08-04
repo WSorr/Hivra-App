@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hivra.local/contracts/capsule-identity-birth-v2.schema.json",
+  "title": "Hivra Capsule Identity and Birth Contract V2 Design",
+  "description": "Machine-readable design evidence. This schema does not authorize a production V2 runtime or wire format.",
+  "x-hivra-contract-id": "capsule_identity_birth_contract_v2",
+  "x-hivra-contract-version": 1,
+  "x-hivra-design-status": "design-complete-no-runtime",
+  "$defs": {
+    "LowerHexBytes": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{2})+$",
+      "minLength": 32,
+      "maxLength": 16384
+    },
+    "Commitment32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "CapsuleIdBytes": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{2})+$",
+      "minLength": 32,
+      "maxLength": 512
+    },
+    "CapsuleIdV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "scheme_id", "value_hex"],
+      "properties": {
+        "version": {"const": 1},
+        "scheme_id": {"const": "hivra.capsule-id.opaque.v1"},
+        "value_hex": {"$ref": "#/$defs/CapsuleIdBytes"}
+      }
+    },
+    "KeyDescriptorV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "suite_id", "key_id", "key_bytes_hex"],
+      "properties": {
+        "version": {"const": 1},
+        "suite_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "key_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "key_bytes_hex": {"$ref": "#/$defs/LowerHexBytes"}
+      }
+    },
+    "SignatureProofV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "suite_id", "key_id", "signature_bytes_hex"],
+      "properties": {
+        "version": {"const": 1},
+        "suite_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "key_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "signature_bytes_hex": {"$ref": "#/$defs/LowerHexBytes"}
+      }
+    },
+    "RootAuthorityRefV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["descriptor_version", "suite_id", "key_id"],
+      "properties": {
+        "descriptor_version": {"const": 1},
+        "suite_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "key_id": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    },
+    "BirthRequestV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "operation_id", "capsule_id", "network_id", "birth_mode", "root_authority", "authorization_proof"],
+      "properties": {
+        "contract_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/Commitment32"},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"enum": ["hivra.neste"]},
+        "birth_mode": {"enum": ["GENESIS", "PROTO"]},
+        "root_authority": {"$ref": "#/$defs/KeyDescriptorV1"},
+        "authorization_proof": {"$ref": "#/$defs/SignatureProofV1"}
+      }
+    },
+    "VerifiedBirthCommandV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "operation_id", "capsule_id", "network_id", "birth_mode", "root_authority_ref", "authorization_evidence_id"],
+      "properties": {
+        "contract_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/Commitment32"},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"enum": ["hivra.neste"]},
+        "birth_mode": {"enum": ["GENESIS", "PROTO"]},
+        "root_authority_ref": {"$ref": "#/$defs/RootAuthorityRefV1"},
+        "authorization_evidence_id": {"$ref": "#/$defs/Commitment32"}
+      }
+    },
+    "CapsuleBornFactV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_version", "capsule_id", "network_id", "birth_mode", "birth_operation_id", "root_authority_ref"],
+      "properties": {
+        "fact_version": {"const": 1},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"enum": ["hivra.neste"]},
+        "birth_mode": {"enum": ["GENESIS", "PROTO"]},
+        "birth_operation_id": {"$ref": "#/$defs/Commitment32"},
+        "root_authority_ref": {"$ref": "#/$defs/RootAuthorityRefV1"}
+      }
+    },
+    "BirthAcceptedV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "fact", "initial_starter_kinds"],
+      "properties": {
+        "decision": {"const": "ACCEPTED"},
+        "fact": {"$ref": "#/$defs/CapsuleBornFactV2"},
+        "initial_starter_kinds": {
+          "type": "array",
+          "items": {"enum": ["JUICE", "SPARK", "SEED", "PULSE", "KICK"]},
+          "maxItems": 5,
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"fact": {"properties": {"birth_mode": {"const": "GENESIS"}}}}},
+          "then": {"properties": {"initial_starter_kinds": {"const": ["JUICE", "SPARK", "SEED", "PULSE", "KICK"]}}},
+          "else": {"properties": {"initial_starter_kinds": {"const": []}}}
+        }
+      ]
+    },
+    "BirthRejectedV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "error_code", "fact", "initial_starter_kinds"],
+      "properties": {
+        "decision": {"const": "REJECTED"},
+        "error_code": {
+          "enum": ["UNEXPECTED_FIELD", "UNSUPPORTED_CONTRACT_VERSION", "INVALID_OPERATION_ID", "INVALID_CAPSULE_ID", "CAPSULE_ID_KEY_ALIAS_FORBIDDEN", "UNSUPPORTED_NETWORK", "INVALID_BIRTH_MODE", "AUTHORITY_BINDING_MISMATCH", "AUTHORIZATION_INVALID", "CAPSULE_ALREADY_EXISTS"]
+        },
+        "fact": {"type": "null"},
+        "initial_starter_kinds": {"const": []}
+      }
+    }
+  }
+}
