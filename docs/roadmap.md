@@ -83,10 +83,10 @@ Capsule AI Runtime is a named cross-version architecture program governed by
   slots, operational stores, drone state, delivery queues, and consensus
   evidence.
 
-The first active item is `V2-0`. As of 2026-08-04, passes A-B completed one
+The first active item is `V2-0`. As of 2026-08-04, passes A-C completed one
 ownership-registry schema, generated architecture evidence, owner discovery,
-and service-locator classification. Pass C is selected to make UI entrypoint
-and Flutter/FFI compatibility mappings explicit.
+service-locator classification, and explicit UI/Flutter-FFI mappings. Pass D
+is selected to decompose the overloaded current identity evidence bucket.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2035,8 +2035,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       T1 and product tracks remain parked, and release work still requires a
       named candidate.
   - Next selected unit:
-    - `V2-0 / pass C`: explicit per-surface UI entrypoint and Flutter/FFI
-      compatibility mappings against the pass A-B registry;
+    - `V2-0 / pass D`: bounded current capability families for identity birth,
+      selection, continuity, recovery, addressing, and Starter inventory;
     - design/tooling only, with no 1.x runtime behavior, 2.0 production code,
       new DTO family, storage format, facade, or parallel execution path.
   - Status: completed (2026-08-04).
@@ -2089,6 +2089,28 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Next selected unit:
     - `V2-0 / pass C`, explicit UI entrypoint and Flutter/FFI compatibility
       mapping only.
+  - Status: completed (2026-08-04).
+
+- `V2-0 / pass C — Explicit UI and Flutter/FFI Boundary Map`
+  - Scope:
+    - replace broad screen and Flutter/FFI compatibility rules with explicit
+      per-declaration mappings;
+    - bind canonical UI surfaces to exact registered capability commands and
+      give every remaining 1.x surface a named capability-qualified debt target;
+    - reject mapping drift without changing runtime code.
+  - Evidence (2026-08-04):
+    - all 17 screen surfaces and 18 Flutter/FFI runtime declarations are mapped;
+    - seven UI entrypoints are `CANONICAL`; 28 UI/FFI surfaces remain explicit
+      `COMPATIBILITY_DEBT` with rationale;
+    - broad screen and FFI fallback rules are removed;
+    - negative tests reject missing/duplicate mappings, unknown capabilities,
+      canonical target drift, and canonical-entrypoint downgrade;
+    - the map exposes sixteen assignments to `capsule_identity`, proving that
+      birth, selection, addressing, backup, recovery, and settings need bounded
+      ownership evidence before any future contract is frozen.
+  - Next selected unit:
+    - `V2-0 / pass D`, identity/continuity/addressing/Starter capability
+      decomposition using current code evidence only.
   - Status: completed (2026-08-04).
 
 ## Planned Product Tracks

@@ -35,25 +35,11 @@
         "rationale": "Current 1.x service surface; not a sole capability owner unless registered above."
       },
       {
-        "id": "ffi_compatibility_boundary",
-        "classification": "COMPATIBILITY_DEBT",
-        "path_pattern": "^flutter/lib/ffi/.*\\.dart$",
-        "symbol_pattern": ".*Runtime$",
-        "rationale": "Explicit Flutter/FFI 1.x compatibility boundary pending capability-sized migration."
-      },
-      {
         "id": "model_port_support",
         "classification": "SUPPORTING_COMPONENT",
         "path_pattern": "^flutter/lib/models/.*\\.dart$",
         "symbol_pattern": ".*Adapter$",
         "rationale": "Typed port evidence; authority remains with its registered lifecycle owner."
-      },
-      {
-        "id": "current_ui_entrypoint_debt",
-        "classification": "COMPATIBILITY_DEBT",
-        "path_pattern": "^flutter/lib/screens/.*\\.dart$",
-        "symbol_pattern": ".*Screen$",
-        "rationale": "Current 1.x UI surface not yet mapped to a frozen 2.0 capability command."
       }
     ],
     "composition_builder_return_suffixes": ["Service", "Store", "Module", "Runtime", "Registry", "Guard", "Processor", "Queue", "Adapter"],
@@ -61,6 +47,43 @@
     "generic_locator_allowed_paths": [],
     "oversized_owner_line_threshold": 800
   },
+  "surface_mappings": [
+    {"id": "ui_backup", "kind": "ui_entrypoint", "path": "flutter/lib/screens/backup_screen.dart", "symbol": "BackupScreen", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.continuity_export", "rationale": "Backup UI is a 1.x continuity surface pending a frozen Capsule continuity command."},
+    {"id": "ui_capsule_doctor", "kind": "ui_entrypoint", "path": "flutter/lib/screens/capsule_doctor_screen.dart", "symbol": "CapsuleDoctorScreen", "capability_id": "capsule_ai_runtime", "status": "COMPATIBILITY_DEBT", "target": "capsule_ai_runtime.tooling_workspace", "rationale": "AI tooling uses the canonical inference runtime but lacks one registered workspace command."},
+    {"id": "ui_capsule_history", "kind": "ui_entrypoint", "path": "flutter/lib/screens/capsule_history_screen.dart", "symbol": "CapsuleHistoryScreen", "capability_id": "history_projection", "status": "CANONICAL", "target": "history_projection.project", "rationale": "Registered history projection entrypoint."},
+    {"id": "ui_capsule_selector", "kind": "ui_entrypoint", "path": "flutter/lib/screens/capsule_selector_screen.dart", "symbol": "CapsuleSelectorScreen", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.selection", "rationale": "Selection is current 1.x identity continuity behavior without a frozen capability command."},
+    {"id": "ui_first_launch", "kind": "ui_entrypoint", "path": "flutter/lib/screens/first_launch_screen.dart", "symbol": "FirstLaunchScreen", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.birth", "rationale": "Capsule birth UI is not yet registered against a frozen birth command."},
+    {"id": "ui_invitations", "kind": "ui_entrypoint", "path": "flutter/lib/screens/invitations_screen.dart", "symbol": "InvitationsScreen", "capability_id": "invitations", "status": "CANONICAL", "target": "invitations.sendInvitation", "rationale": "Registered invitation command entrypoint."},
+    {"id": "ui_ledger_inspector", "kind": "ui_entrypoint", "path": "flutter/lib/screens/ledger_inspector_screen.dart", "symbol": "LedgerInspectorScreen", "capability_id": "ledger_truth", "status": "COMPATIBILITY_DEBT", "target": "ledger_truth.inspect", "rationale": "Inspector composes current projections but is not one registered capability command."},
+    {"id": "ui_main", "kind": "ui_entrypoint", "path": "flutter/lib/screens/main_screen.dart", "symbol": "MainScreen", "capability_id": "person_runtime_shell", "status": "CANONICAL", "target": "person_runtime_shell.bootstrapActiveCapsuleRuntime", "rationale": "Registered Person Runtime shell bootstrap entrypoint."},
+    {"id": "ui_moltbook", "kind": "ui_entrypoint", "path": "flutter/lib/screens/moltbook_ambassador_screen.dart", "symbol": "MoltbookAmbassadorScreen", "capability_id": "moltbook_agent", "status": "CANONICAL", "target": "moltbook_agent.runMoltbookOnDemandCycle", "rationale": "Registered Moltbook lifecycle entrypoint."},
+    {"id": "ui_recovery", "kind": "ui_entrypoint", "path": "flutter/lib/screens/recovery_screen.dart", "symbol": "RecoveryScreen", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.recovery", "rationale": "Recovery is a 1.x continuity surface pending a frozen recovery command."},
+    {"id": "ui_relationships", "kind": "ui_entrypoint", "path": "flutter/lib/screens/relationships_screen.dart", "symbol": "RelationshipsScreen", "capability_id": "relationships", "status": "CANONICAL", "target": "relationships.loadRelationships", "rationale": "Registered relationship projection entrypoint."},
+    {"id": "ui_capsule_card_scanner", "kind": "ui_entrypoint", "path": "flutter/lib/screens/settings_screen.dart", "symbol": "_CapsuleCardScannerScreen", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.address_import", "rationale": "Nested scanner UI is a current address-import surface, not an independent owner."},
+    {"id": "ui_settings", "kind": "ui_entrypoint", "path": "flutter/lib/screens/settings_screen.dart", "symbol": "SettingsScreen", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.settings", "rationale": "Settings aggregate identity and addressing controls without one frozen capability command."},
+    {"id": "ui_starters", "kind": "ui_entrypoint", "path": "flutter/lib/screens/starters_screen.dart", "symbol": "StartersScreen", "capability_id": "invitations", "status": "COMPATIBILITY_DEBT", "target": "invitations.starter_inventory", "rationale": "Starter inventory participates in invitation intent but lacks an explicit registered command boundary."},
+    {"id": "ui_trading", "kind": "ui_entrypoint", "path": "flutter/lib/screens/trading_drone_screen.dart", "symbol": "TradingDroneScreen", "capability_id": "trading_drone", "status": "CANONICAL", "target": "trading_drone.build", "rationale": "Registered Trading Drone module entrypoint; command contract remains NEEDS_CONTRACT."},
+    {"id": "ui_transports", "kind": "ui_entrypoint", "path": "flutter/lib/screens/transports_screen.dart", "symbol": "TransportsScreen", "capability_id": "capsule_delivery", "status": "COMPATIBILITY_DEBT", "target": "capsule_delivery.transport_diagnostics", "rationale": "Transport diagnostics are a 1.x adapter view, not a domain truth or frozen command."},
+    {"id": "ui_wasm_plugins", "kind": "ui_entrypoint", "path": "flutter/lib/screens/wasm_plugins_screen.dart", "symbol": "WasmPluginsScreen", "capability_id": "wasm_drone_runtime", "status": "CANONICAL", "target": "wasm_drone_runtime.removePlugin", "rationale": "Registered WASM plugin lifecycle entrypoint."},
+    {"id": "ffi_app_runtime_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/app_runtime_runtime.dart", "symbol": "AppRuntimeRuntime", "capability_id": "person_runtime_shell", "status": "COMPATIBILITY_DEBT", "target": "person_runtime_shell.ffi_port", "rationale": "Abstract 1.x Flutter/FFI application runtime port."},
+    {"id": "ffi_app_runtime_adapter", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/app_runtime_runtime.dart", "symbol": "HivraAppRuntimeRuntime", "capability_id": "person_runtime_shell", "status": "COMPATIBILITY_DEBT", "target": "person_runtime_shell.ffi_adapter", "rationale": "Concrete 1.x Flutter/FFI application runtime adapter."},
+    {"id": "ffi_backup_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/backup_runtime.dart", "symbol": "BackupRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.continuity_export_port", "rationale": "Abstract 1.x backup compatibility port."},
+    {"id": "ffi_backup_adapter", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/backup_runtime.dart", "symbol": "HivraBackupRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.continuity_export_adapter", "rationale": "Concrete 1.x backup compatibility adapter."},
+    {"id": "ffi_capsule_address_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/capsule_address_runtime.dart", "symbol": "CapsuleAddressRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.address_port", "rationale": "Abstract 1.x Capsule address compatibility port."},
+    {"id": "ffi_capsule_address_adapter", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/capsule_address_runtime.dart", "symbol": "HivraCapsuleAddressRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.address_adapter", "rationale": "Concrete 1.x Capsule address compatibility adapter."},
+    {"id": "ffi_capsule_draft_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/capsule_draft_runtime.dart", "symbol": "CapsuleDraftRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.birth_draft_port", "rationale": "Abstract 1.x Capsule birth-draft compatibility port."},
+    {"id": "ffi_capsule_draft_adapter", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/capsule_draft_runtime.dart", "symbol": "HivraCapsuleDraftRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.birth_draft_adapter", "rationale": "Concrete 1.x Capsule birth-draft compatibility adapter."},
+    {"id": "ffi_bootstrap_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/capsule_runtime_bootstrap_runtime.dart", "symbol": "CapsuleRuntimeBootstrapRuntime", "capability_id": "person_runtime_shell", "status": "COMPATIBILITY_DEBT", "target": "person_runtime_shell.bootstrap_port", "rationale": "Abstract 1.x runtime bootstrap compatibility port."},
+    {"id": "ffi_bootstrap_adapter", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/capsule_runtime_bootstrap_runtime.dart", "symbol": "HivraCapsuleRuntimeBootstrapRuntime", "capability_id": "person_runtime_shell", "status": "COMPATIBILITY_DEBT", "target": "person_runtime_shell.bootstrap_adapter", "rationale": "Concrete 1.x runtime bootstrap compatibility adapter."},
+    {"id": "ffi_selector_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/capsule_selector_runtime.dart", "symbol": "CapsuleSelectorRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.selection_port", "rationale": "Abstract 1.x Capsule selection compatibility port."},
+    {"id": "ffi_selector_adapter", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/capsule_selector_runtime.dart", "symbol": "HivraCapsuleSelectorRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.selection_adapter", "rationale": "Concrete 1.x Capsule selection compatibility adapter."},
+    {"id": "ffi_invitation_actions_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/invitation_actions_runtime.dart", "symbol": "InvitationActionsRuntime", "capability_id": "invitations", "status": "COMPATIBILITY_DEBT", "target": "invitations.ffi_actions_port", "rationale": "Abstract 1.x invitation action compatibility port."},
+    {"id": "ffi_invitation_actions_adapter", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/invitation_actions_runtime.dart", "symbol": "HivraInvitationActionsRuntime", "capability_id": "invitations", "status": "COMPATIBILITY_DEBT", "target": "invitations.ffi_actions_adapter", "rationale": "Concrete 1.x invitation action compatibility adapter."},
+    {"id": "ffi_ledger_view_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/ledger_view_runtime.dart", "symbol": "LedgerViewRuntime", "capability_id": "ledger_truth", "status": "COMPATIBILITY_DEBT", "target": "ledger_truth.projection_port", "rationale": "Abstract 1.x Core projection compatibility port."},
+    {"id": "ffi_ledger_view_adapter", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/ledger_view_runtime.dart", "symbol": "HivraLedgerViewRuntime", "capability_id": "ledger_truth", "status": "COMPATIBILITY_DEBT", "target": "ledger_truth.projection_adapter", "rationale": "Concrete 1.x Core projection compatibility adapter."},
+    {"id": "ffi_recovery_port", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/recovery_runtime.dart", "symbol": "RecoveryRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.recovery_port", "rationale": "Abstract 1.x Capsule recovery compatibility port."},
+    {"id": "ffi_recovery_adapter", "kind": "ffi_runtime_port", "path": "flutter/lib/ffi/recovery_runtime.dart", "symbol": "HivraRecoveryRuntime", "capability_id": "capsule_identity", "status": "COMPATIBILITY_DEBT", "target": "capsule_identity.recovery_adapter", "rationale": "Concrete 1.x Capsule recovery compatibility adapter."}
+  ],
   "capabilities": [
     {
       "id": "capsule_identity",

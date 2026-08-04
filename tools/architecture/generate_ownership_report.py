@@ -186,10 +186,16 @@ def discover_owners(registry: dict) -> dict:
                 registered.setdefault((item["path"], item["symbol"]), "REGISTERED_EVIDENCE")
         for item in capability["entrypoints"]:
             registered.setdefault((item["path"], item["symbol"]), "REGISTERED_ENTRYPOINT")
+    surface_mappings = {}
+    for mapping in registry["surface_mappings"]:
+        key = (mapping.get("path"), mapping.get("symbol"))
+        if key in surface_mappings:
+            raise RegistryError(f"duplicate surface mapping: {key[0]}::{key[1]}")
+        surface_mappings[key] = mapping
 
     suffixes = tuple(discovery["owner_suffixes"])
     screen_suffix = discovery["screen_suffix"]
-    declaration = re.compile(r"^(?:abstract\s+(?:interface\s+)?class|class)\s+([A-Za-z][A-Za-z0-9_]*)\b", re.MULTILINE)
+    declaration = re.compile(r"^(?:abstract\s+(?:interface\s+)?class|class)\s+([A-Za-z_][A-Za-z0-9_]*)\b", re.MULTILINE)
     candidates = []
     sources = flutter_sources(discovery["flutter_roots"])
     for path in sources:
@@ -203,6 +209,15 @@ def discover_owners(registry: dict) -> dict:
             classification = registered.get(key)
             rationale = "Declared by the canonical ownership registry."
             rule_id = "registry"
+            mapping = surface_mappings.get(key)
+            if classification is None and mapping is not None:
+                classification = (
+                    "REGISTERED_ENTRYPOINT"
+                    if mapping.get("status") == "CANONICAL"
+                    else "COMPATIBILITY_DEBT"
+                )
+                rationale = mapping.get("rationale", "")
+                rule_id = f"surface_mapping:{mapping.get('id')}"
             if classification is None and relative in registry["composition_roots"]:
                 classification = "COMPOSITION_SUPPORT"
                 rationale = "Registered composition root; constructs downward capability dependencies."
@@ -286,10 +301,83 @@ def discover_owners(registry: dict) -> dict:
     }
 
 
+def validate_surface_mappings(registry: dict, capability_ids: set[str], discovery: dict) -> None:
+    mapping_ids = set()
+    mapping_keys = set()
+    registered_entrypoints = {
+        (entrypoint["path"], entrypoint["symbol"]): (
+            capability["id"],
+            entrypoint["command_symbol"],
+        )
+        for capability in registry["capabilities"]
+        for entrypoint in capability["entrypoints"]
+    }
+    required_keys = {"id", "kind", "path", "symbol", "capability_id", "status", "target", "rationale"}
+    for mapping in registry["surface_mappings"]:
+        require_keys(mapping, required_keys, f"surface mapping {mapping.get('id')}")
+        if mapping["id"] in mapping_ids:
+            raise RegistryError(f"duplicate surface mapping id: {mapping['id']}")
+        mapping_ids.add(mapping["id"])
+        key = (mapping["path"], mapping["symbol"])
+        if key in mapping_keys:
+            raise RegistryError(f"duplicate surface mapping: {key[0]}::{key[1]}")
+        mapping_keys.add(key)
+        evidence_exists(
+            {"id": mapping["id"], "path": mapping["path"], "symbol": mapping["symbol"]},
+            f"surface mapping {mapping['id']}",
+        )
+        if mapping["capability_id"] not in capability_ids:
+            raise RegistryError(f"surface mapping {mapping['id']}: unknown capability {mapping['capability_id']}")
+        if mapping["kind"] not in {"ui_entrypoint", "ffi_runtime_port"}:
+            raise RegistryError(f"surface mapping {mapping['id']}: invalid kind")
+        if mapping["status"] not in {"CANONICAL", "COMPATIBILITY_DEBT"}:
+            raise RegistryError(f"surface mapping {mapping['id']}: invalid status")
+        if not mapping["target"].startswith(f"{mapping['capability_id']}."):
+            raise RegistryError(f"surface mapping {mapping['id']}: target must be capability-qualified")
+        if not mapping["rationale"].strip():
+            raise RegistryError(f"surface mapping {mapping['id']}: rationale is required")
+        if mapping["kind"] == "ui_entrypoint":
+            if not mapping["path"].startswith("flutter/lib/screens/") or not mapping["symbol"].endswith("Screen"):
+                raise RegistryError(f"surface mapping {mapping['id']}: invalid UI surface")
+            registered_entrypoint = registered_entrypoints.get(key)
+            if mapping["status"] == "CANONICAL":
+                if registered_entrypoint is None:
+                    raise RegistryError(f"surface mapping {mapping['id']}: CANONICAL UI must be a registered capability entrypoint")
+                expected_capability, expected_command = registered_entrypoint
+                if mapping["capability_id"] != expected_capability:
+                    raise RegistryError(f"surface mapping {mapping['id']}: canonical capability does not match its entrypoint owner")
+                if mapping["target"] != f"{expected_capability}.{expected_command}":
+                    raise RegistryError(f"surface mapping {mapping['id']}: canonical target does not match its registered command")
+            elif registered_entrypoint is not None:
+                raise RegistryError(f"surface mapping {mapping['id']}: registered entrypoint cannot be downgraded to compatibility debt")
+        elif not mapping["path"].startswith("flutter/lib/ffi/") or not mapping["symbol"].endswith("Runtime"):
+            raise RegistryError(f"surface mapping {mapping['id']}: invalid FFI runtime surface")
+        if mapping["kind"] == "ffi_runtime_port" and mapping["status"] != "COMPATIBILITY_DEBT":
+            raise RegistryError(f"surface mapping {mapping['id']}: 1.x Flutter/FFI ports remain compatibility debt")
+
+    discovered_keys = {
+        (candidate["path"], candidate["symbol"])
+        for candidate in discovery["candidates"]
+        if (
+            candidate["path"].startswith("flutter/lib/screens/")
+            and candidate["symbol"].endswith("Screen")
+        )
+        or (
+            candidate["path"].startswith("flutter/lib/ffi/")
+            and candidate["symbol"].endswith("Runtime")
+        )
+    }
+    if mapping_keys != discovered_keys:
+        raise RegistryError(
+            f"surface mapping coverage mismatch; missing={sorted(discovered_keys - mapping_keys)} "
+            f"extra={sorted(mapping_keys - discovered_keys)}"
+        )
+
+
 def validate_registry(registry: dict) -> dict:
     require_keys(
         registry,
-        {"schema_version", "registry_id", "packages", "composition_roots", "owner_discovery", "capabilities", "concrete_bindings", "forbidden_rust_edges"},
+        {"schema_version", "registry_id", "packages", "composition_roots", "owner_discovery", "surface_mappings", "capabilities", "concrete_bindings", "forbidden_rust_edges"},
         "registry",
     )
     if registry["schema_version"] != 1:
@@ -396,6 +484,7 @@ def validate_registry(registry: dict) -> dict:
     if violations:
         raise RegistryError(f"forbidden Rust dependency edges: {sorted(violations)}")
     discovery = discover_owners(registry)
+    validate_surface_mappings(registry, capability_ids, discovery)
     return {
         "members": members,
         "rust_edges": edges,
@@ -424,6 +513,7 @@ def render_report(registry: dict, evidence: dict) -> str:
         f"- Dart layer import edges: `{len(evidence['dart_edges'])}`",
         f"- Discovered owner candidates: `{len(evidence['discovery']['candidates'])}`",
         f"- Composition builders: `{len(evidence['discovery']['builders'])}`",
+        f"- Explicit UI/FFI surface mappings: `{len(registry['surface_mappings'])}`",
         "",
         "## Closure Verdicts",
         "",
@@ -491,6 +581,16 @@ def render_report(registry: dict, evidence: dict) -> str:
     lines.extend(["", "### Oversized Candidate Surfaces", ""])
     for line_count, path in evidence["discovery"]["oversized"]:
         lines.append(f"- `{line_count}` lines — `{path}`")
+    lines.extend(["", "## UI and Flutter/FFI Boundary Map", ""])
+    lines.extend([
+        "| Surface | Kind | Capability | Status | Named target | Rationale |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ])
+    for mapping in sorted(registry["surface_mappings"], key=lambda item: item["id"]):
+        lines.append(
+            f"| `{mapping['path']}` (`{mapping['symbol']}`) | `{mapping['kind']}` | "
+            f"`{mapping['capability_id']}` | `{mapping['status']}` | `{mapping['target']}` | {mapping['rationale']} |"
+        )
     lines.extend(["", "## Owner Surface Entropy", "", "Largest registered owner files by line count:", ""])
     for line_count, capability_id, path, symbol in evidence["owner_sizes"]:
         lines.append(f"- `{line_count}` lines — `{capability_id}` — `{path}` (`{symbol}`)")
@@ -526,6 +626,22 @@ def self_test(registry: dict) -> None:
     locator_escape = copy.deepcopy(registry)
     locator_escape["owner_discovery"]["generic_locator_patterns"] = ["class "]
     cases.append(("generic locator escape", locator_escape))
+    missing_surface = copy.deepcopy(registry)
+    missing_surface["surface_mappings"].pop()
+    cases.append(("missing UI or FFI surface mapping", missing_surface))
+    duplicate_surface = copy.deepcopy(registry)
+    duplicate_surface["surface_mappings"].append(copy.deepcopy(duplicate_surface["surface_mappings"][0]))
+    cases.append(("duplicate UI or FFI surface mapping", duplicate_surface))
+    wrong_surface_capability = copy.deepcopy(registry)
+    wrong_surface_capability["surface_mappings"][0]["capability_id"] = "unknown_capability"
+    cases.append(("unknown surface capability", wrong_surface_capability))
+    canonical_target_drift = copy.deepcopy(registry)
+    canonical_mapping = next(
+        mapping for mapping in canonical_target_drift["surface_mappings"]
+        if mapping["status"] == "CANONICAL"
+    )
+    canonical_mapping["target"] = f"{canonical_mapping['capability_id']}.wrongCommand"
+    cases.append(("canonical surface target drift", canonical_target_drift))
     for name, mutated in cases:
         try:
             validate_registry(mutated)

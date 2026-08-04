@@ -1,9 +1,10 @@
 # Hivra 2.0 Architecture Blueprint
 
-Status: design-only draft. `V2-0 / passes A-B` completed the ownership registry,
-generated baseline, owner discovery, and service-locator classification.
-`V2-0 / pass C` is selected to make UI entrypoint and Flutter/FFI compatibility
-classifications explicit. This document does not change the
+Status: design-only draft. `V2-0 / passes A-C` completed the ownership registry,
+generated baseline, owner discovery, service-locator classification, and
+explicit UI/Flutter-FFI surface mapping. `V2-0 / pass D` is selected to split
+the overloaded current `capsule_identity` evidence bucket into bounded
+capability families. This document does not change the
 normative Hivra 1.x protocol or authorize a 1.x runtime migration.
 
 ## 1. Objective
@@ -470,9 +471,37 @@ Selected pass C:
 - keep App Shell and Trading command-contract design deferred until those
   mappings prove their complete present-day surfaces.
 
-Pass C remains design/tooling work. It may update registry evidence, generated
-reports, and gates only; it may not refactor UI, FFI, Core, storage, or runtime
-composition.
+Pass C completed on 2026-08-04 with:
+
+- explicit records for all 17 discovered screen surfaces and all 18 discovered
+  Flutter/FFI runtime declarations;
+- seven `CANONICAL` UI entrypoints bound to their exact registered capability
+  command targets;
+- twenty-eight `COMPATIBILITY_DEBT` surfaces with capability-qualified targets
+  and per-surface rationale;
+- fail-closed rejection of missing/duplicate mappings, unknown capabilities,
+  canonical target drift, and registered-entrypoint downgrade;
+- removal of the broad screen and Flutter/FFI classification rules.
+
+The resulting map exposes one new concentration rather than hiding it:
+`capsule_identity` currently receives sixteen UI/FFI mappings spanning birth,
+selection, addressing, backup, recovery, and settings. Treating those as one
+future capability would create a god owner and violate capability closure.
+
+Selected pass D:
+
+- separate the current evidence into bounded birth, selection, continuity,
+  recovery, and addressing capability families, plus Starter inventory where
+  it is currently folded into invitations;
+- name one current owner and closure verdict for each family using existing
+  code only;
+- update surface targets to those bounded families and fail closed if a broad
+  catch-all identity assignment returns;
+- introduce no new DTO, command implementation, facade, storage format, event,
+  or executable route.
+
+Pass D is still `V2-0` design evidence. It does not authorize the later V2-1
+Core contract implementation or any App Shell/Trading runtime refactor.
 
 ### V2-1: Core contract proofs
 
