@@ -90,8 +90,8 @@ decomposition, and a fail-closed exit matrix. `V2-1 / pass A` completed
 `capsule_identity_birth_contract_v2`, including remediation of exact proof
 binding, deterministic operation identity, replay semantics, root schema
 validation, and blueprint ownership. `V2-1 / pass B` completed
-`starter_inventory_contract_v2`. Post-Pass B consolidation selected
-`V2-1 / pass C`, a design-only Capsule continuity export contract.
+`starter_inventory_contract_v2`. `V2-1 / pass C` completed the design-only
+`capsule_continuity_export_contract_v2`. No later pass is selected.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2244,6 +2244,37 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       operation/result path; no recovery protocol, second backup format, Core
       fact, FFI/storage/UI binding, or runtime implementation.
   - Status: completed (2026-08-04).
+
+- `V2-1 / pass C — Capsule Continuity Export Contract`
+  - Scope:
+    - assign export intent, exact immutable snapshot binding, local authority,
+      operation replay, and prepared artifact evidence to one application-level
+      design owner;
+    - retain the existing authenticated `hivra.capsule_backup.v2` codec profile
+      and keep filesystem, sharing, durability receipts, and recovery outside
+      the contract;
+    - add no Core fact, production DTO, FFI, storage, Flutter, UI, or runtime
+      path.
+  - Evidence (2026-08-04):
+    - one normative blueprint section, one draft-2020-12 schema, one compact
+      semantic vector set, and one validator integrated into the existing
+      architecture gate;
+    - vectors bind Capsule/network/Ledger snapshot, exact authorization scope,
+      operation replay, encrypted artifact profile, digest, and byte length;
+    - negative mutations reject malformed Core snapshots, replay evidence
+      substitution, plaintext profiles, raw seeds, destination paths, schema
+      weakening, missing canon, semantic drift, and runtime authorization;
+    - exact replay returns the prior exact evidence, while operation-id reuse
+      with changed semantics fails closed and appends no Core fact.
+  - Architecture-economy review:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | Existing blueprint section plus one schema, compact fixture set, validator, and existing-gate hook | Second export route, raw seed/path capability intent, recovery/storage/share ownership leakage, and replay evidence substitution | Exact snapshot, authority, operation, profile, and artifact-evidence ownership | One design owner; zero runtime paths | 1.x `BackupService`/`BackupRuntime`/persistence/screen composition and future V2-2 effect receipts remain explicit | Consolidation can decide whether another bounded contract is justified without reopening continuity semantics |
+
+  - Next selected unit: none; runtime implementation and later V2-1 contracts
+    remain unauthorized pending a separate consolidation decision.
+  - Status: completed (2026-08-04); local design and repository gates pass.
 
 ## Planned Product Tracks
 
