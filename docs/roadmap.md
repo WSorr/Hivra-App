@@ -83,8 +83,10 @@ Capsule AI Runtime is a named cross-version architecture program governed by
   slots, operational stores, drone state, delivery queues, and consensus
   evidence.
 
-The first active item is `V2-0`. As of 2026-08-04, pass A is selected to freeze
-one ownership-registry schema and generate current architecture evidence only.
+The first active item is `V2-0`. As of 2026-08-04, pass A completed one
+ownership-registry schema and generated current architecture evidence. Pass B
+is selected to close owner-candidate discovery and classify service-locator
+surfaces only.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2033,10 +2035,37 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       T1 and product tracks remain parked, and release work still requires a
       named candidate.
   - Next selected unit:
-    - `V2-0 / pass A`: one ownership-registry schema plus generated current
-      capability/contract/dependency/fact/projection/effect/entrypoint evidence;
+    - `V2-0 / pass B`: deterministic owner-candidate discovery plus
+      service-locator and oversized-owner classification against the pass A
+      registry;
     - design/tooling only, with no 1.x runtime behavior, 2.0 production code,
       new DTO family, storage format, facade, or parallel execution path.
+  - Status: completed (2026-08-04).
+
+- `V2-0 / pass A — Ownership Registry Baseline`
+  - Scope:
+    - freeze one repository registry for current packages, known capability
+      owners, contracts, facts, projections, effects, entrypoints, composition
+      bindings, and forbidden Rust edges;
+    - generate deterministic evidence and closure verdicts from the registry
+      plus current code metadata;
+    - add fail-closed consistency and negative self-tests without changing
+      runtime code.
+  - Evidence (2026-08-04):
+    - `architecture/ownership-registry.v1.json` records nine packages and twelve
+      known capability families;
+    - `docs/generated/architecture-ownership-baseline.md` records current Rust
+      and Flutter layer edges, composition bindings, closure verdicts, and owner
+      surface entropy;
+    - the gate rejects package drift, missing symbols, duplicate owners, Rust
+      cycles, forbidden edges, non-composition bindings, invalid closure claims,
+      entrypoint bypass, and stale generated evidence;
+    - `trading_drone` and `person_runtime_shell` remain `NEEDS_CONTRACT`; no
+      speculative 2.0 contract, facade, event, storage, or runtime path was
+      introduced.
+  - Next selected unit:
+    - `V2-0 / pass B`, owner-candidate discovery and service-locator
+      classification only.
   - Status: completed (2026-08-04).
 
 ## Planned Product Tracks

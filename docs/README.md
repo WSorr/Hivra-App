@@ -55,6 +55,13 @@ Contains:
 - release discipline and preflight expectations
 - medium-term architecture and plugin-host work
 
+### Generated architecture evidence
+
+- `generated/architecture-ownership-baseline.md` is the deterministic current
+  ownership, dependency, closure, composition-binding, and owner-surface report.
+- Its source registry is `../architecture/ownership-registry.v1.json`; update
+  the registry or generator, never the generated report by hand.
+
 ### 5) `android-keystore-migration.md` (implementation note)
 Use this when working on Android seed-storage hardening.
 

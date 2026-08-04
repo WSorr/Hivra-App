@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "registry_id": "hivra-current-ownership",
+  "packages": [
+    {"id": "hivra-core", "path": "core/hivra-core", "kind": "rust", "layer": "core"},
+    {"id": "hivra-engine", "path": "engine/hivra-engine", "kind": "rust", "layer": "engine"},
+    {"id": "hivra-ed25519-crypto", "path": "adapters/hivra-ed25519-crypto", "kind": "rust", "layer": "adapter"},
+    {"id": "hivra-transport", "path": "adapters/hivra-transport", "kind": "rust", "layer": "adapter"},
+    {"id": "hivra-nostr-crypto", "path": "adapters/hivra-nostr-crypto", "kind": "rust", "layer": "adapter"},
+    {"id": "hivra-keystore", "path": "platform/hivra-keystore", "kind": "rust", "layer": "platform"},
+    {"id": "hivra-wasm-runtime", "path": "platform/hivra-wasm-runtime", "kind": "rust", "layer": "platform"},
+    {"id": "hivra-ffi", "path": "platform/hivra-ffi", "kind": "rust", "layer": "platform"},
+    {"id": "hivra-flutter", "path": "flutter", "kind": "flutter", "layer": "ui"}
+  ],
+  "composition_roots": [
+    "flutter/lib/services/app_runtime_service.dart",
+    "flutter/lib/services/capsule_ai_runtime_service.dart",
+    "flutter/lib/services/plugin_runtime_module_service.dart",
+    "flutter/lib/services/trading_drone_module_service.dart"
+  ],
+  "capabilities": [
+    {
+      "id": "capsule_identity",
+      "owner": {"layer": "core", "path": "core/hivra-core/src/capsule.rs", "symbol": "Capsule"},
+      "public_contracts": [{"id": "capsule_state", "path": "core/hivra-core/src/capsule.rs", "symbol": "CapsuleState"}],
+      "facts": [{"id": "capsule_created", "path": "core/hivra-core/src/event_payloads.rs", "symbol": "CapsuleCreatedPayload"}],
+      "projections": [], "effect_kinds": [], "entrypoints": [],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "ledger_truth",
+      "owner": {"layer": "core", "path": "core/hivra-core/src/ledger.rs", "symbol": "Ledger"},
+      "public_contracts": [{"id": "event_kind", "path": "core/hivra-core/src/event.rs", "symbol": "EventKind"}],
+      "facts": [{"id": "signed_event", "path": "core/hivra-core/src/event.rs", "symbol": "Event"}],
+      "projections": [], "effect_kinds": [], "entrypoints": [],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "invitations",
+      "owner": {"layer": "application", "path": "flutter/lib/services/invitation_intent_handler.dart", "symbol": "InvitationIntentHandler"},
+      "public_contracts": [{"id": "invitation_current_view_v1", "path": "core/hivra-core/src/invitation.rs", "symbol": "InvitationCurrentViewV1"}],
+      "facts": [{"id": "invitation_sent", "path": "core/hivra-core/src/event_payloads.rs", "symbol": "InvitationSentPayload"}],
+      "projections": [{"id": "invitation_projection", "path": "flutter/lib/services/invitation_projection_service.dart", "symbol": "InvitationProjectionService"}],
+      "effect_kinds": [{"id": "invitation_delivery", "path": "flutter/lib/services/capsule_delivery_lifecycle_service.dart", "symbol": "ensureEnqueued"}],
+      "entrypoints": [{"id": "invitations_screen", "path": "flutter/lib/screens/invitations_screen.dart", "symbol": "InvitationsScreen", "command_path": "flutter/lib/services/invitation_intent_handler.dart", "command_symbol": "sendInvitation"}],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "relationships",
+      "owner": {"layer": "core", "path": "core/hivra-core/src/relationship.rs", "symbol": "Relationships"},
+      "public_contracts": [{"id": "relationship_current_view_v1", "path": "core/hivra-core/src/relationship.rs", "symbol": "RelationshipCurrentViewV1"}],
+      "facts": [{"id": "relationship_established", "path": "core/hivra-core/src/event_payloads.rs", "symbol": "RelationshipEstablishedPayload"}],
+      "projections": [{"id": "relationship_projection", "path": "flutter/lib/services/relationship_projection_service.dart", "symbol": "RelationshipProjectionService"}],
+      "effect_kinds": [],
+      "entrypoints": [{"id": "relationships_screen", "path": "flutter/lib/screens/relationships_screen.dart", "symbol": "RelationshipsScreen", "command_path": "flutter/lib/services/relationship_projection_service.dart", "command_symbol": "loadRelationships"}],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "history_projection",
+      "owner": {"layer": "core", "path": "core/hivra-core/src/history.rs", "symbol": "history_view_v1"},
+      "public_contracts": [{"id": "history_view_v1", "path": "core/hivra-core/src/history.rs", "symbol": "HistoryViewV1"}],
+      "facts": [],
+      "projections": [{"id": "capsule_history_projection", "path": "flutter/lib/services/capsule_history_projection_service.dart", "symbol": "CapsuleHistoryProjectionService"}],
+      "effect_kinds": [],
+      "entrypoints": [{"id": "capsule_history_screen", "path": "flutter/lib/screens/capsule_history_screen.dart", "symbol": "CapsuleHistoryScreen", "command_path": "flutter/lib/services/capsule_history_projection_service.dart", "command_symbol": "project"}],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "capsule_delivery",
+      "owner": {"layer": "application", "path": "flutter/lib/services/capsule_delivery_lifecycle_service.dart", "symbol": "CapsuleDeliveryLifecycleService"},
+      "public_contracts": [{"id": "delivery_cycle", "path": "flutter/lib/services/capsule_delivery_lifecycle_service.dart", "symbol": "pumpDueNow"}],
+      "facts": [], "projections": [],
+      "effect_kinds": [{"id": "delivery_outbox", "path": "flutter/lib/services/delivery_outbox_store.dart", "symbol": "DeliveryOutboxStore"}],
+      "entrypoints": [],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "external_effects",
+      "owner": {"layer": "application", "path": "flutter/lib/services/external_effect_service.dart", "symbol": "ExternalEffectService"},
+      "public_contracts": [{"id": "external_effect_operation", "path": "flutter/lib/models/external_effect_models.dart", "symbol": "ExternalEffectOperation"}],
+      "facts": [], "projections": [],
+      "effect_kinds": [{"id": "external_effect_process", "path": "flutter/lib/services/external_effect_service.dart", "symbol": "process"}],
+      "entrypoints": [],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "capsule_ai_runtime",
+      "owner": {"layer": "application", "path": "flutter/lib/services/capsule_ai_runtime_service.dart", "symbol": "CapsuleAiRuntimeService"},
+      "public_contracts": [{"id": "capsule_inference_request_v1", "path": "flutter/lib/services/capsule_ai_runtime_service.dart", "symbol": "CapsuleInferenceRequestV1"}],
+      "facts": [], "projections": [],
+      "effect_kinds": [{"id": "capsule_inference", "path": "flutter/lib/services/capsule_ai_runtime_service.dart", "symbol": "infer"}],
+      "entrypoints": [],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "wasm_drone_runtime",
+      "owner": {"layer": "platform", "path": "platform/hivra-wasm-runtime/src/lib.rs", "symbol": "invoke_json"},
+      "public_contracts": [{"id": "wasm_runtime_service", "path": "flutter/lib/services/wasm_plugin_runtime_service.dart", "symbol": "WasmPluginRuntimeService"}],
+      "facts": [], "projections": [],
+      "effect_kinds": [{"id": "plugin_runtime_invoke", "path": "flutter/lib/services/wasm_plugin_runtime_service.dart", "symbol": "invoke"}],
+      "entrypoints": [{"id": "wasm_plugins_screen", "path": "flutter/lib/screens/wasm_plugins_screen.dart", "symbol": "WasmPluginsScreen", "command_path": "flutter/lib/services/plugin_runtime_module_service.dart", "command_symbol": "removePlugin"}],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "moltbook_agent",
+      "owner": {"layer": "module", "path": "flutter/lib/services/plugin_runtime_module_service.dart", "symbol": "PluginRuntimeModule"},
+      "public_contracts": [{"id": "moltbook_engagement_plan", "path": "flutter/lib/models/moltbook_ambassador_models.dart", "symbol": "MoltbookEngagementPlan"}],
+      "facts": [], "projections": [],
+      "effect_kinds": [{"id": "moltbook_publication", "path": "flutter/lib/services/plugin_runtime_module_service.dart", "symbol": "prepareMoltbookPublication"}],
+      "entrypoints": [{"id": "moltbook_ambassador_screen", "path": "flutter/lib/screens/moltbook_ambassador_screen.dart", "symbol": "MoltbookAmbassadorScreen", "command_path": "flutter/lib/services/plugin_runtime_module_service.dart", "command_symbol": "runMoltbookOnDemandCycle"}],
+      "closure": {"verdict": "READY", "missing_boundaries": []}
+    },
+    {
+      "id": "trading_drone",
+      "owner": {"layer": "module", "path": "flutter/lib/services/trading_drone_module_service.dart", "symbol": "TradingDroneModule"},
+      "public_contracts": [{"id": "trading_module_builder", "path": "flutter/lib/services/trading_drone_module_service.dart", "symbol": "TradingDroneModuleService"}],
+      "facts": [], "projections": [],
+      "effect_kinds": [{"id": "bingx_execution_queue", "path": "flutter/lib/services/bingx_futures_execution_queue_service.dart", "symbol": "BingxFuturesExecutionQueueService"}],
+      "entrypoints": [{"id": "trading_drone_screen", "path": "flutter/lib/screens/trading_drone_screen.dart", "symbol": "TradingDroneScreen", "command_path": "flutter/lib/services/trading_drone_module_service.dart", "command_symbol": "build"}],
+      "closure": {"verdict": "NEEDS_CONTRACT", "missing_boundaries": ["canonical trading capability command contract"]}
+    },
+    {
+      "id": "person_runtime_shell",
+      "owner": {"layer": "composition", "path": "flutter/lib/services/app_runtime_service.dart", "symbol": "AppRuntimeService"},
+      "public_contracts": [{"id": "passive_receive_port", "path": "flutter/lib/services/capsule_passive_receive_coordinator.dart", "symbol": "CapsulePassiveReceivePort"}],
+      "facts": [], "projections": [], "effect_kinds": [],
+      "entrypoints": [{"id": "main_screen", "path": "flutter/lib/screens/main_screen.dart", "symbol": "MainScreen", "command_path": "flutter/lib/services/app_runtime_service.dart", "command_symbol": "bootstrapActiveCapsuleRuntime"}],
+      "closure": {"verdict": "NEEDS_CONTRACT", "missing_boundaries": ["canonical Capsule Map grouping and route contract"]}
+    }
+  ],
+  "concrete_bindings": [
+    {
+      "id": "moltbook_provider_adapter",
+      "pattern": "MoltbookProviderAdapter\\(",
+      "search_roots": ["flutter/lib"],
+      "definition_paths": ["flutter/lib/services/moltbook_provider_adapter.dart"],
+      "allowed_paths": ["flutter/lib/services/plugin_runtime_module_service.dart"]
+    },
+    {
+      "id": "inference_provider_dispatch",
+      "pattern": "inferenceProviderAdapterFor",
+      "search_roots": ["flutter/lib"],
+      "definition_paths": ["flutter/lib/services/inference_provider_adapter.dart"],
+      "allowed_paths": ["flutter/lib/services/capsule_ai_runtime_service.dart"]
+    }
+  ],
+  "forbidden_rust_edges": [
+    {"source": "hivra-core", "target": "hivra-engine"},
+    {"source": "hivra-core", "target": "hivra-transport"},
+    {"source": "hivra-engine", "target": "hivra-transport"},
+    {"source": "hivra-transport", "target": "hivra-core"},
+    {"source": "hivra-transport", "target": "hivra-engine"},
+    {"source": "hivra-transport", "target": "hivra-ffi"}
+  ]
+}

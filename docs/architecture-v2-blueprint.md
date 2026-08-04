@@ -1,7 +1,8 @@
 # Hivra 2.0 Architecture Blueprint
 
-Status: design-only draft. `V2-0 / pass A` is selected for ownership-registry
-and generated baseline evidence only. This document does not change the
+Status: design-only draft. `V2-0 / pass A` completed the ownership-registry
+and generated baseline evidence. `V2-0 / pass B` is selected to close owner
+discovery coverage and classify service-locator surfaces only. This document does not change the
 normative Hivra 1.x protocol or authorize a 1.x runtime migration.
 
 ## 1. Objective
@@ -410,9 +411,36 @@ Selected pass A (2026-08-04):
   runtime files or introducing a 2.0 DTO, facade, storage format, event, or
   executable path.
 
-Pass A exit evidence is one reviewed registry, deterministic generated report,
-gate self-test, and `tools/review/review_all.sh`. It removes the current
-documentation-only ownership ambiguity; it does not migrate a capability.
+Pass A completed on 2026-08-04 with:
+
+- the reviewed registry at `architecture/ownership-registry.v1.json`;
+- the deterministic report at
+  `docs/generated/architecture-ownership-baseline.md`;
+- package-inventory, Rust-cycle, forbidden-edge, composition-binding,
+  duplicate-owner, code-symbol, closure, and entrypoint-bypass validation in
+  `tools/review/ownership_registry_gate.sh`;
+- no runtime-code or production-path changes.
+
+The baseline records twelve known capability families. `trading_drone` and
+`person_runtime_shell` are explicitly `NEEDS_CONTRACT`; no placeholder 2.0
+contract was added to make them appear ready. The largest registered owner
+surface is the current Moltbook module composition boundary, not a new Core
+owner.
+
+Selected pass B:
+
+- derive deterministic owner candidates from current production declarations
+  and composition/service-builder surfaces;
+- require every discovered candidate to be registered as a capability owner,
+  classified as supporting evidence, or explicitly bounded compatibility debt;
+- report service-locator and oversized owner surfaces without moving files or
+  creating a replacement facade;
+- keep `trading_drone` and `person_runtime_shell` contract work deferred until
+  discovery proves their complete current boundaries.
+
+Pass B exit evidence is a fail-closed owner-discovery rule, an updated generated
+report, its negative self-tests, and `tools/review/review_all.sh`. It remains
+design/tooling work and does not migrate a capability.
 
 ### V2-1: Core contract proofs
 
