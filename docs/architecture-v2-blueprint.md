@@ -1,10 +1,9 @@
 # Hivra 2.0 Architecture Blueprint
 
-Status: design-only draft. `V2-0 / passes A-C` completed the ownership registry,
-generated baseline, owner discovery, service-locator classification, and
-explicit UI/Flutter-FFI surface mapping. `V2-0 / pass D` is selected to split
-the overloaded current `capsule_identity` evidence bucket into bounded
-capability families. This document does not change the
+Status: design-only draft. `V2-0 / passes A-D` completed the ownership registry,
+generated baseline, owner discovery, service-locator classification, explicit
+UI/Flutter-FFI surface mapping, and bounded identity-family decomposition.
+`V2-0 / pass E` is selected as the final exit audit only. This document does not change the
 normative Hivra 1.x protocol or authorize a 1.x runtime migration.
 
 ## 1. Objective
@@ -500,8 +499,38 @@ Selected pass D:
 - introduce no new DTO, command implementation, facade, storage format, event,
   or executable route.
 
-Pass D is still `V2-0` design evidence. It does not authorize the later V2-1
-Core contract implementation or any App Shell/Trading runtime refactor.
+Pass D completed on 2026-08-04 with:
+
+- six bounded current capability families: `capsule_birth`,
+  `capsule_selection`, `capsule_continuity`, `capsule_recovery`,
+  `capsule_addressing`, and `starter_inventory`;
+- one existing code owner and explicit closure verdict for each family;
+- seventeen UI/FFI mappings moved out of the `capsule_identity` catch-all;
+- zero UI/FFI surface assignments left on the base Core identity capability;
+- fail-closed policy requiring all six bounded families to retain mapped
+  evidence and forbidding `capsule_identity` from returning as a surface
+  catch-all;
+- no runtime, Core, storage, DTO, event, facade, or executable-path change.
+
+The six families are not declared 2.0-ready. Birth, selection, continuity, and
+Starter inventory remain `NEEDS_CONTRACT`; recovery and addressing remain
+`NEEDS_PROTOCOL`. The registry now names the missing boundaries instead of
+allowing them to collapse back into one identity service.
+
+Selected pass E — final `V2-0` exit audit:
+
+- verify every `V2-0` work-package requirement against generated evidence and
+  current gates;
+- summarize all non-`READY` capability families and order contract/protocol
+  work without implementing it;
+- verify that owner discovery, dependency, composition, surface mapping,
+  crypto-debt, and entropy evidence are deterministic and fail closed;
+- decide whether `V2-0` can close and name at most one first `V2-1` design
+  contract, but do not create that contract or any V2 runtime code in pass E.
+
+Pass E may update architecture status, generated evidence, and review gates
+only. Completion of `V2-0` will authorize contract design review, not runtime
+implementation.
 
 ### V2-1: Core contract proofs
 

@@ -302,6 +302,24 @@ def discover_owners(registry: dict) -> dict:
 
 
 def validate_surface_mappings(registry: dict, capability_ids: set[str], discovery: dict) -> None:
+    policy = registry["surface_mapping_policy"]
+    require_keys(
+        policy,
+        {"forbidden_catch_all_capability_ids", "required_bounded_capability_ids"},
+        "surface_mapping_policy",
+    )
+    forbidden_catch_all = set(policy["forbidden_catch_all_capability_ids"])
+    unknown_forbidden = forbidden_catch_all - capability_ids
+    if unknown_forbidden:
+        raise RegistryError(
+            f"surface_mapping_policy: unknown forbidden capability ids {sorted(unknown_forbidden)}"
+        )
+    required_bounded = set(policy["required_bounded_capability_ids"])
+    unknown_required = required_bounded - capability_ids
+    if unknown_required:
+        raise RegistryError(
+            f"surface_mapping_policy: unknown required bounded capability ids {sorted(unknown_required)}"
+        )
     mapping_ids = set()
     mapping_keys = set()
     registered_entrypoints = {
@@ -328,6 +346,10 @@ def validate_surface_mappings(registry: dict, capability_ids: set[str], discover
         )
         if mapping["capability_id"] not in capability_ids:
             raise RegistryError(f"surface mapping {mapping['id']}: unknown capability {mapping['capability_id']}")
+        if mapping["capability_id"] in forbidden_catch_all:
+            raise RegistryError(
+                f"surface mapping {mapping['id']}: broad catch-all capability {mapping['capability_id']} is forbidden"
+            )
         if mapping["kind"] not in {"ui_entrypoint", "ffi_runtime_port"}:
             raise RegistryError(f"surface mapping {mapping['id']}: invalid kind")
         if mapping["status"] not in {"CANONICAL", "COMPATIBILITY_DEBT"}:
@@ -372,12 +394,18 @@ def validate_surface_mappings(registry: dict, capability_ids: set[str], discover
             f"surface mapping coverage mismatch; missing={sorted(discovered_keys - mapping_keys)} "
             f"extra={sorted(mapping_keys - discovered_keys)}"
         )
+    mapped_capabilities = {mapping["capability_id"] for mapping in registry["surface_mappings"]}
+    missing_bounded = required_bounded - mapped_capabilities
+    if missing_bounded:
+        raise RegistryError(
+            f"surface mapping policy: bounded capabilities without surfaces {sorted(missing_bounded)}"
+        )
 
 
 def validate_registry(registry: dict) -> dict:
     require_keys(
         registry,
-        {"schema_version", "registry_id", "packages", "composition_roots", "owner_discovery", "surface_mappings", "capabilities", "concrete_bindings", "forbidden_rust_edges"},
+        {"schema_version", "registry_id", "packages", "composition_roots", "owner_discovery", "surface_mappings", "surface_mapping_policy", "capabilities", "concrete_bindings", "forbidden_rust_edges"},
         "registry",
     )
     if registry["schema_version"] != 1:
@@ -514,6 +542,8 @@ def render_report(registry: dict, evidence: dict) -> str:
         f"- Discovered owner candidates: `{len(evidence['discovery']['candidates'])}`",
         f"- Composition builders: `{len(evidence['discovery']['builders'])}`",
         f"- Explicit UI/FFI surface mappings: `{len(registry['surface_mappings'])}`",
+        f"- Forbidden surface catch-all capabilities: `{len(registry['surface_mapping_policy']['forbidden_catch_all_capability_ids'])}`",
+        f"- Required bounded surface capabilities: `{len(registry['surface_mapping_policy']['required_bounded_capability_ids'])}`",
         "",
         "## Closure Verdicts",
         "",
@@ -615,7 +645,11 @@ def self_test(registry: dict) -> None:
     invalid_closure["capabilities"][0]["closure"] = {"verdict": "READY", "missing_boundaries": ["not allowed"]}
     cases.append(("invalid closure", invalid_closure))
     bypass = copy.deepcopy(registry)
-    bypass["capabilities"][2]["entrypoints"][0]["command_symbol"] = "commandThatDoesNotExist"
+    invitation_capability = next(
+        capability for capability in bypass["capabilities"]
+        if capability["id"] == "invitations"
+    )
+    invitation_capability["entrypoints"][0]["command_symbol"] = "commandThatDoesNotExist"
     cases.append(("entrypoint bypass", bypass))
     unclassified = copy.deepcopy(registry)
     unclassified["owner_discovery"]["classification_rules"] = []
@@ -642,6 +676,17 @@ def self_test(registry: dict) -> None:
     )
     canonical_mapping["target"] = f"{canonical_mapping['capability_id']}.wrongCommand"
     cases.append(("canonical surface target drift", canonical_target_drift))
+    catch_all_return = copy.deepcopy(registry)
+    catch_all_return["surface_mappings"][0]["capability_id"] = "capsule_identity"
+    catch_all_return["surface_mappings"][0]["target"] = "capsule_identity.catch_all"
+    cases.append(("broad identity catch-all return", catch_all_return))
+    missing_bounded_capability = copy.deepcopy(registry)
+    removed_capability = "capsule_continuity"
+    for mapping in missing_bounded_capability["surface_mappings"]:
+        if mapping["capability_id"] == removed_capability:
+            mapping["capability_id"] = "capsule_selection"
+            mapping["target"] = "capsule_selection.compatibility_probe"
+    cases.append(("bounded capability without surface", missing_bounded_capability))
     for name, mutated in cases:
         try:
             validate_registry(mutated)

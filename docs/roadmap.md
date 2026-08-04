@@ -83,10 +83,10 @@ Capsule AI Runtime is a named cross-version architecture program governed by
   slots, operational stores, drone state, delivery queues, and consensus
   evidence.
 
-The first active item is `V2-0`. As of 2026-08-04, passes A-C completed one
+The first active item is `V2-0`. As of 2026-08-04, passes A-D completed one
 ownership-registry schema, generated architecture evidence, owner discovery,
-service-locator classification, and explicit UI/Flutter-FFI mappings. Pass D
-is selected to decompose the overloaded current identity evidence bucket.
+service-locator classification, explicit UI/Flutter-FFI mappings, and bounded
+identity-family decomposition. Pass E is selected as the final V2-0 exit audit.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2035,8 +2035,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       T1 and product tracks remain parked, and release work still requires a
       named candidate.
   - Next selected unit:
-    - `V2-0 / pass D`: bounded current capability families for identity birth,
-      selection, continuity, recovery, addressing, and Starter inventory;
+    - `V2-0 / pass E`: verify all baseline evidence and order non-READY
+      contract/protocol work without implementing it;
     - design/tooling only, with no 1.x runtime behavior, 2.0 production code,
       new DTO family, storage format, facade, or parallel execution path.
   - Status: completed (2026-08-04).
@@ -2111,6 +2111,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Next selected unit:
     - `V2-0 / pass D`, identity/continuity/addressing/Starter capability
       decomposition using current code evidence only.
+  - Status: completed (2026-08-04).
+
+- `V2-0 / pass D — Bounded Identity and Continuity Families`
+  - Scope:
+    - replace the overloaded `capsule_identity` surface bucket with bounded
+      birth, selection, continuity, recovery, addressing, and Starter inventory
+      capability evidence;
+    - preserve base identity as a Core-owned domain capability rather than a UI,
+      FFI, backup, settings, or recovery facade;
+    - fail closed if the broad identity catch-all returns.
+  - Evidence (2026-08-04):
+    - the registry grows from twelve to eighteen known capability families using
+      existing code owners only;
+    - seventeen UI/FFI surfaces move to six required bounded families, while
+      `capsule_identity` retains zero UI/FFI mappings;
+    - birth, selection, continuity, and Starter inventory are explicitly
+      `NEEDS_CONTRACT`; recovery and addressing are `NEEDS_PROTOCOL`;
+    - policy and negative self-tests reject a missing bounded family or any
+      return to the identity catch-all;
+    - no runtime code, Core contract, DTO, event, facade, storage, or executable
+      path is introduced.
+  - Next selected unit:
+    - `V2-0 / pass E`, final exit audit and ordering only.
   - Status: completed (2026-08-04).
 
 ## Planned Product Tracks
