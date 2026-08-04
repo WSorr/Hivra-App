@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hivra.local/contracts/starter-inventory-v2.schema.json",
+  "title": "Hivra Starter Inventory and Genesis Seed Contract V2 Design",
+  "description": "Machine evidence for the normative V2 blueprint section; no runtime or production wire format is authorized.",
+  "x-hivra-contract-id": "starter_inventory_contract_v2",
+  "x-hivra-contract-version": 1,
+  "x-hivra-design-status": "design-only-no-runtime",
+  "x-hivra-normative-source": "docs/architecture-v2-blueprint.md",
+  "x-hivra-normative-heading": "#### V2-1/B Starter Inventory and Genesis Seed Contract",
+  "oneOf": [
+    {"$ref": "#/$defs/GenesisSeedPlanV1"},
+    {"$ref": "#/$defs/StarterCreatedFactV2"},
+    {"$ref": "#/$defs/StarterBurnedFactV2"},
+    {"$ref": "#/$defs/StarterInventoryViewV1"},
+    {"$ref": "#/$defs/StarterInventoryRejectedV1"}
+  ],
+  "$defs": {
+    "LowerHexBytes": {"type": "string", "pattern": "^(?:[0-9a-f]{2})+$", "minLength": 32, "maxLength": 1024},
+    "Commitment32": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "NetworkIdV1": {"type": "string", "pattern": "^hivra\\.[a-z][a-z0-9-]{0,31}$"},
+    "StarterKindV1": {"enum": ["JUICE", "SPARK", "SEED", "PULSE", "KICK"]},
+    "SlotIndexV1": {"type": "integer", "minimum": 0, "maximum": 4},
+    "CapsuleIdV2": {"$ref": "capsule-identity-birth-v2.schema.json#/$defs/CapsuleIdV2"},
+    "StarterIdV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "scheme_id", "value_hex"],
+      "properties": {
+        "version": {"const": 1},
+        "scheme_id": {"type": "string", "pattern": "^hivra\\.starter-id\\.[a-z][a-z0-9.-]{0,63}\\.v[0-9]+$"},
+        "value_hex": {"$ref": "#/$defs/LowerHexBytes"}
+      }
+    },
+    "GenesisStarterIdV1": {
+      "allOf": [
+        {"$ref": "#/$defs/StarterIdV2"},
+        {"type": "object", "properties": {"scheme_id": {"const": "hivra.starter-id.genesis.v1"}}}
+      ]
+    },
+    "GenesisSeedEntryV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "slot_index", "kind", "starter_id"],
+      "properties": {
+        "ordinal": {"$ref": "#/$defs/SlotIndexV1"},
+        "slot_index": {"$ref": "#/$defs/SlotIndexV1"},
+        "kind": {"$ref": "#/$defs/StarterKindV1"},
+        "starter_id": {"$ref": "#/$defs/GenesisStarterIdV1"}
+      }
+    },
+    "GenesisSeedPlanV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_version", "birth_operation_id", "birth_semantic_commitment", "capsule_id", "network_id", "entries"],
+      "properties": {
+        "plan_version": {"const": 1},
+        "birth_operation_id": {"$ref": "#/$defs/Commitment32"},
+        "birth_semantic_commitment": {"$ref": "#/$defs/Commitment32"},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"$ref": "#/$defs/NetworkIdV1"},
+        "entries": {"type": "array", "items": {"$ref": "#/$defs/GenesisSeedEntryV1"}, "maxItems": 5}
+      }
+    },
+    "StarterCreatedFactV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_version", "starter_id", "capsule_id", "network_id", "slot_index", "kind", "creation_operation_id"],
+      "properties": {
+        "fact_version": {"const": 1},
+        "starter_id": {"$ref": "#/$defs/StarterIdV2"},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"$ref": "#/$defs/NetworkIdV1"},
+        "slot_index": {"$ref": "#/$defs/SlotIndexV1"},
+        "kind": {"$ref": "#/$defs/StarterKindV1"},
+        "creation_operation_id": {"$ref": "#/$defs/Commitment32"}
+      }
+    },
+    "StarterBurnedFactV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_version", "starter_id", "capsule_id", "network_id", "burn_operation_id", "reason"],
+      "properties": {
+        "fact_version": {"const": 1},
+        "starter_id": {"$ref": "#/$defs/StarterIdV2"},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"$ref": "#/$defs/NetworkIdV1"},
+        "burn_operation_id": {"$ref": "#/$defs/Commitment32"},
+        "reason": {"const": "INVITATION_REJECTED_EMPTY_SLOT"}
+      }
+    },
+    "EmptyStarterSlotV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot_index", "state", "starter_id", "kind"],
+      "properties": {
+        "slot_index": {"$ref": "#/$defs/SlotIndexV1"},
+        "state": {"const": "EMPTY"},
+        "starter_id": {"type": "null"},
+        "kind": {"type": "null"}
+      }
+    },
+    "ActiveStarterSlotV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot_index", "state", "starter_id", "kind"],
+      "properties": {
+        "slot_index": {"$ref": "#/$defs/SlotIndexV1"},
+        "state": {"const": "ACTIVE"},
+        "starter_id": {"$ref": "#/$defs/StarterIdV2"},
+        "kind": {"$ref": "#/$defs/StarterKindV1"}
+      }
+    },
+    "StarterSlotV1": {"oneOf": [{"$ref": "#/$defs/EmptyStarterSlotV1"}, {"$ref": "#/$defs/ActiveStarterSlotV1"}]},
+    "StarterInventoryViewV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["view_version", "capsule_id", "network_id", "ledger_head_commitment", "slots"],
+      "properties": {
+        "view_version": {"const": 1},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"$ref": "#/$defs/NetworkIdV1"},
+        "ledger_head_commitment": {"$ref": "#/$defs/Commitment32"},
+        "slots": {"type": "array", "items": {"$ref": "#/$defs/StarterSlotV1"}, "minItems": 5, "maxItems": 5}
+      }
+    },
+    "StarterInventoryRejectedV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "error_code", "ledger_append_required"],
+      "properties": {
+        "decision": {"const": "REJECTED"},
+        "error_code": {"enum": ["INVALID_GENESIS_PLAN", "INVALID_STARTER_ID", "INVALID_STARTER_FACT", "CAPSULE_SCOPE_MISMATCH", "NETWORK_SCOPE_MISMATCH", "DUPLICATE_STARTER_ID", "SLOT_OCCUPIED", "STARTER_NOT_FOUND", "STARTER_ALREADY_BURNED", "NON_ATOMIC_BIRTH_BATCH"]},
+        "ledger_append_required": {"const": false}
+      }
+    }
+  }
+}

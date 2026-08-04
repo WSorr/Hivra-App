@@ -813,6 +813,129 @@ Selection of a later contract is outside this normative section. The current
 work item and next decision are recorded only in `development-control.md`, with
 history and debt retained in `roadmap.md`.
 
+#### V2-1/B Starter Inventory and Genesis Seed Contract
+
+- Contract id: `starter_inventory_contract_v2`
+- Contract version: `1`
+- Contract boundary: design-only; no production event, storage, FFI, Flutter,
+  or runtime binding.
+
+This section is the normative design source. The schema at
+`architecture/contracts/starter-inventory-v2.schema.json` and vectors at
+`architecture/fixtures/starter-inventory-v2-vectors.json` are machine-readable
+evidence only.
+
+##### Ownership and canonical path
+
+Starter Inventory is the sole owner of Starter lifecycle facts, slot occupancy,
+and the canonical inventory current view. Capsule Birth remains the owner of
+the birth decision and `CapsuleBornFactV2`. Invitation owns invitation status
+and reservation/lock meaning; `LOCKED` is not a Starter lifecycle state.
+
+```text
+VerifiedBirthCommandV2
+  -> Capsule Birth transition
+  -> Starter Inventory pure Genesis seed plan
+  -> one Core atomic fact batch
+     GENESIS: CapsuleBornFactV2 + five StarterCreatedFactV2
+     PROTO:   CapsuleBornFactV2
+  -> one Ledger append/result boundary
+```
+
+There is no `SeedStartersCommand`, second operation id, second birth result, or
+post-birth repair route. Exact birth replay returns the prior result and appends
+nothing. Failure to produce the complete ordered batch appends nothing.
+
+##### Values, facts, and current view
+
+`StarterIdV2` is a versioned, scheme-tagged, length-delimited domain identifier;
+it is not a root, transport, signing, encryption, or KEM key. Genesis Starter
+ids use scheme `hivra.starter-id.genesis.v1` and are derived from the exact
+birth semantic commitment, derived birth operation id, CapsuleId, network,
+slot index, and Starter kind with domain `hivra/starter-id/genesis/v1`. The v1
+commitment encoding reuses the length-delimited SHA-256 convention defined by
+Pass A without making Capsule or Starter identity depend permanently on SHA-256.
+
+`StarterKindV1` remains the closed ordered set `JUICE`, `SPARK`, `SEED`,
+`PULSE`, `KICK`. Inventory capacity is five slots indexed `0..4`. Kind is not a
+general slot property: only the Genesis seed plan maps that ordered kind set to
+slots `0..4`. Pass B does not define later Starter creation or authorize reuse
+of the Genesis identifier scheme; that requires a separately reviewed
+capability contract before runtime work.
+
+`StarterCreatedFactV2` binds StarterId, CapsuleId, network, slot, kind, and the
+single operation that created it. `StarterBurnedFactV2` binds StarterId,
+CapsuleId, network, the consuming operation, and a versioned closed reason.
+Burn is terminal for one StarterId; the same id can never reactivate.
+
+`StarterInventoryViewV1` is reconstructed only from accepted Starter facts in
+Ledger order. It exposes exactly five `EMPTY` or `ACTIVE` slots and the Ledger
+head commitment used for projection. It does not expose `LOCKED`, invitation
+status, relationship truth, UI labels, or historical audit. Reservation is a
+separate composition of this view with the canonical Invitation current view.
+
+Projection fails closed on duplicate StarterId, occupied-slot creation,
+Capsule/network mismatch, unknown reason, burn of an unknown Starter, or
+reactivation after burn. Malformed and foreign-scope facts cannot become empty
+or successful inventory state.
+
+##### Deterministic Genesis seed plan and atomicity
+
+For `GENESIS`, the pure plan contains exactly these ordered entries:
+
+| Ordinal | Slot | Kind |
+| --- | --- | --- |
+| 0 | 0 | `JUICE` |
+| 1 | 1 | `SPARK` |
+| 2 | 2 | `SEED` |
+| 3 | 3 | `PULSE` |
+| 4 | 4 | `KICK` |
+
+Each entry carries its derived `StarterIdV2`. For `PROTO`, the plan is empty.
+The plan consumes the already verified Pass A command; it does not receive raw
+proof, key bytes, seed, nonce, RNG, clock, or transport identity.
+
+The Core transaction validates the complete plan before append. A Genesis
+transaction commits the birth fact and all five Starter facts in canonical
+order or commits zero facts. Persisting only the birth fact, any subset of the
+Starter facts, reordered facts, duplicate slots, wrong kinds, or ids derived
+from another Capsule/network/birth commitment returns
+`NON_ATOMIC_BIRTH_BATCH` or the narrower closed validation error and appends
+nothing.
+
+##### Closed errors
+
+Version 1 defines `INVALID_GENESIS_PLAN`, `INVALID_STARTER_ID`,
+`INVALID_STARTER_FACT`,
+`CAPSULE_SCOPE_MISMATCH`, `NETWORK_SCOPE_MISMATCH`, `DUPLICATE_STARTER_ID`,
+`SLOT_OCCUPIED`, `STARTER_NOT_FOUND`, `STARTER_ALREADY_BURNED`, and
+`NON_ATOMIC_BIRTH_BATCH`. Adapter text remains diagnostic and cannot become a
+Core branch or fact.
+
+##### 1.x compatibility and sealing targets
+
+Maintained 1.x history remains readable and is never rewritten. Its fixed
+32-byte `StarterId`, seed/slot derivation, `StarterCreatedPayload`,
+`StarterBurnedPayload`, and first-free `SlotLayout` replay are compatibility
+inputs, not V2 contracts. A future migration checkpoint derives V2 Starter ids
+and slot facts from the exact accepted 1.x Ledger order without dual-write.
+
+The implementation migration must replace or seal:
+
+- the Genesis Starter loop in `platform/hivra-ffi/src/runtime_support.rs`;
+- direct FFI `derive_starter_id` / `derive_starter_nonce` policy;
+- per-slot `hivra_starter_get_id`, `hivra_starter_get_type`, and
+  `hivra_starter_exists` probes after one versioned inventory view is bound;
+- Dart reconstruction of Starter kinds and invitation locks in
+  `LedgerViewService`;
+- writable fixed-size `StarterId` assumptions outside the declared 1.x
+  compatibility boundary.
+
+Old event decoders remain for the declared read window. No V2 runtime work is
+authorized until vectors prove exact Genesis/Proto plans, all-or-none append,
+idempotent replay, terminal burn, scope isolation, and deterministic current
+view through one Core path.
+
 ### V2-1: Core contract proofs
 
 - define Capsule, Ledger, Trust, and Pair Consensus capability contracts;

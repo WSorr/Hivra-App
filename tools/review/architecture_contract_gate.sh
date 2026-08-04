@@ -315,6 +315,11 @@ require_present "$SPEC" 'PFR is not a second runtime layer, a new Core entity, o
 require_present "$CHECKLIST" 'preserves the Person-First Runtime \(PFR\)' \
   "architecture review protects person-first ownership"
 check_architecture_economy_keeper
+if python3 "$ROOT/tools/architecture/validate_starter_inventory_contract.py"; then
+  pass "V2 Starter inventory contract remains bound to Pass A and the normative blueprint"
+else
+  fail "V2 Starter inventory contract remains bound to Pass A and the normative blueprint"
+fi
 require_present "$PRODUCT_AXIS" 'Cryptographic agility' \
   "product axis defines cryptographic agility as a permanent invariant"
 require_present "$SPEC" '^### 0\.3 Cryptographic Agility' \
