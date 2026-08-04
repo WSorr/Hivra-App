@@ -2,16 +2,17 @@
 
 Status date: 2026-08-04
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: `V2-1 / pass B`, design-only Starter inventory and
-Genesis seed-plan contract. V2-0 passes A-E completed one repository ownership registry,
+Current development focus: post-`V2-1 / pass B` consolidation and next-unit
+decision. V2-0 passes A-E completed one repository ownership registry,
 deterministic
 current-architecture evidence, owner discovery, explicit UI/Flutter-FFI
 surface mappings, bounded identity-family decomposition, exit audit, and
 fail-closed gates; they changed no runtime path. Pass A completed exact
 proof/request binding, deterministic operation identity, idempotent replay,
-standard schema validation, and fail-closed blueprint ownership. Pass B may
-design one Starter inventory contract and atomic Genesis seed plan only;
-runtime implementation remains unauthorized. The post-AI-4 audit found no active 1.x integrity
+standard schema validation, and fail-closed blueprint ownership. Pass B closed
+one Starter inventory owner, deterministic Genesis seed plan, atomic birth
+boundary, and current-view contract. No later V2-1 pass is selected and runtime
+implementation remains unauthorized. The post-AI-4 audit found no active 1.x integrity
 finding: Capsule AI Runtime convergence is complete, feature-owned provider
 dispatch and credential reads remain zero, and the full T0 environment verifier
 matches every repository pin. No AI-5, release candidate, T1, or other runtime
@@ -34,7 +35,7 @@ Before resuming work, answer four questions in this order:
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
 | What is the next 1.x remediation step? | No active 1.x remediation finding is selected. A new runtime pass requires a named failure or review finding. | `docs/roadmap.md`, applicable architecture contract |
-| Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
+| Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
 table, then open only the linked authority for the selected work item.
@@ -45,7 +46,7 @@ table, then open only the linked authority for the selected work item.
 | --- | --- | --- | --- | --- |
 | **1.x maintained runtime** | Checkpoint complete; no active finding | `12.3 / pass 18` and `12.5 / AI-4` are complete; no later remediation is inferred. | Latest build `100000331`: Flutter `760/760`, Rust workspace and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | Select a new runtime pass only from a named failure or review finding. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
-| **2.0 architecture** | `V2-0` and `V2-1 / pass A` complete; pass B selected, design-only | Design one Starter inventory contract: canonical current view, deterministic Genesis seed plan, atomic birth boundary, errors, vectors, and sealing targets. | Pass A has one blueprint owner, one schema, one vector set, one validator, and no runtime path; remediation review found no remaining finding. | Pass B may use one normative section, one schema, one fixture set, and one validator; no production event, DTO family, binding, storage, or UI path. |
+| **2.0 architecture** | `V2-0` and `V2-1 / passes A-B` complete; no later pass selected | Consolidate before choosing another design contract; runtime implementation remains unauthorized. | Pass B has one blueprint owner, one schema, one vector set, one validator in the existing architecture gate, and no runtime path; consolidation found no duplicated normative owner. | Select a later unit only if it reduces a named ambiguity or compatibility debt without creating a second Core path. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
 | **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects and a foreground bounded-reply experiment exist, but automatic modes are blocked by the canonical engagement lifecycle gates. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |
@@ -58,9 +59,9 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — `V2-1 / pass B` design:** define Starter inventory and the atomic
-   Genesis seed-plan boundary within one section/schema/fixture/validator
-   budget; add no runtime code, DTO family, binding, storage, or executable path.
+1. **P1 — post-Pass B decision:** audit remaining V2-1 ambiguity and select at
+   most one bounded contract only if it removes or seals a named path; do not
+   infer Pass C or authorize runtime implementation.
 2. **P1 — release decision:** only a named release candidate may trigger fresh
    macOS and Android packaged-artifact signoff.
 3. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,

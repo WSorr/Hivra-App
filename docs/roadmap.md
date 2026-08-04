@@ -89,8 +89,8 @@ classification, explicit UI/Flutter-FFI mappings, bounded identity-family
 decomposition, and a fail-closed exit matrix. `V2-1 / pass A` completed
 `capsule_identity_birth_contract_v2`, including remediation of exact proof
 binding, deterministic operation identity, replay semantics, root schema
-validation, and blueprint ownership. The active design-only item is
-`V2-1 / pass B`, `starter_inventory_contract_v2`.
+validation, and blueprint ownership. `V2-1 / pass B` completed
+`starter_inventory_contract_v2`; no later V2-1 pass is selected.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2188,6 +2188,36 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       seed-plan contract design only.
   - Status: completed (2026-08-04); remediation and consolidation review closed
     with no remaining finding.
+
+- `V2-1 / pass B — Starter Inventory and Genesis Seed Contract`
+  - Scope:
+    - assign Starter lifecycle facts, slot occupancy, and current view to one
+      Core owner;
+    - derive the five Genesis Starters from the verified Pass A birth command;
+    - require one all-or-none birth transaction and define no second seed or
+      repair operation;
+    - preserve 1.x history as read compatibility without runtime changes.
+  - Evidence (2026-08-04):
+    - one normative blueprint section, one schema, one semantic vector set, and
+      one validator integrated into the existing architecture gate;
+    - standard schema validation and negative mutations reject root weakening,
+      duplicated CapsuleId semantics, generic Genesis ids, `LOCKED` ownership,
+      missing evidence, semantic drift, missing canon, and runtime authorization;
+    - vectors prove exact Genesis/Proto plans, atomic append, exact replay,
+      terminal burn, closed burn reasons, scope isolation, and deterministic
+      current view;
+    - no Rust, Flutter, FFI, storage, adapter, production event, or UI path
+      changed.
+  - Architecture-economy review:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | Existing blueprint section plus one schema, fixture set, validator, and existing-gate hook | Second seed command, post-birth repair route, invitation-owned `LOCKED` state, and Genesis-scheme reuse are forbidden | Starter ownership, Genesis derivation, atomic birth, replay, burn, and projection scope | One design owner; zero runtime owners or paths | 1.x FFI Genesis loop, derivation policy, fixed StarterId, slot probes, and Dart replay remain explicit migration targets | Consolidate and select at most one later contract only from a named ambiguity |
+
+  - Next selected unit: none; Pass C and runtime implementation remain
+    unauthorized pending a separate consolidation decision.
+  - Status: completed (2026-08-04); consolidation found no duplicated normative
+    owner and no new finding.
 
 ## Planned Product Tracks
 
