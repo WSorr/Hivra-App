@@ -86,10 +86,11 @@ Capsule AI Runtime is a named cross-version architecture program governed by
 `V2-0` is complete as of 2026-08-04. Passes A-E produced one ownership-registry
 schema, generated architecture evidence, owner discovery, service-locator
 classification, explicit UI/Flutter-FFI mappings, bounded identity-family
-decomposition, and a fail-closed exit matrix. `V2-1 / pass A` is remediating
-proof/request binding, deterministic operation identity, replay semantics, and
-standard schema validation in `capsule_identity_birth_contract_v2`. Pass B is
-not selected before remediation review and documentation-consolidation triage.
+decomposition, and a fail-closed exit matrix. `V2-1 / pass A` completed
+`capsule_identity_birth_contract_v2`, including remediation of exact proof
+binding, deterministic operation identity, replay semantics, root schema
+validation, and blueprint ownership. The active design-only item is
+`V2-1 / pass B`, `starter_inventory_contract_v2`.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2038,7 +2039,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       T1 and product tracks remain parked, and release work still requires a
       named candidate.
   - Next selected unit:
-    - `V2-1 / pass A remediation`; pass B remains blocked pending review;
+    - `V2-1 / pass B`, Starter inventory and atomic Genesis seed-plan design;
     - design/tooling only, with no 1.x runtime behavior, 2.0 production code,
       new DTO family, storage format, facade, or parallel execution path.
   - Status: completed (2026-08-04).
@@ -2182,10 +2183,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `1 -> GENESIS`, `0 -> PROTO`; history is never rewritten or re-signed;
     - no production Rust, Flutter, FFI, storage, event, adapter, or UI path is
       introduced.
-  - Next decision:
-    - review Pass A remediation, then choose Pass B or a short documentation
-      consolidation pass without new entities.
-  - Status: remediation (2026-08-04); Pass B blocked.
+  - Next selected unit:
+    - `V2-1 / pass B`, Starter inventory/current-view and atomic Genesis
+      seed-plan contract design only.
+  - Status: completed (2026-08-04); remediation and consolidation review closed
+    with no remaining finding.
 
 ## Planned Product Tracks
 
