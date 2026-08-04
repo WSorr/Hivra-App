@@ -1,7 +1,8 @@
 # Hivra 2.0 Architecture Blueprint
 
-Status: design-only draft. This document does not change the normative Hivra
-1.x protocol or authorize a 1.x runtime migration.
+Status: design-only draft. `V2-0 / pass A` is selected for ownership-registry
+and generated baseline evidence only. This document does not change the
+normative Hivra 1.x protocol or authorize a 1.x runtime migration.
 
 ## 1. Objective
 
@@ -392,6 +393,26 @@ mode. Compatibility adapters may read old data, but they emit one canonical
   Core/Engine/FFI/Flutter and keep the 1.x compatibility-boundary gate
   non-increasing;
 - record the baseline entropy report without changing runtime behavior.
+
+Selected pass A (2026-08-04):
+
+- define one repository-level ownership-registry schema rather than one
+  manifest per micro-module;
+- generate current capability, public-contract, package dependency,
+  composition-only concrete edge, fact/projection owner, effect owner, and
+  UI/drone entrypoint evidence from 1.x code plus that registry;
+- emit explicit `READY`, `NEEDS_CONTRACT`, `NEEDS_PROTOCOL`, or `REJECTED`
+  closure verdicts for registered capability families;
+- fail the review gate on missing code/registry entries, duplicate owners,
+  dependency cycles, concrete adapter imports outside composition, or an
+  entrypoint that bypasses its declared capability API;
+- record entropy totals and largest remaining owner surfaces without moving
+  runtime files or introducing a 2.0 DTO, facade, storage format, event, or
+  executable path.
+
+Pass A exit evidence is one reviewed registry, deterministic generated report,
+gate self-test, and `tools/review/review_all.sh`. It removes the current
+documentation-only ownership ambiguity; it does not migrate a capability.
 
 ### V2-1: Core contract proofs
 

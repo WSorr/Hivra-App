@@ -187,6 +187,15 @@ Completion evidence (2026-08-03):
 
 Status: completed. T1 is not activated automatically by T0 completion.
 
+Post-AI-4 reverification (2026-08-04):
+
+- full local verification matched every checked-in T0 version and Rust target;
+- Flutter-resolved JDK 21 remains the sole Android build authority;
+- direct `./gradlew` JDK selection remains noncanonical diagnostic evidence;
+- simulator-runtime discovery remains unhealthy but outside the maintained
+  macOS/Android T0 packaging claim;
+- no T1, Rust, Android-stack, Xcode, or CocoaPods update was selected.
+
 ### T1: Flutter/Dart stable update
 
 Goal:

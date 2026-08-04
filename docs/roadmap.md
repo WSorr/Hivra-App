@@ -83,8 +83,10 @@ Capsule AI Runtime is a named cross-version architecture program governed by
   slots, operational stores, drone state, delivery queues, and consensus
   evidence.
 
-The first active item is `V2-0`. No 2.0 runtime implementation starts before
-the blueprint design exit criteria are satisfied.
+The first active item is `V2-0`. As of 2026-08-04, pass A is selected to freeze
+one ownership-registry schema and generate current architecture evidence only.
+No 2.0 runtime implementation starts before the blueprint design exit criteria
+are satisfied.
 
 ## 1.x / 2.0 Sequencing Contract
 
@@ -2002,11 +2004,40 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       `arm64-v8a`, `armeabi-v7a`, and `x86_64`; both fresh artifacts cold-start
       without fatal terminal evidence. Live inference remains an explicit
       credentialed user action rather than an automated gate.
-  - Next selected unit: post-AI-4 documentation, debt, and environment audit;
-    it may select one bounded maintenance unit but cannot infer AI-5 or a
+  - Post-AI-4 documentation, debt, and environment audit is completed in
+    `12.6`; it selected design-only `V2-0 / pass A` and did not infer AI-5 or a
     release candidate.
   - Status: AI-4 convergence complete; no legacy feature-owned provider
     dispatch or credential-read path remains.
+
+- `12.6 Post-AI-4 Debt and Environment Checkpoint`
+  - Scope:
+    - reconcile current documentation, executable debt gates, and pinned local
+      toolchain evidence after Capsule AI Runtime convergence;
+    - distinguish active 1.x findings from guarded compatibility, design-only,
+      release-only, and parked work;
+    - select exactly one next bounded unit without inferring a release or
+      runtime migration.
+  - Evidence (2026-08-04):
+    - `main` was clean at `b86cb7a`; AI provider dispatch and feature-owned
+      credential-read gates remain fixed at `0/0`;
+    - `tools/toolchain/verify_environment.sh` matched Flutter `3.41.2`, Dart
+      `3.11.0`, Rust/Cargo `1.93.0`, Android SDK/build tools `36.1.0`, NDK
+      `28.2.13676358`, AGP `8.13.2`, Gradle `8.13`, Kotlin `2.2.20`, JDK `21`,
+      Xcode `26.6`, macOS SDK `26.5`, and CocoaPods `1.16.2` to the T0 manifest;
+    - direct Gradle JDK and simulator-runtime discovery remain documented
+      noncanonical/out-of-scope warnings, not release-authority drift for the
+      maintained macOS and Android line;
+    - no active 1.x correctness, security, replay, transport, projection,
+      effect-lifecycle, AI-runtime, or platform-parity finding was identified;
+      T1 and product tracks remain parked, and release work still requires a
+      named candidate.
+  - Next selected unit:
+    - `V2-0 / pass A`: one ownership-registry schema plus generated current
+      capability/contract/dependency/fact/projection/effect/entrypoint evidence;
+    - design/tooling only, with no 1.x runtime behavior, 2.0 production code,
+      new DTO family, storage format, facade, or parallel execution path.
+  - Status: completed (2026-08-04).
 
 ## Planned Product Tracks
 

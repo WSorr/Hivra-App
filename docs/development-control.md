@@ -2,13 +2,12 @@
 
 Status date: 2026-08-04
 Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: Capsule AI Runtime convergence. AI-4 is complete:
-History Advisor, Developer Engineer, Capsule Analyst, and Moltbook now use the
-provider-independent runtime. Feature-owned provider dispatch and credential
-reads are zero and gated against return. No AI-5 is implied. The next bounded
-unit must be selected from a fresh documentation/debt audit; a release remains
-a separate named-candidate decision.
-T1 or any other toolchain upgrade is not selected.
+Current development focus: `V2-0 / pass A`, design-only ownership registry and
+generated baseline evidence. The post-AI-4 audit found no active 1.x integrity
+finding: Capsule AI Runtime convergence is complete, feature-owned provider
+dispatch and credential reads remain zero, and the full T0 environment verifier
+matches every repository pin. No AI-5, release candidate, T1, or other runtime
+upgrade is implied.
 Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
 signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
@@ -26,7 +25,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation step? | Reconcile the post-AI-4 documentation, debt, and environment checkpoint, then select one bounded maintenance unit. Do not infer AI-5 or a release candidate. | `docs/architecture/capsule-ai-runtime.md`, `docs/roadmap.md` |
+| What is the next 1.x remediation step? | No active 1.x remediation finding is selected. A new runtime pass requires a named failure or review finding. | `docs/roadmap.md`, applicable architecture contract |
 | Is 2.0 implementation work allowed? | No. `V2-0` may inventory owners and generate architecture evidence only; it may not create a second production path. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -36,10 +35,10 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Checkpoint complete | `12.3 / pass 18` bounded pair-attestation responses passed full gates and cross-platform cold-restart smoke. | Build `100000326`: Flutter `737/737`, Rust workspace and review gates pass; macOS schema v1→v2 with unchanged Ledger `105/62/119`; Android Ledger `v82`; repeated attestation receives store `0`. | Runtime remains unchanged during AI-0 contract and inventory work. |
+| **1.x maintained runtime** | Checkpoint complete; no active finding | `12.3 / pass 18` and `12.5 / AI-4` are complete; no later remediation is inferred. | Latest build `100000331`: Flutter `760/760`, Rust workspace and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | Select a new runtime pass only from a named failure or review finding. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
-| **2.0 architecture** | Design-only | `V2-0`: inventory capability owners, commands, facts, projections, effects, entrypoints, and forbidden dependency edges. | A reviewed ownership/dependency baseline, generated evidence, and closure verdicts, with no 2.0 runtime path in 1.x. | `V2-1` contracts only after V2-0 exit evidence; each later migration deletes or seals its 1.x path. |
-| **Platform toolchain** | Checkpoint complete | `T0`: one baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Build `100000327`: all gates pass; macOS universal and Android three-ABI layouts verified; both artifacts cold-start without fatal evidence. | Select any later toolchain unit explicitly; do not activate T1 by implication. |
+| **2.0 architecture** | `V2-0 / pass A` selected; design-only | Freeze one ownership-registry schema and generate current capability, contract, dependency, fact/projection, effect, and entrypoint evidence from 1.x reality. | Registry/report consistency gate, closure verdicts, and zero runtime behavior or production-path changes. | `V2-0 / pass B` only after pass A exposes concrete missing or duplicate ownership. |
+| **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
 | **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects and a foreground bounded-reply experiment exist, but automatic modes are blocked by the canonical engagement lifecycle gates. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |
 
@@ -51,14 +50,15 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — post-AI-4 debt checkpoint:** reconcile documentation, executable
-   debt gates, and environment evidence, then select one bounded maintenance
-   unit without reopening the completed AI migration.
+1. **P1 — `V2-0 / pass A` design evidence:** define one repository ownership
+   registry and generated baseline report without adding 2.0 runtime code,
+   contracts, DTOs, storage, facades, or executable paths to 1.x.
 2. **P1 — release decision:** only a named release candidate may trigger fresh
    macOS and Android packaged-artifact signoff.
-3. **P2 — design and parked work:** `V2-0`, crypto-agility protocol design,
-   dependency upgrades, AI trading advice, distributed backup, and staking
-   remain non-runtime or parked until the P0 sequence permits selection.
+3. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
+   AI trading advice, distributed backup, and staking remain non-runtime or
+   parked until the active design unit or a named release decision permits
+   selection.
 
 Unchecked boxes in reusable release/smoke checklists are execution templates,
 not automatically active debt. A checklist becomes active only for a named

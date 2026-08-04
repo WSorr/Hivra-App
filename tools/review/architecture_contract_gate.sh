@@ -108,6 +108,7 @@ DOCS_README="$ROOT/docs/README.md"
 PRODUCT_AXIS="$ROOT/docs/product-axis.md"
 CHECKLIST="$ROOT/docs/checklists/architecture-review.md"
 ROADMAP="$ROOT/docs/roadmap.md"
+DEVELOPMENT_CONTROL="$ROOT/docs/development-control.md"
 EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
 V2_BLUEPRINT="$ROOT/docs/architecture-v2-blueprint.md"
 PLATFORM_TOOLCHAIN="$ROOT/docs/platform-toolchain-evolution.md"
@@ -487,6 +488,10 @@ require_present "$EXEC_DISCIPLINE" '^## 7\. Plugin Repository Boundary' \
   "execution discipline defines plugin repository boundary"
 require_present "$V2_BLUEPRINT" '^Status: design-only draft\.' \
   "v2 blueprint cannot silently change normative v1 behavior"
+require_present "$V2_BLUEPRINT" 'Selected pass A \(2026-08-04\):' \
+  "v2 blueprint selects bounded ownership-registry evidence"
+require_present "$DEVELOPMENT_CONTROL" '`V2-0 / pass A`, design-only ownership registry' \
+  "development control selects V2-0 without opening a runtime path"
 require_present "$PLATFORM_TOOLCHAIN" '^# Hivra Platform Toolchain Evolution' \
   "platform toolchain evolution contract exists"
 require_present "$PLATFORM_TOOLCHAIN" 'Hivra does not plan a bridge-framework' \
