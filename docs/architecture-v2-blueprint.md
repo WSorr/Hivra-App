@@ -1,9 +1,10 @@
 # Hivra 2.0 Architecture Blueprint
 
-Status: design-only draft. `V2-0 / passes A-D` completed the ownership registry,
-generated baseline, owner discovery, service-locator classification, explicit
-UI/Flutter-FFI surface mapping, and bounded identity-family decomposition.
-`V2-0 / pass E` is selected as the final exit audit only. This document does not change the
+Status: design-only draft. `V2-0 / passes A-E` is complete. The ownership
+registry, generated baseline, owner discovery, service-locator classification,
+explicit UI/Flutter-FFI surface mapping, bounded identity-family decomposition,
+and exit audit are fail-closed evidence. `V2-1 / pass A` is selected for the
+Capsule identity and birth contract design only. This document does not change the
 normative Hivra 1.x protocol or authorize a 1.x runtime migration.
 
 ## 1. Objective
@@ -528,9 +529,37 @@ Selected pass E — final `V2-0` exit audit:
 - decide whether `V2-0` can close and name at most one first `V2-1` design
   contract, but do not create that contract or any V2 runtime code in pass E.
 
-Pass E may update architecture status, generated evidence, and review gates
-only. Completion of `V2-0` will authorize contract design review, not runtime
-implementation.
+Pass E completed on 2026-08-04 with:
+
+- all seven V2-0 work-package requirements recorded `COMPLETE` in the generated
+  exit matrix;
+- deterministic evidence for 18 capability families, 161 owner candidates, 33
+  composition builders, 35 explicit UI/FFI mappings, dependency edges,
+  concrete bindings, crypto compatibility debt, and entropy surfaces;
+- closure totals of ten `READY`, six `NEEDS_CONTRACT`, and two
+  `NEEDS_PROTOCOL` capability families;
+- all eight non-ready families ordered without changing their verdicts;
+- explicit `runtime_implementation_authorized: false` enforced by the registry
+  gate and its negative self-tests.
+
+V2-0 is complete. It authorizes architecture contract design review only. It
+does not authorize a second Core, production V2 code, runtime migration,
+dual-write/projection, new persisted format, or release claim.
+
+Selected `V2-1 / pass A` — `capsule_identity_birth_contract_v2`:
+
+- define the design contract for `CapsuleId` as a domain identifier independent
+  of key algorithm, key length, and signature length;
+- define immutable Genesis/Proto `birth_mode` separately from runtime role;
+- define the canonical birth command/result/fact boundary, errors, invariants,
+  and deterministic golden vectors;
+- define migration/removal targets against current First Launch and
+  Flutter/FFI draft surfaces without implementing them;
+- preserve one Core path and append-only Ledger history.
+
+Pass A is contract/schema/fixture design only. No Rust, Flutter, FFI, storage,
+crypto adapter, migration runtime, or production binding may be implemented
+until the contract review and its own exit criteria are complete.
 
 ### V2-1: Core contract proofs
 

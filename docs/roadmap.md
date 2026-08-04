@@ -83,10 +83,11 @@ Capsule AI Runtime is a named cross-version architecture program governed by
   slots, operational stores, drone state, delivery queues, and consensus
   evidence.
 
-The first active item is `V2-0`. As of 2026-08-04, passes A-D completed one
-ownership-registry schema, generated architecture evidence, owner discovery,
-service-locator classification, explicit UI/Flutter-FFI mappings, and bounded
-identity-family decomposition. Pass E is selected as the final V2-0 exit audit.
+`V2-0` is complete as of 2026-08-04. Passes A-E produced one ownership-registry
+schema, generated architecture evidence, owner discovery, service-locator
+classification, explicit UI/Flutter-FFI mappings, bounded identity-family
+decomposition, and a fail-closed exit matrix. The first active item is
+`V2-1 / pass A`, design-only `capsule_identity_birth_contract_v2`.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2035,8 +2036,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       T1 and product tracks remain parked, and release work still requires a
       named candidate.
   - Next selected unit:
-    - `V2-0 / pass E`: verify all baseline evidence and order non-READY
-      contract/protocol work without implementing it;
+    - `V2-1 / pass A`: design CapsuleId and immutable birth-mode contracts,
+      deterministic vectors, and current-path migration/removal targets;
     - design/tooling only, with no 1.x runtime behavior, 2.0 production code,
       new DTO family, storage format, facade, or parallel execution path.
   - Status: completed (2026-08-04).
@@ -2134,6 +2135,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       path is introduced.
   - Next selected unit:
     - `V2-0 / pass E`, final exit audit and ordering only.
+  - Status: completed (2026-08-04).
+
+- `V2-0 / pass E — Exit Audit`
+  - Scope:
+    - verify every V2-0 work-package requirement against generated evidence and
+      fail-closed gates;
+    - order all non-ready capability families without implementing contracts;
+    - select at most one first V2-1 design contract while keeping runtime
+      implementation unauthorized.
+  - Evidence (2026-08-04):
+    - the generated exit matrix records all seven requirements `COMPLETE`;
+    - the baseline contains 18 capabilities, 161 owner candidates, 33
+      composition builders, 35 UI/FFI surface mappings, dependency/concrete
+      binding evidence, crypto-debt checks, and entropy surfaces;
+    - closure totals are ten `READY`, six `NEEDS_CONTRACT`, and two
+      `NEEDS_PROTOCOL`; all eight non-ready families are explicitly ordered;
+    - registry policy and negative tests require
+      `runtime_implementation_authorized: false`;
+    - `capsule_identity_birth_contract_v2` is selected first because stable
+      CapsuleId and birth mode unblock continuity, recovery, addressing,
+      selection, and later crypto-agility proofs.
+  - Next selected unit:
+    - `V2-1 / pass A`, Capsule identity and birth contract/schema/fixture design
+      only; no production implementation.
   - Status: completed (2026-08-04).
 
 ## Planned Product Tracks

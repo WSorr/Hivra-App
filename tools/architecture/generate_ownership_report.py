@@ -15,6 +15,15 @@ REGISTRY_PATH = ROOT / "architecture/ownership-registry.v1.json"
 REPORT_PATH = ROOT / "docs/generated/architecture-ownership-baseline.md"
 VERDICTS = {"READY", "NEEDS_CONTRACT", "NEEDS_PROTOCOL", "REJECTED"}
 EVIDENCE_KEYS = ("public_contracts", "facts", "projections", "effect_kinds")
+V2_0_EXIT_REQUIREMENT_IDS = {
+    "capability_evidence",
+    "dependency_graph",
+    "owner_and_locator",
+    "closure_verdicts",
+    "crypto_compatibility_debt",
+    "entropy_baseline",
+    "runtime_scope",
+}
 DISCOVERY_CLASSIFICATIONS = {
     "CAPABILITY_OWNER",
     "REGISTERED_EVIDENCE",
@@ -402,10 +411,79 @@ def validate_surface_mappings(registry: dict, capability_ids: set[str], discover
         )
 
 
+def validate_v2_0_exit_audit(registry: dict, capability_ids: set[str]) -> None:
+    audit = registry["v2_0_exit_audit"]
+    require_keys(
+        audit,
+        {
+            "status",
+            "runtime_implementation_authorized",
+            "requirements",
+            "ordered_non_ready_capabilities",
+            "first_v2_1_design_contract",
+        },
+        "v2_0_exit_audit",
+    )
+    if audit["status"] != "COMPLETE":
+        raise RegistryError("v2_0_exit_audit: status must be COMPLETE")
+    if audit["runtime_implementation_authorized"] is not False:
+        raise RegistryError("v2_0_exit_audit: runtime implementation must remain unauthorized")
+
+    requirement_ids = set()
+    for requirement in audit["requirements"]:
+        require_keys(
+            requirement,
+            {"id", "status", "evidence", "gate"},
+            f"V2-0 exit requirement {requirement.get('id')}",
+        )
+        if requirement["id"] in requirement_ids:
+            raise RegistryError(f"duplicate V2-0 exit requirement: {requirement['id']}")
+        requirement_ids.add(requirement["id"])
+        if requirement["status"] != "COMPLETE":
+            raise RegistryError(f"V2-0 exit requirement {requirement['id']}: incomplete")
+        if not requirement["evidence"].strip():
+            raise RegistryError(f"V2-0 exit requirement {requirement['id']}: evidence is required")
+        if not (ROOT / requirement["gate"]).is_file():
+            raise RegistryError(f"V2-0 exit requirement {requirement['id']}: missing gate {requirement['gate']}")
+    if requirement_ids != V2_0_EXIT_REQUIREMENT_IDS:
+        raise RegistryError(
+            f"V2-0 exit requirement mismatch; missing={sorted(V2_0_EXIT_REQUIREMENT_IDS - requirement_ids)} "
+            f"extra={sorted(requirement_ids - V2_0_EXIT_REQUIREMENT_IDS)}"
+        )
+
+    non_ready = {
+        capability["id"]
+        for capability in registry["capabilities"]
+        if capability["closure"]["verdict"] != "READY"
+    }
+    ordered = audit["ordered_non_ready_capabilities"]
+    if len(ordered) != len(set(ordered)) or set(ordered) != non_ready:
+        raise RegistryError(
+            f"V2-0 ordered non-ready capability mismatch; missing={sorted(non_ready - set(ordered))} "
+            f"extra={sorted(set(ordered) - non_ready)}"
+        )
+
+    first_contract = audit["first_v2_1_design_contract"]
+    require_keys(
+        first_contract,
+        {"contract_id", "capability_id", "status", "rationale", "unblocks"},
+        "first_v2_1_design_contract",
+    )
+    if first_contract["status"] != "SELECTED_DESIGN_ONLY":
+        raise RegistryError("first_v2_1_design_contract: only design selection is allowed")
+    if not ordered or first_contract["capability_id"] != ordered[0]:
+        raise RegistryError("first_v2_1_design_contract: capability must be first in ordered non-ready work")
+    if not first_contract["contract_id"].strip() or not first_contract["rationale"].strip():
+        raise RegistryError("first_v2_1_design_contract: contract id and rationale are required")
+    unblocks = set(first_contract["unblocks"])
+    if not unblocks or not unblocks.issubset(capability_ids - {first_contract["capability_id"]}):
+        raise RegistryError("first_v2_1_design_contract: unblocks must name other registered capabilities")
+
+
 def validate_registry(registry: dict) -> dict:
     require_keys(
         registry,
-        {"schema_version", "registry_id", "packages", "composition_roots", "owner_discovery", "surface_mappings", "surface_mapping_policy", "capabilities", "concrete_bindings", "forbidden_rust_edges"},
+        {"schema_version", "registry_id", "packages", "composition_roots", "owner_discovery", "surface_mappings", "surface_mapping_policy", "v2_0_exit_audit", "capabilities", "concrete_bindings", "forbidden_rust_edges"},
         "registry",
     )
     if registry["schema_version"] != 1:
@@ -513,6 +591,7 @@ def validate_registry(registry: dict) -> dict:
         raise RegistryError(f"forbidden Rust dependency edges: {sorted(violations)}")
     discovery = discover_owners(registry)
     validate_surface_mappings(registry, capability_ids, discovery)
+    validate_v2_0_exit_audit(registry, capability_ids)
     return {
         "members": members,
         "rust_edges": edges,
@@ -554,6 +633,41 @@ def render_report(registry: dict, evidence: dict) -> str:
         owner = capability["owner"]
         missing = "; ".join(capability["closure"]["missing_boundaries"]) or "—"
         lines.append(f"| `{capability['id']}` | `{owner['path']}` (`{owner['symbol']}`) | `{capability['closure']['verdict']}` | {missing} |")
+    audit = registry["v2_0_exit_audit"]
+    lines.extend(["", "## V2-0 Exit Audit", ""])
+    lines.extend([
+        f"- Status: `{audit['status']}`",
+        f"- Runtime implementation authorized: `{str(audit['runtime_implementation_authorized']).lower()}`",
+        "",
+        "### Requirement Matrix",
+        "",
+        "| Requirement | Status | Evidence | Gate |",
+        "| --- | --- | --- | --- |",
+    ])
+    for requirement in sorted(audit["requirements"], key=lambda item: item["id"]):
+        lines.append(
+            f"| `{requirement['id']}` | `{requirement['status']}` | {requirement['evidence']} | `{requirement['gate']}` |"
+        )
+    lines.extend(["", "### Ordered Non-Ready Capabilities", ""])
+    capabilities_by_id = {capability["id"]: capability for capability in capabilities}
+    for index, capability_id in enumerate(audit["ordered_non_ready_capabilities"], 1):
+        capability = capabilities_by_id[capability_id]
+        lines.append(
+            f"{index}. `{capability_id}` — `{capability['closure']['verdict']}` — "
+            f"{'; '.join(capability['closure']['missing_boundaries'])}"
+        )
+    first_contract = audit["first_v2_1_design_contract"]
+    lines.extend([
+        "",
+        "### First V2-1 Design Contract",
+        "",
+        f"- Contract: `{first_contract['contract_id']}`",
+        f"- Capability: `{first_contract['capability_id']}`",
+        f"- Status: `{first_contract['status']}`",
+        f"- Rationale: {first_contract['rationale']}",
+        f"- Unblocks: {', '.join(f'`{item}`' for item in first_contract['unblocks'])}",
+        "- This selection authorizes contract design only; it does not authorize runtime implementation.",
+    ])
     lines.extend(["", "## Package Inventory", ""])
     for package in sorted(registry["packages"], key=lambda item: item["id"]):
         lines.append(
@@ -687,6 +801,15 @@ def self_test(registry: dict) -> None:
             mapping["capability_id"] = "capsule_selection"
             mapping["target"] = "capsule_selection.compatibility_probe"
     cases.append(("bounded capability without surface", missing_bounded_capability))
+    incomplete_exit = copy.deepcopy(registry)
+    incomplete_exit["v2_0_exit_audit"]["requirements"][0]["status"] = "PENDING"
+    cases.append(("incomplete V2-0 exit requirement", incomplete_exit))
+    unordered_exit = copy.deepcopy(registry)
+    unordered_exit["v2_0_exit_audit"]["ordered_non_ready_capabilities"].pop()
+    cases.append(("incomplete non-ready ordering", unordered_exit))
+    runtime_authorized = copy.deepcopy(registry)
+    runtime_authorized["v2_0_exit_audit"]["runtime_implementation_authorized"] = True
+    cases.append(("V2-0 runtime authorization", runtime_authorized))
     for name, mutated in cases:
         try:
             validate_registry(mutated)

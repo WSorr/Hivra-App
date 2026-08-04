@@ -9,4 +9,6 @@ python3 "$GENERATOR" --check
 
 rg -q 'architecture/ownership-registry.v1.json' "$ROOT/docs/architecture-v2-blueprint.md"
 rg -q 'generated/architecture-ownership-baseline.md' "$ROOT/docs/README.md"
+rg -q '^## V2-0 Exit Audit' "$ROOT/docs/generated/architecture-ownership-baseline.md"
+rg -q 'Runtime implementation authorized: `false`' "$ROOT/docs/generated/architecture-ownership-baseline.md"
 printf 'PASS ownership-registry: architecture canon and navigation reference generated evidence\n'

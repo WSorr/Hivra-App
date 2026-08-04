@@ -95,6 +95,36 @@
       "starter_inventory"
     ]
   },
+  "v2_0_exit_audit": {
+    "status": "COMPLETE",
+    "runtime_implementation_authorized": false,
+    "requirements": [
+      {"id": "capability_evidence", "status": "COMPLETE", "evidence": "Current contracts, facts, projections, effects, and entrypoints are generated from the registry and code symbols.", "gate": "tools/review/ownership_registry_gate.sh"},
+      {"id": "dependency_graph", "status": "COMPLETE", "evidence": "Rust package edges, cycles, forbidden edges, Flutter layer imports, and concrete bindings are generated and checked.", "gate": "tools/review/ownership_registry_gate.sh"},
+      {"id": "owner_and_locator", "status": "COMPLETE", "evidence": "Owner candidates, duplicate owners, composition builders, and generic service-locator patterns are fail-closed evidence.", "gate": "tools/review/ownership_registry_gate.sh"},
+      {"id": "closure_verdicts", "status": "COMPLETE", "evidence": "Every registered capability has READY, NEEDS_CONTRACT, NEEDS_PROTOCOL, or REJECTED with missing boundaries.", "gate": "tools/review/ownership_registry_gate.sh"},
+      {"id": "crypto_compatibility_debt", "status": "COMPLETE", "evidence": "Fixed-size crypto shapes remain non-increasing and confined to the explicit 1.x compatibility boundary.", "gate": "tools/review/architecture_contract_gate.sh"},
+      {"id": "entropy_baseline", "status": "COMPLETE", "evidence": "Generated owner sizes and oversized candidate surfaces expose current concentration without moving runtime files.", "gate": "tools/review/ownership_registry_gate.sh"},
+      {"id": "runtime_scope", "status": "COMPLETE", "evidence": "V2-0 produced architecture registry, generated evidence, documentation, and review gates only; it authorizes no runtime implementation.", "gate": "tools/review/architecture_contract_gate.sh"}
+    ],
+    "ordered_non_ready_capabilities": [
+      "capsule_birth",
+      "starter_inventory",
+      "capsule_continuity",
+      "capsule_recovery",
+      "capsule_addressing",
+      "capsule_selection",
+      "person_runtime_shell",
+      "trading_drone"
+    ],
+    "first_v2_1_design_contract": {
+      "contract_id": "capsule_identity_birth_contract_v2",
+      "capability_id": "capsule_birth",
+      "status": "SELECTED_DESIGN_ONLY",
+      "rationale": "CapsuleId and immutable birth mode are foundational inputs for continuity, recovery, addressing, selection, and later crypto-agility migration proofs.",
+      "unblocks": ["capsule_continuity", "capsule_recovery", "capsule_addressing", "capsule_selection"]
+    }
+  },
   "capabilities": [
     {
       "id": "capsule_identity",
