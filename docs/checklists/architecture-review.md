@@ -31,6 +31,28 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 - [ ] Replay, restart, concurrency, migration, and macOS/Android evidence are
       selected according to the changed boundary.
 
+## Architecture Economy Keeper
+
+- [ ] Every changed fact has one document owner: normative semantics in the
+      applicable specification/blueprint, current status in
+      `development-control.md`, and history/debt in `roadmap.md`.
+- [ ] Schema, fixtures, generated evidence, and validator remain subordinate to
+      that owner and do not restate or invent independent semantics.
+- [ ] No new document, schema, registry, DTO family, or gate is added when an
+      existing owner can absorb the responsibility cleanly.
+- [ ] The pass stays within one normative section, at most one schema, one
+      fixture set, one validator/gate, and short status/history updates; any
+      excess has a named non-overlapping responsibility.
+- [ ] The gate protects a real regression and has a negative mutation/self-test;
+      Markdown phrase presence alone is not semantic evidence.
+- [ ] The closing review reports `Added`, `Removed or sealed`,
+      `Ambiguity eliminated`, `New owner/path count`,
+      `Remaining compatibility debt`, and `Next decision unlocked`.
+- [ ] The change reduces possible interpretations, owners, or execution paths;
+      otherwise the pass stops instead of adding architecture artifacts.
+- [ ] The next contract is selected only after deciding whether a bounded
+      consolidation pass would remove more ambiguity.
+
 ## Dependency Law
 
 - [ ] Dependencies flow strictly downward.

@@ -110,6 +110,10 @@ must re-enter the same operation. They must not create another effect path.
     continuity do not depend on one cryptographic algorithm, public-key size,
     or signature size. Algorithms belong to crypto/platform adapters;
     protocol proofs are versioned, suite-tagged, and length-delimited.
+12. **Architecture economy:** architecture evidence is accepted only when it
+    reduces the number of plausible interpretations, owners, or execution
+    paths. Added files, prose, schemas, registries, and PASS lines are not
+    progress by themselves.
 
 ## 4. Predictable Extension Rules
 
@@ -305,6 +309,35 @@ Changes are compared against the previous stable baseline using these signals:
 The target is not the smallest file count. The target is lower ambiguity,
 fewer paths, stronger replay, and predictable extension. A large cohesive owner
 is preferable to many microfiles sharing one lifecycle.
+
+### Architecture Economy Keeper
+
+One fact has one document owner. Normative semantics live in the applicable
+specification or architecture blueprint; current work status lives in
+`development-control.md`; history and debt live in `roadmap.md`. A schema is a
+machine representation of its normative owner, fixtures are behavioral
+evidence, generated evidence comes from one registry/source, and validators
+verify those owners without inventing another contract.
+
+Do not add a document, schema, registry, DTO family, or gate when an existing
+owner can accept the change without mixing responsibilities. A gate must catch
+a real regression and include a negative mutation/self-test; phrase presence
+alone is insufficient for a semantic contract.
+
+Each design pass is budgeted to one existing normative section, at most one
+contract schema, one semantic fixture set, one validator/gate, and short
+status/history updates. Exceeding that budget requires a named responsibility
+that cannot fit an existing artifact. The next contract is never selected
+automatically; first decide whether consolidation removes more ambiguity.
+
+Before closing a material architecture pass, report this entropy delta:
+
+| Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+| --- | --- | --- | --- | --- | --- |
+
+If the pass cannot name a removed/sealed path, a closed ambiguity or risk, and
+a newly enabled engineering decision, stop. Hivra optimizes for a predictable
+system, not a growing library of architecture documents.
 
 ## 8. Version Use
 

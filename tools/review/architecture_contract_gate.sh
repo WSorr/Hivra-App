@@ -35,6 +35,83 @@ require_absent() {
   fi
 }
 
+check_architecture_economy_keeper() {
+  if python3 - "$PRODUCT_AXIS" "$CHECKLIST" <<'PY'
+import sys
+from pathlib import Path
+
+
+def section(text, heading):
+    lines = text.splitlines()
+    matches = [index for index, line in enumerate(lines) if line == heading]
+    if len(matches) != 1:
+        raise ValueError(f"heading must occur exactly once: {heading}")
+    level = len(heading) - len(heading.lstrip("#"))
+    end = len(lines)
+    for index in range(matches[0] + 1, len(lines)):
+        line = lines[index]
+        if line.startswith("#"):
+            current_level = len(line) - len(line.lstrip("#"))
+            if current_level <= level:
+                end = index
+                break
+    return "\n".join(lines[matches[0]:end])
+
+
+def validate(product, checklist):
+    if "12. **Architecture economy:**" not in product:
+        raise ValueError("permanent architecture-economy invariant is missing")
+    keeper = section(product, "### Architecture Economy Keeper")
+    review = section(checklist, "## Architecture Economy Keeper")
+    product_rules = (
+        "One fact has one document owner.",
+        "Do not add a document, schema, registry, DTO family, or gate",
+        "negative mutation/self-test",
+        "Each design pass is budgeted to one existing normative section",
+        "The next contract is never selected",
+        "| Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |",
+        "If the pass cannot name a removed/sealed path",
+    )
+    checklist_rules = (
+        "Every changed fact has one document owner",
+        "No new document, schema, registry, DTO family, or gate is added",
+        "negative mutation/self-test",
+        "Remaining compatibility debt",
+        "The change reduces possible interpretations, owners, or execution paths",
+        "The next contract is selected only after deciding whether",
+    )
+    missing = [rule for rule in product_rules if rule not in keeper]
+    missing += [rule for rule in checklist_rules if rule not in review]
+    if missing:
+        raise ValueError(f"architecture-economy contract incomplete: {missing}")
+
+
+product = Path(sys.argv[1]).read_text(encoding="utf-8")
+checklist = Path(sys.argv[2]).read_text(encoding="utf-8")
+try:
+    validate(product, checklist)
+    mutations = (
+        (product.replace("One fact has one document owner.", "One fact may have many document owners."), checklist),
+        (product.replace("| Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |", ""), checklist),
+        (product, checklist.replace("negative mutation/self-test", "review assertion")),
+    )
+    for mutated_product, mutated_checklist in mutations:
+        try:
+            validate(mutated_product, mutated_checklist)
+        except ValueError:
+            continue
+        raise ValueError("negative mutation was accepted")
+except ValueError as error:
+    print(error, file=sys.stderr)
+    raise SystemExit(1)
+PY
+  then
+    pass "architecture economy keeper and negative mutations are enforced"
+  else
+    fail "architecture economy keeper and negative mutations are enforced"
+  fi
+}
+
 check_crypto_fixed_size_compatibility_boundary() {
   local pattern='(?i)(pubkey|public_key|private_key|secret_key|signer|sign(?:ature)?|seed).{0,100}\[u8;\s*(32|64)\]|\[u8;\s*(32|64)\].{0,100}(pubkey|public_key|private_key|secret_key|signer|sign(?:ature)?|seed)|pubkey32|signature64|cardSignature64'
   local matches
@@ -237,6 +314,7 @@ require_present "$SPEC" 'PFR is not a second runtime layer, a new Core entity, o
   "specification keeps PFR on the canonical architecture path"
 require_present "$CHECKLIST" 'preserves the Person-First Runtime \(PFR\)' \
   "architecture review protects person-first ownership"
+check_architecture_economy_keeper
 require_present "$PRODUCT_AXIS" 'Cryptographic agility' \
   "product axis defines cryptographic agility as a permanent invariant"
 require_present "$SPEC" '^### 0\.3 Cryptographic Agility' \
