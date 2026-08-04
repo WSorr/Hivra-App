@@ -13,11 +13,54 @@
     {"id": "hivra-flutter", "path": "flutter", "kind": "flutter", "layer": "ui"}
   ],
   "composition_roots": [
+    "flutter/lib/services/ai_tooling_module_service.dart",
     "flutter/lib/services/app_runtime_service.dart",
     "flutter/lib/services/capsule_ai_runtime_service.dart",
+    "flutter/lib/services/invitation_module_service.dart",
+    "flutter/lib/services/ledger_inspector_module_service.dart",
+    "flutter/lib/services/main_screen_module_service.dart",
     "flutter/lib/services/plugin_runtime_module_service.dart",
     "flutter/lib/services/trading_drone_module_service.dart"
   ],
+  "owner_discovery": {
+    "flutter_roots": ["flutter/lib"],
+    "owner_suffixes": ["Service", "Coordinator", "Handler", "Store", "Repository", "Module", "Runtime", "Registry", "Guard", "Processor", "Queue", "Adapter"],
+    "screen_suffix": "Screen",
+    "classification_rules": [
+      {
+        "id": "current_flutter_service_support",
+        "classification": "SUPPORTING_COMPONENT",
+        "path_pattern": "^flutter/lib/services/.*\\.dart$",
+        "symbol_pattern": ".*",
+        "rationale": "Current 1.x service surface; not a sole capability owner unless registered above."
+      },
+      {
+        "id": "ffi_compatibility_boundary",
+        "classification": "COMPATIBILITY_DEBT",
+        "path_pattern": "^flutter/lib/ffi/.*\\.dart$",
+        "symbol_pattern": ".*Runtime$",
+        "rationale": "Explicit Flutter/FFI 1.x compatibility boundary pending capability-sized migration."
+      },
+      {
+        "id": "model_port_support",
+        "classification": "SUPPORTING_COMPONENT",
+        "path_pattern": "^flutter/lib/models/.*\\.dart$",
+        "symbol_pattern": ".*Adapter$",
+        "rationale": "Typed port evidence; authority remains with its registered lifecycle owner."
+      },
+      {
+        "id": "current_ui_entrypoint_debt",
+        "classification": "COMPATIBILITY_DEBT",
+        "path_pattern": "^flutter/lib/screens/.*\\.dart$",
+        "symbol_pattern": ".*Screen$",
+        "rationale": "Current 1.x UI surface not yet mapped to a frozen 2.0 capability command."
+      }
+    ],
+    "composition_builder_return_suffixes": ["Service", "Store", "Module", "Runtime", "Registry", "Guard", "Processor", "Queue", "Adapter"],
+    "generic_locator_patterns": ["GetIt\\.", "getIt<", "serviceLocator", "ServiceLocator", "locator\\.get", "Provider\\.of<"],
+    "generic_locator_allowed_paths": [],
+    "oversized_owner_line_threshold": 800
+  },
   "capabilities": [
     {
       "id": "capsule_identity",

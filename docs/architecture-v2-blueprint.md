@@ -1,8 +1,9 @@
 # Hivra 2.0 Architecture Blueprint
 
-Status: design-only draft. `V2-0 / pass A` completed the ownership-registry
-and generated baseline evidence. `V2-0 / pass B` is selected to close owner
-discovery coverage and classify service-locator surfaces only. This document does not change the
+Status: design-only draft. `V2-0 / passes A-B` completed the ownership registry,
+generated baseline, owner discovery, and service-locator classification.
+`V2-0 / pass C` is selected to make UI entrypoint and Flutter/FFI compatibility
+classifications explicit. This document does not change the
 normative Hivra 1.x protocol or authorize a 1.x runtime migration.
 
 ## 1. Objective
@@ -438,9 +439,40 @@ Selected pass B:
 - keep `trading_drone` and `person_runtime_shell` contract work deferred until
   discovery proves their complete current boundaries.
 
-Pass B exit evidence is a fail-closed owner-discovery rule, an updated generated
-report, its negative self-tests, and `tools/review/review_all.sh`. It remains
-design/tooling work and does not migrate a capability.
+Pass B completed on 2026-08-04 with:
+
+- deterministic discovery of 158 owner-like Flutter declarations;
+- 33 service/module builder surfaces restricted to eight registered
+  composition roots;
+- explicit classification of each candidate as a capability owner, registered
+  evidence/entrypoint, composition support, supporting component, or bounded
+  compatibility debt;
+- zero generic service-locator pattern occurrences;
+- an entropy report exposing fifteen candidate files at or above the 800-line
+  review threshold, including the current Trading, Moltbook, plugin, exchange,
+  persistence, chat, and invitation surfaces;
+- negative tests for an unclassified owner, a builder outside composition, and
+  a generic locator escaping its allowance.
+
+The discovery does not prove that every broad `SUPPORTING_COMPONENT` or
+`COMPATIBILITY_DEBT` classification has the correct future capability target.
+It makes that remaining ambiguity measurable instead of silently treating each
+class as an independent architecture owner.
+
+Selected pass C:
+
+- replace broad screen and Flutter/FFI compatibility classifications with
+  explicit per-surface records and named current capability boundaries;
+- map every discovered screen to a registered command entrypoint or a named
+  bounded 1.x UI debt target;
+- map every discovered Flutter/FFI runtime port to its owning capability and
+  compatibility boundary;
+- keep App Shell and Trading command-contract design deferred until those
+  mappings prove their complete present-day surfaces.
+
+Pass C remains design/tooling work. It may update registry evidence, generated
+reports, and gates only; it may not refactor UI, FFI, Core, storage, or runtime
+composition.
 
 ### V2-1: Core contract proofs
 

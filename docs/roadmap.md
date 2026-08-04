@@ -83,10 +83,10 @@ Capsule AI Runtime is a named cross-version architecture program governed by
   slots, operational stores, drone state, delivery queues, and consensus
   evidence.
 
-The first active item is `V2-0`. As of 2026-08-04, pass A completed one
-ownership-registry schema and generated current architecture evidence. Pass B
-is selected to close owner-candidate discovery and classify service-locator
-surfaces only.
+The first active item is `V2-0`. As of 2026-08-04, passes A-B completed one
+ownership-registry schema, generated architecture evidence, owner discovery,
+and service-locator classification. Pass C is selected to make UI entrypoint
+and Flutter/FFI compatibility mappings explicit.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2035,9 +2035,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       T1 and product tracks remain parked, and release work still requires a
       named candidate.
   - Next selected unit:
-    - `V2-0 / pass B`: deterministic owner-candidate discovery plus
-      service-locator and oversized-owner classification against the pass A
-      registry;
+    - `V2-0 / pass C`: explicit per-surface UI entrypoint and Flutter/FFI
+      compatibility mappings against the pass A-B registry;
     - design/tooling only, with no 1.x runtime behavior, 2.0 production code,
       new DTO family, storage format, facade, or parallel execution path.
   - Status: completed (2026-08-04).
@@ -2066,6 +2065,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Next selected unit:
     - `V2-0 / pass B`, owner-candidate discovery and service-locator
       classification only.
+  - Status: completed (2026-08-04).
+
+- `V2-0 / pass B — Owner Discovery and Composition Surfaces`
+  - Scope:
+    - derive owner-like Flutter declarations and service/module builders from
+      production code;
+    - classify every candidate through the canonical registry and fail closed
+      on unclassified owners, hidden composition builders, or generic service
+      locator escape;
+    - report oversized candidate surfaces without moving or splitting them.
+  - Evidence (2026-08-04):
+    - the generated baseline records 158 owner candidates across capability,
+      evidence, entrypoint, composition, supporting, and compatibility-debt
+      classifications;
+    - 33 service/module builders are restricted to eight registered composition
+      roots, while generic service-locator pattern evidence remains zero;
+    - fifteen candidate files meet the 800-line entropy threshold, making the
+      current Trading, Moltbook, plugin, exchange, persistence, chat, and
+      invitation concentration visible without inferring a runtime refactor;
+    - negative self-tests reject an unclassified owner, a builder outside
+      composition, and an unapproved locator pattern.
+  - Next selected unit:
+    - `V2-0 / pass C`, explicit UI entrypoint and Flutter/FFI compatibility
+      mapping only.
   - Status: completed (2026-08-04).
 
 ## Planned Product Tracks

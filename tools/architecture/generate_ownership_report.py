@@ -15,6 +15,14 @@ REGISTRY_PATH = ROOT / "architecture/ownership-registry.v1.json"
 REPORT_PATH = ROOT / "docs/generated/architecture-ownership-baseline.md"
 VERDICTS = {"READY", "NEEDS_CONTRACT", "NEEDS_PROTOCOL", "REJECTED"}
 EVIDENCE_KEYS = ("public_contracts", "facts", "projections", "effect_kinds")
+DISCOVERY_CLASSIFICATIONS = {
+    "CAPABILITY_OWNER",
+    "REGISTERED_EVIDENCE",
+    "REGISTERED_ENTRYPOINT",
+    "COMPOSITION_SUPPORT",
+    "SUPPORTING_COMPONENT",
+    "COMPATIBILITY_DEBT",
+}
 
 
 class RegistryError(RuntimeError):
@@ -131,10 +139,157 @@ def dart_edges() -> list[tuple[str, str]]:
     return sorted(edges)
 
 
+def flutter_sources(roots: list[str]) -> list[Path]:
+    sources = set()
+    for root in roots:
+        for path in (ROOT / root).rglob("*.dart"):
+            relative = path.relative_to(ROOT).as_posix()
+            if "/test/" in f"/{relative}/" or relative.endswith("_test.dart"):
+                continue
+            sources.add(path)
+    return sorted(sources)
+
+
+def discover_owners(registry: dict) -> dict:
+    discovery = registry["owner_discovery"]
+    require_keys(
+        discovery,
+        {
+            "flutter_roots",
+            "owner_suffixes",
+            "screen_suffix",
+            "classification_rules",
+            "composition_builder_return_suffixes",
+            "generic_locator_patterns",
+            "generic_locator_allowed_paths",
+            "oversized_owner_line_threshold",
+        },
+        "owner_discovery",
+    )
+    rules = []
+    for rule in discovery["classification_rules"]:
+        require_keys(
+            rule,
+            {"id", "classification", "path_pattern", "symbol_pattern", "rationale"},
+            f"owner discovery rule {rule.get('id')}",
+        )
+        if rule["classification"] not in DISCOVERY_CLASSIFICATIONS:
+            raise RegistryError(f"owner discovery rule {rule['id']}: invalid classification")
+        rules.append((rule, re.compile(rule["path_pattern"]), re.compile(rule["symbol_pattern"])))
+
+    registered: dict[tuple[str, str], str] = {}
+    for capability in registry["capabilities"]:
+        owner = capability["owner"]
+        registered[(owner["path"], owner["symbol"])] = "CAPABILITY_OWNER"
+        for key in EVIDENCE_KEYS:
+            for item in capability[key]:
+                registered.setdefault((item["path"], item["symbol"]), "REGISTERED_EVIDENCE")
+        for item in capability["entrypoints"]:
+            registered.setdefault((item["path"], item["symbol"]), "REGISTERED_ENTRYPOINT")
+
+    suffixes = tuple(discovery["owner_suffixes"])
+    screen_suffix = discovery["screen_suffix"]
+    declaration = re.compile(r"^(?:abstract\s+(?:interface\s+)?class|class)\s+([A-Za-z][A-Za-z0-9_]*)\b", re.MULTILINE)
+    candidates = []
+    sources = flutter_sources(discovery["flutter_roots"])
+    for path in sources:
+        relative = path.relative_to(ROOT).as_posix()
+        text = path.read_text(encoding="utf-8")
+        for match in declaration.finditer(text):
+            symbol = match.group(1)
+            if not symbol.endswith(suffixes) and not symbol.endswith(screen_suffix):
+                continue
+            key = (relative, symbol)
+            classification = registered.get(key)
+            rationale = "Declared by the canonical ownership registry."
+            rule_id = "registry"
+            if classification is None and relative in registry["composition_roots"]:
+                classification = "COMPOSITION_SUPPORT"
+                rationale = "Registered composition root; constructs downward capability dependencies."
+                rule_id = "composition_root"
+            if classification is None:
+                matched_rules = [rule for rule, path_pattern, symbol_pattern in rules if path_pattern.search(relative) and symbol_pattern.fullmatch(symbol)]
+                if len(matched_rules) != 1:
+                    raise RegistryError(
+                        f"owner candidate {relative}::{symbol}: expected one classification rule, found {len(matched_rules)}"
+                    )
+                rule = matched_rules[0]
+                classification = rule["classification"]
+                rationale = rule["rationale"]
+                rule_id = rule["id"]
+            candidates.append(
+                {
+                    "path": relative,
+                    "symbol": symbol,
+                    "line": text.count("\n", 0, match.start()) + 1,
+                    "classification": classification,
+                    "rule_id": rule_id,
+                    "rationale": rationale,
+                }
+            )
+
+    return_suffixes = tuple(discovery["composition_builder_return_suffixes"])
+    builder_pattern = re.compile(
+        r"^\s{2}([A-Za-z][A-Za-z0-9_]*)\s+(build[A-Za-z0-9_]*)\s*\(",
+        re.MULTILINE,
+    )
+    builders = []
+    for path in sources:
+        relative = path.relative_to(ROOT).as_posix()
+        text = path.read_text(encoding="utf-8")
+        for match in builder_pattern.finditer(text):
+            return_type, symbol = match.groups()
+            if not return_type.endswith(return_suffixes):
+                continue
+            if relative not in registry["composition_roots"]:
+                raise RegistryError(
+                    f"composition builder {relative}::{symbol} returns {return_type} outside a registered composition root"
+                )
+            builders.append(
+                {
+                    "path": relative,
+                    "symbol": symbol,
+                    "return_type": return_type,
+                    "line": text.count("\n", 0, match.start()) + 1,
+                }
+            )
+
+    allowed_locator_paths = set(discovery["generic_locator_allowed_paths"])
+    locator_occurrences = []
+    for raw_pattern in discovery["generic_locator_patterns"]:
+        pattern = re.compile(raw_pattern)
+        for path in sources:
+            relative = path.relative_to(ROOT).as_posix()
+            text = path.read_text(encoding="utf-8")
+            if pattern.search(text):
+                locator_occurrences.append((raw_pattern, relative))
+                if relative not in allowed_locator_paths:
+                    raise RegistryError(
+                        f"generic service locator pattern {raw_pattern!r} escaped its allowance in {relative}"
+                    )
+
+    threshold = discovery["oversized_owner_line_threshold"]
+    if not isinstance(threshold, int) or threshold < 1:
+        raise RegistryError("owner_discovery: oversized_owner_line_threshold must be positive")
+    candidate_paths = {candidate["path"] for candidate in candidates}
+    oversized = []
+    for relative in sorted(candidate_paths):
+        line_count = len((ROOT / relative).read_text(encoding="utf-8").splitlines())
+        if line_count >= threshold:
+            oversized.append((line_count, relative))
+
+    return {
+        "candidates": sorted(candidates, key=lambda item: (item["path"], item["line"], item["symbol"])),
+        "builders": sorted(builders, key=lambda item: (item["path"], item["line"], item["symbol"])),
+        "locator_occurrences": sorted(set(locator_occurrences)),
+        "oversized": sorted(oversized, reverse=True),
+    }
+
+
 def validate_registry(registry: dict) -> dict:
     require_keys(
         registry,
-        {"schema_version", "registry_id", "packages", "composition_roots", "capabilities", "concrete_bindings", "forbidden_rust_edges"},
+        {"schema_version", "registry_id", "packages", "composition_roots", "owner_discovery", "capabilities", "concrete_bindings", "forbidden_rust_edges"},
         "registry",
     )
     if registry["schema_version"] != 1:
@@ -240,12 +395,14 @@ def validate_registry(registry: dict) -> dict:
     violations = forbidden.intersection(edges)
     if violations:
         raise RegistryError(f"forbidden Rust dependency edges: {sorted(violations)}")
+    discovery = discover_owners(registry)
     return {
         "members": members,
         "rust_edges": edges,
         "dart_edges": dart_edges(),
         "binding_results": binding_results,
         "owner_sizes": sorted(owner_sizes, reverse=True),
+        "discovery": discovery,
     }
 
 
@@ -265,6 +422,8 @@ def render_report(registry: dict, evidence: dict) -> str:
         f"- Capabilities: `{len(capabilities)}`",
         f"- Rust dependency edges: `{len(evidence['rust_edges'])}`",
         f"- Dart layer import edges: `{len(evidence['dart_edges'])}`",
+        f"- Discovered owner candidates: `{len(evidence['discovery']['candidates'])}`",
+        f"- Composition builders: `{len(evidence['discovery']['builders'])}`",
         "",
         "## Closure Verdicts",
         "",
@@ -300,6 +459,38 @@ def render_report(registry: dict, evidence: dict) -> str:
     lines.extend(["", "## Composition Bindings", ""])
     for binding_id, paths in evidence["binding_results"]:
         lines.append(f"- `{binding_id}`: {', '.join(f'`{path}`' for path in paths)}")
+    lines.extend(["", "## Owner Discovery", ""])
+    counts = {}
+    for candidate in evidence["discovery"]["candidates"]:
+        counts[candidate["classification"]] = counts.get(candidate["classification"], 0) + 1
+    for classification in sorted(counts):
+        lines.append(f"- `{classification}`: `{counts[classification]}`")
+    lines.extend(["", "### Classification Rules", ""])
+    for rule in registry["owner_discovery"]["classification_rules"]:
+        lines.append(
+            f"- `{rule['id']}` → `{rule['classification']}` — path `{rule['path_pattern']}`, "
+            f"symbol `{rule['symbol_pattern']}` — {rule['rationale']}"
+        )
+    lines.extend(["", "### Candidate Inventory", ""])
+    for candidate in evidence["discovery"]["candidates"]:
+        lines.append(
+            f"- `{candidate['classification']}` — `{candidate['path']}` line `{candidate['line']}` "
+            f"(`{candidate['symbol']}`) — rule `{candidate['rule_id']}`"
+        )
+    lines.extend(["", "### Composition Builders", ""])
+    for builder in evidence["discovery"]["builders"]:
+        lines.append(
+            f"- `{builder['path']}` line `{builder['line']}` (`{builder['symbol']}` → `{builder['return_type']}`)"
+        )
+    lines.extend(["", "### Generic Service Locator Evidence", ""])
+    if evidence["discovery"]["locator_occurrences"]:
+        for pattern, path in evidence["discovery"]["locator_occurrences"]:
+            lines.append(f"- `{pattern}` in `{path}`")
+    else:
+        lines.append("- No registered or unregistered generic service-locator pattern was found.")
+    lines.extend(["", "### Oversized Candidate Surfaces", ""])
+    for line_count, path in evidence["discovery"]["oversized"]:
+        lines.append(f"- `{line_count}` lines — `{path}`")
     lines.extend(["", "## Owner Surface Entropy", "", "Largest registered owner files by line count:", ""])
     for line_count, capability_id, path, symbol in evidence["owner_sizes"]:
         lines.append(f"- `{line_count}` lines — `{capability_id}` — `{path}` (`{symbol}`)")
@@ -326,6 +517,15 @@ def self_test(registry: dict) -> None:
     bypass = copy.deepcopy(registry)
     bypass["capabilities"][2]["entrypoints"][0]["command_symbol"] = "commandThatDoesNotExist"
     cases.append(("entrypoint bypass", bypass))
+    unclassified = copy.deepcopy(registry)
+    unclassified["owner_discovery"]["classification_rules"] = []
+    cases.append(("unclassified owner candidate", unclassified))
+    hidden_builder = copy.deepcopy(registry)
+    hidden_builder["composition_roots"].remove("flutter/lib/services/app_runtime_service.dart")
+    cases.append(("builder outside composition", hidden_builder))
+    locator_escape = copy.deepcopy(registry)
+    locator_escape["owner_discovery"]["generic_locator_patterns"] = ["class "]
+    cases.append(("generic locator escape", locator_escape))
     for name, mutated in cases:
         try:
             validate_registry(mutated)
