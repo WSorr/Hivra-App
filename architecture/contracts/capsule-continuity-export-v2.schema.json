@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hivra.local/contracts/capsule-continuity-export-v2.schema.json",
+  "title": "Hivra Capsule Continuity Export Contract V2 Design",
+  "description": "Machine evidence for the normative V2 blueprint section; no runtime, recovery protocol, or production wire format is authorized.",
+  "x-hivra-contract-id": "capsule_continuity_export_contract_v2",
+  "x-hivra-contract-version": 1,
+  "x-hivra-design-status": "design-only-no-runtime",
+  "x-hivra-normative-source": "docs/architecture-v2-blueprint.md",
+  "x-hivra-normative-heading": "#### V2-1/C Capsule Continuity Export Contract",
+  "oneOf": [
+    {"$ref": "#/$defs/ContinuityExportRequestV1"},
+    {"$ref": "#/$defs/VerifiedContinuityExportCommandV1"},
+    {"$ref": "#/$defs/ContinuityArtifactEvidenceV1"},
+    {"$ref": "#/$defs/ContinuityExportResultV1"},
+    {"$ref": "#/$defs/ContinuityExportRejectedV1"}
+  ],
+  "$defs": {
+    "Commitment32": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "OpaqueId": {"type": "string", "pattern": "^(?:[0-9a-f]{2}){16,64}$"},
+    "NetworkIdV1": {"type": "string", "pattern": "^hivra\\.[a-z][a-z0-9-]{0,31}$"},
+    "CapsuleIdV2": {"$ref": "capsule-identity-birth-v2.schema.json#/$defs/CapsuleIdV2"},
+    "ArtifactDigestV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "suite_id", "value_hex"],
+      "properties": {
+        "version": {"const": 1},
+        "suite_id": {"const": "sha256"},
+        "value_hex": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "ContinuitySnapshotV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_version", "capsule_id", "network_id", "ledger_head_commitment", "ledger_event_count", "ledger_export_commitment", "metadata_commitment"],
+      "properties": {
+        "snapshot_version": {"const": 1},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"$ref": "#/$defs/NetworkIdV1"},
+        "ledger_head_commitment": {"$ref": "#/$defs/Commitment32"},
+        "ledger_event_count": {"type": "integer", "minimum": 1},
+        "ledger_export_commitment": {"$ref": "#/$defs/Commitment32"},
+        "metadata_commitment": {"$ref": "#/$defs/Commitment32"}
+      }
+    },
+    "ContinuityExportRequestV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "operation_id", "snapshot", "artifact_profile_id"],
+      "properties": {
+        "contract_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/OpaqueId"},
+        "snapshot": {"$ref": "#/$defs/ContinuitySnapshotV1"},
+        "artifact_profile_id": {"const": "hivra.capsule_backup.v2"}
+      }
+    },
+    "VerifiedContinuityExportCommandV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command_version", "request", "request_commitment", "snapshot_commitment", "authorization_evidence_id"],
+      "properties": {
+        "command_version": {"const": 1},
+        "request": {"$ref": "#/$defs/ContinuityExportRequestV1"},
+        "request_commitment": {"$ref": "#/$defs/Commitment32"},
+        "snapshot_commitment": {"$ref": "#/$defs/Commitment32"},
+        "authorization_evidence_id": {"$ref": "#/$defs/OpaqueId"}
+      }
+    },
+    "ContinuityArtifactEvidenceV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_version", "operation_id", "request_commitment", "snapshot_commitment", "artifact_profile_id", "artifact_digest", "artifact_byte_length"],
+      "properties": {
+        "evidence_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/OpaqueId"},
+        "request_commitment": {"$ref": "#/$defs/Commitment32"},
+        "snapshot_commitment": {"$ref": "#/$defs/Commitment32"},
+        "artifact_profile_id": {"const": "hivra.capsule_backup.v2"},
+        "artifact_digest": {"$ref": "#/$defs/ArtifactDigestV1"},
+        "artifact_byte_length": {"type": "integer", "minimum": 1, "maximum": 1073741824}
+      }
+    },
+    "ContinuityExportResultV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "disposition", "artifact_evidence", "core_append_required", "durability_claimed"],
+      "properties": {
+        "decision": {"const": "ACCEPTED"},
+        "disposition": {"enum": ["PREPARED", "REPLAYED"]},
+        "artifact_evidence": {"$ref": "#/$defs/ContinuityArtifactEvidenceV1"},
+        "core_append_required": {"const": false},
+        "durability_claimed": {"const": false}
+      }
+    },
+    "ContinuityExportRejectedV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "error_code", "core_append_required", "artifact_required"],
+      "properties": {
+        "decision": {"const": "REJECTED"},
+        "error_code": {"enum": ["INVALID_REQUEST", "OPERATION_ID_CONFLICT", "CAPSULE_SCOPE_MISMATCH", "NETWORK_SCOPE_MISMATCH", "SNAPSHOT_STALE", "SNAPSHOT_COMMITMENT_MISMATCH", "AUTHORIZATION_REQUIRED", "AUTHORIZATION_SCOPE_MISMATCH", "PROFILE_NOT_ALLOWED", "ARTIFACT_EVIDENCE_MISMATCH"]},
+        "core_append_required": {"const": false},
+        "artifact_required": {"const": false}
+      }
+    }
+  }
+}

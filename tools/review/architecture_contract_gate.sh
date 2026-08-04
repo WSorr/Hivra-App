@@ -320,6 +320,11 @@ if python3 "$ROOT/tools/architecture/validate_starter_inventory_contract.py"; th
 else
   fail "V2 Starter inventory contract remains bound to Pass A and the normative blueprint"
 fi
+if python3 "$ROOT/tools/architecture/validate_capsule_continuity_export_contract.py"; then
+  pass "V2 continuity export contract binds snapshot, authority, replay, and artifact evidence"
+else
+  fail "V2 continuity export contract binds snapshot, authority, replay, and artifact evidence"
+fi
 require_present "$PRODUCT_AXIS" 'Cryptographic agility' \
   "product axis defines cryptographic agility as a permanent invariant"
 require_present "$SPEC" '^### 0\.3 Cryptographic Agility' \

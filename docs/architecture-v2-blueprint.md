@@ -936,6 +936,107 @@ authorized until vectors prove exact Genesis/Proto plans, all-or-none append,
 idempotent replay, terminal burn, scope isolation, and deterministic current
 view through one Core path.
 
+#### V2-1/C Capsule Continuity Export Contract
+
+- Contract id: `capsule_continuity_export_contract_v2`
+- Contract version: `1`
+- Contract boundary: design-only application contract; no Core fact, recovery
+  protocol, production wire format, storage, FFI, Flutter, or runtime binding.
+
+This section is the normative design source. The schema at
+`architecture/contracts/capsule-continuity-export-v2.schema.json` and vectors
+at `architecture/fixtures/capsule-continuity-export-v2-vectors.json` are
+machine-readable evidence only.
+
+##### Ownership and canonical path
+
+Capsule Continuity owns export intent, exact snapshot binding, authorization
+scope, operation replay, and prepared-artifact evidence. Ledger/Core remains
+the sole owner of history truth and the immutable export snapshot. The crypto
+and backup codec adapter owns artifact encoding. The filesystem writer owns a
+durable write receipt, and Temporary Backup Share owns disposable share-file
+cleanup. Recovery owns import, migration, owner verification, and history
+anchoring; export cannot call or define recovery.
+
+```text
+ContinuityExportRequestV1
+  -> resolve exact Ledger/Core snapshot
+  -> verify local export authority
+  -> VerifiedContinuityExportCommandV1
+  -> existing authenticated backup codec profile
+  -> ContinuityArtifactEvidenceV1
+  -> one prepared result
+  -> future V2-2 storage/share effect receipt
+```
+
+There is no second Ledger export route, no Core event, no export-owned recovery
+command, and no screen-owned serialization or write path. Raw seed, key,
+mnemonic, proof bytes, destination path, clock, nonce, salt, ciphertext, and
+filesystem receipt do not enter the continuity command.
+
+##### Request, snapshot, and operation identity
+
+`ContinuitySnapshotV1` binds CapsuleId, network, Ledger head commitment, event
+count, canonical Ledger export commitment, and continuity metadata commitment.
+Its domain-separated semantic commitment covers every field using the
+length-delimited convention from Pass A. An active snapshot mismatch fails
+closed; export never silently advances to a newer head after authorization.
+
+`ContinuityExportRequestV1` binds contract version, operation id, the complete
+snapshot, and artifact profile `hivra.capsule_backup.v2`. The request commitment
+is domain-separated and covers the exact snapshot commitment. The operation id
+is caller-created opaque intent identity: an exact repeat is idempotent and may
+return the prior prepared result, while the same id with another request
+commitment returns `OPERATION_ID_CONFLICT`.
+
+The only allowed v1 artifact profile names the maintained authenticated 1.x
+backup envelope as a compatibility output. It does not redefine that wire
+format and does not authorize a second or future V2 backup format. Plaintext v1
+and raw Ledger output are never allowed for a new user-visible export.
+
+##### Authorization and prepared evidence
+
+Platform crypto verifies local Capsule export authority over the exact request
+commitment. `VerifiedContinuityExportCommandV1` carries only the verified
+request, request commitment, and opaque authorization evidence id. A boolean
+`valid`, raw proof, seed, key, or mnemonic is not accepted as authority.
+
+`ContinuityArtifactEvidenceV1` binds operation id, request commitment, snapshot
+commitment, artifact profile, suite-tagged variable-length artifact digest, and
+artifact byte length. `ContinuityExportResultV1` is `PREPARED` or `REPLAYED`
+and carries that exact evidence. It is not a filesystem or share receipt and
+cannot claim durability, publication, recovery, or import success.
+
+Artifact randomness belongs to the codec adapter. Exact operation replay must
+return the previously recorded evidence rather than silently create a second
+artifact. Crash/write reconciliation and durable effect receipts belong to the
+future V2-2 effect contract and are not invented here.
+
+##### Closed rejection and sealing targets
+
+Version 1 defines `INVALID_REQUEST`, `OPERATION_ID_CONFLICT`,
+`CAPSULE_SCOPE_MISMATCH`, `NETWORK_SCOPE_MISMATCH`, `SNAPSHOT_STALE`,
+`SNAPSHOT_COMMITMENT_MISMATCH`, `AUTHORIZATION_REQUIRED`,
+`AUTHORIZATION_SCOPE_MISMATCH`, `PROFILE_NOT_ALLOWED`, and
+`ARTIFACT_EVIDENCE_MISMATCH`. Rejection appends no Core fact and produces no
+artifact or downstream write obligation.
+
+The implementation migration must replace or seal:
+
+- `BackupService` methods that pass raw seed and target path as capability
+  intent;
+- `BackupRuntime` ownership of mnemonic generation and post-birth persistence;
+- direct `CapsulePersistenceService` composition of snapshot selection, seed
+  binding, codec invocation, and filesystem destination;
+- screen-selected export/share routes that can appear to be separate
+  continuity operations;
+- any attempt to treat internal plaintext snapshots, paths, or recovery import
+  results as continuity export success.
+
+No V2 runtime work is authorized until vectors prove full snapshot binding,
+authorization binding, exact replay, operation conflict, stale/wrong scope
+rejection, authenticated-profile enforcement, and exact artifact evidence.
+
 ### V2-1: Core contract proofs
 
 - define Capsule, Ledger, Trust, and Pair Consensus capability contracts;
