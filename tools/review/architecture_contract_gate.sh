@@ -490,8 +490,6 @@ require_present "$V2_BLUEPRINT" '^Status: design-only draft\.' \
   "v2 blueprint cannot silently change normative v1 behavior"
 require_present "$V2_BLUEPRINT" 'Selected pass A \(2026-08-04\):' \
   "v2 blueprint selects bounded ownership-registry evidence"
-require_present "$DEVELOPMENT_CONTROL" '`V2-1 / pass B`, design-only Starter inventory' \
-  "development control selects the next V2-1 contract design without opening a runtime path"
 require_present "$PLATFORM_TOOLCHAIN" '^# Hivra Platform Toolchain Evolution' \
   "platform toolchain evolution contract exists"
 require_present "$PLATFORM_TOOLCHAIN" 'Hivra does not plan a bridge-framework' \

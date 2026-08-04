@@ -2,10 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hivra.local/contracts/capsule-identity-birth-v2.schema.json",
   "title": "Hivra Capsule Identity and Birth Contract V2 Design",
-  "description": "Machine-readable design evidence. This schema does not authorize a production V2 runtime or wire format.",
+  "description": "Machine-readable design evidence for the normative blueprint contract. This schema does not authorize a production V2 runtime or wire format.",
   "x-hivra-contract-id": "capsule_identity_birth_contract_v2",
   "x-hivra-contract-version": 1,
-  "x-hivra-design-status": "design-complete-no-runtime",
+  "x-hivra-design-status": "design-only-no-runtime",
+  "x-hivra-normative-source": "docs/architecture-v2-blueprint.md",
+  "x-hivra-normative-heading": "#### V2-1/A Capsule Identity and Birth Contract",
+  "oneOf": [
+    {"$ref": "#/$defs/BirthRequestV2"},
+    {"$ref": "#/$defs/VerifiedBirthCommandV2"},
+    {"$ref": "#/$defs/CapsuleBornFactV2"},
+    {"$ref": "#/$defs/BirthAcceptedV2"},
+    {"$ref": "#/$defs/BirthRejectedV2"}
+  ],
   "$defs": {
     "LowerHexBytes": {
       "type": "string",
@@ -47,22 +56,24 @@
     "SignatureProofV1": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "suite_id", "key_id", "signature_bytes_hex"],
+      "required": ["version", "suite_id", "key_id", "signed_commitment", "signature_bytes_hex"],
       "properties": {
         "version": {"const": 1},
         "suite_id": {"type": "string", "minLength": 1, "maxLength": 128},
         "key_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "signed_commitment": {"$ref": "#/$defs/Commitment32"},
         "signature_bytes_hex": {"$ref": "#/$defs/LowerHexBytes"}
       }
     },
     "RootAuthorityRefV1": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["descriptor_version", "suite_id", "key_id"],
+      "required": ["descriptor_version", "suite_id", "key_id", "descriptor_commitment"],
       "properties": {
         "descriptor_version": {"const": 1},
         "suite_id": {"type": "string", "minLength": 1, "maxLength": 128},
-        "key_id": {"type": "string", "minLength": 1, "maxLength": 128}
+        "key_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "descriptor_commitment": {"$ref": "#/$defs/Commitment32"}
       }
     },
     "BirthRequestV2": {
@@ -82,10 +93,11 @@
     "VerifiedBirthCommandV2": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["contract_version", "operation_id", "capsule_id", "network_id", "birth_mode", "root_authority_ref", "authorization_evidence_id"],
+      "required": ["contract_version", "operation_id", "semantic_commitment", "capsule_id", "network_id", "birth_mode", "root_authority_ref", "authorization_evidence_id"],
       "properties": {
         "contract_version": {"const": 1},
         "operation_id": {"$ref": "#/$defs/Commitment32"},
+        "semantic_commitment": {"$ref": "#/$defs/Commitment32"},
         "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
         "network_id": {"enum": ["hivra.neste"]},
         "birth_mode": {"enum": ["GENESIS", "PROTO"]},
@@ -96,22 +108,25 @@
     "CapsuleBornFactV2": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fact_version", "capsule_id", "network_id", "birth_mode", "birth_operation_id", "root_authority_ref"],
+      "required": ["fact_version", "capsule_id", "network_id", "birth_mode", "birth_operation_id", "birth_semantic_commitment", "root_authority_ref"],
       "properties": {
         "fact_version": {"const": 1},
         "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
         "network_id": {"enum": ["hivra.neste"]},
         "birth_mode": {"enum": ["GENESIS", "PROTO"]},
         "birth_operation_id": {"$ref": "#/$defs/Commitment32"},
+        "birth_semantic_commitment": {"$ref": "#/$defs/Commitment32"},
         "root_authority_ref": {"$ref": "#/$defs/RootAuthorityRefV1"}
       }
     },
     "BirthAcceptedV2": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["decision", "fact", "initial_starter_kinds"],
+      "required": ["decision", "disposition", "ledger_append_required", "fact", "initial_starter_kinds"],
       "properties": {
         "decision": {"const": "ACCEPTED"},
+        "disposition": {"enum": ["CREATED", "REPLAYED"]},
+        "ledger_append_required": {"type": "boolean"},
         "fact": {"$ref": "#/$defs/CapsuleBornFactV2"},
         "initial_starter_kinds": {
           "type": "array",
@@ -122,6 +137,11 @@
       },
       "allOf": [
         {
+          "if": {"properties": {"disposition": {"const": "CREATED"}}},
+          "then": {"properties": {"ledger_append_required": {"const": true}}},
+          "else": {"properties": {"ledger_append_required": {"const": false}}}
+        },
+        {
           "if": {"properties": {"fact": {"properties": {"birth_mode": {"const": "GENESIS"}}}}},
           "then": {"properties": {"initial_starter_kinds": {"const": ["JUICE", "SPARK", "SEED", "PULSE", "KICK"]}}},
           "else": {"properties": {"initial_starter_kinds": {"const": []}}}
@@ -131,12 +151,13 @@
     "BirthRejectedV2": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["decision", "error_code", "fact", "initial_starter_kinds"],
+      "required": ["decision", "error_code", "ledger_append_required", "fact", "initial_starter_kinds"],
       "properties": {
         "decision": {"const": "REJECTED"},
         "error_code": {
-          "enum": ["UNEXPECTED_FIELD", "UNSUPPORTED_CONTRACT_VERSION", "INVALID_OPERATION_ID", "INVALID_CAPSULE_ID", "CAPSULE_ID_KEY_ALIAS_FORBIDDEN", "UNSUPPORTED_NETWORK", "INVALID_BIRTH_MODE", "AUTHORITY_BINDING_MISMATCH", "AUTHORIZATION_INVALID", "CAPSULE_ALREADY_EXISTS"]
+          "enum": ["UNEXPECTED_FIELD", "UNSUPPORTED_CONTRACT_VERSION", "INVALID_OPERATION_ID", "INVALID_CAPSULE_ID", "CAPSULE_ID_KEY_ALIAS_FORBIDDEN", "UNSUPPORTED_NETWORK", "INVALID_BIRTH_MODE", "AUTHORITY_BINDING_MISMATCH", "AUTHORIZATION_COMMITMENT_MISMATCH", "AUTHORIZATION_INVALID", "CAPSULE_ALREADY_EXISTS"]
         },
+        "ledger_append_required": {"const": false},
         "fact": {"type": "null"},
         "initial_starter_kinds": {"const": []}
       }

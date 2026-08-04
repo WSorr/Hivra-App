@@ -3,10 +3,10 @@
 Status: design-only draft. `V2-0 / passes A-E` is complete. The ownership
 registry, generated baseline, owner discovery, service-locator classification,
 explicit UI/Flutter-FFI surface mapping, bounded identity-family decomposition,
-and exit audit are fail-closed evidence. `V2-1 / pass A` completed the Capsule
-identity and birth design contract. `V2-1 / pass B` is selected for the Starter
-inventory and Genesis seed-plan contract design only. This document does not change the
-normative Hivra 1.x protocol or authorize a 1.x runtime migration.
+and exit audit are fail-closed evidence. `V2-1 / pass A` defines the Capsule
+identity and birth design contract. Current work selection and status live in
+`development-control.md`. This document does not change the normative Hivra
+1.x protocol or authorize a 1.x runtime migration.
 
 ## 1. Objective
 
@@ -566,7 +566,7 @@ until the contract review and its own exit criteria are complete.
 
 - Contract id: `capsule_identity_birth_contract_v2`
 - Contract version: `1`
-- Status: design complete; no production wire format or runtime binding.
+- Contract boundary: design-only; no production wire format or runtime binding.
 
 This section is the normative design source. The machine-readable schema at
 `architecture/contracts/capsule-identity-birth-v2.schema.json` and semantic
@@ -653,10 +653,32 @@ BirthRequestV2 {
 }
 ```
 
+Version 1 uses three domain-separated, length-delimited commitments. Ordered
+fields are encoded as a four-byte unsigned big-endian byte length followed by
+the UTF-8 field bytes; each commitment is SHA-256 over the encoded domain label
+followed by its encoded fields:
+
+1. `RootAuthorityCommitmentV1` covers descriptor version, `suite_id`, `key_id`,
+   and the complete variable-length public-key bytes.
+2. `BirthSemanticCommitmentV1` uses domain
+   `hivra/capsule-birth/semantic/v1` and covers contract version, the complete
+   versioned `CapsuleIdV2`, network id, birth mode, and
+   `RootAuthorityCommitmentV1`. It excludes `operation_id` to avoid circularity.
+3. `operation_id` is derived with domain `hivra/capsule-birth/operation/v1`
+   from `BirthSemanticCommitmentV1`. `BirthAuthorizationCommitmentV1` then uses
+   domain `hivra/capsule-birth/authorization/v1` and covers both the semantic
+   commitment and derived operation id.
+
+`SignatureProofV1` is verified only over
+`BirthAuthorizationCommitmentV1`. Changing CapsuleId, network, birth mode,
+operation id, or any authority-descriptor field invalidates authorization.
+The hash choice versions this commitment encoding; it does not define Capsule
+identity or constrain future signing suites.
+
 After adapter verification, the application boundary creates exactly one
-`VerifiedBirthCommandV2`. It carries `RootAuthorityRefV1` and an opaque
-`authorization_evidence_id`; raw key and proof bytes do not cross into the Core
-command.
+`VerifiedBirthCommandV2`. It carries the verified semantic commitment,
+`RootAuthorityRefV1`, and an opaque `authorization_evidence_id`; raw key and
+proof bytes do not cross into the Core command.
 
 An accepted transition produces exactly one `CapsuleBornFactV2` and one
 deterministic initial Starter plan. The fact binds:
@@ -672,9 +694,12 @@ It does not contain runtime role, transport identity, mutable settings, seed,
 private material, raw public-key bytes, or raw signature bytes.
 
 The transition is deterministic for the same verified command and existing
-Ledger projection. A Capsule id can be born once. Repeating the same or another
-operation against an existing Capsule id returns `CAPSULE_ALREADY_EXISTS`; it
-does not append another birth fact.
+Ledger projection. The projection records `operation_id` with its semantic
+commitment and accepted fact. An exact repeat returns that fact with
+`REPLAYED` and appends nothing. Reusing an operation id with changed birth
+semantics fails `INVALID_OPERATION_ID` because the identifier no longer matches
+its deterministic derivation. A different valid operation against an existing
+Capsule id returns `CAPSULE_ALREADY_EXISTS`; it does not append another fact.
 
 ##### Canonical errors
 
@@ -688,6 +713,7 @@ Version 1 defines these closed error codes:
 - `UNSUPPORTED_NETWORK`;
 - `INVALID_BIRTH_MODE`;
 - `AUTHORITY_BINDING_MISMATCH`;
+- `AUTHORIZATION_COMMITMENT_MISMATCH`;
 - `AUTHORIZATION_INVALID`;
 - `CAPSULE_ALREADY_EXISTS`.
 
@@ -748,6 +774,10 @@ The checked-in vectors cover:
 - rejection of `runtime_role` and `LEAF` as birth inputs;
 - rejection of CapsuleId/public-key aliasing;
 - proof/descriptor binding mismatch;
+- exact proof binding to CapsuleId, network, birth mode, operation id, and the
+  complete authority descriptor;
+- exact idempotent replay and rejection of operation-id reuse with changed
+  semantics;
 - invalid authorization evidence;
 - duplicate Capsule birth;
 - unsupported contract version and network;
@@ -758,42 +788,30 @@ commitment. A later implementation pass must choose canonical encoding only
 with schema versioning, length delimiting, cross-language fixtures, and removal
 targets approved together.
 
-Pass A exits only when the blueprint, schema, vectors, validator negative
-self-tests, ownership registry, and full repository review agree. Exit closes
-the design contract; it does not authorize implementation. The next design
-dependency is the standalone Starter inventory/current-view and Genesis seed
-plan contract required to make the accepted birth transaction atomic.
+Pass A review exits only when the blueprint, schema, vectors, validator
+negative mutations, ownership registry, and full repository review agree. Exit
+closes the reviewed design contract; it does not authorize implementation or
+automatically select the next contract.
 
-Pass A completed on 2026-08-04 with:
+Pass A review evidence:
 
 - the normative blueprint contract above;
 - a strict draft-2020-12 schema with opaque variable-length CapsuleId,
   suite-tagged variable-length authority/proof values, exact birth modes,
   closed errors, and no runtime-role field;
-- twelve semantic vectors covering accepted Genesis/Proto behavior, variable
-  key/proof sizes, exact Starter plans, identifier separation, authorization,
-  duplicate birth, version, operation id, network, and malformed Capsule id;
-- fail-closed schema/vector validation and negative self-tests for runtime
-  authorization, schema weakening, missing vectors, and semantic drift;
+- semantic vectors covering accepted Genesis/Proto behavior, exact replay,
+  changed-operation rejection, exact authorization binding, variable key/proof
+  sizes, identifier separation, duplicate birth, and malformed inputs;
+- standard draft-2020-12 validation plus negative mutations for an empty root,
+  proof-binding weakening, missing vectors, and semantic drift;
 - explicit 1.x read compatibility plus append-only migration and removal/sealing
   targets;
 - zero Rust, Flutter, FFI, storage, adapter, persisted-format, or production
   binding changes.
 
-Selected `V2-1 / pass B` — `starter_inventory_contract_v2`:
-
-- define one Core-owned Starter inventory current-view contract from Ledger
-  facts;
-- define the deterministic Genesis seed plan consumed by Capsule Birth without
-  giving Birth ownership of Starter lifecycle facts;
-- define Starter id/value shape, state transitions, ordering, errors, and
-  semantic golden vectors without spreading current fixed-size crypto debt;
-- define the atomic transaction boundary between `CapsuleBornFactV2` and the
-  five Genesis `StarterCreated` facts;
-- map current `Starter`, `StarterCreatedPayload`, `StarterBurnedPayload`,
-  LedgerView adapter, and Starters screen as compatibility/removal targets;
-- introduce no runtime implementation, V2 event in production Core, FFI binding,
-  storage format, or UI path.
+Selection of a later contract is outside this normative section. The current
+work item and next decision are recorded only in `development-control.md`, with
+history and debt retained in `roadmap.md`.
 
 ### V2-1: Core contract proofs
 

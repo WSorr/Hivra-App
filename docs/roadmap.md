@@ -86,9 +86,10 @@ Capsule AI Runtime is a named cross-version architecture program governed by
 `V2-0` is complete as of 2026-08-04. Passes A-E produced one ownership-registry
 schema, generated architecture evidence, owner discovery, service-locator
 classification, explicit UI/Flutter-FFI mappings, bounded identity-family
-decomposition, and a fail-closed exit matrix. `V2-1 / pass A` completed
-design-only `capsule_identity_birth_contract_v2`. The first active item is
-`V2-1 / pass B`, design-only `starter_inventory_contract_v2`.
+decomposition, and a fail-closed exit matrix. `V2-1 / pass A` is remediating
+proof/request binding, deterministic operation identity, replay semantics, and
+standard schema validation in `capsule_identity_birth_contract_v2`. Pass B is
+not selected before remediation review and documentation-consolidation triage.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2037,8 +2038,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       T1 and product tracks remain parked, and release work still requires a
       named candidate.
   - Next selected unit:
-    - `V2-1 / pass B`: design Starter inventory, deterministic Genesis seeding,
-      atomic birth transaction semantics, vectors, and removal targets;
+    - `V2-1 / pass A remediation`; pass B remains blocked pending review;
     - design/tooling only, with no 1.x runtime behavior, 2.0 production code,
       new DTO family, storage format, facade, or parallel execution path.
   - Status: completed (2026-08-04).
@@ -2052,7 +2052,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       plus current code metadata;
     - add fail-closed consistency and negative self-tests without changing
       runtime code.
-  - Evidence (2026-08-04):
+  - Evidence under remediation (2026-08-04):
     - `architecture/ownership-registry.v1.json` records nine packages and twelve
       known capability families;
     - `docs/generated/architecture-ownership-baseline.md` records current Rust
@@ -2173,19 +2173,19 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Evidence (2026-08-04):
     - the blueprint is normative; the checked-in JSON Schema and fixtures are
       machine-readable review evidence rather than a second architecture source;
-    - twelve vectors cover accepted Genesis/Proto flows, variable key/proof
-      lengths, exact Starter plans, identifier/key separation, authorization,
-      duplicate birth, contract version, operation id, network, and Capsule id;
-    - the validator rejects runtime authorization, weakened Starter-plan schema,
-      missing vectors, and semantic drift;
+    - vectors bind authorization to exact birth semantics, derive operation id,
+      distinguish exact replay from duplicate Capsule birth, and reject changed
+      request fields after proof creation;
+    - the validator uses draft-2020-12 validation and rejects weakened root,
+      proof-binding, fixture coverage, and semantic-result mutations;
     - 1.x `capsule_type` remains read-only compatibility input with mapping
       `1 -> GENESIS`, `0 -> PROTO`; history is never rewritten or re-signed;
     - no production Rust, Flutter, FFI, storage, event, adapter, or UI path is
       introduced.
-  - Next selected unit:
-    - `V2-1 / pass B`, Starter inventory/current-view and atomic Genesis
-      seed-plan contract design only.
-  - Status: completed (2026-08-04).
+  - Next decision:
+    - review Pass A remediation, then choose Pass B or a short documentation
+      consolidation pass without new entities.
+  - Status: remediation (2026-08-04); Pass B blocked.
 
 ## Planned Product Tracks
 

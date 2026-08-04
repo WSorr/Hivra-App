@@ -466,11 +466,11 @@ def validate_v2_0_exit_audit(registry: dict, capability_ids: set[str]) -> None:
     first_contract = audit["first_v2_1_design_contract"]
     require_keys(
         first_contract,
-        {"contract_id", "capability_id", "status", "rationale", "unblocks"},
+        {"contract_id", "capability_id", "runtime_implementation_authorized", "rationale", "unblocks"},
         "first_v2_1_design_contract",
     )
-    if first_contract["status"] != "DESIGN_COMPLETE_NO_RUNTIME":
-        raise RegistryError("first_v2_1_design_contract: design must be complete without runtime authorization")
+    if first_contract["runtime_implementation_authorized"] is not False:
+        raise RegistryError("first_v2_1_design_contract: runtime implementation must remain unauthorized")
     if not ordered or first_contract["capability_id"] != ordered[0]:
         raise RegistryError("first_v2_1_design_contract: capability must be first in ordered non-ready work")
     if not first_contract["contract_id"].strip() or not first_contract["rationale"].strip():
@@ -663,7 +663,7 @@ def render_report(registry: dict, evidence: dict) -> str:
         "",
         f"- Contract: `{first_contract['contract_id']}`",
         f"- Capability: `{first_contract['capability_id']}`",
-        f"- Status: `{first_contract['status']}`",
+        f"- Runtime implementation authorized: `{str(first_contract['runtime_implementation_authorized']).lower()}`",
         f"- Rationale: {first_contract['rationale']}",
         f"- Unblocks: {', '.join(f'`{item}`' for item in first_contract['unblocks'])}",
         "- This selection authorizes contract design only; it does not authorize runtime implementation.",
@@ -811,7 +811,7 @@ def self_test(registry: dict) -> None:
     runtime_authorized["v2_0_exit_audit"]["runtime_implementation_authorized"] = True
     cases.append(("V2-0 runtime authorization", runtime_authorized))
     contract_runtime_authorized = copy.deepcopy(registry)
-    contract_runtime_authorized["v2_0_exit_audit"]["first_v2_1_design_contract"]["status"] = "IMPLEMENTATION_AUTHORIZED"
+    contract_runtime_authorized["v2_0_exit_audit"]["first_v2_1_design_contract"]["runtime_implementation_authorized"] = True
     cases.append(("V2-1 contract runtime authorization", contract_runtime_authorized))
     for name, mutated in cases:
         try:
