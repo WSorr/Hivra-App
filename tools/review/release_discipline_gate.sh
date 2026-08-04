@@ -40,7 +40,7 @@ MAC_RELEASE_SCRIPT="$ROOT/tools/release/macos_release.sh"
 ANDROID_RELEASE_SCRIPT="$ROOT/tools/release/android_release.sh"
 RELEASE_VERSION_GUARD="$ROOT/tools/release/release_version_guard.sh"
 REVIEW_ALL="$ROOT/tools/review/review_all.sh"
-CI_RELEASE_GATES="$ROOT/.github/workflows/release-gates.yml"
+CI_REPOSITORY_GATES="$ROOT/.github/workflows/release-gates.yml"
 CHECKLIST_MAC="$ROOT/docs/checklists/release-macos.md"
 CHECKLIST_ANDROID="$ROOT/docs/checklists/release-android.md"
 CHECKLIST_ANDROID_RUNTIME="$ROOT/docs/checklists/android-runtime-hardening.md"
@@ -81,10 +81,19 @@ require_file "$DRONE_EVIDENCE_CHECK" "trading drone evidence-check script exists
 require_file "$MANUAL_SIGNOFF_CHECK" "manual release signoff-check script exists"
 require_file "$GITHUB_RELEASE_PUBLISH" "guarded GitHub release publish script exists"
 require_file "$FLUTTER_VERSION_DERIVER" "Flutter artifact version derivation exists"
-require_file "$CI_RELEASE_GATES" "root GitHub release-gates workflow exists"
+require_file "$CI_REPOSITORY_GATES" "root GitHub repository-gates workflow exists"
 require_file "$TOOLCHAIN_VERIFY" "toolchain environment verifier exists"
 require_file "$TOOLCHAIN_BASELINE" "toolchain baseline manifest exists"
 require_file "$RUST_TOOLCHAIN" "Rust toolchain pin exists"
+
+require_present "$CI_REPOSITORY_GATES" '^name: Hivra Repository Gates$' \
+  "repository workflow is distinct from the release process"
+require_present "$CI_REPOSITORY_GATES" '^  pull_request:$' \
+  "repository workflow validates pull requests"
+require_present "$CI_REPOSITORY_GATES" '^  push:$' \
+  "repository workflow validates main pushes"
+require_present "$CI_REPOSITORY_GATES" '^  review-gates:$' \
+  "repository workflow preserves the required review-gates context"
 
 require_present "$ROADMAP" '^### 6\. Release Preflight as a Gate' \
   "roadmap tracks release preflight gate"
@@ -445,13 +454,13 @@ require_present "$REVIEW_ALL" 'release_discipline_gate\.sh' \
   "review_all includes release discipline gate"
 require_present "$REVIEW_ALL" 'user_lifetime_safety_gate\.sh' \
   "review_all includes user lifetime safety gate"
-require_present "$CI_RELEASE_GATES" 'tools/review/review_all\.sh' \
-  "GitHub release-gates workflow runs review gates"
-require_present "$CI_RELEASE_GATES" 'tools/toolchain/verify_environment\.sh --static' \
-  "GitHub release-gates workflow verifies repository toolchain pins"
-require_present "$CI_RELEASE_GATES" 'tools/toolchain/verify_environment\.sh --self-test' \
-  "GitHub release-gates workflow proves toolchain mismatch failure"
-require_present "$CI_RELEASE_GATES" 'tools/release/check_manual_release_signoff\.sh --self-test' \
-  "GitHub release-gates workflow runs manual signoff self-test"
+require_present "$CI_REPOSITORY_GATES" 'tools/review/review_all\.sh' \
+  "GitHub repository-gates workflow runs review gates"
+require_present "$CI_REPOSITORY_GATES" 'tools/toolchain/verify_environment\.sh --static' \
+  "GitHub repository-gates workflow verifies repository toolchain pins"
+require_present "$CI_REPOSITORY_GATES" 'tools/toolchain/verify_environment\.sh --self-test' \
+  "GitHub repository-gates workflow proves toolchain mismatch failure"
+require_present "$CI_REPOSITORY_GATES" 'tools/release/check_manual_release_signoff\.sh --self-test' \
+  "GitHub repository-gates workflow runs manual signoff self-test"
 
 exit "$STATUS"

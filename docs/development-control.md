@@ -139,7 +139,32 @@ No status update means the work is not ready to be called complete.
 - If a task is not needed for the next 1.x release and changes ownership or
   contracts, it belongs in the 2.0 design line first.
 
-## 6. Practical Reading Set
+## 6. Repository Integration Gate
+
+Repository integration and product release are separate processes.
+
+- `.github/workflows/release-gates.yml` is the repository push/PR workflow
+  displayed as `Hivra Repository Gates`. Its required GitHub status context is
+  the stable job name `review-gates`.
+- `main` accepts changes only through a pull request. Branch protection requires
+  `review-gates` on the current head, requires the branch to be up to date,
+  applies to administrators, and forbids force pushes and branch deletion.
+- The repository workflow validates a commit; it does not create a tag, build a
+  release candidate, publish artifacts, or replace the explicit release
+  scripts, checklists, manual signoff, and guarded publication process.
+- A green local `tools/review/review_all.sh` is necessary but not sufficient
+  when CI, review gates, documentation integrity, toolchains, or generated and
+  ignored paths change. Those changes must also pass from a clean detached
+  checkout and then pass the GitHub `review-gates` check on the pushed branch.
+- After every push, inspect the corresponding GitHub Actions run and wait for a
+  terminal green result. Do not merge, push another pass, or call the commit
+  complete while that run or the previous repository-gate run is red.
+- Required checks, pull-request enforcement, administrator enforcement, and
+  force-push/deletion restrictions have no repository-local bypass. If GitHub
+  cannot enforce them, work stops at a documented external limitation rather
+  than substituting a script that direct pushes can bypass.
+
+## 7. Practical Reading Set
 
 For a normal 1.x repair, read only:
 

@@ -1,4 +1,4 @@
-name: Hivra Release Gates
+name: Hivra Repository Gates
 
 on:
   pull_request:
