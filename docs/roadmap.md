@@ -90,7 +90,8 @@ decomposition, and a fail-closed exit matrix. `V2-1 / pass A` completed
 `capsule_identity_birth_contract_v2`, including remediation of exact proof
 binding, deterministic operation identity, replay semantics, root schema
 validation, and blueprint ownership. `V2-1 / pass B` completed
-`starter_inventory_contract_v2`; no later V2-1 pass is selected.
+`starter_inventory_contract_v2`. Post-Pass B consolidation selected
+`V2-1 / pass C`, a design-only Capsule continuity export contract.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2218,6 +2219,31 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     unauthorized pending a separate consolidation decision.
   - Status: completed (2026-08-04); consolidation found no duplicated normative
     owner and no new finding.
+
+- `V2-1 / post-Pass B consolidation and Pass C selection`
+  - Findings (2026-08-04):
+    - the ownership baseline remains a current-runtime snapshot; reviewed
+      design-only contracts do not make their 1.x production paths `READY`;
+    - birth and Starter registry debt now names production binding and sealing
+      work instead of incorrectly claiming that no reviewed design exists;
+    - continuity is the next ordered capability whose ambiguity is independently
+      closable: export intent and snapshot evidence currently span
+      `BackupService`, FFI, codec, persistence, and recovery-facing surfaces;
+    - recovery migration, owner verification, history anchoring, and a new
+      backup wire format are separate responsibilities and are excluded.
+  - Architecture-economy review:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | No document, schema, registry, or gate; existing registry/report/status text only | False equivalence between design completion and production closure | Pass A/B design evidence versus unresolved 1.x runtime binding | Zero owners; zero runtime paths | Birth/Starter runtime binding remains; continuity, recovery, addressing, selection, shell, and trading remain non-ready | One bounded continuity export contract can now be reviewed without absorbing recovery or storage |
+
+  - Next selected unit:
+    - `V2-1 / pass C`, Capsule continuity export contract, design/schema/vectors/
+      validator only;
+    - one application owner, one immutable snapshot commitment, one export
+      operation/result path; no recovery protocol, second backup format, Core
+      fact, FFI/storage/UI binding, or runtime implementation.
+  - Status: completed (2026-08-04).
 
 ## Planned Product Tracks
 
