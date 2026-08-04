@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 root = Path(sys.argv[1])
@@ -29,6 +30,18 @@ for path in md_files:
             missing_links.append((path.relative_to(root), target))
 
 missing_paths = []
+
+
+def is_git_ignored(repo_path: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(root), "check-ignore", "--quiet", "--", repo_path],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
 path_re = re.compile(
     r"`((?:docs|tools|flutter|core|adapters|platform|engine|README\.md|"
     r"Cargo\.toml|Cargo\.lock)[^`\s]*)`"
@@ -41,7 +54,7 @@ for path in md_files:
             continue
         clean = clean.split()[0]
         candidate = root / clean
-        if not candidate.resolve().exists():
+        if not candidate.resolve().exists() and not is_git_ignored(clean):
             missing_paths.append((path.relative_to(root), raw))
 
 stale_patterns = [
