@@ -197,6 +197,31 @@ def validate_plan(candidate: object, command: dict, schema: dict, birth_schema: 
     return None
 
 
+def validate_created_fact_batch(
+    command: dict,
+    plan: dict,
+    facts: object,
+    schema: dict,
+    birth_schema: dict,
+) -> dict | None:
+    if not isinstance(facts, list) or len(facts) != len(plan["entries"]):
+        return reject("NON_ATOMIC_BIRTH_BATCH")
+    fact_validator = validator_for(schema, birth_schema, "StarterCreatedFactV2")
+    expected = created_facts(command, plan)
+    for actual, planned in zip(facts, expected):
+        if not fact_validator.is_valid(actual):
+            return reject("INVALID_STARTER_FACT")
+        if actual["capsule_id"] != command["capsule_id"]:
+            return reject("CAPSULE_SCOPE_MISMATCH")
+        if actual["network_id"] != command["network_id"]:
+            return reject("NETWORK_SCOPE_MISMATCH")
+        if actual["starter_id"] != planned["starter_id"]:
+            return reject("INVALID_STARTER_ID")
+        if actual != planned:
+            return reject("INVALID_STARTER_FACT")
+    return None
+
+
 def evaluate(vector: dict, schema: dict, birth_schema: dict, birth_vectors: dict, birth_contract) -> dict:
     scenario = vector["scenario"]
     command = verified_birth(vector["birth_vector_id"], birth_vectors, birth_contract)
@@ -207,6 +232,16 @@ def evaluate(vector: dict, schema: dict, birth_schema: dict, birth_vectors: dict
     if scenario == "PLAN":
         return {"decision": "ACCEPTED", "plan": vector["candidate_plan"]}
     if scenario == "ATOMIC":
+        facts = created_facts(command, vector["candidate_plan"])
+        rejection = validate_created_fact_batch(
+            command,
+            vector["candidate_plan"],
+            facts,
+            schema,
+            birth_schema,
+        )
+        if rejection is not None:
+            return rejection
         expected_kinds = ["CapsuleBornFactV2"] + ["StarterCreatedFactV2"] * len(vector["candidate_plan"]["entries"])
         attempted = vector["candidate_append_fact_kinds"]
         if vector["prior_transaction_applied"]:
@@ -360,6 +395,29 @@ def self_test(schema: dict, birth_schema: dict, fixtures: dict, birth_fixtures: 
         NORMATIVE_HEADING,
         NORMATIVE_HEADING + "\n\nThis contract authorizes runtime implementation.",
     )
+    birth_vectors = birth_vectors_by_id(birth_fixtures)
+    genesis_command = verified_birth(
+        "genesis_variable_length_authority_accepted",
+        birth_vectors,
+        birth_contract,
+    )
+    genesis_plan_value = genesis_plan(genesis_command, birth_contract)
+    wrong_scope_facts = created_facts(genesis_command, genesis_plan_value)
+    wrong_scope_facts[0]["capsule_id"] = copy.deepcopy(
+        birth_vectors["proto_classical_key_accepted"]["request"]["capsule_id"]
+    )
+
+    def validate_wrong_scope_fact_batch() -> None:
+        rejection = validate_created_fact_batch(
+            genesis_command,
+            genesis_plan_value,
+            wrong_scope_facts,
+            schema,
+            birth_schema,
+        )
+        if rejection == reject("CAPSULE_SCOPE_MISMATCH"):
+            raise ContractError("expected rejection: foreign Capsule scope")
+
     probes = (
         ("missing root contract", lambda: validate_schema(missing_root, birth_schema)),
         ("invitation lock ownership", lambda: validate_schema(locked_view, birth_schema)),
@@ -369,6 +427,7 @@ def self_test(schema: dict, birth_schema: dict, fixtures: dict, birth_fixtures: 
         ("semantic result drift", lambda: validate_fixtures(schema, birth_schema, changed_result, birth_fixtures, birth_contract)),
         ("missing normative section", lambda: validate_blueprint(schema, missing_section)),
         ("runtime authorization", lambda: validate_blueprint(schema, runtime_authorized)),
+        ("foreign-scope atomic Starter fact", validate_wrong_scope_fact_batch),
     )
     for name, probe in probes:
         try:
