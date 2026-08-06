@@ -91,7 +91,9 @@ decomposition, and a fail-closed exit matrix. `V2-1 / pass A` completed
 binding, deterministic operation identity, replay semantics, root schema
 validation, and blueprint ownership. `V2-1 / pass B` completed
 `starter_inventory_contract_v2`. `V2-1 / pass C` completed the design-only
-`capsule_continuity_export_contract_v2`. No later pass is selected.
+`capsule_continuity_export_contract_v2`. Post-Pass C consolidation selected
+`V2-1 / pass D`, a design-only Capsule recovery authorization and history-
+anchoring protocol.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2275,6 +2277,39 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Next selected unit: none; runtime implementation and later V2-1 contracts
     remain unauthorized pending a separate consolidation decision.
   - Status: completed (2026-08-04); local design and repository gates pass.
+
+- `V2-1 / post-Pass C consolidation and Pass D selection`
+  - Findings (2026-08-07):
+    - the blueprint remains the sole normative continuity owner; schema and
+      fixtures are machine evidence, roadmap is history, and the generated
+      ownership baseline remains a current 1.x runtime snapshot;
+    - no duplicated continuity DTO family, registry, gate, document, Core path,
+      or runtime route was added by Pass C;
+    - current recovery meaning is split between `RecoveryService.recover` and
+      selector-driven `importCapsuleFromBackupJson`, with different ordering of
+      artifact decoding, seed/owner verification, Ledger import, Capsule
+      creation, persistence, and activation;
+    - this is one independently closable protocol ambiguity: which exact
+      Capsule, network, authority evidence, artifact commitment, accepted
+      history head, and operation identity authorize one recovery result;
+    - codec/KDF details, mnemonic handling, filesystem writes, secure storage,
+      UI/FFI composition, a new backup format, and runtime migration remain
+      downstream or compatibility responsibilities.
+  - Architecture-economy review:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | Existing status and roadmap text only | Automatic progression after Pass C and any claim that export completion already defines recovery | Continuity evidence ownership versus recovery authorization/history acceptance | Zero owners; zero runtime paths | Two 1.x recovery routes, seed-derived identity alias, direct Ledger import, persistence/activation ordering, and runtime binding remain explicit | One bounded recovery protocol can be reviewed without absorbing codec, storage, selection, or UI |
+
+  - Next selected unit:
+    - `V2-1 / pass D`, Capsule recovery authorization and history-anchoring
+      protocol, design/schema/vectors/validator only;
+    - one protocol owner and one accepted/rejected/replayed result path over the
+      reviewed CapsuleId, authenticated continuity artifact evidence, exact
+      Ledger history commitment, and verified local authority;
+    - no production Rust, Flutter, FFI, storage, event, adapter, UI, recovery
+      execution, new backup wire format, release, or manual smoke.
+  - Status: completed (2026-08-07); Pass D selected, runtime unauthorized.
 
 ## Planned Product Tracks
 

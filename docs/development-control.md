@@ -48,7 +48,7 @@ table, then open only the linked authority for the selected work item.
 | --- | --- | --- | --- | --- |
 | **1.x maintained runtime** | Checkpoint complete; no active finding | `12.3 / pass 18` and `12.5 / AI-4` are complete; no later remediation is inferred. | Latest build `100000331`: Flutter `760/760`, Rust workspace and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | Select a new runtime pass only from a named failure or review finding. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
-| **2.0 architecture** | `V2-0` and `V2-1 / passes A-C` complete; no next pass selected | Capsule continuity export now has one design-only intent/result/evidence contract above existing codec/filesystem adapters; runtime implementation remains unauthorized. | Schema, semantic vectors, and negative mutations bind exact snapshot, authority, replay, reviewed encrypted profile, and artifact evidence without adding a runtime path. | Run a short consolidation decision before selecting another contract; do not infer recovery, runtime binding, or a second backup format from Pass C completion. |
+| **2.0 architecture** | `V2-0` and `V2-1 / passes A-C` complete; pass D selected, design-only | Define one Capsule recovery authorization and history-anchoring protocol above the existing authenticated continuity artifact; runtime implementation remains unauthorized. | Post-Pass C consolidation found no duplicate normative owner and isolated two current recovery routes with different authority/history/activation ordering. | Pass D may use one existing blueprint section, one schema, one fixture set, and one validator in the existing gate; it must not define a new backup format, storage transaction, UI/FFI path, or runtime implementation. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
 | **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects and a foreground bounded-reply experiment exist, but automatic modes are blocked by the canonical engagement lifecycle gates. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |
@@ -61,9 +61,10 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — post-Pass C consolidation decision:** verify that blueprint, schema,
-   fixtures, validator, roadmap, and generated evidence have one owner per fact;
-   select no later contract without a separately named ambiguity.
+1. **P1 — `V2-1 / pass D` design:** define one recovery authorization and
+   history-anchoring decision over a verified Capsule identity and authenticated
+   continuity artifact; seal parallel recovery semantics without changing the
+   current runtime.
 2. **P1 — release decision:** only a named release candidate may trigger fresh
    macOS and Android packaged-artifact signoff.
 3. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
