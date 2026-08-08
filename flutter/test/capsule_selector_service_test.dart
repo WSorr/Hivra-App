@@ -1,7 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/capsule_selector_runtime.dart';
+import 'package:hivra_app/models/capsule_chat_models.dart';
+import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/capsule_selector_service.dart';
+import 'package:hivra_app/services/ui_event_log_service.dart';
 
 CapsuleSelectorItem _item({
   required String pubKeyHex,
@@ -67,6 +70,18 @@ class _PublicSummaryRuntime implements CapsuleSelectorRuntime {
   @override
   Future<void> activateCapsule(String pubKeyHex) async {
     activationCalls += 1;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _DeletionRuntime implements CapsuleSelectorRuntime {
+  final List<String> deleted = <String>[];
+
+  @override
+  Future<void> deleteCapsule(String pubKeyHex) async {
+    deleted.add(pubKeyHex);
   }
 
   @override
@@ -320,5 +335,36 @@ void main() {
     );
 
     expect(() => service.activateCapsule('aa'), throwsA(isA<StateError>()));
+  });
+
+  test('deleting a capsule clears its process chat projection', () async {
+    const capsuleHex =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    final runtime = _DeletionRuntime();
+    final inbox = CapsuleDeliveryInboxStore();
+    inbox.merge(
+      capsuleHex,
+      messages: const <CapsuleChatInboxMessage>[
+        CapsuleChatInboxMessage(
+          id: 'message',
+          fromHex: capsuleHex,
+          messageText: 'must not return',
+          createdAtUtc: '2026-08-09T08:00:00.000Z',
+          envelopeHashHex: '',
+          timestampMs: 1,
+        ),
+      ],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+    final service = CapsuleSelectorService(
+      runtime,
+      const UiEventLogService(),
+      inbox,
+    );
+
+    await service.deleteCapsule(capsuleHex);
+
+    expect(runtime.deleted, <String>[capsuleHex]);
+    expect(inbox.loadMessages(capsuleHex), isEmpty);
   });
 }

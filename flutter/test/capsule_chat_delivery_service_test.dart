@@ -21,6 +21,7 @@ import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/transport_health_policy_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
+import 'package:hivra_app/screens/wasm_plugins_screen.dart';
 
 void main() {
   group('tradeSignalInboxRecordId', () {
@@ -165,68 +166,84 @@ void main() {
     },
   );
 
-  test('chat received by passive drain remains available to workspace', () async {
-    const peerHex =
-        '1111111111111111111111111111111111111111111111111111111111111111';
-    const localRootHex =
-        '2222222222222222222222222222222222222222222222222222222222222222';
-    final store = CapsuleDeliveryInboxStore();
-    final runtime = _FakeRuntime(
-      capsuleRootKey: _hexToBytes(localRootHex),
-      workerBootstrap: const <String, Object?>{
-        'activeCapsuleHex': localRootHex,
-      },
-    );
-    final checks = _FakeManualConsensusCheckService(<ManualConsensusCheck>[
-      const ManualConsensusCheck(
-        peerHex: peerHex,
-        peerLabel: 'peer',
-        invitationCount: 1,
-        relationshipCount: 1,
-        hashHex:
-            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-        canonicalJson: '{}',
-        isSignable: true,
-        blockingFacts: <ConsensusBlockingFact>[],
-      ),
-    ]);
-    final passiveService = CapsuleChatDeliveryService(
-      runtime: runtime,
-      manualChecks: checks,
-      deliveryInboxStore: store,
-      receiveWorkerRunner:
-          (_) async => <String, Object?>{
-            'result': 1,
-            'json': jsonEncode(<Map<String, Object?>>[
-              <String, Object?>{
-                'from_hex': peerHex,
-                'payload_json': jsonEncode(<String, Object?>{
-                  'message_text': 'preserved',
-                  'created_at_utc': '2026-08-08T12:00:00.000Z',
-                  'envelope_hash_hex':
-                      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-                }),
-                'timestamp_ms': 1,
-              },
-            ]),
-            'lastError': null,
-          },
-    );
-    final workspaceService = CapsuleChatDeliveryService(
-      runtime: runtime,
-      manualChecks: checks,
-      deliveryInboxStore: store,
-    );
+  test(
+    'workspace keeps passive chat visible when the next refresh times out',
+    () async {
+      const peerHex =
+          '1111111111111111111111111111111111111111111111111111111111111111';
+      const localRootHex =
+          '2222222222222222222222222222222222222222222222222222222222222222';
+      final store = CapsuleDeliveryInboxStore();
+      final runtime = _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      );
+      final checks = _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+        const ManualConsensusCheck(
+          peerHex: peerHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      ]);
+      final passiveService = CapsuleChatDeliveryService(
+        runtime: runtime,
+        manualChecks: checks,
+        deliveryInboxStore: store,
+        receiveWorkerRunner:
+            (_) async => <String, Object?>{
+              'result': 1,
+              'json': jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'from_hex': peerHex,
+                  'payload_json': jsonEncode(<String, Object?>{
+                    'message_text': 'preserved',
+                    'created_at_utc': '2026-08-08T12:00:00.000Z',
+                    'envelope_hash_hex':
+                        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                  }),
+                  'timestamp_ms': 1,
+                },
+              ]),
+              'lastError': null,
+            },
+      );
+      final workspaceService = CapsuleChatDeliveryService(
+        runtime: runtime,
+        manualChecks: checks,
+        deliveryInboxStore: store,
+      );
 
-    final received = await passiveService.drainAndFilter();
+      var projected = const <CapsuleChatInboxMessage>[];
 
-    expect(received.messages, hasLength(1));
-    expect(workspaceService.loadCachedMessages(), hasLength(1));
-    expect(
-      workspaceService.loadCachedMessages().single.messageText,
-      equals('preserved'),
-    );
-  });
+      final received = await passiveService.drainAndFilter();
+      final result = await projectCachedMessagesBeforeChatRefresh(
+        currentMessages: const <CapsuleChatInboxMessage>[],
+        loadCachedMessages: workspaceService.loadCachedMessages,
+        refresh:
+            () async => const CapsuleChatDeliveryReceiveResult(
+              code: -1003,
+              errorMessage: 'Transport receive timed out',
+              droppedByConsensus: 0,
+              messages: <CapsuleChatInboxMessage>[],
+              tradeSignals: <CapsuleTradeSignalInboxMessage>[],
+            ),
+        projectMessages: (messages) => projected = messages,
+      );
+
+      expect(received.messages, hasLength(1));
+      expect(result.code, -1003);
+      expect(projected, hasLength(1));
+      expect(projected.single.messageText, 'preserved');
+    },
+  );
 
   test('delivery inbox isolates chat by capsule and stable message id', () {
     const firstCapsule =
@@ -260,6 +277,111 @@ void main() {
     expect(store.loadMessages(firstCapsule), hasLength(1));
     expect(store.loadMessages(firstCapsule).single.messageText, 'replacement');
     expect(store.loadMessages(secondCapsule), isEmpty);
+  });
+
+  test('delivery inbox bounds records and capsule scopes', () {
+    final store = CapsuleDeliveryInboxStore(
+      maxCapsules: 2,
+      maxRecordsPerCapsule: 2,
+    );
+    const firstCapsule =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    const secondCapsule =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    const thirdCapsule =
+        '3333333333333333333333333333333333333333333333333333333333333333';
+
+    CapsuleChatInboxMessage message(String id, int timestampMs) =>
+        CapsuleChatInboxMessage(
+          id: id,
+          fromHex: secondCapsule,
+          messageText: id,
+          createdAtUtc: '2026-08-09T08:00:00.000Z',
+          envelopeHashHex: '',
+          timestampMs: timestampMs,
+        );
+    CapsuleTradeSignalInboxMessage signal(String id, int timestampMs) =>
+        CapsuleTradeSignalInboxMessage(
+          id: id,
+          signalId: id,
+          fromHex: secondCapsule,
+          symbol: 'BTC-USDT',
+          side: 'buy',
+          orderType: 'limit',
+          quantityDecimal: '0.01',
+          entryMode: 'zone_pending',
+          intentHashHex: '',
+          createdAtUtc: '2026-08-09T08:00:00.000Z',
+          strategyTag: null,
+          canonicalIntentJson: '{}',
+          timestampMs: timestampMs,
+        );
+
+    store.merge(
+      firstCapsule,
+      messages: <CapsuleChatInboxMessage>[message('first', 1)],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+    store.merge(
+      secondCapsule,
+      messages: <CapsuleChatInboxMessage>[
+        message('old', 1),
+        message('middle', 2),
+        message('new', 3),
+      ],
+      tradeSignals: <CapsuleTradeSignalInboxMessage>[
+        signal('old-signal', 1),
+        signal('middle-signal', 2),
+        signal('new-signal', 3),
+      ],
+    );
+    store.merge(
+      thirdCapsule,
+      messages: <CapsuleChatInboxMessage>[message('third', 4)],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+
+    expect(store.loadMessages(firstCapsule), isEmpty);
+    expect(
+      store.loadMessages(secondCapsule).map((message) => message.id),
+      <String>['middle', 'new'],
+    );
+    expect(
+      store.loadTradeSignals(secondCapsule).map((signal) => signal.id),
+      <String>['middle-signal', 'new-signal'],
+    );
+    expect(store.loadMessages(thirdCapsule), hasLength(1));
+  });
+
+  test('delivery inbox cleanup removes only the deleted capsule', () {
+    const deletedCapsule =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    const retainedCapsule =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    final store = CapsuleDeliveryInboxStore();
+    const message = CapsuleChatInboxMessage(
+      id: 'message',
+      fromHex: retainedCapsule,
+      messageText: 'cached',
+      createdAtUtc: '2026-08-09T08:00:00.000Z',
+      envelopeHashHex: '',
+      timestampMs: 1,
+    );
+    store.merge(
+      deletedCapsule,
+      messages: const <CapsuleChatInboxMessage>[message],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+    store.merge(
+      retainedCapsule,
+      messages: const <CapsuleChatInboxMessage>[message],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+
+    store.clearCapsule(deletedCapsule);
+
+    expect(store.loadMessages(deletedCapsule), isEmpty);
+    expect(store.loadMessages(retainedCapsule), hasLength(1));
   });
 
   test(

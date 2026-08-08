@@ -1,27 +1,29 @@
 # Hivra Development Control
 
-Status date: 2026-08-08
+Status date: 2026-08-09
 Current released baseline: commit `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
 Current development focus: `v1.0.3-test16` is the selected 1.x test release
 candidate. Packaged smoke reproduced a credential-visibility defect in the
 Trading Drone and then a chat-projection loss: passive receive accepted three
 chat messages before the workspace opened, but the destructive drain left no
 workspace-visible inbox. Credential masking is merged and verified on Android.
-The existing `CapsuleChatDeliveryService` owner must retain accepted chat
-projections across passive drains and prove Capsule-scoped deduplication before
-both artifacts are rebuilt again. No tag, GitHub Release, stable `1.0` claim,
-or 2.0 runtime work is authorized.
+The chat remediation is complete in the existing
+`CapsuleDeliveryInboxStore`/`CapsuleChatDeliveryService` path: cached messages
+are projected independently of transport refresh success, retention is bounded,
+and Capsule deletion clears its process projection. All earlier test16
+artifacts are invalid. The next step is one macOS/Android rebuild from the same
+green post-merge SHA followed by complete manual signoff. No tag, GitHub
+Release, stable `1.0` claim, or 2.0 runtime work is authorized.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
 next pass selected. They
 established repository ownership evidence, Capsule identity/birth, Starter
 inventory, continuity export, recovery, and Capsule selection/prepared-
 activation contracts without changing a runtime path. Recovery, persistence,
 UI/FFI, addressing, seed handling, import/export/delete, and runtime
-implementation remain unauthorized. The post-AI-4 audit found no
-active 1.x integrity finding: Capsule AI Runtime convergence is complete,
-feature-owned provider dispatch and credential reads remain zero, and the full
-T0 environment verifier matches every repository pin. No AI-5, release
-candidate, T1, or other runtime upgrade is implied.
+implementation remain unauthorized. Capsule AI Runtime convergence remains
+complete, feature-owned provider dispatch and credential reads remain zero,
+and the full T0 environment verifier matches every repository pin. No AI-5,
+T1, or other runtime upgrade is implied.
 Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
 signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
@@ -39,7 +41,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation step? | `1.x Product Completion / pass A`: audit the existing end-to-end person journey, automated coverage, diagnostics, and release-checklist ownership before selecting a candidate or changing runtime. | `docs/roadmap.md`, existing release and lifetime checklists |
+| What is the next 1.x step? | Rebuild both `v1.0.3-test16` packaged artifacts from one green post-merge SHA, then complete the full macOS/Android manual signoff. | `docs/roadmap.md`, existing release and lifetime checklists |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -49,8 +51,8 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Product-completion readiness audit complete; one reproduced chat-projection remediation active | `CapsuleChatDeliveryService` remains the sole accepted-inbox owner and must retain messages drained by foreground receive until the Chat workspace can project them. | Regression must prove accepted chat survives a prior passive drain without adding another transport, FFI, or Core path; full repository verification must remain green. | Merge only through PR, reject the current replacement artifacts, and rebuild from the green post-merge SHA. |
-| **1.x release** | `v1.0.3-test16` candidate selected; not released; all pre-fix artifacts rejected | Complete the chat-projection remediation, rebuild macOS and Android from one clean post-merge SHA, then repeat cross-platform chat and remaining applicable smoke gates. | Android replacement smoke proves both BingX credential fields masked; the same run exposed `transport.passive_receive chat=3/3` while the workspace showed `Inbox: 0`. | Tag and publication remain blocked until replacement artifacts pass manual signoff and all evidence is recorded. |
+| **1.x maintained runtime** | Chat-projection remediation complete; packaged verification pending | `CapsuleDeliveryInboxStore` remains the sole process inbox owner: passive messages are projected before or independently of network refresh, retained within fixed bounds, isolated by Capsule, and cleared by the existing Capsule deletion use case. | Timeout/error regression preserves cached chat while surfacing only the transport notice; bounded retention and delete cleanup regressions pass without another transport, FFI, Core path, DTO, or owner. | Merge only through protected PR, then rebuild both platforms from the green post-merge SHA. |
+| **1.x release** | `v1.0.3-test16` candidate selected; not released; every earlier artifact invalid | Rebuild macOS and Android from one clean post-merge SHA, then repeat cross-platform chat and all remaining applicable smoke gates. | Credential masking and chat projection are covered by focused regressions; packaged evidence must be regenerated from the final merged commit. | Tag and publication remain blocked until both replacement artifacts pass manual signoff and all evidence is recorded. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |

@@ -79,13 +79,24 @@ BingxExecutionPolicy _defaultExecutionPolicyForPeer(String _) =>
 class CapsuleDeliveryInboxStore {
   static final CapsuleDeliveryInboxStore shared = CapsuleDeliveryInboxStore();
 
+  static const int defaultMaxCapsules = 8;
+  static const int defaultMaxRecordsPerCapsule = 256;
+
+  final int maxCapsules;
+  final int maxRecordsPerCapsule;
+
   final Map<String, Map<String, CapsuleChatInboxMessage>> _messagesByCapsule =
       <String, Map<String, CapsuleChatInboxMessage>>{};
 
   final Map<String, Map<String, CapsuleTradeSignalInboxMessage>>
   _signalsByCapsule = <String, Map<String, CapsuleTradeSignalInboxMessage>>{};
+  final List<String> _capsuleOrder = <String>[];
 
-  CapsuleDeliveryInboxStore();
+  CapsuleDeliveryInboxStore({
+    this.maxCapsules = defaultMaxCapsules,
+    this.maxRecordsPerCapsule = defaultMaxRecordsPerCapsule,
+  }) : assert(maxCapsules > 0),
+       assert(maxRecordsPerCapsule > 0);
 
   List<CapsuleChatInboxMessage> loadMessages(String capsuleRootHex) {
     final normalized = capsuleRootHex.trim().toLowerCase();
@@ -112,19 +123,81 @@ class CapsuleDeliveryInboxStore {
   }) {
     final normalized = capsuleRootHex.trim().toLowerCase();
     if (!_isHex64(normalized)) return;
-    final messagesById = _messagesByCapsule.putIfAbsent(
-      normalized,
-      () => <String, CapsuleChatInboxMessage>{},
-    );
-    for (final message in messages) {
-      messagesById[message.id] = message;
+    final incomingMessages = messages.toList(growable: false);
+    final incomingSignals = tradeSignals.toList(growable: false);
+    if (incomingMessages.isEmpty && incomingSignals.isEmpty) return;
+
+    _touchCapsule(normalized);
+    if (incomingMessages.isNotEmpty) {
+      final messagesById = _messagesByCapsule.putIfAbsent(
+        normalized,
+        () => <String, CapsuleChatInboxMessage>{},
+      );
+      for (final message in incomingMessages) {
+        messagesById[message.id] = message;
+      }
+      _retainNewestMessages(messagesById);
     }
-    final byId = _signalsByCapsule.putIfAbsent(
-      normalized,
-      () => <String, CapsuleTradeSignalInboxMessage>{},
-    );
-    for (final signal in tradeSignals) {
-      byId[signal.id] = signal;
+    if (incomingSignals.isNotEmpty) {
+      final signalsById = _signalsByCapsule.putIfAbsent(
+        normalized,
+        () => <String, CapsuleTradeSignalInboxMessage>{},
+      );
+      for (final signal in incomingSignals) {
+        signalsById[signal.id] = signal;
+      }
+      _retainNewestSignals(signalsById);
+    }
+    _retainNewestCapsules();
+  }
+
+  void clearCapsule(String capsuleRootHex) {
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    _messagesByCapsule.remove(normalized);
+    _signalsByCapsule.remove(normalized);
+    _capsuleOrder.remove(normalized);
+  }
+
+  void _touchCapsule(String capsuleRootHex) {
+    _capsuleOrder.remove(capsuleRootHex);
+    _capsuleOrder.add(capsuleRootHex);
+  }
+
+  void _retainNewestCapsules() {
+    while (_capsuleOrder.length > maxCapsules) {
+      clearCapsule(_capsuleOrder.first);
+    }
+  }
+
+  void _retainNewestMessages(
+    Map<String, CapsuleChatInboxMessage> messagesById,
+  ) {
+    if (messagesById.length <= maxRecordsPerCapsule) return;
+    final oldestFirst =
+        messagesById.values.toList()..sort((a, b) {
+          final timestampOrder = a.timestampMs.compareTo(b.timestampMs);
+          return timestampOrder != 0 ? timestampOrder : a.id.compareTo(b.id);
+        });
+    for (final message in oldestFirst.take(
+      messagesById.length - maxRecordsPerCapsule,
+    )) {
+      messagesById.remove(message.id);
+    }
+  }
+
+  void _retainNewestSignals(
+    Map<String, CapsuleTradeSignalInboxMessage> signalsById,
+  ) {
+    if (signalsById.length <= maxRecordsPerCapsule) return;
+    final oldestFirst =
+        signalsById.values.toList()..sort((a, b) {
+          final timestampOrder = a.timestampMs.compareTo(b.timestampMs);
+          return timestampOrder != 0 ? timestampOrder : a.id.compareTo(b.id);
+        });
+    for (final signal in oldestFirst.take(
+      signalsById.length - maxRecordsPerCapsule,
+    )) {
+      signalsById.remove(signal.id);
     }
   }
 

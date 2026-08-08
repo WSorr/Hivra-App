@@ -2539,17 +2539,22 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     transport diagnostics reported `chat=3/3` during launch receive, but the
     later Chat workspace displayed `Inbox: 0` because the accepted in-memory
     FFI inbox had already been drained.
-  - The existing `CapsuleChatDeliveryService` inbox owner now retains accepted
-    chat messages by Capsule and stable message id, alongside its existing
-    trade-signal cache. The Chat workspace merges that projection after every
-    canonical passive receive instead of opening a second receive route.
+  - The existing `CapsuleDeliveryInboxStore` owner retains accepted chat
+    messages by Capsule and stable message id, alongside its existing
+    trade-signal cache. The Chat workspace projects that cache before and after
+    canonical passive receive, so a timeout or other transport error changes
+    only the visible transport notice and cannot hide accepted messages.
   - The regression proves a message accepted by an earlier passive drain
-    remains available to a later workspace service instance. Core, FFI,
-    transport encryption, Ledger truth, and outbound delivery are unchanged.
-  - The current replacement artifacts are rejected. Both platforms must be
-    rebuilt from the green post-merge remediation SHA and repeat cross-platform
-    chat smoke before manual signoff.
-  - Status: remediation in progress (2026-08-08); no tag or publication.
+    remains available to a later workspace service instance even when its next
+    refresh returns a timeout. Retention is capped at eight Capsule scopes and
+    256 chat messages plus 256 trade signals per Capsule; the existing Capsule
+    deletion use case clears the deleted scope from the process cache. Core,
+    FFI, transport encryption, Ledger truth, and outbound delivery are
+    unchanged.
+  - Every prior test16 artifact is rejected. Both platforms must be rebuilt
+    from one green post-merge remediation SHA and repeat complete manual signoff.
+  - Status: completed (2026-08-09); rebuild and manual signoff pending, no tag
+    or publication.
 
 ## Planned Product Tracks
 

@@ -6,6 +6,7 @@ import '../ffi/capsule_selector_runtime.dart';
 import '../utils/hivra_id_format.dart';
 import 'capsule_persistence_models.dart';
 import 'capsule_backup_codec.dart';
+import 'capsule_chat_delivery_service.dart';
 import 'ui_event_log_service.dart';
 
 class CapsuleSelectorItem {
@@ -39,12 +40,16 @@ class CapsuleSelectorItem {
 class CapsuleSelectorService {
   final CapsuleSelectorRuntime _runtime;
   final UiEventLogService _uiLog;
+  final CapsuleDeliveryInboxStore _deliveryInboxStore;
 
   CapsuleSelectorService([
     CapsuleSelectorRuntime? runtime,
     UiEventLogService uiLog = const UiEventLogService(),
+    CapsuleDeliveryInboxStore? deliveryInboxStore,
   ]) : _runtime = runtime ?? HivraCapsuleSelectorRuntime(),
-       _uiLog = uiLog;
+       _uiLog = uiLog,
+       _deliveryInboxStore =
+           deliveryInboxStore ?? CapsuleDeliveryInboxStore.shared;
 
   Future<List<CapsuleSelectorItem>> loadCapsules() async {
     await _uiLog.log('capsule.selector.service', 'list.start');
@@ -260,8 +265,9 @@ class CapsuleSelectorService {
     return _runtime.exportCapsuleBackupToPath(pubKeyHex, targetPath);
   }
 
-  Future<void> deleteCapsule(String pubKeyHex) {
-    return _runtime.deleteCapsule(pubKeyHex);
+  Future<void> deleteCapsule(String pubKeyHex) async {
+    await _runtime.deleteCapsule(pubKeyHex);
+    _deliveryInboxStore.clearCapsule(pubKeyHex);
   }
 
   bool validateMnemonic(String phrase) => _runtime.validateMnemonic(phrase);
