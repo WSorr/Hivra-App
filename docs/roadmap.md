@@ -2454,6 +2454,33 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: completed (2026-08-08); 2.0 paused, pass A selected, no release
     candidate or runtime implementation authorized.
 
+- `1.x Product Completion / pass A — end-to-end journey readiness`
+  - Findings (2026-08-08):
+    - existing Core, FFI, Flutter application, transport, consensus, chat,
+      plugin, recovery, restart, and diagnostics suites provide automated
+      evidence for every requested journey segment;
+    - no failing regression, contradictory owner, second runtime route, or
+      reproducible 1.x defect was found during the readiness audit;
+    - the actual gap was coordination evidence: the User Lifetime Safety Pack
+      covered birth, relationship, recovery, update, and pending invitations,
+      but did not require packaged clean install, pair consensus/chat,
+      plugin lifecycle, or cross-platform restart/Capsule isolation as one
+      coherent release-candidate journey;
+    - the existing pack now owns those scenarios and maps each segment to its
+      existing owner and regression files. Capability-specific and platform
+      details remain linked rather than copied;
+    - the existing lifetime gate now protects the expanded journey and includes
+      a negative mutation that removes consensus/chat coverage and must fail.
+  - Product-completion result:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | Four bounded scenarios, one evidence map in the existing lifetime pack, and a mutation self-test in its existing gate | A second end-to-end checklist, debug-build substitution, anecdotal UI-only signoff, and automatic release selection are forbidden | Which single artifact owns the full person journey and which existing tests support each segment | Zero state owners; zero runtime paths; zero new documents/gates | Manual packaged execution on both platforms, external tester evidence, Trust Layer issue #7, dependency updates, and registry production-binding debt remain explicit | A separate release decision can name the next test candidate without reopening architecture or inventing runtime work |
+
+  - Next selected unit: none. Packaging, manual smoke, tags, and publication
+    require a separately named test release candidate.
+  - Status: completed (2026-08-08); no runtime finding reproduced.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
