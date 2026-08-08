@@ -1037,6 +1037,113 @@ No V2 runtime work is authorized until vectors prove full snapshot binding,
 authorization binding, exact replay, operation conflict, stale/wrong scope
 rejection, authenticated-profile enforcement, and exact artifact evidence.
 
+#### V2-1/D Capsule Recovery Authorization and History Anchoring Protocol
+
+- Contract id: `capsule_recovery_protocol_v2`
+- Contract version: `1`
+- Contract boundary: design-only application protocol; no production Core fact,
+  backup wire format, storage transaction, FFI, Flutter, UI, or runtime binding.
+
+This section is the normative design source. The schema at
+`architecture/contracts/capsule-recovery-v2.schema.json` and vectors at
+`architecture/fixtures/capsule-recovery-v2-vectors.json` are machine-readable
+evidence only.
+
+##### Ownership and canonical path
+
+Capsule Recovery owns one authorization, history-acceptance, replay, and
+prepared-activation decision. Ledger/Core owns verification of the candidate
+history and its relation to any current local history. Crypto/platform adapters
+own root-authority proof verification. The reviewed continuity profile and
+codec own artifact authentication and decoding. Storage and Capsule selection
+remain downstream effects and cannot decide recovery truth.
+
+```text
+RecoveryRequestV1
+  -> authenticate reviewed continuity artifact evidence
+  -> verify active root authority over the exact recovery commitment
+  -> verify candidate Ledger history and current-base relation
+  -> VerifiedRecoveryCommandV1
+  -> one prepared recovery plan/result
+  -> future V2-2 atomic persistence and activation receipt
+```
+
+There is no second recovery route through Capsule selection or persistence.
+Raw artifact bytes, mnemonic, seed, private key, signature bytes, path, clock,
+filesystem handle, secure-storage object, decoded event list, and adapter error
+text do not enter `VerifiedRecoveryCommandV1`.
+
+##### Request and exact operation identity
+
+`RecoveryRequestV1` binds contract version, deterministic operation id,
+CapsuleId, network, the complete Pass C `ContinuityArtifactEvidenceV1`, the
+candidate `ContinuitySnapshotV1`, expected local state, active root authority,
+and a suite-tagged authorization proof. The candidate snapshot Capsule/network
+must equal the request scope, and its exact snapshot commitment must equal the
+authenticated artifact evidence.
+
+The domain-separated semantic commitment covers every field except proof bytes
+and operation id. The operation id is deterministically derived from that
+commitment. The authorization commitment binds both values; changing Capsule,
+network, artifact, candidate history, expected local base, authority, or
+operation identity after signing fails closed.
+
+An exact repeat may return the prior exact prepared evidence as `REPLAYED`.
+Reusing an operation id with another request commitment returns
+`OPERATION_ID_CONFLICT`. A mnemonic or key without authenticated continuity
+artifact evidence is not Capsule recovery: it cannot establish CapsuleId or
+history and must not return recovery success.
+
+##### History anchoring and prepared activation
+
+Expected local state is either `EMPTY` or one exact
+`ContinuitySnapshotV1`. Before acceptance the current local state must still
+equal that expectation. For an empty base, a valid candidate is accepted as
+`EMPTY_BASE`. For an existing base, the candidate must be `EXACT` or a verified
+`DESCENDANT`. An older candidate is `HISTORY_ROLLBACK`; a non-descendant is
+`HISTORY_FORK`. Recovery never rewrites, re-signs, truncates, or heuristically
+merges Ledger history.
+
+`VerifiedRecoveryCommandV1` contains only semantic commitments, scoped ids,
+the verified history relation, and opaque artifact/authority/history evidence
+ids. `RecoveryPlanEvidenceV1` binds the same operation, request, artifact,
+candidate snapshot, expected local state, and relation.
+`RecoveryAcceptedV1` is `PREPARED` or `REPLAYED`; it appends no Core fact and
+claims neither durability nor activation. Only a later V2-2 effect receipt may
+confirm atomic persistence, secure authority installation, and Capsule
+activation.
+
+##### Closed rejection and sealing targets
+
+Version 1 defines `INVALID_REQUEST`, `INVALID_OPERATION_ID`,
+`OPERATION_ID_CONFLICT`, `CAPSULE_SCOPE_MISMATCH`,
+`NETWORK_SCOPE_MISMATCH`, `ARTIFACT_AUTHENTICATION_FAILED`,
+`ARTIFACT_EVIDENCE_MISMATCH`, `AUTHORITY_BINDING_MISMATCH`,
+`AUTHORIZATION_COMMITMENT_MISMATCH`, `AUTHORIZATION_INVALID`,
+`HISTORY_SCOPE_MISMATCH`, `HISTORY_ROLLBACK`, `HISTORY_FORK`, and
+`BASE_STATE_CHANGED`, and `PLAN_EVIDENCE_MISMATCH`. Rejection appends no Core
+fact and creates no persistence or activation obligation.
+
+The implementation migration must replace or seal:
+
+- seed-only success in `RecoveryService.recover` as a native V2 Capsule
+  recovery result;
+- selector-owned `importCapsuleFromBackupJson` as a parallel recovery command;
+- direct persistence import that selects owner, writes history, stores authority,
+  and activates a Capsule before one protocol decision;
+- create-import-recreate flows that infer birth mode or authority from partial
+  history after mutation has begun;
+- rollback, fork, wrong-scope, or stale-base acceptance;
+- any result that treats artifact decoding or a written path as completed
+  recovery.
+
+Old 1.x backup and Ledger decoders may remain read-only compatibility adapters
+for the declared migration window. No V2 runtime work is authorized until
+vectors prove exact scope, artifact/authority binding, deterministic operation
+identity, exact replay, empty/exact/descendant history acceptance, rollback and
+fork rejection, stale-base rejection, and zero mutation before the prepared
+decision.
+
 ### V2-1: Core contract proofs
 
 - define Capsule, Ledger, Trust, and Pair Consensus capability contracts;
