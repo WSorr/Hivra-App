@@ -27,6 +27,13 @@ This directory contains deterministic release helpers for Hivra.
   - Derives the embedded Flutter build name/number from `--version`.
     - `tools/release/android_release.sh --version <v> --channel <test|public>`
 
+- `derive_flutter_version.sh`
+  - Owns the monotonic cross-platform build number layout.
+  - Reserves slot `9999` for a stable patch, so stable always upgrades every
+    `testN` of the same patch and the next patch remains greater.
+  - Keeps the maximum supported version below Android's versionCode ceiling.
+  - Provides boundary and negative checks through `--self-test`.
+
 - `record_trading_drone_evidence.sh`
   - Appends one build-tagged evidence row to:
     - `docs/checklists/trading-drone-evidence-log.md`

@@ -2507,6 +2507,17 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: completed (2026-08-08); candidate packaging starts only from the
     green post-merge `main` SHA.
 
+- `v1.0.3-test16 packaging remediation — monotonic build identity`
+  - Packaged smoke reproduced that the old build-number formula mapped test16
+    to `100000316`, below the last verified internal build `100000331`, and
+    also mapped stable `1.0.3` below its own prereleases.
+  - The existing version-derivation owner now reserves a stable slot inside
+    each patch and proves test-to-stable and patch-to-patch monotonicity plus
+    Android's upper bound with negative boundary tests.
+  - The first test16 artifacts are rejected. Both platforms must be rebuilt
+    from the green post-merge remediation SHA before smoke resumes.
+  - Status: completed (2026-08-08); replacement artifacts pending.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
