@@ -112,8 +112,8 @@
       "starter_inventory",
       "capsule_continuity",
       "capsule_recovery",
-      "capsule_addressing",
       "capsule_selection",
+      "capsule_addressing",
       "person_runtime_shell",
       "trading_drone"
     ],
@@ -161,7 +161,7 @@
       "facts": [], "projections": [],
       "effect_kinds": [{"id": "backup_export", "path": "flutter/lib/services/backup_service.dart", "symbol": "exportBackupEnvelopeToPath"}],
       "entrypoints": [],
-      "closure": {"verdict": "NEEDS_CONTRACT", "missing_boundaries": ["versioned Capsule continuity export command above the 1.x backup envelope"]}
+      "closure": {"verdict": "NEEDS_CONTRACT", "missing_boundaries": ["production binding to capsule_continuity_export_contract_v2 and sealing of the 1.x backup/export routes"]}
     },
     {
       "id": "capsule_recovery",
@@ -171,7 +171,7 @@
       "projections": [{"id": "recovery_execution_result", "path": "flutter/lib/services/recovery_service.dart", "symbol": "RecoveryExecutionResult"}],
       "effect_kinds": [{"id": "capsule_restore", "path": "flutter/lib/services/recovery_service.dart", "symbol": "recover"}],
       "entrypoints": [],
-      "closure": {"verdict": "NEEDS_PROTOCOL", "missing_boundaries": ["versioned recovery migration, owner verification, and history anchoring protocol"]}
+      "closure": {"verdict": "NEEDS_PROTOCOL", "missing_boundaries": ["production binding to capsule_recovery_protocol_v2 and sealing of seed-only and selector-import recovery routes"]}
     },
     {
       "id": "capsule_addressing",

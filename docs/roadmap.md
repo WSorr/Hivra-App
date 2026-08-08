@@ -93,7 +93,9 @@ validation, and blueprint ownership. `V2-1 / pass B` completed
 `starter_inventory_contract_v2`. `V2-1 / pass C` completed the design-only
 `capsule_continuity_export_contract_v2`. Post-Pass C consolidation selected
 and `V2-1 / pass D` completed the design-only
-`capsule_recovery_protocol_v2`. No later pass is selected.
+`capsule_recovery_protocol_v2`. Post-Pass D consolidation selected
+`V2-1 / pass E`, a design-only Capsule selection and prepared-activation
+contract.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2344,6 +2346,43 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Next selected unit: none; runtime implementation and later V2-1 contracts
     remain unauthorized pending a separate consolidation decision.
   - Status: completed (2026-08-08); local design and repository gates pass.
+
+- `V2-1 / post-Pass D consolidation and Pass E selection`
+  - Findings (2026-08-08):
+    - Pass C and D retain one normative owner each; schemas and fixtures remain
+      machine evidence, roadmap remains history, and the ownership registry
+      remains the current 1.x closure source;
+    - the registry previously described Continuity and Recovery as still
+      missing their design contract/protocol; their actual remaining debt is
+      production binding to the reviewed contract plus sealing old 1.x routes;
+    - the generated ownership baseline is regenerated from that corrected
+      registry, while both closure verdicts remain non-ready and runtime
+      implementation remains unauthorized;
+    - Capsule Selection is the next independently closable ambiguity: one
+      `activateCapsule` seam currently maps missing authority to a boolean,
+      delegates directly to persistence, and is surrounded by unrelated
+      import/export/delete/mnemonic operations in the same compatibility port;
+    - Selection directly consumes the prepared recovery boundary and requires
+      one exact expected-active/target decision. Addressing remains later
+      because card schema, crypto-agile proof, endpoint rotation, resolution,
+      and storage form a wider independent protocol.
+  - Architecture-economy review:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | Existing registry, generated baseline, two existing validator linkages, status, and roadmap only | Stale claims that Continuity/Recovery design is missing and stale ordering of Selection behind the wider Addressing protocol | Reviewed design completion versus unresolved production binding; next bounded dependency after recovery | Zero owners; zero runtime paths | Birth/Starter/Continuity/Recovery production binding, 28 compatibility surfaces, fixed crypto shapes, Selection, Addressing, shell, and trading contracts remain explicit | One serialized Capsule selection/prepared-activation contract can now be reviewed without absorbing recovery, persistence, addressing, or UI |
+
+  - Next selected unit:
+    - `V2-1 / pass E`, Capsule selection and prepared-activation contract,
+      design/schema/vectors/validator only;
+    - one application owner, deterministic operation identity, exact expected
+      active Capsule, exact target Capsule, authority-availability evidence,
+      serialized replay/conflict handling, and a prepared result awaiting a
+      future V2-2 activation receipt;
+    - no production Rust, Flutter, FFI, storage, adapter, UI, import/export,
+      delete, mnemonic/seed recovery, address protocol, release, or manual
+      smoke.
+  - Status: completed (2026-08-08); Pass E selected, runtime unauthorized.
 
 ## Planned Product Tracks
 
