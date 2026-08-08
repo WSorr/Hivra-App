@@ -1,24 +1,18 @@
 # Hivra Development Control
 
-Status date: 2026-08-04
-Current released baseline: `main` at `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: `V2-1 / pass C`, design-only Capsule continuity
-export contract. V2-0 passes A-E completed one repository ownership registry,
-deterministic
-current-architecture evidence, owner discovery, explicit UI/Flutter-FFI
-surface mappings, bounded identity-family decomposition, exit audit, and
-fail-closed gates; they changed no runtime path. Pass A completed exact
-proof/request binding, deterministic operation identity, idempotent replay,
-standard schema validation, and fail-closed blueprint ownership. Pass B closed
-one Starter inventory owner, deterministic Genesis seed plan, atomic birth
-boundary, and current-view contract. Post-Pass B consolidation separated
-design completion from production-path closure and selected only continuity
-export intent/result/evidence semantics for Pass C. Recovery protocol, a new
-backup wire format, and runtime implementation remain unauthorized. The post-AI-4 audit found no active 1.x integrity
-finding: Capsule AI Runtime convergence is complete, feature-owned provider
-dispatch and credential reads remain zero, and the full T0 environment verifier
-matches every repository pin. No AI-5, release candidate, T1, or other runtime
-upgrade is implied.
+Status date: 2026-08-08
+Current released baseline: commit `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
+Current development focus: `V2-1 / pass E`, design-only Capsule selection and
+prepared activation over verified local Capsule inventory. V2-0 passes A-E and
+V2-1 passes A-D are complete. They established repository ownership evidence,
+Capsule identity/birth, Starter inventory, continuity export, and recovery
+contracts without changing a runtime path. Pass E must remain inside the
+selection boundary recorded below; recovery, persistence, UI/FFI, addressing,
+and runtime implementation remain unauthorized. The post-AI-4 audit found no
+active 1.x integrity finding: Capsule AI Runtime convergence is complete,
+feature-owned provider dispatch and credential reads remain zero, and the full
+T0 environment verifier matches every repository pin. No AI-5, release
+candidate, T1, or other runtime upgrade is implied.
 Transactional serialized
 plugin install/update/remove is complete; authenticated Nostr delivery uses
 signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
