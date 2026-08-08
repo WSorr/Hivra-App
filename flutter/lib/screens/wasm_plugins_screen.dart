@@ -16,6 +16,34 @@ import '../utils/runtime_capability_display.dart';
 import 'moltbook_ambassador_screen.dart';
 import 'trading_drone_screen.dart';
 
+@visibleForTesting
+Future<CapsuleChatDeliveryReceiveResult>
+projectCachedMessagesBeforeChatRefresh({
+  required List<CapsuleChatInboxMessage> currentMessages,
+  required List<CapsuleChatInboxMessage> Function() loadCachedMessages,
+  required Future<CapsuleChatDeliveryReceiveResult> Function() refresh,
+  required void Function(List<CapsuleChatInboxMessage> messages)
+  projectMessages,
+}) async {
+  void projectCachedMessages() {
+    final byId = <String, CapsuleChatInboxMessage>{
+      for (final message in currentMessages) message.id: message,
+      for (final message in loadCachedMessages()) message.id: message,
+    };
+    final merged =
+        byId.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    projectMessages(List<CapsuleChatInboxMessage>.unmodifiable(merged));
+  }
+
+  projectCachedMessages();
+  try {
+    return await refresh();
+  } finally {
+    projectCachedMessages();
+  }
+}
+
 class WasmPluginsScreen extends StatefulWidget {
   final bool embedded;
   final AppRuntimeService? runtime;
@@ -590,16 +618,29 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         }
         return;
       }
-      final receive = await _module.passiveReceive.trigger(
-        capsuleHex: capsuleHex,
-        reason:
-            silentWhenEmpty
-                ? CapsulePassiveReceiveReason.screenActivation
-                : CapsulePassiveReceiveReason.manual,
-        quick: silentWhenEmpty,
-        manualRetry: !silentWhenEmpty,
+      final receive = await projectCachedMessagesBeforeChatRefresh(
+        currentMessages: _chatInbox,
+        loadCachedMessages: _module.chatDelivery.loadCachedMessages,
+        refresh:
+            () => _module.passiveReceive
+                .trigger(
+                  capsuleHex: capsuleHex,
+                  reason:
+                      silentWhenEmpty
+                          ? CapsulePassiveReceiveReason.screenActivation
+                          : CapsulePassiveReceiveReason.manual,
+                  quick: silentWhenEmpty,
+                  manualRetry: !silentWhenEmpty,
+                )
+                .then((value) => value.chat),
+        projectMessages: (messages) {
+          if (!mounted) return;
+          setState(() {
+            _chatInbox = messages;
+          });
+        },
       );
-      final result = receive.chat;
+      final result = receive;
       stopwatch.stop();
       await _module.uiLog.log(
         'chat.fetch.result',
