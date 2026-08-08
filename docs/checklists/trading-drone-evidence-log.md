@@ -4,8 +4,11 @@ Use this file to capture build-tagged parity evidence for each release-candidate
 
 Record one row per platform/mode verification cycle.
 
-This log proves deterministic trading-drone parity coverage only. It does not
-prove that packaged app artifacts were manually installed/launched. Manual
+Candidate rows must match the production-backed golden vectors in
+`tools/release/trading_drone_evidence_fixture.json`; the checker rejects
+well-formed but invented hashes, duplicate coverage rows, and altered risk
+paths. This log proves deterministic trading-drone parity coverage only. It
+does not prove that packaged app artifacts were manually installed/launched. Manual
 release approval is recorded separately in
 `docs/checklists/release-manual-signoff-log.md`.
 

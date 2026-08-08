@@ -2495,6 +2495,18 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       2.0 implementation, stable `1.0`, tagging, or publication.
   - Status: selected; artifacts and manual evidence pending.
 
+- `v1.0.3-test16 preflight remediation — canonical Trading Drone evidence`
+  - Strict preflight exposed that the evidence checker accepted arbitrary
+    well-formed hashes and had no production-backed generator or golden vector.
+  - The existing release owner now binds candidate rows to one canonical
+    fixture, production envelope tests prove its hashes, and negative mutations
+    reject changed hashes, risk paths, duplicate rows, and missing coverage.
+  - Runtime behavior and release authority are unchanged. Packaging remains
+    blocked until this remediation is merged with green repository gates and
+    exact candidate rows are recorded separately.
+  - Status: completed (2026-08-08); candidate packaging starts only from the
+    green post-merge `main` SHA.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
