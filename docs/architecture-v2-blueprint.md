@@ -1144,6 +1144,115 @@ identity, exact replay, empty/exact/descendant history acceptance, rollback and
 fork rejection, stale-base rejection, and zero mutation before the prepared
 decision.
 
+#### V2-1/E Capsule Selection and Prepared Activation Contract
+
+- Contract id: `capsule_selection_contract_v2`
+- Contract version: `1`
+- Contract boundary: design-only application contract; no Core fact,
+  persistence transaction, activation effect, recovery, UI, FFI, addressing,
+  seed handling, or runtime binding.
+
+This section is the normative design source. The schema at
+`architecture/contracts/capsule-selection-v2.schema.json` and vectors at
+`architecture/fixtures/capsule-selection-v2-vectors.json` are machine-readable
+evidence only.
+
+##### Ownership and canonical path
+
+Capsule Selection is the sole owner of one selection intent, exact inventory
+and expected-active preconditions, authorization binding, operation replay,
+and prepared activation decision. Ledger/Core remains the sole owner of
+Capsule identity and confirmed history. The existing local Capsule inventory
+boundary owns inventory state and emits immutable verification evidence; it
+does not decide selection. A future V2-2 effect lifecycle is the sole owner of
+serialized persistence and activation receipts.
+
+```text
+CapsuleSelectionRequestV1
+  -> verify exact local inventory and expected-active state
+  -> verify target root authority over the exact selection commitment
+  -> VerifiedSelectionCommandV1
+  -> one NO_CHANGE or ACTIVATE_TARGET plan
+  -> one prepared result
+  -> future V2-2 serialized activation effect receipt
+```
+
+There is no second selection route through a screen, recovery, import, or
+persistence. Raw seed, mnemonic, private key, proof bytes, path, backup,
+decoded Ledger, UI state, clock, storage handle, and adapter error text do not
+enter `VerifiedSelectionCommandV1`.
+
+##### Exact request, proof, and replay binding
+
+`SelectionContextV1` binds network, exact inventory revision and commitment,
+expected-active state (`NONE` or one exact `CapsuleId`), target `CapsuleId`, and
+the complete target root authority descriptor. The inventory commitment covers
+the complete ordered Capsule inventory, its active pointer, network, and
+revision. The target must exist exactly once with the bound authority, and the
+current active state must still equal the request expectation.
+
+The domain-separated semantic commitment covers the contract version and every
+context field using the length-delimited convention from Pass A. The operation
+id is deterministically derived from that semantic commitment. The target root
+authority proof signs a separate authorization commitment that binds both the
+semantic commitment and operation id. Changing network, inventory, expected
+active Capsule, target Capsule, authority descriptor, or operation identity
+after signing fails closed.
+
+An exact repeat returns the previously recorded exact plan as `REPLAYED`.
+Reusing an operation id with another request commitment returns
+`OPERATION_ID_CONFLICT`; replay cannot substitute a newer inventory or another
+plan. Raw proof never enters the verified command.
+
+##### Prepared activation boundary
+
+If the verified target already equals the expected active Capsule, the plan is
+`NO_CHANGE` and creates no activation obligation. Otherwise the plan is
+`ACTIVATE_TARGET`. `SelectionPlanEvidenceV1` binds the same operation, request,
+context, inventory, expected-active state, target, authority, and transition.
+`SelectionAcceptedV1` is `PREPARED` or `REPLAYED`; it appends no Core fact and
+claims neither persistence nor activation.
+
+A future V2-2 activation owner must atomically re-check the exact inventory and
+active-state preconditions, consume this plan through one effect operation,
+and return a receipt bound to the plan evidence. Pass E neither defines that
+receipt nor authorizes a storage write, runtime switch, retry loop, or UI
+navigation result.
+
+##### Threat model, closed rejection, and sealing targets
+
+The contract fails closed against wrong network or Capsule, missing or
+duplicate target inventory entries, stale inventory revision/commitment,
+changed expected-active state, authority or suite/key confusion, proof
+substitution, operation-id conflict, replay-plan substitution, no-op effects,
+and a prepared result falsely claiming persistence or activation.
+
+Version 1 defines `INVALID_REQUEST`, `INVALID_OPERATION_ID`,
+`OPERATION_ID_CONFLICT`, `NETWORK_SCOPE_MISMATCH`,
+`TARGET_NOT_IN_INVENTORY`, `INVENTORY_STATE_CHANGED`,
+`EXPECTED_ACTIVE_STATE_CHANGED`, `AUTHORITY_BINDING_MISMATCH`,
+`AUTHORIZATION_COMMITMENT_MISMATCH`, `AUTHORIZATION_INVALID`,
+`INVENTORY_EVIDENCE_MISMATCH`, and `PLAN_EVIDENCE_MISMATCH`. Rejection appends
+no Core fact and creates no persistence or activation obligation.
+
+The implementation migration must replace or seal:
+
+- the boolean `CapsuleSeedRequiredException` selection outcome that makes
+  recovery appear to be a branch of selection;
+- screen-owned seed restoration followed by recursive selection;
+- direct `CapsulePersistenceService.activateCapsule` delegation before one
+  serialized selection decision;
+- the broad selector runtime port that combines selection with
+  import/export/delete, mnemonic, seed, and persistence operations;
+- any result that treats a stored active pointer, loaded runtime, or navigation
+  as proof of completed activation.
+
+These remain explicit 1.x compatibility debt. No V2 runtime work is authorized
+until vectors prove exact inventory/active/target/authority binding,
+deterministic operation identity, exact replay and conflict behavior,
+`NO_CHANGE` effect suppression, stale-state rejection, and zero mutation before
+the prepared decision.
+
 ### V2-1: Core contract proofs
 
 - define Capsule, Ledger, Trust, and Pair Consensus capability contracts;

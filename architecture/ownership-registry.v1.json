@@ -152,7 +152,7 @@
       "projections": [{"id": "capsule_selector_item", "path": "flutter/lib/services/capsule_selector_service.dart", "symbol": "CapsuleSelectorItem"}],
       "effect_kinds": [{"id": "capsule_activation", "path": "flutter/lib/services/capsule_selector_service.dart", "symbol": "activateCapsule"}],
       "entrypoints": [],
-      "closure": {"verdict": "NEEDS_CONTRACT", "missing_boundaries": ["one serialized Capsule selection and activation command"]}
+      "closure": {"verdict": "NEEDS_CONTRACT", "missing_boundaries": ["production binding to capsule_selection_contract_v2 and sealing of boolean, recursive UI, direct persistence, and broad selector compatibility routes"]}
     },
     {
       "id": "capsule_continuity",

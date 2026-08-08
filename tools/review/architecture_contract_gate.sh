@@ -330,6 +330,11 @@ if python3 "$ROOT/tools/architecture/validate_capsule_recovery_contract.py"; the
 else
   fail "V2 recovery protocol binds artifact, authority, history, replay, and prepared activation"
 fi
+if python3 "$ROOT/tools/architecture/validate_capsule_selection_contract.py"; then
+  pass "V2 Capsule selection contract binds inventory, active state, authority, replay, and prepared activation"
+else
+  fail "V2 Capsule selection contract binds inventory, active state, authority, replay, and prepared activation"
+fi
 require_present "$PRODUCT_AXIS" 'Cryptographic agility' \
   "product axis defines cryptographic agility as a permanent invariant"
 require_present "$SPEC" '^### 0\.3 Cryptographic Agility' \

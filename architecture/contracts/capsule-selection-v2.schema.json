@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hivra.local/contracts/capsule-selection-v2.schema.json",
+  "title": "Hivra Capsule Selection and Prepared Activation Contract V2 Design",
+  "description": "Machine evidence for the normative V2-1/E blueprint section; no runtime, persistence, UI, FFI, recovery, or production binding is authorized.",
+  "x-hivra-contract-id": "capsule_selection_contract_v2",
+  "x-hivra-contract-version": 1,
+  "x-hivra-design-status": "design-only-no-runtime",
+  "x-hivra-normative-source": "docs/architecture-v2-blueprint.md",
+  "x-hivra-normative-heading": "#### V2-1/E Capsule Selection and Prepared Activation Contract",
+  "oneOf": [
+    {"$ref": "#/$defs/CapsuleSelectionRequestV1"},
+    {"$ref": "#/$defs/VerifiedSelectionCommandV1"},
+    {"$ref": "#/$defs/SelectionPlanEvidenceV1"},
+    {"$ref": "#/$defs/SelectionAcceptedV1"},
+    {"$ref": "#/$defs/SelectionRejectedV1"}
+  ],
+  "$defs": {
+    "Commitment32": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "CapsuleIdV2": {"$ref": "capsule-identity-birth-v2.schema.json#/$defs/CapsuleIdV2"},
+    "KeyDescriptorV1": {"$ref": "capsule-identity-birth-v2.schema.json#/$defs/KeyDescriptorV1"},
+    "SignatureProofV1": {"$ref": "capsule-identity-birth-v2.schema.json#/$defs/SignatureProofV1"},
+    "NoActiveCapsuleV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {"state": {"const": "NONE"}}
+    },
+    "ActiveCapsuleV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "capsule_id"],
+      "properties": {
+        "state": {"const": "ACTIVE"},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"}
+      }
+    },
+    "ExpectedActiveStateV1": {
+      "oneOf": [
+        {"$ref": "#/$defs/NoActiveCapsuleV1"},
+        {"$ref": "#/$defs/ActiveCapsuleV1"}
+      ]
+    },
+    "SelectionContextV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context_version", "network_id", "inventory_revision", "inventory_commitment", "expected_active", "target_capsule_id", "target_root_authority"],
+      "properties": {
+        "context_version": {"const": 1},
+        "network_id": {"type": "string", "pattern": "^hivra\\.[a-z0-9-]+$"},
+        "inventory_revision": {"type": "integer", "minimum": 0},
+        "inventory_commitment": {"$ref": "#/$defs/Commitment32"},
+        "expected_active": {"$ref": "#/$defs/ExpectedActiveStateV1"},
+        "target_capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "target_root_authority": {"$ref": "#/$defs/KeyDescriptorV1"}
+      }
+    },
+    "CapsuleSelectionRequestV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "operation_id", "context", "authorization_proof"],
+      "properties": {
+        "contract_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/Commitment32"},
+        "context": {"$ref": "#/$defs/SelectionContextV1"},
+        "authorization_proof": {"$ref": "#/$defs/SignatureProofV1"}
+      }
+    },
+    "VerifiedSelectionCommandV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command_version", "operation_id", "request_commitment", "context_commitment", "network_id", "inventory_revision", "inventory_commitment", "expected_active_commitment", "target_capsule_id", "target_authority_commitment", "transition", "inventory_verification_evidence_id", "authorization_evidence_id"],
+      "properties": {
+        "command_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/Commitment32"},
+        "request_commitment": {"$ref": "#/$defs/Commitment32"},
+        "context_commitment": {"$ref": "#/$defs/Commitment32"},
+        "network_id": {"type": "string", "pattern": "^hivra\\.[a-z0-9-]+$"},
+        "inventory_revision": {"type": "integer", "minimum": 0},
+        "inventory_commitment": {"$ref": "#/$defs/Commitment32"},
+        "expected_active_commitment": {"$ref": "#/$defs/Commitment32"},
+        "target_capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "target_authority_commitment": {"$ref": "#/$defs/Commitment32"},
+        "transition": {"enum": ["NO_CHANGE", "ACTIVATE_TARGET"]},
+        "inventory_verification_evidence_id": {"$ref": "#/$defs/Commitment32"},
+        "authorization_evidence_id": {"$ref": "#/$defs/Commitment32"}
+      }
+    },
+    "SelectionPlanEvidenceV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_version", "operation_id", "request_commitment", "context_commitment", "network_id", "inventory_revision", "inventory_commitment", "expected_active_commitment", "target_capsule_id", "target_authority_commitment", "transition"],
+      "properties": {
+        "plan_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/Commitment32"},
+        "request_commitment": {"$ref": "#/$defs/Commitment32"},
+        "context_commitment": {"$ref": "#/$defs/Commitment32"},
+        "network_id": {"type": "string", "pattern": "^hivra\\.[a-z0-9-]+$"},
+        "inventory_revision": {"type": "integer", "minimum": 0},
+        "inventory_commitment": {"$ref": "#/$defs/Commitment32"},
+        "expected_active_commitment": {"$ref": "#/$defs/Commitment32"},
+        "target_capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "target_authority_commitment": {"$ref": "#/$defs/Commitment32"},
+        "transition": {"enum": ["NO_CHANGE", "ACTIVATE_TARGET"]}
+      }
+    },
+    "SelectionAcceptedV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "disposition", "plan_evidence", "core_append_required", "persistence_claimed", "activation_claimed"],
+      "properties": {
+        "decision": {"const": "ACCEPTED"},
+        "disposition": {"enum": ["PREPARED", "REPLAYED"]},
+        "plan_evidence": {"$ref": "#/$defs/SelectionPlanEvidenceV1"},
+        "core_append_required": {"const": false},
+        "persistence_claimed": {"const": false},
+        "activation_claimed": {"const": false}
+      }
+    },
+    "SelectionRejectedV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "error_code", "core_append_required", "persistence_required", "activation_required"],
+      "properties": {
+        "decision": {"const": "REJECTED"},
+        "error_code": {"enum": ["INVALID_REQUEST", "INVALID_OPERATION_ID", "OPERATION_ID_CONFLICT", "NETWORK_SCOPE_MISMATCH", "TARGET_NOT_IN_INVENTORY", "INVENTORY_STATE_CHANGED", "EXPECTED_ACTIVE_STATE_CHANGED", "AUTHORITY_BINDING_MISMATCH", "AUTHORIZATION_COMMITMENT_MISMATCH", "AUTHORIZATION_INVALID", "INVENTORY_EVIDENCE_MISMATCH", "PLAN_EVIDENCE_MISMATCH"]},
+        "core_append_required": {"const": false},
+        "persistence_required": {"const": false},
+        "activation_required": {"const": false}
+      }
+    }
+  }
+}
