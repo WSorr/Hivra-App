@@ -23,10 +23,12 @@ FIXTURES_PATH = ROOT / "architecture/fixtures/capsule-continuity-export-v2-vecto
 BIRTH_SCHEMA_PATH = ROOT / "architecture/contracts/capsule-identity-birth-v2.schema.json"
 BIRTH_VALIDATOR_PATH = ROOT / "tools/architecture/validate_capsule_identity_birth_contract.py"
 BLUEPRINT_PATH = ROOT / "docs/architecture-v2-blueprint.md"
+REGISTRY_PATH = ROOT / "architecture/ownership-registry.v1.json"
 CONTRACT_ID = "capsule_continuity_export_contract_v2"
 DESIGN_STATUS = "design-only-no-runtime"
 NORMATIVE_HEADING = "#### V2-1/C Capsule Continuity Export Contract"
 PROFILE = "hivra.capsule_backup.v2"
+EXPECTED_RUNTIME_DEBT = "production binding to capsule_continuity_export_contract_v2 and sealing of the 1.x backup/export routes"
 ERROR_CODES = {
     "INVALID_REQUEST", "OPERATION_ID_CONFLICT", "CAPSULE_SCOPE_MISMATCH",
     "NETWORK_SCOPE_MISMATCH", "SNAPSHOT_STALE", "SNAPSHOT_COMMITMENT_MISMATCH",
@@ -212,6 +214,18 @@ def validate_blueprint(blueprint: str) -> None:
         raise ContractError("normative contract authorizes runtime implementation")
 
 
+def validate_registry(registry: dict) -> None:
+    capability = next(
+        (item for item in registry.get("capabilities", []) if item.get("id") == "capsule_continuity"),
+        None,
+    )
+    if capability is None:
+        raise ContractError("ownership registry lost capsule_continuity")
+    closure = capability.get("closure")
+    if closure != {"verdict": "NEEDS_CONTRACT", "missing_boundaries": [EXPECTED_RUNTIME_DEBT]}:
+        raise ContractError("continuity registry debt must name production binding and sealed 1.x routes")
+
+
 def validate_fixtures(schema: dict, birth_schema: dict, fixtures: dict, birth_contract) -> None:
     if set(fixtures) != {"schema_version", "contract_id", "design_status", "vectors"}:
         raise ContractError("fixture root shape mismatch")
@@ -234,7 +248,7 @@ def validate_fixtures(schema: dict, birth_schema: dict, fixtures: dict, birth_co
         raise ContractError(f"fixture coverage mismatch; missing={sorted(REQUIRED_VECTORS - ids)} extra={sorted(ids - REQUIRED_VECTORS)}")
 
 
-def self_test(schema: dict, birth_schema: dict, fixtures: dict, blueprint: str, birth_contract) -> None:
+def self_test(schema: dict, birth_schema: dict, fixtures: dict, blueprint: str, registry: dict, birth_contract) -> None:
     missing_root = copy.deepcopy(schema); missing_root.pop("oneOf")
     copied_capsule = copy.deepcopy(schema); copied_capsule["$defs"]["CapsuleIdV2"] = {"type": "object"}
     plaintext = copy.deepcopy(schema); plaintext["$defs"]["ContinuityExportRequestV1"]["properties"]["artifact_profile_id"] = {"type": "string"}
@@ -249,6 +263,9 @@ def self_test(schema: dict, birth_schema: dict, fixtures: dict, blueprint: str, 
     malformed_vector["active_snapshot"]["unexpected"] = True
     missing_section = blueprint.replace(section(blueprint, NORMATIVE_HEADING), "")
     runtime_authorized = blueprint.replace(NORMATIVE_HEADING, NORMATIVE_HEADING + "\n\nThis contract authorizes runtime implementation.")
+    stale_registry = copy.deepcopy(registry)
+    continuity = next(item for item in stale_registry["capabilities"] if item["id"] == "capsule_continuity")
+    continuity["closure"]["missing_boundaries"] = ["versioned continuity contract required"]
     probes = (
         ("missing root", lambda: validate_schema(missing_root, birth_schema)),
         ("copied CapsuleId", lambda: validate_schema(copied_capsule, birth_schema)),
@@ -260,6 +277,7 @@ def self_test(schema: dict, birth_schema: dict, fixtures: dict, blueprint: str, 
         ("malformed active snapshot accepted", lambda: validate_fixtures(schema, birth_schema, malformed_active_snapshot, birth_contract)),
         ("missing canon", lambda: validate_blueprint(missing_section)),
         ("runtime authorization", lambda: validate_blueprint(runtime_authorized)),
+        ("stale runtime debt", lambda: validate_registry(stale_registry)),
     )
     for name, probe in probes:
         try:
@@ -275,12 +293,14 @@ def main() -> int:
         fixtures = json.loads(FIXTURES_PATH.read_text(encoding="utf-8"))
         birth_schema = json.loads(BIRTH_SCHEMA_PATH.read_text(encoding="utf-8"))
         blueprint = BLUEPRINT_PATH.read_text(encoding="utf-8")
+        registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
         birth_contract = load_birth_contract()
         birth_contract.validate_schema(birth_schema)
         validate_schema(schema, birth_schema)
         validate_blueprint(blueprint)
+        validate_registry(registry)
         validate_fixtures(schema, birth_schema, fixtures, birth_contract)
-        self_test(schema, birth_schema, fixtures, blueprint, birth_contract)
+        self_test(schema, birth_schema, fixtures, blueprint, registry, birth_contract)
         print("PASS capsule-continuity-export-contract: snapshot, authority, replay, profile, evidence, and mutations")
         return 0
     except (ContractError, json.JSONDecodeError, OSError, KeyError, TypeError, ValueError) as error:
