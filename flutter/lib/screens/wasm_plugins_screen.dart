@@ -635,6 +635,8 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       setState(() {
         final byId = <String, CapsuleChatInboxMessage>{
           for (final message in _chatInbox) message.id: message,
+          for (final message in _module.chatDelivery.loadCachedMessages())
+            message.id: message,
         };
         for (final message in result.messages) {
           byId[message.id] = message;
