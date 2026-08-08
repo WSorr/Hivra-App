@@ -3,10 +3,12 @@
 Status date: 2026-08-08
 Current released baseline: commit `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
 Current development focus: `v1.0.3-test16` is the selected 1.x test release
-candidate. Build both packaged artifacts from one clean post-merge `main` SHA,
-run the complete User Lifetime Safety Pack on macOS and Android, and fix only
-reproduced defects. No tag, GitHub Release, stable `1.0` claim, or 2.0 runtime
-work is authorized.
+candidate. Packaged smoke reproduced a credential-visibility defect in the
+Trading Drone: the stored API key rendered as plaintext. The existing screen
+owner must keep both BingX credential fields masked by default, prove explicit
+independent reveal behavior, and rebuild both artifacts from the green
+post-merge remediation SHA. No tag, GitHub Release, stable `1.0` claim, or 2.0
+runtime work is authorized.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
 next pass selected. They
 established repository ownership evidence, Capsule identity/birth, Starter
@@ -45,8 +47,8 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Product-completion readiness audit complete; no runtime finding selected | `1.x Product Completion / pass A` maps installation, birth/recovery, contacts, invitations, consensus, chat, plugins, restart/switch, and macOS/Android evidence onto existing owners and the sole User Lifetime Safety Pack. | Capability owners and regression suites cover every journey segment; the strengthened lifetime gate rejects missing consensus/chat coverage. Baseline build `100000331` remains the last packaged evidence. | Decide separately whether to name the next test release candidate. Change runtime only for a reproduced finding. |
-| **1.x release** | `v1.0.3-test16` candidate selected; not released | Package macOS and Android from one clean post-merge SHA, then execute platform, User Lifetime, Trading, Moltbook, and applicable AI smoke gates. | The repository guard identifies `v1.0.3-test16` as the only valid next test tag; readiness audit and repository gates are green. | Tag and publication remain blocked until both packaged artifacts pass manual signoff and all evidence is recorded. |
+| **1.x maintained runtime** | Product-completion readiness audit complete; one reproduced credential-visibility remediation active | `TradingDroneScreen` remains the sole UI owner and must mask both stored BingX credential values unless the person explicitly reveals one field. | A widget regression exercises populated fields, default masking, and independent reveal controls; full repository verification must remain green. | Merge only through PR, reject the prior artifacts, and rebuild from the green post-merge SHA. |
+| **1.x release** | `v1.0.3-test16` candidate selected; not released; previous artifacts rejected | Complete the credential-visibility remediation, rebuild macOS and Android from one clean post-merge SHA, then resume platform, User Lifetime, Trading, Moltbook, and applicable AI smoke gates. | Smoke proved cross-platform chat/restart continuity and Trading risk rejection, but also reproduced plaintext API-key rendering. | Tag and publication remain blocked until replacement artifacts pass manual signoff and all evidence is recorded. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
