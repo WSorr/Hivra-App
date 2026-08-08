@@ -92,8 +92,8 @@ binding, deterministic operation identity, replay semantics, root schema
 validation, and blueprint ownership. `V2-1 / pass B` completed
 `starter_inventory_contract_v2`. `V2-1 / pass C` completed the design-only
 `capsule_continuity_export_contract_v2`. Post-Pass C consolidation selected
-`V2-1 / pass D`, a design-only Capsule recovery authorization and history-
-anchoring protocol.
+and `V2-1 / pass D` completed the design-only
+`capsule_recovery_protocol_v2`. No later pass is selected.
 No 2.0 runtime implementation starts before the blueprint design exit criteria
 are satisfied.
 
@@ -2310,6 +2310,40 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - no production Rust, Flutter, FFI, storage, event, adapter, UI, recovery
       execution, new backup wire format, release, or manual smoke.
   - Status: completed (2026-08-07); Pass D selected, runtime unauthorized.
+
+- `V2-1 / pass D — Capsule Recovery Authorization and History Anchoring`
+  - Scope:
+    - assign artifact authentication, exact root-authority authorization,
+      deterministic operation identity, local-base comparison, Ledger history
+      acceptance, replay, and prepared activation to one application protocol;
+    - reuse Pass A Capsule identity/authority proof and Pass C continuity
+      snapshot/artifact evidence rather than introducing a second DTO family;
+    - add no production Core fact, backup format, Rust, Flutter, FFI, storage,
+      adapter, UI, recovery execution, release, or manual smoke.
+  - Evidence (2026-08-08):
+    - one normative blueprint section, one draft-2020-12 schema, one compact
+      semantic vector set, and one validator integrated into the existing
+      architecture gate;
+    - 20 vectors prove empty-base, exact, and descendant acceptance; exact
+      replay; operation conflict and invalid identity; wrong Capsule/network;
+      artifact, authority, authorization, and history-evidence binding;
+      rollback, fork, stale-base, seed-only, raw-seed, and destination-path
+      rejection;
+    - negative self-tests reject schema-root weakening, copied upstream types,
+      optional artifacts, activation claims, raw secret command fields, missing
+      vectors, semantic drift, proof rebinding, replay-plan substitution,
+      missing canon, and runtime authorization;
+    - accepted results are only `PREPARED` or `REPLAYED`, append no Core fact,
+      and claim neither durability nor activation.
+  - Architecture-economy review:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | Existing blueprint section plus one schema, compact fixture set, validator, and existing-gate hook | Seed-only native V2 recovery success, selector-owned parallel import, direct persist/activate before decision, create-import-recreate inference, rollback/fork, and replay-plan substitution are forbidden | Exact artifact, authority, operation, local-base, history-relation, replay, and prepared-result ownership | One design owner; zero runtime paths | Two 1.x recovery routes, seed-derived identity alias, codec/persistence/activation composition, fixed crypto compatibility, runtime binding, and future V2-2 effect receipts remain explicit | Consolidation can decide whether another bounded contract is justified without reopening recovery semantics |
+
+  - Next selected unit: none; runtime implementation and later V2-1 contracts
+    remain unauthorized pending a separate consolidation decision.
+  - Status: completed (2026-08-08); local design and repository gates pass.
 
 ## Planned Product Tracks
 
