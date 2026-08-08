@@ -451,13 +451,14 @@ if rg -q -- '--skip-preflight|--skip-build' \
 else
   pass "release scripts do not expose preflight/build bypass flags"
 fi
-if [ "$("$FLUTTER_VERSION_DERIVER" \
+if "$FLUTTER_VERSION_DERIVER" --self-test >/dev/null &&
+   [ "$("$FLUTTER_VERSION_DERIVER" \
   --version v1.0.3-test4 --field name)" = "1.0.3" ] &&
    [ "$("$FLUTTER_VERSION_DERIVER" \
-  --version v1.0.3-test4 --field number)" = "100000304" ]; then
-  pass "Flutter artifact version derivation is deterministic"
+  --version v1.0.3-test4 --field number)" = "100030004" ]; then
+  pass "Flutter artifact version derivation is deterministic and monotonic"
 else
-  fail "Flutter artifact version derivation is deterministic"
+  fail "Flutter artifact version derivation is deterministic and monotonic"
 fi
 require_present "$PRECHECK" 'user_lifetime_safety_gate\.sh' \
   "preflight includes user lifetime safety gate"
