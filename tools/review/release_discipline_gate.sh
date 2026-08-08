@@ -54,6 +54,7 @@ CHECKLIST_DRONE_EVIDENCE="$ROOT/docs/checklists/trading-drone-evidence-log.md"
 DRONE_GOAL_CONTRACT="$ROOT/docs/plugins/bingx_futures_trading_drone_goal_contract_v1.md"
 DRONE_EVIDENCE_RECORD="$ROOT/tools/release/record_trading_drone_evidence.sh"
 DRONE_EVIDENCE_CHECK="$ROOT/tools/release/check_trading_drone_evidence.sh"
+DRONE_EVIDENCE_FIXTURE="$ROOT/tools/release/trading_drone_evidence_fixture.json"
 MANUAL_SIGNOFF_CHECK="$ROOT/tools/release/check_manual_release_signoff.sh"
 GITHUB_RELEASE_PUBLISH="$ROOT/tools/release/publish_github_release.sh"
 FLUTTER_VERSION_DERIVER="$ROOT/tools/release/derive_flutter_version.sh"
@@ -78,6 +79,7 @@ require_file "$CHECKLIST_DRONE_EVIDENCE" "trading drone evidence log exists"
 require_file "$DRONE_GOAL_CONTRACT" "trading drone goal contract exists"
 require_file "$DRONE_EVIDENCE_RECORD" "trading drone evidence-record script exists"
 require_file "$DRONE_EVIDENCE_CHECK" "trading drone evidence-check script exists"
+require_file "$DRONE_EVIDENCE_FIXTURE" "canonical trading drone evidence fixture exists"
 require_file "$MANUAL_SIGNOFF_CHECK" "manual release signoff-check script exists"
 require_file "$GITHUB_RELEASE_PUBLISH" "guarded GitHub release publish script exists"
 require_file "$FLUTTER_VERSION_DERIVER" "Flutter artifact version derivation exists"
@@ -324,8 +326,17 @@ require_present "$CHECKLIST_MANUAL_SIGNOFF" '\| Build Tag \| Date \(UTC\) \| Pla
   "manual signoff log includes required table columns"
 require_present "$MANUAL_SIGNOFF_CHECK" 'Moltbook Smoke must be PASS' \
   "manual signoff checker requires Moltbook smoke"
-require_present "$DRONE_EVIDENCE_CHECK" '\^\[0-9a-fA-F\]\{64\}\$' \
-  "drone evidence checker requires canonical 64-hex hashes"
+require_present "$DRONE_EVIDENCE_CHECK" 'hash_pattern = re\.compile\(r"\^\[0-9a-f\]\{64\}\$"\)' \
+  "drone evidence checker requires canonical lowercase 64-hex hashes"
+require_present "$DRONE_EVIDENCE_CHECK" 'trading_drone_evidence_fixture\.json' \
+  "drone evidence checker binds candidate rows to the canonical fixture"
+require_present "$DRONE_EVIDENCE_CHECK" '--self-test' \
+  "drone evidence checker has a negative mutation self-test"
+if "$DRONE_EVIDENCE_CHECK" --self-test >/dev/null; then
+  pass "drone evidence checker self-test passes"
+else
+  fail "drone evidence checker self-test passes"
+fi
 require_present "$MANUAL_SIGNOFF_CHECK" '--self-test' \
   "manual signoff checker has network-free self-test"
 if "$MANUAL_SIGNOFF_CHECK" --self-test >/dev/null; then

@@ -32,11 +32,13 @@ This directory contains deterministic release helpers for Hivra.
     - `docs/checklists/trading-drone-evidence-log.md`
 
 - `check_trading_drone_evidence.sh`
-  - Verifies required coverage for one build tag:
+  - Verifies exact golden coverage from
+    `tools/release/trading_drone_evidence_fixture.json` for one build tag:
     - macOS `situational` + `interactive`
     - Android `situational` + `interactive`
     - at least one `risk_blocked`
-    - non-empty decision/execution hashes
+    - production-backed decision/execution hashes and matching risk paths
+  - Provides a network-free negative mutation check with `--self-test`.
 
 - `check_manual_release_signoff.sh`
   - Verifies the canonical manual signoff log for one build tag.
