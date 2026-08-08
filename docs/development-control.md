@@ -2,9 +2,11 @@
 
 Status date: 2026-08-08
 Current released baseline: commit `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Product Completion / pass A`, end-to-end user
-journey readiness over the existing runtime and existing User Lifetime Safety
-Pack. No release candidate, build, manual smoke, or runtime change is implied.
+Current development focus: `1.x Product Completion / pass A` is complete. The
+existing User Lifetime Safety Pack now owns one coherent journey across packaged
+install, birth/recovery, contacts, invitations, consensus, chat, plugins,
+restart/switch, and macOS/Android isolation. No runtime defect was reproduced.
+No release candidate, build, or manual smoke is selected.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
 next pass selected. They
 established repository ownership evidence, Capsule identity/birth, Starter
@@ -43,7 +45,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Product-completion readiness audit active; no runtime finding yet | `1.x Product Completion / pass A` maps installation, birth/recovery, contacts, invitations, consensus, chat, plugins, restart/switch, and macOS/Android evidence onto existing owners and checklists. | Baseline build `100000331`: Flutter `760/760`, Rust workspace and review gates pass; prior macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | Change runtime only for a reproduced finding. A named release candidate is required before packaging or manual smoke. |
+| **1.x maintained runtime** | Product-completion readiness audit complete; no runtime finding selected | `1.x Product Completion / pass A` maps installation, birth/recovery, contacts, invitations, consensus, chat, plugins, restart/switch, and macOS/Android evidence onto existing owners and the sole User Lifetime Safety Pack. | Capability owners and regression suites cover every journey segment; the strengthened lifetime gate rejects missing consensus/chat coverage. Baseline build `100000331` remains the last packaged evidence. | Decide separately whether to name the next test release candidate. Change runtime only for a reproduced finding. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
@@ -58,13 +60,10 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — `1.x Product Completion / pass A`:** map the complete user journey
-   and its automated/diagnostic evidence onto existing owners and the existing
-   User Lifetime Safety Pack; record only reproduced gaps, without speculative
-   runtime changes or a second checklist.
-2. **P1 — release decision:** after pass A, only a named release candidate may trigger fresh
+1. **P1 — release decision:** decide whether the completed readiness map is
+   sufficient to name the next test release candidate and trigger fresh
    macOS and Android packaged-artifact signoff.
-3. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
+2. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
    AI trading advice, distributed backup, and staking remain non-runtime or
    parked until the active design unit or a named release decision permits
    selection.
