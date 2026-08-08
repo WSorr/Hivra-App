@@ -2384,6 +2384,39 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       smoke.
   - Status: completed (2026-08-08); Pass E selected, runtime unauthorized.
 
+- `V2-1 / Pass E Capsule Selection and Prepared Activation Contract`
+  - Completed design (2026-08-08):
+    - one application-level Capsule Selection owner accepts one exact request
+      over the verified local inventory revision/commitment, expected-active
+      state, target `CapsuleId`, and target root authority;
+    - the domain-separated semantic commitment covers every selection field,
+      the deterministic operation id derives from it, and the suite-tagged
+      proof binds both values without carrying proof bytes into the verified
+      command;
+    - exact replay returns the prior exact plan, conflicting reuse closes with
+      `OPERATION_ID_CONFLICT`, and stale inventory or active state, wrong scope,
+      authority confusion, proof substitution, and replay-plan substitution
+      fail closed;
+    - `NO_CHANGE` creates no activation obligation; `ACTIVATE_TARGET` remains a
+      prepared plan until a future V2-2 effect owner atomically re-checks the
+      preconditions and returns a plan-bound receipt;
+    - the contract appends no Core fact, claims no persistence or activation,
+      and authorizes no recovery, storage, UI/FFI, addressing, seed,
+      import/export/delete, or runtime implementation;
+    - standard draft-2020-12 schema validation, 20 semantic vectors, validator
+      mutation self-tests, ownership evidence, architecture gate, repository
+      gates, Rust workspace, Flutter analyze, and Flutter `760/760` pass.
+  - Architecture-economy result:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | One existing blueprint section, one schema, one compact fixture set, one validator, and one existing-gate hook | Boolean recovery-as-selection outcome, recursive UI restore/select, direct persistence activation, broad selector port, and navigation-as-success are forbidden V2 routes | Exact inventory, active-state, target, authority, operation, replay, no-op, and prepared-result semantics | One existing application owner; zero runtime paths | Production binding, one V2-2 activation effect/receipt, and sealing the named 1.x compatibility routes | A bounded consolidation can measure duplication before any next contract is selected |
+
+  - Next selected unit: none. Pass F, runtime implementation, release work, and
+    manual smoke remain unauthorized pending a separate consolidation decision.
+  - Status: completed (2026-08-08); local design, regression, and repository
+    gates pass; protected PR and post-merge CI remain required.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
