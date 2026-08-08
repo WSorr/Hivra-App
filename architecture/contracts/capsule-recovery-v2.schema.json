@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hivra.local/contracts/capsule-recovery-v2.schema.json",
+  "title": "Hivra Capsule Recovery Protocol V2 Design",
+  "description": "Machine evidence for the normative V2-1/D blueprint section; no runtime, storage transaction, recovery wire format, or production binding is authorized.",
+  "x-hivra-contract-id": "capsule_recovery_protocol_v2",
+  "x-hivra-contract-version": 1,
+  "x-hivra-design-status": "design-only-no-runtime",
+  "x-hivra-normative-source": "docs/architecture-v2-blueprint.md",
+  "x-hivra-normative-heading": "#### V2-1/D Capsule Recovery Authorization and History Anchoring Protocol",
+  "oneOf": [
+    {"$ref": "#/$defs/RecoveryRequestV1"},
+    {"$ref": "#/$defs/VerifiedRecoveryCommandV1"},
+    {"$ref": "#/$defs/RecoveryPlanEvidenceV1"},
+    {"$ref": "#/$defs/RecoveryAcceptedV1"},
+    {"$ref": "#/$defs/RecoveryRejectedV1"}
+  ],
+  "$defs": {
+    "Commitment32": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "CapsuleIdV2": {"$ref": "capsule-identity-birth-v2.schema.json#/$defs/CapsuleIdV2"},
+    "KeyDescriptorV1": {"$ref": "capsule-identity-birth-v2.schema.json#/$defs/KeyDescriptorV1"},
+    "SignatureProofV1": {"$ref": "capsule-identity-birth-v2.schema.json#/$defs/SignatureProofV1"},
+    "ContinuitySnapshotV1": {"$ref": "capsule-continuity-export-v2.schema.json#/$defs/ContinuitySnapshotV1"},
+    "ContinuityArtifactEvidenceV1": {"$ref": "capsule-continuity-export-v2.schema.json#/$defs/ContinuityArtifactEvidenceV1"},
+    "EmptyLocalStateV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {"state": {"const": "EMPTY"}}
+    },
+    "PresentLocalStateV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "snapshot"],
+      "properties": {
+        "state": {"const": "PRESENT"},
+        "snapshot": {"$ref": "#/$defs/ContinuitySnapshotV1"}
+      }
+    },
+    "ExpectedLocalStateV1": {
+      "oneOf": [
+        {"$ref": "#/$defs/EmptyLocalStateV1"},
+        {"$ref": "#/$defs/PresentLocalStateV1"}
+      ]
+    },
+    "RecoveryRequestV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "operation_id", "capsule_id", "network_id", "artifact_evidence", "candidate_snapshot", "expected_local_state", "root_authority", "authorization_proof"],
+      "properties": {
+        "contract_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/Commitment32"},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"const": "hivra.neste"},
+        "artifact_evidence": {"$ref": "#/$defs/ContinuityArtifactEvidenceV1"},
+        "candidate_snapshot": {"$ref": "#/$defs/ContinuitySnapshotV1"},
+        "expected_local_state": {"$ref": "#/$defs/ExpectedLocalStateV1"},
+        "root_authority": {"$ref": "#/$defs/KeyDescriptorV1"},
+        "authorization_proof": {"$ref": "#/$defs/SignatureProofV1"}
+      }
+    },
+    "VerifiedRecoveryCommandV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command_version", "operation_id", "request_commitment", "capsule_id", "network_id", "artifact_evidence_commitment", "candidate_snapshot_commitment", "local_state_commitment", "history_relation", "artifact_verification_evidence_id", "authorization_evidence_id", "history_verification_evidence_id"],
+      "properties": {
+        "command_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/Commitment32"},
+        "request_commitment": {"$ref": "#/$defs/Commitment32"},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"const": "hivra.neste"},
+        "artifact_evidence_commitment": {"$ref": "#/$defs/Commitment32"},
+        "candidate_snapshot_commitment": {"$ref": "#/$defs/Commitment32"},
+        "local_state_commitment": {"$ref": "#/$defs/Commitment32"},
+        "history_relation": {"enum": ["EMPTY_BASE", "EXACT", "DESCENDANT"]},
+        "artifact_verification_evidence_id": {"$ref": "#/$defs/Commitment32"},
+        "authorization_evidence_id": {"$ref": "#/$defs/Commitment32"},
+        "history_verification_evidence_id": {"$ref": "#/$defs/Commitment32"}
+      }
+    },
+    "RecoveryPlanEvidenceV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_version", "operation_id", "request_commitment", "capsule_id", "network_id", "artifact_evidence_commitment", "candidate_snapshot_commitment", "local_state_commitment", "history_relation"],
+      "properties": {
+        "plan_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/Commitment32"},
+        "request_commitment": {"$ref": "#/$defs/Commitment32"},
+        "capsule_id": {"$ref": "#/$defs/CapsuleIdV2"},
+        "network_id": {"const": "hivra.neste"},
+        "artifact_evidence_commitment": {"$ref": "#/$defs/Commitment32"},
+        "candidate_snapshot_commitment": {"$ref": "#/$defs/Commitment32"},
+        "local_state_commitment": {"$ref": "#/$defs/Commitment32"},
+        "history_relation": {"enum": ["EMPTY_BASE", "EXACT", "DESCENDANT"]}
+      }
+    },
+    "RecoveryAcceptedV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "disposition", "plan_evidence", "core_append_required", "durability_claimed", "activation_claimed"],
+      "properties": {
+        "decision": {"const": "ACCEPTED"},
+        "disposition": {"enum": ["PREPARED", "REPLAYED"]},
+        "plan_evidence": {"$ref": "#/$defs/RecoveryPlanEvidenceV1"},
+        "core_append_required": {"const": false},
+        "durability_claimed": {"const": false},
+        "activation_claimed": {"const": false}
+      }
+    },
+    "RecoveryRejectedV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "error_code", "core_append_required", "persistence_required", "activation_required"],
+      "properties": {
+        "decision": {"const": "REJECTED"},
+        "error_code": {"enum": ["INVALID_REQUEST", "INVALID_OPERATION_ID", "OPERATION_ID_CONFLICT", "CAPSULE_SCOPE_MISMATCH", "NETWORK_SCOPE_MISMATCH", "ARTIFACT_AUTHENTICATION_FAILED", "ARTIFACT_EVIDENCE_MISMATCH", "AUTHORITY_BINDING_MISMATCH", "AUTHORIZATION_COMMITMENT_MISMATCH", "AUTHORIZATION_INVALID", "HISTORY_SCOPE_MISMATCH", "HISTORY_ROLLBACK", "HISTORY_FORK", "BASE_STATE_CHANGED", "PLAN_EVIDENCE_MISMATCH"]},
+        "core_append_required": {"const": false},
+        "persistence_required": {"const": false},
+        "activation_required": {"const": false}
+      }
+    }
+  }
+}
