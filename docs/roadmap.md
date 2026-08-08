@@ -2518,6 +2518,22 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     from the green post-merge remediation SHA before smoke resumes.
   - Status: completed (2026-08-08); replacement artifacts pending.
 
+- `v1.0.3-test16 smoke remediation — masked Trading credentials`
+  - Packaged Android smoke reproduced that the stored BingX API key was
+    rendered as plaintext while the secret field alone was masked.
+  - The existing `TradingDroneScreen` UI owner now keeps both populated
+    credential fields masked by default. Each value can be revealed only by
+    its own explicit visibility control; suggestions and autocorrection remain
+    disabled for both fields.
+  - A widget regression proves default masking with populated values and
+    independently mutates each reveal control. No credential store, execution
+    service, Core path, DTO family, or effect route was added.
+  - The prior test16 artifacts are rejected. Replacement macOS and Android
+    artifacts require green PR and post-merge gates before packaged smoke can
+    resume.
+  - Status: remediation implemented (2026-08-08); PR, replacement artifacts,
+    and manual signoff pending.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

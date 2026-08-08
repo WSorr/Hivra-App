@@ -102,7 +102,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _cancelingOrder = false;
   bool _fittingMaxNotional = false;
   bool _useTestOrderEndpoint = true;
-  bool _obscureApiSecret = true;
   bool _droneEnabled = true;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
@@ -3569,42 +3568,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             subtitle:
                 'Credentialed execution queue with retry + idempotency cache.',
             children: [
-              TextField(
+              TradingDroneCredentialField(
+                fieldKey: const ValueKey<String>('bingx-api-key-field'),
                 controller: _apiKeyController,
-                decoration: InputDecoration(
-                  labelText: 'BingX API Key',
-                  filled: true,
-                  fillColor: const Color(0xFF0F141C),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+                label: 'BingX API Key',
+                showTooltip: 'Show API key',
+                hideTooltip: 'Hide API key',
               ),
               const SizedBox(height: 10),
-              TextField(
+              TradingDroneCredentialField(
+                fieldKey: const ValueKey<String>('bingx-api-secret-field'),
                 controller: _apiSecretController,
-                obscureText: _obscureApiSecret,
-                decoration: InputDecoration(
-                  labelText: 'BingX API Secret',
-                  filled: true,
-                  fillColor: const Color(0xFF0F141C),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  suffixIcon: IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _obscureApiSecret = !_obscureApiSecret;
-                      });
-                    },
-                    icon: Icon(
-                      _obscureApiSecret
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded,
-                    ),
-                    tooltip: _obscureApiSecret ? 'Show secret' : 'Hide secret',
-                  ),
-                ),
+                label: 'BingX API Secret',
+                showTooltip: 'Show secret',
+                hideTooltip: 'Hide secret',
               ),
               const SizedBox(height: 6),
               SwitchListTile.adaptive(
@@ -3877,6 +3854,62 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class TradingDroneCredentialField extends StatefulWidget {
+  final Key fieldKey;
+  final TextEditingController controller;
+  final String label;
+  final String showTooltip;
+  final String hideTooltip;
+
+  const TradingDroneCredentialField({
+    super.key,
+    required this.fieldKey,
+    required this.controller,
+    required this.label,
+    required this.showTooltip,
+    required this.hideTooltip,
+  });
+
+  @override
+  State<TradingDroneCredentialField> createState() =>
+      _TradingDroneCredentialFieldState();
+}
+
+class _TradingDroneCredentialFieldState
+    extends State<TradingDroneCredentialField> {
+  bool _obscureText = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      key: widget.fieldKey,
+      controller: widget.controller,
+      obscureText: _obscureText,
+      autocorrect: false,
+      enableSuggestions: false,
+      decoration: InputDecoration(
+        labelText: widget.label,
+        filled: true,
+        fillColor: const Color(0xFF0F141C),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        suffixIcon: IconButton(
+          onPressed: () {
+            setState(() {
+              _obscureText = !_obscureText;
+            });
+          },
+          icon: Icon(
+            _obscureText
+                ? Icons.visibility_off_rounded
+                : Icons.visibility_rounded,
+          ),
+          tooltip: _obscureText ? widget.showTooltip : widget.hideTooltip,
+        ),
       ),
     );
   }
