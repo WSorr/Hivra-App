@@ -2417,6 +2417,43 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: completed (2026-08-08); local design, regression, and repository
     gates pass; protected PR and post-merge CI remain required.
 
+- `Post-V2-1/E consolidation and 1.x Product Completion selection`
+  - Findings (2026-08-08):
+    - Passes A-E each retain one normative section in
+      `architecture-v2-blueprint.md`; their schemas, vectors, and validators
+      remain subordinate machine evidence rather than parallel specifications;
+    - `development-control.md` remains the only current-status board,
+      `roadmap.md` remains history, and the ownership registry plus generated
+      baseline remain the only current production-binding debt inventory;
+    - no contradictory Pass A-E semantics, duplicate contract owner, stale
+      generated evidence, or automatically implied Pass F was found;
+    - the next higher-value uncertainty is product evidence, not another 2.0
+      contract: current release checklists cover platform packaging and the User
+      Lifetime Safety Pack covers core lifetime risks, but no single reviewed
+      journey currently proves installation, birth/recovery, contacts,
+      invitations, consensus, chat, plugins, restart/switch, and both platforms
+      as one coherent product-completion readiness map;
+    - that gap fits the existing User Lifetime Safety Pack and release
+      checklists. A new document, schema, registry, gate, DTO, service, or state
+      owner would add duplication rather than reduce ambiguity.
+  - Architecture-economy result:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | Short status/history update only | Automatic Pass F, automatic V2 runtime work, and a second product-completion checklist are sealed | 2.0 design completion versus real 1.x product readiness; current status versus historical evidence | Zero owners; zero runtime paths | Existing registry production-binding debt, Trust Layer issue #7, dependency updates, and unreproduced user-journey gaps remain explicit | One bounded 1.x readiness audit can determine whether a named test release candidate is justified |
+
+  - Next selected unit:
+    - `1.x Product Completion / pass A`, end-to-end user-journey readiness;
+    - inspect existing runtime paths, tests, diagnostics, and checklist coverage
+      for installation, Capsule birth/recovery, contacts, invitations,
+      consensus, chat, plugins, restart/switch, and macOS/Android parity;
+    - extend only `docs/checklists/user-lifetime-safety-pack.md` where a real
+      coverage gap exists; do not create another checklist or runtime path;
+    - runtime edits require a reproduced finding; packaging and manual smoke
+      require a separately named release candidate.
+  - Status: completed (2026-08-08); 2.0 paused, pass A selected, no release
+    candidate or runtime implementation authorized.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
