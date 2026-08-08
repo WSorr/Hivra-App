@@ -2,13 +2,13 @@
 
 Status date: 2026-08-08
 Current released baseline: commit `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: `V2-1 / pass E`, design-only Capsule selection and
-prepared activation over verified local Capsule inventory. V2-0 passes A-E and
-V2-1 passes A-D are complete. They established repository ownership evidence,
-Capsule identity/birth, Starter inventory, continuity export, and recovery
-contracts without changing a runtime path. Pass E must remain inside the
-selection boundary recorded below; recovery, persistence, UI/FFI, addressing,
-and runtime implementation remain unauthorized. The post-AI-4 audit found no
+Current development focus: post-`V2-1 / pass E` consolidation review; no next
+2.0 pass is selected. V2-0 passes A-E and V2-1 passes A-E are complete. They
+established repository ownership evidence, Capsule identity/birth, Starter
+inventory, continuity export, recovery, and Capsule selection/prepared-
+activation contracts without changing a runtime path. Recovery, persistence,
+UI/FFI, addressing, seed handling, import/export/delete, and runtime
+implementation remain unauthorized. The post-AI-4 audit found no
 active 1.x integrity finding: Capsule AI Runtime convergence is complete,
 feature-owned provider dispatch and credential reads remain zero, and the full
 T0 environment verifier matches every repository pin. No AI-5, release
@@ -42,7 +42,7 @@ table, then open only the linked authority for the selected work item.
 | --- | --- | --- | --- | --- |
 | **1.x maintained runtime** | Checkpoint complete; no active finding | `12.3 / pass 18` and `12.5 / AI-4` are complete; no later remediation is inferred. | Latest build `100000331`: Flutter `760/760`, Rust workspace and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | Select a new runtime pass only from a named failure or review finding. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
-| **2.0 architecture** | `V2-0` and `V2-1 / passes A-D` complete; pass E selected, design-only | Define one serialized Capsule selection and prepared-activation contract over a verified local Capsule inventory; runtime implementation remains unauthorized. | Post-Pass D consolidation bound Continuity/Recovery registry debt to their reviewed contracts, regenerated ownership evidence, and isolated selection as the smaller direct continuation of recovery. | Pass E may use one existing blueprint section, one schema, one fixture set, and one validator in the existing gate; it must not absorb recovery, import/export/delete, seed handling, persistence mechanics, UI/FFI, addressing, or runtime implementation. |
+| **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; no next pass selected | Run a bounded post-Pass E consolidation review; runtime implementation remains unauthorized. | Pass E defined one exact inventory/active/target/authority-bound selection decision, deterministic replay/conflict semantics, and a prepared activation boundary with mutation-tested machine evidence. | Decide explicitly whether another bounded contract reduces more ambiguity than documentation/registry consolidation; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
 | **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects and a foreground bounded-reply experiment exist, but automatic modes are blocked by the canonical engagement lifecycle gates. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |
@@ -55,10 +55,10 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — `V2-1 / pass E` design:** define one serialized Capsule selection and
-   prepared-activation decision over exact expected-active and target Capsule
-   state; keep recovery, persistence, UI, and address resolution downstream or
-   separate.
+1. **P1 — post-`V2-1 / pass E` consolidation:** verify that blueprint, roadmap,
+   ownership registry, generated evidence, and contract gates retain one owner
+   per fact without restating Pass A-E semantics; select no next pass unless it
+   closes a smaller independently verifiable ambiguity.
 2. **P1 — release decision:** only a named release candidate may trigger fresh
    macOS and Android packaged-artifact signoff.
 3. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
