@@ -2481,6 +2481,20 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     require a separately named test release candidate.
   - Status: completed (2026-08-08); no runtime finding reproduced.
 
+- `1.x release candidate selection — v1.0.3-test16`
+  - Decision (2026-08-08):
+    - the repository release guard identifies `v1.0.3-test16` as the only valid
+      next test version after published `v1.0.3-test15`;
+    - the completed product-readiness map justifies one packaged macOS/Android
+      system run from one clean post-merge `main` SHA;
+    - strict preflight, platform packaging checks, User Lifetime Safety Pack,
+      Trading Drone evidence, Moltbook smoke, applicable AI smoke, hashes,
+      diagnostics, and manual signoff are required before any tag or release;
+    - only reproduced candidate defects may open runtime remediation. The
+      candidate does not authorize speculative cleanup, dependency upgrades,
+      2.0 implementation, stable `1.0`, tagging, or publication.
+  - Status: selected; artifacts and manual evidence pending.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
