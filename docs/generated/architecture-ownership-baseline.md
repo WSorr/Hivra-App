@@ -305,7 +305,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/starters_screen.dart` line `16` (`StartersScreen`) — rule `surface_mapping:ui_starters`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/trading_drone_screen.dart` line `25` (`TradingDroneScreen`) — rule `registry`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/transports_screen.dart` line `8` (`TransportsScreen`) — rule `surface_mapping:ui_transports`
-- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/wasm_plugins_screen.dart` line `19` (`WasmPluginsScreen`) — rule `registry`
+- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/wasm_plugins_screen.dart` line `47` (`WasmPluginsScreen`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_capsule_inspection_service.dart` line `104` (`AiCapsuleInspectionService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_developer_engineer_service.dart` line `37` (`AiDeveloperEngineerService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_developer_remote_repository_cache_service.dart` line `65` (`AiDeveloperRemoteRepositoryCacheService`) — rule `current_flutter_service_support`
@@ -355,7 +355,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_ai_runtime_service.dart` line `225` (`CapsuleAiRuntimeService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_deferred_inbox_store.dart` line `101` (`CapsuleChatDeferredInboxStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_delivery_service.dart` line `79` (`CapsuleDeliveryInboxStore`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_delivery_service.dart` line `135` (`CapsuleChatDeliveryService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_delivery_service.dart` line `208` (`CapsuleChatDeliveryService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_contact_label_store.dart` line `7` (`CapsuleContactLabelStore`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_delivery_lifecycle_service.dart` line `36` (`CapsuleDeliveryLifecycleService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_diagnostics_service.dart` line `13` (`CapsuleDiagnosticsService`) — rule `current_flutter_service_support`
@@ -370,7 +370,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_runtime_bootstrap_service.dart` line `12` (`CapsuleRuntimeBootstrapService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_scoped_secret_vault.dart` line `262` (`_VaultCoordinator`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_seed_store.dart` line `11` (`CapsuleSeedStore`) — rule `current_flutter_service_support`
-- `CAPABILITY_OWNER` — `flutter/lib/services/capsule_selector_service.dart` line `39` (`CapsuleSelectorService`) — rule `registry`
+- `CAPABILITY_OWNER` — `flutter/lib/services/capsule_selector_service.dart` line `40` (`CapsuleSelectorService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/consensus_attestation_exchange_service.dart` line `42` (`ConsensusAttestationExchangeService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/consensus_attestation_store.dart` line `31` (`ConsensusAttestationStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/consensus_attestation_sync_service.dart` line `74` (`ConsensusAttestationSyncService`) — rule `current_flutter_service_support`
@@ -476,13 +476,13 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 - `3955` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3059` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
-- `2406` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
+- `2447` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
 - `2097` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
 - `1649` lines — `flutter/lib/services/plugin_runtime_module_service.dart`
 - `1378` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
 - `1280` lines — `flutter/lib/screens/invitations_screen.dart`
-- `1070` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
+- `1143` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `979` lines — `flutter/lib/screens/ledger_inspector_screen.dart`
 - `905` lines — `flutter/lib/services/external_effect_service.dart`
 - `885` lines — `flutter/lib/screens/relationships_screen.dart`
@@ -544,7 +544,7 @@ Largest registered owner files by line count:
 - `460` lines — `history_projection` — `core/hivra-core/src/history.rs` (`history_view_v1`)
 - `356` lines — `person_runtime_shell` — `flutter/lib/services/app_runtime_service.dart` (`AppRuntimeService`)
 - `311` lines — `capsule_delivery` — `flutter/lib/services/capsule_delivery_lifecycle_service.dart` (`CapsuleDeliveryLifecycleService`)
-- `278` lines — `capsule_selection` — `flutter/lib/services/capsule_selector_service.dart` (`CapsuleSelectorService`)
+- `284` lines — `capsule_selection` — `flutter/lib/services/capsule_selector_service.dart` (`CapsuleSelectorService`)
 - `216` lines — `wasm_drone_runtime` — `platform/hivra-wasm-runtime/src/lib.rs` (`invoke_json`)
 - `202` lines — `starter_inventory` — `core/hivra-core/src/starter.rs` (`Starter`)
 - `158` lines — `capsule_recovery` — `flutter/lib/services/recovery_service.dart` (`RecoveryService`)
