@@ -2,8 +2,11 @@
 
 Status date: 2026-08-08
 Current released baseline: commit `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
-Current development focus: post-`V2-1 / pass E` consolidation review; no next
-2.0 pass is selected. V2-0 passes A-E and V2-1 passes A-E are complete. They
+Current development focus: `1.x Product Completion / pass A`, end-to-end user
+journey readiness over the existing runtime and existing User Lifetime Safety
+Pack. No release candidate, build, manual smoke, or runtime change is implied.
+V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
+next pass selected. They
 established repository ownership evidence, Capsule identity/birth, Starter
 inventory, continuity export, recovery, and Capsule selection/prepared-
 activation contracts without changing a runtime path. Recovery, persistence,
@@ -30,7 +33,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x remediation step? | No active 1.x remediation finding is selected. A new runtime pass requires a named failure or review finding. | `docs/roadmap.md`, applicable architecture contract |
+| What is the next 1.x remediation step? | `1.x Product Completion / pass A`: audit the existing end-to-end person journey, automated coverage, diagnostics, and release-checklist ownership before selecting a candidate or changing runtime. | `docs/roadmap.md`, existing release and lifetime checklists |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -40,9 +43,9 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Checkpoint complete; no active finding | `12.3 / pass 18` and `12.5 / AI-4` are complete; no later remediation is inferred. | Latest build `100000331`: Flutter `760/760`, Rust workspace and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | Select a new runtime pass only from a named failure or review finding. |
+| **1.x maintained runtime** | Product-completion readiness audit active; no runtime finding yet | `1.x Product Completion / pass A` maps installation, birth/recovery, contacts, invitations, consensus, chat, plugins, restart/switch, and macOS/Android evidence onto existing owners and checklists. | Baseline build `100000331`: Flutter `760/760`, Rust workspace and review gates pass; prior macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | Change runtime only for a reproduced finding. A named release candidate is required before packaging or manual smoke. |
 | **1.x release** | Released | `v1.0.3-test15` is the current test release on macOS and Android. | Tag, guarded GitHub release, artifact hashes, and platform signoff are recorded. | The current Moltbook lifecycle/UI checkpoint is not a release; the next release requires a new candidate and fresh signoff. |
-| **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; no next pass selected | Run a bounded post-Pass E consolidation review; runtime implementation remains unauthorized. | Pass E defined one exact inventory/active/target/authority-bound selection decision, deterministic replay/conflict semantics, and a prepared activation boundary with mutation-tested machine evidence. | Decide explicitly whether another bounded contract reduces more ambiguity than documentation/registry consolidation; do not infer Pass F. |
+| **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
 | **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects and a foreground bounded-reply experiment exist, but automatic modes are blocked by the canonical engagement lifecycle gates. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |
@@ -55,11 +58,11 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — post-`V2-1 / pass E` consolidation:** verify that blueprint, roadmap,
-   ownership registry, generated evidence, and contract gates retain one owner
-   per fact without restating Pass A-E semantics; select no next pass unless it
-   closes a smaller independently verifiable ambiguity.
-2. **P1 — release decision:** only a named release candidate may trigger fresh
+1. **P1 — `1.x Product Completion / pass A`:** map the complete user journey
+   and its automated/diagnostic evidence onto existing owners and the existing
+   User Lifetime Safety Pack; record only reproduced gaps, without speculative
+   runtime changes or a second checklist.
+2. **P1 — release decision:** after pass A, only a named release candidate may trigger fresh
    macOS and Android packaged-artifact signoff.
 3. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
    AI trading advice, distributed backup, and staking remain non-runtime or
