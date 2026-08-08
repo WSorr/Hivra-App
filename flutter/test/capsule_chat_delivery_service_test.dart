@@ -7,6 +7,7 @@ import 'package:hivra_app/ffi/app_runtime_runtime.dart';
 import 'package:hivra_app/ffi/capsule_address_runtime.dart';
 import 'package:hivra_app/ffi/invitation_actions_runtime.dart';
 import 'package:hivra_app/ffi/ledger_view_runtime.dart';
+import 'package:hivra_app/models/capsule_chat_models.dart';
 import 'package:hivra_app/models/consensus_models.dart';
 import 'package:hivra_app/models/relationship.dart';
 import 'package:hivra_app/models/starter.dart';
@@ -97,7 +98,7 @@ void main() {
           '1111111111111111111111111111111111111111111111111111111111111111';
       const localRootHex =
           '2222222222222222222222222222222222222222222222222222222222222222';
-      final store = CapsuleTradeSignalInboxStore();
+      final store = CapsuleDeliveryInboxStore();
       final runtime = _FakeRuntime(
         capsuleRootKey: _hexToBytes(localRootHex),
         workerBootstrap: const <String, Object?>{
@@ -133,7 +134,7 @@ void main() {
       final chatService = CapsuleChatDeliveryService(
         runtime: runtime,
         manualChecks: checks,
-        tradeSignalInboxStore: store,
+        deliveryInboxStore: store,
         receiveWorkerRunner:
             (_) async => <String, Object?>{
               'result': 1,
@@ -150,7 +151,7 @@ void main() {
       final droneService = CapsuleChatDeliveryService(
         runtime: runtime,
         manualChecks: checks,
-        tradeSignalInboxStore: store,
+        deliveryInboxStore: store,
       );
 
       final received = await chatService.drainAndFilter();
@@ -163,6 +164,103 @@ void main() {
       );
     },
   );
+
+  test('chat received by passive drain remains available to workspace', () async {
+    const peerHex =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    const localRootHex =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    final store = CapsuleDeliveryInboxStore();
+    final runtime = _FakeRuntime(
+      capsuleRootKey: _hexToBytes(localRootHex),
+      workerBootstrap: const <String, Object?>{
+        'activeCapsuleHex': localRootHex,
+      },
+    );
+    final checks = _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+      const ManualConsensusCheck(
+        peerHex: peerHex,
+        peerLabel: 'peer',
+        invitationCount: 1,
+        relationshipCount: 1,
+        hashHex:
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        canonicalJson: '{}',
+        isSignable: true,
+        blockingFacts: <ConsensusBlockingFact>[],
+      ),
+    ]);
+    final passiveService = CapsuleChatDeliveryService(
+      runtime: runtime,
+      manualChecks: checks,
+      deliveryInboxStore: store,
+      receiveWorkerRunner:
+          (_) async => <String, Object?>{
+            'result': 1,
+            'json': jsonEncode(<Map<String, Object?>>[
+              <String, Object?>{
+                'from_hex': peerHex,
+                'payload_json': jsonEncode(<String, Object?>{
+                  'message_text': 'preserved',
+                  'created_at_utc': '2026-08-08T12:00:00.000Z',
+                  'envelope_hash_hex':
+                      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                }),
+                'timestamp_ms': 1,
+              },
+            ]),
+            'lastError': null,
+          },
+    );
+    final workspaceService = CapsuleChatDeliveryService(
+      runtime: runtime,
+      manualChecks: checks,
+      deliveryInboxStore: store,
+    );
+
+    final received = await passiveService.drainAndFilter();
+
+    expect(received.messages, hasLength(1));
+    expect(workspaceService.loadCachedMessages(), hasLength(1));
+    expect(
+      workspaceService.loadCachedMessages().single.messageText,
+      equals('preserved'),
+    );
+  });
+
+  test('delivery inbox isolates chat by capsule and stable message id', () {
+    const firstCapsule =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    const secondCapsule =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    final store = CapsuleDeliveryInboxStore();
+    const first = CapsuleChatInboxMessage(
+      id: 'message-1',
+      fromHex: firstCapsule,
+      messageText: 'first',
+      createdAtUtc: '2026-08-08T12:00:00.000Z',
+      envelopeHashHex: '',
+      timestampMs: 1,
+    );
+    const replacement = CapsuleChatInboxMessage(
+      id: 'message-1',
+      fromHex: firstCapsule,
+      messageText: 'replacement',
+      createdAtUtc: '2026-08-08T12:00:01.000Z',
+      envelopeHashHex: '',
+      timestampMs: 2,
+    );
+
+    store.merge(
+      firstCapsule,
+      messages: const <CapsuleChatInboxMessage>[first, replacement],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+
+    expect(store.loadMessages(firstCapsule), hasLength(1));
+    expect(store.loadMessages(firstCapsule).single.messageText, 'replacement');
+    expect(store.loadMessages(secondCapsule), isEmpty);
+  });
 
   test(
     'prefers contact-card transport when root also appears as relationship peer',

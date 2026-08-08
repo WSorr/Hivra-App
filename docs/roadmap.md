@@ -2531,8 +2531,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - The prior test16 artifacts are rejected. Replacement macOS and Android
     artifacts require green PR and post-merge gates before packaged smoke can
     resume.
-  - Status: remediation implemented (2026-08-08); PR, replacement artifacts,
-    and manual signoff pending.
+  - Status: completed and merged (2026-08-08); Android packaged smoke confirms
+    both values are masked by default. Final candidate signoff remains pending.
+
+- `v1.0.3-test16 smoke remediation — preserve passive chat inbox`
+  - Replacement Android smoke reproduced a destructive projection gap:
+    transport diagnostics reported `chat=3/3` during launch receive, but the
+    later Chat workspace displayed `Inbox: 0` because the accepted in-memory
+    FFI inbox had already been drained.
+  - The existing `CapsuleChatDeliveryService` inbox owner now retains accepted
+    chat messages by Capsule and stable message id, alongside its existing
+    trade-signal cache. The Chat workspace merges that projection after every
+    canonical passive receive instead of opening a second receive route.
+  - The regression proves a message accepted by an earlier passive drain
+    remains available to a later workspace service instance. Core, FFI,
+    transport encryption, Ledger truth, and outbound delivery are unchanged.
+  - The current replacement artifacts are rejected. Both platforms must be
+    rebuilt from the green post-merge remediation SHA and repeat cross-platform
+    chat smoke before manual signoff.
+  - Status: remediation in progress (2026-08-08); no tag or publication.
 
 ## Planned Product Tracks
 

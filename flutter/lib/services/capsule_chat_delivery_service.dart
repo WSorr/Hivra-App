@@ -76,16 +76,27 @@ BingxExecutionPolicy _defaultExecutionPolicyForPeer(String _) =>
       maxRiskPercent: 100,
     );
 
-class CapsuleTradeSignalInboxStore {
-  static final CapsuleTradeSignalInboxStore shared =
-      CapsuleTradeSignalInboxStore();
+class CapsuleDeliveryInboxStore {
+  static final CapsuleDeliveryInboxStore shared = CapsuleDeliveryInboxStore();
+
+  final Map<String, Map<String, CapsuleChatInboxMessage>> _messagesByCapsule =
+      <String, Map<String, CapsuleChatInboxMessage>>{};
 
   final Map<String, Map<String, CapsuleTradeSignalInboxMessage>>
   _signalsByCapsule = <String, Map<String, CapsuleTradeSignalInboxMessage>>{};
 
-  CapsuleTradeSignalInboxStore();
+  CapsuleDeliveryInboxStore();
 
-  List<CapsuleTradeSignalInboxMessage> load(String capsuleRootHex) {
+  List<CapsuleChatInboxMessage> loadMessages(String capsuleRootHex) {
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    final messages =
+        _messagesByCapsule[normalized]?.values.toList() ??
+        <CapsuleChatInboxMessage>[];
+    messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    return List<CapsuleChatInboxMessage>.unmodifiable(messages);
+  }
+
+  List<CapsuleTradeSignalInboxMessage> loadTradeSignals(String capsuleRootHex) {
     final normalized = capsuleRootHex.trim().toLowerCase();
     final signals =
         _signalsByCapsule[normalized]?.values.toList() ??
@@ -95,16 +106,24 @@ class CapsuleTradeSignalInboxStore {
   }
 
   void merge(
-    String capsuleRootHex,
-    Iterable<CapsuleTradeSignalInboxMessage> signals,
-  ) {
+    String capsuleRootHex, {
+    required Iterable<CapsuleChatInboxMessage> messages,
+    required Iterable<CapsuleTradeSignalInboxMessage> tradeSignals,
+  }) {
     final normalized = capsuleRootHex.trim().toLowerCase();
     if (!_isHex64(normalized)) return;
+    final messagesById = _messagesByCapsule.putIfAbsent(
+      normalized,
+      () => <String, CapsuleChatInboxMessage>{},
+    );
+    for (final message in messages) {
+      messagesById[message.id] = message;
+    }
     final byId = _signalsByCapsule.putIfAbsent(
       normalized,
       () => <String, CapsuleTradeSignalInboxMessage>{},
     );
-    for (final signal in signals) {
+    for (final signal in tradeSignals) {
       byId[signal.id] = signal;
     }
   }
@@ -123,7 +142,7 @@ class CapsuleChatDeliveryService {
   final ChatWorkerRunner _receiveWorkerRunner;
   final CapsuleFfiWorkerQueue _workerQueue;
   final CapsuleChatDeferredInboxStore _deferredInboxStore;
-  final CapsuleTradeSignalInboxStore _tradeSignalInboxStore;
+  final CapsuleDeliveryInboxStore _deliveryInboxStore;
   final BingxFuturesExecutionCommandService _executionCommandService;
   final ExecutionPolicyResolver _executionPolicyForPeer;
   final ExecutionKnownIntentLookup? _hasKnownIntentHash;
@@ -141,7 +160,7 @@ class CapsuleChatDeliveryService {
     ChatWorkerRunner receiveWorkerRunner = _defaultReceiveWorkerRunner,
     CapsuleFfiWorkerQueue? workerQueue,
     CapsuleChatDeferredInboxStore? deferredInboxStore,
-    CapsuleTradeSignalInboxStore? tradeSignalInboxStore,
+    CapsuleDeliveryInboxStore? deliveryInboxStore,
     BingxFuturesExecutionCommandService? executionCommandService,
     ExecutionPolicyResolver? executionPolicyForPeer,
     ExecutionKnownIntentLookup? hasKnownIntentHash,
@@ -157,8 +176,8 @@ class CapsuleChatDeliveryService {
        _workerQueue = workerQueue ?? CapsuleFfiWorkerQueue.shared,
        _deferredInboxStore =
            deferredInboxStore ?? const CapsuleChatDeferredInboxStore(),
-       _tradeSignalInboxStore =
-           tradeSignalInboxStore ?? CapsuleTradeSignalInboxStore.shared,
+       _deliveryInboxStore =
+           deliveryInboxStore ?? CapsuleDeliveryInboxStore.shared,
        _executionCommandService =
            executionCommandService ??
            BingxFuturesExecutionCommandService(
@@ -171,12 +190,20 @@ class CapsuleChatDeliveryService {
        _transportHealth =
            transportHealth ?? TransportHealthPolicyService.shared;
 
+  List<CapsuleChatInboxMessage> loadCachedMessages() {
+    final root = _runtime.capsuleRootPublicKey();
+    if (root == null || root.length != 32) {
+      return const <CapsuleChatInboxMessage>[];
+    }
+    return _deliveryInboxStore.loadMessages(_hex(root));
+  }
+
   List<CapsuleTradeSignalInboxMessage> loadCachedTradeSignals() {
     final root = _runtime.capsuleRootPublicKey();
     if (root == null || root.length != 32) {
       return const <CapsuleTradeSignalInboxMessage>[];
     }
-    return _tradeSignalInboxStore.load(_hex(root));
+    return _deliveryInboxStore.loadTradeSignals(_hex(root));
   }
 
   Future<CapsuleChatDeliverySendResult> sendCanonicalEnvelope({
@@ -541,7 +568,11 @@ class CapsuleChatDeliveryService {
     final tradeSignals =
         byTradeSignalId.values.toList()
           ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    _tradeSignalInboxStore.merge(activeCapsuleHex, tradeSignals);
+    _deliveryInboxStore.merge(
+      activeCapsuleHex,
+      messages: messages,
+      tradeSignals: tradeSignals,
+    );
     if (localRootHex != null) {
       final deferredById = <String, CapsuleChatDeferredInboxItem>{
         for (final item in remainingDeferred) item.id: item,
