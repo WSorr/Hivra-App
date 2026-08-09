@@ -2620,6 +2620,20 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     notarized. No stable `1.0` claim or next release candidate is implied.
   - Status: published (2026-08-09); no next 1.x or 2.0 runtime pass selected.
 
+- `1.x Moltbook Reference-Grade Pass A — session resume ownership`
+  - Audit found one trigger-owner contradiction: `Stop` correctly invalidated
+    in-flight work, but the process-scoped `session` latch remained closed, so
+    an explicit local Enable could leave the Ambassador visibly stopped.
+  - The existing `MoltbookCycleTriggerService` now clears its session latch at
+    the same stop generation boundary. A resumed scope starts exactly one new
+    session cycle; duplicate starts still collapse to that one cycle.
+  - Regression tests cover the trigger owner directly and the canonical
+    `PluginRuntimeModule` path. No DTO, service, effect owner, provider request,
+    Core/FFI path, persistence route, or automatic publication authority was
+    added.
+  - Status: completed (2026-08-09); no next 1.x pass, release candidate, or 2.0
+    runtime unit selected automatically.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
