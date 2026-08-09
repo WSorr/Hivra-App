@@ -2599,9 +2599,26 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Regression vectors cover the reproduced restart state and the positive
     multi-order case. No exchange effect, order cancellation, Core/FFI path,
     DTO family, tracking owner, or persistence route is added.
-  - Every test16 artifact through `332083d` is rejected. Both platforms require
-    one rebuild from the green post-merge SHA and complete manual signoff.
-  - Status: remediation active (2026-08-09); tag and publication remain blocked.
+  - Every test16 artifact through `332083d` is rejected. Replacement artifacts
+    built from clean source commit `30e0800` passed packaged macOS and Android
+    hands smoke, including restart reconciliation without a stale drone-owned
+    order or unintended exchange effect.
+  - Status: completed (2026-08-09); exact replacement artifacts passed manual
+    signoff and were published through the guarded test-release path.
+
+- `v1.0.3-test16 release publication`
+  - Evidence-only commit `2a23411` differs from artifact source commit `30e0800`
+    only by `docs/checklists/release-manual-signoff-log.md`.
+  - The guarded publisher repeated automated preflight and manual signoff, then
+    created annotated tag `v1.0.3-test16` at `2a23411` and published a GitHub
+    prerelease using the exact previously verified macOS and Android artifacts.
+  - Remote asset digests match the signoff record: macOS
+    `a4775a3b6321cebd25c2e7b327257f7060df04baf3596f01c84d1c3fe8dfd6da`
+    and Android
+    `1472c4731590d824d1d3473923da04f17d81f299d5b67350649d57cbeeaa2727`.
+  - Release notes explicitly identify the macOS artifact as unsigned and not
+    notarized. No stable `1.0` claim or next release candidate is implied.
+  - Status: published (2026-08-09); no next 1.x or 2.0 runtime pass selected.
 
 ## Planned Product Tracks
 
