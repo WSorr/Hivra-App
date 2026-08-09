@@ -1227,9 +1227,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           operation.requiredAction != null && !operation.state.isTerminal,
     );
     final recoverableOperation = _latestOperationWhere(
-      (operation) =>
-          operation.state == ExternalEffectState.unresolved &&
-          operation.requiredAction == null,
+      MoltbookPublicationService.requiresReconciliation,
     );
     final reconciliationOperation = recoverableOperation;
     final queuedOperation = _latestOperationWhere(

@@ -66,25 +66,32 @@ void main() {
     );
   });
 
-  test('terminal reconciliation excludes expired verification', () {
+  test('reconciliation priority includes recoverable terminal effects', () {
+    final unresolved = _operation(
+      state: ExternalEffectState.unresolved,
+      withReceipt: false,
+    );
+    final expiredAction = _operation(
+      state: ExternalEffectState.terminalFailure,
+      lastErrorCode: 'required_action_expired',
+      withReceipt: false,
+    );
+    final terminalFailure = _operation(
+      state: ExternalEffectState.terminalFailure,
+      lastErrorCode: 'verification_expired',
+      withReceipt: false,
+    );
+
     expect(
-      MoltbookPublicationService.canManuallyReconcileTerminalFailure(
-        _operation(
-          state: ExternalEffectState.terminalFailure,
-          lastErrorCode: 'required_action_expired',
-          withReceipt: false,
-        ),
-      ),
+      MoltbookPublicationService.requiresReconciliation(unresolved),
       isTrue,
     );
     expect(
-      MoltbookPublicationService.canManuallyReconcileTerminalFailure(
-        _operation(
-          state: ExternalEffectState.terminalFailure,
-          lastErrorCode: 'verification_expired',
-          withReceipt: false,
-        ),
-      ),
+      MoltbookPublicationService.requiresReconciliation(expiredAction),
+      isTrue,
+    );
+    expect(
+      MoltbookPublicationService.requiresReconciliation(terminalFailure),
       isFalse,
     );
   });

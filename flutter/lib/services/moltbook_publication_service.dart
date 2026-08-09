@@ -265,6 +265,12 @@ class MoltbookPublicationService {
         operation.lastErrorCode == 'required_action_expired';
   }
 
+  static bool requiresReconciliation(ExternalEffectOperation operation) {
+    return (operation.state == ExternalEffectState.unresolved &&
+            operation.requiredAction == null) ||
+        canManuallyReconcileTerminalFailure(operation);
+  }
+
   Future<ExternalEffectOperation> resolveVerification({
     required String operationId,
     required String answer,
