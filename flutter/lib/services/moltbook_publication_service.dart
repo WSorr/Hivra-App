@@ -263,6 +263,7 @@ class MoltbookPublicationService {
         operation.receipt == null &&
         operation.attemptCount > 0 &&
         const <String>{
+          'http_400',
           'required_action_expired',
           'verification_expired',
         }.contains(operation.lastErrorCode);

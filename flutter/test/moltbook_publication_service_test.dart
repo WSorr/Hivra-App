@@ -81,6 +81,11 @@ void main() {
       lastErrorCode: 'verification_expired',
       withReceipt: false,
     );
+    final rejectedDelivery = _operation(
+      state: ExternalEffectState.terminalFailure,
+      lastErrorCode: 'http_400',
+      withReceipt: false,
+    );
     final unrelatedFailure = _operation(
       state: ExternalEffectState.terminalFailure,
       lastErrorCode: 'credential_unavailable',
@@ -97,6 +102,10 @@ void main() {
     );
     expect(
       MoltbookPublicationService.requiresReconciliation(expiredVerification),
+      isTrue,
+    );
+    expect(
+      MoltbookPublicationService.requiresReconciliation(rejectedDelivery),
       isTrue,
     );
     expect(
