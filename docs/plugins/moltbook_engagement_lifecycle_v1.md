@@ -65,6 +65,9 @@ For one target key:
   publication routes;
 - an existing active effect is resumed, never recreated;
 - a succeeded effect permanently closes that exact target;
+- an observed direct reply from the bound provider account closes that exact
+  target even when the local Capsule journal has no matching operation;
+- comments authored by the bound provider account are never reply targets;
 - a newer foreign follow-up is a different target because it has a different
   parent comment id;
 - a cancelled or expired target may be reopened only through an explicit

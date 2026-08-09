@@ -867,10 +867,21 @@ class PluginRuntimeModule {
           accountBindingId,
           cycleEpoch: cycleEpoch,
         );
+        final publiclyAnsweredCommentIds =
+            observedConversation.comments
+                .where(
+                  (comment) =>
+                      comment.authorId == accountBindingId &&
+                      comment.parentCommentId != null,
+                )
+                .map((comment) => comment.parentCommentId!)
+                .toSet();
         final availableComments = <MoltbookCommentObservation>[];
         for (final comment in observedConversation.comments) {
-          final unavailable = await moltbookPublications
-              .isReplyTargetUnavailable(
+          final unavailable =
+              comment.authorId == accountBindingId ||
+              publiclyAnsweredCommentIds.contains(comment.commentId) ||
+              await moltbookPublications.isReplyTargetUnavailable(
                 accountBindingId: accountBindingId,
                 postId: observedConversation.post.postId,
                 parentCommentId: comment.commentId,

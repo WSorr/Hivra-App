@@ -306,6 +306,25 @@ void main() {
   );
 
   test(
+    'bounded cycle skips a target already answered by the provider account',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'reply_draft';
+      connection.commentIds = <String>['comment-1', 'comment-2'];
+      connection.accountReplyParentIds.add('comment-1');
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(heartbeatHost.authorizedTargetCommentIds, <String>['comment-2']);
+      expect(publications.unavailableChecks, contains('comment-2'));
+      expect(publications.delegatedApprovalCount, 1);
+      expect(publications.processedIds, <String>['reply-effect-1']);
+      expect(summary.blockedCount, 0);
+    },
+  );
+
+  test(
     'cycle skips a no-action post and evaluates the next candidate',
     () async {
       configuration.approvalMode =
@@ -482,6 +501,7 @@ class _CycleConnection implements MoltbookConnectionService {
   String accountId = 'agent-1';
   List<String> feedIds = <String>['post-2', 'post-1'];
   List<String> commentIds = <String>['comment-1'];
+  final Set<String> accountReplyParentIds = <String>{};
   Future<void>? observationGate;
   void Function()? afterObserve;
   final List<Set<String>> processedSnapshots = <Set<String>>[];
@@ -544,20 +564,32 @@ class _CycleConnection implements MoltbookConnectionService {
         createdAtUtc: '2026-08-01T00:00:00.000Z',
         updatedAtUtc: '2026-08-01T00:05:00.000Z',
       ),
-      comments: commentIds
-          .map(
-            (commentId) => MoltbookCommentObservation(
-              commentId: commentId,
-              postId: postId,
-              parentCommentId: null,
-              content: 'What changed?',
-              authorId: 'reader-$commentId',
-              authorName: 'Reader',
-              score: 0,
-              createdAtUtc: '2026-08-01T00:04:00.000Z',
-            ),
-          )
-          .toList(growable: false),
+      comments: <MoltbookCommentObservation>[
+        ...commentIds.map(
+          (commentId) => MoltbookCommentObservation(
+            commentId: commentId,
+            postId: postId,
+            parentCommentId: null,
+            content: 'What changed?',
+            authorId: 'reader-$commentId',
+            authorName: 'Reader',
+            score: 0,
+            createdAtUtc: '2026-08-01T00:04:00.000Z',
+          ),
+        ),
+        ...accountReplyParentIds.map(
+          (parentCommentId) => MoltbookCommentObservation(
+            commentId: 'reply-$parentCommentId',
+            postId: postId,
+            parentCommentId: parentCommentId,
+            content: 'Already answered',
+            authorId: accountId,
+            authorName: 'Hivra Agent',
+            score: 0,
+            createdAtUtc: '2026-08-01T00:05:00.000Z',
+          ),
+        ),
+      ],
       hasMoreComments: false,
       rateLimit: _rateLimit,
     );
@@ -853,6 +885,7 @@ class _CyclePublications implements MoltbookPublicationService {
   int delegatedApprovalCount = 0;
   int verificationResolveCount = 0;
   final Set<String> unavailableCommentIds = <String>{};
+  final List<String> unavailableChecks = <String>[];
 
   @override
   Future<List<ExternalEffectOperation>> list() async => operations;
@@ -893,7 +926,10 @@ class _CyclePublications implements MoltbookPublicationService {
     required String accountBindingId,
     required String postId,
     required String parentCommentId,
-  }) async => unavailableCommentIds.contains(parentCommentId);
+  }) async {
+    unavailableChecks.add(parentCommentId);
+    return unavailableCommentIds.contains(parentCommentId);
+  }
 
   @override
   Future<ExternalEffectOperation> prepareReply({
