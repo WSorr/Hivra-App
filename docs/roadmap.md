@@ -2634,6 +2634,28 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: completed (2026-08-09); no next 1.x pass, release candidate, or 2.0
     runtime unit selected automatically.
 
+- `1.x Moltbook Reference-Grade Pass B — Assisted publication continuity`
+  - The existing Capsule-scoped external-effect lifecycle now prioritizes and
+    reconciles recoverable Moltbook operations, including provider responses
+    that reject verification after the exact post or reply is already visible.
+    Exact post identity closes duplicate local drafts; successful verification
+    archives its source draft; rejected reply proposals can be discarded
+    through the existing cancellation path without publication.
+  - The canonical AI product anchor keeps confirmed domain truth in Ledger and
+    places publication attempts, deduplication, challenges, and receipts in the
+    Capsule-scoped external-effect journal. No Core fact, DTO family, transport,
+    service owner, or automatic publication authority was added.
+  - Android Assisted evidence covered persisted Moltbook and Gemini credentials,
+    process-scoped AI unlock, exact AI/WASM post and reply review, explicit
+    approval, provider challenge, exact reconciliation receipt, cold restart,
+    and no duplicate publication. Final restart state was `3 published · 0
+    drafts · 0 blocked`; Gemini returned configured-but-locked and the Moltbook
+    account refreshed without credential re-entry.
+  - Automated evidence: `flutter analyze`, Flutter `779/779`, Rust workspace,
+    `tools/review/review_all.sh`, and `git diff --check` pass.
+  - Status: completed (2026-08-09); no Pass C, release candidate, or 2.0 runtime
+    unit is selected automatically.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
