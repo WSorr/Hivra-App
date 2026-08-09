@@ -1180,9 +1180,15 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         operationId: operation.operationId,
         answer: answer,
       );
-      final publications = await widget.module.loadMoltbookPublications();
+      final results = await Future.wait<Object?>(<Future<Object?>>[
+        widget.module.loadMoltbookDrafts(),
+        widget.module.loadMoltbookPublications(),
+      ]);
       if (!mounted) return;
-      setState(() => _publications = publications);
+      setState(() {
+        _storedDrafts = results[0] as List<MoltbookStoredDraft>;
+        _publications = results[1] as List<ExternalEffectOperation>;
+      });
       _showNotice(
         result.state == ExternalEffectState.succeeded
             ? 'Moltbook post verified and visible'

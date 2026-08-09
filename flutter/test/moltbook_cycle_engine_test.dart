@@ -38,6 +38,7 @@ void main() {
   late _EnabledConfiguration configuration;
   late _HeartbeatHost heartbeatHost;
   late _CycleAi ai;
+  late _RecordingDraftStore drafts;
   late MoltbookCycleTriggerService triggers;
   late PluginRuntimeModule module;
 
@@ -54,7 +55,7 @@ void main() {
       uiLog: _SilentLog(),
       externalEffects: _UnusedExternalEffects(),
       moltbookConnection: connection,
-      moltbookDrafts: _UnusedDraftStore(),
+      moltbookDrafts: drafts,
       moltbookFeedCheckpoint: checkpoint,
       moltbookPublications: publications,
       moltbookPublicBulletinAi: ai,
@@ -74,8 +75,21 @@ void main() {
     configuration = _EnabledConfiguration();
     heartbeatHost = _HeartbeatHost();
     ai = _CycleAi();
+    drafts = _RecordingDraftStore();
     triggers = MoltbookCycleTriggerService();
     module = buildModule(triggers);
+  });
+
+  test('successful verification archives its exact source draft', () async {
+    publications.verificationResult = _succeededPostOperation();
+
+    final result = await module.resolveMoltbookPublicationVerification(
+      operationId: publications.verificationResult!.operationId,
+      answer: '50',
+    );
+
+    expect(result.state, ExternalEffectState.succeeded);
+    expect(drafts.deletedHashes, <String>{'f' * 64});
   });
 
   test('duplicate wake shares one in-flight Capsule account cycle', () async {
@@ -620,6 +634,7 @@ class _CyclePublications implements MoltbookPublicationService {
   final List<String> processedIds = <String>[];
   final List<ExternalEffectOperation> preparedReplies =
       <ExternalEffectOperation>[];
+  ExternalEffectOperation? verificationResult;
 
   @override
   Future<List<ExternalEffectOperation>> list() async => operations;
@@ -629,6 +644,12 @@ class _CyclePublications implements MoltbookPublicationService {
     processedIds.add(operationId);
     return _operation(challenged: true);
   }
+
+  @override
+  Future<ExternalEffectOperation> resolveVerification({
+    required String operationId,
+    required String answer,
+  }) async => verificationResult!;
 
   @override
   Future<List<ExternalEffectOperation>> findReplyOperations({
@@ -780,9 +801,47 @@ class _UnusedExternalEffects implements ExternalEffectService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _UnusedDraftStore implements MoltbookDraftStore {
+class _RecordingDraftStore implements MoltbookDraftStore {
+  final Set<String> deletedHashes = <String>{};
+
+  @override
+  Future<void> deleteAll(Set<String> draftHashHexes) async {
+    deletedHashes.addAll(draftHashHexes);
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+ExternalEffectOperation _succeededPostOperation() {
+  const operationId = 'moltbook-post-verified';
+  return ExternalEffectOperation(
+    ownerCapsuleHex: _rootA,
+    operationId: operationId,
+    pluginId: moltbookAmbassadorPluginId,
+    providerId: 'moltbook',
+    accountBindingId: 'agent-1',
+    effectKind: 'moltbook.post.create',
+    canonicalPayloadJson: '{"source_draft_hash_hex":"${'f' * 64}"}',
+    payloadHashHex: 'c' * 64,
+    state: ExternalEffectState.succeeded,
+    approvalEvidenceHashHex: 'd' * 64,
+    attemptCount: 1,
+    revision: 3,
+    createdAtUtc: '2026-08-01T00:00:00.000Z',
+    updatedAtUtc: '2026-08-01T00:01:00.000Z',
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    requiredAction: null,
+    receipt: const ExternalEffectReceipt(
+      operationId: operationId,
+      providerId: 'moltbook',
+      providerReceiptId: 'post-1',
+      evidenceHashHex:
+          'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      receivedAtUtc: '2026-08-01T00:01:00.000Z',
+    ),
+  );
 }
 
 class _CycleAi implements MoltbookPublicBulletinAiService {

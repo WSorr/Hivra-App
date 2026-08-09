@@ -1278,6 +1278,7 @@ class PluginRuntimeModule {
       operationId: operationId,
       answer: answer,
     );
+    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[result]);
     await uiLog.log(
       'moltbook.publication.verify',
       'operation=$operationId state=${result.state.wireName} '
