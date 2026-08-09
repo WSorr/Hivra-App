@@ -10,9 +10,10 @@ Date: 2026-02-20
 
 ## Documentation and Comment Language Requirements
 
-### 1. Documentation Language
+### 1. Repository Language
 
-All user-facing documentation, README files, API docs, guides, and examples published in open repositories or shipped with the product MUST be written in ENGLISH.
+All tracked text, including documentation, source, tests, fixtures, commit
+messages, and pull request descriptions, MUST be written in ENGLISH.
 
 This includes (but is not limited to):
 
@@ -34,8 +35,8 @@ pub fn now(&self) -> Timestamp {
     self.time.now()
 }
 
-// Incorrect:
-/// Возвращает текущую метку времени из источника времени.
+// Incorrect: a non-English comment.
+/// [Non-English description omitted.]
 pub fn now(&self) -> Timestamp {
     self.time.now()
 }
@@ -43,11 +44,9 @@ pub fn now(&self) -> Timestamp {
 
 ### 3. Exceptions
 
-Only the following are exceptions:
-
-- Internal team documents (like this one)
-- Temporary development comments (TODO, FIXME) — must be translated or removed before release
-- Specific terms without adequate translation
+Spoken conversation may use the language chosen by its participants. No
+non-English conversation text may be copied into tracked repository content.
+Technical names that have no translation remain identifiers, not prose.
 
 ### 4. Rationale
 
@@ -58,7 +57,9 @@ Only the following are exceptions:
 
 ### 5. Enforcement
 
-Commits containing non-English documentation or comments (in production-bound files) must not pass review and must be corrected.
+Commits containing non-English tracked text must not pass review and must be
+corrected. The repository gate rejects Cyrillic text as a deterministic minimum
+enforcement rule.
 
 ---
 

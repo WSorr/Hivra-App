@@ -331,7 +331,8 @@ selection remains exclusively in `development-control.md` and `roadmap.md`.
   capability owner, lane mapping, axis gain, and removal delta.
 - If product behavior/flows are affected, update `hivra-conceptual-model.md` in the same PR.
 - Keep terminology consistent: Capsule, Starter, Invitation, Relationship, Ledger, Network.
-- All product-bound documentation and code comments must be in English.
+- All tracked repository text must be in English. Spoken conversation is the
+  only language-policy exception; Cyrillic text is rejected by repository gates.
 - 2.0 design work must not alter the normative 1.x specification until a
   capability migration is explicitly approved.
 

@@ -80,7 +80,30 @@ for path in md_files:
                 continue
             stale_hits.append((path.relative_to(root), line_number, label, line.strip()))
 
-if missing_links or missing_paths or stale_hits:
+cyrillic_re = re.compile(r"[\u0400-\u052f]")
+cyrillic_hits = []
+tracked = subprocess.run(
+    ["git", "-C", str(root), "ls-files", "-z"],
+    check=True,
+    capture_output=True,
+).stdout.split(b"\0")
+for raw_path in tracked:
+    if not raw_path:
+        continue
+    relative = raw_path.decode("utf-8", errors="replace")
+    path = root / relative
+    try:
+        payload = path.read_bytes()
+    except OSError:
+        continue
+    if b"\0" in payload:
+        continue
+    text = payload.decode("utf-8", errors="replace")
+    for line_number, line in enumerate(text.splitlines(), 1):
+        if cyrillic_re.search(line):
+            cyrillic_hits.append((relative, line_number, line.strip()))
+
+if missing_links or missing_paths or stale_hits or cyrillic_hits:
     for file_path, target in missing_links:
         print(f"FAIL docs-integrity: missing markdown link in {file_path}: {target}")
     for file_path, target in missing_paths:
@@ -88,6 +111,11 @@ if missing_links or missing_paths or stale_hits:
     for file_path, line_number, label, line in stale_hits:
         print(
             f"FAIL docs-integrity: stale term '{label}' in "
+            f"{file_path}:{line_number}: {line[:180]}"
+        )
+    for file_path, line_number, line in cyrillic_hits:
+        print(
+            f"FAIL docs-integrity: Cyrillic text is forbidden in tracked files: "
             f"{file_path}:{line_number}: {line[:180]}"
         )
     sys.exit(1)
