@@ -853,18 +853,59 @@ class PluginRuntimeModule {
     );
     final heartbeatPlan = heartbeat.plan;
     String? deferredFeedPostId;
-    final candidatePostId = heartbeatPlan.candidatePostIds.firstOrNull;
-    if (candidatePostId != null) {
+    for (final candidatePostId in heartbeatPlan.candidatePostIds) {
       try {
         final selectionKind =
             heartbeatPlan.priority == 'review_activity'
                 ? 'own_activity'
                 : 'feed_candidate';
-        final conversation = await observeMoltbookConversation(candidatePostId);
+        final observedConversation = await observeMoltbookConversation(
+          candidatePostId,
+        );
         await _ensureMoltbookCycleScope(
           ownerHex,
           accountBindingId,
           cycleEpoch: cycleEpoch,
+        );
+        final publiclyAnsweredCommentIds =
+            observedConversation.comments
+                .where(
+                  (comment) =>
+                      comment.authorId == accountBindingId &&
+                      comment.parentCommentId != null,
+                )
+                .map((comment) => comment.parentCommentId!)
+                .toSet();
+        final availableComments = <MoltbookCommentObservation>[];
+        for (final comment in observedConversation.comments) {
+          final unavailable =
+              comment.authorId == accountBindingId ||
+              publiclyAnsweredCommentIds.contains(comment.commentId) ||
+              await moltbookPublications.isReplyTargetUnavailable(
+                accountBindingId: accountBindingId,
+                postId: observedConversation.post.postId,
+                parentCommentId: comment.commentId,
+              );
+          await _ensureMoltbookCycleScope(
+            ownerHex,
+            accountBindingId,
+            cycleEpoch: cycleEpoch,
+          );
+          if (!unavailable) availableComments.add(comment);
+        }
+        if (availableComments.length != observedConversation.comments.length) {
+          await uiLog.log(
+            'moltbook.cycle.targets',
+            'post=${observedConversation.post.postId} '
+                'available=${availableComments.length} '
+                'excluded=${observedConversation.comments.length - availableComments.length}',
+          );
+        }
+        final conversation = MoltbookConversationObservation(
+          post: observedConversation.post,
+          comments: availableComments,
+          hasMoreComments: observedConversation.hasMoreComments,
+          rateLimit: observedConversation.rateLimit,
         );
         final engagementPlan = await planMoltbookEngagement(
           conversation: conversation,
@@ -891,8 +932,10 @@ class PluginRuntimeModule {
           );
           if (existing.isEmpty) {
             final configuration = await _ambassadorConfiguration.load();
-            if (configuration.approvalMode ==
-                MoltbookAmbassadorConfiguration.approvalAssisted) {
+            if (const <String>{
+              MoltbookAmbassadorConfiguration.approvalAssisted,
+              MoltbookAmbassadorConfiguration.approvalBounded,
+            }.contains(configuration.approvalMode)) {
               final proposal = await proposeMoltbookReply(
                 conversation: conversation,
                 engagementPlan: engagementPlan,
@@ -911,11 +954,21 @@ class PluginRuntimeModule {
                 accountBindingId,
                 cycleEpoch: cycleEpoch,
               );
-              final operation = await advanceMoltbookEngagement(
+              final bounded =
+                  configuration.approvalMode ==
+                  MoltbookAmbassadorConfiguration.approvalBounded;
+              final operation = await _advanceMoltbookEngagement(
                 engagementPlan: engagementPlan,
                 draft: draft,
-                policy: MoltbookEngagementWritePolicy.assisted,
-                exactApproval: false,
+                policy:
+                    bounded
+                        ? MoltbookEngagementWritePolicy.bounded
+                        : MoltbookEngagementWritePolicy.assisted,
+                exactApproval: bounded,
+                processAuthorizedEffect: bounded,
+                cycleOwnerHex: ownerHex,
+                cycleAccountBindingId: accountBindingId,
+                cycleEpoch: cycleEpoch,
               );
               await _ensureMoltbookCycleScope(
                 ownerHex,
@@ -923,12 +976,24 @@ class PluginRuntimeModule {
                 cycleEpoch: cycleEpoch,
               );
               await uiLog.log(
-                'moltbook.cycle.propose',
-                'prepared operation=${operation.operationId} '
-                    'post=${engagementPlan.targetPostId}',
+                bounded ? 'moltbook.cycle.delegate' : 'moltbook.cycle.propose',
+                '${bounded ? "processed" : "prepared"} '
+                'operation=${operation.operationId} '
+                'post=${engagementPlan.targetPostId} '
+                'state=${operation.state.wireName}',
               );
+              if (bounded &&
+                  (operation.requiredAction != null ||
+                      operation.lastErrorCode == 'verification_required')) {
+                challengedCount++;
+              }
+              if (bounded &&
+                  operation.state == ExternalEffectState.terminalFailure) {
+                blockedCount++;
+              }
             }
           }
+          break;
         } else if (engagementPlan.actionClass != 'no_action') {
           throw StateError(
             'Cycle action ${engagementPlan.actionClass} is not mounted',
@@ -943,6 +1008,7 @@ class PluginRuntimeModule {
           'moltbook.cycle.propose',
           'deferred post=$candidatePostId ${_safeError(error)}',
         );
+        break;
       }
     }
     await _ensureMoltbookCycleScope(
@@ -1063,8 +1129,10 @@ class PluginRuntimeModule {
   }) async {
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled ||
-        configuration.approvalMode !=
-            MoltbookAmbassadorConfiguration.approvalAssisted) {
+        !const <String>{
+          MoltbookAmbassadorConfiguration.approvalAssisted,
+          MoltbookAmbassadorConfiguration.approvalBounded,
+        }.contains(configuration.approvalMode)) {
       throw StateError('Assisted Moltbook publication is not enabled');
     }
     final operation = await moltbookPublications.prepare(
@@ -1093,11 +1161,50 @@ class PluginRuntimeModule {
     required bool exactApproval,
     bool processAuthorizedEffect = false,
     DateTime? nowUtc,
+  }) => _advanceMoltbookEngagement(
+    engagementPlan: engagementPlan,
+    draft: draft,
+    policy: policy,
+    exactApproval: exactApproval,
+    processAuthorizedEffect: processAuthorizedEffect,
+    nowUtc: nowUtc,
+  );
+
+  Future<ExternalEffectOperation> _advanceMoltbookEngagement({
+    required MoltbookEngagementPlan engagementPlan,
+    required MoltbookReplyDraftPreview draft,
+    required MoltbookEngagementWritePolicy policy,
+    required bool exactApproval,
+    required bool processAuthorizedEffect,
+    DateTime? nowUtc,
+    String? cycleOwnerHex,
+    String? cycleAccountBindingId,
+    int? cycleEpoch,
   }) async {
+    Future<void> ensureCycleScope() async {
+      if (cycleOwnerHex == null ||
+          cycleAccountBindingId == null ||
+          cycleEpoch == null) {
+        return;
+      }
+      await _ensureMoltbookCycleScope(
+        cycleOwnerHex,
+        cycleAccountBindingId,
+        cycleEpoch: cycleEpoch,
+      );
+    }
+
     final configuration = await _ambassadorConfiguration.load();
-    if (!configuration.enabled ||
-        configuration.approvalMode !=
-            MoltbookAmbassadorConfiguration.approvalAssisted) {
+    final policyAllowed = switch (policy) {
+      MoltbookEngagementWritePolicy.assisted => const <String>{
+        MoltbookAmbassadorConfiguration.approvalAssisted,
+        MoltbookAmbassadorConfiguration.approvalBounded,
+      }.contains(configuration.approvalMode),
+      MoltbookEngagementWritePolicy.bounded =>
+        configuration.approvalMode ==
+            MoltbookAmbassadorConfiguration.approvalBounded,
+    };
+    if (!configuration.enabled || !policyAllowed) {
       throw StateError('Moltbook engagement publication is not enabled');
     }
     if (draft.engagementPlanHashHex != engagementPlan.planHashHex ||
@@ -1121,9 +1228,11 @@ class PluginRuntimeModule {
         draft: draft,
         nowUtc: nowUtc,
       );
+      await ensureCycleScope();
     }
 
     final operation = await moltbookPublications.prepareReply(draft: draft);
+    await ensureCycleScope();
     await uiLog.log(
       'moltbook.engagement.advance',
       'policy=${policy.name} approval=$exactApproval '
@@ -1140,6 +1249,7 @@ class PluginRuntimeModule {
               authorization: delegatedAuthorization!,
               nowUtc: nowUtc,
             );
+    await ensureCycleScope();
     if (!processAuthorizedEffect) return queued;
     return moltbookPublications.process(queued.operationId);
   }

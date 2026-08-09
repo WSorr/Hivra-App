@@ -331,6 +331,46 @@ void main() {
     });
 
     test(
+      'automatic selection excludes existing and cancelled targets',
+      () async {
+        final operation = await publications.prepareReply(
+          draft: _draft('first'),
+        );
+
+        expect(
+          await publications.isReplyTargetUnavailable(
+            accountBindingId: binding.accountId,
+            postId: 'post-1',
+            parentCommentId: 'comment-1',
+          ),
+          isTrue,
+        );
+
+        await effects.cancel(
+          pluginId: moltbookAmbassadorPluginId,
+          operationId: operation.operationId,
+        );
+
+        expect(
+          await publications.isReplyTargetUnavailable(
+            accountBindingId: binding.accountId,
+            postId: 'post-1',
+            parentCommentId: 'comment-1',
+          ),
+          isTrue,
+        );
+        expect(
+          await publications.isReplyTargetUnavailable(
+            accountBindingId: binding.accountId,
+            postId: 'post-1',
+            parentCommentId: 'comment-2',
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    test(
       'legacy duplicate active replies freeze preparation and delivery',
       () async {
         await _prepareLegacy(effects, 'legacy-one', _draft('first'));

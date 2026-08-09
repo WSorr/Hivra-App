@@ -21,6 +21,7 @@ import 'package:hivra_app/services/moltbook_ambassador_configuration_store.dart'
 import 'package:hivra_app/services/moltbook_connection_service.dart';
 import 'package:hivra_app/services/moltbook_cycle_trigger_service.dart';
 import 'package:hivra_app/services/moltbook_draft_store.dart';
+import 'package:hivra_app/services/moltbook_external_effect_adapter.dart';
 import 'package:hivra_app/services/moltbook_feed_checkpoint_store.dart';
 import 'package:hivra_app/services/moltbook_publication_service.dart';
 import 'package:hivra_app/services/moltbook_public_bulletin_ai_service.dart';
@@ -176,7 +177,7 @@ void main() {
     final summary = await replacement;
 
     expect(connection.observeCount, 2);
-    expect(heartbeatHost.executeCount, 2);
+    expect(heartbeatHost.executeCount, 3);
     expect(summary.inspectedCount, 2);
   });
 
@@ -231,6 +232,173 @@ void main() {
     expect(publications.processedIds, isEmpty);
     expect(summary.blockedCount, 0);
     expect(summary.checkpoint.processedPostIds, <String>['post-2', 'post-1']);
+  });
+
+  test(
+    'bounded cycle authorizes and processes one exact reply without review',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'reply_draft';
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(ai.proposalCount, 1);
+      expect(heartbeatHost.authorizationCount, 1);
+      expect(publications.delegatedApprovalCount, 1);
+      expect(publications.processedIds, <String>['reply-effect-1']);
+      expect(publications.verificationResolveCount, 0);
+      expect(summary.challengedCount, 1);
+      expect(summary.blockedCount, 0);
+    },
+  );
+
+  test('bounded cycle fails closed after three durable writes today', () async {
+    configuration.approvalMode =
+        MoltbookAmbassadorConfiguration.approvalBounded;
+    heartbeatHost.engagementAction = 'reply_draft';
+    final now = DateTime.now().toUtc();
+    publications.operations = <ExternalEffectOperation>[
+      _committedReply('daily-1', now.subtract(const Duration(hours: 3))),
+      _committedReply('daily-2', now.subtract(const Duration(hours: 2))),
+      _committedReply('daily-3', now.subtract(const Duration(hours: 1))),
+    ];
+
+    final summary = await module.runMoltbookCycle();
+
+    expect(heartbeatHost.authorizationCount, 1);
+    expect(publications.preparedReplies, isEmpty);
+    expect(publications.delegatedApprovalCount, 0);
+    expect(publications.processedIds, isEmpty);
+    expect(summary.blockedCount, 1);
+  });
+
+  test('bounded cycle cannot delegate a root comment', () async {
+    configuration.approvalMode =
+        MoltbookAmbassadorConfiguration.approvalBounded;
+    heartbeatHost.engagementAction = 'comment_draft';
+
+    final summary = await module.runMoltbookCycle();
+
+    expect(heartbeatHost.authorizationCount, 0);
+    expect(publications.preparedReplies, isEmpty);
+    expect(publications.delegatedApprovalCount, 0);
+    expect(publications.processedIds, isEmpty);
+    expect(summary.blockedCount, 1);
+  });
+
+  test(
+    'bounded cycle skips a closed comment and replies to the next',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'reply_draft';
+      connection.commentIds = <String>['comment-1', 'comment-2'];
+      publications.unavailableCommentIds.add('comment-1');
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(heartbeatHost.authorizedTargetCommentIds, <String>['comment-2']);
+      expect(publications.delegatedApprovalCount, 1);
+      expect(publications.processedIds, <String>['reply-effect-1']);
+      expect(summary.blockedCount, 0);
+    },
+  );
+
+  test(
+    'bounded cycle skips a target already answered by the provider account',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'reply_draft';
+      connection.commentIds = <String>['comment-1', 'comment-2'];
+      connection.accountReplyParentIds.add('comment-1');
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(heartbeatHost.authorizedTargetCommentIds, <String>['comment-2']);
+      expect(publications.unavailableChecks, contains('comment-2'));
+      expect(publications.delegatedApprovalCount, 1);
+      expect(publications.processedIds, <String>['reply-effect-1']);
+      expect(summary.blockedCount, 0);
+    },
+  );
+
+  test(
+    'cycle skips a no-action post and evaluates the next candidate',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      connection.feedIds = <String>['post-1', 'post-2'];
+      heartbeatHost.engagementActionsByPostId['post-1'] = 'no_action';
+      heartbeatHost.engagementActionsByPostId['post-2'] = 'reply_draft';
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(connection.observedConversationPostIds, <String>[
+        'post-1',
+        'post-2',
+      ]);
+      expect(heartbeatHost.authorizedTargetCommentIds, <String>['comment-1']);
+      expect(publications.delegatedApprovalCount, 1);
+      expect(publications.processedIds, <String>['reply-effect-1']);
+      expect(summary.blockedCount, 0);
+    },
+  );
+
+  test(
+    'recreated module enforces interval from durable reply history',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'reply_draft';
+      publications.operations = <ExternalEffectOperation>[
+        _committedReply(
+          'recent-1',
+          DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+        ),
+      ];
+      final restartedModule = buildModule(MoltbookCycleTriggerService());
+
+      final summary = await restartedModule.runMoltbookCycle();
+
+      expect(heartbeatHost.authorizationCount, 1);
+      expect(publications.preparedReplies, isEmpty);
+      expect(publications.delegatedApprovalCount, 0);
+      expect(publications.processedIds, isEmpty);
+      expect(summary.blockedCount, 1);
+    },
+  );
+
+  test(
+    'Capsule switch after bounded authorization creates no effect',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      heartbeatHost.engagementAction = 'reply_draft';
+      heartbeatHost.afterAuthorization = () => activeRoot = _rootB;
+
+      await expectLater(module.runMoltbookCycle(), throwsA(isA<StateError>()));
+
+      expect(publications.preparedReplies, isEmpty);
+      expect(publications.delegatedApprovalCount, 0);
+      expect(publications.processedIds, isEmpty);
+      expect(checkpoint.commitCount, 0);
+    },
+  );
+
+  test('Stop after bounded authorization creates no effect', () async {
+    configuration.approvalMode =
+        MoltbookAmbassadorConfiguration.approvalBounded;
+    heartbeatHost.engagementAction = 'reply_draft';
+    heartbeatHost.afterAuthorization = module.stopMoltbookCycles;
+
+    await expectLater(module.runMoltbookCycle(), throwsA(isA<StateError>()));
+
+    expect(publications.preparedReplies, isEmpty);
+    expect(publications.delegatedApprovalCount, 0);
+    expect(publications.processedIds, isEmpty);
+    expect(checkpoint.commitCount, 0);
   });
 
   test('AI failure defers selected feed candidate from checkpoint', () async {
@@ -329,8 +497,11 @@ class _UnusedPassiveReceive implements CapsulePassiveReceivePort {
 
 class _CycleConnection implements MoltbookConnectionService {
   int observeCount = 0;
+  final List<String> observedConversationPostIds = <String>[];
   String accountId = 'agent-1';
   List<String> feedIds = <String>['post-2', 'post-1'];
+  List<String> commentIds = <String>['comment-1'];
+  final Set<String> accountReplyParentIds = <String>{};
   Future<void>? observationGate;
   void Function()? afterObserve;
   final List<Set<String>> processedSnapshots = <Set<String>>[];
@@ -375,37 +546,54 @@ class _CycleConnection implements MoltbookConnectionService {
   @override
   Future<MoltbookConversationObservation> observeConversation(
     String postId,
-  ) async => MoltbookConversationObservation(
-    post: MoltbookPostObservation(
-      postId: postId,
-      title: 'Post $postId',
-      content: 'Public content',
-      authorId: 'author-1',
-      authorName: 'Agent',
-      submoltName: 'hivra',
-      score: 1,
-      commentCount: 1,
-      isVerified: true,
-      isSpam: false,
-      isLocked: false,
-      createdAtUtc: '2026-08-01T00:00:00.000Z',
-      updatedAtUtc: '2026-08-01T00:05:00.000Z',
-    ),
-    comments: <MoltbookCommentObservation>[
-      MoltbookCommentObservation(
-        commentId: 'comment-1',
+  ) async {
+    observedConversationPostIds.add(postId);
+    return MoltbookConversationObservation(
+      post: MoltbookPostObservation(
         postId: postId,
-        parentCommentId: null,
-        content: 'What changed?',
-        authorId: 'reader-1',
-        authorName: 'Reader',
-        score: 0,
-        createdAtUtc: '2026-08-01T00:04:00.000Z',
+        title: 'Post $postId',
+        content: 'Public content',
+        authorId: 'author-1',
+        authorName: 'Agent',
+        submoltName: 'hivra',
+        score: 1,
+        commentCount: 1,
+        isVerified: true,
+        isSpam: false,
+        isLocked: false,
+        createdAtUtc: '2026-08-01T00:00:00.000Z',
+        updatedAtUtc: '2026-08-01T00:05:00.000Z',
       ),
-    ],
-    hasMoreComments: false,
-    rateLimit: _rateLimit,
-  );
+      comments: <MoltbookCommentObservation>[
+        ...commentIds.map(
+          (commentId) => MoltbookCommentObservation(
+            commentId: commentId,
+            postId: postId,
+            parentCommentId: null,
+            content: 'What changed?',
+            authorId: 'reader-$commentId',
+            authorName: 'Reader',
+            score: 0,
+            createdAtUtc: '2026-08-01T00:04:00.000Z',
+          ),
+        ),
+        ...accountReplyParentIds.map(
+          (parentCommentId) => MoltbookCommentObservation(
+            commentId: 'reply-$parentCommentId',
+            postId: postId,
+            parentCommentId: parentCommentId,
+            content: 'Already answered',
+            authorId: accountId,
+            authorName: 'Hivra Agent',
+            score: 0,
+            createdAtUtc: '2026-08-01T00:05:00.000Z',
+          ),
+        ),
+      ],
+      hasMoreComments: false,
+      rateLimit: _rateLimit,
+    );
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -434,7 +622,11 @@ class _MemoryCheckpoint implements MoltbookFeedCheckpointStore {
 
 class _HeartbeatHost implements PluginHostApiService {
   int executeCount = 0;
+  int authorizationCount = 0;
+  final List<String> authorizedTargetCommentIds = <String>[];
+  final Map<String, String> engagementActionsByPostId = <String, String>{};
   String engagementAction = 'no_action';
+  void Function()? afterAuthorization;
 
   @override
   Future<PluginHostApiResponse> executeWithRuntimeHook(
@@ -446,6 +638,25 @@ class _HeartbeatHost implements PluginHostApiService {
     }
     if (request.method == prepareMoltbookReplyMethod) {
       return _replyDraftResponse(request);
+    }
+    if (request.method == authorizeMoltbookDelegatedReplyMethod) {
+      authorizationCount++;
+      authorizedTargetCommentIds.add(
+        request.args['target_comment_id'] as String,
+      );
+      final writesToday = request.args['writes_today'] as int;
+      final maxDailyWrites = request.args['max_daily_writes'] as int;
+      final minutesSinceLastWrite =
+          request.args['minutes_since_last_write'] as int?;
+      final minIntervalMinutes = request.args['min_interval_minutes'] as int;
+      if (writesToday >= maxDailyWrites ||
+          (minutesSinceLastWrite != null &&
+              minutesSinceLastWrite < minIntervalMinutes)) {
+        throw StateError('Delegated reply policy denied authorization');
+      }
+      final response = _delegatedAuthorizationResponse(request);
+      afterAuthorization?.call();
+      return response;
     }
     final observedAt = request.args['observed_at_utc'] as String;
     final feed = request.args['feed'] as List<dynamic>;
@@ -516,8 +727,11 @@ class _HeartbeatHost implements PluginHostApiService {
     final observedAt = request.args['observed_at_utc'] as String;
     final post = request.args['post'] as Map<String, dynamic>;
     final comments = request.args['comments'] as List<dynamic>;
+    final action =
+        engagementActionsByPostId[post['post_id'] as String] ??
+        engagementAction;
     final targetCommentId =
-        engagementAction == 'reply_draft' && comments.isNotEmpty
+        action == 'reply_draft' && comments.isNotEmpty
             ? (comments.first as Map<String, dynamic>)['comment_id'] as String
             : null;
     final canonical = jsonEncode(<String, dynamic>{
@@ -525,11 +739,11 @@ class _HeartbeatHost implements PluginHostApiService {
       'plugin_id': moltbookAmbassadorPluginId,
       'contract_kind': 'moltbook_ambassador_engagement_plan',
       'observed_at_utc': observedAt,
-      'action_class': engagementAction,
+      'action_class': action,
       'target_post_id': post['post_id'],
       'target_comment_id': targetCommentId,
       'reason':
-          engagementAction == 'no_action'
+          action == 'no_action'
               ? 'No useful reply is required.'
               : 'A factual reply may be useful.',
       'publish_allowed': false,
@@ -569,6 +783,37 @@ class _HeartbeatHost implements PluginHostApiService {
     }, canonical);
   }
 
+  PluginHostApiResponse _delegatedAuthorizationResponse(
+    PluginHostApiRequest request,
+  ) {
+    final canonical = jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'plugin_id': moltbookAmbassadorPluginId,
+      'contract_kind': 'moltbook_ambassador_delegated_reply_authorization',
+      'target_post_id': request.args['target_post_id'],
+      'target_comment_id': request.args['target_comment_id'],
+      'engagement_plan_hash_hex': request.args['engagement_plan_hash_hex'],
+      'reply_draft_hash_hex': request.args['reply_draft_hash_hex'],
+      'policy_version': request.args['policy_version'],
+      'max_daily_writes': request.args['max_daily_writes'],
+      'writes_today': request.args['writes_today'],
+      'min_interval_minutes': request.args['min_interval_minutes'],
+      'observed_at_utc': request.args['observed_at_utc'],
+      'publish_allowed': true,
+      'human_review_required': false,
+      'safety_flags': <String>[
+        'exact_reply_draft_bound',
+        'engagement_plan_bound',
+      ],
+    });
+    return _response(request, <String, dynamic>{
+      ...jsonDecode(canonical) as Map<String, dynamic>,
+      'canonical_authorization_json': canonical,
+      'authorization_hash_hex':
+          sha256.convert(utf8.encode(canonical)).toString(),
+    }, canonical);
+  }
+
   PluginHostApiResponse _response(
     PluginHostApiRequest request,
     Map<String, dynamic> result,
@@ -604,6 +849,7 @@ class _HeartbeatHost implements PluginHostApiService {
 }
 
 class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
+  String approvalMode = MoltbookAmbassadorConfiguration.approvalAssisted;
   String triggerPolicy = MoltbookAmbassadorConfiguration.triggerOnDemand;
   bool enabled = true;
 
@@ -614,13 +860,14 @@ class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
         agentDescription: 'Capsule ambassador',
         personaSummary: 'Technical Hivra updates',
         allowedTopics: const <String>['hivra'],
-        approvalMode: MoltbookAmbassadorConfiguration.approvalAssisted,
+        approvalMode: approvalMode,
         triggerPolicy: triggerPolicy,
         enabled: enabled,
       );
 
   @override
   Future<void> save(MoltbookAmbassadorConfiguration configuration) async {
+    approvalMode = configuration.approvalMode;
     triggerPolicy = configuration.triggerPolicy;
     enabled = configuration.enabled;
   }
@@ -635,6 +882,10 @@ class _CyclePublications implements MoltbookPublicationService {
   final List<ExternalEffectOperation> preparedReplies =
       <ExternalEffectOperation>[];
   ExternalEffectOperation? verificationResult;
+  int delegatedApprovalCount = 0;
+  int verificationResolveCount = 0;
+  final Set<String> unavailableCommentIds = <String>{};
+  final List<String> unavailableChecks = <String>[];
 
   @override
   Future<List<ExternalEffectOperation>> list() async => operations;
@@ -646,10 +897,22 @@ class _CyclePublications implements MoltbookPublicationService {
   }
 
   @override
+  Future<ExternalEffectOperation> approveDelegatedReplyAndQueue({
+    required ExternalEffectOperation operation,
+    required MoltbookDelegatedReplyAuthorization authorization,
+  }) async {
+    delegatedApprovalCount++;
+    return operation;
+  }
+
+  @override
   Future<ExternalEffectOperation> resolveVerification({
     required String operationId,
     required String answer,
-  }) async => verificationResult!;
+  }) async {
+    verificationResolveCount++;
+    return verificationResult!;
+  }
 
   @override
   Future<List<ExternalEffectOperation>> findReplyOperations({
@@ -657,6 +920,16 @@ class _CyclePublications implements MoltbookPublicationService {
     required String postId,
     required String? parentCommentId,
   }) async => preparedReplies;
+
+  @override
+  Future<bool> isReplyTargetUnavailable({
+    required String accountBindingId,
+    required String postId,
+    required String parentCommentId,
+  }) async {
+    unavailableChecks.add(parentCommentId);
+    return unavailableCommentIds.contains(parentCommentId);
+  }
 
   @override
   Future<ExternalEffectOperation> prepareReply({
@@ -669,7 +942,7 @@ class _CyclePublications implements MoltbookPublicationService {
       pluginId: moltbookAmbassadorPluginId,
       providerId: 'moltbook',
       accountBindingId: 'agent-1',
-      effectKind: 'comment.create',
+      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
       canonicalPayloadJson: jsonEncode(<String, dynamic>{
         'schema_version': 2,
         'account_name': 'Hivra Agent',
@@ -740,7 +1013,7 @@ ExternalEffectOperation _operation({bool challenged = false}) =>
       pluginId: moltbookAmbassadorPluginId,
       providerId: 'moltbook',
       accountBindingId: 'agent-1',
-      effectKind: 'comment.create',
+      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
       canonicalPayloadJson: '{}',
       payloadHashHex:
           'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
@@ -762,6 +1035,31 @@ ExternalEffectOperation _operation({bool challenged = false}) =>
                 expiresAtUtc: '2026-08-01T01:00:00.000Z',
               )
               : null,
+      receipt: null,
+    );
+
+ExternalEffectOperation _committedReply(String operationId, DateTime updated) =>
+    ExternalEffectOperation(
+      ownerCapsuleHex: _rootA,
+      operationId: operationId,
+      pluginId: moltbookAmbassadorPluginId,
+      providerId: 'moltbook',
+      accountBindingId: 'agent-1',
+      effectKind: MoltbookExternalEffectAdapter.commentEffectKind,
+      canonicalPayloadJson: '{}',
+      payloadHashHex:
+          'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      state: ExternalEffectState.succeeded,
+      approvalEvidenceHashHex:
+          'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      attemptCount: 1,
+      revision: 2,
+      createdAtUtc:
+          updated.subtract(const Duration(minutes: 1)).toIso8601String(),
+      updatedAtUtc: updated.toIso8601String(),
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      requiredAction: null,
       receipt: null,
     );
 

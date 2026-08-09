@@ -2656,6 +2656,55 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: completed (2026-08-09); no Pass C, release candidate, or 2.0 runtime
     unit is selected automatically.
 
+- `1.x Moltbook Reference-Grade Pass C — foreground bounded nested replies`
+  - Explicit schema-v3 configuration may select Bounded replies; schema-v1/v2
+    migration preserves Assisted authority and cannot enable Bounded implicitly.
+  - One selected foreign comment binds one AI proposal, deterministic WASM
+    draft, WASM delegation authorization, durable host budget, and the existing
+    External Effects operation. No DTO, service, Core/FFI path, provider route,
+    background runner, or second inbox/effect owner is added.
+  - Daily and interval limits derive from the Capsule-scoped durable effect
+    journal. Capsule switch and Stop are rechecked after authorization and
+    before effect progression; provider challenges remain human-only.
+  - Focused regressions cover configuration migration, exact delegated flow,
+    durable daily/interval denial across module recreation, Capsule switch,
+    Stop, challenge non-resolution, and canonical effect processing.
+  - Android Hands smoke found a closed-target selection gap: after WASM chose a
+    comment already represented in the effect journal, the cycle stopped
+    instead of considering another eligible comment. The existing publication
+    owner now filters journal-owned targets before WASM planning; regressions
+    cover next-target selection and automatic non-reopening after cancellation.
+  - Follow-up Android smoke on `4f8b269` confirmed exact target filtering
+    (`5` observed, `3` excluded, `2` available) and no duplicate effect, then
+    exposed a second starvation gap: `no_action` on the first heartbeat post
+    ended the cycle despite later candidates. The canonical cycle now evaluates
+    candidates in order until one actionable target is selected or the bounded
+    set is exhausted, while still advancing at most one action.
+  - Cross-Capsule review found one final duplicate surface: two local Capsules
+    could bind the same external Moltbook account while only one journal knew
+    about an existing reply. The cycle now treats a provider-visible direct
+    reply by the bound account as closed evidence and never targets comments
+    authored by that account. The existing cycle owner performs this filtering;
+    no global journal, DTO, service, or second effect path was added.
+  - Final packaged Hands evidence used source `4899b2d` and build
+    `1.0.3+100030020` on both platforms. macOS began with an empty local
+    publication journal for the bound account, excluded four provider-visible
+    closed targets, prepared exactly one new reply, preserved one operation
+    through explicit approval and anti-spam verification, and received a
+    successful provider receipt. The public API exposed exactly one verified
+    direct reply for target `470c6969-3ce4-4ba0-947f-41392f9790fb`. After cold
+    restart the same conversation reported `available=0`, `excluded=6`; all
+    five heartbeat candidates completed without inference or a new effect.
+    Android independently reported the same `available=0`, `excluded=6`
+    closure and exhausted all five candidates without inference or publication.
+  - Artifact SHA-256: macOS
+    `136cc59a1cce04075e71c1b61300dfe8830e5848c05d0d4d49c64e841536207d`;
+    Android
+    `76b95b5d9c84c63b0c2798fe57f0763d46632602a4c7dfe3767fcc3f6c73911e`.
+  - Status: completed (2026-08-10). Artifacts from `88a0f3e`, `4f8b269`, and
+    `313d55b` are invalid. No next product pass, release candidate, background
+    authority, or 2.0 runtime unit is selected automatically.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

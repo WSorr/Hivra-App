@@ -462,10 +462,12 @@ class MoltbookStoredDraft {
 }
 
 class MoltbookAmbassadorConfiguration {
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
+  static const int previousSchemaVersion = 2;
   static const int legacySchemaVersion = 1;
   static const String approvalDraft = 'draft';
   static const String approvalAssisted = 'assisted';
+  static const String approvalBounded = 'bounded';
   static const String triggerOnDemand = 'on_demand';
   static const String triggerSession = 'session';
   static const String triggerContinuous = 'continuous_while_running';
@@ -508,6 +510,7 @@ class MoltbookAmbassadorConfiguration {
   factory MoltbookAmbassadorConfiguration.fromJson(Map<String, dynamic> json) {
     final sourceSchemaVersion = json['schema_version'];
     if (sourceSchemaVersion != legacySchemaVersion &&
+        sourceSchemaVersion != previousSchemaVersion &&
         sourceSchemaVersion != schemaVersion) {
       throw const FormatException('Unsupported Moltbook configuration schema');
     }
@@ -552,6 +555,12 @@ class MoltbookAmbassadorConfiguration {
               : '',
       enabled: json['enabled'] as bool,
     );
+    if (sourceSchemaVersion != schemaVersion &&
+        config.approvalMode == approvalBounded) {
+      throw const FormatException(
+        'bounded approval requires configuration schema v3',
+      );
+    }
     config.validate();
     return config;
   }
@@ -584,8 +593,12 @@ class MoltbookAmbassadorConfiguration {
         throw const FormatException('allowed_topics contains an invalid value');
       }
     }
-    if (approvalMode != approvalDraft && approvalMode != approvalAssisted) {
-      throw const FormatException('approval_mode must be draft or assisted');
+    if (approvalMode != approvalDraft &&
+        approvalMode != approvalAssisted &&
+        approvalMode != approvalBounded) {
+      throw const FormatException(
+        'approval_mode must be draft, assisted, or bounded',
+      );
     }
     if (triggerPolicy != triggerOnDemand &&
         triggerPolicy != triggerSession &&
