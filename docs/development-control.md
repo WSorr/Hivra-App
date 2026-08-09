@@ -11,15 +11,20 @@ latch and verified the existing Assisted post/reply lifecycle through exact
 approval, publication challenge, receipt reconciliation, cold restart, and
 no-duplicate recovery on Android. No new effect owner, release candidate, or
 automatic publication authority was added. Moltbook Reference-Grade Pass C is
-the active bounded 1.x unit: explicit foreground nested-reply authority through
-the existing engagement/effect path. Android Hands smoke found that WASM could
+complete: explicit foreground nested-reply authority uses the existing
+engagement/effect path. Android Hands smoke found that WASM could
 reselect a journal-owned comment and stop before considering another eligible
 comment; the existing publication owner now filters such targets before
 planning. Follow-up Android smoke then proved that a `no_action` result on the
 first heartbeat candidate starved later candidates; the same cycle owner now
 continues through the bounded ordered set while still advancing at most one
-action. All pre-remediation packaged artifacts are invalid, and fresh macOS and
-Android evidence from one final post-fix SHA remains pending.
+action. Final cross-Capsule review found that the same external account could
+already have answered a target from another local Capsule, so provider-visible
+direct replies now close that target before planning. Packaged Hands smoke from
+source `4899b2d`, build `1.0.3+100030020`, passed on macOS and Android: exact
+approval, challenge verification, provider receipt, public visibility, cold
+restart, ordered candidate exhaustion, and no duplicate effect were confirmed.
+No next 1.x product pass is selected.
 Stable `1.0`, another release candidate, and 2.0 runtime work remain
 unauthorized without a separate explicit decision.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
@@ -49,7 +54,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete Moltbook Reference-Grade Pass C evidence for explicitly enabled foreground bounded nested replies. | `docs/plugins/moltbook_engagement_lifecycle_v1.md`, existing release and lifetime checklists |
+| What is the next 1.x step? | No implementation pass is selected. Consolidate the completed Pass C evidence before choosing another product unit. | `docs/plugins/moltbook_engagement_lifecycle_v1.md`, `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -59,12 +64,12 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Moltbook Reference-Grade Pass C remediation active | Existing 1.x runtime remains the sole production line. Explicit foreground bounded nested replies extend the same canonical engagement/effect path; no background service or broader action authority is allowed. | Schema-v3 opt-in, durable budgets, restart, Capsule-switch, Stop, challenge-human-only, journal-owned target exclusion, and ordered candidate exhaustion are implemented; fresh packaged macOS/Android evidence remains pending. | Close Pass C only after both final post-fix packaged smokes; select no next unit automatically. |
+| **1.x maintained runtime** | Moltbook Reference-Grade Pass C complete | Existing 1.x runtime remains the sole production line. Explicit foreground bounded nested replies use the same canonical engagement/effect path; no background service or broader action authority is allowed. | Schema-v3 opt-in, durable budgets, restart, Capsule-switch, Stop, challenge-human-only, local-journal and provider-visible target closure, ordered candidate exhaustion, exact provider receipt, and packaged macOS/Android Hands smoke passed from `4899b2d`. | Run a consolidation review; select no next unit automatically. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
-| **Future product tracks** | Parked except for guarded Moltbook evolution | AI trading advice, distributed backup drone, and staking drone remain parked. Moltbook Observe/Assisted effects remain released; explicit foreground bounded nested replies are under Pass C verification. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not preempt active 1.x integrity work. |
+| **Future product tracks** | Parked | AI trading advice, distributed backup drone, staking drone, and any further Moltbook authority remain unselected. Moltbook Observe/Assisted effects and explicit foreground bounded replies retain their existing reviewed boundaries. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not become active without an explicit product decision. |
 
 `12.3` passes 1-18 are complete. Any later transport remediation requires a
 new named finding and bounded pass; no pass is inferred merely because a screen
@@ -74,9 +79,9 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — active 1.x unit:** complete Moltbook Reference-Grade Pass C automated
-   and packaged macOS/Android evidence. Do not infer background authority or a
-   subsequent product/release pass.
+1. **P1 — consolidation:** review the completed Moltbook Pass C evidence and
+   remaining product maturity before selecting another bounded unit. Do not
+   infer background authority or a subsequent product/release pass.
 2. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
    AI trading advice, distributed backup, and staking remain non-runtime or
    parked until the active design unit or a named release decision permits
