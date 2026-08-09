@@ -2568,6 +2568,22 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     is added.
   - Every prior test16 artifact is rejected. Both platforms require one rebuild
     from the green post-merge SHA and complete manual signoff.
+  - Status: completed and merged (2026-08-09); packaged hands smoke confirms
+    the exact selection is visible and stale context is invalidated.
+
+- `v1.0.3-test16 smoke remediation — bounded AI Engineer quick-add`
+  - Replacement macOS hands smoke reproduced that quick-add could extend the
+    selected context to `9/8`; the canonical context builder then rejected the
+    request only after the invalid selection was already visible.
+  - The existing `_DeveloperWorkspaceCard` owner now fills only the remaining
+    slots up to `AiDeveloperWorkspaceService.maxSelectedFiles` and reports
+    suggestions skipped at the limit. The existing builder continues to reject
+    manually entered over-limit selections fail-closed.
+  - A focused regression mutates available capacity and proves quick-add cannot
+    exceed it. No provider, credential, runtime dispatch, DTO, file-write path,
+    validator owner, or second selected-context path is added.
+  - Every test16 artifact through `f5632b9` is rejected. Both platforms require
+    one rebuild from the green post-merge SHA and complete manual signoff.
   - Status: remediation active (2026-08-09); tag and publication remain blocked.
 
 ## Planned Product Tracks

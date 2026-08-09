@@ -290,7 +290,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPATIBILITY_DEBT` — `flutter/lib/ffi/recovery_runtime.dart` line `31` (`HivraRecoveryRuntime`) — rule `surface_mapping:ffi_recovery_adapter`
 - `SUPPORTING_COMPONENT` — `flutter/lib/models/external_effect_models.dart` line `401` (`ExternalEffectAdapter`) — rule `model_port_support`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/backup_screen.dart` line `9` (`BackupScreen`) — rule `surface_mapping:ui_backup`
-- `COMPATIBILITY_DEBT` — `flutter/lib/screens/capsule_doctor_screen.dart` line `45` (`CapsuleDoctorScreen`) — rule `surface_mapping:ui_capsule_doctor`
+- `COMPATIBILITY_DEBT` — `flutter/lib/screens/capsule_doctor_screen.dart` line `49` (`CapsuleDoctorScreen`) — rule `surface_mapping:ui_capsule_doctor`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/capsule_history_screen.dart` line `6` (`CapsuleHistoryScreen`) — rule `registry`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/capsule_selector_screen.dart` line `12` (`CapsuleSelectorScreen`) — rule `surface_mapping:ui_capsule_selector`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/first_launch_screen.dart` line `4` (`FirstLaunchScreen`) — rule `surface_mapping:ui_first_launch`
@@ -480,7 +480,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `2097` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
 - `1649` lines — `flutter/lib/services/plugin_runtime_module_service.dart`
-- `1427` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
+- `1440` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
 - `1280` lines — `flutter/lib/screens/invitations_screen.dart`
 - `1143` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `979` lines — `flutter/lib/screens/ledger_inspector_screen.dart`

@@ -23,15 +23,19 @@ import '../widgets/ai_diagnostics/report_widgets.dart';
 List<String> mergeDeveloperWorkspaceFileSelections({
   required Iterable<String> currentPaths,
   required Iterable<String> suggestedPaths,
+  int maxPaths = AiDeveloperWorkspaceService.maxSelectedFiles,
 }) {
   final selected =
       currentPaths
           .map((path) => path.trim())
           .where((path) => path.isNotEmpty)
           .toSet();
-  selected.addAll(
-    suggestedPaths.map((path) => path.trim()).where((path) => path.isNotEmpty),
-  );
+  for (final path in suggestedPaths) {
+    final normalized = path.trim();
+    if (normalized.isEmpty || selected.contains(normalized)) continue;
+    if (selected.length >= maxPaths) break;
+    selected.add(normalized);
+  }
   return selected.toList()..sort();
 }
 
@@ -1021,19 +1025,28 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
 
   void _addSuggestedFiles(Iterable<String> relativePaths) {
     final previous = _selectedRelativePaths();
+    final suggested =
+        relativePaths
+            .map((path) => path.trim())
+            .where((path) => path.isNotEmpty)
+            .toSet();
+    final newSuggestionCount = suggested.difference(previous.toSet()).length;
     final selected = mergeDeveloperWorkspaceFileSelections(
       currentPaths: previous,
-      suggestedPaths: relativePaths,
+      suggestedPaths: suggested,
     );
     _selectedFilesController.text = selected.join('\n');
     _selectedFilesController.selection = TextSelection.collapsed(
       offset: _selectedFilesController.text.length,
     );
     final addedCount = selected.length - previous.length;
+    final skippedCount = newSuggestionCount - addedCount;
     setState(() {
       _error = null;
       _selectionNotice =
-          addedCount == 0
+          skippedCount > 0
+              ? 'Added $addedCount file${addedCount == 1 ? '' : 's'} · ${selected.length}/${AiDeveloperWorkspaceService.maxSelectedFiles} selected · $skippedCount skipped at the limit'
+              : addedCount == 0
               ? 'No new files added; all suggestions are already selected.'
               : 'Added $addedCount file${addedCount == 1 ? '' : 's'} · ${selected.length}/${AiDeveloperWorkspaceService.maxSelectedFiles} selected';
       _invalidateSelectedContext();

@@ -23,4 +23,14 @@ void main() {
       'docs/specification.md',
     ]);
   });
+
+  test('quick add never exceeds the developer workspace selection limit', () {
+    final merged = mergeDeveloperWorkspaceFileSelections(
+      currentPaths: const <String>['one.md', 'two.md', 'three.md'],
+      suggestedPaths: const <String>['four.md', 'five.md', 'six.md'],
+      maxPaths: 4,
+    );
+
+    expect(merged, const <String>['four.md', 'one.md', 'three.md', 'two.md']);
+  });
 }
