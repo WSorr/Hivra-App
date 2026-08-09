@@ -7,10 +7,9 @@ replace this manual smoke pass.
 ## Choose The Operator
 
 After the exact packaged artifacts are ready and before the first interactive
-step, the agent MUST stop and ask the person: **"Hands or automatic?"** Use the
-exact localized equivalent in the current conversation language; in Russian,
-ask **"Руки или автомат?"** The agent must not infer the answer from a connected
-device, an open app, or a prior smoke pass.
+step, the agent MUST stop and ask the person exactly: **"Hands or automatic?"**
+The agent must not infer the answer from a connected device, an open app, or a
+prior smoke pass.
 
 - **Hands:** the person drives the UI. The agent may prepare and launch the
   exact artifact, watch terminal/device logs, identify the next high-signal

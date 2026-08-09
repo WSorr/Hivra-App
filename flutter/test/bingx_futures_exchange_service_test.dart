@@ -10,7 +10,7 @@ void main() {
       expect(
         () =>
             const BingxFuturesApiCredentials(
-              apiKey: 'api-key-н',
+              apiKey: 'api-key-\u00e9',
               apiSecret: 'api-secret',
             ).normalized(),
         throwsA(
@@ -25,7 +25,7 @@ void main() {
         () =>
             const BingxFuturesApiCredentials(
               apiKey: 'api-key',
-              apiSecret: 'api-secret-н',
+              apiSecret: 'api-secret-\u00e9',
             ).normalized(),
         throwsA(
           isA<FormatException>().having(

@@ -284,8 +284,6 @@ require_present "$CHECKLIST_SMOKE" 'before GitHub' \
   "manual smoke checklist is explicitly before GitHub publication"
 require_present "$CHECKLIST_SMOKE" 'Hands or automatic\?' \
   "manual smoke checklist requires explicit operator selection"
-require_present "$CHECKLIST_SMOKE" 'exact localized equivalent' \
-  "manual smoke checklist requires localized operator selection"
 require_present "$CHECKLIST_SMOKE" 'the person drives the UI' \
   "manual smoke checklist defines hands-driven execution"
 require_present "$CHECKLIST_SMOKE" 'the agent may drive the scenario' \

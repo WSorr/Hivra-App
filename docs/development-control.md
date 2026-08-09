@@ -115,9 +115,8 @@ conversation before editing:
    disappear or be made unreachable.
 
 Before packaged manual smoke begins, follow the operator-selection rule in
-`docs/checklists/manual-smoke.md`: stop and ask **"Hands or automatic?"**, using
-the exact localized equivalent for the current conversation. Do not start
-interactive actions until the person chooses who drives the UI.
+`docs/checklists/manual-smoke.md`: stop and ask **"Hands or automatic?"**. Do
+not start interactive actions until the person chooses who drives the UI.
 
 At the end of a meaningful pass, update only the source that owns its status:
 
