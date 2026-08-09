@@ -2584,6 +2584,23 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     validator owner, or second selected-context path is added.
   - Every test16 artifact through `f5632b9` is rejected. Both platforms require
     one rebuild from the green post-merge SHA and complete manual signoff.
+  - Status: completed and merged (2026-08-09); packaged macOS hands smoke
+    confirms the selection remains at `8/8` and context build succeeds.
+
+- `v1.0.3-test16 smoke remediation — reconcile stale managed-order tracking`
+  - Packaged macOS hands smoke restored one persisted managed-order lineage and
+    started symbol polling, while the successful live open-order projection
+    reported `Drone: 0`; the closed managed ID had no tracked-order pointer and
+    therefore escaped the existing single-pointer cleanup path.
+  - The existing `BingxFuturesOrderTrackingState` now reconciles every managed
+    ID, symbol, and provenance record against each successful open-order read.
+    A surviving managed order becomes the tracked pointer; when none survive,
+    polling stops and only the existing risk settings remain persisted.
+  - Regression vectors cover the reproduced restart state and the positive
+    multi-order case. No exchange effect, order cancellation, Core/FFI path,
+    DTO family, tracking owner, or persistence route is added.
+  - Every test16 artifact through `332083d` is rejected. Both platforms require
+    one rebuild from the green post-merge SHA and complete manual signoff.
   - Status: remediation active (2026-08-09); tag and publication remain blocked.
 
 ## Planned Product Tracks

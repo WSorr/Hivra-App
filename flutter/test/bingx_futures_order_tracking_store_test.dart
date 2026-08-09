@@ -9,8 +9,9 @@ import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 void main() {
   group('BingxFuturesOrderTrackingStore', () {
     test('saves and restores tracking state for active capsule', () async {
-      final tempHome =
-          await Directory.systemTemp.createTemp('hivra-order-tracking-test-');
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-order-tracking-test-',
+      );
       addTearDown(() async {
         if (await tempHome.exists()) {
           await tempHome.delete(recursive: true);
@@ -75,8 +76,9 @@ void main() {
     });
 
     test('returns null on malformed persisted json', () async {
-      final tempHome =
-          await Directory.systemTemp.createTemp('hivra-order-tracking-test-');
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-order-tracking-test-',
+      );
       addTearDown(() async {
         if (await tempHome.exists()) {
           await tempHome.delete(recursive: true);
@@ -107,9 +109,7 @@ void main() {
           'tracked_symbol': 'BTC-USDT',
           'tracked_order_id': 'ord-legacy',
           'managed_order_ids': <String>['ord-legacy'],
-          'managed_order_symbols': <String, String>{
-            'ord-legacy': 'BTC-USDT',
-          },
+          'managed_order_symbols': <String, String>{'ord-legacy': 'BTC-USDT'},
         },
       );
 
@@ -140,8 +140,9 @@ void main() {
     });
 
     test('isolates state by capsule scope', () async {
-      final tempHome =
-          await Directory.systemTemp.createTemp('hivra-order-tracking-test-');
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-order-tracking-test-',
+      );
       addTearDown(() async {
         if (await tempHome.exists()) {
           await tempHome.delete(recursive: true);
@@ -203,8 +204,9 @@ void main() {
     });
 
     test('clears persisted file when saved state is empty', () async {
-      final tempHome =
-          await Directory.systemTemp.createTemp('hivra-order-tracking-test-');
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-order-tracking-test-',
+      );
       addTearDown(() async {
         if (await tempHome.exists()) {
           await tempHome.delete(recursive: true);
@@ -249,8 +251,9 @@ void main() {
     });
 
     test('persists risk settings even without managed order state', () async {
-      final tempHome =
-          await Directory.systemTemp.createTemp('hivra-order-tracking-test-');
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-order-tracking-test-',
+      );
       addTearDown(() async {
         if (await tempHome.exists()) {
           await tempHome.delete(recursive: true);
@@ -287,5 +290,67 @@ void main() {
       expect(restored.stopLossPercent, 5.0);
       expect(restored.takeProfitRiskReward, 3.0);
     });
+
+    test('restart reconciliation seals stale managed-order tracking', () {
+      const state = BingxFuturesOrderTrackingState(
+        trackedSymbol: 'BNB-USDT',
+        trackedOrderId: null,
+        managedOrderIds: <String>['closed-order'],
+        managedOrderSymbols: <String, String>{'closed-order': 'BNB-USDT'},
+        managedOrderProvenance: <String, BingxManagedOrderProvenance>{
+          'closed-order': BingxManagedOrderProvenance(
+            orderId: 'closed-order',
+            symbol: 'BNB-USDT',
+            side: 'buy',
+            testOrder: false,
+            intentHashHex: 'intent-closed',
+            canonicalIntentJson: '{"symbol":"BNB-USDT","side":"buy"}',
+            marketSnapshotHashHex: null,
+            featureHashHex: null,
+            tvhDecisionHashHex: null,
+            liveDecisionHashHex: null,
+            recordedAtUtc: '2026-08-08T17:43:02.000Z',
+          ),
+        },
+        stopLossPercent: 5.0,
+        takeProfitRiskReward: 2.0,
+      );
+
+      final reconciled = state.reconcileOpenOrderIds(<String>['other-order']);
+
+      expect(reconciled.trackedSymbol, isNull);
+      expect(reconciled.trackedOrderId, isNull);
+      expect(reconciled.managedOrderIds, isEmpty);
+      expect(reconciled.managedOrderSymbols, isEmpty);
+      expect(reconciled.managedOrderProvenance, isEmpty);
+      expect(reconciled.stopLossPercent, 5.0);
+      expect(reconciled.takeProfitRiskReward, 2.0);
+    });
+
+    test(
+      'restart reconciliation retains only currently open managed orders',
+      () {
+        const state = BingxFuturesOrderTrackingState(
+          trackedSymbol: 'SOL-USDT',
+          trackedOrderId: null,
+          managedOrderIds: <String>['closed-order', 'open-order'],
+          managedOrderSymbols: <String, String>{
+            'closed-order': 'SOL-USDT',
+            'open-order': 'SOL-USDT',
+          },
+          stopLossPercent: 7.0,
+          takeProfitRiskReward: 3.0,
+        );
+
+        final reconciled = state.reconcileOpenOrderIds(<String>['open-order']);
+
+        expect(reconciled.trackedSymbol, 'SOL-USDT');
+        expect(reconciled.trackedOrderId, 'open-order');
+        expect(reconciled.managedOrderIds, <String>['open-order']);
+        expect(reconciled.managedOrderSymbols, <String, String>{
+          'open-order': 'SOL-USDT',
+        });
+      },
+    );
   });
 }
