@@ -76,9 +76,14 @@ void main() {
       lastErrorCode: 'required_action_expired',
       withReceipt: false,
     );
-    final terminalFailure = _operation(
+    final expiredVerification = _operation(
       state: ExternalEffectState.terminalFailure,
       lastErrorCode: 'verification_expired',
+      withReceipt: false,
+    );
+    final unrelatedFailure = _operation(
+      state: ExternalEffectState.terminalFailure,
+      lastErrorCode: 'credential_unavailable',
       withReceipt: false,
     );
 
@@ -91,7 +96,11 @@ void main() {
       isTrue,
     );
     expect(
-      MoltbookPublicationService.requiresReconciliation(terminalFailure),
+      MoltbookPublicationService.requiresReconciliation(expiredVerification),
+      isTrue,
+    );
+    expect(
+      MoltbookPublicationService.requiresReconciliation(unrelatedFailure),
       isFalse,
     );
   });

@@ -1300,7 +1300,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       MoltbookWorkspaceNextAction.verify =>
         () => _resolvePublicationVerification(verificationOperation!),
       MoltbookWorkspaceNextAction.reconcile =>
-        () => _processPublication(reconciliationOperation!),
+        () => _reconcilePublication(reconciliationOperation!),
       MoltbookWorkspaceNextAction.publish =>
         () => _processPublication(queuedOperation!),
       MoltbookWorkspaceNextAction.reviewReply =>

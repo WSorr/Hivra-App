@@ -262,7 +262,10 @@ class MoltbookPublicationService {
     return operation.state == ExternalEffectState.terminalFailure &&
         operation.receipt == null &&
         operation.attemptCount > 0 &&
-        operation.lastErrorCode == 'required_action_expired';
+        const <String>{
+          'required_action_expired',
+          'verification_expired',
+        }.contains(operation.lastErrorCode);
   }
 
   static bool requiresReconciliation(ExternalEffectOperation operation) {
