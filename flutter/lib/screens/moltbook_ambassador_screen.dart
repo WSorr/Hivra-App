@@ -570,7 +570,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       );
       if (!mounted) return;
       final payload = MoltbookPublicationService.decodePayload(operation);
-      final approved = await showDialog<bool>(
+      final decision = await showDialog<int>(
         context: context,
         barrierDismissible: false,
         builder:
@@ -605,18 +605,22 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
+                  onPressed: () => Navigator.pop(dialogContext, 0),
                   child: const Text('Keep local'),
                 ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, 1),
+                  child: const Text('Discard reply'),
+                ),
                 FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
+                  onPressed: () => Navigator.pop(dialogContext, 2),
                   child: const Text('Approve exact reply'),
                 ),
               ],
             ),
       );
       if (!mounted) return;
-      if (approved == true) {
+      if (decision == 2) {
         await widget.module.advanceMoltbookEngagement(
           engagementPlan: plan,
           draft: draft,
@@ -624,6 +628,10 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
           exactApproval: true,
         );
         _showNotice('Reply approved and queued locally');
+      } else if (decision == 1) {
+        await widget.module.cancelMoltbookPublication(operation.operationId);
+        setState(() => _replyDraftPreview = null);
+        _showNotice('Reply discarded without publication');
       } else {
         _showNotice('Reply remains local and unapproved');
       }
@@ -651,7 +659,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     final payload = MoltbookPublicationService.decodePayload(operation);
     setState(() => _publicationBusy = true);
     try {
-      final approved = await showDialog<bool>(
+      final decision = await showDialog<int>(
         context: context,
         barrierDismissible: false,
         builder:
@@ -686,20 +694,27 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
+                  onPressed: () => Navigator.pop(dialogContext, 0),
                   child: const Text('Keep local'),
                 ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, 1),
+                  child: const Text('Discard reply'),
+                ),
                 FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
+                  onPressed: () => Navigator.pop(dialogContext, 2),
                   child: const Text('Approve exact reply'),
                 ),
               ],
             ),
       );
       if (!mounted) return;
-      if (approved == true) {
+      if (decision == 2) {
         await widget.module.approveMoltbookPublication(operation);
         _showNotice('Reply approved and queued locally');
+      } else if (decision == 1) {
+        await widget.module.cancelMoltbookPublication(operation.operationId);
+        _showNotice('Reply discarded without publication');
       } else {
         _showNotice('Reply remains local and unapproved');
       }
