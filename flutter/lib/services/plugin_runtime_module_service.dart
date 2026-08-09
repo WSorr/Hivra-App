@@ -1071,7 +1071,13 @@ class PluginRuntimeModule {
       draft: draft,
       submoltName: submoltName,
     );
-    await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[operation]);
+    if (operation.state == ExternalEffectState.succeeded) {
+      await moltbookDrafts.delete(draft.draftHashHex);
+    } else {
+      await _archiveSucceededMoltbookDrafts(<ExternalEffectOperation>[
+        operation,
+      ]);
+    }
     await uiLog.log(
       'moltbook.publication.prepare',
       'operation=${operation.operationId} '

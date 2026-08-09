@@ -1226,8 +1226,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       (operation) =>
           operation.requiredAction != null && !operation.state.isTerminal,
     );
+    final supersededPostFailureIds =
+        MoltbookPublicationService.supersededPostFailureIds(_publications);
     final recoverableOperation = _latestOperationWhere(
-      MoltbookPublicationService.requiresReconciliation,
+      (operation) =>
+          MoltbookPublicationService.requiresReconciliation(operation) &&
+          !supersededPostFailureIds.contains(operation.operationId),
     );
     final reconciliationOperation = recoverableOperation;
     final queuedOperation = _latestOperationWhere(
@@ -1256,7 +1260,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _publications
             .where(
               (operation) =>
-                  operation.state == ExternalEffectState.terminalFailure,
+                  operation.state == ExternalEffectState.terminalFailure &&
+                  !supersededPostFailureIds.contains(operation.operationId),
             )
             .length;
     final projectedChallengedCount =

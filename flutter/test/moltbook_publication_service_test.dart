@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/moltbook_ambassador_models.dart';
@@ -111,6 +113,42 @@ void main() {
     expect(
       MoltbookPublicationService.requiresReconciliation(unrelatedFailure),
       isFalse,
+    );
+  });
+
+  test('succeeded exact post seals a duplicate terminal failure', () {
+    final succeeded = _postOperation(
+      operationId: 'moltbook-post-succeeded',
+      state: ExternalEffectState.succeeded,
+      draftHashHex: '1' * 64,
+    );
+    final failedDuplicate = _postOperation(
+      operationId: 'moltbook-post-failed',
+      state: ExternalEffectState.terminalFailure,
+      draftHashHex: '2' * 64,
+      lastErrorCode: 'http_400',
+      withReceipt: false,
+    );
+    final differentPost = _postOperation(
+      operationId: 'moltbook-post-different',
+      state: ExternalEffectState.terminalFailure,
+      draftHashHex: '3' * 64,
+      title: 'Different title',
+      lastErrorCode: 'http_400',
+      withReceipt: false,
+    );
+
+    expect(
+      MoltbookPublicationService.supersededPostFailureIds(
+        <ExternalEffectOperation>[succeeded, failedDuplicate],
+      ),
+      contains(failedDuplicate.operationId),
+    );
+    expect(
+      MoltbookPublicationService.supersededPostFailureIds(
+        <ExternalEffectOperation>[succeeded, differentPost],
+      ),
+      isNot(contains(differentPost.operationId)),
     );
   });
 
@@ -344,6 +382,201 @@ void main() {
       );
     });
   });
+
+  group('post effect identity', () {
+    late Directory home;
+    late CapsuleFileStore files;
+    late String activeRoot;
+    late ExternalEffectService effects;
+    late MoltbookPublicationService publications;
+
+    const binding = MoltbookConnectionBinding(
+      accountId: 'account-test',
+      accountName: 'agent',
+      isClaimed: true,
+      isActive: true,
+      verifiedAtUtc: '2026-07-31T18:00:00.000Z',
+    );
+
+    setUp(() async {
+      activeRoot = _ownerA;
+      home = await Directory.systemTemp.createTemp(
+        'hivra_moltbook_post_effect_test_',
+      );
+      files = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: home.path),
+        atomicWrites: const AtomicFileWriteService(),
+      );
+      effects = _effects(files, () => activeRoot);
+      publications = _publications(effects, binding);
+    });
+
+    tearDown(() async {
+      if (await home.exists()) await home.delete(recursive: true);
+    });
+
+    test('different draft hashes share one exact public post effect', () async {
+      final first = await publications.prepare(
+        draft: _postDraft('1'),
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+      );
+      final repeated = await publications.prepare(
+        draft: _postDraft('2'),
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+      );
+
+      expect(repeated.operationId, first.operationId);
+      expect(await publications.list(), hasLength(1));
+    });
+
+    test('succeeded exact post closes a later duplicate draft', () async {
+      final first = await publications.prepare(
+        draft: _postDraft('1'),
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+      );
+      await effects.approve(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: first.operationId,
+        approvalEvidenceHashHex: _approvalHash,
+      );
+      await effects.enqueue(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: first.operationId,
+      );
+      await effects.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: first.operationId,
+      );
+
+      final repeated = await publications.prepare(
+        draft: _postDraft('2'),
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+      );
+
+      expect(repeated.operationId, first.operationId);
+      expect(repeated.state, ExternalEffectState.succeeded);
+      expect(await publications.list(), hasLength(1));
+    });
+
+    test('terminal exact post blocks blind replacement', () async {
+      final operation = await publications.prepare(
+        draft: _postDraft('1'),
+        submoltName: MoltbookPublicationService.defaultSubmolt,
+      );
+      await effects.approve(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: operation.operationId,
+        approvalEvidenceHashHex: _approvalHash,
+      );
+      await effects.enqueue(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: operation.operationId,
+      );
+      final journal = await publications.list();
+      final failed = _postOperation(
+        operationId: operation.operationId,
+        state: ExternalEffectState.terminalFailure,
+        draftHashHex: '1' * 64,
+        lastErrorCode: 'http_400',
+        withReceipt: false,
+      );
+      await files.writePluginState(
+        await files.capsuleDirForHex(_ownerA, create: true),
+        moltbookAmbassadorPluginId,
+        'external_effects.v1.json',
+        jsonEncode(<String, dynamic>{
+          'schema_version': 1,
+          'owner_capsule_hex': _ownerA,
+          'plugin_id': moltbookAmbassadorPluginId,
+          'operations': <Map<String, dynamic>>[failed.toJson()],
+        }),
+      );
+      expect(journal, hasLength(1));
+
+      await expectLater(
+        publications.prepare(
+          draft: _postDraft('2'),
+          submoltName: MoltbookPublicationService.defaultSubmolt,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('unresolved delivery history'),
+          ),
+        ),
+      );
+      expect(await publications.list(), hasLength(1));
+    });
+  });
+}
+
+MoltbookDraftPreview _postDraft(String suffix) {
+  return MoltbookDraftPreview(
+    bulletinId: 'bulletin-$suffix',
+    releaseTag: 'test-$suffix',
+    category: 'hivra-development',
+    title: 'Exact public title',
+    body: 'Exact public body.',
+    audience: 'public',
+    approvalRequired: true,
+    safetyFlags: const <String>['reviewed'],
+    draftHashHex: suffix * 64,
+    canonicalDraftJson: '{}',
+  );
+}
+
+ExternalEffectOperation _postOperation({
+  required String operationId,
+  required ExternalEffectState state,
+  required String draftHashHex,
+  String title = 'Exact public title',
+  String? lastErrorCode,
+  bool withReceipt = true,
+}) {
+  final content =
+      'Exact public body.\n\n${MoltbookPublicationContract.attribution()}';
+  final payload = jsonEncode(<String, dynamic>{
+    'schema_version': 2,
+    'account_name': 'agent',
+    'submolt_name': MoltbookPublicationService.defaultSubmolt,
+    'title': title,
+    'content': content,
+    'operation_marker': MoltbookPublicationContract.operationMarker(
+      operationId,
+    ),
+    'source_draft_hash_hex': draftHashHex,
+  });
+  return ExternalEffectOperation(
+    ownerCapsuleHex: _ownerA,
+    operationId: operationId,
+    pluginId: moltbookAmbassadorPluginId,
+    providerId: 'moltbook',
+    accountBindingId: 'account-test',
+    effectKind: MoltbookExternalEffectAdapter.postEffectKind,
+    canonicalPayloadJson: payload,
+    payloadHashHex: sha256.convert(utf8.encode(payload)).toString(),
+    state: state,
+    approvalEvidenceHashHex:
+        state == ExternalEffectState.prepared ? null : _approvalHash,
+    attemptCount: state == ExternalEffectState.prepared ? 0 : 1,
+    revision: 1,
+    createdAtUtc: '2026-07-31T18:00:00.000Z',
+    updatedAtUtc: '2026-07-31T18:00:01.000Z',
+    lastErrorCode: lastErrorCode,
+    lastErrorMessage: null,
+    requiredAction: null,
+    receipt:
+        withReceipt
+            ? ExternalEffectReceipt(
+              operationId: operationId,
+              providerId: 'moltbook',
+              providerReceiptId: '20e1d392-5f55-4cae-b48a-af3192dc477b',
+              evidenceHashHex: _receiptHash,
+              receivedAtUtc: '2026-07-31T18:00:01.000Z',
+            )
+            : null,
+  );
 }
 
 ExternalEffectService _effects(
