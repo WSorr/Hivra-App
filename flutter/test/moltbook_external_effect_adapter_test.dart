@@ -384,6 +384,54 @@ void main() {
   );
 
   test(
+    'falls back to exact profile reconciliation when post lookup returns 400',
+    () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            if (request.uri.path == '/api/v1/posts/matched-post') {
+              return MoltbookHttpResponse(
+                statusCode: 400,
+                headers: const <String, String>{},
+                bodyBytes: Uint8List.fromList(utf8.encode('{}')),
+              );
+            }
+            return _jsonResponse(<String, dynamic>{
+              'success': true,
+              'agent': <String, dynamic>{'name': 'HivraAgent'},
+              'recentPosts': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'id': 'matched-post',
+                  'title': 'Release note',
+                  'content':
+                      'Public fact\n\n'
+                      '[Hivra on GitHub](https://github.com/WSorr/Hivra-App)',
+                  'verification_status': 'verified',
+                  'is_spam': false,
+                },
+              ],
+            });
+          },
+        ),
+      );
+
+      final result = await adapter.reconcile(
+        _request(providerReferenceId: 'matched-post'),
+      );
+
+      expect(result.status, ExternalEffectAdapterStatus.succeeded);
+      expect(result.receipt?.providerReceiptId, 'matched-post');
+      expect(requests.map((request) => request.uri.path), <String>[
+        '/api/v1/posts/matched-post',
+        '/api/v1/agents/profile',
+      ]);
+    },
+  );
+
+  test(
     'rejects a provider reference whose exact post payload differs',
     () async {
       final adapter = MoltbookExternalEffectAdapter(

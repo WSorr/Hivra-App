@@ -8,7 +8,10 @@ class MoltbookPublicBulletinAiService {
   static const String canonicalProductAnchor =
       'Hivra is a local-first runtime for user-owned Capsules. A Capsule can '
       'operate independently, keep its own ledger, run isolated WASM drones, '
-      'and optionally use trusted links to other Capsules.';
+      'and optionally use trusted links to other Capsules. The Ledger owns '
+      'confirmed domain truth. External publication attempts, deduplication, '
+      'challenges, and receipts belong to a Capsule-scoped external-effect '
+      'journal, not the Ledger.';
   static const int maxSourceNotesCharacters = 4000;
   static const int maxFacts = 8;
   static const int maxFactCharacters = 280;

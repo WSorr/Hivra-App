@@ -413,7 +413,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/plugin_host_api_service.dart` line `10` (`PluginHostApiService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/plugin_host_contract_handler.dart` line `34` (`PluginHostContractHandler`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/plugin_runtime_module_service.dart` line `60` (`PluginRuntimeModule`) — rule `registry`
-- `COMPOSITION_SUPPORT` — `flutter/lib/services/plugin_runtime_module_service.dart` line `1570` (`PluginRuntimeModuleService`) — rule `composition_root`
+- `COMPOSITION_SUPPORT` — `flutter/lib/services/plugin_runtime_module_service.dart` line `1577` (`PluginRuntimeModuleService`) — rule `composition_root`
 - `CAPABILITY_OWNER` — `flutter/lib/services/recovery_service.dart` line `20` (`RecoveryService`) — rule `registry`
 - `REGISTERED_EVIDENCE` — `flutter/lib/services/relationship_projection_service.dart` line `15` (`RelationshipProjectionService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/relationship_service.dart` line `25` (`RelationshipService`) — rule `current_flutter_service_support`
@@ -465,7 +465,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `flutter/lib/services/invitation_module_service.dart` line `29` (`build` → `InvitationModule`)
 - `flutter/lib/services/ledger_inspector_module_service.dart` line `28` (`build` → `LedgerInspectorModule`)
 - `flutter/lib/services/main_screen_module_service.dart` line `31` (`build` → `MainScreenModule`)
-- `flutter/lib/services/plugin_runtime_module_service.dart` line `1584` (`build` → `PluginRuntimeModule`)
+- `flutter/lib/services/plugin_runtime_module_service.dart` line `1591` (`build` → `PluginRuntimeModule`)
 - `flutter/lib/services/trading_drone_module_service.dart` line `88` (`build` → `TradingDroneModule`)
 
 ### Generic Service Locator Evidence
@@ -475,11 +475,11 @@ These verdicts describe production-path closure. A reviewed design-only contract
 ### Oversized Candidate Surfaces
 
 - `4009` lines — `flutter/lib/screens/trading_drone_screen.dart`
-- `3059` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
+- `3083` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
 - `2447` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
 - `2097` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
-- `1649` lines — `flutter/lib/services/plugin_runtime_module_service.dart`
+- `1656` lines — `flutter/lib/services/plugin_runtime_module_service.dart`
 - `1440` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
 - `1280` lines — `flutter/lib/screens/invitations_screen.dart`
 - `1143` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
@@ -534,7 +534,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 Largest registered owner files by line count:
 
-- `1649` lines — `moltbook_agent` — `flutter/lib/services/plugin_runtime_module_service.dart` (`PluginRuntimeModule`)
+- `1656` lines — `moltbook_agent` — `flutter/lib/services/plugin_runtime_module_service.dart` (`PluginRuntimeModule`)
 - `940` lines — `relationships` — `core/hivra-core/src/relationship.rs` (`Relationships`)
 - `905` lines — `external_effects` — `flutter/lib/services/external_effect_service.dart` (`ExternalEffectService`)
 - `815` lines — `invitations` — `flutter/lib/services/invitation_intent_handler.dart` (`InvitationIntentHandler`)

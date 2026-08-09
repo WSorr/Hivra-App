@@ -59,6 +59,14 @@ class MoltbookPublicationService {
     final marker = MoltbookPublicationContract.operationMarker(operationId);
     final attribution = MoltbookPublicationContract.attribution();
     final content = '${draft.body.trimRight()}\n\n$attribution';
+    final ownerHex = _effects.activeOwnerCapsuleHex;
+    final publicEffectKey = _postEffectKey(
+      accountBindingId: binding.accountId,
+      accountName: binding.accountName,
+      submoltName: submolt,
+      title: draft.title,
+      content: content,
+    );
     final canonicalPayload = jsonEncode(<String, dynamic>{
       'schema_version': 2,
       'account_name': binding.accountName,
@@ -68,14 +76,49 @@ class MoltbookPublicationService {
       'operation_marker': marker,
       'source_draft_hash_hex': draft.draftHashHex,
     });
-    return _effects.prepare(
-      operationId: operationId,
-      pluginId: moltbookAmbassadorPluginId,
-      providerId: MoltbookConnectionService.providerId,
-      accountBindingId: binding.accountId,
-      effectKind: MoltbookExternalEffectAdapter.effectKind,
-      canonicalPayloadJson: canonicalPayload,
-    );
+    return _withEngagementLock('$ownerHex::post::$publicEffectKey', () async {
+      _requireSameOwner(ownerHex);
+      final existing = (await list())
+          .where(
+            (operation) =>
+                operation.state != ExternalEffectState.cancelled &&
+                _postEffectKeyForOperation(operation) == publicEffectKey,
+          )
+          .toList(growable: false);
+      final succeeded = existing
+          .where(
+            (operation) => operation.state == ExternalEffectState.succeeded,
+          )
+          .toList(growable: false);
+      if (succeeded.length > 1) {
+        throw StateError(
+          'Moltbook post has conflicting succeeded publication effects',
+        );
+      }
+      if (succeeded.isNotEmpty) return succeeded.single;
+      if (existing.length > 1) {
+        throw StateError('Moltbook post has conflicting publication effects');
+      }
+      if (existing.isNotEmpty) {
+        final operation = existing.single;
+        if (operation.state == ExternalEffectState.terminalFailure) {
+          throw StateError(
+            'The exact Moltbook post has an unresolved delivery history; '
+            'change the reviewed text before preparing another effect',
+          );
+        }
+        return operation;
+      }
+      _requireSameOwner(ownerHex);
+      return _effects.prepare(
+        operationId: operationId,
+        pluginId: moltbookAmbassadorPluginId,
+        providerId: MoltbookConnectionService.providerId,
+        accountBindingId: binding.accountId,
+        effectKind: MoltbookExternalEffectAdapter.effectKind,
+        canonicalPayloadJson: canonicalPayload,
+      );
+    });
   }
 
   Future<ExternalEffectOperation> prepareReply({
@@ -262,7 +305,41 @@ class MoltbookPublicationService {
     return operation.state == ExternalEffectState.terminalFailure &&
         operation.receipt == null &&
         operation.attemptCount > 0 &&
-        operation.lastErrorCode == 'required_action_expired';
+        const <String>{
+          'http_400',
+          'required_action_expired',
+          'verification_expired',
+        }.contains(operation.lastErrorCode);
+  }
+
+  static bool requiresReconciliation(ExternalEffectOperation operation) {
+    return (operation.state == ExternalEffectState.unresolved &&
+            operation.requiredAction == null) ||
+        canManuallyReconcileTerminalFailure(operation);
+  }
+
+  static Set<String> supersededPostFailureIds(
+    Iterable<ExternalEffectOperation> operations,
+  ) {
+    final succeededKeys = <String>{};
+    for (final operation in operations) {
+      if (operation.state == ExternalEffectState.succeeded &&
+          operation.receipt != null &&
+          operation.effectKind ==
+              MoltbookExternalEffectAdapter.postEffectKind) {
+        succeededKeys.add(_postEffectKeyForOperation(operation));
+      }
+    }
+    return operations
+        .where(
+          (operation) =>
+              operation.state == ExternalEffectState.terminalFailure &&
+              operation.effectKind ==
+                  MoltbookExternalEffectAdapter.postEffectKind &&
+              succeededKeys.contains(_postEffectKeyForOperation(operation)),
+        )
+        .map((operation) => operation.operationId)
+        .toSet();
   }
 
   Future<ExternalEffectOperation> resolveVerification({
@@ -458,6 +535,40 @@ class MoltbookPublicationService {
     return payload['source_draft_hash_hex'] == draft.draftHashHex &&
         payload['engagement_plan_hash_hex'] == draft.engagementPlanHashHex &&
         payload['content'] == draft.body;
+  }
+
+  static String _postEffectKeyForOperation(ExternalEffectOperation operation) {
+    _validateMoltbookOperation(operation);
+    if (operation.effectKind != MoltbookExternalEffectAdapter.postEffectKind) {
+      return '';
+    }
+    final payload = decodePayload(operation);
+    return _postEffectKey(
+      accountBindingId: operation.accountBindingId,
+      accountName: payload['account_name']?.toString() ?? '',
+      submoltName: payload['submolt_name']?.toString() ?? '',
+      title: payload['title']?.toString() ?? '',
+      content: payload['content']?.toString() ?? '',
+    );
+  }
+
+  static String _postEffectKey({
+    required String accountBindingId,
+    required String accountName,
+    required String submoltName,
+    required String title,
+    required String content,
+  }) {
+    final canonical = jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'provider_id': MoltbookConnectionService.providerId,
+      'account_binding_id': accountBindingId,
+      'account_name': accountName,
+      'submolt_name': submoltName,
+      'title': title,
+      'content': content,
+    });
+    return sha256.convert(utf8.encode(canonical)).toString();
   }
 
   void _requireSameOwner(String ownerHex) {
