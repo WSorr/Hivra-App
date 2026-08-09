@@ -41,9 +41,7 @@ class BingxManagedOrderProvenance {
     };
   }
 
-  static BingxManagedOrderProvenance? fromJsonMap(
-    Map<String, dynamic> map,
-  ) {
+  static BingxManagedOrderProvenance? fromJsonMap(Map<String, dynamic> map) {
     String read(String key) => map[key]?.toString().trim() ?? '';
 
     final orderId = read('order_id');
@@ -67,9 +65,7 @@ class BingxManagedOrderProvenance {
       testOrder: map['test_order'] == true,
       intentHashHex: intentHashHex,
       canonicalIntentJson: canonicalIntentJson,
-      marketSnapshotHashHex: _readOptionalHash(
-        map['market_snapshot_hash_hex'],
-      ),
+      marketSnapshotHashHex: _readOptionalHash(map['market_snapshot_hash_hex']),
       featureHashHex: _readOptionalHash(map['feature_hash_hex']),
       tvhDecisionHashHex: _readOptionalHash(map['tvh_decision_hash_hex']),
       liveDecisionHashHex: _readOptionalHash(map['live_decision_hash_hex']),
@@ -111,9 +107,60 @@ class BingxFuturesOrderTrackingState {
       stopLossPercent == null &&
       takeProfitRiskReward == null;
 
+  BingxFuturesOrderTrackingState reconcileOpenOrderIds(
+    Iterable<String> openOrderIds,
+  ) {
+    final openIds =
+        openOrderIds
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet();
+    final retainedIds =
+        managedOrderIds
+            .map((value) => value.trim())
+            .where(openIds.contains)
+            .toSet()
+            .toList()
+          ..sort();
+    final retainedIdSet = retainedIds.toSet();
+    final retainedSymbols = <String, String>{
+      for (final entry in managedOrderSymbols.entries)
+        if (retainedIdSet.contains(entry.key)) entry.key: entry.value,
+    };
+    final retainedProvenance = <String, BingxManagedOrderProvenance>{
+      for (final entry in managedOrderProvenance.entries)
+        if (retainedIdSet.contains(entry.key)) entry.key: entry.value,
+    };
+    final currentTrackedOrderId = trackedOrderId?.trim() ?? '';
+    final nextTrackedOrderId =
+        retainedIdSet.contains(currentTrackedOrderId)
+            ? currentTrackedOrderId
+            : retainedIds.isEmpty
+            ? null
+            : retainedIds.first;
+    final nextTrackedSymbol =
+        nextTrackedOrderId == null
+            ? null
+            : retainedSymbols[nextTrackedOrderId] ?? trackedSymbol;
+
+    return BingxFuturesOrderTrackingState(
+      trackedSymbol: nextTrackedSymbol,
+      trackedOrderId: nextTrackedOrderId,
+      managedOrderIds: List<String>.unmodifiable(retainedIds),
+      managedOrderSymbols: Map<String, String>.unmodifiable(retainedSymbols),
+      managedOrderProvenance:
+          Map<String, BingxManagedOrderProvenance>.unmodifiable(
+            retainedProvenance,
+          ),
+      stopLossPercent: stopLossPercent,
+      takeProfitRiskReward: takeProfitRiskReward,
+    );
+  }
+
   Map<String, dynamic> toJson() {
-    final sortedProvenance = managedOrderProvenance.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
+    final sortedProvenance =
+        managedOrderProvenance.entries.toList()
+          ..sort((a, b) => a.key.compareTo(b.key));
     return <String, dynamic>{
       'version': 2,
       'tracked_symbol': trackedSymbol?.trim().toUpperCase(),
@@ -128,14 +175,13 @@ class BingxFuturesOrderTrackingState {
     };
   }
 
-  static BingxFuturesOrderTrackingState? fromJsonMap(
-    Map<String, dynamic> map,
-  ) {
+  static BingxFuturesOrderTrackingState? fromJsonMap(Map<String, dynamic> map) {
     final trackedSymbol = map['tracked_symbol']?.toString().trim();
     final trackedOrderId = map['tracked_order_id']?.toString().trim();
     final stopLossPercent = _readPositiveDouble(map['stop_loss_percent']);
-    final takeProfitRiskReward =
-        _readPositiveDouble(map['take_profit_risk_reward']);
+    final takeProfitRiskReward = _readPositiveDouble(
+      map['take_profit_risk_reward'],
+    );
     final managedRaw = map['managed_order_ids'];
     final managed = <String>{};
     if (managedRaw is List) {
@@ -173,23 +219,28 @@ class BingxFuturesOrderTrackingState {
       }
     }
     return BingxFuturesOrderTrackingState(
-      trackedSymbol: trackedSymbol == null || trackedSymbol.isEmpty
-          ? null
-          : trackedSymbol.toUpperCase(),
-      trackedOrderId: trackedOrderId == null || trackedOrderId.isEmpty
-          ? null
-          : trackedOrderId,
+      trackedSymbol:
+          trackedSymbol == null || trackedSymbol.isEmpty
+              ? null
+              : trackedSymbol.toUpperCase(),
+      trackedOrderId:
+          trackedOrderId == null || trackedOrderId.isEmpty
+              ? null
+              : trackedOrderId,
       managedOrderIds: List<String>.unmodifiable(managed.toList()..sort()),
-      managedOrderSymbols:
-          Map<String, String>.unmodifiable(Map<String, String>.fromEntries(
-        managedSymbols.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
-      )),
-      managedOrderProvenance:
-          Map<String, BingxManagedOrderProvenance>.unmodifiable(
-        Map<String, BingxManagedOrderProvenance>.fromEntries(
-          provenance.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+      managedOrderSymbols: Map<String, String>.unmodifiable(
+        Map<String, String>.fromEntries(
+          managedSymbols.entries.toList()
+            ..sort((a, b) => a.key.compareTo(b.key)),
         ),
       ),
+      managedOrderProvenance:
+          Map<String, BingxManagedOrderProvenance>.unmodifiable(
+            Map<String, BingxManagedOrderProvenance>.fromEntries(
+              provenance.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key)),
+            ),
+          ),
       stopLossPercent: stopLossPercent,
       takeProfitRiskReward: takeProfitRiskReward,
     );

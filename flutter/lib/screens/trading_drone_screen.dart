@@ -2298,6 +2298,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       );
       if (!mounted) return;
       final allOrders = result.orders;
+      if (result.isSuccess) {
+        await _reconcileOpenOrderTracking(allOrders);
+        if (!mounted) return;
+      }
       for (final order in allOrders) {
         if (_managedOrderIds.contains(order.orderId)) {
           _managedOrderSymbols[order.orderId] = order.symbol.toUpperCase();
@@ -2402,6 +2406,56 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         });
       }
     }
+  }
+
+  Future<void> _reconcileOpenOrderTracking(
+    List<BingxFuturesOpenOrder> openOrders,
+  ) async {
+    final previousManagedIds = Set<String>.from(_managedOrderIds);
+    final previousTrackedOrderId = _trackedOrderId;
+    final reconciled = BingxFuturesOrderTrackingState(
+      trackedSymbol: _trackedOrdersSymbol,
+      trackedOrderId: _trackedOrderId,
+      managedOrderIds: _managedOrderIds.toList(growable: false),
+      managedOrderSymbols: Map<String, String>.from(_managedOrderSymbols),
+      managedOrderProvenance: Map<String, BingxManagedOrderProvenance>.from(
+        _managedOrderProvenance,
+      ),
+      stopLossPercent: _stopLossPercent,
+      takeProfitRiskReward: _takeProfitRiskReward,
+    ).reconcileOpenOrderIds(openOrders.map((order) => order.orderId));
+    final removedIds = previousManagedIds.difference(
+      reconciled.managedOrderIds.toSet(),
+    );
+    final trackingPointerChanged =
+        previousTrackedOrderId != reconciled.trackedOrderId;
+    if (removedIds.isEmpty && !trackingPointerChanged) return;
+
+    _managedOrderIds
+      ..clear()
+      ..addAll(reconciled.managedOrderIds);
+    _managedOrderSymbols
+      ..clear()
+      ..addAll(reconciled.managedOrderSymbols);
+    _managedOrderProvenance
+      ..clear()
+      ..addAll(reconciled.managedOrderProvenance);
+    _trackedOrdersSymbol = reconciled.trackedSymbol;
+    _trackedOrderId = reconciled.trackedOrderId;
+    _cancelOrderIdController.text = reconciled.trackedOrderId ?? '';
+    _managedOrderLifecycleRevision += 1;
+
+    await _module.uiLog.log(
+      'bingx.exchange.tracking.reconcile',
+      'openCount=${openOrders.length} removedCount=${removedIds.length} '
+          'managedCount=${_managedOrderIds.length} '
+          'trackedOrderId=${_trackedOrderId ?? "-"}',
+    );
+    if (_managedOrderIds.isEmpty) {
+      _stopOpenOrdersAutoTracking(reason: 'no_managed_open_orders');
+      return;
+    }
+    await _persistOpenOrdersTrackingState(source: 'open_orders_reconciled');
   }
 
   Future<void> _revalidateManagedOpenOrders({
