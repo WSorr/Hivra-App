@@ -183,8 +183,12 @@ One cycle executes in this order:
 5. Fetch Home and paginated activity/feed pages until the checkpoint boundary,
    provider limit, or local cycle budget is reached.
 6. Normalize and deduplicate observations by provider ids.
-7. Exclude targets already active, succeeded, expired by age policy, authored
-   by self, unverified, spam-marked, locked, or outside allowed topics.
+7. Before WASM selection, ask the existing publication owner to exclude every
+   target already represented in the Capsule-scoped effect journal. Active and
+   succeeded targets remain closed; cancelled or terminal targets require the
+   existing explicit user reopen path and cannot be reopened by an automatic
+   cycle. Also exclude targets expired by age policy, authored by self,
+   unverified, spam-marked, locked, or outside allowed topics.
 8. Ask WASM to rank/plan a bounded candidate set.
 9. For selected targets only, request an AI proposal if configured.
 10. Validate and bind exact prose through WASM.
@@ -290,8 +294,9 @@ Remote Moltbook content and model output are untrusted data.
    queue, deliver, or compensate an engagement through a parallel route.
 3. **Cycle engine (implemented)**: one Capsule/account-scoped in-flight cycle
    reconciles unresolved effects, performs paginated heartbeat observation and
-   deterministic WASM planning, selects at most one target, obtains one bounded
-   AI proposal, binds it through WASM, and prepares one local immutable effect.
+   filters journal-owned targets before deterministic WASM planning, selects at
+   most one remaining target, obtains one bounded AI proposal, binds it through
+   WASM, and prepares one local immutable effect.
    Assisted stops for exact review; explicitly enabled Bounded may authorize,
    queue, and process that exact nested reply through the same use case. It
    commits the checkpoint only after ownership checks and never solves a

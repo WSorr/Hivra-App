@@ -860,11 +860,42 @@ class PluginRuntimeModule {
             heartbeatPlan.priority == 'review_activity'
                 ? 'own_activity'
                 : 'feed_candidate';
-        final conversation = await observeMoltbookConversation(candidatePostId);
+        final observedConversation = await observeMoltbookConversation(
+          candidatePostId,
+        );
         await _ensureMoltbookCycleScope(
           ownerHex,
           accountBindingId,
           cycleEpoch: cycleEpoch,
+        );
+        final availableComments = <MoltbookCommentObservation>[];
+        for (final comment in observedConversation.comments) {
+          final unavailable = await moltbookPublications
+              .isReplyTargetUnavailable(
+                accountBindingId: accountBindingId,
+                postId: observedConversation.post.postId,
+                parentCommentId: comment.commentId,
+              );
+          await _ensureMoltbookCycleScope(
+            ownerHex,
+            accountBindingId,
+            cycleEpoch: cycleEpoch,
+          );
+          if (!unavailable) availableComments.add(comment);
+        }
+        if (availableComments.length != observedConversation.comments.length) {
+          await uiLog.log(
+            'moltbook.cycle.targets',
+            'post=${observedConversation.post.postId} '
+                'available=${availableComments.length} '
+                'excluded=${observedConversation.comments.length - availableComments.length}',
+          );
+        }
+        final conversation = MoltbookConversationObservation(
+          post: observedConversation.post,
+          comments: availableComments,
+          hasMoreComments: observedConversation.hasMoreComments,
+          rateLimit: observedConversation.rateLimit,
         );
         final engagementPlan = await planMoltbookEngagement(
           conversation: conversation,

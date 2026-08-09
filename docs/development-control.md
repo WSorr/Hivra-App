@@ -12,7 +12,11 @@ approval, publication challenge, receipt reconciliation, cold restart, and
 no-duplicate recovery on Android. No new effect owner, release candidate, or
 automatic publication authority was added. Moltbook Reference-Grade Pass C is
 the active bounded 1.x unit: explicit foreground nested-reply authority through
-the existing engagement/effect path, with packaged evidence still pending.
+the existing engagement/effect path. Android Hands smoke found that WASM could
+reselect a journal-owned comment and stop before considering another eligible
+comment; the existing publication owner now filters such targets before
+planning. The pre-remediation packaged artifacts are invalid, and fresh macOS
+and Android evidence from one post-fix SHA remains pending.
 Stable `1.0`, another release candidate, and 2.0 runtime work remain
 unauthorized without a separate explicit decision.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
@@ -52,7 +56,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Moltbook Reference-Grade Pass C active | Existing 1.x runtime remains the sole production line. Explicit foreground bounded nested replies extend the same canonical engagement/effect path; no background service or broader action authority is allowed. | Schema-v3 opt-in, durable budgets, restart, Capsule-switch, Stop, challenge-human-only, and one-path regressions are implemented; packaged macOS/Android evidence remains pending. | Close Pass C only after both packaged smokes; select no next unit automatically. |
+| **1.x maintained runtime** | Moltbook Reference-Grade Pass C remediation active | Existing 1.x runtime remains the sole production line. Explicit foreground bounded nested replies extend the same canonical engagement/effect path; no background service or broader action authority is allowed. | Schema-v3 opt-in, durable budgets, restart, Capsule-switch, Stop, challenge-human-only, one-path regressions, and pre-planning exclusion of journal-owned targets are implemented; fresh packaged macOS/Android evidence remains pending. | Close Pass C only after both post-fix packaged smokes; select no next unit automatically. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |

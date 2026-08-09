@@ -2669,8 +2669,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Focused regressions cover configuration migration, exact delegated flow,
     durable daily/interval denial across module recreation, Capsule switch,
     Stop, challenge non-resolution, and canonical effect processing.
-  - Status: active (2026-08-10); full automated gates and packaged macOS/Android
-    evidence remain required. No next pass or release candidate is selected.
+  - Android Hands smoke found a closed-target selection gap: after WASM chose a
+    comment already represented in the effect journal, the cycle stopped
+    instead of considering another eligible comment. The existing publication
+    owner now filters journal-owned targets before WASM planning; regressions
+    cover next-target selection and automatic non-reopening after cancellation.
+  - Status: remediation active (2026-08-10); artifacts from `88a0f3e` are
+    invalid. Full automated gates and fresh packaged macOS/Android evidence from
+    one post-fix SHA remain required. No next pass or release candidate is
+    selected.
 
 ## Planned Product Tracks
 

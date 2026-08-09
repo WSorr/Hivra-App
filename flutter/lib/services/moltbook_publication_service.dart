@@ -230,6 +230,19 @@ class MoltbookPublicationService {
         .toList(growable: false);
   }
 
+  Future<bool> isReplyTargetUnavailable({
+    required String accountBindingId,
+    required String postId,
+    required String parentCommentId,
+  }) async {
+    final matching = await findReplyOperations(
+      accountBindingId: accountBindingId,
+      postId: postId,
+      parentCommentId: parentCommentId,
+    );
+    return matching.isNotEmpty;
+  }
+
   Future<ExternalEffectOperation> approveAndQueue(
     ExternalEffectOperation operation,
   ) async {
