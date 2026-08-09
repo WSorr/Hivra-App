@@ -2556,6 +2556,20 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: completed (2026-08-09); rebuild and manual signoff pending, no tag
     or publication.
 
+- `v1.0.3-test16 smoke remediation — visible AI Engineer selection`
+  - Packaged macOS hands smoke reproduced that quick-add changed a selected-file
+    field hidden below long repository listings, so the operator could not
+    verify the exact advisory context. Changing that field also left an older
+    built context eligible for Ask.
+  - The existing `_DeveloperWorkspaceCard` owner now places the exact selection
+    beside quick-add, reports additive/deduplicated changes, and invalidates the
+    built preview and answer whenever selection changes. No AI provider,
+    credential, runtime dispatch, DTO, file-write path, or second context owner
+    is added.
+  - Every prior test16 artifact is rejected. Both platforms require one rebuild
+    from the green post-merge SHA and complete manual signoff.
+  - Status: remediation active (2026-08-09); tag and publication remain blocked.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

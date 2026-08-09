@@ -19,6 +19,22 @@ import '../widgets/ai_diagnostics/plugin_audit_widgets.dart';
 import '../widgets/ai_diagnostics/provider_widgets.dart';
 import '../widgets/ai_diagnostics/report_widgets.dart';
 
+@visibleForTesting
+List<String> mergeDeveloperWorkspaceFileSelections({
+  required Iterable<String> currentPaths,
+  required Iterable<String> suggestedPaths,
+}) {
+  final selected =
+      currentPaths
+          .map((path) => path.trim())
+          .where((path) => path.isNotEmpty)
+          .toSet();
+  selected.addAll(
+    suggestedPaths.map((path) => path.trim()).where((path) => path.isNotEmpty),
+  );
+  return selected.toList()..sort();
+}
+
 String _doctorErrorMessage(Object error) {
   return error
       .toString()
@@ -816,6 +832,7 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   AiDeveloperWorkspaceSelectedContext? _selectedContext;
   AiDeveloperEngineerPreview? _engineerPreview;
   int? _selectedFileRequestCount;
+  String? _selectionNotice;
   InferenceProviderKind _engineerProvider = InferenceProviderKind.openAi;
   String? _engineerAnswer;
   String? _error;
@@ -1003,22 +1020,47 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
   }
 
   void _addSuggestedFiles(Iterable<String> relativePaths) {
-    final selected =
-        _selectedFilesController.text
-            .split(RegExp(r'[\n,]+'))
-            .map((path) => path.trim())
-            .where((path) => path.isNotEmpty)
-            .toSet();
-    selected.addAll(
-      relativePaths.map((path) => path.trim()).where((path) => path.isNotEmpty),
+    final previous = _selectedRelativePaths();
+    final selected = mergeDeveloperWorkspaceFileSelections(
+      currentPaths: previous,
+      suggestedPaths: relativePaths,
     );
-    final sorted = selected.toList()..sort();
-    _selectedFilesController.text = sorted.join('\n');
+    _selectedFilesController.text = selected.join('\n');
     _selectedFilesController.selection = TextSelection.collapsed(
       offset: _selectedFilesController.text.length,
     );
+    final addedCount = selected.length - previous.length;
     setState(() {
       _error = null;
+      _selectionNotice =
+          addedCount == 0
+              ? 'No new files added; all suggestions are already selected.'
+              : 'Added $addedCount file${addedCount == 1 ? '' : 's'} · ${selected.length}/${AiDeveloperWorkspaceService.maxSelectedFiles} selected';
+      _invalidateSelectedContext();
+    });
+  }
+
+  List<String> _selectedRelativePaths() {
+    return _selectedFilesController.text
+        .split(RegExp(r'[\n,]+'))
+        .map((path) => path.trim())
+        .where((path) => path.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+  }
+
+  void _invalidateSelectedContext() {
+    _selectedContext = null;
+    _engineerPreview = null;
+    _selectedFileRequestCount = null;
+    _engineerAnswer = null;
+  }
+
+  void _onSelectedFilesChanged(String _) {
+    setState(() {
+      _selectionNotice =
+          '${_selectedRelativePaths().length}/${AiDeveloperWorkspaceService.maxSelectedFiles} files selected; rebuild context before asking.';
+      _invalidateSelectedContext();
     });
   }
 
@@ -1242,29 +1284,36 @@ class _DeveloperWorkspaceCardState extends State<_DeveloperWorkspaceCard> {
                 ]),
               ),
               const SizedBox(height: 8),
-              ..._report!.repositories.map(
-                (repo) => AiDeveloperWorkspaceRepoTile(
-                  repo: repo,
-                  onAddFile: _addSelectedFile,
-                ),
-              ),
-              const SizedBox(height: 12),
               TextField(
+                key: const ValueKey<String>(
+                  'hivra_engineer_selected_relative_files',
+                ),
                 controller: _selectedFilesController,
                 minLines: 2,
                 maxLines: 6,
+                onChanged: _onSelectedFilesChanged,
                 decoration: const InputDecoration(
                   labelText: 'Selected relative files for developer context',
-                  helperText:
-                      'Manual selection only. Example: docs/specification.md',
+                  helperText: 'Maximum 8 files. Build context after selection.',
                   border: OutlineInputBorder(),
                 ),
               ),
+              if (_selectionNotice != null) ...[
+                const SizedBox(height: 6),
+                Text(_selectionNotice!, style: theme.textTheme.bodySmall),
+              ],
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _busy ? null : _buildSelectedContext,
                 icon: const Icon(Icons.fact_check),
                 label: const Text('Build selected context preview'),
+              ),
+              const SizedBox(height: 12),
+              ..._report!.repositories.map(
+                (repo) => AiDeveloperWorkspaceRepoTile(
+                  repo: repo,
+                  onAddFile: _addSelectedFile,
+                ),
               ),
             ],
             if (_selectedContext != null) ...[
