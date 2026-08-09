@@ -177,7 +177,7 @@ void main() {
     final summary = await replacement;
 
     expect(connection.observeCount, 2);
-    expect(heartbeatHost.executeCount, 2);
+    expect(heartbeatHost.executeCount, 3);
     expect(summary.inspectedCount, 2);
   });
 
@@ -299,6 +299,28 @@ void main() {
       final summary = await module.runMoltbookCycle();
 
       expect(heartbeatHost.authorizedTargetCommentIds, <String>['comment-2']);
+      expect(publications.delegatedApprovalCount, 1);
+      expect(publications.processedIds, <String>['reply-effect-1']);
+      expect(summary.blockedCount, 0);
+    },
+  );
+
+  test(
+    'cycle skips a no-action post and evaluates the next candidate',
+    () async {
+      configuration.approvalMode =
+          MoltbookAmbassadorConfiguration.approvalBounded;
+      connection.feedIds = <String>['post-1', 'post-2'];
+      heartbeatHost.engagementActionsByPostId['post-1'] = 'no_action';
+      heartbeatHost.engagementActionsByPostId['post-2'] = 'reply_draft';
+
+      final summary = await module.runMoltbookCycle();
+
+      expect(connection.observedConversationPostIds, <String>[
+        'post-1',
+        'post-2',
+      ]);
+      expect(heartbeatHost.authorizedTargetCommentIds, <String>['comment-1']);
       expect(publications.delegatedApprovalCount, 1);
       expect(publications.processedIds, <String>['reply-effect-1']);
       expect(summary.blockedCount, 0);
@@ -456,6 +478,7 @@ class _UnusedPassiveReceive implements CapsulePassiveReceivePort {
 
 class _CycleConnection implements MoltbookConnectionService {
   int observeCount = 0;
+  final List<String> observedConversationPostIds = <String>[];
   String accountId = 'agent-1';
   List<String> feedIds = <String>['post-2', 'post-1'];
   List<String> commentIds = <String>['comment-1'];
@@ -503,39 +526,42 @@ class _CycleConnection implements MoltbookConnectionService {
   @override
   Future<MoltbookConversationObservation> observeConversation(
     String postId,
-  ) async => MoltbookConversationObservation(
-    post: MoltbookPostObservation(
-      postId: postId,
-      title: 'Post $postId',
-      content: 'Public content',
-      authorId: 'author-1',
-      authorName: 'Agent',
-      submoltName: 'hivra',
-      score: 1,
-      commentCount: 1,
-      isVerified: true,
-      isSpam: false,
-      isLocked: false,
-      createdAtUtc: '2026-08-01T00:00:00.000Z',
-      updatedAtUtc: '2026-08-01T00:05:00.000Z',
-    ),
-    comments: commentIds
-        .map(
-          (commentId) => MoltbookCommentObservation(
-            commentId: commentId,
-            postId: postId,
-            parentCommentId: null,
-            content: 'What changed?',
-            authorId: 'reader-$commentId',
-            authorName: 'Reader',
-            score: 0,
-            createdAtUtc: '2026-08-01T00:04:00.000Z',
-          ),
-        )
-        .toList(growable: false),
-    hasMoreComments: false,
-    rateLimit: _rateLimit,
-  );
+  ) async {
+    observedConversationPostIds.add(postId);
+    return MoltbookConversationObservation(
+      post: MoltbookPostObservation(
+        postId: postId,
+        title: 'Post $postId',
+        content: 'Public content',
+        authorId: 'author-1',
+        authorName: 'Agent',
+        submoltName: 'hivra',
+        score: 1,
+        commentCount: 1,
+        isVerified: true,
+        isSpam: false,
+        isLocked: false,
+        createdAtUtc: '2026-08-01T00:00:00.000Z',
+        updatedAtUtc: '2026-08-01T00:05:00.000Z',
+      ),
+      comments: commentIds
+          .map(
+            (commentId) => MoltbookCommentObservation(
+              commentId: commentId,
+              postId: postId,
+              parentCommentId: null,
+              content: 'What changed?',
+              authorId: 'reader-$commentId',
+              authorName: 'Reader',
+              score: 0,
+              createdAtUtc: '2026-08-01T00:04:00.000Z',
+            ),
+          )
+          .toList(growable: false),
+      hasMoreComments: false,
+      rateLimit: _rateLimit,
+    );
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -566,6 +592,7 @@ class _HeartbeatHost implements PluginHostApiService {
   int executeCount = 0;
   int authorizationCount = 0;
   final List<String> authorizedTargetCommentIds = <String>[];
+  final Map<String, String> engagementActionsByPostId = <String, String>{};
   String engagementAction = 'no_action';
   void Function()? afterAuthorization;
 
@@ -668,8 +695,11 @@ class _HeartbeatHost implements PluginHostApiService {
     final observedAt = request.args['observed_at_utc'] as String;
     final post = request.args['post'] as Map<String, dynamic>;
     final comments = request.args['comments'] as List<dynamic>;
+    final action =
+        engagementActionsByPostId[post['post_id'] as String] ??
+        engagementAction;
     final targetCommentId =
-        engagementAction == 'reply_draft' && comments.isNotEmpty
+        action == 'reply_draft' && comments.isNotEmpty
             ? (comments.first as Map<String, dynamic>)['comment_id'] as String
             : null;
     final canonical = jsonEncode(<String, dynamic>{
@@ -677,11 +707,11 @@ class _HeartbeatHost implements PluginHostApiService {
       'plugin_id': moltbookAmbassadorPluginId,
       'contract_kind': 'moltbook_ambassador_engagement_plan',
       'observed_at_utc': observedAt,
-      'action_class': engagementAction,
+      'action_class': action,
       'target_post_id': post['post_id'],
       'target_comment_id': targetCommentId,
       'reason':
-          engagementAction == 'no_action'
+          action == 'no_action'
               ? 'No useful reply is required.'
               : 'A factual reply may be useful.',
       'publish_allowed': false,

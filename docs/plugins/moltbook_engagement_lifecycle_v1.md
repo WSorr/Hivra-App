@@ -189,7 +189,10 @@ One cycle executes in this order:
    existing explicit user reopen path and cannot be reopened by an automatic
    cycle. Also exclude targets expired by age policy, authored by self,
    unverified, spam-marked, locked, or outside allowed topics.
-8. Ask WASM to rank/plan a bounded candidate set.
+8. Evaluate the ordered heartbeat candidate set through WASM until one
+   actionable target is selected or the set is exhausted. A `no_action` result
+   closes only that candidate for the current cycle; it cannot starve later
+   candidates. At most one actionable target may advance per cycle.
 9. For selected targets only, request an AI proposal if configured.
 10. Validate and bind exact prose through WASM.
 11. Under Assisted policy, prepare one immutable local effect and stop for exact

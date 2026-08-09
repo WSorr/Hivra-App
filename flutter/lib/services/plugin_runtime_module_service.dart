@@ -853,8 +853,7 @@ class PluginRuntimeModule {
     );
     final heartbeatPlan = heartbeat.plan;
     String? deferredFeedPostId;
-    final candidatePostId = heartbeatPlan.candidatePostIds.firstOrNull;
-    if (candidatePostId != null) {
+    for (final candidatePostId in heartbeatPlan.candidatePostIds) {
       try {
         final selectionKind =
             heartbeatPlan.priority == 'review_activity'
@@ -983,6 +982,7 @@ class PluginRuntimeModule {
               }
             }
           }
+          break;
         } else if (engagementPlan.actionClass != 'no_action') {
           throw StateError(
             'Cycle action ${engagementPlan.actionClass} is not mounted',
@@ -997,6 +997,7 @@ class PluginRuntimeModule {
           'moltbook.cycle.propose',
           'deferred post=$candidatePostId ${_safeError(error)}',
         );
+        break;
       }
     }
     await _ensureMoltbookCycleScope(

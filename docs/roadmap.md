@@ -2674,10 +2674,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     instead of considering another eligible comment. The existing publication
     owner now filters journal-owned targets before WASM planning; regressions
     cover next-target selection and automatic non-reopening after cancellation.
-  - Status: remediation active (2026-08-10); artifacts from `88a0f3e` are
-    invalid. Full automated gates and fresh packaged macOS/Android evidence from
-    one post-fix SHA remain required. No next pass or release candidate is
-    selected.
+  - Follow-up Android smoke on `4f8b269` confirmed exact target filtering
+    (`5` observed, `3` excluded, `2` available) and no duplicate effect, then
+    exposed a second starvation gap: `no_action` on the first heartbeat post
+    ended the cycle despite later candidates. The canonical cycle now evaluates
+    candidates in order until one actionable target is selected or the bounded
+    set is exhausted, while still advancing at most one action.
+  - Status: remediation active (2026-08-10); artifacts from `88a0f3e` and
+    `4f8b269` are invalid. Full automated gates and fresh packaged macOS/Android
+    evidence from one final post-fix SHA remain required. No next pass or
+    release candidate is selected.
 
 ## Planned Product Tracks
 
