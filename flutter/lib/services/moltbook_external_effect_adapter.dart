@@ -258,8 +258,25 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
   ) async {
     final providerReferenceId = request.providerReferenceId;
     if (providerReferenceId != null) {
-      return _reconcilePostById(request, apiKey, payload, providerReferenceId);
+      try {
+        return await _reconcilePostById(
+          request,
+          apiKey,
+          payload,
+          providerReferenceId,
+        );
+      } on MoltbookProviderException catch (error) {
+        if (error.code != 'http_400') rethrow;
+      }
     }
+    return _reconcilePostFromProfile(request, apiKey, payload);
+  }
+
+  Future<ExternalEffectAdapterResult> _reconcilePostFromProfile(
+    ExternalEffectAdapterRequest request,
+    String apiKey,
+    _MoltbookPostPayload payload,
+  ) async {
     final profile = await _provider.observeProfile(
       apiKey: apiKey,
       accountName: payload.accountName,
