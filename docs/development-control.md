@@ -13,10 +13,14 @@ are projected independently of transport refresh success, retention is bounded,
 and Capsule deletion clears its process projection. Hands smoke then reproduced
 an AI Engineer selection-visibility defect: quick-add changed the hidden file
 selection below long repository listings, while later edits did not invalidate
-an already-built advisory context. Remediation remains in the existing
-`_DeveloperWorkspaceCard` owner. All earlier test16 artifacts are invalid. The
-next step is green PR/post-merge verification, then one macOS/Android rebuild
-from the same SHA followed by complete manual signoff. No tag, GitHub
+an already-built advisory context. That remediation is merged in the existing
+`_DeveloperWorkspaceCard` owner. Replacement packaged smoke then proved the
+selection visible but reproduced that quick-add could exceed the canonical
+eight-file limit and fail only during context build. The same owner now caps
+quick-add atomically while the existing build validator remains fail-closed for
+manual input. All earlier test16 artifacts are invalid. The next step is green
+PR/post-merge verification, then one macOS/Android rebuild from the same SHA
+followed by complete manual signoff. No tag, GitHub
 Release, stable `1.0` claim, or 2.0 runtime work is authorized.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
 next pass selected. They
@@ -55,8 +59,8 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | AI Engineer selection remediation active | `_DeveloperWorkspaceCard` remains the sole selected-context UI owner: quick-add must expose the exact selection immediately, and any selection change must invalidate the previously built advisory context. | Focused regression proves additive deduplication; Flutter and repository gates pass; packaged hands smoke confirms visible selection and rebuild requirement. | Merge only through protected PR, then rebuild both platforms from the green post-merge SHA. |
-| **1.x release** | `v1.0.3-test16` candidate selected; not released; every earlier artifact invalid | Rebuild macOS and Android from one clean post-merge SHA, then repeat cross-platform chat and all remaining applicable smoke gates. | Credential masking, chat projection, and AI selection binding are covered by focused regressions; packaged evidence must be regenerated from the final merged commit. | Tag and publication remain blocked until both replacement artifacts pass manual signoff and all evidence is recorded. |
+| **1.x maintained runtime** | AI Engineer selection-limit remediation active | `_DeveloperWorkspaceCard` remains the sole selected-context UI owner: quick-add may fill only the remaining slots up to eight, while manual over-limit input remains rejected by the canonical build validator. | Focused regression proves additive deduplication and atomic capping; Flutter and repository gates pass; replacement packaged hands smoke must confirm the selection never reaches `9/8`. | Merge only through protected PR, then rebuild both platforms from the green post-merge SHA. |
+| **1.x release** | `v1.0.3-test16` candidate selected; not released; every artifact through `f5632b9` invalid | Rebuild macOS and Android from one clean post-merge SHA, then repeat cross-platform chat and all remaining applicable smoke gates. | Credential masking, chat projection, exact AI selection visibility, context invalidation, and selection capping are covered by focused regressions; packaged evidence must be regenerated from the final merged commit. | Tag and publication remain blocked until both replacement artifacts pass manual signoff and all evidence is recorded. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
