@@ -3,30 +3,16 @@
 Status date: 2026-08-09
 Current released baseline: commit `9953b02` (`v1.0.3-test15`, macOS and Android manual signoff recorded)
 Current development focus: `v1.0.3-test16` is the selected 1.x test release
-candidate. Packaged smoke reproduced a credential-visibility defect in the
-Trading Drone and then a chat-projection loss: passive receive accepted three
-chat messages before the workspace opened, but the destructive drain left no
-workspace-visible inbox. Credential masking is merged and verified on Android.
-The chat remediation is complete in the existing
-`CapsuleDeliveryInboxStore`/`CapsuleChatDeliveryService` path: cached messages
-are projected independently of transport refresh success, retention is bounded,
-and Capsule deletion clears its process projection. Hands smoke then reproduced
-an AI Engineer selection-visibility defect: quick-add changed the hidden file
-selection below long repository listings, while later edits did not invalidate
-an already-built advisory context. That remediation is merged in the existing
-`_DeveloperWorkspaceCard` owner. Replacement packaged smoke then proved the
-selection visible but reproduced that quick-add could exceed the canonical
-eight-file limit and fail only during context build. The same owner now caps
-quick-add atomically while the existing build validator remains fail-closed for
-manual input, and packaged hands smoke confirms the selection remains at the
-eight-file limit. The same smoke then reproduced stale Trading Drone tracking:
-a closed managed order restored a symbol-only poll loop even though the live
-open-order projection contained zero drone-owned orders. Remediation is active
-in the existing tracking-state lifecycle; all test16 artifacts through
-`332083d` are invalid. The next step is green PR/post-merge verification, then
-one macOS/Android rebuild from the same SHA followed by complete manual signoff.
-No tag, GitHub
-Release, stable `1.0` claim, or 2.0 runtime work is authorized.
+candidate. All candidate remediations are merged, and exact macOS and Android
+artifacts were rebuilt from clean commit `30e0800`. Hands smoke passed on both
+packaged artifacts. Evidence includes restart-safe Trading Drone reconciliation,
+Moltbook prepare-only review, bounded and visible AI Engineer context on macOS,
+Capsule-scoped restart behavior, and bidirectional chat delivery with passive
+receive projected visibly before a manual refresh. The exact artifact hashes
+and platform signoff are recorded in the canonical manual signoff log. The next
+step is final repository and release-gate verification from this evidence-only
+change, followed by an explicit tag/publication decision. No tag, GitHub Release,
+stable `1.0` claim, or 2.0 runtime work is authorized yet.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
 next pass selected. They
 established repository ownership evidence, Capsule identity/birth, Starter
@@ -54,7 +40,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Close stale Trading Drone tracking remediation through protected PR, rebuild both `v1.0.3-test16` artifacts from its green post-merge SHA, then complete macOS/Android manual signoff. | `docs/roadmap.md`, existing release and lifetime checklists |
+| What is the next 1.x step? | Validate the recorded `v1.0.3-test16` signoff through protected PR and green post-merge gates, then make a separate tag/publication decision. | `docs/roadmap.md`, existing release and lifetime checklists |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -64,8 +50,8 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading Drone stale-tracking remediation active | Existing `BingxFuturesOrderTrackingState` and `TradingDroneScreen` lifecycle reconcile persisted managed IDs against each successful live open-order projection; risk settings remain preserved. | Negative restart regression removes a closed managed ID and its provenance; positive regression retains and selects the surviving open managed order. | Merge only through protected PR, then rebuild both platforms from the green post-merge SHA. |
-| **1.x release** | `v1.0.3-test16` candidate selected; not released; every artifact through `332083d` invalid | Rebuild macOS and Android from one clean post-merge SHA, then repeat cross-platform chat and all remaining applicable smoke gates. | Credential masking, chat projection, AI context selection, and stale order-tracking cleanup are covered by focused regressions; packaged evidence must be regenerated from the final merged commit. | Tag and publication remain blocked until both replacement artifacts pass manual signoff and all evidence is recorded. |
+| **1.x maintained runtime** | No active release-blocking runtime finding | Existing `BingxFuturesOrderTrackingState` and `TradingDroneScreen` lifecycle reconcile persisted managed IDs against each successful live open-order projection; risk settings remain preserved. | Focused restart regressions and packaged restart smoke from `30e0800` remove stale ownership while retaining valid live ownership. | Open a new remediation only for a reproduced finding; exchange-generated protective-order ownership remains non-blocking audit debt in issue #26. |
+| **1.x release** | `v1.0.3-test16` candidate signoff complete; not released | Exact clean-commit artifacts from `30e0800` passed macOS and Android hands smoke. | SHA-256 identities and per-platform PASS rows are recorded in `docs/checklists/release-manual-signoff-log.md`; bidirectional passive chat projection is included. | Validate evidence through protected PR and green post-merge gates, then decide separately whether to tag and publish the test release. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
 | **Capsule AI Runtime** | AI-4 convergence complete | History Advisor, Developer Engineer, Capsule Analyst, and Moltbook use one canonical runtime; feature-owned dispatch and credential reads are zero. | Build `100000331`: focused AI/Moltbook/cycle regressions `53/53`, Flutter `760/760`, Rust workspace, analyze, and review gates pass; macOS universal and Android three-ABI artifacts cold-start without fatal evidence. | No AI-5. Re-audit the ordered debt tail before selecting another implementation unit. |
@@ -79,9 +65,10 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — `v1.0.3-test16` candidate:** run strict preflight, package macOS and
-   Android from one clean post-merge SHA, execute the complete journey, and
-   record evidence. Fix only reproduced defects.
+1. **P1 — `v1.0.3-test16` candidate:** validate the recorded two-platform
+   signoff through protected PR and green post-merge gates, then make an
+   explicit tag/publication decision. Do not rebuild or reopen runtime work
+   without a reproduced finding.
 2. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
    AI trading advice, distributed backup, and staking remain non-runtime or
    parked until the active design unit or a named release decision permits

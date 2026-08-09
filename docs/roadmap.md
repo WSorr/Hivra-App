@@ -2599,9 +2599,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Regression vectors cover the reproduced restart state and the positive
     multi-order case. No exchange effect, order cancellation, Core/FFI path,
     DTO family, tracking owner, or persistence route is added.
-  - Every test16 artifact through `332083d` is rejected. Both platforms require
-    one rebuild from the green post-merge SHA and complete manual signoff.
-  - Status: remediation active (2026-08-09); tag and publication remain blocked.
+  - Every test16 artifact through `332083d` is rejected. Replacement macOS and
+    Android artifacts were built from clean commit `30e0800` and completed hands
+    smoke, including restart reconciliation with no stale drone-owned order and
+    no unintended exchange effect.
+  - Status: completed (2026-08-09); exact replacement artifacts passed manual
+    signoff. Tag and publication remain a separate explicit decision.
+
+- `v1.0.3-test16 packaged manual signoff`
+  - Clean source commit `30e0800` produced the exact macOS and Android artifacts
+    recorded in `docs/checklists/release-manual-signoff-log.md`.
+  - Both platforms passed the complete applicable packaged gates. Cross-platform
+    chat passed in both directions: each receiver accepted the new envelope in
+    passive receive and projected the cached message visibly without restarting
+    the Chat workspace. A later manual Android refresh returned zero new chat
+    items, confirming that passive receive had already consumed the delivery.
+  - Trading restart reconciliation, Moltbook prepare-only review, Capsule-scoped
+    restart behavior, and macOS AI Engineer context bounds passed without adding
+    an external effect or exposing credentials.
+  - Exchange-generated protective-order ownership remains non-blocking audit debt
+    in issue #26 because the current upstream open-order response provides no
+    proven parent linkage. It is not inferred by symbol, side, price, or time.
+  - Status: signoff complete (2026-08-09); final repository/release gates and an
+    explicit tag/publication decision remain. No stable `1.0` claim is implied.
 
 ## Planned Product Tracks
 
