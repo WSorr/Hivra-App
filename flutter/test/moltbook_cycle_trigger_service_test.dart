@@ -46,6 +46,29 @@ void main() {
     expect(runs, 2);
   });
 
+  test('explicit stop allows one new session cycle for the scope', () async {
+    final service = MoltbookCycleTriggerService();
+    var runs = 0;
+
+    await service.startSession(
+      scope: _scopeA,
+      runCycle: () async => _summary(++runs),
+    );
+    service.stopAll();
+    final resumed = await service.startSession(
+      scope: _scopeA,
+      runCycle: () async => _summary(++runs),
+    );
+    final duplicate = await service.startSession(
+      scope: _scopeA,
+      runCycle: () async => _summary(++runs),
+    );
+
+    expect(resumed, isNotNull);
+    expect(duplicate, isNull);
+    expect(runs, 2);
+  });
+
   test('duplicate continuous start shares one sequential driver', () async {
     final delays = <Completer<void>>[];
     final firstCycleGate = Completer<void>();

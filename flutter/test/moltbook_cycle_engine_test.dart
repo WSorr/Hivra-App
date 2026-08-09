@@ -276,6 +276,20 @@ void main() {
     expect(connection.observeCount, 1);
   });
 
+  test('stopped session policy resumes exactly once when enabled', () async {
+    configuration.triggerPolicy =
+        MoltbookAmbassadorConfiguration.triggerSession;
+
+    await module.startConfiguredMoltbookCycles();
+    module.stopMoltbookCycles();
+    final resumed = await module.startConfiguredMoltbookCycles();
+    final duplicate = await module.startConfiguredMoltbookCycles();
+
+    expect(resumed, isNotNull);
+    expect(duplicate, isNull);
+    expect(connection.observeCount, 2);
+  });
+
   test('persistent stop disables future configured cycles', () async {
     configuration.triggerPolicy =
         MoltbookAmbassadorConfiguration.triggerSession;

@@ -81,6 +81,7 @@ class MoltbookCycleTriggerService {
 
   void stopAll() {
     _generation++;
+    _sessionStarted.clear();
     for (final entry in _continuousRuns.entries) {
       final run = entry.value;
       run.active = false;

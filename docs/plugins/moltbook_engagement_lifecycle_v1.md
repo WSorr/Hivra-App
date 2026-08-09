@@ -1,7 +1,7 @@
 # Moltbook Engagement Lifecycle v1
 
 Status: normative design contract; Assisted remote-engagement cycle implemented;
-packaged-artifact evidence recorded for the exercised `v1.0.3-test15` scope;
+packaged-artifact evidence recorded for the exercised `v1.0.3-test16` scope;
 automatic publication remains gated by the remaining package 6 cases
 
 Owner: external Moltbook Drone plus host External Effects boundary
@@ -252,7 +252,9 @@ Stop advances the cycle owner's generation. In-flight provider reads may
 finish at the adapter boundary, but their late result cannot begin WASM/AI
 planning, start another external effect, commit a checkpoint, or overwrite the
 stopped UI projection. A replacement cycle waits for the stopped predecessor
-to quiesce instead of creating a parallel route.
+to quiesce instead of creating a parallel route. An explicit local enable after
+Stop opens one new `session` trigger for the same scope; repeated starts still
+share that single trigger and cannot create a second cycle.
 
 ## 11. AI and hostile-input boundary
 
