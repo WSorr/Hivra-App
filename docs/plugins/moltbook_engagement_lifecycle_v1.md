@@ -1,8 +1,8 @@
 # Moltbook Engagement Lifecycle v1
 
-Status: normative design contract; Assisted remote-engagement cycle implemented;
-packaged-artifact evidence recorded for the exercised `v1.0.3-test16` scope;
-automatic publication remains gated by the remaining package 6 cases
+Status: normative design contract; Assisted remote-engagement cycle released;
+foreground Bounded exact-reply implementation is under Pass C verification;
+packaged-artifact evidence remains required before reference-grade closure
 
 Owner: external Moltbook Drone plus host External Effects boundary
 
@@ -189,8 +189,8 @@ One cycle executes in this order:
 9. For selected targets only, request an AI proposal if configured.
 10. Validate and bind exact prose through WASM.
 11. Under Assisted policy, prepare one immutable local effect and stop for exact
-    human review. Under a separately released Bounded policy, apply the current
-    delegation authorization.
+    human review. Under explicitly enabled Bounded policy, apply the current
+    WASM authorization and host-owned durable budget to that same effect path.
 12. Process authorized effects through the common adapter and record receipts.
 13. Commit the checkpoint only through the newest safely observed boundary.
 14. Publish a local cycle summary and stop.
@@ -291,9 +291,11 @@ Remote Moltbook content and model output are untrusted data.
 3. **Cycle engine (implemented)**: one Capsule/account-scoped in-flight cycle
    reconciles unresolved effects, performs paginated heartbeat observation and
    deterministic WASM planning, selects at most one target, obtains one bounded
-   AI proposal in Assisted mode, binds it through WASM, and prepares one local
-   immutable effect. It commits the checkpoint only after ownership checks and
-   never approves, queues, delivers, or solves a challenge automatically.
+   AI proposal, binds it through WASM, and prepares one local immutable effect.
+   Assisted stops for exact review; explicitly enabled Bounded may authorize,
+   queue, and process that exact nested reply through the same use case. It
+   commits the checkpoint only after ownership checks and never solves a
+   challenge automatically.
 4. **Trigger policies (implemented)**: a single application controller mounts
    `on_demand`, once-per-process `session`, and sequential
    `continuous_while_running` triggers over the same cycle port. Continuous
@@ -305,10 +307,12 @@ Remote Moltbook content and model output are untrusted data.
    path, exposes one primary next action, shows write and trigger policy
    separately, keeps Stop visible, projects bounded cycle/effect counts, and
    moves provider ids, hashes, attempts, checkpoints, and manual provider reads
-   into secondary technical details. Bounded publication is not exposed by the
-   release UI before package 6 evidence passes.
-6. **Release evidence**: hostile input, duplicate target, restart, timeout,
-   challenge, Capsule switch, rate limit, kill switch, macOS, and Android.
+   into secondary technical details. Bounded nested replies are exposed only
+   through explicit schema-v3 configuration; older profiles cannot acquire the
+   authority during migration.
+6. **Release evidence (in progress)**: hostile input, duplicate target,
+   restart, timeout, challenge, Capsule switch, rate limit, kill switch, macOS,
+   and Android.
    Deterministic tests cover the hostile-input boundary, semantic
    deduplication, restart reconciliation, provider timeout/challenge/rate-limit
    mapping, Capsule/account changes, and the generation-bound Stop contract.
@@ -316,7 +320,7 @@ Remote Moltbook content and model output are untrusted data.
 
 ## 13. Release gates
 
-Bounded or automatic mode remains unreleasable until all are true:
+Bounded mode remains non-reference-grade until all are true:
 
 - duplicate Assisted/Bounded actions cannot create two active effects for one
   target;
@@ -332,5 +336,6 @@ Bounded or automatic mode remains unreleasable until all are true:
 - no secret, Core data, relationship data, or provider DTO enters AI or WASM;
 - macOS and Android manual evidence passes with a disposable account.
 
-Until these gates pass, the shipped default remains Assisted and automatic
-cycle controls remain hidden or clearly marked experimental.
+The shipped default remains Assisted. Bounded requires explicit selection,
+runs only while the application and AI lease are active, and never authorizes
+root comments, posts, votes, follows, direct messages, or challenge answers.

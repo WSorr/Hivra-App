@@ -1152,14 +1152,16 @@ MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT="$(
     "$MOLTBOOK_AMBASSADOR_SCREEN" || true
 )"
 if [ "${MOLTBOOK_ENGAGEMENT_ADVANCE_ROUTE_COUNT:-0}" -eq 2 ]; then
-  pass "Moltbook release UI has one Assisted orchestration route"
+  pass "Moltbook release UI has one engagement orchestration route"
 else
-  fail "Moltbook release UI has one Assisted orchestration route"
+  fail "Moltbook release UI has one engagement orchestration route"
 fi
 require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'prepareMoltbookReplyPublication|authorizeDelegatedMoltbookReply|approveDelegatedMoltbookReply' \
   "Moltbook screen has no parallel reply authorization or queue route"
-require_absent "$MOLTBOOK_AMBASSADOR_SCREEN" 'MoltbookEngagementWritePolicy\.bounded|Bounded queue' \
-  "Moltbook release UI does not expose Bounded publication before evidence"
+require_present "$MOLTBOOK_AMBASSADOR_SCREEN" 'MoltbookAmbassadorConfiguration\.approvalBounded' \
+  "Moltbook release UI exposes bounded policy through canonical configuration"
+require_present "$PLUGIN_RUNTIME_MODULE" 'MoltbookEngagementWritePolicy\.bounded' \
+  "Moltbook runtime maps bounded policy into the canonical engagement use case"
 require_present "$MOLTBOOK_ENGAGEMENT_LIFECYCLE_DOC" 'Cycle engine \(implemented\)' \
   "Moltbook lifecycle records the implemented serialized cycle"
 require_present "$PLUGIN_RUNTIME_MODULE" 'static final Map<String, Future<MoltbookCycleSummary>> _moltbookCycles' \

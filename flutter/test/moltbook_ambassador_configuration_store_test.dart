@@ -96,10 +96,62 @@ void main() {
       configuration.triggerPolicy,
       MoltbookAmbassadorConfiguration.triggerOnDemand,
     );
-    expect(configuration.toJson()['schema_version'], 2);
+    expect(configuration.toJson()['schema_version'], 3);
   });
 
-  test('rejects invalid autonomous approval mode', () {
+  test('migrates schema v2 configuration without changing write authority', () {
+    final configuration = MoltbookAmbassadorConfiguration.fromJson(
+      <String, dynamic>{
+        'schema_version': 2,
+        'plugin_id': moltbookAmbassadorPluginId,
+        'agent_name': 'agent',
+        'agent_description': 'description',
+        'persona_summary': 'summary',
+        'allowed_topics': <String>['hivra-development'],
+        'approval_mode': MoltbookAmbassadorConfiguration.approvalAssisted,
+        'trigger_policy': MoltbookAmbassadorConfiguration.triggerContinuous,
+        'enabled': true,
+      },
+    );
+
+    expect(
+      configuration.approvalMode,
+      MoltbookAmbassadorConfiguration.approvalAssisted,
+    );
+    expect(
+      configuration.triggerPolicy,
+      MoltbookAmbassadorConfiguration.triggerContinuous,
+    );
+    expect(configuration.toJson()['schema_version'], 3);
+  });
+
+  test('accepts bounded replies only in configuration schema v3', () {
+    final bounded = <String, dynamic>{
+      'schema_version': 3,
+      'plugin_id': moltbookAmbassadorPluginId,
+      'agent_name': 'agent',
+      'agent_description': 'description',
+      'persona_summary': 'summary',
+      'allowed_topics': <String>['hivra-development'],
+      'approval_mode': MoltbookAmbassadorConfiguration.approvalBounded,
+      'trigger_policy': MoltbookAmbassadorConfiguration.triggerContinuous,
+      'enabled': true,
+    };
+
+    expect(
+      MoltbookAmbassadorConfiguration.fromJson(bounded).approvalMode,
+      MoltbookAmbassadorConfiguration.approvalBounded,
+    );
+    expect(
+      () => MoltbookAmbassadorConfiguration.fromJson(<String, dynamic>{
+        ...bounded,
+        'schema_version': 2,
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test('rejects unknown autonomous approval mode', () {
     expect(
       () => MoltbookAmbassadorConfiguration.fromJson(<String, dynamic>{
         'schema_version': 1,

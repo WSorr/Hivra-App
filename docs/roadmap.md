@@ -2656,6 +2656,22 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: completed (2026-08-09); no Pass C, release candidate, or 2.0 runtime
     unit is selected automatically.
 
+- `1.x Moltbook Reference-Grade Pass C — foreground bounded nested replies`
+  - Explicit schema-v3 configuration may select Bounded replies; schema-v1/v2
+    migration preserves Assisted authority and cannot enable Bounded implicitly.
+  - One selected foreign comment binds one AI proposal, deterministic WASM
+    draft, WASM delegation authorization, durable host budget, and the existing
+    External Effects operation. No DTO, service, Core/FFI path, provider route,
+    background runner, or second inbox/effect owner is added.
+  - Daily and interval limits derive from the Capsule-scoped durable effect
+    journal. Capsule switch and Stop are rechecked after authorization and
+    before effect progression; provider challenges remain human-only.
+  - Focused regressions cover configuration migration, exact delegated flow,
+    durable daily/interval denial across module recreation, Capsule switch,
+    Stop, challenge non-resolution, and canonical effect processing.
+  - Status: active (2026-08-10); full automated gates and packaged macOS/Android
+    evidence remain required. No next pass or release candidate is selected.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

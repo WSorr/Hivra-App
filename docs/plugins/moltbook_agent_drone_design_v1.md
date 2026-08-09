@@ -45,11 +45,11 @@ capabilities are now mounted behind explicit contracts:
 - foreground scheduling with an explicit online/offline lifecycle.
 
 No temporary direct HTTP call from a screen or WASM import may close these
-boundaries. Bounded Interactive mode remains gated. The authorization method
-now proves exact draft/plan binding, daily budget, and minimum interval;
-the foreground exact-reply queue is exposed behind explicit confirmation;
-automatic selection, scheduling, and unattended processing remain disabled
-until stop-control and restart evidence exist.
+boundaries. Bounded Interactive is limited to foreground nested replies. The
+authorization method proves exact draft/plan binding, daily budget, and minimum
+interval; the cycle uses the same external-effect owner as Assisted. Root
+comments, posts, votes, follows, direct messages, challenge solving, background
+execution, and unattended operation after application exit remain disabled.
 
 ## 3. Ownership and Dependency Stack
 
@@ -249,9 +249,9 @@ routes or state machines.
 There is no background-service promise in v1. Closing the application stops
 new reads and decisions. Moltbook retains already-published remote state.
 Closing the application also destroys the in-memory AI lease. Session and
-continuous Assisted cycles can request inference only after the user explicitly
-unlocks the configured provider once for that foreground process. A locked
-cycle pauses before inference and leaves its selected candidate retryable.
+continuous Assisted or Bounded cycles can request inference only after the user
+explicitly unlocks the configured provider once for that foreground process. A
+locked cycle pauses before inference and leaves its selected candidate retryable.
 
 ## 8. Method Scopes
 
@@ -616,19 +616,18 @@ Discover publication is allowed only after Phases 1-4 pass automated and
 manual release evidence. The signed catalog entry must pin the reviewed package
 hash and minimum host ABI/capabilities.
 
-The bounded reply authorization primitive and explicit foreground exact-reply
-queue are implemented. Bounded Interactive mode remains a separate release
-decision. Manual smoke exposed that Assisted and Bounded controls can prepare
-different operations for the same remote comment; this is a release blocker,
-not an acceptable duplicate-click edge case. The normative remediation and
-mode model are defined in `moltbook_engagement_lifecycle_v1.md`.
+The bounded reply authorization primitive and foreground exact-reply cycle are
+implemented through the single engagement orchestration port. The earlier
+Assisted/Bounded duplicate route is sealed by canonical target identity. Pass C
+adds explicit schema-v3 enablement, durable daily/interval enforcement, and
+generation checks that stop before effect creation after Capsule switch or
+Stop. Cross-platform packaged evidence remains the release boundary.
 
 Canonical engagement identity, the single orchestration port, serialized
-wake-run-sleep execution, one-target Assisted proposal preparation, three
-trigger policies, and a persistent local stop are implemented. Bounded
-publication still requires replay, prompt-injection, revocation,
-Capsule-switch, rate-limit, and unattended-restart evidence. Trigger
-configuration alone does not grant write authority or make Bounded mode
-releasable.
+wake-run-sleep execution, one-target proposal preparation, three trigger
+policies, and a persistent local stop are implemented. Bounded reference-grade
+closure still requires packaged replay, hostile-input, revocation,
+Capsule-switch, rate-limit, restart, Stop, macOS, and Android evidence. Trigger
+configuration alone does not create background authority.
 
 No phase may add direct network or secure-storage access to WASM.

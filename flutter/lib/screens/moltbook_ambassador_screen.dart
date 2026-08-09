@@ -1360,7 +1360,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                       ),
                       const SizedBox(height: 6),
                       const Text(
-                        'See what needs attention, then open a section only when you need it. Nothing is published without your approval.',
+                        'See what needs attention, then open a section only when you need it. Every publication follows the selected write policy and the same receipt lifecycle.',
                         style: TextStyle(
                           color: Color(0xFF9CA7B5),
                           height: 1.35,
@@ -1525,6 +1525,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                               initialValue: _approvalMode,
                               decoration: const InputDecoration(
                                 labelText: 'Approval mode',
+                                helperText:
+                                    'Bounded applies only to nested replies: at most 3 per UTC day, 30 minutes apart. Provider challenges stay manual.',
                               ),
                               items: const [
                                 DropdownMenuItem(
@@ -1539,6 +1541,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                                           .approvalAssisted,
                                   child: Text('Assisted approval'),
                                 ),
+                                DropdownMenuItem(
+                                  value:
+                                      MoltbookAmbassadorConfiguration
+                                          .approvalBounded,
+                                  child: Text('Bounded replies'),
+                                ),
                               ],
                               onChanged: (value) {
                                 if (value != null) {
@@ -1552,7 +1560,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                               decoration: const InputDecoration(
                                 labelText: 'Cycle trigger',
                                 helperText:
-                                    'Automatic triggers are experimental until release evidence passes.',
+                                    'Foreground only. Stop prevents future cycles.',
                               ),
                               items: const [
                                 DropdownMenuItem(
@@ -1565,17 +1573,13 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                                   value:
                                       MoltbookAmbassadorConfiguration
                                           .triggerSession,
-                                  child: Text(
-                                    'Once per app session (experimental)',
-                                  ),
+                                  child: Text('Once per app session'),
                                 ),
                                 DropdownMenuItem(
                                   value:
                                       MoltbookAmbassadorConfiguration
                                           .triggerContinuous,
-                                  child: Text(
-                                    'Continuous while running (experimental)',
-                                  ),
+                                  child: Text('Continuous while running'),
                                 ),
                               ],
                               onChanged: (value) {
@@ -1808,7 +1812,7 @@ class _MoltbookWorkflowCard extends StatelessWidget {
       ),
       MoltbookWorkspaceNextAction.reviewReply => (
         'Next: review the exact reply',
-        'One WASM-bound reply is ready for explicit Assisted approval.',
+        'One WASM-bound reply is ready for explicit human approval.',
         'Review reply',
         Icons.rate_review_outlined,
       ),
@@ -1984,14 +1988,15 @@ class _MoltbookWorkflowCard extends StatelessWidget {
   static String _writePolicyLabel(String policy) => switch (policy) {
     MoltbookAmbassadorConfiguration.approvalDraft => 'Draft only',
     MoltbookAmbassadorConfiguration.approvalAssisted => 'Assisted',
+    MoltbookAmbassadorConfiguration.approvalBounded => 'Bounded replies',
     _ => 'Unknown',
   };
 
   static String _triggerPolicyLabel(String policy) => switch (policy) {
     MoltbookAmbassadorConfiguration.triggerOnDemand => 'On demand',
-    MoltbookAmbassadorConfiguration.triggerSession => 'Session (experimental)',
+    MoltbookAmbassadorConfiguration.triggerSession => 'Session',
     MoltbookAmbassadorConfiguration.triggerContinuous =>
-      'Continuous (experimental)',
+      'Continuous while running',
     _ => 'Unknown',
   };
 
