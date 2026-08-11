@@ -169,3 +169,126 @@ all point to the same behavior.
 2. Reject any runtime change that reintroduces screen-owned decision semantics or host-side plugin evaluator mirrors.
 3. For every release candidate:
    - macOS + Android evidence captured with build tag/date in parity checklist.
+
+---
+
+## 11. Remote Runner Shadow Boundary
+
+Status: Pass A contract selected; implementation is not authorized
+
+### 11.1 Purpose And Sole Owner
+
+The first remote-runner milestone exists only to prove that the current
+deterministic Trading Drone can be reproduced on an unattended host without
+moving Capsule authority or creating another trading path.
+
+`TradingDroneModuleService` remains the sole local application owner of
+trading intent, risk, execution, reconciliation, and user-visible state. A
+future remote runner is a replaceable compute worker. It may produce shadow
+evidence, but it cannot own a position, order, approval, retry, receipt,
+credential, or Capsule fact.
+
+Canonical Pass A path:
+
+```text
+public BingX market data
+  -> pinned Trading Drone package and policy
+  -> deterministic shadow decision
+  -> signed, bounded shadow evidence
+  -> local comparison and diagnostics only
+```
+
+There is no remote effect path in Pass A.
+
+### 11.2 Permanent Authority Boundary
+
+The remote host MUST NOT receive or derive:
+
+- a Capsule seed, root key, transport key, backup, or unrestricted Ledger;
+- the local BingX trading API key or secret;
+- a user approval, consensus authority, or external-effect capability;
+- permission to place, cancel, replace, amend, or reconcile an order;
+- permission to mutate local tracking, risk, plugin, or Capsule state.
+
+No result from the runner becomes a trading intent or effect merely because it
+is signed, recent, or deterministic. Remote output remains untrusted evidence
+until the local owner validates its exact contract and compares it with the
+canonical local pipeline.
+
+### 11.3 Pass A Input And Output Contract
+
+Pass A uses only provider-public market endpoints. It stores no exchange or
+Capsule credential on the remote host. Account balance, positions, realized
+PnL, open orders, and all authenticated exchange reads remain local and are
+therefore absent from remote risk and execution decisions.
+
+Each shadow run binds at least:
+
+- contract version and runner build identity;
+- pinned plugin id, version, package digest, and host ABI;
+- normalized public market snapshot and its canonical hash;
+- exact deterministic policy/configuration hash;
+- shadow decision payload and decision hash;
+- observed-at time, bounded validity window, sequence, and previous evidence
+  hash;
+- runner signing-key id and signature suite.
+
+Unknown versions, stale windows, repeated sequence values with changed
+content, broken previous-hash continuity, plugin/policy drift, invalid
+signatures, oversized evidence, and local replay mismatch fail closed. They
+produce diagnostics only and never trigger an exchange action.
+
+### 11.4 Threat Model
+
+Pass A must make the following failures visible:
+
+- **host compromise:** forged or altered shadow evidence is rejected; public
+  data access grants no trading authority;
+- **runner spoofing/key confusion:** evidence is accepted only from the exact
+  leased runner key and declared signature suite;
+- **replay/fork:** sequence plus previous-evidence hash permits one ordered
+  stream; conflicting reuse is quarantined;
+- **package or policy substitution:** digest/ABI/config mismatch blocks parity;
+- **clock manipulation:** local receipt time and bounded validity are checked
+  independently of runner time;
+- **provider divergence or stale data:** snapshot hashes and source times stay
+  visible; missing required inputs yield `NO_SIGNAL`/`BLOCKED`, never an
+  inferred trade;
+- **resource exhaustion:** observation cadence, evidence size, retention, and
+  concurrent runner count are bounded before ingestion;
+- **downgrade:** shadow evidence cannot be translated into the existing local
+  execution envelope or bypass its consensus, risk, idempotency, approval, and
+  receipt owners.
+
+### 11.5 Lease, Revocation, And Kill Switch
+
+A later implementation may activate one short-lived, Capsule-authorized runner
+lease. The lease must bind the runner key, build/package/policy digests,
+observation scope, cadence, expiry, and monotonically increasing lease version.
+Renewal creates a new version; it cannot extend or mutate an old lease in
+place. Revocation and expiry stop local acceptance immediately.
+
+Pass A uses no exchange key, so a compromised runner loses useful authority
+when local acceptance stops. Any later account-read phase requires a separate
+decision and an independently revocable, read-only, IP-bound exchange key. Any
+future trading permission requires another contract and cannot reuse the
+shadow lease or read-only key.
+
+### 11.6 Exit Evidence And Sealed Paths
+
+Pass A is complete only when a later implementation proves, over bounded
+fixtures and live public observations:
+
+1. local and remote snapshot, feature, and decision hashes match;
+2. restart resumes one ordered evidence stream without duplicate acceptance;
+3. expiry, revocation, wrong runner, fork, stale data, package drift, and policy
+   drift fail closed;
+4. zero authenticated BingX calls and zero exchange mutations occur remotely;
+5. no remote output enters `BingxFuturesExchangeExecutionUseCaseService` or the
+   external-effect lifecycle.
+
+This contract seals three shortcuts: copying the Capsule to a VPS, copying the
+local trading credential to a VPS, and adding a second exchange-execution
+route. It does not authorize implementation, deployment, a background service,
+or a 24/7 trading claim. The next step after this design checkpoint must be
+selected separately.
