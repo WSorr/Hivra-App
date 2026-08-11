@@ -185,6 +185,42 @@ void main() {
       );
     });
 
+    test(
+      'restart keeps configuration locked until explicit unlock without key re-entry',
+      () async {
+        final secureStorage = _FakeSecureStorage();
+        final firstProcess = AiDoctorCredentialStore(
+          secureStorage: secureStorage,
+        );
+        await firstProcess.saveApiKey(
+          InferenceProviderKind.gemini,
+          'gemini-key',
+        );
+
+        final restartedProcess = AiDoctorCredentialStore(
+          secureStorage: secureStorage,
+        );
+
+        expect(restartedProcess.isPreferredProviderUnlocked, isFalse);
+        expect(restartedProcess.sessionPreferredProvider, isNull);
+        expect(
+          await restartedProcess.loadPreferredProvider(),
+          InferenceProviderKind.gemini,
+        );
+        expect(restartedProcess.isPreferredProviderUnlocked, isFalse);
+
+        expect(
+          await restartedProcess.unlockPreferredProviderSession(),
+          InferenceProviderKind.gemini,
+        );
+        expect(restartedProcess.isPreferredProviderUnlocked, isTrue);
+        expect(
+          restartedProcess.sessionApiKey(InferenceProviderKind.gemini),
+          'gemini-key',
+        );
+      },
+    );
+
     test('fails closed when secure storage is unavailable', () async {
       final store = AiDoctorCredentialStore(
         secureStorage: _ThrowingSecureStorage(),
