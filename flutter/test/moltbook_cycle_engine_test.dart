@@ -258,10 +258,11 @@ void main() {
         MoltbookAmbassadorConfiguration.approvalBounded;
     heartbeatHost.engagementAction = 'reply_draft';
     final now = DateTime.now().toUtc();
+    final today = DateTime.utc(now.year, now.month, now.day);
     publications.operations = <ExternalEffectOperation>[
-      _committedReply('daily-1', now.subtract(const Duration(hours: 3))),
-      _committedReply('daily-2', now.subtract(const Duration(hours: 2))),
-      _committedReply('daily-3', now.subtract(const Duration(hours: 1))),
+      _committedReply('daily-1', today),
+      _committedReply('daily-2', today),
+      _committedReply('daily-3', today),
     ];
 
     final summary = await module.runMoltbookCycle();
