@@ -2814,6 +2814,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     changed. No following pass, deployment, release work, or 24/7 claim is
     selected automatically.
 
+- `1.x Trading Remote Runner Pass B remediation — public shadow and wire`
+  - Finding: the first Pass B harness fed Capsule-local consensus inputs into
+    the shadow rule evaluation and verified a typed value without an
+    untrusted-byte parser, so neither remote authority separation nor a real
+    cross-language wire contract was proven.
+  - Remediation owner remains
+    `BingxFuturesDeterministicReplayHarnessService`. Public shadow computation
+    now excludes consensus, blocking facts, account risk, execution, and effect
+    state. Local gates remain downstream and may block any matching shadow
+    signal.
+  - One compact ordered JSON wire is parsed from strict UTF-8 and accepted only
+    after byte-for-byte canonical re-encoding. The existing Trading parity gate
+    runs an independent Python reconstruction of the Dart golden fixture and
+    negative whitespace/order/unknown/duplicate/local-field mutations.
+  - Status: implementation and full local gates complete; clean-checkout, PR,
+    and exact post-merge gates remain required (2026-08-11). Runtime consumers,
+    network, persistence, credentials, UI, VPS, effects, release work, and Pass C
+    remain unchanged and unauthorized.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

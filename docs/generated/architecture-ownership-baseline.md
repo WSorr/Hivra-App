@@ -323,7 +323,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/atomic_file_write_service.dart` line `3` (`AtomicFileWriteService`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/backup_service.dart` line `5` (`BackupService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_credential_store.dart` line `11` (`BingxFuturesCredentialStore`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart` line `175` (`BingxFuturesDeterministicReplayHarnessService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart` line `174` (`BingxFuturesDeterministicReplayHarnessService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart` line `13` (`BingxFuturesExchangeExecutionUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_risk_input_service.dart` line `65` (`BingxFuturesExchangeRiskInputService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_service.dart` line `11` (`BingxFuturesExchangeService`) — rule `current_flutter_service_support`

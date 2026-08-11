@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -116,8 +119,20 @@ void main() {
 
       expect(
         evidence.evidenceHashHex,
-        '2680032d4b8368a42bbceec152a03adff763e356791c8ce14cf42a68bee716d5',
+        'cfa9f205c836d49073c99c17d8aa1ece6348f64cd023ecce9b01d71ebc4bb0ff',
       );
+      final golden = Map<String, dynamic>.from(
+        jsonDecode(
+              File(
+                'test/fixtures/trading_shadow_evidence_v1.json',
+              ).readAsStringSync(),
+            )
+            as Map,
+      );
+      expect(evidence.semanticMap, golden['semantic_fields']);
+      expect(evidence.semanticJson, golden['expected_semantic_json']);
+      expect(utf8.decode(evidence.wireBytes), golden['expected_wire_utf8']);
+      expect(_hex(publicKey.bytes), golden['runner_public_key_hex']);
       expect(
         await _verify(
           service: service,
@@ -125,6 +140,58 @@ void main() {
           trustedRunnerKey: publicKey,
         ),
         BingxFuturesShadowEvidenceVerdict.accepted,
+      );
+    });
+
+    test('keeps local consensus blocking out of public shadow evidence', () {
+      final fixture = _fixtureBlocked();
+      final local = service.runFixture(fixture);
+      final shadow = service.runPublicMarket(
+        fixtureId: fixture.id,
+        snapshotInput: fixture.snapshotInput,
+        fundingRateDecimal: fixture.fundingRateDecimal,
+      );
+
+      expect(local.decision, BingxTvhDecisionKind.blocked);
+      expect(local.topReasonCode, 'consensus_guard');
+      expect(shadow.decision, BingxTvhDecisionKind.long);
+      expect(shadow.topReasonCode, 'funding_guard');
+    });
+
+    test('rejects non-canonical and unknown untrusted wire bytes', () async {
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+      final evidence = await _signedEvidence(
+        service: service,
+        signingKey: signingKey,
+        runnerKeyId: _runnerKeyId(publicKey),
+      );
+      final decoded = Map<String, dynamic>.from(
+        jsonDecode(utf8.decode(evidence.wireBytes)) as Map,
+      );
+
+      expect(
+        () => service.parseShadowEvidence(
+          utf8.encode(const JsonEncoder.withIndent('  ').convert(decoded)),
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => service.parseShadowEvidence(
+          utf8.encode(jsonEncode(<String, dynamic>{...decoded, 'extra': true})),
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => service.parseShadowEvidence(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{
+              'signature_hex': decoded['signature_hex'],
+              ...decoded..remove('signature_hex'),
+            }),
+          ),
+        ),
+        throwsFormatException,
       );
     });
 
@@ -389,9 +456,14 @@ Future<BingxFuturesShadowEvidence> _signedEvidence({
   required SimpleKeyPair signingKey,
   required String runnerKeyId,
 }) async {
-  final localRun = service.runFixture(_fixtureLong());
+  final fixture = _fixtureLong();
+  final localRun = service.runPublicMarket(
+    fixtureId: fixture.id,
+    snapshotInput: fixture.snapshotInput,
+    fundingRateDecimal: fixture.fundingRateDecimal,
+  );
   final unsigned = service.buildShadowEvidence(
-    localRun: localRun,
+    publicRun: localRun,
     runnerBuildId: 'runner-build-2026-08-11',
     pluginId: 'hivra.bingx-futures-trading',
     pluginVersion: '0.2.7-plugins',
@@ -425,9 +497,14 @@ Future<BingxFuturesShadowEvidenceVerdict> _verify({
   int lastAcceptedSequence = 0,
   String lastAcceptedEvidenceHashHex = _emptyEvidenceHash,
 }) {
+  final fixture = _fixtureLong();
   return service.verifyShadowEvidence(
-    evidence: evidence,
-    localRun: service.runFixture(_fixtureLong()),
+    untrustedWireBytes: evidence.wireBytes,
+    localPublicRun: service.runPublicMarket(
+      fixtureId: fixture.id,
+      snapshotInput: fixture.snapshotInput,
+      fundingRateDecimal: fixture.fundingRateDecimal,
+    ),
     trustedRunnerKey: trustedRunnerKey,
     expectedRunnerBuildId: 'runner-build-2026-08-11',
     expectedPluginId: 'hivra.bingx-futures-trading',
