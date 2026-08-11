@@ -2832,6 +2832,21 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     (2026-08-11). Runtime consumers, network, persistence, credentials, UI, VPS,
     effects, release work, and Pass C remain unchanged and unauthorized.
 
+- `1.x Trading market/local-guard consolidation`
+  - Scope: remove the remaining structural smell after Pass B without selecting
+    Pass C. The existing `BingxFuturesTvhRuleEngineService` remains the sole
+    decision owner.
+  - `evaluateMarket()` owns market-only TVH evaluation and accepts no consensus
+    or blocking arguments. Existing `evaluate()` owns the local consensus guard
+    and delegates to the same market evaluator after that guard passes. The
+    public replay harness no longer supplies a synthetic consensus value.
+  - Exit evidence: existing market decision hashes remain stable, local blocked
+    behavior remains stable, and focused tests prove the public method cannot
+    receive local guard inputs.
+  - Status: implementation and full local gates complete; clean-checkout, PR,
+    and exact post-merge gates remain (2026-08-11). No runtime consumer, network,
+    persistence, credential, UI, VPS, effect, release, or Pass C is added.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

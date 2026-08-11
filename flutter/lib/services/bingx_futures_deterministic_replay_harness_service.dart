@@ -219,16 +219,14 @@ class BingxFuturesDeterministicReplayHarnessService {
   }) {
     final snapshotDigest = _snapshotService.build(snapshotInput);
     final featureResult = _featureExtractor.extract(snapshotDigest);
-    final decision = _ruleEngine.evaluate(
+    final decision = _ruleEngine.evaluateMarket(
       features: featureResult,
       fundingRateDecimal: fundingRateDecimal,
-      isConsensusSignable: true,
       policy: BingxTvhPolicy(
         minAbsTradeDelta: _policy.minAbsTradeDelta,
         minAbsSessionNetDelta: _policy.minAbsSessionNetDelta,
         maxAbsFundingRate: _policy.maxAbsFundingRate,
         requireWhaleActivation: _policy.requireWhaleActivation,
-        requireConsensusSignable: false,
       ),
     );
     return BingxFuturesReplayRunResult(
