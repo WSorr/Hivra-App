@@ -16,11 +16,12 @@ class BingxFuturesTvhRuleEngineService {
     BingxTvhPolicy policy = const BingxTvhPolicy(),
   }) {
     final reasons = <BingxTvhDecisionReason>[];
-    final normalizedBlocking = blockingFactCodes
-        .map((code) => code.trim())
-        .where((code) => code.isNotEmpty)
-        .toList()
-      ..sort();
+    final normalizedBlocking =
+        blockingFactCodes
+            .map((code) => code.trim())
+            .where((code) => code.isNotEmpty)
+            .toList()
+          ..sort();
 
     if (policy.requireConsensusSignable &&
         (!isConsensusSignable || normalizedBlocking.isNotEmpty)) {
@@ -28,9 +29,10 @@ class BingxFuturesTvhRuleEngineService {
         BingxTvhDecisionReason(
           code: 'consensus_guard',
           passed: false,
-          detail: normalizedBlocking.isEmpty
-              ? 'consensus_signable=false'
-              : 'blocking=${normalizedBlocking.join(",")}',
+          detail:
+              normalizedBlocking.isEmpty
+                  ? 'consensus_signable=false'
+                  : 'blocking=${normalizedBlocking.join(",")}',
         ),
       );
       return _result(
@@ -40,6 +42,20 @@ class BingxFuturesTvhRuleEngineService {
         reasons: reasons,
       );
     }
+
+    return evaluateMarket(
+      features: features,
+      fundingRateDecimal: fundingRateDecimal,
+      policy: policy,
+    );
+  }
+
+  BingxTvhDecisionResult evaluateMarket({
+    required BingxFuturesFeatureExtractionResult features,
+    required String fundingRateDecimal,
+    BingxTvhPolicy policy = const BingxTvhPolicy(),
+  }) {
+    final reasons = <BingxTvhDecisionReason>[];
 
     final fundingRate = _parseDecimal(
       fundingRateDecimal,
@@ -81,11 +97,13 @@ class BingxFuturesTvhRuleEngineService {
     final shortWhaleOk =
         !policy.requireWhaleActivation || features.hasSellWhaleActivation;
 
-    final longReady = features.trendDirection == BingxTrendDirection.bullish &&
+    final longReady =
+        features.trendDirection == BingxTrendDirection.bullish &&
         longTradeOk &&
         longSessionOk &&
         longWhaleOk;
-    final shortReady = features.trendDirection == BingxTrendDirection.bearish &&
+    final shortReady =
+        features.trendDirection == BingxTrendDirection.bearish &&
         shortTradeOk &&
         shortSessionOk &&
         shortWhaleOk;
@@ -144,9 +162,10 @@ class BingxFuturesTvhRuleEngineService {
       ),
     );
 
-    final decision = longReady
-        ? BingxTvhDecisionKind.long
-        : shortReady
+    final decision =
+        longReady
+            ? BingxTvhDecisionKind.long
+            : shortReady
             ? BingxTvhDecisionKind.short
             : BingxTvhDecisionKind.noSignal;
     return _result(
@@ -163,15 +182,16 @@ class BingxFuturesTvhRuleEngineService {
     required String fundingRateDecimal,
     required List<BingxTvhDecisionReason> reasons,
   }) {
-    final canonicalReasons = reasons
-        .map(
-          (reason) => <String, dynamic>{
-            'code': reason.code,
-            'passed': reason.passed,
-            'detail': reason.detail,
-          },
-        )
-        .toList();
+    final canonicalReasons =
+        reasons
+            .map(
+              (reason) => <String, dynamic>{
+                'code': reason.code,
+                'passed': reason.passed,
+                'detail': reason.detail,
+              },
+            )
+            .toList();
     final canonical = jsonEncode(<String, dynamic>{
       'schema_version': 1,
       'rule_set': features.ruleSet,

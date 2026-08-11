@@ -111,6 +111,26 @@ void main() {
       );
     });
 
+    test('market evaluation has no consensus guard input', () {
+      final result = service.evaluateMarket(
+        features: _feature(
+          trend: BingxTrendDirection.bullish,
+          tradeDeltaDecimal: '1.50',
+          sessionNetDeltaDecimal: '3.20',
+          hasBuyWhaleActivation: true,
+          hasSellWhaleActivation: false,
+        ),
+        fundingRateDecimal: '0.0008',
+        policy: policy,
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.long);
+      expect(
+        result.reasons.map((reason) => reason.code),
+        isNot(contains('consensus_guard')),
+      );
+    });
+
     test('is hash-stable for identical inputs', () {
       final features = _feature(
         trend: BingxTrendDirection.bullish,

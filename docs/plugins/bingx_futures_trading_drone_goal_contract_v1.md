@@ -365,3 +365,10 @@ canonical JSON, domain-separated hash, runner key id, and negative wire
 mutations. The existing Trading parity gate executes that validator. This
 remediation changes no application consumer, network, persistence, credential,
 UI, Core, FFI, exchange, or external-effect path.
+
+Post-remediation consolidation makes this separation structural inside the
+existing TVH rule owner. `evaluateMarket()` accepts only public features,
+funding, and strategy policy. The existing `evaluate()` remains the local
+consensus wrapper and delegates to that same market evaluator only after its
+local guard passes. The public replay harness calls `evaluateMarket()` directly;
+no synthetic consensus value or disabled consensus flag remains on that path.
