@@ -174,7 +174,7 @@ all point to the same behavior.
 
 ## 11. Remote Runner Shadow Boundary
 
-Status: Pass A contract selected; implementation is not authorized
+Status: Pass A contract complete; implementation is not authorized
 
 ### 11.1 Purpose And Sole Owner
 
