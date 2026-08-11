@@ -334,7 +334,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_feature_extractor_service.dart` line `95` (`BingxFuturesFeatureExtractorService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_intent_use_case_service.dart` line `7` (`BingxFuturesIntentUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_live_decision_service.dart` line `13` (`BingxFuturesLiveDecisionService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart` line `21` (`BingxFuturesLiveSnapshotBuilderService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart` line `23` (`BingxFuturesLiveSnapshotBuilderService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_live_strategy_use_case_service.dart` line `19` (`BingxFuturesLiveStrategyUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_market_snapshot_service.dart` line `7` (`BingxFuturesMarketSnapshotService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_mode_orchestrator_service.dart` line `33` (`BingxFuturesModeOrchestratorService`) — rule `current_flutter_service_support`
@@ -349,7 +349,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_strategy_naming_service.dart` line `3` (`BingxFuturesStrategyNamingService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_tvh_rule_engine_service.dart` line `8` (`BingxFuturesTvhRuleEngineService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_volume_growth_filter_service.dart` line `3` (`BingxFuturesVolumeGrowthFilterService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_zone_decision_service.dart` line `164` (`BingxFuturesZoneDecisionService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_zone_decision_service.dart` line `178` (`BingxFuturesZoneDecisionService`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_address_service.dart` line `151` (`CapsuleAddressService`) — rule `registry`
 - `COMPOSITION_SUPPORT` — `flutter/lib/services/capsule_ai_runtime_service.dart` line `197` (`CapsuleInferenceRuntime`) — rule `composition_root`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_ai_runtime_service.dart` line `225` (`CapsuleAiRuntimeService`) — rule `registry`
@@ -485,6 +485,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `1143` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `979` lines — `flutter/lib/screens/ledger_inspector_screen.dart`
 - `905` lines — `flutter/lib/services/external_effect_service.dart`
+- `897` lines — `flutter/lib/services/bingx_futures_zone_decision_service.dart`
 - `885` lines — `flutter/lib/screens/relationships_screen.dart`
 - `879` lines — `flutter/lib/services/moltbook_provider_adapter.dart`
 - `815` lines — `flutter/lib/services/invitation_intent_handler.dart`

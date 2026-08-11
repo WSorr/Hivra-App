@@ -46,6 +46,18 @@ execution path remain unauthorized. The bounded post-Pass-B consolidation is
 complete: the existing TVH rule owner now exposes market-only evaluation
 without consensus inputs, while its existing guarded entry retains local
 consensus policy. No decision semantics or product authority changed.
+Trading Liquidity Lifecycle hardening is complete as a bounded 1.x product
+pass. The
+existing market pipeline now excludes forming provider candles from the
+canonical snapshot digest, derived liquidity, and zone evaluation, and the
+existing zone owner reduces a bounded closed-candle sweep/reclaim lifecycle
+with ATR-body, expiry, and retest limits. No new owner, plugin ABI, credential,
+network, persistence, remote runner, or exchange-effect path is added. Full
+automated gates and an automatic macOS zone-calculation smoke are complete. The
+smoke scanned the six-symbol Core Watchlist, selected a READY SOL-USDT setup,
+calculated an executable fresh sellside zone, and prepared a decision envelope
+without invoking an exchange order effect. No live order, release, or following
+pass is authorized by this result.
 Stable `1.0`, another release candidate, and 2.0 runtime work remain
 unauthorized without a separate explicit decision.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
@@ -75,7 +87,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No pass is selected. Pass C and all live observation, persistence, deployment, account-read, or effect work remain blocked pending an explicit product decision. | `plugins/bingx_futures_trading_drone_goal_contract_v1.md`, `roadmap.md` |
+| What is the next 1.x step? | No pass is selected. Trading Liquidity Lifecycle hardening is complete; live orders, Pass C, deployment, and release remain blocked pending a separate product decision. | `plugins/bingx_futures_trading_drone_spec_v1.md`, `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -85,7 +97,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Market/local-guard consolidation complete; no next pass selected | Existing 1.x runtime remains the sole production line. The existing TVH rule owner exposes a pure market evaluator plus its existing local consensus wrapper, with no decision or authority change. | Existing decision hashes and local consensus behavior remain stable; public replay calls an API with no consensus or blocking inputs. Full local and clean-checkout gates, PR `#43`, and post-merge run `31487730478` passed. | Pass C, live runner, observation network, persistence, deployment, account reads, exchange effects, and following work remain blocked pending explicit selection. |
+| **1.x maintained runtime** | Trading Liquidity Lifecycle hardening complete; no next pass selected | Existing 1.x runtime remains the sole production line. Forming candles are excluded from canonical decisions and the existing zone owner evaluates bounded closed-candle sweep/reclaim evidence. | Full automated gates plus automatic macOS Core Watchlist/SOL-USDT zone and decision-envelope smoke passed without an exchange effect. | Select the next product unit explicitly. Live orders, Pass C, deployment, and release remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
@@ -100,7 +112,7 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — selection:** the market/local-guard consolidation is complete. Select
+1. **P1 — selection:** Trading Liquidity Lifecycle hardening is complete. Select
    no Pass C, live observations, persistence, VPS deployment, credentials,
    exchange effects, background trading, following pass, or release pass
    automatically.

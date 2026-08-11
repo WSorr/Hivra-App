@@ -4,6 +4,7 @@ class BingxFuturesZoneDecisionInput {
   final String? requiredSide;
   final List<num> microHighs;
   final List<num> microLows;
+  final List<num> microOpens;
   final List<num> microCloses;
   final List<num> macroHighs;
   final List<num> macroLows;
@@ -30,6 +31,7 @@ class BingxFuturesZoneDecisionInput {
     this.requiredSide,
     required this.microHighs,
     required this.microLows,
+    this.microOpens = const <num>[],
     this.microCloses = const <num>[],
     required this.macroHighs,
     required this.macroLows,
@@ -161,7 +163,23 @@ class _ExternalRetestLevel {
   });
 }
 
+class _MicroReclaimEvent {
+  final num anchorPrice;
+  final int sweepIndex;
+  final int reclaimIndex;
+
+  const _MicroReclaimEvent({
+    required this.anchorPrice,
+    required this.sweepIndex,
+    required this.reclaimIndex,
+  });
+}
+
 class BingxFuturesZoneDecisionService {
+  static const int _microReclaimMaxAgeBars = 8;
+  static const int _microReclaimMaxRetests = 2;
+  static const double _microReclaimMinBodyAtr = 0.5;
+
   const BingxFuturesZoneDecisionService();
 
   BingxFuturesZoneDecisionResult decide({
@@ -270,13 +288,15 @@ class BingxFuturesZoneDecisionService {
 
     final selectedSide = sideDecision.side;
     final reversalSignal = selectedSide == 'sell' ? sweepUp : sweepDown;
-    final confirmedMicroReclaim = _hasConfirmedMicroReclaim(
+    final microReclaim = _findConfirmedMicroReclaim(
       side: selectedSide,
+      highs: input.microHighs,
+      lows: input.microLows,
+      opens: input.microOpens,
       closes: input.microCloses,
       olderHigh: olderHigh,
       olderLow: olderLow,
-      sweepUp: sweepUp,
-      sweepDown: sweepDown,
+      eventStartIndex: microSplit,
     );
     final aligned = (selectedSide == 'buy' && contextBias > 0) ||
         (selectedSide == 'sell' && contextBias < 0);
@@ -411,8 +431,8 @@ class BingxFuturesZoneDecisionService {
     num zoneHigh;
     if (selectedSide == 'sell') {
       var anchorHigh = olderHigh;
-      if (confirmedMicroReclaim) {
-        anchorHigh = recentHigh;
+      if (microReclaim != null) {
+        anchorHigh = microReclaim.anchorPrice;
         anchorSource = 'micro_sweep_reclaim';
         anchorExecutable = true;
         anchorLifecycle = 'reclaimed';
@@ -444,8 +464,8 @@ class BingxFuturesZoneDecisionService {
       }
     } else {
       var anchorLow = olderLow;
-      if (confirmedMicroReclaim) {
-        anchorLow = recentLow;
+      if (microReclaim != null) {
+        anchorLow = microReclaim.anchorPrice;
         anchorSource = 'micro_sweep_reclaim';
         anchorExecutable = true;
         anchorLifecycle = 'reclaimed';
@@ -540,21 +560,116 @@ class BingxFuturesZoneDecisionService {
     return 'sell';
   }
 
-  bool _hasConfirmedMicroReclaim({
+  _MicroReclaimEvent? _findConfirmedMicroReclaim({
     required String side,
+    required List<num> highs,
+    required List<num> lows,
+    required List<num> opens,
     required List<num> closes,
     required num olderHigh,
     required num olderLow,
-    required bool sweepUp,
-    required bool sweepDown,
+    required int eventStartIndex,
   }) {
-    if (closes.length < 2) return false;
-    final lastClose = closes.last;
-    final previousClose = closes[closes.length - 2];
-    if (side == 'buy') {
-      return sweepDown && lastClose > olderLow && lastClose > previousClose;
+    if (highs.length != lows.length ||
+        highs.length != opens.length ||
+        highs.length != closes.length ||
+        highs.length < 15 ||
+        eventStartIndex <= 0 ||
+        eventStartIndex >= highs.length) {
+      return null;
     }
-    return sweepUp && lastClose < olderHigh && lastClose < previousClose;
+
+    final level = side == 'buy' ? olderLow : olderHigh;
+    int? sweepIndex;
+    num? sweepExtreme;
+    var retests = 0;
+    _MicroReclaimEvent? latestConfirmed;
+
+    for (var index = eventStartIndex; index < highs.length; index += 1) {
+      final swept = side == 'buy' ? lows[index] < level : highs[index] > level;
+      if (swept) {
+        final extreme = side == 'buy' ? lows[index] : highs[index];
+        if (sweepIndex == null || latestConfirmed != null) {
+          sweepIndex = index;
+          sweepExtreme = extreme;
+          retests = 0;
+          latestConfirmed = null;
+        } else if (side == 'buy'
+            ? extreme < sweepExtreme!
+            : extreme > sweepExtreme!) {
+          sweepExtreme = extreme;
+        }
+      }
+      if (sweepIndex == null || sweepExtreme == null) continue;
+      if (latestConfirmed != null) continue;
+
+      final age = index - sweepIndex;
+      if (age > _microReclaimMaxAgeBars) {
+        sweepIndex = null;
+        sweepExtreme = null;
+        retests = 0;
+        continue;
+      }
+
+      final crossedLevel = side == 'buy'
+          ? closes[index] > level && closes[index - 1] <= level
+          : closes[index] < level && closes[index - 1] >= level;
+      if (crossedLevel) retests += 1;
+      if (retests > _microReclaimMaxRetests) {
+        sweepIndex = null;
+        sweepExtreme = null;
+        retests = 0;
+        continue;
+      }
+
+      final atr = _atrAt(
+        highs: highs,
+        lows: lows,
+        closes: closes,
+        index: index,
+      );
+      final body = (closes[index] - opens[index]).abs();
+      final directionalBody = side == 'buy'
+          ? closes[index] > opens[index]
+          : closes[index] < opens[index];
+      final reclaimed =
+          side == 'buy' ? closes[index] > level : closes[index] < level;
+      if (atr > 0 &&
+          directionalBody &&
+          reclaimed &&
+          body >= atr * _microReclaimMinBodyAtr) {
+        latestConfirmed = _MicroReclaimEvent(
+          anchorPrice: sweepExtreme,
+          sweepIndex: sweepIndex,
+          reclaimIndex: index,
+        );
+      }
+    }
+    return latestConfirmed;
+  }
+
+  num _atrAt({
+    required List<num> highs,
+    required List<num> lows,
+    required List<num> closes,
+    required int index,
+  }) {
+    final first = (index - 13).clamp(0, index);
+    var total = 0.0;
+    var count = 0;
+    for (var cursor = first; cursor <= index; cursor += 1) {
+      final range = highs[cursor] - lows[cursor];
+      final trueRange = cursor == 0
+          ? range
+          : <num>[
+              range,
+              (highs[cursor] - closes[cursor - 1]).abs(),
+              (lows[cursor] - closes[cursor - 1]).abs(),
+            ].reduce((a, b) => a > b ? a : b);
+      total += trueRange.toDouble();
+      count += 1;
+    }
+    return count == 0 ? 0 : total / count;
   }
 
   List<_ExternalLevelPoint> _freshSwingLevels({

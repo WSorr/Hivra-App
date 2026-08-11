@@ -64,6 +64,7 @@ class BingxFuturesLiveDecisionService {
           requiredSide: zoneEvaluationSide,
           microHighs: _readHighs(input.snapshotInput.candles, '5m'),
           microLows: _readLows(input.snapshotInput.candles, '5m'),
+          microOpens: _readOpens(input.snapshotInput.candles, '5m'),
           microCloses: _readCloses(input.snapshotInput.candles, '5m'),
           macroHighs: _readHighs(input.snapshotInput.candles, '1h'),
           macroLows: _readLows(input.snapshotInput.candles, '1h'),
@@ -310,6 +311,10 @@ class BingxFuturesLiveDecisionService {
     return _readSeries(candles, timeframe, (candle) => candle.closeDecimal);
   }
 
+  List<num> _readOpens(List<BingxFuturesCandle> candles, String timeframe) {
+    return _readSeries(candles, timeframe, (candle) => candle.openDecimal);
+  }
+
   List<num> _readSeries(
     List<BingxFuturesCandle> candles,
     String timeframe,
@@ -317,7 +322,11 @@ class BingxFuturesLiveDecisionService {
   ) {
     final normalized = timeframe.trim().toLowerCase();
     final rows = candles
-        .where((candle) => candle.timeframe.trim().toLowerCase() == normalized)
+        .where(
+          (candle) =>
+              candle.isClosed &&
+              candle.timeframe.trim().toLowerCase() == normalized,
+        )
         .toList()
       ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
     return rows

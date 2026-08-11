@@ -2,6 +2,8 @@ import '../models/bingx_futures_market_snapshot_models.dart';
 import '../models/bingx_futures_exchange_models.dart';
 import 'bingx_futures_exchange_service.dart';
 
+DateTime _systemClockUtc() => DateTime.now().toUtc();
+
 class BingxFuturesLiveSnapshotBuildResult {
   final bool isSuccess;
   final String errorCode;
@@ -19,7 +21,11 @@ class BingxFuturesLiveSnapshotBuildResult {
 }
 
 class BingxFuturesLiveSnapshotBuilderService {
-  const BingxFuturesLiveSnapshotBuilderService();
+  final DateTime Function() _clockUtc;
+
+  const BingxFuturesLiveSnapshotBuilderService({
+    DateTime Function() clockUtc = _systemClockUtc,
+  }) : _clockUtc = clockUtc;
 
   Future<BingxFuturesLiveSnapshotBuildResult> fetchAndBuild({
     required BingxFuturesExchangeService exchange,
@@ -154,14 +160,15 @@ class BingxFuturesLiveSnapshotBuilderService {
       );
     }
     try {
+      final observationTime = _clockUtc().toUtc();
       final allCandles = <BingxFuturesCandle>[
-        ..._mapCandles('1m', k1m.klines),
-        ..._mapCandles('5m', k5m.klines),
-        ..._mapCandles('15m', k15m.klines),
-        ..._mapCandles('1h', k1h.klines),
-        ..._mapCandles('4h', k4h.klines),
-        ..._mapCandles('1d', k1d.klines),
-        ..._mapCandles('1w', k1w.klines),
+        ..._mapCandles('1m', k1m.klines, observedAtUtc: observationTime),
+        ..._mapCandles('5m', k5m.klines, observedAtUtc: observationTime),
+        ..._mapCandles('15m', k15m.klines, observedAtUtc: observationTime),
+        ..._mapCandles('1h', k1h.klines, observedAtUtc: observationTime),
+        ..._mapCandles('4h', k4h.klines, observedAtUtc: observationTime),
+        ..._mapCandles('1d', k1d.klines, observedAtUtc: observationTime),
+        ..._mapCandles('1w', k1w.klines, observedAtUtc: observationTime),
       ];
       final tradeRows = _mapTrades(trades.trades);
       final openInterestRows = _buildOpenInterestRows(
@@ -181,8 +188,8 @@ class BingxFuturesLiveSnapshotBuilderService {
         ),
       );
       final liquidity = _deriveLiquidity(
-        candles5m: k5m.klines,
-        candles1h: k1h.klines,
+        candles5m: _closedKlines('5m', k5m.klines, observationTime),
+        candles1h: _closedKlines('1h', k1h.klines, observationTime),
         depth: depth,
         trades: trades.trades,
         priceDecimal: price.priceDecimal!,
@@ -253,9 +260,11 @@ class BingxFuturesLiveSnapshotBuilderService {
 
   List<BingxFuturesCandle> _mapCandles(
     String timeframe,
-    List<BingxFuturesPublicKline> input,
-  ) {
+    List<BingxFuturesPublicKline> input, {
+    DateTime? observedAtUtc,
+  }) {
     final minutes = _timeframeMinutes(timeframe);
+    final observedAt = (observedAtUtc ?? DateTime.now()).toUtc();
     return input
         .map((kline) {
           final openTime = DateTime.fromMillisecondsSinceEpoch(
@@ -273,7 +282,7 @@ class BingxFuturesLiveSnapshotBuilderService {
             closeDecimal: kline.closeDecimal,
             volumeBaseDecimal: kline.volumeBaseDecimal ?? '0',
             volumeQuoteDecimal: kline.volumeQuoteDecimal ?? '0',
-            isClosed: true,
+            isClosed: !closeTime.isAfter(observedAt),
           );
         })
         .toList(growable: false);
@@ -290,6 +299,21 @@ class BingxFuturesLiveSnapshotBuilderService {
       '1w' => 10080,
       _ => 1,
     };
+  }
+
+  List<BingxFuturesPublicKline> _closedKlines(
+    String timeframe,
+    List<BingxFuturesPublicKline> input,
+    DateTime observedAtUtc,
+  ) {
+    final duration = Duration(minutes: _timeframeMinutes(timeframe));
+    return input.where((kline) {
+      final openTime = DateTime.fromMillisecondsSinceEpoch(
+        kline.openTimeMs,
+        isUtc: true,
+      );
+      return !openTime.add(duration).isAfter(observedAtUtc);
+    }).toList(growable: false);
   }
 
   List<BingxFuturesTrade> _mapTrades(List<BingxFuturesPublicTrade> input) {
