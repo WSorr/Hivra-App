@@ -2745,10 +2745,21 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     configured-but-locked, explicit-unlock, no-key-reentry, and Capsule-switch
     acceptance.
   - Exit evidence: focused tests, full repository gates, green PR and
-    post-merge checks, then packaged checklist execution. Until packaged smoke
-    passes, Capsule AI Runtime is converged but not reference-grade accepted.
-  - Status: in progress (2026-08-11); no release candidate or following product
-    pass is selected automatically.
+    post-merge checks passed. The published macOS `test16` artifact with SHA-256
+    `a4775a3b6321cebd25c2e7b327257f7060df04baf3596f01c84d1c3fe8dfd6da`
+    was used without rebuild; the three AI owner files have no diff from its
+    source commit `30e0800`.
+  - Packaged evidence: cold start restored Gemini and `gemini-2.5-flash` while
+    leaving the API-key field empty; outbound preview bound snapshot
+    `8a190e23127fa67c91117f3a0264a99612a59233787a17efefb44bc6399d5735`,
+    `4003` bytes, and `Secrets redacted: true`. Explicit Ask reached Gemini with
+    the saved key, surfaced temporary provider backpressure, and one bounded
+    retry returned an advisory result. No state mutation or fatal runtime
+    evidence was observed. Wrong-Capsule and stale-completion rejection remain
+    proven by the focused runtime regressions.
+  - Status: completed (2026-08-11); reference-grade 1.x baseline accepted. No
+    AI-5, release candidate, or following product pass is selected
+    automatically.
 
 ## Planned Product Tracks
 
