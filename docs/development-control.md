@@ -36,14 +36,13 @@ automated evidence proves process-lock and Capsule binding, while packaged
 macOS `test16` evidence proves that Gemini configuration survives a cold start,
 an explicit Ask restores the saved credential without key re-entry, outbound
 context remains redacted, provider backpressure is visible, and one bounded
-retry returns an advisory result. Trading Remote Runner Pass B is reopened for
-remediation: the first fixture harness mixed local consensus gating into the
-remote shadow decision and accepted a pre-typed value without proving a
-canonical untrusted-byte boundary. The active remediation separates public
-market shadow computation from local consensus/risk/execution gates and adds an
-exact canonical wire parser plus independent cross-language golden evidence.
-Runtime consumers, network, persistence, credentials, UI, VPS, exchange effects,
-Pass C, and a second execution path remain unauthorized.
+retry returns an advisory result. Trading Remote Runner Pass B remediation is
+complete: public market shadow computation is physically separated from local
+consensus/risk/execution inputs, verification begins from exact canonical
+untrusted bytes, and Dart plus independent Python golden evidence covers wire,
+hash, key binding, and negative mutations. Runtime consumers, network,
+persistence, credentials, UI, VPS, exchange effects, Pass C, and a second
+execution path remain unauthorized.
 Stable `1.0`, another release candidate, and 2.0 runtime work remain
 unauthorized without a separate explicit decision.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
@@ -73,7 +72,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete Trading Remote Runner Pass B remediation only. Pass C and all live observation, persistence, deployment, account-read, or effect work are blocked. | `plugins/bingx_futures_trading_drone_goal_contract_v1.md`, `roadmap.md` |
+| What is the next 1.x step? | No pass is selected. Pass B remediation is complete; Pass C and all live observation, persistence, deployment, account-read, or effect work remain blocked pending consolidation. | `plugins/bingx_futures_trading_drone_goal_contract_v1.md`, `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -83,7 +82,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading Remote Runner Pass B remediation active | Existing 1.x runtime remains the sole production line. The fixture-only replay owner must separate public shadow computation from local authority and parse exact untrusted canonical bytes. | Focused Dart vectors plus an independent Python reconstruction must prove public-only scope, canonical wire, signature/key binding, freshness, replay/fork continuity, package/policy binding, and local public parity. | Pass C, live runner, observation network, persistence, deployment, account reads, exchange effects, and following work remain blocked. |
+| **1.x maintained runtime** | Trading Remote Runner Pass B remediation complete | Existing 1.x runtime remains the sole production line. The fixture-only replay owner separates public shadow computation from local authority and parses exact untrusted canonical bytes. | Focused Dart vectors, independent Python reconstruction, full local/clean-checkout gates, PR `#41`, and exact post-merge run `31486417119` prove the boundary. | Pass C, live runner, observation network, persistence, deployment, account reads, exchange effects, and following work remain blocked pending consolidation. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
@@ -98,10 +97,10 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — active:** close Trading Remote Runner Pass B remediation through the
-   protected PR and exact post-merge gate. Select no Pass C, live observations,
-   persistence, VPS deployment, credentials, exchange effects, background
-   trading, following pass, or release pass automatically.
+1. **P1 — selection:** Trading Remote Runner Pass B remediation is complete.
+   Select no Pass C, live observations, persistence, VPS deployment,
+   credentials, exchange effects, background trading, following pass, or
+   release pass automatically.
 2. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
    AI trading advice, distributed backup, and staking remain non-runtime or
    parked until the active design unit or a named release decision permits

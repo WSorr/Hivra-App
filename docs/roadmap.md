@@ -2828,10 +2828,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     after byte-for-byte canonical re-encoding. The existing Trading parity gate
     runs an independent Python reconstruction of the Dart golden fixture and
     negative whitespace/order/unknown/duplicate/local-field mutations.
-  - Status: implementation and full local gates complete; clean-checkout, PR,
-    and exact post-merge gates remain required (2026-08-11). Runtime consumers,
-    network, persistence, credentials, UI, VPS, effects, release work, and Pass C
-    remain unchanged and unauthorized.
+  - Status: completed through PR `#41` and exact post-merge run `31486417119`
+    (2026-08-11). Runtime consumers, network, persistence, credentials, UI, VPS,
+    effects, release work, and Pass C remain unchanged and unauthorized.
 
 ## Planned Product Tracks
 
