@@ -51,6 +51,43 @@ void main() {
       expect(permuted.liveDecisionHashHex, base.liveDecisionHashHex);
     });
 
+    test('ignores a forming candle in snapshot and zone evaluation', () {
+      final baseInput = _buildInput(permuted: false);
+      final forming = BingxFuturesCandle(
+        timeframe: '5m',
+        openTimeUtc: '2026-04-25T10:00:00Z',
+        closeTimeUtc: '2026-04-25T10:05:00Z',
+        openDecimal: '102.5',
+        highDecimal: '150',
+        lowDecimal: '60',
+        closeDecimal: '70',
+        volumeBaseDecimal: '999999',
+        volumeQuoteDecimal: '99999999',
+        isClosed: false,
+      );
+      final base = service.decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: baseInput,
+          isConsensusSignable: true,
+        ),
+      );
+      final withForming = service.decide(
+        BingxFuturesLiveDecisionInput(
+          snapshotInput: _withCandles(
+            baseInput,
+            <BingxFuturesCandle>[...baseInput.candles, forming],
+          ),
+          isConsensusSignable: true,
+        ),
+      );
+
+      expect(withForming.marketSnapshotHashHex, base.marketSnapshotHashHex);
+      expect(withForming.featureHashHex, base.featureHashHex);
+      expect(withForming.liveDecisionHashHex, base.liveDecisionHashHex);
+      expect(withForming.zoneLowDecimal, base.zoneLowDecimal);
+      expect(withForming.zoneHighDecimal, base.zoneHighDecimal);
+    });
+
     test('blocks live entry when consensus guard blocks TVH decision', () {
       final result = service.decide(
         BingxFuturesLiveDecisionInput(
@@ -225,6 +262,23 @@ void main() {
       );
     });
   });
+}
+
+BingxFuturesMarketSnapshotInput _withCandles(
+  BingxFuturesMarketSnapshotInput input,
+  List<BingxFuturesCandle> candles,
+) {
+  return BingxFuturesMarketSnapshotInput(
+    instrument: input.instrument,
+    prices: input.prices,
+    candles: candles,
+    trades: input.trades,
+    openInterest: input.openInterest,
+    funding: input.funding,
+    liquidityLevels: input.liquidityLevels,
+    sessionVolumes: input.sessionVolumes,
+    orderBookTopLevels: input.orderBookTopLevels,
+  );
 }
 
 BingxFuturesMarketSnapshotInput _buildMinimalInput() {

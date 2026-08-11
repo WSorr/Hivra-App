@@ -143,12 +143,12 @@ void main() {
             119,
             120,
             118,
-            117,
+            117
             118,
             119,
             117,
             116,
-            117
+            117,
           ],
           higherLows: const <num>[
             105,
@@ -168,7 +168,7 @@ void main() {
             112,
             110,
             104,
-            108,
+            108
             114,
             109,
             103,
@@ -176,7 +176,7 @@ void main() {
             113,
             105,
             101,
-            108
+            108,
           ],
           dailyHighs: const <num>[],
           dailyLows: const <num>[],
@@ -206,23 +206,23 @@ void main() {
           macroLows: base.macroLows,
           higherHighs: const <num>[
             120,
-            119,
-            118,
-            119,
-            120,
-            119,
-            118,
-            119,
-            120,
-            119,
-            118,
             119
+            118,
+            119,
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+            119,
           ],
           higherLows: const <num>[
             105,
             104,
             100,
-            103,
+            103
             106,
             105,
             104,
@@ -230,7 +230,7 @@ void main() {
             105,
             104,
             99,
-            103
+            103,
           ],
           higherCloses: const <num>[
             112,
@@ -239,12 +239,12 @@ void main() {
             108,
             114,
             111,
-            109,
+            109
             106,
             113,
             108,
             104,
-            109
+            109,
           ],
           dailyHighs: const <num>[],
           dailyLows: const <num>[],
@@ -274,7 +274,7 @@ void main() {
           macroLows: base.macroLows,
           higherHighs: const <num>[
             120,
-            119,
+            119
             118,
             119,
             120,
@@ -302,7 +302,7 @@ void main() {
             101,
             98,
             102,
-            104,
+            104
             105,
             106,
           ],
@@ -312,7 +312,7 @@ void main() {
             104,
             108,
             114,
-            109,
+            109
             101,
             107,
             113,
@@ -362,7 +362,7 @@ void main() {
             120,
             119,
             118,
-            119
+            119,
           ],
           higherLows: const <num>[
             105,
@@ -376,7 +376,7 @@ void main() {
             105,
             104,
             103,
-            104
+            104,
           ],
           higherCloses: const <num>[
             112,
@@ -390,7 +390,7 @@ void main() {
             113,
             108,
             107,
-            109
+            109,
           ],
           dailyHighs: const <num>[],
           dailyLows: const <num>[],
@@ -441,39 +441,115 @@ void main() {
     });
 
     test('current sweep reclaim is an executable new event', () {
-      final base = _inputForSweepDown();
-      final closes = List<num>.filled(base.microHighs.length, 88)
-        ..[base.microHighs.length - 2] = 84
-        ..[base.microHighs.length - 1] = 96;
-      final result = service.decide(
-        input: BingxFuturesZoneDecisionInput(
-          midPrice: base.midPrice,
-          fallbackSide: base.fallbackSide,
-          requiredSide: 'buy',
-          microHighs: base.microHighs,
-          microLows: base.microLows,
-          microCloses: closes,
-          macroHighs: base.macroHighs,
-          macroLows: base.macroLows,
-          higherHighs: const <num>[],
-          higherLows: const <num>[],
-          higherCloses: const <num>[],
-          dailyHighs: const <num>[],
-          dailyLows: const <num>[],
-          dailyCloses: const <num>[],
-          weeklyHighs: const <num>[],
-          weeklyLows: const <num>[],
-          recentMicroBars: base.recentMicroBars,
-          zoneNearBps: base.zoneNearBps,
-          zoneFarBps: base.zoneFarBps,
-        ),
-      );
+      final result = service.decide(input: _microReclaimInput(side: 'buy'));
 
       expect(result.anchorSource, 'micro_sweep_reclaim');
       expect(result.anchorExecutable, isTrue);
       expect(result.anchorLifecycle, 'reclaimed');
+      expect(result.zoneLow, greaterThanOrEqualTo(88));
+    });
+
+    test('rejects reclaim candle whose body is too small relative to ATR', () {
+      final result = service.decide(
+        input: _microReclaimInput(side: 'sell', weakBody: true),
+      );
+
+      expect(result.anchorSource, 'internal_diagnostic');
+      expect(result.anchorExecutable, isFalse);
+    });
+
+    test('expires an unreclaimed sweep after the bounded bar window', () {
+      final result = service.decide(
+        input: _microReclaimInput(side: 'buy', expired: true),
+      );
+
+      expect(result.anchorSource, 'internal_diagnostic');
+      expect(result.anchorExecutable, isFalse);
+    });
+
+    test('invalidates a sweep after more than two failed reclaims', () {
+      final result = service.decide(
+        input: _microReclaimInput(side: 'sell', excessiveRetests: true),
+      );
+
+      expect(result.anchorSource, 'internal_diagnostic');
+      expect(result.anchorExecutable, isFalse);
     });
   });
+}
+
+BingxFuturesZoneDecisionInput _microReclaimInput({
+  required String side,
+  bool weakBody = false,
+  bool expired = false,
+  bool excessiveRetests = false,
+}) {
+  final highs = List<num>.filled(30, 96);
+  final lows = List<num>.filled(30, 94);
+  final opens = List<num>.filled(30, 95);
+  final closes = List<num>.filled(30, 95);
+  highs[0] = 100;
+  lows[1] = 90;
+
+  if (side == 'buy') {
+    lows[20] = 88;
+    opens[20] = weakBody ? 90.8 : 89;
+    closes[20] = expired ? 89 : 91;
+    if (weakBody) closes[20] = 91;
+  } else {
+    highs[20] = 102;
+    opens[20] = weakBody ? 99.2 : 101;
+    closes[20] = expired || excessiveRetests ? 101 : 99;
+    if (weakBody) closes[20] = 99;
+  }
+
+  if (expired) {
+    for (var index = 21; index < 30; index += 1) {
+      opens[index] = side == 'buy' ? 89 : 101;
+      closes[index] = opens[index];
+      highs[index] = 99;
+      lows[index] = 91;
+    }
+  }
+
+  if (excessiveRetests) {
+    for (var index = 21; index <= 25; index += 1) {
+      final below = index.isOdd;
+      highs[index] = index < 25 ? 101 : 99;
+      lows[index] = 98;
+      opens[index] = below ? 99.2 : 100.8;
+      closes[index] = below ? 99 : 101;
+    }
+    for (var index = 26; index < 30; index += 1) {
+      highs[index] = 99;
+      lows[index] = 97;
+      opens[index] = 98;
+      closes[index] = 98;
+    }
+  }
+
+  return BingxFuturesZoneDecisionInput(
+    midPrice: 96,
+    fallbackSide: side,
+    requiredSide: side,
+    microHighs: highs,
+    microLows: lows,
+    microOpens: opens,
+    microCloses: closes,
+    macroHighs: List<num>.filled(40, 105),
+    macroLows: List<num>.filled(40, 85),
+    higherHighs: const <num>[],
+    higherLows: const <num>[],
+    higherCloses: const <num>[],
+    dailyHighs: const <num>[],
+    dailyLows: const <num>[],
+    dailyCloses: const <num>[],
+    weeklyHighs: const <num>[],
+    weeklyLows: const <num>[],
+    recentMicroBars: 10,
+    zoneNearBps: 15,
+    zoneFarBps: 35,
+  );
 }
 
 BingxFuturesZoneDecisionInput _inputForSweepUp() {

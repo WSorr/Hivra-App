@@ -2848,6 +2848,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     consumer, network, persistence, credential, UI, VPS, effect, release, or
     Pass C was added; no next pass is selected.
 
+- `1.x Trading Liquidity Lifecycle hardening`
+  - Selected lane: bounded 1.x product hardening in the existing market and
+    zone owners. This is not Remote Runner Pass C and adds no server, network,
+    credential, persistence, plugin ABI, or exchange-effect path.
+  - Provider klines are classified against one injected UTC observation clock.
+    Forming candles are excluded from the canonical snapshot digest, derived
+    liquidity, feature extraction, and zone evaluation.
+  - The existing `BingxFuturesZoneDecisionService` reconstructs one pure
+    closed-candle sweep event. Reclaim requires a directional body of at least
+    `0.5 * ATR14`, expires after 8 bars, rejects more than 2 failed close-back
+    attempts, and remains anchored to the exact sweep extreme.
+  - Fixed percentage reverse parameters that had no runtime consumer were
+    removed. No external indicator code, UI drawing state, alert state, or
+    mutable market-state owner was introduced.
+  - Exit gate: focused and full repository checks, then one bounded manual
+    zone-calculation smoke with no live order. Release, remote runner, and
+    following product work require separate selection.
+  - Status: complete locally (2026-08-11). Full gates passed. Automatic macOS
+    smoke scanned the six-symbol Core Watchlist, selected SOL-USDT as READY,
+    calculated a fresh executable sellside zone, and prepared the decision
+    envelope without invoking an exchange order effect. Android was not
+    required because this pass changed the shared deterministic market/zone
+    pipeline rather than a platform adapter. No following pass is selected.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

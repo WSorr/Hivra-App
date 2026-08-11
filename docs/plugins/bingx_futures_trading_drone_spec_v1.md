@@ -168,11 +168,14 @@ Define swing levels on 5m:
 
 Sweep condition:
 
-- price wick crosses swing level and closes back inside range within 1–3 candles.
+- a closed-candle wick crosses a previously established swing level;
+- reclaim is evaluated by the bounded microstructure lifecycle in section
+  5.3.2, not by a fixed percentage offset.
 
-### 5.3.1 Required Detection Algorithm (Pivot Cluster, Jack-Venture Style)
+### 5.3.1 Canonical Hivra Pivot-Cluster Contract
 
-For v1 implementation, liquidity level detection MUST follow the pivot-cluster model equivalent to the provided Pine logic:
+The v1 liquidity detector is an independently specified deterministic
+pivot-cluster model:
 
 1. Pivot source:
    - `pivot_high = pivothigh(liqLen, 1)`
@@ -192,16 +195,13 @@ For v1 implementation, liquidity level detection MUST follow the pivot-cluster m
 7. Breach logic:
    - buyside breached when `high > zone_top`
    - sellside breached when `low < zone_bottom`
-8. Reverse signal logic (post-breach):
-   - buy reverse from breached sellside at `level * (1 - buyPctBreak/100)`
-   - sell reverse from breached buyside at `level * (1 + sellPctBreak/100)`
+8. Breached clusters become historical evidence only. They do not authorize a
+   reverse signal by applying a fixed percentage offset.
 
 Default parameters for v1:
 
 - `liqLen = 7`
 - `liqMar = 10 / 6.9`
-- `buyPctBreak = 1.0`
-- `sellPctBreak = 1.0`
 - `maxTrackedLevelsPerSide = visLiq = 3` (configurable)
 
 Determinism constraints:
@@ -209,6 +209,31 @@ Determinism constraints:
 - level list must be sorted deterministically before hashing/output,
 - class assignment (external/internal) must be derived from active level set only,
 - no UI/runtime state may influence level computation.
+
+### 5.3.2 Closed-Candle Sweep/Reclaim Lifecycle
+
+The executable microstructure path MUST be a pure reduction over ordered,
+closed 5m OHLC candles. A currently forming provider candle MUST NOT enter the
+canonical normalized snapshot, derived liquidity, ATR, or zone decision.
+
+For the side selected by TVH:
+
+1. Start from the structure level established before the recent evaluation
+   window.
+2. Record a sweep when a closed wick crosses that level. A deeper wick in the
+   same active event updates its extreme without creating another event.
+3. Confirm reclaim only when a closed candle finishes back beyond the level in
+   the intended direction and its directional body is at least `0.5 * ATR14`.
+4. Expire an unconfirmed sweep after 8 closed bars.
+5. Invalidate it after more than 2 failed close-back attempts.
+6. Once confirmed, keep one event anchored to the exact sweep extreme until a
+   later sweep starts a new event. Repeated evaluation of identical candles
+   MUST produce the same event and zone.
+
+The reducer has no persisted mutable market state. Restart, local execution,
+and shadow replay reconstruct the same lifecycle from the same canonical
+candle sequence. Effect idempotency remains the responsibility of the existing
+managed-order owner; this lifecycle adds no order authority.
 
 ### 5.4 Microstructure Confirmation
 

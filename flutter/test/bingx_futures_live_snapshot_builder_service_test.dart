@@ -5,10 +5,14 @@ import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.d
 
 void main() {
   group('BingxFuturesLiveSnapshotBuilderService', () {
-    const builder = BingxFuturesLiveSnapshotBuilderService();
-
     test('builds snapshot with OI history and liquidation proxy levels',
         () async {
+      final builder = BingxFuturesLiveSnapshotBuilderService(
+        clockUtc: () => DateTime.fromMillisecondsSinceEpoch(
+          1710000400000,
+          isUtc: true,
+        ),
+      );
       var requestedExtended4hHistory = false;
       final exchange = BingxFuturesExchangeService(
         requestSender: (request) async {
@@ -87,10 +91,26 @@ void main() {
         isTrue,
       );
       expect(requestedExtended4hHistory, isTrue);
+      final fiveMinuteCandles = snapshot.candles
+          .where((item) => item.timeframe == '5m')
+          .toList(growable: false);
+      expect(fiveMinuteCandles.map((item) => item.isClosed), <bool>[
+        true,
+        false,
+      ]);
+      expect(
+        snapshot.liquidityLevels
+            .singleWhere(
+              (item) => item.kind == 'internal' && item.side == 'sellside',
+            )
+            .priceDecimal,
+        '102',
+      );
     });
 
     test('does not treat account force-orders as market liquidation feed',
         () async {
+      const builder = BingxFuturesLiveSnapshotBuilderService();
       var requestedAccountForceOrders = false;
       final exchange = BingxFuturesExchangeService(
         clockMs: () => 1710009999000,

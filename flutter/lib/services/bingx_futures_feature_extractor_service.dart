@@ -96,16 +96,12 @@ class BingxFuturesFeatureExtractorService {
   final int liqLen;
   final double liqMar;
   final int maxTrackedLevelsPerSide;
-  final double buyPctBreak;
-  final double sellPctBreak;
   final double whaleProximityBps;
 
   const BingxFuturesFeatureExtractorService({
     this.liqLen = 7,
     this.liqMar = 10 / 6.9,
     this.maxTrackedLevelsPerSide = 3,
-    this.buyPctBreak = 1.0,
-    this.sellPctBreak = 1.0,
     this.whaleProximityBps = 10.0,
   });
 
