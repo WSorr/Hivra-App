@@ -2808,11 +2808,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     | --- | --- | --- | --- | --- | --- |
     | One evidence value and fixture mutations in the existing replay owner | Unauthenticated exact replay, changed-content sequence reuse, chain fork, downgrade, and package/policy substitution fail closed | The exact authenticated shadow commitment and local parity order are executable | Zero new owners; zero network/effect paths | No live observations, acceptance persistence, runner lease, deployment, account reads, or remote execution | A later review may decide whether live public-observation parity is justified |
 
-  - Status: implementation and local repository gates complete (2026-08-11);
-    PR and exact post-merge gates remain required. No manual smoke is required
-    because no app route, network, storage, credential, UI, FFI, Core, or
-    exchange behavior changed. No following pass, deployment, release work, or
-    24/7 claim is selected automatically.
+  - Status: completed (2026-08-11) through PR `#39`; required PR and exact
+    post-merge repository gates passed. No manual smoke was required because no
+    app route, network, storage, credential, UI, FFI, Core, or exchange behavior
+    changed. No following pass, deployment, release work, or 24/7 claim is
+    selected automatically.
 
 ## Planned Product Tracks
 
