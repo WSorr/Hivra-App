@@ -174,7 +174,7 @@ all point to the same behavior.
 
 ## 11. Remote Runner Shadow Boundary
 
-Status: Pass B remediation in progress; Pass C and remote runtime implementation
+Status: Pass B remediation complete; Pass C and remote runtime implementation
 are not authorized
 
 ### 11.1 Purpose And Sole Owner
