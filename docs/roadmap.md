@@ -2761,6 +2761,32 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     AI-5, release candidate, or following product pass is selected
     automatically.
 
+- `1.x Trading Remote Runner Pass A — public-data shadow contract`
+  - Selected lane: product design only. The existing Trading Drone goal
+    contract is the sole normative owner; no new document, schema, DTO, gate,
+    service, repository, deployment, or runtime path is introduced.
+  - The pass separates reproducible unattended compute from authority. A
+    future runner may consume public BingX market data and produce signed,
+    hash-linked shadow decisions; it cannot receive Capsule material, local
+    trading credentials, account state, approval, consensus, or exchange-effect
+    capability.
+  - The contract binds package/policy/snapshot/decision identity, ordered
+    evidence, bounded freshness, runner-key binding, replay/fork rejection,
+    revocation, parity evidence, and zero authenticated remote calls. It seals
+    Capsule-on-VPS, trading-key-on-VPS, and second-execution-route shortcuts.
+  - Official provider evidence confirms that public market data is accessible
+    without authentication and that read-only or IP-bound API keys are distinct
+    provider controls. Pass A deliberately uses neither key type; any account
+    read or trade authority requires a separate later decision.
+  - Architecture-economy result:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | One section in the existing Trading goal contract | Capsule-on-VPS, local trading-key-on-VPS, remote effects, and a second execution route are forbidden | Unattended shadow compute is separated from account access and trading authority | Zero runtime owners; zero runtime/effect paths | No runner lease/evidence implementation, remote storage, deployment, or live parity proof exists | Consolidation may decide whether a fixture-only shadow harness is the smallest justified Pass B |
+
+  - Status: in progress (2026-08-11). Implementation, deployment, Pass B,
+    release work, and 24/7 trading claims remain unauthorized.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
