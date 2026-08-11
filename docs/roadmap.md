@@ -2889,8 +2889,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     restart recovery, Capsule isolation, bounded fail-closed claim retention,
     one queue caller, full local/clean-checkout gates, protected PR, and green
     post-merge repository gates.
-  - Status: complete locally (2026-08-11); protected PR and post-merge gates
-    remain required. No following product pass is selected.
+  - Status: complete (2026-08-11) at `255a356`; protected PR `#46`, clean
+    checkout, and post-merge repository gates `31531348050` passed. No
+    following product pass is selected.
 
 ## Planned Product Tracks
 
