@@ -171,6 +171,7 @@ void main() {
 
       activeCapsuleHex =
           'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+      expect(await store.load(), isNull);
       await store.save(
         const BingxFuturesOrderTrackingState(
           trackedSymbol: 'SOL-USDT',
@@ -326,6 +327,46 @@ void main() {
       expect(reconciled.stopLossPercent, 5.0);
       expect(reconciled.takeProfitRiskReward, 2.0);
     });
+
+    test(
+      'reconciliation never claims an exchange-only protective order by inference',
+      () {
+        const state = BingxFuturesOrderTrackingState(
+          trackedSymbol: 'MNT-USDT',
+          trackedOrderId: 'parent-order',
+          managedOrderIds: <String>['parent-order'],
+          managedOrderSymbols: <String, String>{'parent-order': 'MNT-USDT'},
+          managedOrderProvenance: <String, BingxManagedOrderProvenance>{
+            'parent-order': BingxManagedOrderProvenance(
+              orderId: 'parent-order',
+              symbol: 'MNT-USDT',
+              side: 'buy',
+              testOrder: false,
+              intentHashHex: 'intent-parent',
+              canonicalIntentJson:
+                  '{"symbol":"MNT-USDT","side":"buy","stop_loss_decimal":"0.5","take_profit_decimal":"0.8"}',
+              marketSnapshotHashHex: null,
+              featureHashHex: null,
+              tvhDecisionHashHex: null,
+              liveDecisionHashHex: null,
+              recordedAtUtc: '2026-08-09T12:00:00.000Z',
+            ),
+          },
+          stopLossPercent: 5.0,
+          takeProfitRiskReward: 2.0,
+        );
+
+        final reconciled = state.reconcileOpenOrderIds(<String>[
+          'exchange-generated-stop',
+          'exchange-generated-take-profit',
+        ]);
+
+        expect(reconciled.managedOrderIds, isEmpty);
+        expect(reconciled.managedOrderSymbols, isEmpty);
+        expect(reconciled.managedOrderProvenance, isEmpty);
+        expect(reconciled.trackedOrderId, isNull);
+      },
+    );
 
     test(
       'restart reconciliation retains only currently open managed orders',

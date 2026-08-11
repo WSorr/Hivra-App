@@ -2705,6 +2705,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `313d55b` are invalid. No next product pass, release candidate, background
     authority, or 2.0 runtime unit is selected automatically.
 
+- `1.x Trading protective-order ownership classification`
+  - The test16 finding was audited against the official BingX placement,
+    current-open-orders, all-orders, and order-details contracts. Placement
+    returns only the submitted parent order; current open orders document no
+    parent-to-generated-protection identifier. Read APIs expose
+    `triggerOrderId`, but their description and examples do not prove a stable
+    directional parent binding suitable for ownership authority.
+  - The existing `BingxFuturesOrderTrackingState` remains the sole owner.
+    Reconciliation retains only exact order IDs already persisted for the
+    active Capsule. Symbol, side, price, trigger price, quantity, and timing
+    never authorize adoption; another Capsule's tracking file cannot confer
+    ownership.
+  - Negative regressions cover exchange-generated STOP/TAKE_PROFIT IDs that
+    resemble a managed parent but lack exact ID evidence, and cross-Capsule
+    non-inheritance. Such orders remain `Exchange only` and cannot enter cancel,
+    replacement, or managed-order revalidation paths.
+  - No DTO, service, registry, exchange request, Core/FFI path, persistence
+    route, or runtime behavior was added. A future change requires new exact
+    provider evidence and a separately selected remediation; it may extend the
+    existing owner only.
+  - Status: classified fail-closed (2026-08-11); GitHub issue `#26` may close
+    after PR and post-merge gates pass. No manual smoke or release candidate is
+    implied because production behavior is unchanged.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
