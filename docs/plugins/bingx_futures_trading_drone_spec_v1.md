@@ -232,8 +232,24 @@ For the side selected by TVH:
 
 The reducer has no persisted mutable market state. Restart, local execution,
 and shadow replay reconstruct the same lifecycle from the same canonical
-candle sequence. Effect idempotency remains the responsibility of the existing
-managed-order owner; this lifecycle adds no order authority.
+candle sequence. The zone owner derives a domain-separated stable liquidity
+event identity from symbol, side, executable anchor source/lifecycle, anchor
+price, and the closed-candle event timestamp. A deeper wick inside an
+unconfirmed sweep does not create another event; a later sweep does.
+
+The prepared execution context records the latest closed 5m bar used for the decision.
+Immediately before any exchange effect, the existing execution use case MUST
+recompute the decision and require the same event identity, same latest closed
+bar, exact live-decision hash, side, and zone side. Market movement, a new bar,
+an expired/consumed anchor, a side change, or a different event closes the
+intent as stale.
+
+Before exchange submission, the existing Capsule-scoped managed-order store
+MUST atomically reserve `(test/live, liquidity_event_id)`. An existing claim
+blocks retry, double-click, restart replay, reconnect replay, and replacement.
+The journal is capped at 256 claims and fails closed when full; it never evicts
+a claim merely to authorize another effect. This lifecycle adds no second
+order authority or exchange path.
 
 ### 5.4 Microstructure Confirmation
 
@@ -403,8 +419,9 @@ Automatic replacement policy:
 - `live_zone_mismatch` may produce one same-side replacement per `(peer, symbol, side)` lifecycle cycle,
 - replacement uses the fresh live TVH zone and retains original quantity,
 - original stop-distance percentage and risk/reward ratio are projected onto the fresh zone midpoint,
-- replacement receives a deterministic client id derived from old intent hash + fresh live decision hash,
-- consensus/host preparation, risk governor, execution idempotency, and exchange receipt are evaluated again,
+- replacement receives the same deterministic client-id derivation from the fresh liquidity event identity,
+- consensus/host preparation and risk governor are evaluated again, while exchange submission still flows only through `BingxFuturesExchangeExecutionUseCaseService`,
+- an event already claimed by the original order is cancel-only and cannot create a replacement effect,
 - `live_side_mismatch`, `momentum_gate_*`, `trend_gate_*`, and `liquidity_anchor_unavailable` are cancel-only and must never auto-reverse or auto-replace.
 
 ---

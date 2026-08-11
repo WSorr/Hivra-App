@@ -27,6 +27,9 @@ void main() {
       expect(first.zoneSide, 'buyside');
       expect(first.zoneLowDecimal, isNotNull);
       expect(first.zoneHighDecimal, isNotNull);
+      expect(first.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(first.liquidityEventAtUtc, isNotNull);
+      expect(first.latestClosedMicroBarAtUtc, isNotNull);
       expect(first.liveDecisionHashHex, second.liveDecisionHashHex);
       expect(first.canonicalJson, second.canonicalJson);
     });
@@ -49,6 +52,11 @@ void main() {
       expect(permuted.featureHashHex, base.featureHashHex);
       expect(permuted.tvhDecisionHashHex, base.tvhDecisionHashHex);
       expect(permuted.liveDecisionHashHex, base.liveDecisionHashHex);
+      expect(permuted.liquidityEventId, base.liquidityEventId);
+      expect(
+        permuted.latestClosedMicroBarAtUtc,
+        base.latestClosedMicroBarAtUtc,
+      );
     });
 
     test('ignores a forming candle in snapshot and zone evaluation', () {
@@ -73,10 +81,10 @@ void main() {
       );
       final withForming = service.decide(
         BingxFuturesLiveDecisionInput(
-          snapshotInput: _withCandles(
-            baseInput,
-            <BingxFuturesCandle>[...baseInput.candles, forming],
-          ),
+          snapshotInput: _withCandles(baseInput, <BingxFuturesCandle>[
+            ...baseInput.candles,
+            forming,
+          ]),
           isConsensusSignable: true,
         ),
       );
@@ -86,6 +94,11 @@ void main() {
       expect(withForming.liveDecisionHashHex, base.liveDecisionHashHex);
       expect(withForming.zoneLowDecimal, base.zoneLowDecimal);
       expect(withForming.zoneHighDecimal, base.zoneHighDecimal);
+      expect(withForming.liquidityEventId, base.liquidityEventId);
+      expect(
+        withForming.latestClosedMicroBarAtUtc,
+        base.latestClosedMicroBarAtUtc,
+      );
     });
 
     test('blocks live entry when consensus guard blocks TVH decision', () {
@@ -94,9 +107,7 @@ void main() {
           snapshotInput: _buildInput(permuted: false),
           isConsensusSignable: false,
           blockingFactCodes: const <String>['pending_remote_break'],
-          policy: const BingxTvhPolicy(
-            requireConsensusSignable: true,
-          ),
+          policy: const BingxTvhPolicy(requireConsensusSignable: true),
         ),
       );
 
@@ -111,9 +122,7 @@ void main() {
       final input = BingxFuturesLiveDecisionInput(
         snapshotInput: _buildShortInput(permuted: false),
         isConsensusSignable: true,
-        policy: const BingxTvhPolicy(
-          requireWhaleActivation: false,
-        ),
+        policy: const BingxTvhPolicy(requireWhaleActivation: false),
       );
 
       final first = service.decide(input);
@@ -134,9 +143,7 @@ void main() {
         BingxFuturesLiveDecisionInput(
           snapshotInput: _buildInput(permuted: false),
           isConsensusSignable: true,
-          policy: const BingxTvhPolicy(
-            maxAbsFundingRate: 0.00001,
-          ),
+          policy: const BingxTvhPolicy(maxAbsFundingRate: 0.00001),
         ),
       );
 
@@ -153,70 +160,70 @@ void main() {
       );
     });
 
-    test('NO_SIGNAL can evaluate a side-locked structural zone without intent',
-        () {
-      final input = BingxFuturesLiveDecisionInput(
-        snapshotInput: _buildInput(permuted: false),
-        isConsensusSignable: true,
-        zoneEvaluationSide: 'buy',
-        policy: const BingxTvhPolicy(
-          maxAbsFundingRate: 0.00001,
-        ),
-      );
-
-      final first = service.decide(input);
-      final second = service.decide(input);
-
-      expect(first.decision, BingxTvhDecisionKind.noSignal);
-      expect(first.canPrepareIntent, isFalse);
-      expect(first.side, isNull);
-      expect(first.zoneEvaluationSide, 'buy');
-      expect(first.zoneSide, 'buyside');
-      expect(first.zoneLowDecimal, isNotNull);
-      expect(first.zoneHighDecimal, isNotNull);
-      expect(first.liveDecisionHashHex, second.liveDecisionHashHex);
-      expect(first.canonicalJson, second.canonicalJson);
-    });
-
-    test('blocks far retest short in strong bearish continuation trend gate',
-        () {
-      final gatedService = BingxFuturesLiveDecisionService(
-        snapshotService: _StubSnapshotService(),
-        featureExtractor: _StubFeatureExtractor(
-          trendDirection: BingxTrendDirection.bearish,
-        ),
-        ruleEngine: _StubRuleEngine(
-          decision: BingxTvhDecisionKind.short,
-        ),
-        zoneDecision: _StubZoneDecision(
-          side: 'sell',
-          zoneSide: 'sellside',
-          trend4h: 'bear',
-          trend1d: 'bear',
-          needsFartherRetest: true,
-          targetRetestPct: 0.09,
-        ),
-      );
-
-      final result = gatedService.decide(
-        BingxFuturesLiveDecisionInput(
-          snapshotInput: _buildMinimalInput(),
+    test(
+      'NO_SIGNAL can evaluate a side-locked structural zone without intent',
+      () {
+        final input = BingxFuturesLiveDecisionInput(
+          snapshotInput: _buildInput(permuted: false),
           isConsensusSignable: true,
-        ),
-      );
+          zoneEvaluationSide: 'buy',
+          policy: const BingxTvhPolicy(maxAbsFundingRate: 0.00001),
+        );
 
-      expect(result.decision, BingxTvhDecisionKind.short);
-      expect(result.side, 'sell');
-      expect(result.trendGateBlocked, isTrue);
-      expect(result.trendGateCode, 'trend_gate_short_far_retest');
-      expect(result.canPrepareIntent, isFalse);
-      expect(
-        result.reasons.any(
-          (reason) => reason.code == 'trend_gate_short_far_retest',
-        ),
-        isTrue,
-      );
-    });
+        final first = service.decide(input);
+        final second = service.decide(input);
+
+        expect(first.decision, BingxTvhDecisionKind.noSignal);
+        expect(first.canPrepareIntent, isFalse);
+        expect(first.side, isNull);
+        expect(first.zoneEvaluationSide, 'buy');
+        expect(first.zoneSide, 'buyside');
+        expect(first.zoneLowDecimal, isNotNull);
+        expect(first.zoneHighDecimal, isNotNull);
+        expect(first.liveDecisionHashHex, second.liveDecisionHashHex);
+        expect(first.canonicalJson, second.canonicalJson);
+      },
+    );
+
+    test(
+      'blocks far retest short in strong bearish continuation trend gate',
+      () {
+        final gatedService = BingxFuturesLiveDecisionService(
+          snapshotService: _StubSnapshotService(),
+          featureExtractor: _StubFeatureExtractor(
+            trendDirection: BingxTrendDirection.bearish,
+          ),
+          ruleEngine: _StubRuleEngine(decision: BingxTvhDecisionKind.short),
+          zoneDecision: _StubZoneDecision(
+            side: 'sell',
+            zoneSide: 'sellside',
+            trend4h: 'bear',
+            trend1d: 'bear',
+            needsFartherRetest: true,
+            targetRetestPct: 0.09,
+          ),
+        );
+
+        final result = gatedService.decide(
+          BingxFuturesLiveDecisionInput(
+            snapshotInput: _buildMinimalInput(),
+            isConsensusSignable: true,
+          ),
+        );
+
+        expect(result.decision, BingxTvhDecisionKind.short);
+        expect(result.side, 'sell');
+        expect(result.trendGateBlocked, isTrue);
+        expect(result.trendGateCode, 'trend_gate_short_far_retest');
+        expect(result.canPrepareIntent, isFalse);
+        expect(
+          result.reasons.any(
+            (reason) => reason.code == 'trend_gate_short_far_retest',
+          ),
+          isTrue,
+        );
+      },
+    );
 
     test('blocks missed short retest after bearish momentum continuation', () {
       final gatedService = BingxFuturesLiveDecisionService(
@@ -224,9 +231,7 @@ void main() {
         featureExtractor: _StubFeatureExtractor(
           trendDirection: BingxTrendDirection.bearish,
         ),
-        ruleEngine: _StubRuleEngine(
-          decision: BingxTvhDecisionKind.short,
-        ),
+        ruleEngine: _StubRuleEngine(decision: BingxTvhDecisionKind.short),
         zoneDecision: _StubZoneDecision(
           side: 'sell',
           zoneSide: 'sellside',
@@ -330,12 +335,33 @@ BingxFuturesMarketSnapshotInput _buildInput({required bool permuted}) {
     ..._generate5mCandles(count: 80),
     ..._generate1hCandles(count: 24),
     ..._generate4hCandlesWithFreshLow(),
-    _singleCandle('1m', '2026-04-25T09:59:00Z', '2026-04-25T10:00:00Z', 102,
-        103, 101, 102.2),
-    _singleCandle('1d', '2026-04-24T00:00:00Z', '2026-04-25T00:00:00Z', 95, 106,
-        94, 101.8),
-    _singleCandle('1w', '2026-04-18T00:00:00Z', '2026-04-25T00:00:00Z', 92, 108,
-        90, 101.8),
+    _singleCandle(
+      '1m',
+      '2026-04-25T09:59:00Z',
+      '2026-04-25T10:00:00Z',
+      102,
+      103,
+      101,
+      102.2,
+    ),
+    _singleCandle(
+      '1d',
+      '2026-04-24T00:00:00Z',
+      '2026-04-25T00:00:00Z',
+      95,
+      106,
+      94,
+      101.8,
+    ),
+    _singleCandle(
+      '1w',
+      '2026-04-18T00:00:00Z',
+      '2026-04-25T00:00:00Z',
+      92,
+      108,
+      90,
+      101.8,
+    ),
   ];
   final trades = <BingxFuturesTrade>[
     const BingxFuturesTrade(
@@ -484,12 +510,33 @@ BingxFuturesMarketSnapshotInput _buildShortInput({required bool permuted}) {
     ..._generate5mCandlesBearish(count: 80),
     ..._generate1hCandlesBearish(count: 24),
     ..._generate4hCandlesWithFreshHigh(),
-    _singleCandle('1m', '2026-04-25T09:59:00Z', '2026-04-25T10:00:00Z', 97,
-        97.2, 95.8, 96.0),
-    _singleCandle('1d', '2026-04-24T00:00:00Z', '2026-04-25T00:00:00Z', 106,
-        107, 93.8, 96.1),
-    _singleCandle('1w', '2026-04-18T00:00:00Z', '2026-04-25T00:00:00Z', 110,
-        111, 92.5, 95.9),
+    _singleCandle(
+      '1m',
+      '2026-04-25T09:59:00Z',
+      '2026-04-25T10:00:00Z',
+      97,
+      97.2,
+      95.8,
+      96.0,
+    ),
+    _singleCandle(
+      '1d',
+      '2026-04-24T00:00:00Z',
+      '2026-04-25T00:00:00Z',
+      106,
+      107,
+      93.8,
+      96.1,
+    ),
+    _singleCandle(
+      '1w',
+      '2026-04-18T00:00:00Z',
+      '2026-04-25T00:00:00Z',
+      110,
+      111,
+      92.5,
+      95.9,
+    ),
   ];
   final trades = <BingxFuturesTrade>[
     const BingxFuturesTrade(
@@ -868,11 +915,10 @@ BingxFuturesCandle _singleCandle(
 class _StubSnapshotService extends BingxFuturesMarketSnapshotService {
   @override
   BingxFuturesMarketSnapshotDigest build(
-      BingxFuturesMarketSnapshotInput input) {
+    BingxFuturesMarketSnapshotInput input,
+  ) {
     return const BingxFuturesMarketSnapshotDigest(
-      normalizedSnapshot: <String, dynamic>{
-        'schema_version': 1,
-      },
+      normalizedSnapshot: <String, dynamic>{'schema_version': 1},
       canonicalJson: '{"schema_version":1}',
       marketSnapshotHashHex:
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -884,9 +930,7 @@ class _StubSnapshotService extends BingxFuturesMarketSnapshotService {
 class _StubFeatureExtractor extends BingxFuturesFeatureExtractorService {
   final BingxTrendDirection trendDirection;
 
-  const _StubFeatureExtractor({
-    required this.trendDirection,
-  });
+  const _StubFeatureExtractor({required this.trendDirection});
 
   @override
   BingxFuturesFeatureExtractionResult extract(
@@ -916,9 +960,7 @@ class _StubFeatureExtractor extends BingxFuturesFeatureExtractorService {
 class _StubRuleEngine extends BingxFuturesTvhRuleEngineService {
   final BingxTvhDecisionKind decision;
 
-  const _StubRuleEngine({
-    required this.decision,
-  });
+  const _StubRuleEngine({required this.decision});
 
   @override
   BingxTvhDecisionResult evaluate({
@@ -933,11 +975,7 @@ class _StubRuleEngine extends BingxFuturesTvhRuleEngineService {
       featureHashHex: features.featureHashHex,
       decision: decision,
       reasons: const <BingxTvhDecisionReason>[
-        BingxTvhDecisionReason(
-          code: 'stub_rule',
-          passed: true,
-          detail: 'stub',
-        ),
+        BingxTvhDecisionReason(code: 'stub_rule', passed: true, detail: 'stub'),
       ],
       canonicalJson: '{"decision":"stub"}',
       decisionHashHex:

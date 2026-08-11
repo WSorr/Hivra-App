@@ -37,9 +37,7 @@ void main() {
     });
 
     test('selects sell on clear sweep-up reversal', () {
-      final result = service.decide(
-        input: _inputForSweepUp(),
-      );
+      final result = service.decide(input: _inputForSweepUp());
 
       expect(result.usedFallback, isFalse);
       expect(result.side, 'sell');
@@ -143,7 +141,7 @@ void main() {
             119,
             120,
             118,
-            117
+            117,
             118,
             119,
             117,
@@ -162,13 +160,13 @@ void main() {
             104,
             100,
             95,
-            99
+            99,
           ],
           higherCloses: const <num>[
             112,
             110,
             104,
-            108
+            108,
             114,
             109,
             103,
@@ -206,7 +204,7 @@ void main() {
           macroLows: base.macroLows,
           higherHighs: const <num>[
             120,
-            119
+            119,
             118,
             119,
             120,
@@ -222,7 +220,7 @@ void main() {
             105,
             104,
             100,
-            103
+            103,
             106,
             105,
             104,
@@ -239,7 +237,7 @@ void main() {
             108,
             114,
             111,
-            109
+            109,
             106,
             113,
             108,
@@ -274,7 +272,7 @@ void main() {
           macroLows: base.macroLows,
           higherHighs: const <num>[
             120,
-            119
+            119,
             118,
             119,
             120,
@@ -302,7 +300,7 @@ void main() {
             101,
             98,
             102,
-            104
+            104,
             105,
             106,
           ],
@@ -312,7 +310,7 @@ void main() {
             104,
             108,
             114,
-            109
+            109,
             101,
             107,
             113,

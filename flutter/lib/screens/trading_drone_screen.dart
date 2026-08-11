@@ -115,6 +115,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   String _signalScanScope = _signalScanScopeCore;
 
   PluginHostApiResponse? _lastIntentResponse;
+  BingxFuturesLiveDecisionResult? _lastPreparedLiveDecision;
   String? _intentBlockingMessage;
   BingxFuturesOrderExecutionResult? _lastExecution;
   BingxFuturesOpenOrdersResult? _lastOpenOrdersRead;
@@ -1508,6 +1509,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _runningIntent = true;
         _intentProgressLabel = 'Starting';
         _lastIntentResponse = null;
+        _lastPreparedLiveDecision = null;
         _intentBlockingMessage = null;
       });
     }
@@ -1543,7 +1545,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     var stopLossDecimal = _stopLossController.text.trim();
     var takeProfitDecimal = _takeProfitController.text.trim();
     final nowUtc = DateTime.now().toUtc().toIso8601String();
-    final clientOrderId = 'ui-ord-${DateTime.now().microsecondsSinceEpoch}';
+    var clientOrderId = 'ui-ord-${DateTime.now().microsecondsSinceEpoch}';
     if (symbol.isEmpty) {
       await _showSnack('Symbol is required');
       return;
@@ -1628,6 +1630,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         await _showSnack(message, seconds: 4);
         return;
       }
+      final liquidityEventId = live.liquidityEventId?.trim() ?? '';
+      final latestClosedBar = live.latestClosedMicroBarAtUtc?.trim() ?? '';
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(liquidityEventId) ||
+          latestClosedBar.isEmpty) {
+        await _module.uiLog.log(
+          'bingx.strategy.live_decision.blocked',
+          'symbol=$symbol message=liquidity_event_evidence_missing',
+        );
+        await _showSnack('Liquidity event evidence is unavailable', seconds: 4);
+        return;
+      }
+      clientOrderId = 'hivra-${liquidityEventId.substring(0, 32)}';
       if (mounted) {
         setState(() {
           _side = live.side!;
@@ -1774,6 +1788,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       if (!mounted) return;
       setState(() {
         _lastIntentResponse = response;
+        _lastPreparedLiveDecision =
+            response.status == PluginHostApiStatus.executed
+                ? liveDecision
+                : null;
         _intentBlockingMessage =
             response.status == PluginHostApiStatus.executed
                 ? null
@@ -2107,6 +2125,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         riskPolicy: _executionRiskPolicy,
         fallbackEquityQuote: _fallbackRiskEquityQuote,
         testOrder: _useTestOrderEndpoint,
+        preparedDecision: _lastPreparedLiveDecision,
+        refreshDecision:
+            () => _computeLiveDecision(
+              symbol: intentSymbol ?? currentSymbol,
+              peerHex: result['peer_hex']?.toString().trim() ?? '',
+              silent: true,
+              forceConsensusSignable:
+                  (result['peer_hex']?.toString().trim() ?? '').isEmpty,
+              zoneEvaluationSide: result['side']?.toString(),
+            ),
       );
       for (final diagnostic in useCaseResult.diagnostics) {
         await _module.uiLog.log('bingx.exchange.risk_detail', diagnostic);
@@ -2120,6 +2148,24 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         await _showSnack(
           useCaseResult.errorMessage ?? 'Invalid intent',
           seconds: 3,
+        );
+        return;
+      }
+      if (useCaseResult.status ==
+              BingxFuturesExchangeExecutionUseCaseStatus.staleIntent ||
+          useCaseResult.status ==
+              BingxFuturesExchangeExecutionUseCaseStatus
+                  .duplicateLiquidityEvent ||
+          useCaseResult.status ==
+              BingxFuturesExchangeExecutionUseCaseStatus
+                  .effectClaimUnavailable) {
+        await _module.uiLog.log(
+          'bingx.exchange.execute.guard',
+          'blocked=${useCaseResult.errorCode ?? useCaseResult.status.name}',
+        );
+        await _showSnack(
+          useCaseResult.errorMessage ?? 'Execution blocked',
+          seconds: 4,
         );
         return;
       }
@@ -2626,13 +2672,14 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return;
     }
 
+    Map<String, dynamic>? replacementIntentResult;
     final runtime = await _module.orderReplacement.execute(
       provenance: provenance,
       liveDecision: liveDecision,
       cancellationReasonCode: cancellationReasonCode,
       cycleAtUtc: cycleAtUtc,
-      prepareIntent: (hostArgs) {
-        return _module.pluginHostApi
+      prepareIntent: (hostArgs) async {
+        final response = await _module.pluginHostApi
             .executeWithRuntimeHook(
               PluginHostApiRequest(
                 schemaVersion: pluginHostApiSchemaVersion,
@@ -2642,6 +2689,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               ),
             )
             .timeout(_hostIntentTimeout);
+        replacementIntentResult = response.result;
+        return response;
       },
       evaluateRisk: (payload, rawIntentResult) {
         return _evaluateExecutionRisk(
@@ -2649,12 +2698,27 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           rawIntentResult: rawIntentResult,
         );
       },
-      executeOrder: (payload, testOrder) {
-        return _module.executionQueue.enqueueOrderExecution(
+      executeOrder: (payload, testOrder) async {
+        final rawIntentResult = replacementIntentResult;
+        if (rawIntentResult == null) return null;
+        final execution = await _module.executionUseCase.execute(
+          screen: 'trading_drone_replacement',
+          rawIntentResult: rawIntentResult,
           credentials: credentials,
-          intent: payload,
+          riskPolicy: _executionRiskPolicy,
+          fallbackEquityQuote: _fallbackRiskEquityQuote,
           testOrder: testOrder,
+          preparedDecision: liveDecision,
+          refreshDecision:
+              () => _computeLiveDecision(
+                symbol: payload.symbol,
+                peerHex: '',
+                silent: true,
+                forceConsensusSignable: true,
+                zoneEvaluationSide: payload.side,
+              ),
         );
+        return execution.queuedExecution;
       },
     );
     final response = runtime.hostResponse;

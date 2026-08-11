@@ -10,7 +10,6 @@ class BingxFuturesLiveDecisionInput {
   final double zoneFarBps;
   final BingxTvhPolicy policy;
   final String? zoneEvaluationSide;
-
   const BingxFuturesLiveDecisionInput({
     required this.snapshotInput,
     required this.isConsensusSignable,
@@ -46,6 +45,9 @@ class BingxFuturesLiveDecisionResult {
   final bool zoneAnchorExecutable;
   final String? zoneAnchorLifecycle;
   final String? zoneEvaluationSide;
+  final String? liquidityEventId;
+  final String? liquidityEventAtUtc;
+  final String? latestClosedMicroBarAtUtc;
 
   const BingxFuturesLiveDecisionResult({
     required this.canPrepareIntent,
@@ -70,5 +72,8 @@ class BingxFuturesLiveDecisionResult {
     this.zoneAnchorExecutable = false,
     this.zoneAnchorLifecycle,
     this.zoneEvaluationSide,
+    this.liquidityEventId,
+    this.liquidityEventAtUtc,
+    this.latestClosedMicroBarAtUtc,
   });
 }

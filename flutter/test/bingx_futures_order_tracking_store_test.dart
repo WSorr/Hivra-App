@@ -55,7 +55,6 @@ void main() {
           takeProfitRiskReward: 2.0,
         ),
       );
-
       final restored = await store.load();
       expect(restored, isNotNull);
       expect(restored!.trackedSymbol, 'BNB-USDT');
@@ -168,6 +167,18 @@ void main() {
           takeProfitRiskReward: 1.5,
         ),
       );
+      final firstEventId = List<String>.filled(64, 'c').join();
+      expect(
+        await store.reserveLiquidityEventEffect(
+          liquidityEventId: firstEventId,
+          clientOrderId: 'hivra-capsule-c',
+          symbol: 'BTC-USDT',
+          side: 'buy',
+          testOrder: false,
+          recordedAtUtc: '2026-08-11T12:00:00.000Z',
+        ),
+        BingxLiquidityEventEffectReservation.acquired,
+      );
 
       activeCapsuleHex =
           'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
@@ -192,6 +203,7 @@ void main() {
       expect(first.managedOrderSymbols, <String, String>{'ord-c': 'BTC-USDT'});
       expect(first.stopLossPercent, 7.0);
       expect(first.takeProfitRiskReward, 1.5);
+      expect(first.liquidityEventEffectClaims, hasLength(1));
 
       activeCapsuleHex =
           'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
@@ -202,6 +214,7 @@ void main() {
       expect(second.managedOrderSymbols, <String, String>{'ord-d': 'SOL-USDT'});
       expect(second.stopLossPercent, 12.0);
       expect(second.takeProfitRiskReward, 3.0);
+      expect(second.liquidityEventEffectClaims, isEmpty);
     });
 
     test('clears persisted file when saved state is empty', () async {
@@ -393,5 +406,96 @@ void main() {
         });
       },
     );
+
+    test('serializes, bounds, and restores liquidity event claims', () async {
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-event-claim-test-',
+      );
+      addTearDown(() async {
+        if (await tempHome.exists()) {
+          await tempHome.delete(recursive: true);
+        }
+      });
+      const capsuleHex =
+          'abababababababababababababababababababababababababababababababab';
+      BingxFuturesOrderTrackingStore buildStore() {
+        return BingxFuturesOrderTrackingStore(
+          readActiveCapsuleRootHex: () => capsuleHex,
+          fileStore: CapsuleFileStore(
+            dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+          ),
+        );
+      }
+
+      final store = buildStore();
+      final eventId = List<String>.filled(64, '1').join();
+      final concurrent =
+          await Future.wait(<Future<BingxLiquidityEventEffectReservation>>[
+            store.reserveLiquidityEventEffect(
+              liquidityEventId: eventId,
+              clientOrderId: 'hivra-event-1',
+              symbol: 'BTC-USDT',
+              side: 'buy',
+              testOrder: false,
+              recordedAtUtc: '2026-08-11T10:00:00.000Z',
+            ),
+            store.reserveLiquidityEventEffect(
+              liquidityEventId: eventId,
+              clientOrderId: 'hivra-event-1',
+              symbol: 'BTC-USDT',
+              side: 'buy',
+              testOrder: false,
+              recordedAtUtc: '2026-08-11T10:00:00.000Z',
+            ),
+          ]);
+      expect(
+        concurrent.where(
+          (value) => value == BingxLiquidityEventEffectReservation.acquired,
+        ),
+        hasLength(1),
+      );
+      expect(
+        await buildStore().reserveLiquidityEventEffect(
+          liquidityEventId: eventId,
+          clientOrderId: 'hivra-event-1',
+          symbol: 'BTC-USDT',
+          side: 'buy',
+          testOrder: false,
+          recordedAtUtc: '2026-08-11T10:01:00.000Z',
+        ),
+        BingxLiquidityEventEffectReservation.alreadyClaimed,
+      );
+      expect(
+        await buildStore().reserveLiquidityEventEffect(
+          liquidityEventId: eventId,
+          clientOrderId: 'hivra-event-1-test',
+          symbol: 'BTC-USDT',
+          side: 'buy',
+          testOrder: true,
+          recordedAtUtc: '2026-08-11T10:02:00.000Z',
+        ),
+        BingxLiquidityEventEffectReservation.acquired,
+      );
+
+      for (var index = 0; index < 260; index += 1) {
+        final id = index.toRadixString(16).padLeft(64, '0');
+        await store.reserveLiquidityEventEffect(
+          liquidityEventId: id,
+          clientOrderId: 'hivra-$index',
+          symbol: 'BTC-USDT',
+          side: 'sell',
+          testOrder: false,
+          recordedAtUtc:
+              DateTime.utc(
+                2026,
+                8,
+                12,
+              ).add(Duration(seconds: index)).toIso8601String(),
+        );
+      }
+      final restored = await buildStore().load();
+      expect(restored, isNotNull);
+      expect(restored!.liquidityEventEffectClaims, hasLength(256));
+    });
   });
 }

@@ -2872,6 +2872,26 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     required because this pass changed the shared deterministic market/zone
     pipeline rather than a platform adapter. No following pass is selected.
 
+- `1.x Trading Intent Freshness and One-Event/One-Effect`
+  - Selected lane: bounded local 1.x trading lifecycle hardening. Remote
+    Runner/VPS, background execution, credentials, plugin ABI, release work,
+    and a second exchange-effect route remain outside scope.
+  - Invariant: one stable liquidity event can authorize at most one test/live
+    exchange effect, and only while the exact prepared closed-bar decision is
+    still current.
+  - Sole owners: `BingxFuturesZoneDecisionService` derives event identity,
+    `BingxFuturesExchangeExecutionUseCaseService` owns freshness and exchange
+    submission, and the existing Capsule-scoped order tracking store owns the
+    durable effect claim.
+  - Sealed paths: timestamp-only client IDs, queue-only process idempotency,
+    post-effect-only ownership recording, and replacement's direct queue call.
+  - Exit evidence: stale-bar/event negative vectors, concurrent duplicate and
+    restart recovery, Capsule isolation, bounded fail-closed claim retention,
+    one queue caller, full local/clean-checkout gates, protected PR, and green
+    post-merge repository gates.
+  - Status: complete locally (2026-08-11); protected PR and post-merge gates
+    remain required. No following product pass is selected.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

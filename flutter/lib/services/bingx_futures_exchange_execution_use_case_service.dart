@@ -4,9 +4,12 @@ import '../models/bingx_futures_exchange_execution_models.dart';
 import '../models/bingx_futures_exchange_models.dart';
 import '../models/bingx_futures_execution_queue_models.dart';
 import '../models/bingx_futures_observability_models.dart';
+import '../models/bingx_futures_live_decision_models.dart';
+import '../models/bingx_futures_order_tracking_models.dart';
 import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_execution_queue_service.dart';
 import 'bingx_futures_observability_envelope_service.dart';
+import 'bingx_futures_order_tracking_store.dart';
 import 'bingx_futures_risk_governor_service.dart';
 import 'bingx_futures_risk_history_service.dart';
 
@@ -17,6 +20,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
   final BingxFuturesRiskGovernorService _riskGovernor;
   final BingxFuturesRiskHistoryService _riskHistory;
   final BingxFuturesObservabilityEnvelopeService _observability;
+  final BingxFuturesOrderTrackingStore? _orderTrackingStore;
 
   const BingxFuturesExchangeExecutionUseCaseService({
     required BingxFuturesExchangeService exchange,
@@ -26,6 +30,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
     BingxFuturesRiskGovernorService riskGovernor =
         const BingxFuturesRiskGovernorService(),
     required BingxFuturesRiskHistoryService riskHistory,
+    BingxFuturesOrderTrackingStore? orderTrackingStore,
     BingxFuturesObservabilityEnvelopeService observability =
         const BingxFuturesObservabilityEnvelopeService(),
   }) : _exchange = exchange,
@@ -33,6 +38,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
        _riskInput = riskInput,
        _riskGovernor = riskGovernor,
        _riskHistory = riskHistory,
+       _orderTrackingStore = orderTrackingStore,
        _observability = observability;
 
   Future<BingxFuturesExchangeExecutionUseCaseResult> execute({
@@ -42,6 +48,8 @@ class BingxFuturesExchangeExecutionUseCaseService {
     required BingxFuturesRiskPolicy riskPolicy,
     required double fallbackEquityQuote,
     required bool testOrder,
+    BingxFuturesLiveDecisionResult? preparedDecision,
+    Future<BingxFuturesLiveDecisionResult?> Function()? refreshDecision,
   }) async {
     late final BingxFuturesIntentPayload payload;
     try {
@@ -52,6 +60,38 @@ class BingxFuturesExchangeExecutionUseCaseService {
         errorCode: 'invalid_intent',
         errorMessage: error.message,
       );
+    }
+
+    final liquidityEventId = preparedDecision?.liquidityEventId?.trim() ?? '';
+    if (payload.entryMode == 'zone_pending') {
+      final preparedBar =
+          preparedDecision?.latestClosedMicroBarAtUtc?.trim() ?? '';
+      if (liquidityEventId.isEmpty ||
+          preparedBar.isEmpty ||
+          refreshDecision == null) {
+        return _result(
+          status: BingxFuturesExchangeExecutionUseCaseStatus.staleIntent,
+          payload: payload,
+          errorCode: 'liquidity_event_evidence_missing',
+          errorMessage: 'Run a fresh liquidity intent before execution.',
+        );
+      }
+      final fresh = await refreshDecision();
+      if (fresh == null ||
+          !fresh.canPrepareIntent ||
+          fresh.liquidityEventId != liquidityEventId ||
+          fresh.latestClosedMicroBarAtUtc != preparedBar ||
+          fresh.liveDecisionHashHex != preparedDecision!.liveDecisionHashHex ||
+          fresh.side != payload.side ||
+          fresh.zoneSide != rawIntentResult['zone_side']?.toString().trim()) {
+        return _result(
+          status: BingxFuturesExchangeExecutionUseCaseStatus.staleIntent,
+          payload: payload,
+          errorCode: 'liquidity_event_stale',
+          errorMessage:
+              'Market structure changed. Prepare a new liquidity intent.',
+        );
+      }
     }
 
     final risk = await evaluateRisk(
@@ -106,11 +146,86 @@ class BingxFuturesExchangeExecutionUseCaseService {
       );
     }
 
+    if (liquidityEventId.isNotEmpty) {
+      final orderTrackingStore = _orderTrackingStore;
+      if (orderTrackingStore == null) {
+        return _result(
+          status:
+              BingxFuturesExchangeExecutionUseCaseStatus.effectClaimUnavailable,
+          payload: payload,
+          riskDecision: risk.decision,
+          errorCode: 'liquidity_event_claim_store_unavailable',
+          errorMessage:
+              'Execution blocked because the event claim store is unavailable.',
+          diagnostics: risk.diagnostics,
+        );
+      }
+      BingxLiquidityEventEffectReservation reservation;
+      try {
+        reservation = await orderTrackingStore.reserveLiquidityEventEffect(
+          liquidityEventId: liquidityEventId,
+          clientOrderId: payload.clientOrderId,
+          symbol: payload.symbol,
+          side: payload.side,
+          testOrder: testOrder,
+          recordedAtUtc: DateTime.now().toUtc().toIso8601String(),
+        );
+      } catch (error) {
+        return _result(
+          status:
+              BingxFuturesExchangeExecutionUseCaseStatus.effectClaimUnavailable,
+          payload: payload,
+          riskDecision: risk.decision,
+          errorCode: 'liquidity_event_claim_persist_failed',
+          errorMessage:
+              'Execution blocked because the event claim was not saved.',
+          diagnostics: <String>[...risk.diagnostics, 'claim_error=$error'],
+        );
+      }
+      if (reservation == BingxLiquidityEventEffectReservation.unavailable) {
+        return _result(
+          status:
+              BingxFuturesExchangeExecutionUseCaseStatus.effectClaimUnavailable,
+          payload: payload,
+          riskDecision: risk.decision,
+          errorCode: 'liquidity_event_claim_unavailable',
+          errorMessage:
+              'Execution blocked because the event claim was not saved.',
+          diagnostics: risk.diagnostics,
+        );
+      }
+      if (reservation == BingxLiquidityEventEffectReservation.alreadyClaimed) {
+        return _result(
+          status:
+              BingxFuturesExchangeExecutionUseCaseStatus
+                  .duplicateLiquidityEvent,
+          payload: payload,
+          riskDecision: risk.decision,
+          errorCode: 'liquidity_event_already_claimed',
+          errorMessage:
+              'This liquidity event already owns an execution effect.',
+          diagnostics: risk.diagnostics,
+        );
+      }
+    }
+
     final queued = await _queue.enqueueOrderExecution(
       credentials: credentials,
       intent: payload,
       testOrder: testOrder,
     );
+    final executionDiagnostics = <String>[...risk.diagnostics];
+    if (liquidityEventId.isNotEmpty && queued.execution.isSuccess) {
+      try {
+        await _orderTrackingStore!.confirmLiquidityEventEffect(
+          liquidityEventId: liquidityEventId,
+          testOrder: testOrder,
+          orderId: queued.execution.orderId ?? '',
+        );
+      } catch (error) {
+        executionDiagnostics.add('claim_confirmation_error=$error');
+      }
+    }
     final envelope = _observability.buildExecutionEnvelope(
       screen: screen,
       symbol: payload.symbol,
@@ -141,7 +256,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
       riskDecision: risk.decision,
       queuedExecution: queued,
       executionEnvelope: envelope,
-      diagnostics: risk.diagnostics,
+      diagnostics: executionDiagnostics,
     );
   }
 

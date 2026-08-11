@@ -3,23 +3,20 @@ import 'bingx_futures_execution_queue_models.dart';
 import 'bingx_futures_risk_models.dart';
 import 'plugin_host_api_models.dart';
 
-typedef BingxReplacementIntentPreparer = Future<PluginHostApiResponse> Function(
-  Map<String, dynamic> hostArgs,
-);
-typedef BingxReplacementRiskEvaluator = Future<BingxFuturesRiskDecision?>
-    Function(
-  BingxFuturesIntentPayload payload,
-  Map<String, dynamic> rawIntentResult,
-);
-typedef BingxReplacementExecutor = Future<BingxQueuedExecutionResult> Function(
-  BingxFuturesIntentPayload payload,
-  bool testOrder,
-);
+typedef BingxReplacementIntentPreparer =
+    Future<PluginHostApiResponse> Function(Map<String, dynamic> hostArgs);
+typedef BingxReplacementRiskEvaluator =
+    Future<BingxFuturesRiskDecision?> Function(
+      BingxFuturesIntentPayload payload,
+      Map<String, dynamic> rawIntentResult,
+    );
+typedef BingxReplacementExecutor =
+    Future<BingxQueuedExecutionResult?> Function(
+      BingxFuturesIntentPayload payload,
+      bool testOrder,
+    );
 
-enum BingxFuturesReplacementPlanStatus {
-  ready,
-  skipped,
-}
+enum BingxFuturesReplacementPlanStatus { ready, skipped }
 
 class BingxFuturesReplacementPlan {
   final BingxFuturesReplacementPlanStatus status;
