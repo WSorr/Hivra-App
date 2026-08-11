@@ -2729,6 +2729,27 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     after PR and post-merge gates pass. No manual smoke or release candidate is
     implied because production behavior is unchanged.
 
+- `1.x Capsule AI Runtime restart acceptance`
+  - Lane: maintained 1.x product evidence; no production runtime change.
+  - Invariant: saved provider configuration survives application restart, the
+    process-memory AI lease does not, explicit unlock restores the saved
+    provider without API-key re-entry, and inference remains bound to the
+    active Capsule before dispatch and after provider completion.
+  - Sole owners remain `AiDoctorCredentialStore` for provider configuration
+    and process lease, and `CapsuleAiRuntimeService` for request execution and
+    Capsule binding. No AI-5, DTO, provider adapter, credential reader,
+    scheduler, Core path, or second acceptance document is added.
+  - Automated evidence adds a fresh-store restart regression and reuses the
+    existing locked-session, wrong-Capsule, and stale-completion runtime tests.
+    The existing AI Engineer release smoke checklist now owns packaged
+    configured-but-locked, explicit-unlock, no-key-reentry, and Capsule-switch
+    acceptance.
+  - Exit evidence: focused tests, full repository gates, green PR and
+    post-merge checks, then packaged checklist execution. Until packaged smoke
+    passes, Capsule AI Runtime is converged but not reference-grade accepted.
+  - Status: in progress (2026-08-11); no release candidate or following product
+    pass is selected automatically.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

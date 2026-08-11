@@ -22,6 +22,12 @@ that include Capsule Analyst developer/AI tooling.
 - [ ] OpenAI/Gemini API key save/clear uses provider-isolated secure storage.
 - [ ] Last selected inference provider persists across Capsule Analyst and
       Hivra Engineer reopen/restart.
+- [ ] After application restart the saved provider remains configured, but the
+      process AI session is locked.
+- [ ] Explicitly unlocking the saved provider restores inference without
+      entering its API key again.
+- [ ] A request prepared for another or previously active Capsule fails before
+      provider dispatch; a late result after Capsule switching is rejected.
 - [ ] Outbound preview is shown before provider submission.
 - [ ] Provider failure leaves capsule ledger, plugin registry, and files unchanged.
 
