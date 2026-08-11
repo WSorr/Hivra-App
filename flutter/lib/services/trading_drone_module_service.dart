@@ -48,7 +48,6 @@ class TradingDroneModule {
   final CapsuleContactLabelStore contactLabels;
   final ConsensusAttestationExchangeService attestationExchange;
   final UiEventLogService uiLog;
-  final BingxFuturesExecutionQueueService executionQueue;
   final String? Function() activeCapsuleRootHex;
 
   const TradingDroneModule({
@@ -75,7 +74,6 @@ class TradingDroneModule {
     required this.contactLabels,
     required this.attestationExchange,
     required this.uiLog,
-    required this.executionQueue,
     required this.activeCapsuleRootHex,
   });
 }
@@ -95,12 +93,13 @@ class TradingDroneModuleService {
     final exchangeRiskInput = const BingxFuturesExchangeRiskInputService();
     final riskGovernor = const BingxFuturesRiskGovernorService();
     final riskHistory = runtime.buildBingxFuturesRiskHistoryService();
+    final orderTrackingStore = runtime.buildBingxFuturesOrderTrackingStore();
     return TradingDroneModule(
       pluginHostApi: pluginHostApi,
       manualChecks: runtime.buildManualConsensusCheckService(),
       credentialStore: runtime.buildBingxFuturesCredentialStore(),
       exchangeService: exchangeService,
-      orderTrackingStore: runtime.buildBingxFuturesOrderTrackingStore(),
+      orderTrackingStore: orderTrackingStore,
       exchangeRiskInput: exchangeRiskInput,
       orderSizing: BingxFuturesOrderSizingService(exchange: exchangeService),
       riskGovernor: riskGovernor,
@@ -116,6 +115,7 @@ class TradingDroneModuleService {
         riskInput: exchangeRiskInput,
         riskGovernor: riskGovernor,
         riskHistory: riskHistory,
+        orderTrackingStore: orderTrackingStore,
         observability: observability,
       ),
       signalRankUseCase: BingxFuturesSignalRankUseCaseService(
@@ -133,7 +133,6 @@ class TradingDroneModuleService {
       contactLabels: runtime.buildCapsuleContactLabelStore(),
       attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       uiLog: const UiEventLogService(),
-      executionQueue: executionQueue,
       activeCapsuleRootHex: runtime.activeCapsuleRootHex,
     );
   }

@@ -1,3 +1,79 @@
+enum BingxLiquidityEventEffectClaimStatus { reserved, confirmed }
+
+enum BingxLiquidityEventEffectReservation {
+  acquired,
+  alreadyClaimed,
+  unavailable,
+}
+
+class BingxLiquidityEventEffectClaim {
+  final String liquidityEventId;
+  final String clientOrderId;
+  final String symbol;
+  final String side;
+  final bool testOrder;
+  final BingxLiquidityEventEffectClaimStatus status;
+  final String? orderId;
+  final String recordedAtUtc;
+
+  const BingxLiquidityEventEffectClaim({
+    required this.liquidityEventId,
+    required this.clientOrderId,
+    required this.symbol,
+    required this.side,
+    required this.testOrder,
+    required this.status,
+    required this.orderId,
+    required this.recordedAtUtc,
+  });
+
+  String get storageKey => '${testOrder ? "test" : "live"}|$liquidityEventId';
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'liquidity_event_id': liquidityEventId,
+    'client_order_id': clientOrderId,
+    'symbol': symbol,
+    'side': side,
+    'test_order': testOrder,
+    'status': status.name,
+    'order_id': orderId,
+    'recorded_at_utc': recordedAtUtc,
+  };
+
+  static BingxLiquidityEventEffectClaim? fromJsonMap(Map<String, dynamic> map) {
+    String read(String key) => map[key]?.toString().trim() ?? '';
+    final eventId = read('liquidity_event_id').toLowerCase();
+    final clientOrderId = read('client_order_id');
+    final symbol = read('symbol').toUpperCase();
+    final side = read('side').toLowerCase();
+    final status = switch (read('status')) {
+      'reserved' => BingxLiquidityEventEffectClaimStatus.reserved,
+      'confirmed' => BingxLiquidityEventEffectClaimStatus.confirmed,
+      _ => null,
+    };
+    final recordedAtUtc = read('recorded_at_utc');
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(eventId) ||
+        clientOrderId.isEmpty ||
+        symbol.isEmpty ||
+        (side != 'buy' && side != 'sell') ||
+        status == null ||
+        recordedAtUtc.isEmpty) {
+      return null;
+    }
+    final orderId = read('order_id');
+    return BingxLiquidityEventEffectClaim(
+      liquidityEventId: eventId,
+      clientOrderId: clientOrderId,
+      symbol: symbol,
+      side: side,
+      testOrder: map['test_order'] == true,
+      status: status,
+      orderId: orderId.isEmpty ? null : orderId,
+      recordedAtUtc: recordedAtUtc,
+    );
+  }
+}
+
 class BingxManagedOrderProvenance {
   final String orderId;
   final String symbol;
@@ -85,6 +161,7 @@ class BingxFuturesOrderTrackingState {
   final List<String> managedOrderIds;
   final Map<String, String> managedOrderSymbols;
   final Map<String, BingxManagedOrderProvenance> managedOrderProvenance;
+  final Map<String, BingxLiquidityEventEffectClaim> liquidityEventEffectClaims;
   final double? stopLossPercent;
   final double? takeProfitRiskReward;
 
@@ -94,6 +171,8 @@ class BingxFuturesOrderTrackingState {
     required this.managedOrderIds,
     required this.managedOrderSymbols,
     this.managedOrderProvenance = const <String, BingxManagedOrderProvenance>{},
+    this.liquidityEventEffectClaims =
+        const <String, BingxLiquidityEventEffectClaim>{},
     required this.stopLossPercent,
     required this.takeProfitRiskReward,
   });
@@ -104,6 +183,7 @@ class BingxFuturesOrderTrackingState {
       managedOrderIds.isEmpty &&
       managedOrderSymbols.isEmpty &&
       managedOrderProvenance.isEmpty &&
+      liquidityEventEffectClaims.isEmpty &&
       stopLossPercent == null &&
       takeProfitRiskReward == null;
 
@@ -152,6 +232,7 @@ class BingxFuturesOrderTrackingState {
           Map<String, BingxManagedOrderProvenance>.unmodifiable(
             retainedProvenance,
           ),
+      liquidityEventEffectClaims: liquidityEventEffectClaims,
       stopLossPercent: stopLossPercent,
       takeProfitRiskReward: takeProfitRiskReward,
     );
@@ -161,14 +242,20 @@ class BingxFuturesOrderTrackingState {
     final sortedProvenance =
         managedOrderProvenance.entries.toList()
           ..sort((a, b) => a.key.compareTo(b.key));
+    final sortedClaims =
+        liquidityEventEffectClaims.entries.toList()
+          ..sort((a, b) => a.key.compareTo(b.key));
     return <String, dynamic>{
-      'version': 2,
+      'version': 3,
       'tracked_symbol': trackedSymbol?.trim().toUpperCase(),
       'tracked_order_id': trackedOrderId?.trim(),
       'managed_order_ids': managedOrderIds,
       'managed_order_symbols': managedOrderSymbols,
       'managed_order_provenance': <String, dynamic>{
         for (final entry in sortedProvenance) entry.key: entry.value.toJson(),
+      },
+      'liquidity_event_effect_claims': <String, dynamic>{
+        for (final entry in sortedClaims) entry.key: entry.value.toJson(),
       },
       'stop_loss_percent': stopLossPercent,
       'take_profit_risk_reward': takeProfitRiskReward,
@@ -218,6 +305,21 @@ class BingxFuturesOrderTrackingState {
         }
       }
     }
+    final claimsRaw = map['liquidity_event_effect_claims'];
+    final claims = <String, BingxLiquidityEventEffectClaim>{};
+    if (claimsRaw is Map) {
+      for (final entry in claimsRaw.entries) {
+        final key = entry.key.toString().trim();
+        final value = entry.value;
+        if (key.isEmpty || value is! Map) continue;
+        final parsed = BingxLiquidityEventEffectClaim.fromJsonMap(
+          Map<String, dynamic>.from(value),
+        );
+        if (parsed != null && parsed.storageKey == key) {
+          claims[key] = parsed;
+        }
+      }
+    }
     return BingxFuturesOrderTrackingState(
       trackedSymbol:
           trackedSymbol == null || trackedSymbol.isEmpty
@@ -241,6 +343,8 @@ class BingxFuturesOrderTrackingState {
                 ..sort((a, b) => a.key.compareTo(b.key)),
             ),
           ),
+      liquidityEventEffectClaims:
+          Map<String, BingxLiquidityEventEffectClaim>.unmodifiable(claims),
       stopLossPercent: stopLossPercent,
       takeProfitRiskReward: takeProfitRiskReward,
     );

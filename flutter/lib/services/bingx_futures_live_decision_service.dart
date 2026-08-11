@@ -28,10 +28,10 @@ class BingxFuturesLiveDecisionService {
         const BingxFuturesTvhRuleEngineService(),
     BingxFuturesZoneDecisionService zoneDecision =
         const BingxFuturesZoneDecisionService(),
-  })  : _snapshotService = snapshotService,
-        _featureExtractor = featureExtractor,
-        _ruleEngine = ruleEngine,
-        _zoneDecision = zoneDecision;
+  }) : _snapshotService = snapshotService,
+       _featureExtractor = featureExtractor,
+       _ruleEngine = ruleEngine,
+       _zoneDecision = zoneDecision;
 
   BingxFuturesLiveDecisionResult decide(BingxFuturesLiveDecisionInput input) {
     final snapshot = _snapshotService.build(input.snapshotInput);
@@ -56,6 +56,7 @@ class BingxFuturesLiveDecisionService {
     if (zoneEvaluationSide != null) {
       zone = _zoneDecision.decide(
         input: BingxFuturesZoneDecisionInput(
+          symbol: input.snapshotInput.instrument.symbol,
           midPrice: _parsePositiveDecimal(
             input.snapshotInput.prices.lastTradePriceDecimal,
             field: 'last_trade_price_decimal',
@@ -66,17 +67,33 @@ class BingxFuturesLiveDecisionService {
           microLows: _readLows(input.snapshotInput.candles, '5m'),
           microOpens: _readOpens(input.snapshotInput.candles, '5m'),
           microCloses: _readCloses(input.snapshotInput.candles, '5m'),
+          microCloseTimesUtc: _readCloseTimes(
+            input.snapshotInput.candles,
+            '5m',
+          ),
           macroHighs: _readHighs(input.snapshotInput.candles, '1h'),
           macroLows: _readLows(input.snapshotInput.candles, '1h'),
           higherHighs: _readHighs(input.snapshotInput.candles, '4h'),
           higherLows: _readLows(input.snapshotInput.candles, '4h'),
           higherCloses: _readCloses(input.snapshotInput.candles, '4h'),
+          higherCloseTimesUtc: _readCloseTimes(
+            input.snapshotInput.candles,
+            '4h',
+          ),
           dailyHighs: _readHighs(input.snapshotInput.candles, '1d'),
           dailyLows: _readLows(input.snapshotInput.candles, '1d'),
           dailyCloses: _readCloses(input.snapshotInput.candles, '1d'),
+          dailyCloseTimesUtc: _readCloseTimes(
+            input.snapshotInput.candles,
+            '1d',
+          ),
           weeklyHighs: _readHighs(input.snapshotInput.candles, '1w'),
           weeklyLows: _readLows(input.snapshotInput.candles, '1w'),
           weeklyCloses: _readCloses(input.snapshotInput.candles, '1w'),
+          weeklyCloseTimesUtc: _readCloseTimes(
+            input.snapshotInput.candles,
+            '1w',
+          ),
           liquidationSellLevels: _readLiquidationLevels(
             input.snapshotInput.liquidityLevels,
             side: 'sellside',
@@ -101,7 +118,8 @@ class BingxFuturesLiveDecisionService {
       zone: zone,
     );
     final trendGateBlocked = trendGateCode != 'ok';
-    final canPrepareIntent = decisionSide != null &&
+    final canPrepareIntent =
+        decisionSide != null &&
         zone != null &&
         !zoneConflict &&
         !trendGateBlocked;
@@ -111,9 +129,10 @@ class BingxFuturesLiveDecisionService {
       BingxTvhDecisionReason(
         code: 'zone_side_alignment',
         passed: !zoneConflict,
-        detail: zone == null
-            ? 'zone_unavailable'
-            : 'evaluation_side=$zoneEvaluationSide zone_side=${zone.side}',
+        detail:
+            zone == null
+                ? 'zone_unavailable'
+                : 'evaluation_side=$zoneEvaluationSide zone_side=${zone.side}',
       ),
       BingxTvhDecisionReason(
         code: trendGateCode,
@@ -176,27 +195,35 @@ class BingxFuturesLiveDecisionService {
       },
       'side': side,
       'zone_evaluation_side': zoneEvaluationSide,
-      'zone': zone == null
-          ? null
-          : <String, dynamic>{
-              'side': zone.zoneSide,
-              'low_decimal': zoneLowDecimal,
-              'high_decimal': zoneHighDecimal,
-              'source': zone.source,
-              'side_reason': zone.sideReason,
-              'conflict': zoneConflict,
-              'target_retest_pct': zone.targetRetestPct,
-              'needs_farther_retest': zone.needsFartherRetest,
-              'anchor_source': zone.anchorSource,
-              'anchor_executable': zone.anchorExecutable,
-              'anchor_lifecycle': zone.anchorLifecycle,
-            },
-      'reason_codes': reasons
-          .map((reason) => <String, dynamic>{
-                'code': reason.code,
-                'passed': reason.passed,
-              })
-          .toList(),
+      'zone':
+          zone == null
+              ? null
+              : <String, dynamic>{
+                'side': zone.zoneSide,
+                'low_decimal': zoneLowDecimal,
+                'high_decimal': zoneHighDecimal,
+                'source': zone.source,
+                'side_reason': zone.sideReason,
+                'conflict': zoneConflict,
+                'target_retest_pct': zone.targetRetestPct,
+                'needs_farther_retest': zone.needsFartherRetest,
+                'anchor_source': zone.anchorSource,
+                'anchor_executable': zone.anchorExecutable,
+                'anchor_lifecycle': zone.anchorLifecycle,
+                'liquidity_event_id': zone.liquidityEventId,
+                'liquidity_event_at_utc': zone.liquidityEventAtUtc,
+                'latest_closed_micro_bar_at_utc':
+                    zone.latestClosedMicroBarAtUtc,
+              },
+      'reason_codes':
+          reasons
+              .map(
+                (reason) => <String, dynamic>{
+                  'code': reason.code,
+                  'passed': reason.passed,
+                },
+              )
+              .toList(),
     });
     final liveHash = sha256.convert(utf8.encode(canonical)).toString();
     return BingxFuturesLiveDecisionResult(
@@ -222,6 +249,9 @@ class BingxFuturesLiveDecisionService {
       zoneAnchorExecutable: zone?.anchorExecutable ?? false,
       zoneAnchorLifecycle: zone?.anchorLifecycle,
       zoneEvaluationSide: zoneEvaluationSide,
+      liquidityEventId: zone?.liquidityEventId,
+      liquidityEventAtUtc: zone?.liquidityEventAtUtc,
+      latestClosedMicroBarAtUtc: zone?.latestClosedMicroBarAtUtc,
     );
   }
 
@@ -246,18 +276,15 @@ class BingxFuturesLiveDecisionService {
     final trend1d = zone.trend1d.trim().toLowerCase();
     final isStrongDownContinuation =
         features.trendDirection == BingxTrendDirection.bearish &&
-            trend4h == 'bear' &&
-            trend1d == 'bear';
+        trend4h == 'bear' &&
+        trend1d == 'bear';
     final isStrongUpContinuation =
         features.trendDirection == BingxTrendDirection.bullish &&
-            trend4h == 'bull' &&
-            trend1d == 'bull';
+        trend4h == 'bull' &&
+        trend1d == 'bull';
 
     final targetRetestPct = zone.targetRetestPct.toDouble();
-    final zoneDistancePct = _zoneDistanceFromMid(
-      side: side,
-      zone: zone,
-    );
+    final zoneDistancePct = _zoneDistanceFromMid(side: side, zone: zone);
     if (side == 'sell' &&
         isStrongDownContinuation &&
         !zone.sweepUp &&
@@ -315,20 +342,38 @@ class BingxFuturesLiveDecisionService {
     return _readSeries(candles, timeframe, (candle) => candle.openDecimal);
   }
 
+  List<String> _readCloseTimes(
+    List<BingxFuturesCandle> candles,
+    String timeframe,
+  ) {
+    final normalized = timeframe.trim().toLowerCase();
+    final rows =
+        candles
+            .where(
+              (candle) =>
+                  candle.isClosed &&
+                  candle.timeframe.trim().toLowerCase() == normalized,
+            )
+            .toList()
+          ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
+    return rows.map((candle) => candle.closeTimeUtc).toList(growable: false);
+  }
+
   List<num> _readSeries(
     List<BingxFuturesCandle> candles,
     String timeframe,
     String Function(BingxFuturesCandle candle) read,
   ) {
     final normalized = timeframe.trim().toLowerCase();
-    final rows = candles
-        .where(
-          (candle) =>
-              candle.isClosed &&
-              candle.timeframe.trim().toLowerCase() == normalized,
-        )
-        .toList()
-      ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
+    final rows =
+        candles
+            .where(
+              (candle) =>
+                  candle.isClosed &&
+                  candle.timeframe.trim().toLowerCase() == normalized,
+            )
+            .toList()
+          ..sort((a, b) => a.closeTimeUtc.compareTo(b.closeTimeUtc));
     return rows
         .map((candle) => _parsePositiveDecimal(read(candle), field: timeframe))
         .toList(growable: false);
@@ -362,10 +407,9 @@ class BingxFuturesLiveDecisionService {
 
   num _readOpenInterestDeltaPct(BingxFuturesMarketSnapshotInput input) {
     if (input.openInterest.length < 2) return 0;
-    final sorted = input.openInterest.toList()
-      ..sort(
-        (a, b) => a.timestampUtc.compareTo(b.timestampUtc),
-      );
+    final sorted =
+        input.openInterest.toList()
+          ..sort((a, b) => a.timestampUtc.compareTo(b.timestampUtc));
     final first = _parsePositiveDecimal(
       sorted.first.openInterestDecimal,
       field: 'open_interest_first',

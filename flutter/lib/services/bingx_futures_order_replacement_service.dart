@@ -111,9 +111,10 @@ class BingxFuturesOrderReplacementService {
     final isBuy = provenance.side == 'buy';
     final newStop =
         isBuy ? newEntry - newRiskDistance : newEntry + newRiskDistance;
-    final newTarget = isBuy
-        ? newEntry + (newRiskDistance * riskReward)
-        : newEntry - (newRiskDistance * riskReward);
+    final newTarget =
+        isBuy
+            ? newEntry + (newRiskDistance * riskReward)
+            : newEntry - (newRiskDistance * riskReward);
     if (newStop <= 0 || newTarget <= 0) {
       return _skipped(
         'replacement_risk_geometry_invalid',
@@ -134,15 +135,19 @@ class BingxFuturesOrderReplacementService {
           'Fresh same-side TVH zone produced a deterministic replacement.',
       hostArgs: <String, dynamic>{
         'peer_hex': peerHex,
-        'client_order_id': 'repl-${replacementDigest.substring(0, 32)}',
+        'client_order_id':
+            liveDecision.liquidityEventId == null
+                ? 'repl-${replacementDigest.substring(0, 32)}'
+                : 'hivra-${liveDecision.liquidityEventId!.substring(0, 32)}',
         'symbol': symbol,
         'side': provenance.side,
         'order_type': 'limit',
         'quantity_decimal': quantity,
         'limit_price_decimal': null,
-        'time_in_force': _read(canonical, 'time_in_force').isEmpty
-            ? 'GTC'
-            : _read(canonical, 'time_in_force').toUpperCase(),
+        'time_in_force':
+            _read(canonical, 'time_in_force').isEmpty
+                ? 'GTC'
+                : _read(canonical, 'time_in_force').toUpperCase(),
         'entry_mode': 'zone_pending',
         'zone_side': liveDecision.zoneSide,
         'zone_low_decimal': _formatDecimal(zoneLow),
@@ -226,9 +231,10 @@ class BingxFuturesOrderReplacementService {
 
     final queued = await executeOrder(payload, provenance.testOrder);
     return BingxFuturesReplacementRuntimeResult(
-      status: queued.execution.isSuccess
-          ? BingxFuturesReplacementRuntimeStatus.executed
-          : BingxFuturesReplacementRuntimeStatus.executionFailed,
+      status:
+          queued?.execution.isSuccess == true
+              ? BingxFuturesReplacementRuntimeStatus.executed
+              : BingxFuturesReplacementRuntimeStatus.executionFailed,
       plan: replacementPlan,
       hostResponse: hostResponse,
       payload: payload,

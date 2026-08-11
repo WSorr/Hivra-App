@@ -4,11 +4,15 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hivra_app/models/bingx_futures_exchange_execution_models.dart';
+import 'package:hivra_app/models/bingx_futures_live_decision_models.dart';
+import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/models/bingx_futures_risk_models.dart';
+import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_execution_use_case_service.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_execution_queue_service.dart';
+import 'package:hivra_app/services/bingx_futures_order_tracking_store.dart';
 import 'package:hivra_app/services/bingx_futures_risk_history_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
@@ -107,6 +111,186 @@ void main() {
       );
       expect(result.errorCode, 'entry_price_unavailable');
       expect(placeOrderCalled, isFalse);
+    });
+
+    test('blocks a zone intent after the next closed market bar', () async {
+      var placeOrderCalled = false;
+      final exchange = BingxFuturesExchangeService();
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            placeOrderCalled = true;
+            throw StateError('must not execute');
+          },
+        ),
+        riskHistory: riskHistory,
+      );
+
+      final result = await service.execute(
+        screen: 'test',
+        rawIntentResult: _zoneIntent,
+        credentials: _credentials,
+        riskPolicy: _policy,
+        fallbackEquityQuote: 100,
+        testOrder: true,
+        preparedDecision: _decision(barAtUtc: '2026-08-11T10:00:00.000Z'),
+        refreshDecision:
+            () async => _decision(barAtUtc: '2026-08-11T10:05:00.000Z'),
+      );
+
+      expect(
+        result.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.staleIntent,
+      );
+      expect(result.errorCode, 'liquidity_event_stale');
+      expect(placeOrderCalled, isFalse);
+    });
+
+    test('blocks a zone intent when the liquidity event changes', () async {
+      final exchange = BingxFuturesExchangeService();
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(exchangeService: exchange),
+        riskHistory: riskHistory,
+      );
+
+      final result = await service.execute(
+        screen: 'test',
+        rawIntentResult: _zoneIntent,
+        credentials: _credentials,
+        riskPolicy: _policy,
+        fallbackEquityQuote: 100,
+        testOrder: true,
+        preparedDecision: _decision(),
+        refreshDecision: () async => _decision(eventHex: 'b'),
+      );
+
+      expect(
+        result.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.staleIntent,
+      );
+      expect(result.errorCode, 'liquidity_event_stale');
+    });
+
+    test('blocks same event after live market decision changes', () async {
+      final exchange = BingxFuturesExchangeService();
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(exchangeService: exchange),
+        riskHistory: riskHistory,
+      );
+
+      final result = await service.execute(
+        screen: 'test',
+        rawIntentResult: _zoneIntent,
+        credentials: _credentials,
+        riskPolicy: _policy,
+        fallbackEquityQuote: 100,
+        testOrder: true,
+        preparedDecision: _decision(),
+        refreshDecision: () async => _decision(liveHashHex: '5'),
+      );
+
+      expect(
+        result.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.staleIntent,
+      );
+      expect(result.errorCode, 'liquidity_event_stale');
+    });
+
+    test('durable event claim blocks a second exchange effect', () async {
+      var placeOrderCalls = 0;
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          if (request.uri.path.endsWith('/quote/contracts')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","tradeMinQuantity":0.001,"tradeMinUSDT":2,"quantityPrecision":3,"pricePrecision":2}]}',
+            );
+          }
+          if (request.uri.path.endsWith('/quote/price')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":{"price":"100"}}',
+            );
+          }
+          return const BingxHttpResponse(
+            statusCode: 503,
+            body: '{"code":503,"msg":"test fallback"}',
+          );
+        },
+      );
+      final trackingStore = BingxFuturesOrderTrackingStore(
+        readActiveCapsuleRootHex: () => List<String>.filled(64, 'd').join(),
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        ),
+      );
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            placeOrderCalls += 1;
+            return BingxFuturesOrderExecutionResult(
+              isSuccess: true,
+              httpStatusCode: 200,
+              exchangeCode: '0',
+              exchangeMessage: 'ok',
+              orderId: 'order-$placeOrderCalls',
+              endpointPath: '/test-order',
+              signedPayloadHashHex: List<String>.filled(64, 'e').join(),
+              responseBody: '{}',
+              intentHashHex: intent.intentHashHex,
+            );
+          },
+        ),
+        riskHistory: riskHistory,
+        orderTrackingStore: trackingStore,
+      );
+
+      Future<BingxFuturesExchangeExecutionUseCaseResult> execute() {
+        return service.execute(
+          screen: 'test',
+          rawIntentResult: _zoneIntent,
+          credentials: _credentials,
+          riskPolicy: _policy,
+          fallbackEquityQuote: 100,
+          testOrder: true,
+          preparedDecision: _decision(),
+          refreshDecision: () async => _decision(),
+        );
+      }
+
+      final first = await execute();
+      final second = await execute();
+
+      expect(first.status, BingxFuturesExchangeExecutionUseCaseStatus.executed);
+      expect(
+        second.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.duplicateLiquidityEvent,
+      );
+      expect(placeOrderCalls, 1);
+      final restored = await trackingStore.load();
+      expect(
+        restored!.liquidityEventEffectClaims.values.single.status,
+        BingxLiquidityEventEffectClaimStatus.confirmed,
+      );
+      expect(
+        restored.liquidityEventEffectClaims.values.single.orderId,
+        'order-1',
+      );
     });
 
     test('returns deterministic execution envelope when risk blocks', () async {
@@ -381,3 +565,50 @@ const Map<String, dynamic> _marketIntent = <String, dynamic>{
   'intent_hash_hex':
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 };
+
+const Map<String, dynamic> _zoneIntent = <String, dynamic>{
+  'client_order_id': 'hivra-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  'symbol': 'BTC-USDT',
+  'side': 'buy',
+  'order_type': 'limit',
+  'quantity_decimal': '0.1',
+  'limit_price_decimal': '100',
+  'time_in_force': 'GTC',
+  'entry_mode': 'zone_pending',
+  'zone_side': 'buyside',
+  'trigger_price_decimal': '101',
+  'stop_loss_decimal': '95',
+  'take_profit_decimal': '110',
+  'intent_hash_hex':
+      'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+};
+
+BingxFuturesLiveDecisionResult _decision({
+  String eventHex = 'a',
+  String liveHashHex = '4',
+  String barAtUtc = '2026-08-11T10:00:00.000Z',
+}) {
+  return BingxFuturesLiveDecisionResult(
+    canPrepareIntent: true,
+    decision: BingxTvhDecisionKind.long,
+    side: 'buy',
+    zoneSide: 'buyside',
+    zoneLowDecimal: '99',
+    zoneHighDecimal: '101',
+    zoneConflict: false,
+    marketSnapshotHashHex: List<String>.filled(64, '1').join(),
+    featureHashHex: List<String>.filled(64, '2').join(),
+    tvhDecisionHashHex: List<String>.filled(64, '3').join(),
+    liveDecisionHashHex: List<String>.filled(64, liveHashHex).join(),
+    canonicalJson: '{}',
+    reasons: const <BingxTvhDecisionReason>[],
+    trend15m: 'bullish',
+    trend4h: 'bull',
+    trend1d: 'bull',
+    trendGateBlocked: false,
+    trendGateCode: 'ok',
+    liquidityEventId: List<String>.filled(64, eventHex).join(),
+    liquidityEventAtUtc: '2026-08-11T09:55:00.000Z',
+    latestClosedMicroBarAtUtc: barAtUtc,
+  );
+}

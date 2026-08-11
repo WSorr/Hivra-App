@@ -1,4 +1,9 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 class BingxFuturesZoneDecisionInput {
+  final String symbol;
   final num midPrice;
   final String fallbackSide;
   final String? requiredSide;
@@ -6,17 +11,21 @@ class BingxFuturesZoneDecisionInput {
   final List<num> microLows;
   final List<num> microOpens;
   final List<num> microCloses;
+  final List<String> microCloseTimesUtc;
   final List<num> macroHighs;
   final List<num> macroLows;
   final List<num> higherHighs;
   final List<num> higherLows;
   final List<num> higherCloses;
+  final List<String> higherCloseTimesUtc;
   final List<num> dailyHighs;
   final List<num> dailyLows;
   final List<num> dailyCloses;
+  final List<String> dailyCloseTimesUtc;
   final List<num> weeklyHighs;
   final List<num> weeklyLows;
   final List<num> weeklyCloses;
+  final List<String> weeklyCloseTimesUtc;
   final List<num> liquidationSellLevels;
   final List<num> liquidationBuyLevels;
   final num oiDeltaPct;
@@ -26,6 +35,7 @@ class BingxFuturesZoneDecisionInput {
   final double zoneFarBps;
 
   const BingxFuturesZoneDecisionInput({
+    this.symbol = '',
     required this.midPrice,
     required this.fallbackSide,
     this.requiredSide,
@@ -33,17 +43,21 @@ class BingxFuturesZoneDecisionInput {
     required this.microLows,
     this.microOpens = const <num>[],
     this.microCloses = const <num>[],
+    this.microCloseTimesUtc = const <String>[],
     required this.macroHighs,
     required this.macroLows,
     required this.higherHighs,
     required this.higherLows,
     required this.higherCloses,
+    this.higherCloseTimesUtc = const <String>[],
     required this.dailyHighs,
     required this.dailyLows,
     required this.dailyCloses,
+    this.dailyCloseTimesUtc = const <String>[],
     required this.weeklyHighs,
     required this.weeklyLows,
     this.weeklyCloses = const <num>[],
+    this.weeklyCloseTimesUtc = const <String>[],
     this.liquidationSellLevels = const <num>[],
     this.liquidationBuyLevels = const <num>[],
     this.oiDeltaPct = 0,
@@ -85,6 +99,9 @@ class BingxFuturesZoneDecisionResult {
   final String anchorLifecycle;
   final int strength;
   final bool usedFallback;
+  final String? liquidityEventId;
+  final String? liquidityEventAtUtc;
+  final String? latestClosedMicroBarAtUtc;
 
   const BingxFuturesZoneDecisionResult({
     required this.side,
@@ -117,6 +134,9 @@ class BingxFuturesZoneDecisionResult {
     required this.anchorLifecycle,
     required this.strength,
     required this.usedFallback,
+    this.liquidityEventId,
+    this.liquidityEventAtUtc,
+    this.latestClosedMicroBarAtUtc,
   });
 }
 
@@ -124,11 +144,13 @@ class _ExternalLevelPoint {
   final num price;
   final num weight;
   final String source;
+  final String? eventAtUtc;
 
   const _ExternalLevelPoint({
     required this.price,
     required this.weight,
     required this.source,
+    required this.eventAtUtc,
   });
 }
 
@@ -155,11 +177,13 @@ class _ExternalRetestLevel {
   final num price;
   final String source;
   final num distancePct;
+  final String? eventAtUtc;
 
   const _ExternalRetestLevel({
     required this.price,
     required this.source,
     required this.distancePct,
+    required this.eventAtUtc,
   });
 }
 
@@ -194,8 +218,9 @@ class BingxFuturesZoneDecisionService {
         input.microLows.length < 20 ||
         input.macroHighs.length < 20 ||
         input.macroLows.length < 20) {
-      final fallbackSide =
-          _normalizeSide(input.requiredSide ?? input.fallbackSide);
+      final fallbackSide = _normalizeSide(
+        input.requiredSide ?? input.fallbackSide,
+      );
       final nearDelta = mid * (input.zoneNearBps / 10000.0);
       final farDelta = mid * (input.zoneFarBps / 10000.0);
       final zoneLow = fallbackSide == 'buy' ? mid - farDelta : mid + nearDelta;
@@ -231,6 +256,7 @@ class BingxFuturesZoneDecisionService {
         anchorLifecycle: 'unavailable',
         strength: 0,
         usedFallback: true,
+        latestClosedMicroBarAtUtc: _lastOrNull(input.microCloseTimesUtc),
       );
     }
 
@@ -268,23 +294,24 @@ class BingxFuturesZoneDecisionService {
     final higherBias = _trendBiasFromCloses(input.higherCloses, window: 12);
     final dailyBias = _trendBiasFromCloses(input.dailyCloses, window: 10);
     final contextBias = higherBias + dailyBias;
-    final sideDecision = input.requiredSide == null
-        ? _selectAutoSide(
-            sweepUp: sweepUp,
-            sweepDown: sweepDown,
-            higherBias: higherBias,
-            dailyBias: dailyBias,
-            contextBias: contextBias,
-            mid: mid,
-            olderHigh: olderHigh,
-            olderLow: olderLow,
-            recentHigh: recentHigh,
-            recentLow: recentLow,
-          )
-        : (
-            side: _normalizeSide(input.requiredSide!),
-            reason: 'tvh_side_locked',
-          );
+    final sideDecision =
+        input.requiredSide == null
+            ? _selectAutoSide(
+              sweepUp: sweepUp,
+              sweepDown: sweepDown,
+              higherBias: higherBias,
+              dailyBias: dailyBias,
+              contextBias: contextBias,
+              mid: mid,
+              olderHigh: olderHigh,
+              olderLow: olderLow,
+              recentHigh: recentHigh,
+              recentLow: recentLow,
+            )
+            : (
+              side: _normalizeSide(input.requiredSide!),
+              reason: 'tvh_side_locked',
+            );
 
     final selectedSide = sideDecision.side;
     final reversalSignal = selectedSide == 'sell' ? sweepUp : sweepDown;
@@ -298,9 +325,11 @@ class BingxFuturesZoneDecisionService {
       olderLow: olderLow,
       eventStartIndex: microSplit,
     );
-    final aligned = (selectedSide == 'buy' && contextBias > 0) ||
+    final aligned =
+        (selectedSide == 'buy' && contextBias > 0) ||
         (selectedSide == 'sell' && contextBias < 0);
-    final contrarian = (selectedSide == 'buy' && contextBias < 0) ||
+    final contrarian =
+        (selectedSide == 'buy' && contextBias < 0) ||
         (selectedSide == 'sell' && contextBias > 0);
     final macroVolPct = macroRange / mid;
 
@@ -334,23 +363,36 @@ class BingxFuturesZoneDecisionService {
       0.11,
     );
     if (input.oiDeltaPct.abs() >= 0.015) {
-      targetRetestDistancePct =
-          _clamp(targetRetestDistancePct + 0.006, 0.02, 0.11);
+      targetRetestDistancePct = _clamp(
+        targetRetestDistancePct + 0.006,
+        0.02,
+        0.11,
+      );
     }
     if (input.sessionDominancePct >= 0.55) {
-      targetRetestDistancePct =
-          _clamp(targetRetestDistancePct + 0.004, 0.02, 0.11);
+      targetRetestDistancePct = _clamp(
+        targetRetestDistancePct + 0.004,
+        0.02,
+        0.11,
+      );
     } else if (input.sessionDominancePct > 0 &&
         input.sessionDominancePct <= 0.38) {
-      targetRetestDistancePct =
-          _clamp(targetRetestDistancePct - 0.003, 0.02, 0.11);
+      targetRetestDistancePct = _clamp(
+        targetRetestDistancePct - 0.003,
+        0.02,
+        0.11,
+      );
     }
-    final needsFartherRetest = (!reversalSignal && !aligned) ||
+    final needsFartherRetest =
+        (!reversalSignal && !aligned) ||
         (selectedSide == 'sell' && dailyBias > 0) ||
         (selectedSide == 'buy' && dailyBias < 0);
     if (needsFartherRetest) {
-      targetRetestDistancePct =
-          _clamp(targetRetestDistancePct + 0.012, 0.02, 0.11);
+      targetRetestDistancePct = _clamp(
+        targetRetestDistancePct + 0.012,
+        0.02,
+        0.11,
+      );
     }
 
     final externalHighCandidates = <_ExternalLevelPoint>[
@@ -361,6 +403,7 @@ class BingxFuturesZoneDecisionService {
         side: 'high',
         source: '4h_fresh_high',
         weight: 1.00,
+        closeTimesUtc: input.higherCloseTimesUtc,
       ),
       ..._freshSwingLevels(
         highs: input.dailyHighs,
@@ -369,6 +412,7 @@ class BingxFuturesZoneDecisionService {
         side: 'high',
         source: '1d_fresh_high',
         weight: 1.25,
+        closeTimesUtc: input.dailyCloseTimesUtc,
       ),
       ..._freshSwingLevels(
         highs: input.weeklyHighs,
@@ -377,6 +421,7 @@ class BingxFuturesZoneDecisionService {
         side: 'high',
         source: '1w_fresh_high',
         weight: 1.55,
+        closeTimesUtc: input.weeklyCloseTimesUtc,
       ),
     ];
     final externalLowCandidates = <_ExternalLevelPoint>[
@@ -387,6 +432,7 @@ class BingxFuturesZoneDecisionService {
         side: 'low',
         source: '4h_fresh_low',
         weight: 1.00,
+        closeTimesUtc: input.higherCloseTimesUtc,
       ),
       ..._freshSwingLevels(
         highs: input.dailyHighs,
@@ -395,6 +441,7 @@ class BingxFuturesZoneDecisionService {
         side: 'low',
         source: '1d_fresh_low',
         weight: 1.25,
+        closeTimesUtc: input.dailyCloseTimesUtc,
       ),
       ..._freshSwingLevels(
         highs: input.weeklyHighs,
@@ -403,6 +450,7 @@ class BingxFuturesZoneDecisionService {
         side: 'low',
         source: '1w_fresh_low',
         weight: 1.55,
+        closeTimesUtc: input.weeklyCloseTimesUtc,
       ),
     ];
     final externalSellRetest = _selectRetestLevelAbove(
@@ -426,6 +474,8 @@ class BingxFuturesZoneDecisionService {
     var anchorSource = 'internal_diagnostic';
     var anchorExecutable = false;
     var anchorLifecycle = 'unavailable';
+    String? liquidityEventAtUtc;
+    num? liquidityAnchorPrice;
 
     num zoneLow;
     num zoneHigh;
@@ -436,12 +486,19 @@ class BingxFuturesZoneDecisionService {
         anchorSource = 'micro_sweep_reclaim';
         anchorExecutable = true;
         anchorLifecycle = 'reclaimed';
+        liquidityAnchorPrice = microReclaim.anchorPrice;
+        liquidityEventAtUtc = _atOrNull(
+          input.microCloseTimesUtc,
+          microReclaim.reclaimIndex,
+        );
       } else if (externalSellRetest != null) {
         anchorHigh = externalSellRetest.price;
         usedExternalLiquidity = true;
         anchorSource = externalSellRetest.source;
         anchorExecutable = true;
         anchorLifecycle = 'fresh';
+        liquidityAnchorPrice = externalSellRetest.price;
+        liquidityEventAtUtc = externalSellRetest.eventAtUtc;
       }
       if (contrarian && !reversalSignal) {
         zoneLow = anchorHigh - width * 0.15;
@@ -469,12 +526,19 @@ class BingxFuturesZoneDecisionService {
         anchorSource = 'micro_sweep_reclaim';
         anchorExecutable = true;
         anchorLifecycle = 'reclaimed';
+        liquidityAnchorPrice = microReclaim.anchorPrice;
+        liquidityEventAtUtc = _atOrNull(
+          input.microCloseTimesUtc,
+          microReclaim.reclaimIndex,
+        );
       } else if (externalBuyRetest != null) {
         anchorLow = externalBuyRetest.price;
         usedExternalLiquidity = true;
         anchorSource = externalBuyRetest.source;
         anchorExecutable = true;
         anchorLifecycle = 'fresh';
+        liquidityAnchorPrice = externalBuyRetest.price;
+        liquidityEventAtUtc = externalBuyRetest.eventAtUtc;
       }
       if (contrarian && !reversalSignal) {
         zoneLow = anchorLow - width * 0.35;
@@ -520,6 +584,14 @@ class BingxFuturesZoneDecisionService {
     }
     strength = strength.clamp(0, 100).toInt();
 
+    final liquidityEventId = _liquidityEventId(
+      symbol: input.symbol,
+      side: selectedSide,
+      anchorSource: anchorSource,
+      anchorLifecycle: anchorLifecycle,
+      anchorPrice: liquidityAnchorPrice,
+      eventAtUtc: liquidityEventAtUtc,
+    );
     return BingxFuturesZoneDecisionResult(
       side: selectedSide,
       zoneSide: selectedSide == 'buy' ? 'buyside' : 'sellside',
@@ -551,6 +623,9 @@ class BingxFuturesZoneDecisionService {
       anchorLifecycle: anchorLifecycle,
       strength: strength,
       usedFallback: false,
+      liquidityEventId: liquidityEventId,
+      liquidityEventAtUtc: liquidityEventAtUtc,
+      latestClosedMicroBarAtUtc: _lastOrNull(input.microCloseTimesUtc),
     );
   }
 
@@ -611,9 +686,10 @@ class BingxFuturesZoneDecisionService {
         continue;
       }
 
-      final crossedLevel = side == 'buy'
-          ? closes[index] > level && closes[index - 1] <= level
-          : closes[index] < level && closes[index - 1] >= level;
+      final crossedLevel =
+          side == 'buy'
+              ? closes[index] > level && closes[index - 1] <= level
+              : closes[index] < level && closes[index - 1] >= level;
       if (crossedLevel) retests += 1;
       if (retests > _microReclaimMaxRetests) {
         sweepIndex = null;
@@ -629,9 +705,10 @@ class BingxFuturesZoneDecisionService {
         index: index,
       );
       final body = (closes[index] - opens[index]).abs();
-      final directionalBody = side == 'buy'
-          ? closes[index] > opens[index]
-          : closes[index] < opens[index];
+      final directionalBody =
+          side == 'buy'
+              ? closes[index] > opens[index]
+              : closes[index] < opens[index];
       final reclaimed =
           side == 'buy' ? closes[index] > level : closes[index] < level;
       if (atr > 0 &&
@@ -659,13 +736,14 @@ class BingxFuturesZoneDecisionService {
     var count = 0;
     for (var cursor = first; cursor <= index; cursor += 1) {
       final range = highs[cursor] - lows[cursor];
-      final trueRange = cursor == 0
-          ? range
-          : <num>[
-              range,
-              (highs[cursor] - closes[cursor - 1]).abs(),
-              (lows[cursor] - closes[cursor - 1]).abs(),
-            ].reduce((a, b) => a > b ? a : b);
+      final trueRange =
+          cursor == 0
+              ? range
+              : <num>[
+                range,
+                (highs[cursor] - closes[cursor - 1]).abs(),
+                (lows[cursor] - closes[cursor - 1]).abs(),
+              ].reduce((a, b) => a > b ? a : b);
       total += trueRange.toDouble();
       count += 1;
     }
@@ -679,6 +757,7 @@ class BingxFuturesZoneDecisionService {
     required String side,
     required String source,
     required num weight,
+    required List<String> closeTimesUtc,
   }) {
     if (highs.length != lows.length ||
         highs.length != closes.length ||
@@ -690,22 +769,24 @@ class BingxFuturesZoneDecisionService {
     for (var index = 2; index < highs.length - 2; index += 1) {
       final isHigh = side == 'high';
       final price = isHigh ? highs[index] : lows[index];
-      final isPivot = isHigh
-          ? price > highs[index - 1] &&
-              price >= highs[index - 2] &&
-              price > highs[index + 1] &&
-              price >= highs[index + 2]
-          : price < lows[index - 1] &&
-              price <= lows[index - 2] &&
-              price < lows[index + 1] &&
-              price <= lows[index + 2];
+      final isPivot =
+          isHigh
+              ? price > highs[index - 1] &&
+                  price >= highs[index - 2] &&
+                  price > highs[index + 1] &&
+                  price >= highs[index + 2]
+              : price < lows[index - 1] &&
+                  price <= lows[index - 2] &&
+                  price < lows[index + 1] &&
+                  price <= lows[index + 2];
       if (!isPivot) continue;
 
-      final isSweepOrigin = previousPivot != null &&
+      final isSweepOrigin =
+          previousPivot != null &&
           (isHigh ? price > previousPivot.price : price < previousPivot.price);
       final isPostSweepReaction =
           previousPivot?.lifecycle == _LiquidityLevelLifecycle.sweepOrigin &&
-              !isSweepOrigin;
+          !isSweepOrigin;
       var consumed = false;
       for (var later = index + 1; later < highs.length; later += 1) {
         if (isHigh ? highs[later] > price : lows[later] < price) {
@@ -713,13 +794,14 @@ class BingxFuturesZoneDecisionService {
           break;
         }
       }
-      final lifecycle = consumed
-          ? _LiquidityLevelLifecycle.consumed
-          : isSweepOrigin
+      final lifecycle =
+          consumed
+              ? _LiquidityLevelLifecycle.consumed
+              : isSweepOrigin
               ? _LiquidityLevelLifecycle.sweepOrigin
               : isPostSweepReaction
-                  ? _LiquidityLevelLifecycle.postSweepReaction
-                  : _LiquidityLevelLifecycle.fresh;
+              ? _LiquidityLevelLifecycle.postSweepReaction
+              : _LiquidityLevelLifecycle.fresh;
       final pivot = _SwingPivot(
         index: index,
         price: price,
@@ -735,6 +817,7 @@ class BingxFuturesZoneDecisionService {
             price: pivot.price,
             weight: weight,
             source: source,
+            eventAtUtc: _atOrNull(closeTimesUtc, pivot.index),
           ),
         )
         .toList(growable: false);
@@ -754,10 +837,7 @@ class BingxFuturesZoneDecisionService {
     return value;
   }
 
-  int _trendBiasFromCloses(
-    List<num> closes, {
-    int window = 12,
-  }) {
+  int _trendBiasFromCloses(List<num> closes, {int window = 12}) {
     if (closes.length < window * 2) return 0;
     final recent = closes.sublist(closes.length - window);
     final prior = closes.sublist(
@@ -854,6 +934,7 @@ class BingxFuturesZoneDecisionService {
           price: level.price,
           source: level.source,
           distancePct: distancePct,
+          eventAtUtc: level.eventAtUtc,
         );
       }
     }
@@ -889,9 +970,50 @@ class BingxFuturesZoneDecisionService {
           price: level.price,
           source: level.source,
           distancePct: distancePct,
+          eventAtUtc: level.eventAtUtc,
         );
       }
     }
     return best;
+  }
+
+  String? _liquidityEventId({
+    required String symbol,
+    required String side,
+    required String anchorSource,
+    required String anchorLifecycle,
+    required num? anchorPrice,
+    required String? eventAtUtc,
+  }) {
+    final normalizedSymbol = symbol.trim().toUpperCase();
+    final normalizedTime = eventAtUtc?.trim() ?? '';
+    if (normalizedSymbol.isEmpty ||
+        anchorPrice == null ||
+        anchorPrice <= 0 ||
+        normalizedTime.isEmpty) {
+      return null;
+    }
+    final canonical = jsonEncode(<String, dynamic>{
+      'contract': 'hivra.trading.liquidity_event.v1',
+      'symbol': normalizedSymbol,
+      'side': side,
+      'anchor_source': anchorSource,
+      'anchor_lifecycle': anchorLifecycle,
+      'anchor_price_decimal': anchorPrice.toString(),
+      'event_at_utc': normalizedTime,
+    });
+    return sha256.convert(utf8.encode(canonical)).toString();
+  }
+
+  String? _lastOrNull(List<String> values) {
+    if (values.isEmpty) return null;
+    final normalized = values.last.trim();
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  String? _atOrNull(List<String> values, int index) {
+    if (index < 0 || index >= values.length) return null;
+    final normalized = values[index].trim();
+    return normalized.isEmpty ? null : normalized;
   }
 }

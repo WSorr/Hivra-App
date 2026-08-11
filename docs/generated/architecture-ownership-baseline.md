@@ -324,7 +324,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `CAPABILITY_OWNER` — `flutter/lib/services/backup_service.dart` line `5` (`BackupService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_credential_store.dart` line `11` (`BingxFuturesCredentialStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart` line `174` (`BingxFuturesDeterministicReplayHarnessService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart` line `13` (`BingxFuturesExchangeExecutionUseCaseService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart` line `16` (`BingxFuturesExchangeExecutionUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_risk_input_service.dart` line `65` (`BingxFuturesExchangeRiskInputService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_service.dart` line `11` (`BingxFuturesExchangeService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_execution_command_service.dart` line `38` (`BingxExecutionCommandReplayStore`) — rule `current_flutter_service_support`
@@ -342,14 +342,14 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_order_replacement_service.dart` line `13` (`BingxFuturesOrderReplacementService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_order_revalidation_service.dart` line `23` (`BingxFuturesOrderRevalidationService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_order_sizing_service.dart` line `7` (`BingxFuturesOrderSizingService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_order_tracking_store.dart` line `8` (`BingxFuturesOrderTrackingStore`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_order_tracking_store.dart` line `9` (`BingxFuturesOrderTrackingStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_risk_governor_service.dart` line `7` (`BingxFuturesRiskGovernorService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_risk_history_service.dart` line `32` (`BingxFuturesRiskHistoryService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_signal_rank_use_case_service.dart` line `6` (`BingxFuturesSignalRankUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_strategy_naming_service.dart` line `3` (`BingxFuturesStrategyNamingService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_tvh_rule_engine_service.dart` line `8` (`BingxFuturesTvhRuleEngineService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_volume_growth_filter_service.dart` line `3` (`BingxFuturesVolumeGrowthFilterService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_zone_decision_service.dart` line `178` (`BingxFuturesZoneDecisionService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_zone_decision_service.dart` line `202` (`BingxFuturesZoneDecisionService`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_address_service.dart` line `151` (`CapsuleAddressService`) — rule `registry`
 - `COMPOSITION_SUPPORT` — `flutter/lib/services/capsule_ai_runtime_service.dart` line `197` (`CapsuleInferenceRuntime`) — rule `composition_root`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_ai_runtime_service.dart` line `225` (`CapsuleAiRuntimeService`) — rule `registry`
@@ -420,7 +420,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/settings_service.dart` line `10` (`SettingsService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/temporary_backup_share_service.dart` line `9` (`TemporaryBackupShareService`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/trading_drone_module_service.dart` line `27` (`TradingDroneModule`) — rule `registry`
-- `REGISTERED_EVIDENCE` — `flutter/lib/services/trading_drone_module_service.dart` line `83` (`TradingDroneModuleService`) — rule `registry`
+- `REGISTERED_EVIDENCE` — `flutter/lib/services/trading_drone_module_service.dart` line `81` (`TradingDroneModuleService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/transport_health_policy_service.dart` line `43` (`TransportHealthPolicyService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ui_event_log_service.dart` line `10` (`UiEventLogService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ui_feedback_service.dart` line `8` (`UiFeedbackService`) — rule `current_flutter_service_support`
@@ -466,7 +466,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `flutter/lib/services/ledger_inspector_module_service.dart` line `28` (`build` → `LedgerInspectorModule`)
 - `flutter/lib/services/main_screen_module_service.dart` line `31` (`build` → `MainScreenModule`)
 - `flutter/lib/services/plugin_runtime_module_service.dart` line `1701` (`build` → `PluginRuntimeModule`)
-- `flutter/lib/services/trading_drone_module_service.dart` line `88` (`build` → `TradingDroneModule`)
+- `flutter/lib/services/trading_drone_module_service.dart` line `86` (`build` → `TradingDroneModule`)
 
 ### Generic Service Locator Evidence
 
@@ -474,7 +474,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 ### Oversized Candidate Surfaces
 
-- `4009` lines — `flutter/lib/screens/trading_drone_screen.dart`
+- `4073` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3088` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
 - `2447` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
 - `2097` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
@@ -483,9 +483,9 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `1440` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
 - `1280` lines — `flutter/lib/screens/invitations_screen.dart`
 - `1143` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
+- `1019` lines — `flutter/lib/services/bingx_futures_zone_decision_service.dart`
 - `979` lines — `flutter/lib/screens/ledger_inspector_screen.dart`
 - `905` lines — `flutter/lib/services/external_effect_service.dart`
-- `897` lines — `flutter/lib/services/bingx_futures_zone_decision_service.dart`
 - `885` lines — `flutter/lib/screens/relationships_screen.dart`
 - `879` lines — `flutter/lib/services/moltbook_provider_adapter.dart`
 - `815` lines — `flutter/lib/services/invitation_intent_handler.dart`
@@ -550,6 +550,6 @@ Largest registered owner files by line count:
 - `202` lines — `starter_inventory` — `core/hivra-core/src/starter.rs` (`Starter`)
 - `158` lines — `capsule_recovery` — `flutter/lib/services/recovery_service.dart` (`RecoveryService`)
 - `157` lines — `capsule_identity` — `core/hivra-core/src/capsule.rs` (`Capsule`)
-- `140` lines — `trading_drone` — `flutter/lib/services/trading_drone_module_service.dart` (`TradingDroneModule`)
+- `139` lines — `trading_drone` — `flutter/lib/services/trading_drone_module_service.dart` (`TradingDroneModule`)
 - `62` lines — `capsule_birth` — `flutter/lib/services/first_launch_service.dart` (`FirstLaunchService`)
 - `33` lines — `capsule_continuity` — `flutter/lib/services/backup_service.dart` (`BackupService`)

@@ -5,6 +5,9 @@ import 'bingx_futures_risk_models.dart';
 
 enum BingxFuturesExchangeExecutionUseCaseStatus {
   invalidIntent,
+  staleIntent,
+  duplicateLiquidityEvent,
+  effectClaimUnavailable,
   riskUnavailable,
   riskBlocked,
   executed,

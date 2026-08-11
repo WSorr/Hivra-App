@@ -21,6 +21,7 @@ Legend:
 | Trend bundle + far-retest continuation gate | DONE | `BingxFuturesLiveDecisionService` emits `trend_15m/4h/1d` and deterministic `trend_gate_*` block codes | Keep live-decision regressions green |
 | Momentum-missed continuation gate | DONE | `BingxFuturesLiveDecisionService` blocks untouched far pending entries with deterministic `momentum_gate_*_missed_retest` codes | Keep missed-retest regressions green |
 | HTF liquidity lifecycle gate | DONE | `BingxFuturesZoneDecisionService` accepts only untouched confirmed swing pivots or a bounded closed-candle micro sweep/reclaim with ATR body, expiry, and retest limits; internal fallback levels are diagnostic-only | Keep fresh/sweep-origin/consumed/weak-body/expiry/retest-limit/non-executable-fallback regressions green |
+| Intent freshness + one-event/one-effect | DONE | Stable event identity remains in the zone owner; the execution use case revalidates the event and closed bar, then atomically claims the event in the existing Capsule-scoped tracking store | Keep stale-bar/event/hash, concurrent duplicate, restart, isolation, bounded-journal, and single-effect-owner regressions green |
 | Risk governor before execution | DONE | `TradingDroneScreen` delegates execution risk to `BingxFuturesExchangeExecutionUseCaseService` | Keep policy regression and envelope checks green |
 | Exchange contract minimums before execution | DONE | Public contract rules feed minimum quantity/notional into `BingxFuturesRiskGovernorService` | Keep ETH-style minimum-size regression green |
 | Realized-loss risk inputs | DONE | Authenticated BingX `REALIZED_PNL` records are normalized into one Capsule-scoped atomic risk projection; UTC daily PnL, loss streak, and last-loss time feed the governor | Keep persistence, dedupe, truncation, and live cooldown regressions green |
@@ -63,6 +64,9 @@ Legend:
       fall back; fallback risk inputs are diagnostic/test-only.
 - [ ] BingX contract minimum quantity/notional gates run before order submission.
 - [ ] Execution queue enforces idempotency + TTL + deterministic retry classification.
+- [ ] Zone-pending execution recomputes the live decision and rejects a changed live-decision hash, new closed bar, changed/expired/consumed event, side change, or zone-side change.
+- [ ] One `(test/live, liquidity_event_id)` can reserve at most one exchange effect across double-click, retry, restart, and reconnect.
+- [ ] The Capsule-scoped event-claim journal is bounded and fails closed rather than evicting authority evidence.
 - [ ] Managed open orders are revalidated against fresh live TVH snapshots before being left active.
 - [ ] `NO_SIGNAL` managed orders receive a side-locked structural revalidation; transient flow failure alone neither cancels nor preserves them blindly.
 - [ ] Structural-only revalidation can keep/cancel but cannot create or replace an order.
@@ -95,6 +99,8 @@ Legend:
 - [ ] `flutter test test/bingx_futures_execution_queue_service_test.dart`
 - [ ] `flutter test test/bingx_futures_order_revalidation_service_test.dart`
 - [ ] `flutter test test/bingx_futures_order_replacement_service_test.dart`
+- [ ] `flutter test test/bingx_futures_order_tracking_store_test.dart`
+- [ ] `flutter test test/bingx_futures_exchange_execution_use_case_service_test.dart`
 - [ ] `flutter test test/bingx_futures_observability_envelope_service_test.dart`
 - [ ] `flutter test test/plugin_host_api_service_test.dart`
 - [ ] `flutter test test/wasm_plugin_capability_policy_service_test.dart`
