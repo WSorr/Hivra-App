@@ -2784,8 +2784,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     | --- | --- | --- | --- | --- | --- |
     | One section in the existing Trading goal contract | Capsule-on-VPS, local trading-key-on-VPS, remote effects, and a second execution route are forbidden | Unattended shadow compute is separated from account access and trading authority | Zero runtime owners; zero runtime/effect paths | No runner lease/evidence implementation, remote storage, deployment, or live parity proof exists | Consolidation may decide whether a fixture-only shadow harness is the smallest justified Pass B |
 
-  - Status: in progress (2026-08-11). Implementation, deployment, Pass B,
-    release work, and 24/7 trading claims remain unauthorized.
+  - Status: completed (2026-08-11). PR and post-merge gates passed; zero runtime
+    paths were added. Implementation, deployment, Pass B, release work, and
+    24/7 trading claims remain unauthorized.
 
 ## Planned Product Tracks
 
