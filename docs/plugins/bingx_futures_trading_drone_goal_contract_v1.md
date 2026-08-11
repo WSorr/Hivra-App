@@ -174,7 +174,8 @@ all point to the same behavior.
 
 ## 11. Remote Runner Shadow Boundary
 
-Status: Pass A contract complete; implementation is not authorized
+Status: Pass B fixture harness complete; remote runtime implementation is not
+authorized
 
 ### 11.1 Purpose And Sole Owner
 
@@ -292,3 +293,47 @@ local trading credential to a VPS, and adding a second exchange-execution
 route. It does not authorize implementation, deployment, a background service,
 or a 24/7 trading claim. The next step after this design checkpoint must be
 selected separately.
+
+### 11.7 Pass B Fixture-Only Evidence Harness
+
+Pass B extends the existing
+`BingxFuturesDeterministicReplayHarnessService`; it does not add another runner,
+decision owner, transport, repository, or effect path. One bounded evidence
+value carries the Pass A fields for deterministic fixture verification. The
+canonical semantic commitment is UTF-8 over:
+
+```text
+hivra:trading-shadow-evidence:v1\n
+|| canonical JSON of the suite-tagged evidence fields
+```
+
+The signature is verified over that exact commitment before evidence can be
+accepted or treated as an exact replay. The evidence hash is SHA-256 over the
+same domain-separated commitment. The current fixture compatibility suite is
+`ed25519-v1`; the suite identifier and signature bytes remain explicit contract
+fields rather than becoming Capsule identity.
+
+Fixture acceptance is fail-closed and ordered:
+
+1. enforce the encoded-size, contract-version, suite, shape, and validity
+   bounds;
+2. bind the declared runner key id to the exact trusted fixture public key and
+   authenticate the semantic commitment;
+3. compare runner build/ABI, plugin/version/package digest, and policy hash;
+4. compare snapshot, feature, decision, and decision kind with the canonical
+   local replay result;
+5. enforce local receipt time, exact-repeat semantics, next sequence, and
+   previous-evidence hash continuity.
+
+The canonical positive vector and negative mutations live in the existing
+replay harness test. They cover downgrade, wrong runner, invalid signature,
+stale evidence, changed-content sequence reuse, forked continuity, build,
+plugin/package, policy, and local parity drift. An exact repeat is diagnostic
+idempotency only; it grants no authority and produces no state mutation.
+
+Pass B contains no network client, persistence, credential read, UI, VPS
+deployment, lease activation, account data, exchange call, intent conversion,
+or external effect. It makes the signed shadow contract executable over local
+fixtures only and leaves every sealed Pass A shortcut sealed. Any live public
+observation, retained acceptance journal, remote process, or account-read phase
+requires a separately selected pass.

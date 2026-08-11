@@ -1,3 +1,5 @@
+import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
@@ -25,10 +27,16 @@ void main() {
     test('matches expected decision branches', () {
       for (final fixture in fixtures) {
         final run = service.runFixture(fixture);
-        expect(run.decision, fixture.expectedDecision,
-            reason: 'fixture=${fixture.id}');
-        expect(run.topReasonCode, fixture.expectedReasonCode,
-            reason: 'fixture=${fixture.id}');
+        expect(
+          run.decision,
+          fixture.expectedDecision,
+          reason: 'fixture=${fixture.id}',
+        );
+        expect(
+          run.topReasonCode,
+          fixture.expectedReasonCode,
+          reason: 'fixture=${fixture.id}',
+        );
       }
     });
 
@@ -51,11 +59,17 @@ void main() {
             history.map((item) => item.featureHashHex).toSet();
         final decisionHashes =
             history.map((item) => item.decisionHashHex).toSet();
-        expect(snapshotHashes.length, 1,
-            reason: 'snapshot drift ${fixture.id}');
+        expect(
+          snapshotHashes.length,
+          1,
+          reason: 'snapshot drift ${fixture.id}',
+        );
         expect(featureHashes.length, 1, reason: 'feature drift ${fixture.id}');
-        expect(decisionHashes.length, 1,
-            reason: 'decision drift ${fixture.id}');
+        expect(
+          decisionHashes.length,
+          1,
+          reason: 'decision drift ${fixture.id}',
+        );
       }
     });
 
@@ -73,15 +87,399 @@ void main() {
             expectedReasonCode: fixture.expectedReasonCode,
           ),
         );
-        expect(permuted.marketSnapshotHashHex, base.marketSnapshotHashHex,
-            reason: 'snapshot permutation drift ${fixture.id}');
-        expect(permuted.featureHashHex, base.featureHashHex,
-            reason: 'feature permutation drift ${fixture.id}');
-        expect(permuted.decisionHashHex, base.decisionHashHex,
-            reason: 'decision permutation drift ${fixture.id}');
+        expect(
+          permuted.marketSnapshotHashHex,
+          base.marketSnapshotHashHex,
+          reason: 'snapshot permutation drift ${fixture.id}',
+        );
+        expect(
+          permuted.featureHashHex,
+          base.featureHashHex,
+          reason: 'feature permutation drift ${fixture.id}',
+        );
+        expect(
+          permuted.decisionHashHex,
+          base.decisionHashHex,
+          reason: 'decision permutation drift ${fixture.id}',
+        );
       }
     });
+
+    test('accepts the canonical signed shadow evidence vector', () async {
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+      final evidence = await _signedEvidence(
+        service: service,
+        signingKey: signingKey,
+        runnerKeyId: _runnerKeyId(publicKey),
+      );
+
+      expect(
+        evidence.evidenceHashHex,
+        '2680032d4b8368a42bbceec152a03adff763e356791c8ce14cf42a68bee716d5',
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: evidence,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.accepted,
+      );
+    });
+
+    test('accepts only an exact replay at the accepted sequence', () async {
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+      final evidence = await _signedEvidence(
+        service: service,
+        signingKey: signingKey,
+        runnerKeyId: _runnerKeyId(publicKey),
+      );
+
+      expect(
+        await _verify(
+          service: service,
+          evidence: evidence,
+          trustedRunnerKey: publicKey,
+          lastAcceptedSequence: evidence.sequence,
+          lastAcceptedEvidenceHashHex: evidence.evidenceHashHex,
+        ),
+        BingxFuturesShadowEvidenceVerdict.exactReplay,
+      );
+
+      final conflicting = await _resign(
+        _copyEvidence(evidence, observedAtEpochMs: 1770000000001),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: conflicting,
+          trustedRunnerKey: publicKey,
+          lastAcceptedSequence: evidence.sequence,
+          lastAcceptedEvidenceHashHex: evidence.evidenceHashHex,
+        ),
+        BingxFuturesShadowEvidenceVerdict.sequenceConflict,
+      );
+    });
+
+    test('fails closed for wrong runner, signature, and chain fork', () async {
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+      final evidence = await _signedEvidence(
+        service: service,
+        signingKey: signingKey,
+        runnerKeyId: _runnerKeyId(publicKey),
+      );
+
+      final wrongRunner = await _resign(
+        _copyEvidence(evidence, runnerKeyId: 'f' * 64),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: wrongRunner,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.wrongRunner,
+      );
+
+      final invalidSignature = evidence.withSignature('00');
+      expect(
+        await _verify(
+          service: service,
+          evidence: invalidSignature,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.invalidSignature,
+      );
+
+      final forked = await _resign(
+        _copyEvidence(evidence, sequence: 2, previousEvidenceHashHex: 'e' * 64),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: forked,
+          trustedRunnerKey: publicKey,
+          lastAcceptedSequence: 1,
+          lastAcceptedEvidenceHashHex: 'd' * 64,
+        ),
+        BingxFuturesShadowEvidenceVerdict.chainFork,
+      );
+    });
+
+    test('fails closed for stale, plugin, policy, and parity drift', () async {
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+      final evidence = await _signedEvidence(
+        service: service,
+        signingKey: signingKey,
+        runnerKeyId: _runnerKeyId(publicKey),
+      );
+
+      expect(
+        await _verify(
+          service: service,
+          evidence: evidence,
+          trustedRunnerKey: publicKey,
+          receivedAtEpochMs: 1770000060001,
+        ),
+        BingxFuturesShadowEvidenceVerdict.stale,
+      );
+
+      final pluginDrift = await _resign(
+        _copyEvidence(evidence, pluginVersion: '0.2.8-drift'),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: pluginDrift,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.pluginDrift,
+      );
+
+      final policyDrift = await _resign(
+        _copyEvidence(evidence, policyHashHex: 'c' * 64),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: policyDrift,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.policyDrift,
+      );
+
+      final parityDrift = await _resign(
+        _copyEvidence(evidence, decisionHashHex: 'b' * 64),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: parityDrift,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.localParityMismatch,
+      );
+    });
+
+    test('fails closed for downgrade, build, and package drift', () async {
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+      final evidence = await _signedEvidence(
+        service: service,
+        signingKey: signingKey,
+        runnerKeyId: _runnerKeyId(publicKey),
+      );
+
+      final contractDowngrade = await _resign(
+        _copyEvidence(evidence, contractVersion: 'trading-shadow-evidence-v0'),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: contractDowngrade,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.unsupportedContract,
+      );
+
+      final suiteDowngrade = await _resign(
+        _copyEvidence(evidence, signatureSuite: 'legacy-v0'),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: suiteDowngrade,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.unsupportedSignatureSuite,
+      );
+
+      final buildDrift = await _resign(
+        _copyEvidence(evidence, hostAbi: 'wasm32-unknown'),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: buildDrift,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.buildDrift,
+      );
+
+      final packageDrift = await _resign(
+        _copyEvidence(evidence, packageDigestHex: '9' * 64),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: packageDrift,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.pluginDrift,
+      );
+    });
+
+    test('bounds evidence before accepting runner content', () async {
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+      final evidence = await _signedEvidence(
+        service: service,
+        signingKey: signingKey,
+        runnerKeyId: _runnerKeyId(publicKey),
+      );
+      final oversized = await _resign(
+        _copyEvidence(evidence, runnerBuildId: 'x' * 9000),
+        signingKey,
+      );
+
+      expect(
+        await _verify(
+          service: service,
+          evidence: oversized,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.oversized,
+      );
+
+      final unboundedValidity = await _resign(
+        _copyEvidence(evidence, validUntilEpochMs: 1770000060001),
+        signingKey,
+      );
+      expect(
+        await _verify(
+          service: service,
+          evidence: unboundedValidity,
+          trustedRunnerKey: publicKey,
+        ),
+        BingxFuturesShadowEvidenceVerdict.malformed,
+      );
+    });
   });
+}
+
+const _packageDigest =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const _emptyEvidenceHash =
+    '0000000000000000000000000000000000000000000000000000000000000000';
+
+Future<SimpleKeyPair> _runnerSigningKey() {
+  return Ed25519().newKeyPairFromSeed(List<int>.generate(32, (index) => index));
+}
+
+String _runnerKeyId(SimplePublicKey publicKey) {
+  return sha256.convert(publicKey.bytes).toString();
+}
+
+Future<BingxFuturesShadowEvidence> _signedEvidence({
+  required BingxFuturesDeterministicReplayHarnessService service,
+  required SimpleKeyPair signingKey,
+  required String runnerKeyId,
+}) async {
+  final localRun = service.runFixture(_fixtureLong());
+  final unsigned = service.buildShadowEvidence(
+    localRun: localRun,
+    runnerBuildId: 'runner-build-2026-08-11',
+    pluginId: 'hivra.bingx-futures-trading',
+    pluginVersion: '0.2.7-plugins',
+    packageDigestHex: _packageDigest,
+    hostAbi: 'wasm32-wasi-preview1',
+    observedAtEpochMs: 1770000000000,
+    validUntilEpochMs: 1770000060000,
+    sequence: 1,
+    previousEvidenceHashHex: _emptyEvidenceHash,
+    runnerKeyId: runnerKeyId,
+  );
+  return _resign(unsigned, signingKey);
+}
+
+Future<BingxFuturesShadowEvidence> _resign(
+  BingxFuturesShadowEvidence evidence,
+  SimpleKeyPair signingKey,
+) async {
+  final signature = await Ed25519().sign(
+    evidence.signingPayload,
+    keyPair: signingKey,
+  );
+  return evidence.withSignature(_hex(signature.bytes));
+}
+
+Future<BingxFuturesShadowEvidenceVerdict> _verify({
+  required BingxFuturesDeterministicReplayHarnessService service,
+  required BingxFuturesShadowEvidence evidence,
+  required SimplePublicKey trustedRunnerKey,
+  int receivedAtEpochMs = 1770000030000,
+  int lastAcceptedSequence = 0,
+  String lastAcceptedEvidenceHashHex = _emptyEvidenceHash,
+}) {
+  return service.verifyShadowEvidence(
+    evidence: evidence,
+    localRun: service.runFixture(_fixtureLong()),
+    trustedRunnerKey: trustedRunnerKey,
+    expectedRunnerBuildId: 'runner-build-2026-08-11',
+    expectedPluginId: 'hivra.bingx-futures-trading',
+    expectedPluginVersion: '0.2.7-plugins',
+    expectedPackageDigestHex: _packageDigest,
+    expectedHostAbi: 'wasm32-wasi-preview1',
+    receivedAtEpochMs: receivedAtEpochMs,
+    lastAcceptedSequence: lastAcceptedSequence,
+    lastAcceptedEvidenceHashHex: lastAcceptedEvidenceHashHex,
+  );
+}
+
+BingxFuturesShadowEvidence _copyEvidence(
+  BingxFuturesShadowEvidence evidence, {
+  String? contractVersion,
+  String? runnerBuildId,
+  String? pluginVersion,
+  String? packageDigestHex,
+  String? hostAbi,
+  String? policyHashHex,
+  String? decisionHashHex,
+  int? observedAtEpochMs,
+  int? validUntilEpochMs,
+  int? sequence,
+  String? previousEvidenceHashHex,
+  String? runnerKeyId,
+  String? signatureSuite,
+}) {
+  return BingxFuturesShadowEvidence(
+    contractVersion: contractVersion ?? evidence.contractVersion,
+    runnerBuildId: runnerBuildId ?? evidence.runnerBuildId,
+    pluginId: evidence.pluginId,
+    pluginVersion: pluginVersion ?? evidence.pluginVersion,
+    packageDigestHex: packageDigestHex ?? evidence.packageDigestHex,
+    hostAbi: hostAbi ?? evidence.hostAbi,
+    policyHashHex: policyHashHex ?? evidence.policyHashHex,
+    marketSnapshotHashHex: evidence.marketSnapshotHashHex,
+    featureHashHex: evidence.featureHashHex,
+    decisionHashHex: decisionHashHex ?? evidence.decisionHashHex,
+    decision: evidence.decision,
+    observedAtEpochMs: observedAtEpochMs ?? evidence.observedAtEpochMs,
+    validUntilEpochMs: validUntilEpochMs ?? evidence.validUntilEpochMs,
+    sequence: sequence ?? evidence.sequence,
+    previousEvidenceHashHex:
+        previousEvidenceHashHex ?? evidence.previousEvidenceHashHex,
+    runnerKeyId: runnerKeyId ?? evidence.runnerKeyId,
+    signatureSuite: signatureSuite ?? evidence.signatureSuite,
+  );
+}
+
+String _hex(List<int> bytes) {
+  return bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
 }
 
 BingxFuturesReplayFixture _fixtureLong() {
@@ -159,7 +557,8 @@ BingxFuturesReplayFixture _fixtureBlocked() {
 }
 
 BingxFuturesMarketSnapshotInput _permuteInput(
-    BingxFuturesMarketSnapshotInput a) {
+  BingxFuturesMarketSnapshotInput a,
+) {
   return BingxFuturesMarketSnapshotInput(
     instrument: a.instrument,
     prices: a.prices,
@@ -173,11 +572,7 @@ BingxFuturesMarketSnapshotInput _permuteInput(
   );
 }
 
-enum _TrendPattern {
-  bullish,
-  bearish,
-  neutral,
-}
+enum _TrendPattern { bullish, bearish, neutral }
 
 BingxFuturesMarketSnapshotInput _buildInput({
   required _TrendPattern trend,
@@ -430,9 +825,10 @@ List<BingxFuturesCandle> _generate5mCandles({required int count}) {
   for (var i = 0; i < count; i++) {
     final open = close;
     final drift = (i % 6) * 0.02;
-    final spike = i % 16 == 5
-        ? 0.8
-        : i % 16 == 11
+    final spike =
+        i % 16 == 5
+            ? 0.8
+            : i % 16 == 11
             ? -0.8
             : 0.0;
     close = 100.0 + drift + spike;
