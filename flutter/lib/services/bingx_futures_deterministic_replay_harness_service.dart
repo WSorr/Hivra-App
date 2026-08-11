@@ -100,15 +100,14 @@ class BingxFuturesShadowEvidence {
 
   String get evidenceHashHex => sha256.convert(signingPayload).toString();
 
-  int get encodedLength =>
-      utf8
-          .encode(
-            jsonEncode(<String, dynamic>{
-              ...semanticMap,
-              'signature_hex': signatureHex,
-            }),
-          )
-          .length;
+  Map<String, dynamic> get wireMap => <String, dynamic>{
+    ...semanticMap,
+    'signature_hex': signatureHex,
+  };
+
+  List<int> get wireBytes => utf8.encode(jsonEncode(wireMap));
+
+  int get encodedLength => wireBytes.length;
 
   BingxFuturesShadowEvidence withSignature(String value) {
     return BingxFuturesShadowEvidence(
@@ -213,6 +212,36 @@ class BingxFuturesDeterministicReplayHarnessService {
     );
   }
 
+  BingxFuturesReplayRunResult runPublicMarket({
+    required String fixtureId,
+    required BingxFuturesMarketSnapshotInput snapshotInput,
+    required String fundingRateDecimal,
+  }) {
+    final snapshotDigest = _snapshotService.build(snapshotInput);
+    final featureResult = _featureExtractor.extract(snapshotDigest);
+    final decision = _ruleEngine.evaluate(
+      features: featureResult,
+      fundingRateDecimal: fundingRateDecimal,
+      isConsensusSignable: true,
+      policy: BingxTvhPolicy(
+        minAbsTradeDelta: _policy.minAbsTradeDelta,
+        minAbsSessionNetDelta: _policy.minAbsSessionNetDelta,
+        maxAbsFundingRate: _policy.maxAbsFundingRate,
+        requireWhaleActivation: _policy.requireWhaleActivation,
+        requireConsensusSignable: false,
+      ),
+    );
+    return BingxFuturesReplayRunResult(
+      fixtureId: fixtureId,
+      marketSnapshotHashHex: snapshotDigest.marketSnapshotHashHex,
+      featureHashHex: featureResult.featureHashHex,
+      decisionHashHex: decision.decisionHashHex,
+      decision: decision.decision,
+      topReasonCode:
+          decision.reasons.isNotEmpty ? decision.reasons.first.code : '',
+    );
+  }
+
   List<BingxFuturesReplayRunResult> runMany({
     required List<BingxFuturesReplayFixture> fixtures,
     int repeat = 1,
@@ -229,19 +258,18 @@ class BingxFuturesDeterministicReplayHarnessService {
     return results;
   }
 
-  String policyHashHex() {
+  String publicStrategyPolicyHashHex() {
     final canonical = jsonEncode(<String, dynamic>{
       'min_abs_trade_delta': _policy.minAbsTradeDelta,
       'min_abs_session_net_delta': _policy.minAbsSessionNetDelta,
       'max_abs_funding_rate': _policy.maxAbsFundingRate,
       'require_whale_activation': _policy.requireWhaleActivation,
-      'require_consensus_signable': _policy.requireConsensusSignable,
     });
     return sha256.convert(utf8.encode(canonical)).toString();
   }
 
   BingxFuturesShadowEvidence buildShadowEvidence({
-    required BingxFuturesReplayRunResult localRun,
+    required BingxFuturesReplayRunResult publicRun,
     required String runnerBuildId,
     required String pluginId,
     required String pluginVersion,
@@ -259,11 +287,11 @@ class BingxFuturesDeterministicReplayHarnessService {
       pluginVersion: pluginVersion,
       packageDigestHex: packageDigestHex,
       hostAbi: hostAbi,
-      policyHashHex: policyHashHex(),
-      marketSnapshotHashHex: localRun.marketSnapshotHashHex,
-      featureHashHex: localRun.featureHashHex,
-      decisionHashHex: localRun.decisionHashHex,
-      decision: localRun.decision.name,
+      policyHashHex: publicStrategyPolicyHashHex(),
+      marketSnapshotHashHex: publicRun.marketSnapshotHashHex,
+      featureHashHex: publicRun.featureHashHex,
+      decisionHashHex: publicRun.decisionHashHex,
+      decision: publicRun.decision.name,
       observedAtEpochMs: observedAtEpochMs,
       validUntilEpochMs: validUntilEpochMs,
       sequence: sequence,
@@ -273,8 +301,8 @@ class BingxFuturesDeterministicReplayHarnessService {
   }
 
   Future<BingxFuturesShadowEvidenceVerdict> verifyShadowEvidence({
-    required BingxFuturesShadowEvidence evidence,
-    required BingxFuturesReplayRunResult localRun,
+    required List<int> untrustedWireBytes,
+    required BingxFuturesReplayRunResult localPublicRun,
     required SimplePublicKey trustedRunnerKey,
     required String expectedRunnerBuildId,
     required String expectedPluginId,
@@ -287,8 +315,17 @@ class BingxFuturesDeterministicReplayHarnessService {
     int maxEncodedBytes = 8192,
     int maxValidityMs = 60000,
   }) async {
-    if (evidence.encodedLength > maxEncodedBytes) {
+    if (untrustedWireBytes.length > maxEncodedBytes) {
       return BingxFuturesShadowEvidenceVerdict.oversized;
+    }
+    late final BingxFuturesShadowEvidence evidence;
+    try {
+      evidence = parseShadowEvidence(
+        untrustedWireBytes,
+        maxEncodedBytes: maxEncodedBytes,
+      );
+    } on FormatException {
+      return BingxFuturesShadowEvidenceVerdict.malformed;
     }
     if (evidence.contractVersion != 'trading-shadow-evidence-v1') {
       return BingxFuturesShadowEvidenceVerdict.unsupportedContract;
@@ -333,13 +370,14 @@ class BingxFuturesDeterministicReplayHarnessService {
         evidence.packageDigestHex != expectedPackageDigestHex) {
       return BingxFuturesShadowEvidenceVerdict.pluginDrift;
     }
-    if (evidence.policyHashHex != policyHashHex()) {
+    if (evidence.policyHashHex != publicStrategyPolicyHashHex()) {
       return BingxFuturesShadowEvidenceVerdict.policyDrift;
     }
-    if (evidence.marketSnapshotHashHex != localRun.marketSnapshotHashHex ||
-        evidence.featureHashHex != localRun.featureHashHex ||
-        evidence.decisionHashHex != localRun.decisionHashHex ||
-        evidence.decision != localRun.decision.name) {
+    if (evidence.marketSnapshotHashHex !=
+            localPublicRun.marketSnapshotHashHex ||
+        evidence.featureHashHex != localPublicRun.featureHashHex ||
+        evidence.decisionHashHex != localPublicRun.decisionHashHex ||
+        evidence.decision != localPublicRun.decision.name) {
       return BingxFuturesShadowEvidenceVerdict.localParityMismatch;
     }
     if (receivedAtEpochMs < evidence.observedAtEpochMs) {
@@ -365,7 +403,85 @@ class BingxFuturesDeterministicReplayHarnessService {
     return BingxFuturesShadowEvidenceVerdict.accepted;
   }
 
+  BingxFuturesShadowEvidence parseShadowEvidence(
+    List<int> untrustedWireBytes, {
+    int maxEncodedBytes = 8192,
+  }) {
+    if (untrustedWireBytes.isEmpty ||
+        untrustedWireBytes.length > maxEncodedBytes) {
+      throw const FormatException('invalid shadow evidence size');
+    }
+    final decoded = jsonDecode(
+      utf8.decode(untrustedWireBytes, allowMalformed: false),
+    );
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('shadow evidence must be an object');
+    }
+    final evidence = BingxFuturesShadowEvidence(
+      contractVersion: _requiredAscii(decoded, 'contract_version'),
+      runnerBuildId: _requiredAscii(decoded, 'runner_build_id'),
+      pluginId: _requiredAscii(decoded, 'plugin_id'),
+      pluginVersion: _requiredAscii(decoded, 'plugin_version'),
+      packageDigestHex: _requiredString(decoded, 'package_digest_hex'),
+      hostAbi: _requiredAscii(decoded, 'host_abi'),
+      policyHashHex: _requiredString(decoded, 'policy_hash_hex'),
+      marketSnapshotHashHex: _requiredString(
+        decoded,
+        'market_snapshot_hash_hex',
+      ),
+      featureHashHex: _requiredString(decoded, 'feature_hash_hex'),
+      decisionHashHex: _requiredString(decoded, 'decision_hash_hex'),
+      decision: _requiredAscii(decoded, 'decision'),
+      observedAtEpochMs: _requiredInt(decoded, 'observed_at_epoch_ms'),
+      validUntilEpochMs: _requiredInt(decoded, 'valid_until_epoch_ms'),
+      sequence: _requiredInt(decoded, 'sequence'),
+      previousEvidenceHashHex: _requiredString(
+        decoded,
+        'previous_evidence_hash_hex',
+      ),
+      runnerKeyId: _requiredAscii(decoded, 'runner_key_id'),
+      signatureSuite: _requiredAscii(decoded, 'signature_suite'),
+      signatureHex: _requiredString(decoded, 'signature_hex'),
+    );
+    if (!_listEquals(untrustedWireBytes, evidence.wireBytes)) {
+      throw const FormatException('shadow evidence is not canonical');
+    }
+    return evidence;
+  }
+
   bool _isSha256(String value) => RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
+
+  String _requiredString(Map<String, dynamic> map, String key) {
+    final value = map[key];
+    if (value is! String || value.isEmpty) {
+      throw FormatException('$key must be a non-empty string');
+    }
+    return value;
+  }
+
+  String _requiredAscii(Map<String, dynamic> map, String key) {
+    final value = _requiredString(map, key);
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,128}$').hasMatch(value)) {
+      throw FormatException('$key must use canonical ASCII');
+    }
+    return value;
+  }
+
+  int _requiredInt(Map<String, dynamic> map, String key) {
+    final value = map[key];
+    if (value is! int) {
+      throw FormatException('$key must be an integer');
+    }
+    return value;
+  }
+
+  bool _listEquals(List<int> left, List<int> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
+  }
 
   List<int> _decodeHex(String value) {
     if (value.length.isOdd || !RegExp(r'^[0-9a-f]+$').hasMatch(value)) {

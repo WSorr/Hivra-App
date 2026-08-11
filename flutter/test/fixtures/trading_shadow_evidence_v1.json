@@ -1,0 +1,35 @@
+{
+  "contract_id": "hivra.trading-shadow-evidence.v1",
+  "domain_separator": "hivra:trading-shadow-evidence:v1\n",
+  "runner_public_key_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+  "semantic_fields": {
+    "contract_version": "trading-shadow-evidence-v1",
+    "runner_build_id": "runner-build-2026-08-11",
+    "plugin_id": "hivra.bingx-futures-trading",
+    "plugin_version": "0.2.7-plugins",
+    "package_digest_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "host_abi": "wasm32-wasi-preview1",
+    "policy_hash_hex": "a43ab0ac947343398707df5d4bc1c542eaee281411b0621a6efa36a08764c1ab",
+    "market_snapshot_hash_hex": "5049f1079a8a00eaa35f07fa43dfc981648893fa997edb9096183ba484835df0",
+    "feature_hash_hex": "f58376032004146596e9f2697f2a56f9fde08d146c8230039992fc39d20d8aed",
+    "decision_hash_hex": "86c32ed457312c1e570c568d410ae693848e0a20263860d30c4f5ec318cb0197",
+    "decision": "long",
+    "observed_at_epoch_ms": 1770000000000,
+    "valid_until_epoch_ms": 1770000060000,
+    "sequence": 1,
+    "previous_evidence_hash_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+    "runner_key_id": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+    "signature_suite": "ed25519-v1"
+  },
+  "signature_hex": "b065ae09e3f5b2a2ec443df0038709749f76b8f73fed053fafbdb49f19ff5bbdc0c90b2beb9c3776dfa32a5ba7c6b386f4ff20a7313e9267f630d1eccff0e104",
+  "expected_semantic_json": "{\"contract_version\":\"trading-shadow-evidence-v1\",\"runner_build_id\":\"runner-build-2026-08-11\",\"plugin_id\":\"hivra.bingx-futures-trading\",\"plugin_version\":\"0.2.7-plugins\",\"package_digest_hex\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"host_abi\":\"wasm32-wasi-preview1\",\"policy_hash_hex\":\"a43ab0ac947343398707df5d4bc1c542eaee281411b0621a6efa36a08764c1ab\",\"market_snapshot_hash_hex\":\"5049f1079a8a00eaa35f07fa43dfc981648893fa997edb9096183ba484835df0\",\"feature_hash_hex\":\"f58376032004146596e9f2697f2a56f9fde08d146c8230039992fc39d20d8aed\",\"decision_hash_hex\":\"86c32ed457312c1e570c568d410ae693848e0a20263860d30c4f5ec318cb0197\",\"decision\":\"long\",\"observed_at_epoch_ms\":1770000000000,\"valid_until_epoch_ms\":1770000060000,\"sequence\":1,\"previous_evidence_hash_hex\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"runner_key_id\":\"56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c\",\"signature_suite\":\"ed25519-v1\"}",
+  "expected_evidence_hash_hex": "cfa9f205c836d49073c99c17d8aa1ece6348f64cd023ecce9b01d71ebc4bb0ff",
+  "expected_wire_utf8": "{\"contract_version\":\"trading-shadow-evidence-v1\",\"runner_build_id\":\"runner-build-2026-08-11\",\"plugin_id\":\"hivra.bingx-futures-trading\",\"plugin_version\":\"0.2.7-plugins\",\"package_digest_hex\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"host_abi\":\"wasm32-wasi-preview1\",\"policy_hash_hex\":\"a43ab0ac947343398707df5d4bc1c542eaee281411b0621a6efa36a08764c1ab\",\"market_snapshot_hash_hex\":\"5049f1079a8a00eaa35f07fa43dfc981648893fa997edb9096183ba484835df0\",\"feature_hash_hex\":\"f58376032004146596e9f2697f2a56f9fde08d146c8230039992fc39d20d8aed\",\"decision_hash_hex\":\"86c32ed457312c1e570c568d410ae693848e0a20263860d30c4f5ec318cb0197\",\"decision\":\"long\",\"observed_at_epoch_ms\":1770000000000,\"valid_until_epoch_ms\":1770000060000,\"sequence\":1,\"previous_evidence_hash_hex\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"runner_key_id\":\"56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c\",\"signature_suite\":\"ed25519-v1\",\"signature_hex\":\"b065ae09e3f5b2a2ec443df0038709749f76b8f73fed053fafbdb49f19ff5bbdc0c90b2beb9c3776dfa32a5ba7c6b386f4ff20a7313e9267f630d1eccff0e104\"}",
+  "negative_mutations": [
+    "pretty_whitespace",
+    "reordered_fields",
+    "unknown_field",
+    "duplicate_field",
+    "local_consensus_field"
+  ]
+}

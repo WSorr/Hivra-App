@@ -54,4 +54,10 @@ else
   pass "runtime status table contains DONE rows only"
 fi
 
+if python3 "$ROOT/tools/architecture/validate_trading_shadow_evidence_fixture.py"; then
+  pass "shadow evidence cross-language fixture passes"
+else
+  fail "shadow evidence cross-language fixture failed"
+fi
+
 exit "$STATUS"

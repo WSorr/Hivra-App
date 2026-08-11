@@ -174,8 +174,8 @@ all point to the same behavior.
 
 ## 11. Remote Runner Shadow Boundary
 
-Status: Pass B fixture harness complete; remote runtime implementation is not
-authorized
+Status: Pass B remediation in progress; Pass C and remote runtime implementation
+are not authorized
 
 ### 11.1 Purpose And Sole Owner
 
@@ -337,3 +337,31 @@ or external effect. It makes the signed shadow contract executable over local
 fixtures only and leaves every sealed Pass A shortcut sealed. Any live public
 observation, retained acceptance journal, remote process, or account-read phase
 requires a separately selected pass.
+
+### 11.8 Pass B Remediation: Public Shadow And Canonical Wire
+
+The remote shadow decision is computed only from the normalized public market
+snapshot, extracted public features, public funding rate, and pinned public
+strategy thresholds. Capsule consensus signability, blocking facts, account
+risk, approval, position/order state, execution policy, and effect state are
+local-only gates. They MUST NOT enter the remote input, policy commitment,
+decision commitment, or wire evidence. A remote `LONG` or `SHORT` remains an
+untrusted parity observation; the local owner may independently return
+`BLOCKED` before any intent exists.
+
+The version-1 wire is the UTF-8 encoding of one compact JSON object in the exact
+field order defined by `BingxFuturesShadowEvidence.semanticMap`, followed by
+`signature_hex`. It permits no insignificant whitespace, reordered, duplicated,
+missing, or unknown fields. Identifiers are bounded canonical ASCII, hashes and
+signature bytes are lowercase hexadecimal, and temporal/sequence values are
+JSON integers. The parser receives bounded untrusted bytes, decodes strict
+UTF-8, reconstructs the typed evidence, re-encodes it, and requires byte-for-byte
+equality before authentication or parity checks.
+
+`flutter/test/fixtures/trading_shadow_evidence_v1.json` is subordinate golden
+evidence, not another semantic owner. Dart parses its exact wire and verifies
+the Ed25519 signature path. The independent Python validator reconstructs the
+canonical JSON, domain-separated hash, runner key id, and negative wire
+mutations. The existing Trading parity gate executes that validator. This
+remediation changes no application consumer, network, persistence, credential,
+UI, Core, FFI, exchange, or external-effect path.
