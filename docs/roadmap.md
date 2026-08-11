@@ -2843,9 +2843,10 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: existing market decision hashes remain stable, local blocked
     behavior remains stable, and focused tests prove the public method cannot
     receive local guard inputs.
-  - Status: implementation and full local gates complete; clean-checkout, PR,
-    and exact post-merge gates remain (2026-08-11). No runtime consumer, network,
-    persistence, credential, UI, VPS, effect, release, or Pass C is added.
+  - Status: complete through full local and clean-checkout gates, protected PR
+    `#43`, and exact post-merge run `31487730478` (2026-08-11). No runtime
+    consumer, network, persistence, credential, UI, VPS, effect, release, or
+    Pass C was added; no next pass is selected.
 
 ## Planned Product Tracks
 

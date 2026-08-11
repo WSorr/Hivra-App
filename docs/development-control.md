@@ -42,10 +42,10 @@ consensus/risk/execution inputs, verification begins from exact canonical
 untrusted bytes, and Dart plus independent Python golden evidence covers wire,
 hash, key binding, and negative mutations. Runtime consumers, network,
 persistence, credentials, UI, VPS, exchange effects, Pass C, and a second
-execution path remain unauthorized. A bounded post-Pass-B consolidation is
-active only to make the already-proven market/local-guard separation structural
-inside the existing TVH rule owner; it changes no decision semantics or product
-authority.
+execution path remain unauthorized. The bounded post-Pass-B consolidation is
+complete: the existing TVH rule owner now exposes market-only evaluation
+without consensus inputs, while its existing guarded entry retains local
+consensus policy. No decision semantics or product authority changed.
 Stable `1.0`, another release candidate, and 2.0 runtime work remain
 unauthorized without a separate explicit decision.
 V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
@@ -75,7 +75,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete only the selected market/local-guard consolidation. Pass C and all live observation, persistence, deployment, account-read, or effect work remain blocked. | `plugins/bingx_futures_trading_drone_goal_contract_v1.md`, `roadmap.md` |
+| What is the next 1.x step? | No pass is selected. Pass C and all live observation, persistence, deployment, account-read, or effect work remain blocked pending an explicit product decision. | `plugins/bingx_futures_trading_drone_goal_contract_v1.md`, `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -85,7 +85,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Market/local-guard consolidation active | Existing 1.x runtime remains the sole production line. The existing TVH rule owner is being split into a pure market evaluator plus its existing local consensus wrapper, with no decision or authority change. | Existing decision hashes and local consensus behavior remain stable; public replay calls an API that has no consensus or blocking inputs. | Pass C, live runner, observation network, persistence, deployment, account reads, exchange effects, and following work remain blocked. |
+| **1.x maintained runtime** | Market/local-guard consolidation complete; no next pass selected | Existing 1.x runtime remains the sole production line. The existing TVH rule owner exposes a pure market evaluator plus its existing local consensus wrapper, with no decision or authority change. | Existing decision hashes and local consensus behavior remain stable; public replay calls an API with no consensus or blocking inputs. Full local and clean-checkout gates, PR `#43`, and post-merge run `31487730478` passed. | Pass C, live runner, observation network, persistence, deployment, account reads, exchange effects, and following work remain blocked pending explicit selection. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
@@ -100,10 +100,10 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — active:** close only the market/local-guard consolidation through a
-   protected PR and exact post-merge gate. Select no Pass C, live observations,
-   persistence, VPS deployment, credentials, exchange effects, background
-   trading, following pass, or release pass automatically.
+1. **P1 — selection:** the market/local-guard consolidation is complete. Select
+   no Pass C, live observations, persistence, VPS deployment, credentials,
+   exchange effects, background trading, following pass, or release pass
+   automatically.
 2. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
    AI trading advice, distributed backup, and staking remain non-runtime or
    parked until the active design unit or a named release decision permits
