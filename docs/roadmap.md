@@ -2904,8 +2904,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Evidence: exact active and terminal statuses, timeout, provider not-found,
     account mismatch, provider acceptance before order-id capture, late
     Capsule switch, manual-order non-adoption, and durable event claims.
-  - Status: implementation complete locally (2026-08-13); protected PR and
-    post-merge repository gates remain required. No following pass is selected.
+  - Status: complete (2026-08-13) at `399b949`; protected PR `#48`, clean
+    checkout, and post-merge repository gates `31644669310` passed. No
+    following pass is selected.
 
 ## Planned Product Tracks
 

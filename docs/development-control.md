@@ -1,10 +1,10 @@
 # Hivra Development Control
 
-Status date: 2026-08-11
+Status date: 2026-08-13
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: the bounded 1.x Trading Restart Recovery and
-Reconciliation implementation is complete locally and awaits protected PR
-verification. Exact account-bound provider evidence now distinguishes active,
+Reconciliation pass is complete on `main`. Exact account-bound provider
+evidence now distinguishes active,
 terminal, and unresolved managed orders without adopting manual orders or
 recreating missing effects. Remote Runner/VPS and background execution remain
 blocked. `v1.0.3-test16` remains the published
@@ -96,7 +96,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Trading Restart Recovery and Reconciliation is complete locally and awaits protected PR verification. Remote Runner/VPS, background execution, deployment, and release remain blocked. | `plugins/bingx_futures_trading_drone_spec_v1.md`, `roadmap.md` |
+| What is the next 1.x step? | No next pass is selected. Trading Restart Recovery and Reconciliation is complete; Remote Runner/VPS, background execution, deployment, and release remain blocked. | `plugins/bingx_futures_trading_drone_spec_v1.md`, `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -106,7 +106,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading Restart Recovery and Reconciliation complete locally; protected PR pending | Existing execution/store/adapter owners reconcile exact Capsule-owned order evidence without a second effect route. | Active/filled/cancelled/rejected/expired, not-found, timeout, account mismatch, accepted-before-order-id, Capsule switch, and manual-order isolation regressions pass locally. | Merge only through green protected CI. Remote Runner/VPS, background execution, deployment, and release remain blocked. |
+| **1.x maintained runtime** | Trading Restart Recovery and Reconciliation complete on `main`; no next pass selected | Existing execution/store/adapter owners reconcile exact Capsule-owned order evidence without a second effect route. | Active/filled/cancelled/rejected/expired, unknown status, not-found, timeout, account mismatch, accepted-before-order-id, Capsule switch, and manual-order isolation regressions passed locally, in clean checkout, and through protected CI. | Remote Runner/VPS, background execution, deployment, and release remain blocked pending a separate explicit selection. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
@@ -121,9 +121,9 @@ appears to work in one manual run.
 
 This is the current execution order, not a second backlog:
 
-1. **P1 — verification:** Merge Trading Restart Recovery and Reconciliation
-   only through green protected CI. Do not select Remote Runner/VPS, background
-   trading, following pass, or release automatically.
+1. **P1 — selection:** No next 1.x pass is selected. Do not infer Remote
+   Runner/VPS, background trading, a following pass, or release from the
+   completed reconciliation evidence.
 2. **P2 — parked work:** crypto-agility protocol design, dependency upgrades,
    AI trading advice, distributed backup, and staking remain non-runtime or
    parked until the active design unit or a named release decision permits
