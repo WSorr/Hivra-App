@@ -194,6 +194,7 @@ class BingxFuturesControlActionResult {
 
 class BingxFuturesOpenOrder {
   final String orderId;
+  final String? clientOrderId;
   final String symbol;
   final String side;
   final String positionSide;
@@ -207,6 +208,7 @@ class BingxFuturesOpenOrder {
 
   const BingxFuturesOpenOrder({
     required this.orderId,
+    this.clientOrderId,
     required this.symbol,
     required this.side,
     required this.positionSide,
@@ -241,6 +243,34 @@ class BingxFuturesOpenOrdersResult {
     required this.responseBody,
     required this.symbol,
     required this.orders,
+  });
+}
+
+class BingxFuturesOrderQueryResult {
+  final bool isSuccess;
+  final int httpStatusCode;
+  final String exchangeCode;
+  final String exchangeMessage;
+  final String endpointPath;
+  final String signedPayloadHashHex;
+  final String responseBody;
+  final String symbol;
+  final String? requestedOrderId;
+  final String? requestedClientOrderId;
+  final BingxFuturesOpenOrder? order;
+
+  const BingxFuturesOrderQueryResult({
+    required this.isSuccess,
+    required this.httpStatusCode,
+    required this.exchangeCode,
+    required this.exchangeMessage,
+    required this.endpointPath,
+    required this.signedPayloadHashHex,
+    required this.responseBody,
+    required this.symbol,
+    required this.requestedOrderId,
+    required this.requestedClientOrderId,
+    required this.order,
   });
 }
 

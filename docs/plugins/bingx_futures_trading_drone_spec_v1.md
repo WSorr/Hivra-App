@@ -251,6 +251,30 @@ The journal is capped at 256 claims and fails closed when full; it never evicts
 a claim merely to authorize another effect. This lifecycle adds no second
 order authority or exchange path.
 
+After restart or reconnect, managed-order reconciliation MUST remain read-only
+and Capsule-scoped. The existing exchange execution use case owns the decision:
+
+- current open-orders evidence may confirm only an exact locally persisted
+  managed `orderId`;
+- an absent managed order MUST be queried through the exact provider order
+  endpoint by its persisted `orderId`, or by the persisted deterministic
+  `clientOrderId` when provider acceptance preceded local order-id capture;
+- `NEW` and `PARTIALLY_FILLED` remain active; `FILLED`, `CANCELED`, `REJECTED`,
+  and `EXPIRED` become explicit terminal evidence;
+- timeout, malformed evidence, unknown status, provider `not found`, legacy
+  records without account binding, and account-binding mismatch remain
+  `unresolved` and MUST NOT authorize delivery, recreation, replacement, or a
+  terminal success claim;
+- reconciliation evaluates only locally persisted ownership evidence. It MUST
+  never adopt manual, protective, or otherwise unrelated provider orders;
+- effect claims remain durable after active tracking ends, and a late result is
+  written only to the Capsule that started reconciliation.
+
+The account binding is a non-secret hash of the exact API-key identity. No
+credential enters the tracking journal. Test-order validation has no provider
+order lifecycle and therefore remains explicitly unresolved rather than being
+queried as a live order.
+
 ### 5.4 Microstructure Confirmation
 
 - taker-flow delta from recent trades:

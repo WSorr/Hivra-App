@@ -1,3 +1,4 @@
+import '../models/bingx_futures_exchange_models.dart';
 import 'app_runtime_service.dart';
 import 'bingx_futures_credential_store.dart';
 import 'bingx_futures_exchange_execution_use_case_service.dart';
@@ -76,6 +77,11 @@ class TradingDroneModule {
     required this.uiLog,
     required this.activeCapsuleRootHex,
   });
+
+  String accountBindingHashHex(BingxFuturesApiCredentials credentials) =>
+      BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+        credentials,
+      );
 }
 
 class TradingDroneModuleService {

@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 import '../models/bingx_futures_risk_models.dart';
 import 'bingx_futures_exchange_risk_input_service.dart';
 import '../models/bingx_futures_exchange_execution_models.dart';
@@ -61,6 +65,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
         errorMessage: error.message,
       );
     }
+    final executionCapsuleRootHex = _orderTrackingStore?.activeCapsuleRootHex;
 
     final liquidityEventId = preparedDecision?.liquidityEventId?.trim() ?? '';
     if (payload.entryMode == 'zone_pending') {
@@ -148,7 +153,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
 
     if (liquidityEventId.isNotEmpty) {
       final orderTrackingStore = _orderTrackingStore;
-      if (orderTrackingStore == null) {
+      if (orderTrackingStore == null || executionCapsuleRootHex == null) {
         return _result(
           status:
               BingxFuturesExchangeExecutionUseCaseStatus.effectClaimUnavailable,
@@ -162,14 +167,20 @@ class BingxFuturesExchangeExecutionUseCaseService {
       }
       BingxLiquidityEventEffectReservation reservation;
       try {
-        reservation = await orderTrackingStore.reserveLiquidityEventEffect(
-          liquidityEventId: liquidityEventId,
-          clientOrderId: payload.clientOrderId,
-          symbol: payload.symbol,
-          side: payload.side,
-          testOrder: testOrder,
-          recordedAtUtc: DateTime.now().toUtc().toIso8601String(),
-        );
+        reservation = await orderTrackingStore
+            .reserveLiquidityEventEffectForCapsule(
+              capsuleRootHex: executionCapsuleRootHex,
+              liquidityEventId: liquidityEventId,
+              clientOrderId: payload.clientOrderId,
+              symbol: payload.symbol,
+              side: payload.side,
+              intentHashHex: payload.intentHashHex,
+              canonicalIntentJson:
+                  rawIntentResult['canonical_intent_json']?.toString(),
+              testOrder: testOrder,
+              recordedAtUtc: DateTime.now().toUtc().toIso8601String(),
+              accountBindingHashHex: accountBindingHashHex(credentials),
+            );
       } catch (error) {
         return _result(
           status:
@@ -217,7 +228,8 @@ class BingxFuturesExchangeExecutionUseCaseService {
     final executionDiagnostics = <String>[...risk.diagnostics];
     if (liquidityEventId.isNotEmpty && queued.execution.isSuccess) {
       try {
-        await _orderTrackingStore!.confirmLiquidityEventEffect(
+        await _orderTrackingStore!.confirmLiquidityEventEffectForCapsule(
+          capsuleRootHex: executionCapsuleRootHex!,
           liquidityEventId: liquidityEventId,
           testOrder: testOrder,
           orderId: queued.execution.orderId ?? '',
@@ -258,6 +270,317 @@ class BingxFuturesExchangeExecutionUseCaseService {
       executionEnvelope: envelope,
       diagnostics: executionDiagnostics,
     );
+  }
+
+  static String accountBindingHashHex(BingxFuturesApiCredentials credentials) {
+    return sha256
+        .convert(utf8.encode(credentials.normalized().apiKey))
+        .toString();
+  }
+
+  Future<BingxFuturesManagedOrderReconciliationResult> reconcileManagedOrders({
+    required BingxFuturesApiCredentials credentials,
+    BingxFuturesOpenOrdersResult? openOrders,
+  }) async {
+    final store = _orderTrackingStore;
+    final capsuleRootHex = store?.activeCapsuleRootHex;
+    if (store == null || capsuleRootHex == null) {
+      return const BingxFuturesManagedOrderReconciliationResult(
+        status: BingxFuturesManagedOrderReconciliationStatus.unavailable,
+        capsuleRootHex: null,
+        state: null,
+        activeCount: 0,
+        terminalCount: 0,
+        unresolvedCount: 0,
+        diagnostics: <String>['managed_order_store_unavailable'],
+      );
+    }
+    final current = await store.loadForCapsule(capsuleRootHex);
+    if (current == null) {
+      return BingxFuturesManagedOrderReconciliationResult(
+        status: BingxFuturesManagedOrderReconciliationStatus.noState,
+        capsuleRootHex: capsuleRootHex,
+        state: null,
+        activeCount: 0,
+        terminalCount: 0,
+        unresolvedCount: 0,
+        diagnostics: const <String>[],
+      );
+    }
+
+    final bindingHash = accountBindingHashHex(credentials);
+    final evidenceAtUtc = DateTime.now().toUtc().toIso8601String();
+    final openById = <String, BingxFuturesOpenOrder>{
+      if (openOrders?.isSuccess == true)
+        for (final order in openOrders!.orders) order.orderId: order,
+    };
+    final queryCache = <String, Future<BingxFuturesOrderQueryResult>>{};
+    final diagnostics = <String>[];
+
+    Future<
+      ({
+        BingxManagedOrderLifecycleStatus status,
+        BingxFuturesOpenOrder? order,
+        String? diagnostic,
+      })
+    >
+    readEvidence({
+      required String symbol,
+      required String side,
+      String? orderId,
+      String? clientOrderId,
+    }) async {
+      final normalizedOrderId = orderId?.trim() ?? '';
+      final normalizedClientOrderId = clientOrderId?.trim() ?? '';
+      BingxFuturesOpenOrder? order = openById[normalizedOrderId];
+      if (order == null) {
+        final key =
+            normalizedOrderId.isNotEmpty
+                ? '${symbol.toUpperCase()}|id|$normalizedOrderId'
+                : '${symbol.toUpperCase()}|client|$normalizedClientOrderId';
+        try {
+          final query = await queryCache.putIfAbsent(
+            key,
+            () => _exchange.getOrder(
+              credentials: credentials,
+              symbol: symbol,
+              orderId: normalizedOrderId.isEmpty ? null : normalizedOrderId,
+              clientOrderId:
+                  normalizedOrderId.isEmpty ? normalizedClientOrderId : null,
+            ),
+          );
+          if (!query.isSuccess) {
+            return (
+              status: BingxManagedOrderLifecycleStatus.unresolved,
+              order: null,
+              diagnostic: 'provider_query_${query.exchangeCode}',
+            );
+          }
+          order = query.order;
+        } catch (error) {
+          return (
+            status: BingxManagedOrderLifecycleStatus.unresolved,
+            order: null,
+            diagnostic: 'provider_query_error:${error.runtimeType}',
+          );
+        }
+      }
+      if (order == null) {
+        return (
+          status: BingxManagedOrderLifecycleStatus.unresolved,
+          order: null,
+          diagnostic: 'provider_evidence_missing',
+        );
+      }
+      if ((normalizedOrderId.isNotEmpty &&
+              order.orderId != normalizedOrderId) ||
+          order.symbol.trim().toUpperCase() != symbol.trim().toUpperCase() ||
+          order.side.trim().toLowerCase() != side.trim().toLowerCase() ||
+          (normalizedOrderId.isEmpty &&
+              order.clientOrderId?.trim().toLowerCase() !=
+                  normalizedClientOrderId.toLowerCase())) {
+        return (
+          status: BingxManagedOrderLifecycleStatus.unresolved,
+          order: order,
+          diagnostic: 'provider_evidence_identity_mismatch',
+        );
+      }
+      final lifecycle = switch (order.status.trim().toUpperCase()) {
+        'NEW' || 'PARTIALLY_FILLED' => BingxManagedOrderLifecycleStatus.active,
+        'FILLED' => BingxManagedOrderLifecycleStatus.filled,
+        'CANCELED' || 'CANCELLED' => BingxManagedOrderLifecycleStatus.cancelled,
+        'REJECTED' => BingxManagedOrderLifecycleStatus.rejected,
+        'EXPIRED' => BingxManagedOrderLifecycleStatus.expired,
+        _ => BingxManagedOrderLifecycleStatus.unresolved,
+      };
+      return (
+        status: lifecycle,
+        order: order,
+        diagnostic:
+            lifecycle == BingxManagedOrderLifecycleStatus.unresolved
+                ? 'provider_status_unknown:${order.status}'
+                : null,
+      );
+    }
+
+    final provenance = <String, BingxManagedOrderProvenance>{
+      ...current.managedOrderProvenance,
+    };
+    final activeIds = <String>{};
+    final activeSymbols = <String, String>{};
+    for (final entry in current.managedOrderProvenance.entries) {
+      final record = entry.value;
+      if (record.testOrder) {
+        provenance[entry.key] = record.withLifecycle(
+          status: BingxManagedOrderLifecycleStatus.unresolved,
+          evidenceAtUtc: evidenceAtUtc,
+          diagnostic: 'test_order_has_no_provider_lifecycle',
+        );
+        continue;
+      }
+      if (record.accountBindingHashHex != bindingHash) {
+        provenance[entry.key] = record.withLifecycle(
+          status: BingxManagedOrderLifecycleStatus.unresolved,
+          evidenceAtUtc: evidenceAtUtc,
+          diagnostic:
+              record.accountBindingHashHex == null
+                  ? 'account_binding_legacy_missing'
+                  : 'account_binding_mismatch',
+        );
+        continue;
+      }
+      final evidence = await readEvidence(
+        symbol: record.symbol,
+        side: record.side,
+        orderId: record.orderId,
+        clientOrderId: record.clientOrderId,
+      );
+      provenance[entry.key] = record.withLifecycle(
+        status: evidence.status,
+        evidenceAtUtc: evidenceAtUtc,
+        diagnostic: evidence.diagnostic,
+      );
+      if (evidence.status == BingxManagedOrderLifecycleStatus.active) {
+        activeIds.add(record.orderId);
+        activeSymbols[record.orderId] = record.symbol;
+      }
+    }
+
+    final claims = <String, BingxLiquidityEventEffectClaim>{
+      ...current.liquidityEventEffectClaims,
+    };
+    for (final entry in current.liquidityEventEffectClaims.entries) {
+      final claim = entry.value;
+      if (claim.testOrder) {
+        claims[entry.key] = claim.withLifecycle(
+          lifecycleStatus: BingxManagedOrderLifecycleStatus.unresolved,
+          evidenceAtUtc: evidenceAtUtc,
+          diagnostic: 'test_order_has_no_provider_lifecycle',
+        );
+        continue;
+      }
+      if (claim.accountBindingHashHex != bindingHash) {
+        claims[entry.key] = claim.withLifecycle(
+          lifecycleStatus: BingxManagedOrderLifecycleStatus.unresolved,
+          evidenceAtUtc: evidenceAtUtc,
+          diagnostic:
+              claim.accountBindingHashHex == null
+                  ? 'account_binding_legacy_missing'
+                  : 'account_binding_mismatch',
+        );
+        continue;
+      }
+      final knownOrderId = claim.orderId?.trim() ?? '';
+      final knownProvenance = provenance[knownOrderId];
+      final evidence =
+          knownProvenance != null
+              ? (
+                status: knownProvenance.lifecycleStatus,
+                order: openById[knownOrderId],
+                diagnostic: knownProvenance.lifecycleDiagnostic,
+              )
+              : await readEvidence(
+                symbol: claim.symbol,
+                side: claim.side,
+                orderId: knownOrderId.isEmpty ? null : knownOrderId,
+                clientOrderId: claim.clientOrderId,
+              );
+      final recoveredOrderId = evidence.order?.orderId.trim();
+      claims[entry.key] = claim.withLifecycle(
+        lifecycleStatus: evidence.status,
+        evidenceAtUtc: evidenceAtUtc,
+        diagnostic: evidence.diagnostic,
+        confirmedOrderId: recoveredOrderId,
+      );
+      if (evidence.status == BingxManagedOrderLifecycleStatus.active &&
+          recoveredOrderId != null &&
+          recoveredOrderId.isNotEmpty) {
+        activeIds.add(recoveredOrderId);
+        activeSymbols[recoveredOrderId] = claim.symbol;
+        if (!provenance.containsKey(recoveredOrderId) &&
+            claim.intentHashHex != null &&
+            claim.canonicalIntentJson != null) {
+          provenance[recoveredOrderId] = BingxManagedOrderProvenance(
+            orderId: recoveredOrderId,
+            symbol: claim.symbol,
+            side: claim.side,
+            testOrder: claim.testOrder,
+            intentHashHex: claim.intentHashHex!,
+            canonicalIntentJson: claim.canonicalIntentJson!,
+            clientOrderId: claim.clientOrderId,
+            accountBindingHashHex: claim.accountBindingHashHex,
+            lifecycleStatus: evidence.status,
+            lifecycleEvidenceAtUtc: evidenceAtUtc,
+            lifecycleDiagnostic: evidence.diagnostic,
+            marketSnapshotHashHex: null,
+            featureHashHex: null,
+            tvhDecisionHashHex: null,
+            liveDecisionHashHex: null,
+            recordedAtUtc: claim.recordedAtUtc,
+          );
+        }
+      }
+    }
+
+    final sortedActiveIds = activeIds.toList()..sort();
+    final previousTracked = current.trackedOrderId?.trim() ?? '';
+    final trackedOrderId =
+        activeIds.contains(previousTracked)
+            ? previousTracked
+            : sortedActiveIds.isEmpty
+            ? null
+            : sortedActiveIds.first;
+    final next = BingxFuturesOrderTrackingState(
+      trackedSymbol:
+          trackedOrderId == null ? null : activeSymbols[trackedOrderId],
+      trackedOrderId: trackedOrderId,
+      managedOrderIds: List<String>.unmodifiable(sortedActiveIds),
+      managedOrderSymbols: Map<String, String>.unmodifiable(activeSymbols),
+      managedOrderProvenance:
+          Map<String, BingxManagedOrderProvenance>.unmodifiable(provenance),
+      liquidityEventEffectClaims:
+          Map<String, BingxLiquidityEventEffectClaim>.unmodifiable(claims),
+      stopLossPercent: current.stopLossPercent,
+      takeProfitRiskReward: current.takeProfitRiskReward,
+    );
+    await store.saveReconciledForCapsule(capsuleRootHex, next);
+    final lifecycleStates = <BingxManagedOrderLifecycleStatus>[
+      ...provenance.values.map((value) => value.lifecycleStatus),
+      ...claims.values.map((value) => value.lifecycleStatus),
+    ];
+    final terminalCount = lifecycleStates.where(_isTerminalLifecycle).length;
+    final unresolvedCount =
+        lifecycleStates
+            .where(
+              (value) => value == BingxManagedOrderLifecycleStatus.unresolved,
+            )
+            .length;
+    diagnostics.addAll(
+      provenance.values
+          .map((value) => value.lifecycleDiagnostic)
+          .whereType<String>(),
+    );
+    diagnostics.addAll(
+      claims.values
+          .map((value) => value.lifecycleDiagnostic)
+          .whereType<String>(),
+    );
+    return BingxFuturesManagedOrderReconciliationResult(
+      status: BingxFuturesManagedOrderReconciliationStatus.reconciled,
+      capsuleRootHex: capsuleRootHex,
+      state: next,
+      activeCount: activeIds.length,
+      terminalCount: terminalCount,
+      unresolvedCount: unresolvedCount,
+      diagnostics: List<String>.unmodifiable(diagnostics.toSet()),
+    );
+  }
+
+  static bool _isTerminalLifecycle(BingxManagedOrderLifecycleStatus status) {
+    return status == BingxManagedOrderLifecycleStatus.filled ||
+        status == BingxManagedOrderLifecycleStatus.cancelled ||
+        status == BingxManagedOrderLifecycleStatus.rejected ||
+        status == BingxManagedOrderLifecycleStatus.expired;
   }
 
   Future<BingxFuturesRiskEvaluationResult> evaluateRisk({

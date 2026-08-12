@@ -304,6 +304,49 @@ class BingxFuturesExchangeService {
     );
   }
 
+  Future<BingxFuturesOrderQueryResult> getOrder({
+    required BingxFuturesApiCredentials credentials,
+    required String symbol,
+    String? orderId,
+    String? clientOrderId,
+  }) async {
+    final normalizedCredentials = credentials.normalized();
+    final normalizedSymbol = _normalizeSymbol(symbol);
+    final normalizedOrderId = orderId?.trim() ?? '';
+    final normalizedClientOrderId = clientOrderId?.trim() ?? '';
+    if (normalizedOrderId.isEmpty && normalizedClientOrderId.isEmpty) {
+      throw const FormatException('orderId or clientOrderId is required');
+    }
+    final params = <String, String>{
+      'symbol': normalizedSymbol,
+      if (normalizedOrderId.isNotEmpty) 'orderId': normalizedOrderId,
+      if (normalizedOrderId.isEmpty && normalizedClientOrderId.isNotEmpty)
+        'clientOrderId': normalizedClientOrderId,
+      'recvWindow': recvWindowMs.toString(),
+      'timestamp': _clockMs().toString(),
+    };
+    final response = await _executeSignedGet(
+      credentials: normalizedCredentials,
+      endpointPath: _liveOrderPath,
+      params: params,
+    );
+    final decoded = _tryDecodeMap(response.body);
+    return BingxFuturesOrderQueryResult(
+      isSuccess: response.isSuccess,
+      httpStatusCode: response.httpStatusCode,
+      exchangeCode: response.exchangeCode,
+      exchangeMessage: response.exchangeMessage,
+      endpointPath: _liveOrderPath,
+      signedPayloadHashHex: response.signedPayloadHashHex,
+      responseBody: response.body,
+      symbol: normalizedSymbol,
+      requestedOrderId: normalizedOrderId.isEmpty ? null : normalizedOrderId,
+      requestedClientOrderId:
+          normalizedClientOrderId.isEmpty ? null : normalizedClientOrderId,
+      order: _extractOrder(decoded, fallbackSymbol: normalizedSymbol),
+    );
+  }
+
   Future<BingxFuturesCancelOrderResult> cancelOrder({
     required BingxFuturesApiCredentials credentials,
     required String symbol,
@@ -1321,47 +1364,11 @@ class BingxFuturesExchangeService {
     final parsed = <BingxFuturesOpenOrder>[];
     for (final raw in rawList) {
       if (raw is! Map) continue;
-      final map = Map<String, dynamic>.from(raw);
-      final orderId =
-          _readTrimmedAny(map, const <String>['orderId', 'orderID', 'id']) ??
-          '';
-      if (orderId.isEmpty) continue;
-      final symbol = _readTrimmed(map, 'symbol')?.toUpperCase();
-      final side = _readTrimmed(map, 'side')?.toUpperCase() ?? '';
-      final positionSide =
-          _readTrimmed(map, 'positionSide')?.toUpperCase() ?? '';
-      final orderType = _readTrimmed(map, 'type')?.toUpperCase() ?? '';
-      final status = _readTrimmed(map, 'status')?.toUpperCase() ?? '';
-      final price = _readTrimmed(map, 'price') ?? _readTrimmed(map, 'avgPrice');
-      final stopPrice = _readTrimmed(map, 'stopPrice');
-      final quantity =
-          _readTrimmed(map, 'origQty') ?? _readTrimmed(map, 'quantity');
-      final executedQty =
-          _readTrimmed(map, 'executedQty') ?? _readTrimmed(map, 'cumQuote');
-      final createdAtMs = int.tryParse(
-        map['time']?.toString() ??
-            map['createTime']?.toString() ??
-            map['timestamp']?.toString() ??
-            '',
+      final order = _parseOpenOrder(
+        Map<String, dynamic>.from(raw),
+        fallbackSymbol: fallbackSymbol,
       );
-      parsed.add(
-        BingxFuturesOpenOrder(
-          orderId: orderId,
-          symbol: symbol == null || symbol.isEmpty ? fallbackSymbol : symbol,
-          side: side,
-          positionSide: positionSide,
-          orderType: orderType,
-          status: status,
-          priceDecimal: (price == null || price.isEmpty) ? null : price,
-          triggerPriceDecimal:
-              (stopPrice == null || stopPrice.isEmpty) ? null : stopPrice,
-          quantityDecimal:
-              (quantity == null || quantity.isEmpty) ? null : quantity,
-          executedQuantityDecimal:
-              (executedQty == null || executedQty.isEmpty) ? null : executedQty,
-          createdAtMs: createdAtMs,
-        ),
-      );
+      if (order != null) parsed.add(order);
     }
     parsed.sort((a, b) {
       final ta = a.createdAtMs ?? 0;
@@ -1369,6 +1376,64 @@ class BingxFuturesExchangeService {
       return tb.compareTo(ta);
     });
     return List<BingxFuturesOpenOrder>.unmodifiable(parsed);
+  }
+
+  static BingxFuturesOpenOrder? _extractOrder(
+    Map<String, dynamic>? decoded, {
+    required String fallbackSymbol,
+  }) {
+    if (decoded == null) return null;
+    final data = decoded['data'];
+    if (data is! Map) return null;
+    final direct = Map<String, dynamic>.from(data);
+    final nested = direct['order'];
+    final map = nested is Map ? Map<String, dynamic>.from(nested) : direct;
+    return _parseOpenOrder(map, fallbackSymbol: fallbackSymbol);
+  }
+
+  static BingxFuturesOpenOrder? _parseOpenOrder(
+    Map<String, dynamic> map, {
+    required String fallbackSymbol,
+  }) {
+    final orderId =
+        _readTrimmedAny(map, const <String>['orderID', 'orderId', 'id']) ?? '';
+    if (orderId.isEmpty) return null;
+    final symbol = _readTrimmed(map, 'symbol')?.toUpperCase();
+    final side = _readTrimmed(map, 'side')?.toUpperCase() ?? '';
+    final positionSide = _readTrimmed(map, 'positionSide')?.toUpperCase() ?? '';
+    final orderType = _readTrimmed(map, 'type')?.toUpperCase() ?? '';
+    final status = _readTrimmed(map, 'status')?.toUpperCase() ?? '';
+    final price = _readTrimmed(map, 'price') ?? _readTrimmed(map, 'avgPrice');
+    final stopPrice = _readTrimmed(map, 'stopPrice');
+    final quantity =
+        _readTrimmed(map, 'origQty') ?? _readTrimmed(map, 'quantity');
+    final executedQty =
+        _readTrimmed(map, 'executedQty') ?? _readTrimmed(map, 'cumQuote');
+    final createdAtMs = int.tryParse(
+      map['time']?.toString() ??
+          map['createTime']?.toString() ??
+          map['timestamp']?.toString() ??
+          '',
+    );
+    return BingxFuturesOpenOrder(
+      orderId: orderId,
+      clientOrderId: _readTrimmedAny(map, const <String>[
+        'clientOrderId',
+        'clientOrderID',
+      ]),
+      symbol: symbol == null || symbol.isEmpty ? fallbackSymbol : symbol,
+      side: side,
+      positionSide: positionSide,
+      orderType: orderType,
+      status: status,
+      priceDecimal: (price == null || price.isEmpty) ? null : price,
+      triggerPriceDecimal:
+          (stopPrice == null || stopPrice.isEmpty) ? null : stopPrice,
+      quantityDecimal: (quantity == null || quantity.isEmpty) ? null : quantity,
+      executedQuantityDecimal:
+          (executedQty == null || executedQty.isEmpty) ? null : executedQty,
+      createdAtMs: createdAtMs,
+    );
   }
 
   static String? _readTrimmed(Map<String, dynamic> map, String key) {
