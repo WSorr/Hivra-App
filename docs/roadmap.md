@@ -2893,6 +2893,20 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     checkout, and post-merge repository gates `31531348050` passed. No
     following product pass is selected.
 
+- `1.x Trading Restart Recovery and Reconciliation`
+  - Lane: maintained 1.x runtime; Remote Runner/VPS, background execution,
+    plugin ABI, Core/Ledger changes, and new effect paths remain blocked.
+  - Owner: the existing exchange execution use case classifies lifecycle,
+    `BingxFuturesOrderTrackingStore` persists Capsule-scoped evidence, and the
+    existing BingX adapter performs exact read-only order queries.
+  - Sealed path: absence from the provider open-orders collection no longer
+    deletes ownership/provenance or guesses a terminal outcome.
+  - Evidence: exact active and terminal statuses, timeout, provider not-found,
+    account mismatch, provider acceptance before order-id capture, late
+    Capsule switch, manual-order non-adoption, and durable event claims.
+  - Status: implementation complete locally (2026-08-13); protected PR and
+    post-merge repository gates remain required. No following pass is selected.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

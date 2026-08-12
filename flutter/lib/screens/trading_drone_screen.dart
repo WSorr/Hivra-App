@@ -218,6 +218,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     required BingxFuturesIntentPayload payload,
     required Map<String, dynamic> result,
     required bool testOrder,
+    required BingxFuturesApiCredentials credentials,
   }) {
     final intentHash = payload.intentHashHex?.trim() ?? '';
     final canonicalIntent = result['canonical_intent_json']?.toString() ?? '';
@@ -238,6 +239,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       testOrder: testOrder,
       intentHashHex: intentHash,
       canonicalIntentJson: canonicalIntent,
+      clientOrderId: payload.clientOrderId,
+      accountBindingHashHex: _module.accountBindingHashHex(credentials),
+      lifecycleStatus: BingxManagedOrderLifecycleStatus.active,
+      lifecycleEvidenceAtUtc: DateTime.now().toUtc().toIso8601String(),
       marketSnapshotHashHex: result['market_snapshot_hash_hex']?.toString(),
       featureHashHex: result['feature_hash_hex']?.toString(),
       tvhDecisionHashHex: result['tvh_decision_hash_hex']?.toString(),
@@ -2259,6 +2264,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     payload: payload,
                     result: result,
                     testOrder: _useTestOrderEndpoint,
+                    credentials: credentials,
                   ),
         );
         _startOpenOrdersAutoTracking(
@@ -2344,10 +2350,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       );
       if (!mounted) return;
       final allOrders = result.orders;
-      if (result.isSuccess) {
-        await _reconcileOpenOrderTracking(allOrders);
-        if (!mounted) return;
-      }
+      final reconciliation = await _module.executionUseCase
+          .reconcileManagedOrders(credentials: credentials, openOrders: result);
+      if (!mounted) return;
+      _applyManagedOrderReconciliation(reconciliation);
       for (final order in allOrders) {
         if (_managedOrderIds.contains(order.orderId)) {
           _managedOrderSymbols[order.orderId] = order.symbol.toUpperCase();
@@ -2454,54 +2460,39 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
   }
 
-  Future<void> _reconcileOpenOrderTracking(
-    List<BingxFuturesOpenOrder> openOrders,
-  ) async {
-    final previousManagedIds = Set<String>.from(_managedOrderIds);
-    final previousTrackedOrderId = _trackedOrderId;
-    final reconciled = BingxFuturesOrderTrackingState(
-      trackedSymbol: _trackedOrdersSymbol,
-      trackedOrderId: _trackedOrderId,
-      managedOrderIds: _managedOrderIds.toList(growable: false),
-      managedOrderSymbols: Map<String, String>.from(_managedOrderSymbols),
-      managedOrderProvenance: Map<String, BingxManagedOrderProvenance>.from(
-        _managedOrderProvenance,
-      ),
-      stopLossPercent: _stopLossPercent,
-      takeProfitRiskReward: _takeProfitRiskReward,
-    ).reconcileOpenOrderIds(openOrders.map((order) => order.orderId));
-    final removedIds = previousManagedIds.difference(
-      reconciled.managedOrderIds.toSet(),
-    );
-    final trackingPointerChanged =
-        previousTrackedOrderId != reconciled.trackedOrderId;
-    if (removedIds.isEmpty && !trackingPointerChanged) return;
-
-    _managedOrderIds
-      ..clear()
-      ..addAll(reconciled.managedOrderIds);
-    _managedOrderSymbols
-      ..clear()
-      ..addAll(reconciled.managedOrderSymbols);
-    _managedOrderProvenance
-      ..clear()
-      ..addAll(reconciled.managedOrderProvenance);
-    _trackedOrdersSymbol = reconciled.trackedSymbol;
-    _trackedOrderId = reconciled.trackedOrderId;
-    _cancelOrderIdController.text = reconciled.trackedOrderId ?? '';
-    _managedOrderLifecycleRevision += 1;
-
-    await _module.uiLog.log(
-      'bingx.exchange.tracking.reconcile',
-      'openCount=${openOrders.length} removedCount=${removedIds.length} '
-          'managedCount=${_managedOrderIds.length} '
-          'trackedOrderId=${_trackedOrderId ?? "-"}',
-    );
-    if (_managedOrderIds.isEmpty) {
-      _stopOpenOrdersAutoTracking(reason: 'no_managed_open_orders');
+  void _applyManagedOrderReconciliation(
+    BingxFuturesManagedOrderReconciliationResult reconciliation,
+  ) {
+    final state = reconciliation.state;
+    if (state == null ||
+        reconciliation.capsuleRootHex != _module.activeCapsuleRootHex()) {
       return;
     }
-    await _persistOpenOrdersTrackingState(source: 'open_orders_reconciled');
+    _managedOrderIds
+      ..clear()
+      ..addAll(state.managedOrderIds);
+    _managedOrderSymbols
+      ..clear()
+      ..addAll(state.managedOrderSymbols);
+    _managedOrderProvenance
+      ..clear()
+      ..addAll(state.managedOrderProvenance);
+    _trackedOrdersSymbol = state.trackedSymbol;
+    _trackedOrderId = state.trackedOrderId;
+    _cancelOrderIdController.text = state.trackedOrderId ?? '';
+    _managedOrderLifecycleRevision += 1;
+    unawaited(
+      _module.uiLog.log(
+        'bingx.exchange.tracking.reconcile',
+        'active=${reconciliation.activeCount} '
+            'terminal=${reconciliation.terminalCount} '
+            'unresolved=${reconciliation.unresolvedCount} '
+            'trackedOrderId=${state.trackedOrderId ?? "-"}',
+      ),
+    );
+    if (state.managedOrderIds.isEmpty) {
+      _stopOpenOrdersAutoTracking(reason: 'no_managed_open_orders');
+    }
   }
 
   Future<void> _revalidateManagedOpenOrders({
@@ -2802,6 +2793,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         payload: payload,
         result: result,
         testOrder: provenance.testOrder,
+        credentials: credentials,
       ),
     );
     _startOpenOrdersAutoTracking(symbol: payload.symbol, orderId: newOrderId);

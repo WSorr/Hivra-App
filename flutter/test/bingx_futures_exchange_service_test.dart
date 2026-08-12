@@ -429,6 +429,38 @@ void main() {
       expect(result.orders.first.quantityDecimal, '4.2');
     });
 
+    test('queries exact order details without scanning order history', () async {
+      late BingxHttpRequest capturedRequest;
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (request) async {
+          capturedRequest = request;
+          return const BingxHttpResponse(
+            statusCode: 200,
+            body:
+                '{"code":0,"msg":"ok","data":{"orderID":"9007199254740993","clientOrderId":"hivra-event","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","type":"TRIGGER_LIMIT","status":"FILLED","price":"100","origQty":"0.1","executedQty":"0.1","time":1710000000000}}',
+          );
+        },
+      );
+
+      final result = await service.getOrder(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+        symbol: 'btc-usdt',
+        orderId: '9007199254740993',
+      );
+
+      expect(capturedRequest.method, 'GET');
+      expect(capturedRequest.uri.path, '/openApi/swap/v2/trade/order');
+      expect(capturedRequest.uri.query, contains('orderId=9007199254740993'));
+      expect(result.isSuccess, isTrue);
+      expect(result.order!.orderId, '9007199254740993');
+      expect(result.order!.clientOrderId, 'hivra-event');
+      expect(result.order!.status, 'FILLED');
+    });
+
     test('cancels order via signed DELETE endpoint', () async {
       late BingxHttpRequest capturedRequest;
       final service = BingxFuturesExchangeService(

@@ -1,5 +1,14 @@
 enum BingxLiquidityEventEffectClaimStatus { reserved, confirmed }
 
+enum BingxManagedOrderLifecycleStatus {
+  unresolved,
+  active,
+  filled,
+  cancelled,
+  rejected,
+  expired,
+}
+
 enum BingxLiquidityEventEffectReservation {
   acquired,
   alreadyClaimed,
@@ -11,9 +20,15 @@ class BingxLiquidityEventEffectClaim {
   final String clientOrderId;
   final String symbol;
   final String side;
+  final String? intentHashHex;
+  final String? canonicalIntentJson;
   final bool testOrder;
   final BingxLiquidityEventEffectClaimStatus status;
   final String? orderId;
+  final String? accountBindingHashHex;
+  final BingxManagedOrderLifecycleStatus lifecycleStatus;
+  final String? lifecycleEvidenceAtUtc;
+  final String? lifecycleDiagnostic;
   final String recordedAtUtc;
 
   const BingxLiquidityEventEffectClaim({
@@ -21,9 +36,15 @@ class BingxLiquidityEventEffectClaim {
     required this.clientOrderId,
     required this.symbol,
     required this.side,
+    this.intentHashHex,
+    this.canonicalIntentJson,
     required this.testOrder,
     required this.status,
     required this.orderId,
+    this.accountBindingHashHex,
+    this.lifecycleStatus = BingxManagedOrderLifecycleStatus.unresolved,
+    this.lifecycleEvidenceAtUtc,
+    this.lifecycleDiagnostic,
     required this.recordedAtUtc,
   });
 
@@ -34,9 +55,15 @@ class BingxLiquidityEventEffectClaim {
     'client_order_id': clientOrderId,
     'symbol': symbol,
     'side': side,
+    'intent_hash_hex': intentHashHex,
+    'canonical_intent_json': canonicalIntentJson,
     'test_order': testOrder,
     'status': status.name,
     'order_id': orderId,
+    'account_binding_hash_hex': accountBindingHashHex,
+    'lifecycle_status': lifecycleStatus.name,
+    'lifecycle_evidence_at_utc': lifecycleEvidenceAtUtc,
+    'lifecycle_diagnostic': lifecycleDiagnostic,
     'recorded_at_utc': recordedAtUtc,
   };
 
@@ -52,6 +79,9 @@ class BingxLiquidityEventEffectClaim {
       _ => null,
     };
     final recordedAtUtc = read('recorded_at_utc');
+    final accountBindingHashHex =
+        read('account_binding_hash_hex').toLowerCase();
+    final lifecycleStatus = _readLifecycleStatus(read('lifecycle_status'));
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(eventId) ||
         clientOrderId.isEmpty ||
         symbol.isEmpty ||
@@ -66,9 +96,48 @@ class BingxLiquidityEventEffectClaim {
       clientOrderId: clientOrderId,
       symbol: symbol,
       side: side,
+      intentHashHex: _readOptionalString(map['intent_hash_hex']),
+      canonicalIntentJson: _readOptionalString(map['canonical_intent_json']),
       testOrder: map['test_order'] == true,
       status: status,
       orderId: orderId.isEmpty ? null : orderId,
+      accountBindingHashHex:
+          RegExp(r'^[0-9a-f]{64}$').hasMatch(accountBindingHashHex)
+              ? accountBindingHashHex
+              : null,
+      lifecycleStatus: lifecycleStatus,
+      lifecycleEvidenceAtUtc: _readOptionalString(
+        map['lifecycle_evidence_at_utc'],
+      ),
+      lifecycleDiagnostic: _readOptionalString(map['lifecycle_diagnostic']),
+      recordedAtUtc: recordedAtUtc,
+    );
+  }
+
+  BingxLiquidityEventEffectClaim withLifecycle({
+    required BingxManagedOrderLifecycleStatus lifecycleStatus,
+    required String evidenceAtUtc,
+    String? diagnostic,
+    String? confirmedOrderId,
+  }) {
+    final nextOrderId = confirmedOrderId?.trim() ?? orderId;
+    return BingxLiquidityEventEffectClaim(
+      liquidityEventId: liquidityEventId,
+      clientOrderId: clientOrderId,
+      symbol: symbol,
+      side: side,
+      intentHashHex: intentHashHex,
+      canonicalIntentJson: canonicalIntentJson,
+      testOrder: testOrder,
+      status:
+          nextOrderId == null || nextOrderId.isEmpty
+              ? status
+              : BingxLiquidityEventEffectClaimStatus.confirmed,
+      orderId: nextOrderId,
+      accountBindingHashHex: accountBindingHashHex,
+      lifecycleStatus: lifecycleStatus,
+      lifecycleEvidenceAtUtc: evidenceAtUtc,
+      lifecycleDiagnostic: diagnostic,
       recordedAtUtc: recordedAtUtc,
     );
   }
@@ -81,6 +150,11 @@ class BingxManagedOrderProvenance {
   final bool testOrder;
   final String intentHashHex;
   final String canonicalIntentJson;
+  final String? clientOrderId;
+  final String? accountBindingHashHex;
+  final BingxManagedOrderLifecycleStatus lifecycleStatus;
+  final String? lifecycleEvidenceAtUtc;
+  final String? lifecycleDiagnostic;
   final String? marketSnapshotHashHex;
   final String? featureHashHex;
   final String? tvhDecisionHashHex;
@@ -94,6 +168,11 @@ class BingxManagedOrderProvenance {
     required this.testOrder,
     required this.intentHashHex,
     required this.canonicalIntentJson,
+    this.clientOrderId,
+    this.accountBindingHashHex,
+    this.lifecycleStatus = BingxManagedOrderLifecycleStatus.unresolved,
+    this.lifecycleEvidenceAtUtc,
+    this.lifecycleDiagnostic,
     required this.marketSnapshotHashHex,
     required this.featureHashHex,
     required this.tvhDecisionHashHex,
@@ -109,6 +188,11 @@ class BingxManagedOrderProvenance {
       'test_order': testOrder,
       'intent_hash_hex': intentHashHex.trim().toLowerCase(),
       'canonical_intent_json': canonicalIntentJson,
+      'client_order_id': clientOrderId,
+      'account_binding_hash_hex': accountBindingHashHex,
+      'lifecycle_status': lifecycleStatus.name,
+      'lifecycle_evidence_at_utc': lifecycleEvidenceAtUtc,
+      'lifecycle_diagnostic': lifecycleDiagnostic,
       'market_snapshot_hash_hex': marketSnapshotHashHex?.trim().toLowerCase(),
       'feature_hash_hex': featureHashHex?.trim().toLowerCase(),
       'tvh_decision_hash_hex': tvhDecisionHashHex?.trim().toLowerCase(),
@@ -126,6 +210,8 @@ class BingxManagedOrderProvenance {
     final intentHashHex = read('intent_hash_hex').toLowerCase();
     final canonicalIntentJson = map['canonical_intent_json']?.toString() ?? '';
     final recordedAtUtc = read('recorded_at_utc');
+    final accountBindingHashHex =
+        read('account_binding_hash_hex').toLowerCase();
     if (orderId.isEmpty ||
         symbol.isEmpty ||
         (side != 'buy' && side != 'sell') ||
@@ -141,6 +227,16 @@ class BingxManagedOrderProvenance {
       testOrder: map['test_order'] == true,
       intentHashHex: intentHashHex,
       canonicalIntentJson: canonicalIntentJson,
+      clientOrderId: _readOptionalString(map['client_order_id']),
+      accountBindingHashHex:
+          RegExp(r'^[0-9a-f]{64}$').hasMatch(accountBindingHashHex)
+              ? accountBindingHashHex
+              : null,
+      lifecycleStatus: _readLifecycleStatus(read('lifecycle_status')),
+      lifecycleEvidenceAtUtc: _readOptionalString(
+        map['lifecycle_evidence_at_utc'],
+      ),
+      lifecycleDiagnostic: _readOptionalString(map['lifecycle_diagnostic']),
       marketSnapshotHashHex: _readOptionalHash(map['market_snapshot_hash_hex']),
       featureHashHex: _readOptionalHash(map['feature_hash_hex']),
       tvhDecisionHashHex: _readOptionalHash(map['tvh_decision_hash_hex']),
@@ -149,10 +245,51 @@ class BingxManagedOrderProvenance {
     );
   }
 
+  BingxManagedOrderProvenance withLifecycle({
+    required BingxManagedOrderLifecycleStatus status,
+    required String evidenceAtUtc,
+    String? diagnostic,
+  }) {
+    return BingxManagedOrderProvenance(
+      orderId: orderId,
+      symbol: symbol,
+      side: side,
+      testOrder: testOrder,
+      intentHashHex: intentHashHex,
+      canonicalIntentJson: canonicalIntentJson,
+      clientOrderId: clientOrderId,
+      accountBindingHashHex: accountBindingHashHex,
+      lifecycleStatus: status,
+      lifecycleEvidenceAtUtc: evidenceAtUtc,
+      lifecycleDiagnostic: diagnostic,
+      marketSnapshotHashHex: marketSnapshotHashHex,
+      featureHashHex: featureHashHex,
+      tvhDecisionHashHex: tvhDecisionHashHex,
+      liveDecisionHashHex: liveDecisionHashHex,
+      recordedAtUtc: recordedAtUtc,
+    );
+  }
+
   static String? _readOptionalHash(Object? value) {
     final normalized = value?.toString().trim().toLowerCase() ?? '';
     return normalized.isEmpty ? null : normalized;
   }
+}
+
+BingxManagedOrderLifecycleStatus _readLifecycleStatus(String value) {
+  return switch (value) {
+    'active' => BingxManagedOrderLifecycleStatus.active,
+    'filled' => BingxManagedOrderLifecycleStatus.filled,
+    'cancelled' || 'canceled' => BingxManagedOrderLifecycleStatus.cancelled,
+    'rejected' => BingxManagedOrderLifecycleStatus.rejected,
+    'expired' => BingxManagedOrderLifecycleStatus.expired,
+    _ => BingxManagedOrderLifecycleStatus.unresolved,
+  };
+}
+
+String? _readOptionalString(Object? value) {
+  final normalized = value?.toString().trim() ?? '';
+  return normalized.isEmpty ? null : normalized;
 }
 
 class BingxFuturesOrderTrackingState {
@@ -187,57 +324,6 @@ class BingxFuturesOrderTrackingState {
       stopLossPercent == null &&
       takeProfitRiskReward == null;
 
-  BingxFuturesOrderTrackingState reconcileOpenOrderIds(
-    Iterable<String> openOrderIds,
-  ) {
-    final openIds =
-        openOrderIds
-            .map((value) => value.trim())
-            .where((value) => value.isNotEmpty)
-            .toSet();
-    final retainedIds =
-        managedOrderIds
-            .map((value) => value.trim())
-            .where(openIds.contains)
-            .toSet()
-            .toList()
-          ..sort();
-    final retainedIdSet = retainedIds.toSet();
-    final retainedSymbols = <String, String>{
-      for (final entry in managedOrderSymbols.entries)
-        if (retainedIdSet.contains(entry.key)) entry.key: entry.value,
-    };
-    final retainedProvenance = <String, BingxManagedOrderProvenance>{
-      for (final entry in managedOrderProvenance.entries)
-        if (retainedIdSet.contains(entry.key)) entry.key: entry.value,
-    };
-    final currentTrackedOrderId = trackedOrderId?.trim() ?? '';
-    final nextTrackedOrderId =
-        retainedIdSet.contains(currentTrackedOrderId)
-            ? currentTrackedOrderId
-            : retainedIds.isEmpty
-            ? null
-            : retainedIds.first;
-    final nextTrackedSymbol =
-        nextTrackedOrderId == null
-            ? null
-            : retainedSymbols[nextTrackedOrderId] ?? trackedSymbol;
-
-    return BingxFuturesOrderTrackingState(
-      trackedSymbol: nextTrackedSymbol,
-      trackedOrderId: nextTrackedOrderId,
-      managedOrderIds: List<String>.unmodifiable(retainedIds),
-      managedOrderSymbols: Map<String, String>.unmodifiable(retainedSymbols),
-      managedOrderProvenance:
-          Map<String, BingxManagedOrderProvenance>.unmodifiable(
-            retainedProvenance,
-          ),
-      liquidityEventEffectClaims: liquidityEventEffectClaims,
-      stopLossPercent: stopLossPercent,
-      takeProfitRiskReward: takeProfitRiskReward,
-    );
-  }
-
   Map<String, dynamic> toJson() {
     final sortedProvenance =
         managedOrderProvenance.entries.toList()
@@ -246,7 +332,7 @@ class BingxFuturesOrderTrackingState {
         liquidityEventEffectClaims.entries.toList()
           ..sort((a, b) => a.key.compareTo(b.key));
     return <String, dynamic>{
-      'version': 3,
+      'version': 4,
       'tracked_symbol': trackedSymbol?.trim().toUpperCase(),
       'tracked_order_id': trackedOrderId?.trim(),
       'managed_order_ids': managedOrderIds,
