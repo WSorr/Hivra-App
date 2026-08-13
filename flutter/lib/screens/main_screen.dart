@@ -44,6 +44,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _starterCount = 0;
   int _relationshipCount = 0;
   int _pendingInvitations = 0;
+  int _invitationsProjectionRefreshRevision = 0;
   bool _isNeste = true;
   String _ledgerHashHex = '0';
   int _ledgerVersion = 0;
@@ -269,7 +270,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     });
   }
 
-  void _loadCapsuleData() {
+  void _loadCapsuleData({bool refreshInvitationsProjection = false}) {
     _stateManager.refreshWithFullState();
     final state = _stateManager.state;
     final runtimeRootKey = _runtime.capsuleRootPublicKey();
@@ -309,6 +310,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
 
     setState(() {
+      if (refreshInvitationsProjection) {
+        _invitationsProjectionRefreshRevision++;
+      }
       _starterCount = state.starterCount;
       _relationshipCount = state.relationshipCount;
       _pendingInvitations = pendingInvitations;
@@ -388,7 +392,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         manualRetry: true,
       );
       if (!mounted) return;
-      _loadCapsuleData();
+      _loadCapsuleData(refreshInvitationsProjection: true);
       if (result.ingress.code < 0) {
         ScaffoldMessenger.of(
           context,
@@ -464,6 +468,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           runtime: _runtime,
           activeCapsuleHex: _activeCapsuleHex,
           ledgerVersion: _ledgerVersion,
+          projectionRefreshRevision: _invitationsProjectionRefreshRevision,
           onLedgerChanged: _handleLedgerChanged,
           onOpenHistory: _openCapsuleHistory,
         );

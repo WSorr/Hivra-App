@@ -117,6 +117,7 @@ class InvitationsScreen extends StatefulWidget {
   final AppRuntimeService runtime;
   final String activeCapsuleHex;
   final int ledgerVersion;
+  final int projectionRefreshRevision;
   final Future<void> Function()? onLedgerChanged;
   final Future<void> Function(CapsuleHistorySubject subject)? onOpenHistory;
 
@@ -125,6 +126,7 @@ class InvitationsScreen extends StatefulWidget {
     required this.runtime,
     required this.activeCapsuleHex,
     required this.ledgerVersion,
+    this.projectionRefreshRevision = 0,
     this.onLedgerChanged,
     this.onOpenHistory,
   });
@@ -163,8 +165,14 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     super.didUpdateWidget(oldWidget);
     final capsuleChanged =
         widget.activeCapsuleHex != oldWidget.activeCapsuleHex;
-    final ledgerChanged = widget.ledgerVersion != oldWidget.ledgerVersion;
-    if (!capsuleChanged && !ledgerChanged) {
+    if (!shouldReloadInvitationsProjection(
+      previousCapsuleHex: oldWidget.activeCapsuleHex,
+      currentCapsuleHex: widget.activeCapsuleHex,
+      previousLedgerVersion: oldWidget.ledgerVersion,
+      currentLedgerVersion: widget.ledgerVersion,
+      previousRefreshRevision: oldWidget.projectionRefreshRevision,
+      currentRefreshRevision: widget.projectionRefreshRevision,
+    )) {
       return;
     }
 
@@ -1277,4 +1285,17 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     if (value == null || value.trim().isEmpty) return null;
     return _decodeB64_32(value);
   }
+}
+
+bool shouldReloadInvitationsProjection({
+  required String previousCapsuleHex,
+  required String currentCapsuleHex,
+  required int previousLedgerVersion,
+  required int currentLedgerVersion,
+  required int previousRefreshRevision,
+  required int currentRefreshRevision,
+}) {
+  return previousCapsuleHex != currentCapsuleHex ||
+      previousLedgerVersion != currentLedgerVersion ||
+      previousRefreshRevision != currentRefreshRevision;
 }

@@ -2947,6 +2947,23 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     zero password prompts and changed `Unlock AI` to `Lock AI`. No following
     pass is selected.
 
+- `1.x Android Invitations explicit-refresh projection remediation`
+  - Finding: on Android, pull-to-refresh updated the Invitations list while the
+    top-bar refresh could receive the same deliveries without repainting the
+    retained screen when the Ledger version did not change.
+  - Root cause: the top bar invoked the canonical passive-receive coordinator
+    and refreshed the shell projection, but `InvitationsScreen` only reloaded
+    for Capsule or Ledger-version changes.
+  - Boundary: keep the existing receive and Capsule-scoped invitation owners;
+    issue a bounded projection revision after the existing manual receive,
+    including its error result, so locally accepted evidence remains visible.
+    No transport, inbox, DTO, Core, Ledger, or second projection path is added.
+  - Exit evidence: focused positive and no-op regression vectors, full local
+    gates, protected PR and post-merge gates, then fresh Android packaged smoke
+    proving the top-bar button updates the same list as pull-to-refresh.
+  - Status: remediation in progress (2026-08-13). No following pass is
+    selected.
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`
