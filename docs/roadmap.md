@@ -3028,9 +3028,20 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     Capsule cannot clear or expose the active Capsule count; refresh failure
     cannot hide retained unread state; eviction/deletion cannot resurrect a
     count; a message becomes read only through the canonical Chat workspace.
-  - Status: audit selected (2026-08-13). Runtime implementation remains blocked
-    until the owner, cursor semantics, lifecycle, and regression matrix are
-    presented and verified.
+  - Implementation: the existing `CapsuleDeliveryInboxStore` owns a bounded
+    persisted set of read message ids under the Capsule directory. Unread is
+    derived only from retained projected ids minus that read set; transport
+    result counts never increment it. The existing Plugins navigation icon
+    projects the active Capsule count, and only the canonical Chat workspace
+    marks messages it actually displayed as read, including when the following
+    network refresh fails.
+  - Entropy reduction: one read owner and one projection path replace the
+    ambiguity between replayed retained history and newly unread messages;
+    added owner count is zero and added execution-path count is zero.
+  - Status: implemented on branch (2026-08-13); focused regression tests pass.
+    Full local gates, protected PR/post-merge gates, and fresh packaged
+    macOS/Android smoke remain required before completion. No tag or Release is
+    authorized.
 
 - `13.1 AI-Assisted Trading Analysis`
   - Goal:

@@ -22,6 +22,8 @@ import 'package:hivra_app/services/manual_consensus_check_service.dart';
 import 'package:hivra_app/services/transport_health_policy_service.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 import 'package:hivra_app/screens/wasm_plugins_screen.dart';
+import 'package:hivra_app/screens/main_screen.dart';
+import 'package:flutter/material.dart';
 
 void main() {
   group('tradeSignalInboxRecordId', () {
@@ -444,6 +446,202 @@ void main() {
 
     expect(store.loadMessages(deletedCapsule), isEmpty);
     expect(store.loadMessages(retainedCapsule), hasLength(1));
+  });
+
+  test('unread state survives restart without replay inflation', () async {
+    const capsuleHex =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    final tempHome = await Directory.systemTemp.createTemp('hivra-unread-');
+    addTearDown(() async {
+      if (await tempHome.exists()) await tempHome.delete(recursive: true);
+    });
+    final fileStore = CapsuleFileStore(
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    final firstStore = CapsuleDeliveryInboxStore(fileStore: fileStore);
+    const first = CapsuleChatInboxMessage(
+      id: 'message-1',
+      fromHex: capsuleHex,
+      messageText: 'first',
+      createdAtUtc: '2026-08-13T08:00:00.000Z',
+      envelopeHashHex: '',
+      timestampMs: 1,
+    );
+    const second = CapsuleChatInboxMessage(
+      id: 'message-2',
+      fromHex: capsuleHex,
+      messageText: 'second',
+      createdAtUtc: '2026-08-13T08:00:01.000Z',
+      envelopeHashHex: '',
+      timestampMs: 2,
+    );
+
+    firstStore.merge(
+      capsuleHex,
+      messages: const <CapsuleChatInboxMessage>[first, second],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+    expect(await firstStore.unreadMessageCount(capsuleHex), 2);
+    await firstStore.markMessagesRead(capsuleHex, const <String>['message-1']);
+    expect(await firstStore.unreadMessageCount(capsuleHex), 1);
+
+    final restartedStore = CapsuleDeliveryInboxStore(fileStore: fileStore);
+    restartedStore.merge(
+      capsuleHex,
+      messages: const <CapsuleChatInboxMessage>[first, second, first],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+
+    expect(await restartedStore.unreadMessageCount(capsuleHex), 1);
+    await restartedStore.markMessagesRead(
+      capsuleHex,
+      restartedStore.loadMessages(capsuleHex).map((message) => message.id),
+    );
+    expect(await restartedStore.unreadMessageCount(capsuleHex), 0);
+  });
+
+  test('corrupt or cross-capsule read state never hides unread', () async {
+    const capsuleHex =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    const otherCapsuleHex =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    final tempHome = await Directory.systemTemp.createTemp('hivra-unread-');
+    addTearDown(() async {
+      if (await tempHome.exists()) await tempHome.delete(recursive: true);
+    });
+    final fileStore = CapsuleFileStore(
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    final store = CapsuleDeliveryInboxStore(fileStore: fileStore);
+    const message = CapsuleChatInboxMessage(
+      id: 'message-1',
+      fromHex: otherCapsuleHex,
+      messageText: 'unread',
+      createdAtUtc: '2026-08-13T08:00:00.000Z',
+      envelopeHashHex: '',
+      timestampMs: 1,
+    );
+    store.merge(
+      capsuleHex,
+      messages: const <CapsuleChatInboxMessage>[message],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+    final capsuleDir = await fileStore.capsuleDirForHex(
+      capsuleHex,
+      create: true,
+    );
+    await fileStore.writeChatReadState(capsuleDir, '{not-json');
+    expect(await store.unreadMessageCount(capsuleHex), 1);
+
+    await fileStore.writeChatReadState(
+      capsuleDir,
+      jsonEncode(<String, Object?>{
+        'version': 1,
+        'capsule_root_hex': otherCapsuleHex,
+        'read_message_ids': <String>['message-1'],
+      }),
+    );
+    expect(await store.unreadMessageCount(capsuleHex), 1);
+    expect(await store.unreadMessageCount(otherCapsuleHex), 0);
+  });
+
+  test('evicted messages cannot resurrect unread state', () async {
+    const capsuleHex =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    final tempHome = await Directory.systemTemp.createTemp('hivra-unread-');
+    addTearDown(() async {
+      if (await tempHome.exists()) await tempHome.delete(recursive: true);
+    });
+    final store = CapsuleDeliveryInboxStore(
+      maxRecordsPerCapsule: 1,
+      fileStore: CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      ),
+    );
+    CapsuleChatInboxMessage message(String id, int timestampMs) =>
+        CapsuleChatInboxMessage(
+          id: id,
+          fromHex: capsuleHex,
+          messageText: id,
+          createdAtUtc: '2026-08-13T08:00:00.000Z',
+          envelopeHashHex: '',
+          timestampMs: timestampMs,
+        );
+    store.merge(
+      capsuleHex,
+      messages: <CapsuleChatInboxMessage>[message('old', 1)],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+    await store.markMessagesRead(capsuleHex, const <String>['old']);
+    store.merge(
+      capsuleHex,
+      messages: <CapsuleChatInboxMessage>[message('new', 2)],
+      tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+    );
+
+    expect(store.loadMessages(capsuleHex).single.id, 'new');
+    expect(await store.unreadMessageCount(capsuleHex), 1);
+    await store.markMessagesRead(capsuleHex, const <String>['new']);
+    expect(await store.unreadMessageCount(capsuleHex), 0);
+  });
+
+  test(
+    'concurrent read projections preserve the newest complete set',
+    () async {
+      const capsuleHex =
+          '1111111111111111111111111111111111111111111111111111111111111111';
+      final tempHome = await Directory.systemTemp.createTemp('hivra-unread-');
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      final store = CapsuleDeliveryInboxStore(
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        ),
+      );
+      CapsuleChatInboxMessage message(String id, int timestampMs) =>
+          CapsuleChatInboxMessage(
+            id: id,
+            fromHex: capsuleHex,
+            messageText: id,
+            createdAtUtc: '2026-08-13T08:00:00.000Z',
+            envelopeHashHex: '',
+            timestampMs: timestampMs,
+          );
+      store.merge(
+        capsuleHex,
+        messages: <CapsuleChatInboxMessage>[
+          message('first', 1),
+          message('second', 2),
+        ],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+      );
+
+      await Future.wait(<Future<void>>[
+        store.markMessagesRead(capsuleHex, const <String>['first']),
+        store.markMessagesRead(capsuleHex, const <String>['first', 'second']),
+      ]);
+
+      expect(await store.unreadMessageCount(capsuleHex), 0);
+    },
+  );
+
+  testWidgets('chat navigation badge is visible only for unread messages', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: chatUnreadNavigationIcon(3))),
+    );
+    expect(find.byKey(const ValueKey<String>('chat-unread-badge')), findsOne);
+    expect(find.text('3'), findsOneWidget);
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: Icon(Icons.extension))),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('chat-unread-badge')),
+      findsNothing,
+    );
   });
 
   test(

@@ -296,7 +296,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/first_launch_screen.dart` line `4` (`FirstLaunchScreen`) — rule `surface_mapping:ui_first_launch`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/invitations_screen.dart` line `116` (`InvitationsScreen`) — rule `registry`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/ledger_inspector_screen.dart` line `13` (`LedgerInspectorScreen`) — rule `surface_mapping:ui_ledger_inspector`
-- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/main_screen.dart` line `23` (`MainScreen`) — rule `registry`
+- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/main_screen.dart` line `34` (`MainScreen`) — rule `registry`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/moltbook_ambassador_screen.dart` line `13` (`MoltbookAmbassadorScreen`) — rule `registry`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/recovery_screen.dart` line `8` (`RecoveryScreen`) — rule `surface_mapping:ui_recovery`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/relationships_screen.dart` line `47` (`RelationshipsScreen`) — rule `registry`
@@ -354,8 +354,8 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPOSITION_SUPPORT` — `flutter/lib/services/capsule_ai_runtime_service.dart` line `197` (`CapsuleInferenceRuntime`) — rule `composition_root`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_ai_runtime_service.dart` line `225` (`CapsuleAiRuntimeService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_deferred_inbox_store.dart` line `105` (`CapsuleChatDeferredInboxStore`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_delivery_service.dart` line `88` (`CapsuleDeliveryInboxStore`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_delivery_service.dart` line `217` (`CapsuleChatDeliveryService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_delivery_service.dart` line `89` (`CapsuleDeliveryInboxStore`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_delivery_service.dart` line `305` (`CapsuleChatDeliveryService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_contact_label_store.dart` line `7` (`CapsuleContactLabelStore`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_delivery_lifecycle_service.dart` line `36` (`CapsuleDeliveryLifecycleService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_diagnostics_service.dart` line `13` (`CapsuleDiagnosticsService`) — rule `current_flutter_service_support`
@@ -394,8 +394,8 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPOSITION_SUPPORT` — `flutter/lib/services/ledger_inspector_module_service.dart` line `7` (`LedgerInspectorModule`) — rule `composition_root`
 - `COMPOSITION_SUPPORT` — `flutter/lib/services/ledger_inspector_module_service.dart` line `21` (`LedgerInspectorModuleService`) — rule `composition_root`
 - `REGISTERED_EVIDENCE` — `flutter/lib/services/ledger_view_service.dart` line `35` (`LedgerViewService`) — rule `registry`
-- `COMPOSITION_SUPPORT` — `flutter/lib/services/main_screen_module_service.dart` line `9` (`MainScreenModule`) — rule `composition_root`
-- `COMPOSITION_SUPPORT` — `flutter/lib/services/main_screen_module_service.dart` line `26` (`MainScreenModuleService`) — rule `composition_root`
+- `COMPOSITION_SUPPORT` — `flutter/lib/services/main_screen_module_service.dart` line `10` (`MainScreenModule`) — rule `composition_root`
+- `COMPOSITION_SUPPORT` — `flutter/lib/services/main_screen_module_service.dart` line `29` (`MainScreenModuleService`) — rule `composition_root`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/manual_consensus_check_service.dart` line `6` (`ManualConsensusCheckService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/moltbook_ambassador_configuration_store.dart` line `7` (`MoltbookAmbassadorConfigurationStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/moltbook_connection_service.dart` line `9` (`MoltbookConnectionService`) — rule `current_flutter_service_support`
@@ -465,7 +465,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `flutter/lib/services/app_runtime_service.dart` line `343` (`buildSettingsService` → `SettingsService`)
 - `flutter/lib/services/invitation_module_service.dart` line `29` (`build` → `InvitationModule`)
 - `flutter/lib/services/ledger_inspector_module_service.dart` line `28` (`build` → `LedgerInspectorModule`)
-- `flutter/lib/services/main_screen_module_service.dart` line `31` (`build` → `MainScreenModule`)
+- `flutter/lib/services/main_screen_module_service.dart` line `34` (`build` → `MainScreenModule`)
 - `flutter/lib/services/plugin_runtime_module_service.dart` line `1758` (`build` → `PluginRuntimeModule`)
 - `flutter/lib/services/trading_drone_module_service.dart` line `92` (`build` → `TradingDroneModule`)
 
@@ -477,20 +477,20 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 - `4065` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3197` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
-- `2447` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
+- `2466` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
 - `2162` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
 - `1827` lines — `flutter/lib/services/plugin_runtime_module_service.dart`
 - `1440` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
+- `1309` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `1309` lines — `flutter/lib/screens/invitations_screen.dart`
-- `1204` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `1019` lines — `flutter/lib/services/bingx_futures_zone_decision_service.dart`
 - `979` lines — `flutter/lib/screens/ledger_inspector_screen.dart`
 - `905` lines — `flutter/lib/services/external_effect_service.dart`
 - `885` lines — `flutter/lib/screens/relationships_screen.dart`
 - `879` lines — `flutter/lib/services/moltbook_provider_adapter.dart`
+- `834` lines — `flutter/lib/screens/main_screen.dart`
 - `815` lines — `flutter/lib/services/invitation_intent_handler.dart`
-- `805` lines — `flutter/lib/screens/main_screen.dart`
 
 ## UI and Flutter/FFI Boundary Map
 
