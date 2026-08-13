@@ -2,17 +2,20 @@
 
 Status date: 2026-08-13
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: bounded Android Invitations refresh remediation.
-The top-bar refresh already uses the canonical passive-receive owner, but its
-post-receive shell refresh did not notify the retained Invitations projection
-when the Ledger version stayed unchanged. The remediation may only make that
-existing projection reread its Capsule-scoped store; a second receive, inbox,
-transport, or state owner is forbidden. Packaged Hands smoke then found that
-the top-bar action omitted the successful result notice shown by pull-to-
-refresh. Both controls must use the existing invitation feedback path and show
-each non-empty manual result exactly once. The bounded P2 Capsule AI unlock
-remediation is complete on `main`. Packaged macOS Release smoke from
-`b6c2e01` migrated the legacy provider preference, then a cold restart unlocked
+Current development focus: no next pass selected. The bounded Android
+Invitations refresh remediation is complete on `main` at `96433fa`. The top-
+bar action now invokes the existing canonical passive-receive owner, refreshes
+the retained Capsule-scoped projection independently of Ledger-version change,
+and presents every non-empty result through the same invitation feedback path
+as pull-to-refresh. Fresh packaged Android Release smoke from `96433fa`, local
+build `1.0.3+100030023`, SHA-256
+`0886443a6eee643025395f8b0310c8e0a2f1df3ae06a1c5fcc657e413483c151`,
+proved a top-bar tap produced `reason=manual` and the user-visible
+`No new invitation deliveries` result without a swipe. Protected PRs `#54`
+and `#56` and post-merge repository gate `31664542748` passed. No second
+receive, inbox, transport, projection, or feedback owner was added. The bounded
+P2 Capsule AI unlock remediation is complete on `main`. Packaged macOS Release
+smoke from `b6c2e01` migrated the legacy provider preference, then a cold restart unlocked
 Gemini with zero password prompts and changed `Unlock AI` to `Lock AI`. Provider
 credentials remain in Secure Storage while the non-secret provider id belongs
 to local configuration under the same credential owner. No second credential
