@@ -26,6 +26,7 @@ import 'moltbook_external_effect_adapter.dart';
 import 'moltbook_feed_checkpoint_store.dart';
 import 'moltbook_publication_service.dart';
 import 'moltbook_public_bulletin_ai_service.dart';
+import 'moltbook_public_change_feed_store.dart';
 import 'moltbook_provider_adapter.dart';
 import 'plugin_host_api_service.dart';
 import 'ui_event_log_service.dart';
@@ -78,6 +79,7 @@ class PluginRuntimeModule {
   final MoltbookFeedCheckpointStore moltbookFeedCheckpoint;
   final MoltbookPublicationService moltbookPublications;
   final MoltbookPublicBulletinAiService moltbookPublicBulletinAi;
+  final MoltbookPublicChangeFeedStore moltbookPublicChanges;
   final MoltbookCycleTriggerService moltbookCycleTriggers;
   final MoltbookAmbassadorConfigurationStore _ambassadorConfiguration;
   final CapsuleFileStore _fileStore;
@@ -99,6 +101,7 @@ class PluginRuntimeModule {
     required this.moltbookFeedCheckpoint,
     required this.moltbookPublications,
     required this.moltbookPublicBulletinAi,
+    required this.moltbookPublicChanges,
     required this.moltbookCycleTriggers,
     required MoltbookAmbassadorConfigurationStore ambassadorConfiguration,
     required CapsuleFileStore fileStore,
@@ -179,6 +182,54 @@ class PluginRuntimeModule {
       );
       rethrow;
     }
+  }
+
+  Future<List<MoltbookPublicChange>> loadMoltbookPublicChanges() =>
+      _loadReconciledMoltbookPublicChanges();
+
+  Future<List<MoltbookPublicChange>>
+  _loadReconciledMoltbookPublicChanges() async {
+    final drafts = await moltbookDrafts.load();
+    await moltbookPublicChanges.reconcileDrafts(
+      drafts
+          .map(
+            (draft) => (
+              bulletinId: draft.preview.bulletinId,
+              category: draft.preview.category,
+              draftHashHex: draft.preview.draftHashHex,
+            ),
+          )
+          .toList(),
+    );
+    return moltbookPublicChanges.load();
+  }
+
+  Future<MoltbookPublicChange> recordMoltbookPublicChange({
+    required String sourceId,
+    required String category,
+    required List<String> facts,
+  }) async {
+    final configuration = await _ambassadorConfiguration.load();
+    final normalizedCategory = category.trim();
+    if (!configuration.allowedTopics.contains(normalizedCategory)) {
+      throw StateError('Public change category must match an allowed topic');
+    }
+    return moltbookPublicChanges.record(
+      sourceId: sourceId,
+      category: normalizedCategory,
+      facts: facts,
+    );
+  }
+
+  Future<MoltbookPublicBulletinProposal?>
+  proposeNextMoltbookPublicChange() async {
+    await _loadReconciledMoltbookPublicChanges();
+    final change = await moltbookPublicChanges.nextPending();
+    if (change == null) return null;
+    return proposeMoltbookPublicBulletin(
+      change.sourceNotes,
+      category: change.category,
+    );
   }
 
   Future<MoltbookConnectionBinding?> loadMoltbookBinding() =>
@@ -1421,6 +1472,7 @@ class PluginRuntimeModule {
     required String titleHint,
     required String reviewedBody,
     required String audience,
+    String? publicChangeCommitmentHashHex,
   }) async {
     final configuration = await _ambassadorConfiguration.load();
     if (!configuration.enabled) {
@@ -1488,7 +1540,30 @@ class PluginRuntimeModule {
         'Installed Moltbook plugin does not preserve the reviewed title/body. Upgrade the plugin before publishing.',
       );
     }
+    if (publicChangeCommitmentHashHex != null) {
+      final change =
+          (await _loadReconciledMoltbookPublicChanges())
+              .where(
+                (candidate) =>
+                    candidate.commitmentHashHex ==
+                    publicChangeCommitmentHashHex,
+              )
+              .singleOrNull;
+      if (change == null || !change.isPending) {
+        throw StateError('Pending public change is unavailable');
+      }
+      if (preview.bulletinId != change.sourceId ||
+          preview.category != change.category) {
+        throw StateError('WASM draft does not match the queued public change');
+      }
+    }
     await moltbookDrafts.save(preview);
+    if (publicChangeCommitmentHashHex != null) {
+      await moltbookPublicChanges.markDrafted(
+        publicChangeCommitmentHashHex,
+        preview.draftHashHex,
+      );
+    }
     await uiLog.log(
       'moltbook.draft.prepare',
       'success bulletin=${_safeLogValue(preview.bulletinId)} '
@@ -1752,6 +1827,10 @@ class PluginRuntimeModuleService {
       ),
       moltbookPublicBulletinAi: MoltbookPublicBulletinAiService(
         runtime: aiRuntime,
+      ),
+      moltbookPublicChanges: MoltbookPublicChangeFeedStore(
+        fileStore: fileStore,
+        readActiveCapsuleRootHex: activeCapsuleRootHex,
       ),
       moltbookCycleTriggers: _moltbookCycleTriggers,
       ambassadorConfiguration: MoltbookAmbassadorConfigurationStore(
