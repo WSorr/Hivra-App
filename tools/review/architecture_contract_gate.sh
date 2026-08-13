@@ -864,12 +864,16 @@ require_present "$FFI_INVITATION_API" 'resolve_receive_batch' \
   "canonical FFI ingress resolves the fetched batch"
 require_present "$FFI_TRANSPORT_CACHE" 'with_current_nostr_transport' \
   "batch resolution cannot rebuild away pending session state"
-require_absent "$FFI_CHAT_API" 'messages\.drain\(0\.\.overflow\)' \
-  "full chat inbox cannot silently evict an unconsumed envelope"
+require_absent "$FFI_CHAT_API" 'static CHAT_INBOX|drain_queued_chat' \
+  "chat ingress has no volatile or destructive process-only handoff"
 require_absent "$FFI_ATTESTATION_API" 'messages\.drain\(0\.\.overflow\)' \
   "full attestation inbox cannot silently evict an unconsumed envelope"
-require_present "$FFI_CHAT_API" 'return InboundRouteResult::Retry;' \
-  "full chat inbox applies retry backpressure"
+require_present "$FFI_CHAT_API" 'match persist_chat_handoff\(' \
+  "chat ingress persists the canonical durable handoff before acknowledgement"
+require_present "$FFI_CHAT_API" 'Err\(error\) => \{' \
+  "chat durable handoff exposes a fail-closed write-error branch"
+require_present "$FFI_CHAT_API" 'InboundRouteResult::Retry' \
+  "chat durable handoff failure applies retry backpressure"
 require_present "$FFI_ATTESTATION_API" 'return InboundRouteResult::Retry;' \
   "full attestation inbox applies retry backpressure"
 require_absent "$INV_ACTIONS" '_pendingRetryPumpByCapsule|_schedulePendingOutgoingRetryPump' \

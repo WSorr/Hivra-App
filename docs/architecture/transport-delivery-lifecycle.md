@@ -183,6 +183,16 @@ truth, or proof of canonical consumption. Process restart may replay an
 overlap; Core idempotence, capability inbox identity, and durable quarantine
 identity must make that replay safe.
 
+For Capsule Chat, `consumed` requires an atomic encrypted handoff into the
+existing Capsule-scoped chat capability owner. A process-memory queue is not a
+terminal handoff. The handoff record retains the exact adapter event id and is
+read non-destructively; Flutter may filter and project it but cannot become a
+second inbox owner. Records are bounded, ordered deterministically, and old
+records leave replay tombstones before removal. Corrupt storage, wrong Capsule,
+wrong network, wrong transport endpoint, authentication failure, or write
+failure returns `retry` and cannot advance acknowledgement. Chat content and
+read/unread state remain operational capability data outside Core and Ledger.
+
 Quarantine recovery MUST re-enter the same canonical FFI ingress router with
 the original adapter event id and envelope. It cannot invoke a capability
 handler directly, append Core facts itself, or become a second receive route.

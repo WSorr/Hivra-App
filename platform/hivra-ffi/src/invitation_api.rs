@@ -683,7 +683,17 @@ fn route_inbound_envelope(
         return InboundDeliveryDisposition::Consumed;
     }
 
-    match crate::chat_api::queue_incoming_chat_if_match(&message, event_id, local_endpoint) {
+    let capsule_state = match current_capsule_state() {
+        Some(state) => state,
+        None => return InboundDeliveryDisposition::Retry,
+    };
+    match crate::chat_api::queue_incoming_chat_if_match(
+        &message,
+        event_id,
+        local_endpoint,
+        &capsule_state,
+        seed,
+    ) {
         InboundRouteResult::Consumed => {
             counters.routed_non_core += 1;
             return InboundDeliveryDisposition::Consumed;
@@ -1309,6 +1319,13 @@ mod quarantine_recovery_tests {
         crate::inbound_quarantine::set_application_storage_root(root.path()).unwrap();
         let seed = Seed::new([41; 32]);
         let local_pubkey = [42; 32];
+        let owner = PubKey::from([43; 32]);
+        RUNTIME.lock().unwrap().capsule = Some(Capsule {
+            pubkey: owner,
+            capsule_type: CapsuleType::Leaf,
+            network: Network::Neste,
+            ledger: Ledger::new(owner),
+        });
         let scope = crate::inbound_quarantine::InboundQuarantineScopeV1::for_runtime(
             &[43; 32],
             1,
@@ -1327,7 +1344,13 @@ mod quarantine_recovery_tests {
             correlation_id: None,
             domain_event: None,
         };
-        crate::chat_api::fill_chat_inbox_for_test(&local_pubkey);
+        let capsule_hex = [43u8; 32]
+            .iter()
+            .map(|value| format!("{value:02x}"))
+            .collect::<String>();
+        let chat_path = crate::chat_api::chat_handoff_path(&capsule_hex).unwrap();
+        std::fs::create_dir_all(chat_path.parent().unwrap()).unwrap();
+        std::fs::write(&chat_path, b"corrupt").unwrap();
         let mut counters = IngressCounters::default();
         assert_eq!(
             route_inbound_envelope(
@@ -1349,7 +1372,7 @@ mod quarantine_recovery_tests {
             )
             .unwrap();
 
-        crate::chat_api::clear_chat_inbox_for_test(&local_pubkey);
+        std::fs::remove_file(&chat_path).unwrap();
         recover_one_quarantined_envelope(
             &mut repository,
             PubKey::from(local_pubkey),
@@ -1359,10 +1382,20 @@ mod quarantine_recovery_tests {
         )
         .unwrap();
 
-        assert_eq!(crate::chat_api::chat_inbox_len_for_test(&local_pubkey), 1);
+        assert_eq!(
+            crate::chat_api::list_chat_handoff(
+                &current_capsule_state().unwrap(),
+                local_pubkey,
+                &seed,
+            )
+            .unwrap()
+            .len(),
+            1
+        );
         assert_eq!(repository.record_count(), 0);
         assert_eq!(repository.tombstone_count(), 1);
         assert_eq!(counters.quarantine_recovered, 1);
-        crate::chat_api::clear_chat_inbox_for_test(&local_pubkey);
+        std::fs::remove_file(chat_path).unwrap();
+        RUNTIME.lock().unwrap().capsule = None;
     }
 }

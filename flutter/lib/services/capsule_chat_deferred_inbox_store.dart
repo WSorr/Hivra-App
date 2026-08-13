@@ -10,6 +10,7 @@ const Duration capsuleChatDeferredInboxTtl = Duration(hours: 48);
 
 class CapsuleChatDeferredInboxItem {
   final String id;
+  final String adapterEventId;
   final String capsuleHex;
   final String fromHex;
   final String payloadJson;
@@ -20,6 +21,7 @@ class CapsuleChatDeferredInboxItem {
 
   const CapsuleChatDeferredInboxItem({
     required this.id,
+    this.adapterEventId = '',
     required this.capsuleHex,
     required this.fromHex,
     required this.payloadJson,
@@ -29,12 +31,10 @@ class CapsuleChatDeferredInboxItem {
     required this.attempts,
   });
 
-  CapsuleChatDeferredInboxItem copyWith({
-    DateTime? lastSeenAt,
-    int? attempts,
-  }) {
+  CapsuleChatDeferredInboxItem copyWith({DateTime? lastSeenAt, int? attempts}) {
     return CapsuleChatDeferredInboxItem(
       id: id,
+      adapterEventId: adapterEventId,
       capsuleHex: capsuleHex,
       fromHex: fromHex,
       payloadJson: payloadJson,
@@ -48,6 +48,7 @@ class CapsuleChatDeferredInboxItem {
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'id': id,
+      if (adapterEventId.isNotEmpty) 'adapter_event_id': adapterEventId,
       'capsule_hex': capsuleHex,
       'from_hex': fromHex,
       'payload_json': payloadJson,
@@ -62,13 +63,15 @@ class CapsuleChatDeferredInboxItem {
     if (raw is! Map) return null;
     final map = Map<String, dynamic>.from(raw);
     final id = map['id']?.toString().trim().toLowerCase() ?? '';
+    final adapterEventId = map['adapter_event_id']?.toString().trim() ?? '';
     final capsuleHex =
         map['capsule_hex']?.toString().trim().toLowerCase() ?? '';
     final fromHex = map['from_hex']?.toString().trim().toLowerCase() ?? '';
     final payloadJson = map['payload_json']?.toString() ?? '';
     final timestampMs = map['timestamp_ms'];
-    final firstSeenAt =
-        DateTime.tryParse(map['first_seen_at']?.toString() ?? '');
+    final firstSeenAt = DateTime.tryParse(
+      map['first_seen_at']?.toString() ?? '',
+    );
     final lastSeenAt = DateTime.tryParse(map['last_seen_at']?.toString() ?? '');
     final attempts = map['attempts'];
     if (!_isHex64(id) ||
@@ -84,6 +87,7 @@ class CapsuleChatDeferredInboxItem {
     }
     return CapsuleChatDeferredInboxItem(
       id: id,
+      adapterEventId: adapterEventId,
       capsuleHex: capsuleHex,
       fromHex: fromHex,
       payloadJson: payloadJson,
@@ -140,12 +144,13 @@ class CapsuleChatDeferredInboxStore {
     for (final item in items) {
       if (item.capsuleHex != normalized) continue;
       final previous = existing[item.id];
-      existing[item.id] = previous == null
-          ? item
-          : previous.copyWith(
-              lastSeenAt: nowUtc,
-              attempts: previous.attempts + 1,
-            );
+      existing[item.id] =
+          previous == null
+              ? item
+              : previous.copyWith(
+                lastSeenAt: nowUtc,
+                attempts: previous.attempts + 1,
+              );
     }
     await _write(normalized, _pruned(existing.values, nowUtc));
   }
@@ -161,6 +166,7 @@ class CapsuleChatDeferredInboxStore {
   }
 
   CapsuleChatDeferredInboxItem create({
+    String adapterEventId = '',
     required String capsuleHex,
     required String fromHex,
     required String payloadJson,
@@ -178,6 +184,7 @@ class CapsuleChatDeferredInboxStore {
     final nowUtc = now.toUtc();
     return CapsuleChatDeferredInboxItem(
       id: id,
+      adapterEventId: adapterEventId.trim(),
       capsuleHex: normalizedCapsule,
       fromHex: normalizedFrom,
       payloadJson: payloadJson,

@@ -745,7 +745,7 @@ fn append_tombstone(
     Ok(())
 }
 
-fn application_storage_root() -> Result<PathBuf, QuarantineError> {
+pub(crate) fn application_storage_root() -> Result<PathBuf, QuarantineError> {
     APPLICATION_STORAGE_ROOT
         .lock()
         .map_err(|_| QuarantineError::Io)?
