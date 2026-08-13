@@ -2,17 +2,13 @@
 
 Status date: 2026-08-13
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Chat Durable Receive Handoff`. The existing
-authenticated ingress route must persist each chat event atomically under the
-exact Capsule/network/transport scope before returning `consumed`. The exact
-adapter event id must survive restart and consensus defer; native reads are
-non-destructive and Flutter remains a projection consumer. Core, Ledger,
-transport format, a second inbox owner, attachments, notifications, and Chat UI
-redesign are outside this bounded pass. The unread system badge is the next
-product candidate only after durable receipt is proven; it is not selected or
-implemented by this pass. Implementation and automated gates are complete on
-the short-lived branch; protected-PR verification and fresh packaged macOS and
-Android smoke remain required before this pass can close. The bounded Android
+Current development focus: `1.x Capsule-scoped Chat Unread Indicator` audit.
+The preceding durable receive handoff is complete on `main` at `c9caa7e` with
+green protected PR/post-merge gates and packaged macOS/Android restart smoke.
+The selected audit must reuse the existing Chat inbox/projection owner and
+define one Capsule-scoped read cursor before any UI implementation. A second
+inbox, transport route, Core/Ledger fact, OS push service, attachment lifecycle,
+or cross-Capsule unread state is not authorized. The bounded Android
 Invitations refresh remediation is complete on `main` at `96433fa`. The top-
 bar action now invokes the existing canonical passive-receive owner, refreshes
 the retained Capsule-scoped projection independently of Ledger-version change,
