@@ -99,57 +99,6 @@ void main() {
     );
   });
 
-  test(
-    'restart reconciles a durable draft written before the feed marker',
-    () async {
-      await store.record(
-        sourceId: 'change-1',
-        category: 'hivra-development',
-        facts: const <String>['One confirmed public fact.'],
-      );
-
-      await store.reconcileDrafts(
-        <({String bulletinId, String category, String draftHashHex})>[
-          (
-            bulletinId: 'change-1',
-            category: 'hivra-development',
-            draftHashHex: 'c' * 64,
-          ),
-        ],
-      );
-
-      expect((await store.load()).single.draftHashHex, 'c' * 64);
-      expect(await store.nextPending(), isNull);
-    },
-  );
-
-  test(
-    'ambiguous durable drafts fail closed during restart reconciliation',
-    () async {
-      await store.record(
-        sourceId: 'change-1',
-        category: 'hivra-development',
-        facts: const <String>['One confirmed public fact.'],
-      );
-      final drafts =
-          <({String bulletinId, String category, String draftHashHex})>[
-            (
-              bulletinId: 'change-1',
-              category: 'hivra-development',
-              draftHashHex: 'a' * 64,
-            ),
-            (
-              bulletinId: 'change-1',
-              category: 'hivra-development',
-              draftHashHex: 'b' * 64,
-            ),
-          ];
-
-      await expectLater(store.reconcileDrafts(drafts), throwsStateError);
-      expect((await store.load()).single.isPending, isTrue);
-    },
-  );
-
   test('retention stays bounded and preserves the newest changes', () async {
     for (
       var index = 0;

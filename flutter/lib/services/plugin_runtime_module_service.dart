@@ -185,24 +185,7 @@ class PluginRuntimeModule {
   }
 
   Future<List<MoltbookPublicChange>> loadMoltbookPublicChanges() =>
-      _loadReconciledMoltbookPublicChanges();
-
-  Future<List<MoltbookPublicChange>>
-  _loadReconciledMoltbookPublicChanges() async {
-    final drafts = await moltbookDrafts.load();
-    await moltbookPublicChanges.reconcileDrafts(
-      drafts
-          .map(
-            (draft) => (
-              bulletinId: draft.preview.bulletinId,
-              category: draft.preview.category,
-              draftHashHex: draft.preview.draftHashHex,
-            ),
-          )
-          .toList(),
-    );
-    return moltbookPublicChanges.load();
-  }
+      moltbookPublicChanges.load();
 
   Future<MoltbookPublicChange> recordMoltbookPublicChange({
     required String sourceId,
@@ -223,7 +206,6 @@ class PluginRuntimeModule {
 
   Future<MoltbookPublicBulletinProposal?>
   proposeNextMoltbookPublicChange() async {
-    await _loadReconciledMoltbookPublicChanges();
     final change = await moltbookPublicChanges.nextPending();
     if (change == null) return null;
     return proposeMoltbookPublicBulletin(
@@ -1542,7 +1524,7 @@ class PluginRuntimeModule {
     }
     if (publicChangeCommitmentHashHex != null) {
       final change =
-          (await _loadReconciledMoltbookPublicChanges())
+          (await moltbookPublicChanges.load())
               .where(
                 (candidate) =>
                     candidate.commitmentHashHex ==

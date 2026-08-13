@@ -166,42 +166,6 @@ class MoltbookPublicChangeFeedStore {
     });
   }
 
-  Future<void> reconcileDrafts(
-    List<({String bulletinId, String category, String draftHashHex})> drafts,
-  ) {
-    return _serialized(() async {
-      final ownerHex = _requireOwnerHex();
-      final changes = await _loadForOwner(ownerHex);
-      var changed = false;
-      for (var index = 0; index < changes.length; index++) {
-        final change = changes[index];
-        if (!change.isPending) continue;
-        final matches =
-            drafts
-                .where(
-                  (draft) =>
-                      draft.bulletinId == change.sourceId &&
-                      draft.category == change.category,
-                )
-                .toList();
-        if (matches.length > 1) {
-          throw StateError('Multiple drafts claim one pending public change');
-        }
-        if (matches.isEmpty) continue;
-        changes[index] = MoltbookPublicChange(
-          sourceId: change.sourceId,
-          category: change.category,
-          facts: change.facts,
-          commitmentHashHex: change.commitmentHashHex,
-          recordedAtUtc: change.recordedAtUtc,
-          draftHashHex: matches.single.draftHashHex,
-        );
-        changed = true;
-      }
-      if (changed) await _writeForOwner(ownerHex, changes);
-    });
-  }
-
   static String commitmentFor({
     required String sourceId,
     required String category,

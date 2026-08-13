@@ -124,6 +124,9 @@ existing draft store durably records the canonical draft hash. Publication
 still requires the existing approval, external-effect, challenge, receipt, and
 reconciliation lifecycle. A provider or future Git/CI producer may enqueue
 facts only through this ingestion contract; it gains no publication authority.
+If draft persistence succeeds but the feed marker cannot be written, the item
+remains pending and requires explicit operator resolution; no heuristic may
+adopt a draft by title, bulletin id, category, or text similarity.
 
 A local post draft is authoring state, not publication history. Once the
 external-effect journal contains a validated `succeeded` post operation bound
