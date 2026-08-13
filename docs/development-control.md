@@ -2,8 +2,8 @@
 
 Status date: 2026-08-13
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Capsule-scoped Chat Unread Indicator`
-verification.
+Current development focus: no next pass selected after completion of the
+`1.x Capsule-scoped Chat Unread Indicator`.
 The preceding durable receive handoff is complete on `main` at `c9caa7e` with
 green protected PR/post-merge gates and packaged macOS/Android restart smoke.
 The bounded implementation extends the existing Chat inbox/projection owner
@@ -11,8 +11,9 @@ with one persisted Capsule-scoped read state over retained message ids. The
 cross-screen Plugins navigation badge is a shell projection only, and messages
 become read only after the canonical Chat workspace projects them. Replay,
 restart, retention, corruption, Capsule isolation, and concurrent projection
-vectors are covered. Closure still requires full local gates, protected PR and
-post-merge gates, and fresh packaged macOS/Android smoke. A second inbox,
+vectors are covered. Protected PR `#60`, post-merge run `31673505950`, and
+fresh packaged macOS/Android Hands smoke from source `d50e70f`, local build
+`1.0.3+100030025`, completed the pass. A second inbox,
 transport route, Core/Ledger fact, OS push service, attachment lifecycle, or
 cross-Capsule unread state is not authorized. The bounded Android
 Invitations refresh remediation is complete on `main` at `96433fa`. The top-

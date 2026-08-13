@@ -3038,10 +3038,18 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Entropy reduction: one read owner and one projection path replace the
     ambiguity between replayed retained history and newly unread messages;
     added owner count is zero and added execution-path count is zero.
-  - Status: implemented on branch (2026-08-13); focused regression tests pass.
-    Full local gates, protected PR/post-merge gates, and fresh packaged
-    macOS/Android smoke remain required before completion. No tag or Release is
-    authorized.
+  - Verification: Flutter `833/833`, Rust workspace, analyze, repository-wide
+    review, detached clean-checkout, protected PR `#60`, and post-merge run
+    `31673505950` passed. Fresh smoke-only Release artifacts from source
+    `d50e70f`, build `1.0.3+100030025`, had macOS SHA-256
+    `fdc1d51632ccb7ef18b46ab80969ad542bc8dad2fd23876e387fc21585df71cb`
+    and Android SHA-256
+    `bcbcc2f3897092e8986b877b3015931c2177da5cd0ac486161711facf4e4164a`.
+    macOS projected badge `3` and Android badge `2`; each cleared only after
+    the canonical Chat workspace displayed the retained messages, stayed clear
+    through periodic replay, and stayed clear after a cold process restart.
+  - Status: complete (2026-08-13). No following pass, tag, or Release is
+    selected.
 
 - `13.1 AI-Assisted Trading Analysis`
   - Goal:
