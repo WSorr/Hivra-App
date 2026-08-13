@@ -482,7 +482,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
 - `1827` lines — `flutter/lib/services/plugin_runtime_module_service.dart`
 - `1440` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
-- `1301` lines — `flutter/lib/screens/invitations_screen.dart`
+- `1309` lines — `flutter/lib/screens/invitations_screen.dart`
 - `1143` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `1019` lines — `flutter/lib/services/bingx_futures_zone_decision_service.dart`
 - `979` lines — `flutter/lib/screens/ledger_inspector_screen.dart`
@@ -490,7 +490,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `885` lines — `flutter/lib/screens/relationships_screen.dart`
 - `879` lines — `flutter/lib/services/moltbook_provider_adapter.dart`
 - `815` lines — `flutter/lib/services/invitation_intent_handler.dart`
-- `809` lines — `flutter/lib/screens/main_screen.dart`
+- `805` lines — `flutter/lib/screens/main_screen.dart`
 
 ## UI and Flutter/FFI Boundary Map
 

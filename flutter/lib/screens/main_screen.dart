@@ -393,11 +393,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       );
       if (!mounted) return;
       _loadCapsuleData(refreshInvitationsProjection: true);
-      if (result.ingress.code < 0) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(result.ingress.message)));
-      }
+      showInvitationUserMessage(context, result.ingress.message);
       return;
     }
     _loadCapsuleData();

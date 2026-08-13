@@ -2961,6 +2961,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: focused positive and no-op regression vectors, full local
     gates, protected PR and post-merge gates, then fresh Android packaged smoke
     proving the top-bar button updates the same list as pull-to-refresh.
+  - Packaged Hands finding: source `1ee7ef4` completed the canonical manual
+    receive and refreshed the projection, but only error results produced a
+    top-bar notice. Pull-to-refresh showed every non-empty result. Follow-up
+    remediation must reuse the existing invitation feedback helper for both
+    controls and add a positive success-notice regression.
   - Status: remediation in progress (2026-08-13). No following pass is
     selected.
 
