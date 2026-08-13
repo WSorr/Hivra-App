@@ -2966,7 +2966,17 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     top-bar notice. Pull-to-refresh showed every non-empty result. Follow-up
     remediation must reuse the existing invitation feedback helper for both
     controls and add a positive success-notice regression.
-  - Status: remediation in progress (2026-08-13). No following pass is
+  - Follow-up result: both controls now use the existing invitation feedback
+    helper, and widget evidence covers the positive success notice. Protected
+    PRs `#54` and `#56` merged at `1ee7ef4` and `96433fa`; PR and post-merge
+    repository gates passed, including final run `31664542748`.
+  - Packaged Hands evidence: fresh Android Release source `96433fa`, local
+    build `1.0.3+100030023`, SHA-256
+    `0886443a6eee643025395f8b0310c8e0a2f1df3ae06a1c5fcc657e413483c151`,
+    produced canonical `reason=manual` receive and the user-visible
+    `No new invitation deliveries` result from one top-bar tap without a
+    swipe.
+  - Status: complete (2026-08-13). No following pass, tag, or Release is
     selected.
 
 ## Planned Product Tracks
