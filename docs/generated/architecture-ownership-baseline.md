@@ -296,7 +296,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/first_launch_screen.dart` line `4` (`FirstLaunchScreen`) — rule `surface_mapping:ui_first_launch`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/invitations_screen.dart` line `116` (`InvitationsScreen`) — rule `registry`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/ledger_inspector_screen.dart` line `13` (`LedgerInspectorScreen`) — rule `surface_mapping:ui_ledger_inspector`
-- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/main_screen.dart` line `34` (`MainScreen`) — rule `registry`
+- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/main_screen.dart` line `37` (`MainScreen`) — rule `registry`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/moltbook_ambassador_screen.dart` line `13` (`MoltbookAmbassadorScreen`) — rule `registry`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/recovery_screen.dart` line `8` (`RecoveryScreen`) — rule `surface_mapping:ui_recovery`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/relationships_screen.dart` line `47` (`RelationshipsScreen`) — rule `registry`
@@ -489,7 +489,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `905` lines — `flutter/lib/services/external_effect_service.dart`
 - `885` lines — `flutter/lib/screens/relationships_screen.dart`
 - `879` lines — `flutter/lib/services/moltbook_provider_adapter.dart`
-- `834` lines — `flutter/lib/screens/main_screen.dart`
+- `838` lines — `flutter/lib/screens/main_screen.dart`
 - `815` lines — `flutter/lib/services/invitation_intent_handler.dart`
 
 ## UI and Flutter/FFI Boundary Map
@@ -537,7 +537,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 Largest registered owner files by line count:
 
 - `1848` lines — `moltbook_agent` — `flutter/lib/services/plugin_runtime_module_service.dart` (`PluginRuntimeModule`)
-- `940` lines — `relationships` — `core/hivra-core/src/relationship.rs` (`Relationships`)
+- `1046` lines — `relationships` — `core/hivra-core/src/relationship.rs` (`Relationships`)
 - `905` lines — `external_effects` — `flutter/lib/services/external_effect_service.dart` (`ExternalEffectService`)
 - `815` lines — `invitations` — `flutter/lib/services/invitation_intent_handler.dart` (`InvitationIntentHandler`)
 - `592` lines — `capsule_addressing` — `flutter/lib/services/capsule_address_service.dart` (`CapsuleAddressService`)

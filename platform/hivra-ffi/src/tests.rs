@@ -3037,6 +3037,67 @@ fn relationship_current_view_v1_projects_exported_ledger_json() {
 }
 
 #[test]
+fn relationship_current_view_v1_projects_root_signed_remote_break() {
+    let _guard = TEST_GUARD.lock().unwrap();
+    clear_runtime_state();
+
+    let seed = test_seed(54);
+    let owner = derived_pubkey(&seed);
+    let peer_transport = PubKey::from([160u8; 32]);
+    let peer_root = PubKey::from([161u8; 32]);
+    let own_starter_id = StarterId::from([162u8; 32]);
+    set_runtime_capsule(owner, Network::Neste);
+    append_runtime_event_with_signer(
+        EventKind::RelationshipEstablished,
+        &RelationshipEstablishedPayload {
+            peer_pubkey: peer_transport,
+            own_starter_id,
+            peer_starter_id: StarterId::from([163u8; 32]),
+            kind: StarterKind::Seed,
+            invitation_id: [164u8; 32],
+            sender_pubkey: peer_transport,
+            sender_starter_type: StarterKind::Seed,
+            sender_starter_id: StarterId::from([163u8; 32]),
+            peer_root_pubkey: Some(peer_root),
+            sender_root_pubkey: Some(owner),
+        }
+        .to_bytes(),
+        owner,
+    )
+    .unwrap();
+    let broken = RelationshipBrokenPayload {
+        peer_pubkey: peer_transport,
+        own_starter_id,
+        peer_root_pubkey: Some(peer_root),
+    };
+    assert!(!should_skip_incoming_delivery_append(
+        EventKind::RelationshipBroken,
+        &broken.to_bytes(),
+        peer_root,
+    ));
+    append_runtime_event_with_signer(EventKind::RelationshipBroken, &broken.to_bytes(), peer_root)
+        .unwrap();
+
+    let ledger = CString::new(export_runtime_ledger().unwrap()).unwrap();
+    let mut projected = ptr::null_mut();
+    let code = unsafe {
+        crate::ledger_api::hivra_project_relationship_current_view_v1(
+            ledger.as_ptr(),
+            ptr::null(),
+            &mut projected,
+        )
+    };
+    assert_eq!(code, 0);
+    assert!(!projected.is_null());
+    let json = unsafe { CStr::from_ptr(projected).to_str().unwrap().to_owned() };
+    unsafe { crate::ffi_support::hivra_free_string(projected) };
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["active_peer_count"], 1);
+    assert_eq!(value["relationships"][0]["starter_kind"], 2);
+    assert_eq!(value["relationships"][0]["status"], "pending_remote_break");
+}
+
+#[test]
 fn pair_view_v1_projects_exported_ledger_json() {
     let _guard = TEST_GUARD.lock().unwrap();
     clear_runtime_state();
