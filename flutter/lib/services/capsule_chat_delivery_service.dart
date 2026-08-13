@@ -11,7 +11,7 @@ import '../models/relationship.dart';
 import 'bingx_futures_execution_command_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_chat_deferred_inbox_store.dart';
-import 'capsule_file_store.dart';
+import 'capsule_delivery_inbox_store.dart';
 import 'capsule_ffi_worker_queue.dart';
 import 'manual_consensus_check_service.dart';
 import 'ledger_view_support.dart';
@@ -79,228 +79,19 @@ List<Relationship> _emptyRelationships() => const <Relationship>[];
 Future<List<CapsuleAddressCard>> _emptyTrustedCards() async =>
     const <CapsuleAddressCard>[];
 DateTime _defaultNowUtc() => DateTime.now().toUtc();
+
+CapsuleChatMessageDeliveryState outgoingChatStateForDeliveryCode(int code) {
+  if (code == 0) return CapsuleChatMessageDeliveryState.transportAccepted;
+  if (code == -1003) return CapsuleChatMessageDeliveryState.ambiguous;
+  return CapsuleChatMessageDeliveryState.failed;
+}
+
 BingxExecutionPolicy _defaultExecutionPolicyForPeer(String _) =>
     const BingxExecutionPolicy(
       allowedSymbols: <String>{},
       maxLeverage: 1000,
       maxRiskPercent: 100,
     );
-
-class CapsuleDeliveryInboxStore {
-  static final CapsuleDeliveryInboxStore shared = CapsuleDeliveryInboxStore();
-
-  static const int defaultMaxCapsules = 8;
-  static const int defaultMaxRecordsPerCapsule = 256;
-
-  final int maxCapsules;
-  final int maxRecordsPerCapsule;
-  final CapsuleFileStore _fileStore;
-
-  final Map<String, Map<String, CapsuleChatInboxMessage>> _messagesByCapsule =
-      <String, Map<String, CapsuleChatInboxMessage>>{};
-
-  final Map<String, Map<String, CapsuleTradeSignalInboxMessage>>
-  _signalsByCapsule = <String, Map<String, CapsuleTradeSignalInboxMessage>>{};
-  final List<String> _capsuleOrder = <String>[];
-  final Map<String, Future<void>> _readStateWriteTails =
-      <String, Future<void>>{};
-
-  CapsuleDeliveryInboxStore({
-    this.maxCapsules = defaultMaxCapsules,
-    this.maxRecordsPerCapsule = defaultMaxRecordsPerCapsule,
-    CapsuleFileStore fileStore = const CapsuleFileStore(),
-  }) : assert(maxCapsules > 0),
-       assert(maxRecordsPerCapsule > 0),
-       _fileStore = fileStore;
-
-  List<CapsuleChatInboxMessage> loadMessages(String capsuleRootHex) {
-    final normalized = capsuleRootHex.trim().toLowerCase();
-    final messages =
-        _messagesByCapsule[normalized]?.values.toList() ??
-        <CapsuleChatInboxMessage>[];
-    messages.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    return List<CapsuleChatInboxMessage>.unmodifiable(messages);
-  }
-
-  List<CapsuleTradeSignalInboxMessage> loadTradeSignals(String capsuleRootHex) {
-    final normalized = capsuleRootHex.trim().toLowerCase();
-    final signals =
-        _signalsByCapsule[normalized]?.values.toList() ??
-        <CapsuleTradeSignalInboxMessage>[];
-    signals.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    return List<CapsuleTradeSignalInboxMessage>.unmodifiable(signals);
-  }
-
-  void merge(
-    String capsuleRootHex, {
-    required Iterable<CapsuleChatInboxMessage> messages,
-    required Iterable<CapsuleTradeSignalInboxMessage> tradeSignals,
-  }) {
-    final normalized = capsuleRootHex.trim().toLowerCase();
-    if (!_isHex64(normalized)) return;
-    final incomingMessages = messages.toList(growable: false);
-    final incomingSignals = tradeSignals.toList(growable: false);
-    if (incomingMessages.isEmpty && incomingSignals.isEmpty) return;
-
-    _touchCapsule(normalized);
-    if (incomingMessages.isNotEmpty) {
-      final messagesById = _messagesByCapsule.putIfAbsent(
-        normalized,
-        () => <String, CapsuleChatInboxMessage>{},
-      );
-      for (final message in incomingMessages) {
-        messagesById[message.id] = message;
-      }
-      _retainNewestMessages(messagesById);
-    }
-    if (incomingSignals.isNotEmpty) {
-      final signalsById = _signalsByCapsule.putIfAbsent(
-        normalized,
-        () => <String, CapsuleTradeSignalInboxMessage>{},
-      );
-      for (final signal in incomingSignals) {
-        signalsById[signal.id] = signal;
-      }
-      _retainNewestSignals(signalsById);
-    }
-    _retainNewestCapsules();
-  }
-
-  void clearCapsule(String capsuleRootHex) {
-    final normalized = capsuleRootHex.trim().toLowerCase();
-    _messagesByCapsule.remove(normalized);
-    _signalsByCapsule.remove(normalized);
-    _capsuleOrder.remove(normalized);
-  }
-
-  Future<int> unreadMessageCount(String capsuleRootHex) async {
-    final normalized = capsuleRootHex.trim().toLowerCase();
-    if (!_isHex64(normalized)) return 0;
-    final retainedIds = loadMessages(normalized).map((message) => message.id);
-    final readIds = await _loadReadMessageIds(normalized);
-    return retainedIds.where((id) => !readIds.contains(id)).length;
-  }
-
-  Future<void> markMessagesRead(
-    String capsuleRootHex,
-    Iterable<String> messageIds,
-  ) async {
-    final normalized = capsuleRootHex.trim().toLowerCase();
-    if (!_isHex64(normalized)) return;
-    final ids = messageIds.toList(growable: false);
-    final previous = _readStateWriteTails[normalized] ?? Future<void>.value();
-    final next = previous
-        .catchError((Object _) {})
-        .then((_) => _markMessagesReadNow(normalized, ids));
-    _readStateWriteTails[normalized] = next;
-    try {
-      await next;
-    } finally {
-      if (identical(_readStateWriteTails[normalized], next)) {
-        _readStateWriteTails.remove(normalized);
-      }
-    }
-  }
-
-  Future<void> _markMessagesReadNow(
-    String capsuleRootHex,
-    Iterable<String> messageIds,
-  ) async {
-    final retainedIds = loadMessages(
-      capsuleRootHex,
-    ).map((message) => message.id);
-    final retainedSet = retainedIds.toSet();
-    final nextReadIds = await _loadReadMessageIds(capsuleRootHex);
-    nextReadIds.addAll(
-      messageIds.map((id) => id.trim()).where(retainedSet.contains),
-    );
-    nextReadIds.removeWhere((id) => !retainedSet.contains(id));
-    final bounded = nextReadIds.toList()..sort();
-    if (bounded.length > maxRecordsPerCapsule) {
-      bounded.removeRange(0, bounded.length - maxRecordsPerCapsule);
-    }
-    final capsuleDir = await _fileStore.capsuleDirForHex(
-      capsuleRootHex,
-      create: true,
-    );
-    await _fileStore.writeChatReadState(
-      capsuleDir,
-      jsonEncode(<String, Object?>{
-        'version': 1,
-        'capsule_root_hex': capsuleRootHex,
-        'read_message_ids': bounded,
-      }),
-    );
-  }
-
-  Future<Set<String>> _loadReadMessageIds(String capsuleRootHex) async {
-    try {
-      final capsuleDir = await _fileStore.capsuleDirForHex(capsuleRootHex);
-      final raw = await _fileStore.readChatReadState(capsuleDir);
-      if (raw == null) return <String>{};
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map ||
-          decoded['version'] != 1 ||
-          decoded['capsule_root_hex'] != capsuleRootHex ||
-          decoded['read_message_ids'] is! List) {
-        return <String>{};
-      }
-      final ids = decoded['read_message_ids'] as List;
-      if (ids.any((id) => id is! String || id.trim().isEmpty)) {
-        return <String>{};
-      }
-      return ids.cast<String>().toSet();
-    } catch (_) {
-      return <String>{};
-    }
-  }
-
-  void _touchCapsule(String capsuleRootHex) {
-    _capsuleOrder.remove(capsuleRootHex);
-    _capsuleOrder.add(capsuleRootHex);
-  }
-
-  void _retainNewestCapsules() {
-    while (_capsuleOrder.length > maxCapsules) {
-      clearCapsule(_capsuleOrder.first);
-    }
-  }
-
-  void _retainNewestMessages(
-    Map<String, CapsuleChatInboxMessage> messagesById,
-  ) {
-    if (messagesById.length <= maxRecordsPerCapsule) return;
-    final oldestFirst =
-        messagesById.values.toList()..sort((a, b) {
-          final timestampOrder = a.timestampMs.compareTo(b.timestampMs);
-          return timestampOrder != 0 ? timestampOrder : a.id.compareTo(b.id);
-        });
-    for (final message in oldestFirst.take(
-      messagesById.length - maxRecordsPerCapsule,
-    )) {
-      messagesById.remove(message.id);
-    }
-  }
-
-  void _retainNewestSignals(
-    Map<String, CapsuleTradeSignalInboxMessage> signalsById,
-  ) {
-    if (signalsById.length <= maxRecordsPerCapsule) return;
-    final oldestFirst =
-        signalsById.values.toList()..sort((a, b) {
-          final timestampOrder = a.timestampMs.compareTo(b.timestampMs);
-          return timestampOrder != 0 ? timestampOrder : a.id.compareTo(b.id);
-        });
-    for (final signal in oldestFirst.take(
-      signalsById.length - maxRecordsPerCapsule,
-    )) {
-      signalsById.remove(signal.id);
-    }
-  }
-
-  static bool _isHex64(String value) =>
-      RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
-}
 
 class CapsuleChatDeliveryService {
   final AppRuntimeRuntime _runtime;
@@ -371,6 +162,18 @@ class CapsuleChatDeliveryService {
     return _deliveryInboxStore.loadMessages(_hex(root));
   }
 
+  Future<List<CapsuleChatInboxMessage>> loadCachedMessagesDurably() async {
+    final root = _runtime.capsuleRootPublicKey();
+    if (root == null || root.length != 32) {
+      return const <CapsuleChatInboxMessage>[];
+    }
+    final capsuleRootHex = _hex(root);
+    if (!await _deliveryInboxStore.hydrateCapsule(capsuleRootHex)) {
+      throw StateError('Chat history is unavailable or invalid');
+    }
+    return _deliveryInboxStore.loadMessages(capsuleRootHex);
+  }
+
   List<CapsuleTradeSignalInboxMessage> loadCachedTradeSignals() {
     final root = _runtime.capsuleRootPublicKey();
     if (root == null || root.length != 32) {
@@ -394,6 +197,91 @@ class CapsuleChatDeliveryService {
       _hex(root),
       messages.map((message) => message.id),
     );
+  }
+
+  Future<void> recordOutgoingMessage({
+    required String capsuleRootHex,
+    required String peerHex,
+    required String envelopeHashHex,
+    required String messageText,
+    required String createdAtUtc,
+    required CapsuleChatMessageDeliveryState deliveryState,
+  }) async {
+    final timestamp = DateTime.tryParse(createdAtUtc)?.millisecondsSinceEpoch;
+    if (!_isLowerHex64(capsuleRootHex) ||
+        !_isLowerHex64(peerHex) ||
+        !_isLowerHex64(envelopeHashHex) ||
+        messageText.trim().isEmpty ||
+        timestamp == null) {
+      throw const FormatException('Outgoing chat timeline record is invalid');
+    }
+    await _deliveryInboxStore.upsertMessageDurably(
+      capsuleRootHex,
+      CapsuleChatInboxMessage(
+        id: envelopeHashHex,
+        fromHex: capsuleRootHex,
+        toHex: peerHex,
+        messageText: messageText,
+        createdAtUtc: createdAtUtc,
+        envelopeHashHex: envelopeHashHex,
+        timestampMs: timestamp,
+        direction: CapsuleChatMessageDirection.outgoing,
+        deliveryState: deliveryState,
+      ),
+    );
+  }
+
+  Future<void> updateOutgoingMessageState({
+    required String capsuleRootHex,
+    required String envelopeHashHex,
+    required CapsuleChatMessageDeliveryState deliveryState,
+  }) async {
+    await _deliveryInboxStore.hydrateCapsule(capsuleRootHex);
+    final current =
+        _deliveryInboxStore
+            .loadMessages(capsuleRootHex)
+            .where(
+              (message) =>
+                  message.id == envelopeHashHex &&
+                  message.direction == CapsuleChatMessageDirection.outgoing,
+            )
+            .firstOrNull;
+    if (current == null) return;
+    await _deliveryInboxStore.upsertMessageDurably(
+      capsuleRootHex,
+      current.copyWith(deliveryState: deliveryState),
+    );
+  }
+
+  Future<CapsuleChatDeliverySendResult> sendCanonicalEnvelopeWithTimeline({
+    required String capsuleRootHex,
+    required String peerHex,
+    required String canonicalEnvelopeJson,
+    required String envelopeHashHex,
+    required String messageText,
+    required String createdAtUtc,
+  }) async {
+    await recordOutgoingMessage(
+      capsuleRootHex: capsuleRootHex,
+      peerHex: peerHex,
+      envelopeHashHex: envelopeHashHex,
+      messageText: messageText,
+      createdAtUtc: createdAtUtc,
+      deliveryState: CapsuleChatMessageDeliveryState.pending,
+    );
+    final delivery = await sendCanonicalEnvelope(
+      peerHex: peerHex,
+      canonicalEnvelopeJson: canonicalEnvelopeJson,
+      expectedCapsuleRootHex: capsuleRootHex,
+    );
+    try {
+      await updateOutgoingMessageState(
+        capsuleRootHex: capsuleRootHex,
+        envelopeHashHex: envelopeHashHex,
+        deliveryState: outgoingChatStateForDeliveryCode(delivery.code),
+      );
+    } catch (_) {}
+    return delivery;
   }
 
   Future<CapsuleChatDeliverySendResult> sendCanonicalEnvelope({
@@ -706,6 +594,7 @@ class CapsuleChatDeliveryService {
         byId[id] = CapsuleChatInboxMessage(
           id: id,
           fromHex: consensusPeerHex,
+          toHex: activeCapsuleHex,
           messageText: envelope['message_text']!,
           createdAtUtc: envelope['created_at_utc']!,
           envelopeHashHex: envelope['envelope_hash_hex']!,
@@ -781,11 +670,24 @@ class CapsuleChatDeliveryService {
     final tradeSignals =
         byTradeSignalId.values.toList()
           ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
-    _deliveryInboxStore.merge(
-      activeCapsuleHex,
-      messages: messages,
-      tradeSignals: tradeSignals,
-    );
+    try {
+      await _deliveryInboxStore.mergeDurably(
+        activeCapsuleHex,
+        messages: messages,
+        tradeSignals: tradeSignals,
+      );
+    } catch (error) {
+      return CapsuleChatDeliveryReceiveResult(
+        code: -2005,
+        errorMessage: 'Chat timeline persistence failed: $error',
+        droppedByConsensus: droppedByConsensus,
+        deferredByConsensus: deferredByConsensus,
+        messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
+        tradeSignals: List<CapsuleTradeSignalInboxMessage>.unmodifiable(
+          tradeSignals,
+        ),
+      );
+    }
     if (localRootHex != null) {
       final deferredById = <String, CapsuleChatDeferredInboxItem>{
         for (final item in remainingDeferred) item.id: item,

@@ -16,6 +16,7 @@ import 'package:hivra_app/services/capsule_address_service.dart';
 import 'package:hivra_app/services/capsule_chat_deferred_inbox_store.dart';
 import 'package:hivra_app/services/consensus_runtime_service.dart';
 import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
+import 'package:hivra_app/services/capsule_delivery_inbox_store.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/manual_consensus_check_service.dart';
@@ -94,6 +95,319 @@ void main() {
     });
   });
 
+  group('Capsule chat conversation timeline', () {
+    const capsuleHex =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    const peerHex =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+
+    test('classifies timeout as ambiguous instead of delivered', () {
+      expect(
+        outgoingChatStateForDeliveryCode(0),
+        CapsuleChatMessageDeliveryState.transportAccepted,
+      );
+      expect(
+        outgoingChatStateForDeliveryCode(-1003),
+        CapsuleChatMessageDeliveryState.ambiguous,
+      );
+      expect(
+        outgoingChatStateForDeliveryCode(-6),
+        CapsuleChatMessageDeliveryState.failed,
+      );
+    });
+
+    test(
+      'peer projection includes both directions without cross-peer leak',
+      () {
+        const otherPeerHex =
+            '3333333333333333333333333333333333333333333333333333333333333333';
+        const incoming = CapsuleChatInboxMessage(
+          id: 'incoming',
+          fromHex: peerHex,
+          toHex: capsuleHex,
+          messageText: 'in',
+          createdAtUtc: '2026-08-13T08:00:00.000Z',
+          envelopeHashHex: '',
+          timestampMs: 1,
+        );
+        const outgoing = CapsuleChatInboxMessage(
+          id: 'outgoing',
+          fromHex: capsuleHex,
+          toHex: peerHex,
+          messageText: 'out',
+          createdAtUtc: '2026-08-13T08:00:01.000Z',
+          envelopeHashHex: '',
+          timestampMs: 2,
+          direction: CapsuleChatMessageDirection.outgoing,
+          deliveryState: CapsuleChatMessageDeliveryState.transportAccepted,
+        );
+        const unrelated = CapsuleChatInboxMessage(
+          id: 'unrelated',
+          fromHex: otherPeerHex,
+          toHex: capsuleHex,
+          messageText: 'hidden',
+          createdAtUtc: '2026-08-13T08:00:02.000Z',
+          envelopeHashHex: '',
+          timestampMs: 3,
+        );
+
+        expect(
+          chatMessagesForPeer(const <CapsuleChatInboxMessage>[
+            incoming,
+            outgoing,
+            unrelated,
+          ], peerHex).map((message) => message.id),
+          <String>['incoming', 'outgoing'],
+        );
+      },
+    );
+
+    test('persists incoming and outgoing messages across restart', () async {
+      final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      final fileStore = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      );
+      final firstStore = CapsuleDeliveryInboxStore(
+        fileStore: fileStore,
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 7)),
+      );
+      const incoming = CapsuleChatInboxMessage(
+        id: 'incoming-envelope',
+        fromHex: peerHex,
+        toHex: capsuleHex,
+        messageText: 'incoming',
+        createdAtUtc: '2026-08-13T08:00:00.000Z',
+        envelopeHashHex: 'incoming-envelope',
+        timestampMs: 1,
+      );
+      const pending = CapsuleChatInboxMessage(
+        id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        fromHex: capsuleHex,
+        toHex: peerHex,
+        messageText: 'outgoing',
+        createdAtUtc: '2026-08-13T08:00:01.000Z',
+        envelopeHashHex:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        timestampMs: 2,
+        direction: CapsuleChatMessageDirection.outgoing,
+        deliveryState: CapsuleChatMessageDeliveryState.pending,
+      );
+
+      await firstStore.mergeDurably(
+        capsuleHex,
+        messages: const <CapsuleChatInboxMessage>[incoming],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+      );
+      await firstStore.upsertMessageDurably(capsuleHex, pending);
+      await firstStore.upsertMessageDurably(
+        capsuleHex,
+        pending.copyWith(
+          deliveryState: CapsuleChatMessageDeliveryState.transportAccepted,
+        ),
+      );
+
+      final capsuleDir = await fileStore.capsuleDirForHex(capsuleHex);
+      final sealed = await fileStore.readChatTimeline(capsuleDir);
+      expect(sealed, isNot(contains('incoming')));
+      expect(sealed, isNot(contains('outgoing')));
+      final wrongScopeDir = await fileStore.capsuleDirForHex(
+        peerHex,
+        create: true,
+      );
+      await fileStore.writeChatTimeline(wrongScopeDir, sealed!);
+      final wrongScopeStore = CapsuleDeliveryInboxStore(
+        fileStore: fileStore,
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 7)),
+      );
+      await wrongScopeStore.hydrateCapsule(peerHex);
+      expect(wrongScopeStore.loadMessages(peerHex), isEmpty);
+
+      final restartedStore = CapsuleDeliveryInboxStore(
+        fileStore: fileStore,
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 7)),
+      );
+      await restartedStore.hydrateCapsule(capsuleHex);
+      final messages = restartedStore.loadMessages(capsuleHex);
+
+      expect(messages, hasLength(2));
+      expect(messages.last.direction, CapsuleChatMessageDirection.outgoing);
+      expect(
+        messages.last.deliveryState,
+        CapsuleChatMessageDeliveryState.transportAccepted,
+      );
+      expect(await restartedStore.unreadMessageCount(capsuleHex), 1);
+    });
+
+    test('durable replay keeps one record per canonical envelope', () async {
+      final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      final fileStore = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      );
+      final store = CapsuleDeliveryInboxStore(
+        fileStore: fileStore,
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 8)),
+      );
+      const message = CapsuleChatInboxMessage(
+        id: 'same-envelope',
+        fromHex: peerHex,
+        toHex: capsuleHex,
+        messageText: 'once',
+        createdAtUtc: '2026-08-13T08:00:00.000Z',
+        envelopeHashHex: 'same-envelope',
+        timestampMs: 1,
+      );
+
+      await store.mergeDurably(
+        capsuleHex,
+        messages: const <CapsuleChatInboxMessage>[message, message],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+      );
+      await store.mergeDurably(
+        capsuleHex,
+        messages: const <CapsuleChatInboxMessage>[
+          CapsuleChatInboxMessage(
+            id: 'same-envelope',
+            fromHex: peerHex,
+            toHex: capsuleHex,
+            messageText: 'conflicting rewrite',
+            createdAtUtc: '2026-08-13T08:00:01.000Z',
+            envelopeHashHex: 'same-envelope',
+            timestampMs: 2,
+          ),
+        ],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+      );
+      final restartedStore = CapsuleDeliveryInboxStore(
+        fileStore: fileStore,
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 8)),
+      );
+      await restartedStore.hydrateCapsule(capsuleHex);
+
+      expect(restartedStore.loadMessages(capsuleHex), hasLength(1));
+      expect(
+        restartedStore.loadMessages(capsuleHex).single.messageText,
+        'once',
+      );
+
+      final wrongKeyStore = CapsuleDeliveryInboxStore(
+        fileStore: fileStore,
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 9)),
+      );
+      await wrongKeyStore.hydrateCapsule(capsuleHex);
+      expect(wrongKeyStore.loadMessages(capsuleHex), isEmpty);
+    });
+
+    test('durable retention keeps only the newest bounded records', () async {
+      final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      final fileStore = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      );
+      Future<Uint8List?> seedLoader(String _) async =>
+          Uint8List.fromList(List<int>.filled(32, 14));
+      final store = CapsuleDeliveryInboxStore(
+        maxRecordsPerCapsule: 2,
+        fileStore: fileStore,
+        loadTimelineSeed: seedLoader,
+      );
+      CapsuleChatInboxMessage message(String id, int timestampMs) =>
+          CapsuleChatInboxMessage(
+            id: id,
+            fromHex: peerHex,
+            toHex: capsuleHex,
+            messageText: id,
+            createdAtUtc: '2026-08-13T08:00:0$timestampMs.000Z',
+            envelopeHashHex: '',
+            timestampMs: timestampMs,
+          );
+
+      await store.mergeDurably(
+        capsuleHex,
+        messages: <CapsuleChatInboxMessage>[
+          message('old', 1),
+          message('middle', 2),
+          message('new', 3),
+        ],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+      );
+      final restartedStore = CapsuleDeliveryInboxStore(
+        maxRecordsPerCapsule: 2,
+        fileStore: fileStore,
+        loadTimelineSeed: seedLoader,
+      );
+      await restartedStore.hydrateCapsule(capsuleHex);
+
+      expect(
+        restartedStore.loadMessages(capsuleHex).map((value) => value.id),
+        <String>['middle', 'new'],
+      );
+    });
+
+    test('wrong-capsule or corrupt timeline fails closed', () async {
+      final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      final fileStore = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      );
+      final capsuleDir = await fileStore.capsuleDirForHex(
+        capsuleHex,
+        create: true,
+      );
+      await fileStore.writeChatTimeline(
+        capsuleDir,
+        jsonEncode(<String, Object?>{
+          'version': 1,
+          'capsule_root_hex': peerHex,
+          'messages': const <Object?>[],
+        }),
+      );
+      final wrongOwnerStore = CapsuleDeliveryInboxStore(fileStore: fileStore);
+      await wrongOwnerStore.hydrateCapsule(capsuleHex);
+      expect(wrongOwnerStore.loadMessages(capsuleHex), isEmpty);
+
+      await fileStore.writeChatTimeline(capsuleDir, '{not-json');
+      final corruptStore = CapsuleDeliveryInboxStore(
+        fileStore: fileStore,
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 11)),
+      );
+      await corruptStore.hydrateCapsule(capsuleHex);
+      expect(corruptStore.loadMessages(capsuleHex), isEmpty);
+      await expectLater(
+        corruptStore.upsertMessageDurably(
+          capsuleHex,
+          const CapsuleChatInboxMessage(
+            id: 'replacement',
+            fromHex: peerHex,
+            toHex: capsuleHex,
+            messageText: 'must not overwrite',
+            createdAtUtc: '2026-08-13T08:00:00.000Z',
+            envelopeHashHex: '',
+            timestampMs: 1,
+          ),
+        ),
+        throwsStateError,
+      );
+      expect(await fileStore.readChatTimeline(capsuleDir), '{not-json');
+    });
+  });
+
   test(
     'trade signals received by chat remain available to trading drone',
     () async {
@@ -101,7 +415,17 @@ void main() {
           '1111111111111111111111111111111111111111111111111111111111111111';
       const localRootHex =
           '2222222222222222222222222222222222222222222222222222222222222222';
-      final store = CapsuleDeliveryInboxStore();
+      final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      final store = CapsuleDeliveryInboxStore(
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        ),
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 12)),
+      );
       final runtime = _FakeRuntime(
         capsuleRootKey: _hexToBytes(localRootHex),
         workerBootstrap: const <String, Object?>{
@@ -231,13 +555,92 @@ void main() {
   });
 
   test(
+    'chat timeline persistence failure blocks handoff acknowledgement',
+    () async {
+      const peerHex =
+          '1111111111111111111111111111111111111111111111111111111111111111';
+      const localRootHex =
+          '2222222222222222222222222222222222222222222222222222222222222222';
+      final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      var acknowledgementCalls = 0;
+      final service = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
+        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ]),
+        deliveryInboxStore: CapsuleDeliveryInboxStore(
+          fileStore: CapsuleFileStore(
+            dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+          ),
+          loadTimelineSeed: (_) async => null,
+        ),
+        receiveWorkerRunner:
+            (_) async => <String, Object?>{
+              'result': 1,
+              'json': jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'event_id': 'event-without-key',
+                  'from_hex': peerHex,
+                  'payload_json': jsonEncode(<String, Object?>{
+                    'message_text': 'retry me',
+                    'created_at_utc': '2026-08-13T09:00:00.000Z',
+                    'envelope_hash_hex': '',
+                  }),
+                  'timestamp_ms': 1,
+                },
+              ]),
+              'lastError': null,
+            },
+        acknowledgeWorkerRunner: (_) async {
+          acknowledgementCalls += 1;
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
+      );
+
+      final result = await service.drainAndFilter();
+
+      expect(result.code, -2005);
+      expect(result.errorMessage, contains('Capsule seed is unavailable'));
+      expect(acknowledgementCalls, 0);
+    },
+  );
+
+  test(
     'workspace keeps passive chat visible when the next refresh times out',
     () async {
       const peerHex =
           '1111111111111111111111111111111111111111111111111111111111111111';
       const localRootHex =
           '2222222222222222222222222222222222222222222222222222222222222222';
-      final store = CapsuleDeliveryInboxStore();
+      final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      final store = CapsuleDeliveryInboxStore(
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        ),
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 13)),
+      );
       final runtime = _FakeRuntime(
         capsuleRootKey: _hexToBytes(localRootHex),
         workerBootstrap: const <String, Object?>{
@@ -290,7 +693,7 @@ void main() {
       final received = await passiveService.drainAndFilter();
       final result = await projectCachedMessagesBeforeChatRefresh(
         currentMessages: const <CapsuleChatInboxMessage>[],
-        loadCachedMessages: workspaceService.loadCachedMessages,
+        loadCachedMessages: workspaceService.loadCachedMessagesDurably,
         refresh:
             () async => const CapsuleChatDeliveryReceiveResult(
               code: -1003,
@@ -309,7 +712,7 @@ void main() {
     },
   );
 
-  test('delivery inbox isolates chat by capsule and stable message id', () {
+  test('delivery inbox isolates capsule and seals stable-id conflicts', () {
     const firstCapsule =
         '1111111111111111111111111111111111111111111111111111111111111111';
     const secondCapsule =
@@ -339,7 +742,7 @@ void main() {
     );
 
     expect(store.loadMessages(firstCapsule), hasLength(1));
-    expect(store.loadMessages(firstCapsule).single.messageText, 'replacement');
+    expect(store.loadMessages(firstCapsule).single.messageText, 'first');
     expect(store.loadMessages(secondCapsule), isEmpty);
   });
 
@@ -779,6 +1182,113 @@ void main() {
     },
   );
 
+  test('tracked chat send persists acceptance and timeout ambiguity', () async {
+    const peerRootHex =
+        '7991eeb935d7ade8a63322d95a4eced25f93cd8f362688f45136b1b15bba72b0';
+    const peerTransportHex =
+        'a33a34ac5881e2ae7eb2967d40b9396c6969a16ec4c9e76288c656b16d949627';
+    const localRootHex =
+        '265ea129e43aab9648315b98a59848fa8e3bd8dec9208f239bfeb51c2eede698';
+    final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+    addTearDown(() async {
+      if (await tempHome.exists()) await tempHome.delete(recursive: true);
+    });
+    final fileStore = CapsuleFileStore(
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    Future<Uint8List?> seedLoader(String _) async =>
+        Uint8List.fromList(List<int>.filled(32, 15));
+    final timelineStore = CapsuleDeliveryInboxStore(
+      fileStore: fileStore,
+      loadTimelineSeed: seedLoader,
+    );
+    var nextCode = 0;
+    var sendCalls = 0;
+    final service = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+        const ManualConsensusCheck(
+          peerHex: peerRootHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      ]),
+      listTrustedCards:
+          () async => const <CapsuleAddressCard>[
+            CapsuleAddressCard(
+              rootKey:
+                  'h10xg7awf467k73f3nytv45nkw6f0e8nv0xcng3az3x6cmzka6w2cqqgpav3',
+              rootHex: peerRootHex,
+              nostrNpub:
+                  'npub15varftzcs832ul4jje75pwfed35kngtwcny7wc5gcettzmv5jcnsysfak5',
+              nostrHex: peerTransportHex,
+            ),
+          ],
+      deliveryInboxStore: timelineStore,
+      sendWorkerRunner: (_) async {
+        sendCalls += 1;
+        return <String, Object?>{
+          'result': nextCode,
+          'lastError': nextCode == 0 ? null : 'local timeout',
+        };
+      },
+    );
+    const acceptedHash =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const ambiguousHash =
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    final accepted = await service.sendCanonicalEnvelopeWithTimeline(
+      capsuleRootHex: localRootHex,
+      peerHex: peerRootHex,
+      canonicalEnvelopeJson: '{"message_text":"accepted"}',
+      envelopeHashHex: acceptedHash,
+      messageText: 'accepted',
+      createdAtUtc: '2026-08-13T10:00:00.000Z',
+    );
+    nextCode = -1003;
+    final ambiguous = await service.sendCanonicalEnvelopeWithTimeline(
+      capsuleRootHex: localRootHex,
+      peerHex: peerRootHex,
+      canonicalEnvelopeJson: '{"message_text":"ambiguous"}',
+      envelopeHashHex: ambiguousHash,
+      messageText: 'ambiguous',
+      createdAtUtc: '2026-08-13T10:00:01.000Z',
+    );
+
+    expect(accepted.isSuccess, isTrue);
+    expect(ambiguous.code, -1003);
+    expect(sendCalls, 2);
+    final restartedStore = CapsuleDeliveryInboxStore(
+      fileStore: fileStore,
+      loadTimelineSeed: seedLoader,
+    );
+    await restartedStore.hydrateCapsule(localRootHex);
+    final byId = <String, CapsuleChatInboxMessage>{
+      for (final message in restartedStore.loadMessages(localRootHex))
+        message.id: message,
+    };
+    expect(
+      byId[acceptedHash]?.deliveryState,
+      CapsuleChatMessageDeliveryState.transportAccepted,
+    );
+    expect(
+      byId[ambiguousHash]?.deliveryState,
+      CapsuleChatMessageDeliveryState.ambiguous,
+    );
+  });
+
   test(
     'chat send recovers transport endpoint from incoming invitation ledger fact',
     () async {
@@ -1030,10 +1540,14 @@ void main() {
         await tempHome.delete(recursive: true);
       }
     });
-    final deferredStore = CapsuleChatDeferredInboxStore(
-      fileStore: CapsuleFileStore(
-        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
-      ),
+    final fileStore = CapsuleFileStore(
+      dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    );
+    final deferredStore = CapsuleChatDeferredInboxStore(fileStore: fileStore);
+    final deliveryStore = CapsuleDeliveryInboxStore(
+      fileStore: fileStore,
+      loadTimelineSeed:
+          (_) async => Uint8List.fromList(List<int>.filled(32, 10)),
     );
     final envelope = jsonEncode(<String, Object?>{
       'message_text': 'hello',
@@ -1069,6 +1583,7 @@ void main() {
             ],
           ),
       deferredInboxStore: deferredStore,
+      deliveryInboxStore: deliveryStore,
       transportHealth: TransportHealthPolicyService(
         timeoutBackoff: const <Duration>[Duration(minutes: 1)],
       ),
@@ -1135,6 +1650,7 @@ void main() {
             blockingFacts: <ConsensusBlockingFact>[],
           ),
       deferredInboxStore: deferredStore,
+      deliveryInboxStore: deliveryStore,
       transportHealth: TransportHealthPolicyService(
         timeoutBackoff: const <Duration>[Duration(minutes: 1)],
       ),

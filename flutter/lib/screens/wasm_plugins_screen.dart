@@ -20,15 +20,15 @@ import 'trading_drone_screen.dart';
 Future<CapsuleChatDeliveryReceiveResult>
 projectCachedMessagesBeforeChatRefresh({
   required List<CapsuleChatInboxMessage> currentMessages,
-  required List<CapsuleChatInboxMessage> Function() loadCachedMessages,
+  required Future<List<CapsuleChatInboxMessage>> Function() loadCachedMessages,
   required Future<CapsuleChatDeliveryReceiveResult> Function() refresh,
   required void Function(List<CapsuleChatInboxMessage> messages)
   projectMessages,
 }) async {
-  void projectCachedMessages() {
+  Future<void> projectCachedMessages() async {
     final byId = <String, CapsuleChatInboxMessage>{
       for (final message in currentMessages) message.id: message,
-      for (final message in loadCachedMessages()) message.id: message,
+      for (final message in await loadCachedMessages()) message.id: message,
     };
     final merged =
         byId.values.toList()
@@ -36,12 +36,30 @@ projectCachedMessagesBeforeChatRefresh({
     projectMessages(List<CapsuleChatInboxMessage>.unmodifiable(merged));
   }
 
-  projectCachedMessages();
+  await projectCachedMessages();
   try {
     return await refresh();
   } finally {
-    projectCachedMessages();
+    await projectCachedMessages();
   }
+}
+
+@visibleForTesting
+List<CapsuleChatInboxMessage> chatMessagesForPeer(
+  List<CapsuleChatInboxMessage> messages,
+  String peerHex,
+) {
+  final normalizedPeer = peerHex.trim().toLowerCase();
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalizedPeer)) return messages;
+  return messages
+      .where(
+        (message) =>
+            (message.direction == CapsuleChatMessageDirection.outgoing
+                ? message.toHex
+                : message.fromHex) ==
+            normalizedPeer,
+      )
+      .toList(growable: false);
 }
 
 class WasmPluginsScreen extends StatefulWidget {
@@ -461,6 +479,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
         _chatWorkspaceNoticeIsError =
             result.status != PluginChatSendStatus.sent &&
             result.status != PluginChatSendStatus.syncing;
+        if (result.isSuccess) _chatMessageController.clear();
       });
       if (result.isSuccess) {
         await _refreshCapsuleChatInbox(silentWhenEmpty: true);
@@ -626,7 +645,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       }
       final receive = await projectCachedMessagesBeforeChatRefresh(
         currentMessages: _chatInbox,
-        loadCachedMessages: _module.chatDelivery.loadCachedMessages,
+        loadCachedMessages: _module.chatDelivery.loadCachedMessagesDurably,
         refresh:
             () => _module.passiveReceive
                 .trigger(
@@ -644,7 +663,11 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           setState(() {
             _chatInbox = messages;
           });
-          unawaited(_markProjectedChatMessagesRead(messages));
+          unawaited(
+            _markProjectedChatMessagesRead(
+              _chatMessagesVisibleForSelectedPeer(messages),
+            ),
+          );
         },
       );
       final result = receive;
@@ -679,12 +702,14 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
               ? ' · deferred ${result.deferredByConsensus} until attestation'
               : '';
       final updateNotice =
-          'Inbox update: chat +${result.messages.length}, signals +${result.tradeSignals.length}, cmd +${result.executionDecisions.length}, receipt +${result.executionReceipts.length}$droppedNote$deferredNote';
+          'Timeline update: chat +${result.messages.length}, signals +${result.tradeSignals.length}, cmd +${result.executionDecisions.length}, receipt +${result.executionReceipts.length}$droppedNote$deferredNote';
+      final cachedMessages =
+          await _module.chatDelivery.loadCachedMessagesDurably();
+      if (!mounted) return;
       setState(() {
         final byId = <String, CapsuleChatInboxMessage>{
           for (final message in _chatInbox) message.id: message,
-          for (final message in _module.chatDelivery.loadCachedMessages())
-            message.id: message,
+          for (final message in cachedMessages) message.id: message,
         };
         for (final message in result.messages) {
           byId[message.id] = message;
@@ -701,6 +726,13 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           _chatWorkspaceNoticeIsError = false;
         }
       });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _chatWorkspaceNotice = 'Chat history is unavailable: $error';
+          _chatWorkspaceNoticeIsError = true;
+        });
+      }
     } finally {
       _refreshingChatInbox = false;
     }
@@ -717,6 +749,10 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     }
     widget.onChatUnreadChanged?.call();
   }
+
+  List<CapsuleChatInboxMessage> _chatMessagesVisibleForSelectedPeer(
+    List<CapsuleChatInboxMessage> messages,
+  ) => chatMessagesForPeer(messages, _chatPeerController.text);
 
   @override
   Widget build(BuildContext context) {
@@ -1724,6 +1760,7 @@ class _CapsuleChatPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final response = lastResponse;
+    final visibleMessages = chatMessagesForPeer(inbox, peerController.text);
     final status = response?.status;
     final accent = switch (status) {
       PluginHostApiStatus.executed => const Color(0xFF75D98A),
@@ -2018,7 +2055,7 @@ class _CapsuleChatPanel extends StatelessWidget {
             children: [
               _InfoChip(
                 icon: Icons.mail_outline,
-                label: 'Inbox: ${inbox.length}',
+                label: 'Messages: ${visibleMessages.length}',
               ),
               if (droppedByConsensus > 0)
                 _InfoChip(
@@ -2032,24 +2069,27 @@ class _CapsuleChatPanel extends StatelessWidget {
                 ),
             ],
           ),
-          if (inbox.isNotEmpty) ...[
+          if (visibleMessages.isNotEmpty) ...[
             const SizedBox(height: 10),
             const Text(
-              'Incoming',
+              'Conversation timeline',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Color(0xFFCFD7E2),
               ),
             ),
             const SizedBox(height: 8),
-            ...inbox.reversed
+            ...visibleMessages.reversed
                 .take(8)
                 .map(
                   (message) => _ChatInboxRow(
                     message: message,
                     localLabel:
                         contactLabels[PeerIdentityFormat.capsuleKeyFromRootHex(
-                          message.fromHex,
+                          message.direction ==
+                                  CapsuleChatMessageDirection.outgoing
+                              ? (message.toHex ?? '')
+                              : message.fromHex,
                         )],
                   ),
                 ),
@@ -2115,10 +2155,21 @@ class _ChatInboxRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isOutgoing =
+        message.direction == CapsuleChatMessageDirection.outgoing;
+    final peerHex = isOutgoing ? (message.toHex ?? '') : message.fromHex;
     final peerLabel = PeerIdentityFormat.capsuleLabelFromRootHex(
-      message.fromHex,
+      peerHex,
       localLabel: localLabel,
     );
+    final deliveryLabel = switch (message.deliveryState) {
+      CapsuleChatMessageDeliveryState.received => 'received',
+      CapsuleChatMessageDeliveryState.pending => 'pending',
+      CapsuleChatMessageDeliveryState.transportAccepted =>
+        'accepted by transport',
+      CapsuleChatMessageDeliveryState.ambiguous => 'delivery unknown',
+      CapsuleChatMessageDeliveryState.failed => 'send failed',
+    };
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -2140,7 +2191,9 @@ class _ChatInboxRow extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'from $peerLabel · ${PeerIdentityFormat.capsuleIdentityHintFromRootHex(message.fromHex)} · ${message.createdAtUtc}',
+            '${isOutgoing ? "to" : "from"} $peerLabel · '
+            '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(peerHex)} · '
+            '$deliveryLabel · ${message.createdAtUtc}',
             style: const TextStyle(fontSize: 11, color: Color(0xFF95A5B7)),
           ),
         ],

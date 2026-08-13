@@ -2,8 +2,17 @@
 
 Status date: 2026-08-13
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no next pass selected after completion of the
-`1.x Capsule-scoped Chat Unread Indicator`.
+Current development focus: `1.x Capsule Chat Conversation Timeline` on a
+short-lived product branch. The existing Capsule-scoped Chat inbox owner is
+being extended into one bounded encrypted peer timeline for both incoming and
+outgoing canonical envelopes. Outgoing state distinguishes local preparation,
+transport acceptance, deterministic failure, and timeout ambiguity; transport
+acceptance is not peer delivery proof. Inbound acknowledgement remains blocked
+until the timeline projection is durably sealed. Core, Ledger, transport wire,
+FFI, WASM ABI, attachments, OS push/background delivery, and a second history
+owner remain unauthorized. The pass is not complete until protected PR gates,
+post-merge gates, and fresh packaged macOS/Android restart smoke pass.
+The preceding `1.x Capsule-scoped Chat Unread Indicator` remains complete.
 The preceding durable receive handoff is complete on `main` at `c9caa7e` with
 green protected PR/post-merge gates and packaged macOS/Android restart smoke.
 The bounded implementation extends the existing Chat inbox/projection owner
