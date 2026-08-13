@@ -2908,6 +2908,21 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     checkout, and post-merge repository gates `31644669310` passed. No
     following pass is selected.
 
+- `1.x Moltbook Capsule Public Change Feed`
+  - Scope: let one Capsule retain a bounded queue of explicitly confirmed
+    public development facts and feed the oldest pending item into the existing
+    Gemini bulletin proposal and ambassador WASM draft path.
+  - Invariants: versioned semantic commitment, exact replay idempotency,
+    conflicting source-id rejection, Capsule isolation, bounded retention,
+    oldest-first selection, and drafted state only after durable canonical WASM
+    draft evidence.
+  - Sealed paths: Gemini cannot read Ledger, repository, Capsule history, or
+    credentials; the feed cannot publish; approval, provider effects,
+    challenges, receipts, and reconciliation retain their existing owners.
+  - Not included: Git/CI producer, background host, automatic publication,
+    provider authority expansion, plugin ABI changes, or release work.
+  - Status: implementation active on a protected feature branch (2026-08-13).
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

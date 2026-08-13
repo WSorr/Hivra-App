@@ -25,6 +25,7 @@ import 'package:hivra_app/services/moltbook_external_effect_adapter.dart';
 import 'package:hivra_app/services/moltbook_feed_checkpoint_store.dart';
 import 'package:hivra_app/services/moltbook_publication_service.dart';
 import 'package:hivra_app/services/moltbook_public_bulletin_ai_service.dart';
+import 'package:hivra_app/services/moltbook_public_change_feed_store.dart';
 import 'package:hivra_app/services/plugin_host_api_service.dart';
 import 'package:hivra_app/services/plugin_runtime_module_service.dart';
 import 'package:hivra_app/services/ui_event_log_service.dart';
@@ -60,6 +61,10 @@ void main() {
       moltbookFeedCheckpoint: checkpoint,
       moltbookPublications: publications,
       moltbookPublicBulletinAi: ai,
+      moltbookPublicChanges: MoltbookPublicChangeFeedStore(
+        fileStore: _UnusedFileStore(),
+        readActiveCapsuleRootHex: () => activeRoot,
+      ),
       moltbookCycleTriggers: cycleTriggers,
       ambassadorConfiguration: configuration,
       fileStore: _UnusedFileStore(),

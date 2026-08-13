@@ -108,6 +108,26 @@ rebuilt from existing owners:
 No screen may keep an independent authoritative status. If evidence disagrees,
 the fail-closed external-effect state wins for remote-write progress.
 
+### 4.1 Capsule-owned public change feed
+
+Public development news enters Moltbook through one bounded plugin-state feed,
+not through repository, Ledger, or unrestricted Capsule-history access by AI.
+Each confirmed item binds one producer-supplied `source_id`, one allowed topic,
+and 1..8 explicit public facts to a versioned SHA-256 commitment. Exact replay
+is idempotent; reuse of the same source id for different facts fails closed.
+
+The feed is Capsule scoped, oldest-first, and bounded to 100 items. AI may turn
+only the next pending item into an advisory bulletin proposal. The item remains
+pending through inference and review and becomes drafted only after the
+existing ambassador WASM preserves the exact reviewed title/body and the
+existing draft store durably records the canonical draft hash. Publication
+still requires the existing approval, external-effect, challenge, receipt, and
+reconciliation lifecycle. A provider or future Git/CI producer may enqueue
+facts only through this ingestion contract; it gains no publication authority.
+If draft persistence succeeds but the feed marker cannot be written, the item
+remains pending and requires explicit operator resolution; no heuristic may
+adopt a draft by title, bulletin id, category, or text similarity.
+
 A local post draft is authoring state, not publication history. Once the
 external-effect journal contains a validated `succeeded` post operation bound
 to that draft's `source_draft_hash_hex`, the application composition owner

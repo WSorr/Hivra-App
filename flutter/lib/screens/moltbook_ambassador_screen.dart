@@ -7,6 +7,7 @@ import '../models/external_effect_models.dart';
 import '../models/moltbook_ambassador_models.dart';
 import '../models/moltbook_provider_models.dart';
 import '../services/moltbook_publication_service.dart';
+import '../services/moltbook_public_change_feed_store.dart';
 import '../services/plugin_runtime_module_service.dart';
 
 class MoltbookAmbassadorScreen extends StatefulWidget {
@@ -66,6 +67,8 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
   MoltbookFeedCheckpoint? _feedCheckpoint;
   MoltbookDraftPreview? _draftPreview;
   MoltbookPublicBulletinProposal? _publicBulletinProposal;
+  List<MoltbookPublicChange> _publicChanges = const <MoltbookPublicChange>[];
+  String? _activePublicChangeCommitmentHashHex;
   List<MoltbookStoredDraft> _storedDrafts = const <MoltbookStoredDraft>[];
   List<ExternalEffectOperation> _publications =
       const <ExternalEffectOperation>[];
@@ -100,6 +103,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _aiSessionProviderLabel = provider;
       });
       _showNotice('$provider unlocked for this app session');
+      unawaited(_proposeNextPublicChange(showEmptyNotice: false));
     } catch (error) {
       if (mounted) {
         _showNotice('Could not unlock AI: $error', isError: true);
@@ -146,12 +150,14 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         widget.module.loadMoltbookDrafts(),
         widget.module.loadMoltbookPublications(),
         widget.module.loadMoltbookFeedCheckpoint(),
+        widget.module.loadMoltbookPublicChanges(),
       ]);
       final configuration = results[0] as MoltbookAmbassadorConfiguration;
       final binding = results[1] as MoltbookConnectionBinding?;
       final drafts = results[2] as List<MoltbookStoredDraft>;
       final publications = results[3] as List<ExternalEffectOperation>;
       final feedCheckpoint = results[4] as MoltbookFeedCheckpoint;
+      final publicChanges = results[5] as List<MoltbookPublicChange>;
       if (!mounted) return;
       _nameController.text = configuration.agentName;
       _descriptionController.text = configuration.agentDescription;
@@ -166,11 +172,16 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         _storedDrafts = drafts;
         _publications = publications;
         _feedCheckpoint = feedCheckpoint;
+        _publicChanges = publicChanges;
         _loadError = null;
         _loading = false;
       });
       if (binding != null && binding.isClaimed && binding.isActive) {
         unawaited(_startConfiguredCycles(showNotice: false));
+      }
+      if (_aiSessionUnlocked &&
+          publicChanges.any((change) => change.isPending)) {
+        unawaited(_proposeNextPublicChange(showEmptyNotice: false));
       }
     } catch (error) {
       if (!mounted) return;
@@ -793,12 +804,16 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         titleHint: _titleHintController.text,
         reviewedBody: _reviewedBodyController.text,
         audience: _audienceController.text,
+        publicChangeCommitmentHashHex: _activePublicChangeCommitmentHashHex,
       );
       final drafts = await widget.module.loadMoltbookDrafts();
+      final publicChanges = await widget.module.loadMoltbookPublicChanges();
       if (!mounted) return;
       setState(() {
         _draftPreview = preview;
         _storedDrafts = drafts;
+        _publicChanges = publicChanges;
+        _activePublicChangeCommitmentHashHex = null;
       });
       _showNotice('WASM draft prepared for review');
     } catch (error) {
@@ -873,6 +888,76 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     } catch (error) {
       if (!mounted) return;
       _showNotice('Could not propose public bulletin: $error', isError: true);
+    } finally {
+      if (mounted) setState(() => _publicFactsBusy = false);
+    }
+  }
+
+  Future<void> _recordPublicChange() async {
+    final facts =
+        _publicSourceNotesController.text
+            .split('\n')
+            .map((fact) => fact.trim())
+            .where((fact) => fact.isNotEmpty)
+            .toList();
+    if (facts.isEmpty) {
+      _showNotice('Add at least one confirmed public fact', isError: true);
+      return;
+    }
+    setState(() => _publicFactsBusy = true);
+    try {
+      await widget.module.recordMoltbookPublicChange(
+        sourceId: _bulletinIdController.text,
+        category: _categoryController.text,
+        facts: facts,
+      );
+      final changes = await widget.module.loadMoltbookPublicChanges();
+      if (!mounted) return;
+      setState(() {
+        _publicChanges = changes;
+      });
+      _showNotice('Confirmed public change added to this Capsule');
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not add public change: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _publicFactsBusy = false);
+    }
+  }
+
+  Future<void> _proposeNextPublicChange({bool showEmptyNotice = true}) async {
+    if (_publicFactsBusy || _activePublicChangeCommitmentHashHex != null) {
+      return;
+    }
+    setState(() => _publicFactsBusy = true);
+    try {
+      final pending =
+          _publicChanges.where((change) => change.isPending).toList();
+      if (pending.isEmpty) {
+        if (showEmptyNotice) {
+          _showNotice('No confirmed public change is waiting');
+        }
+        return;
+      }
+      final change = pending.first;
+      final proposal = await widget.module.proposeNextMoltbookPublicChange();
+      if (proposal == null || !mounted) return;
+      setState(() {
+        _activePublicChangeCommitmentHashHex = change.commitmentHashHex;
+        _publicBulletinProposal = proposal;
+        _titleHintController.text = proposal.title;
+        _reviewedBodyController.text = proposal.body;
+        _factsController.text = proposal.facts.join('\n');
+        _draftPreview = null;
+      });
+      _showNotice(
+        'Gemini proposed the next confirmed Capsule change for review',
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not propose queued change: $error', isError: true);
+      }
     } finally {
       if (mounted) setState(() => _publicFactsBusy = false);
     }
@@ -1444,8 +1529,12 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                           busy: _draftBusy || _publicFactsBusy,
                           publicFactsBusy: _publicFactsBusy,
                           publicBulletinProposal: _publicBulletinProposal,
+                          publicChanges: _publicChanges,
                           preview: _draftPreview,
                           onProposePublicBulletin: _proposePublicBulletin,
+                          onRecordPublicChange: _recordPublicChange,
+                          onProposeNextPublicChange:
+                              () => _proposeNextPublicChange(),
                           onPrepare: _prepareDraft,
                         ),
                       ),
@@ -2335,8 +2424,11 @@ class _MoltbookDraftCard extends StatelessWidget {
   final bool busy;
   final bool publicFactsBusy;
   final MoltbookPublicBulletinProposal? publicBulletinProposal;
+  final List<MoltbookPublicChange> publicChanges;
   final MoltbookDraftPreview? preview;
   final VoidCallback onProposePublicBulletin;
+  final VoidCallback onRecordPublicChange;
+  final VoidCallback onProposeNextPublicChange;
   final VoidCallback onPrepare;
 
   const _MoltbookDraftCard({
@@ -2351,8 +2443,11 @@ class _MoltbookDraftCard extends StatelessWidget {
     required this.busy,
     required this.publicFactsBusy,
     required this.publicBulletinProposal,
+    required this.publicChanges,
     required this.preview,
     required this.onProposePublicBulletin,
+    required this.onRecordPublicChange,
+    required this.onProposeNextPublicChange,
     required this.onPrepare,
   });
 
@@ -2458,7 +2553,7 @@ class _MoltbookDraftCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Paste only information you are willing to send to the selected AI provider. The proposal stays local and cannot publish.',
+                    'Record confirmed public facts in this Capsule. Gemini receives only the next queued item; the proposal stays local and cannot publish.',
                     style: TextStyle(color: Color(0xFFA9C7C4), height: 1.35),
                   ),
                   const SizedBox(height: 12),
@@ -2474,6 +2569,20 @@ class _MoltbookDraftCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  FilledButton.tonalIcon(
+                    onPressed: busy ? null : onRecordPublicChange,
+                    icon: const Icon(Icons.playlist_add_check_rounded),
+                    label: const Text('Add confirmed change'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonalIcon(
+                    onPressed: busy ? null : onProposeNextPublicChange,
+                    icon: const Icon(Icons.auto_awesome_rounded),
+                    label: Text(
+                      'Propose next change (${publicChanges.where((change) => change.isPending).length})',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   FilledButton.tonalIcon(
                     onPressed: busy ? null : onProposePublicBulletin,
                     icon:
