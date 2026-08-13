@@ -1642,11 +1642,34 @@ class PluginRuntimeModule {
       case PluginHostApiStatus.executed:
         final canonicalEnvelopeJson =
             response.result?['canonical_envelope_json']?.toString() ?? '';
-        final delivery = await chatDelivery.sendCanonicalEnvelope(
-          peerHex: normalizedPeer,
-          canonicalEnvelopeJson: canonicalEnvelopeJson,
-          expectedCapsuleRootHex: operationCapsuleHex,
-        );
+        final envelopeHash =
+            response.result?['envelope_hash_hex']?.toString().toLowerCase() ??
+            '';
+        final canonicalMessageText =
+            response.result?['message_text']?.toString() ?? normalizedMessage;
+        final canonicalCreatedAtUtc =
+            response.result?['created_at_utc']?.toString() ?? createdAtUtc;
+        final CapsuleChatDeliverySendResult delivery;
+        try {
+          delivery = await chatDelivery.sendCanonicalEnvelopeWithTimeline(
+            capsuleRootHex: operationCapsuleHex,
+            peerHex: normalizedPeer,
+            canonicalEnvelopeJson: canonicalEnvelopeJson,
+            envelopeHashHex: envelopeHash,
+            messageText: canonicalMessageText,
+            createdAtUtc: canonicalCreatedAtUtc,
+          );
+        } catch (error) {
+          await uiLog.log(
+            'chat.send.timeline.error',
+            'owner=$operationCapsuleHex phase=prepare error=${_safeError(error)}',
+          );
+          return const PluginChatSendResult(
+            status: PluginChatSendStatus.failed,
+            message:
+                'Message was not sent because Chat history could not be saved',
+          );
+        }
         if (!delivery.isSuccess) {
           await uiLog.log(
             'chat.send.transport.error',
@@ -1664,8 +1687,6 @@ class PluginRuntimeModule {
             delivery: delivery,
           );
         }
-        final envelopeHash =
-            response.result?['envelope_hash_hex']?.toString() ?? '';
         final shortHash =
             envelopeHash.length >= 12
                 ? '${envelopeHash.substring(0, 12)}..'

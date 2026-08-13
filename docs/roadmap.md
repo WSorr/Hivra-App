@@ -3051,6 +3051,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: complete (2026-08-13). No following pass, tag, or Release is
     selected.
 
+- `1.x Capsule Chat Conversation Timeline`
+  - Finding: the canonical Chat workspace projected only a bounded incoming
+    process-memory inbox. Successful outgoing envelopes were not projected,
+    and acknowledged incoming content had no durable conversation view after
+    restart.
+  - Invariant: one canonical envelope hash maps to at most one bounded
+    Capsule/peer-scoped timeline record. Incoming content is persisted before
+    handoff acknowledgement. Outgoing content is persisted before the effect
+    and records `pending`, `transportAccepted`, `ambiguous`, or `failed`
+    without treating adapter acceptance as peer delivery proof.
+  - Owner and boundary: the existing `CapsuleDeliveryInboxStore` remains the
+    sole Chat projection owner and is physically separated from the transport
+    service file without changing ownership. Timeline content is suite-tagged,
+    Capsule-bound, and encrypted at rest from the existing Capsule seed owner.
+    Core, Ledger, transport wire, FFI, WASM ABI, attachments, background
+    delivery, and a second inbox/history service remain sealed.
+  - Negative evidence: replay dedupe, peer and Capsule isolation, bounded
+    retention, wrong key, wrong scope, malformed storage, unavailable key,
+    timeout ambiguity, unread exclusion for outgoing records, and persistence
+    failure before acknowledgement.
+  - Status: implementation candidate; protected PR, post-merge gates, and
+    fresh packaged macOS/Android restart smoke remain required. No tag or
+    Release is selected.
+
 - `13.1 AI-Assisted Trading Analysis`
   - Goal:
     - connect the existing Capsule Analyst/Hivra Engineer AI tooling to the

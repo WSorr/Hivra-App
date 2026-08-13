@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/ffi/capsule_selector_runtime.dart';
 import 'package:hivra_app/models/capsule_chat_models.dart';
-import 'package:hivra_app/services/capsule_chat_delivery_service.dart';
+import 'package:hivra_app/services/capsule_delivery_inbox_store.dart';
 import 'package:hivra_app/services/capsule_persistence_models.dart';
 import 'package:hivra_app/services/capsule_selector_service.dart';
 import 'package:hivra_app/services/ui_event_log_service.dart';
