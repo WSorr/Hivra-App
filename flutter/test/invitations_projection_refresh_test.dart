@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/screens/invitations_screen.dart';
 
@@ -31,5 +32,29 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  testWidgets('successful explicit refresh shows the invitation result', (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (value) {
+              context = value;
+              return const SizedBox();
+            },
+          ),
+        ),
+      ),
+    );
+
+    showInvitationUserMessage(context, 'Invitation refresh complete');
+    await tester.pump();
+
+    expect(find.text('Invitation refresh complete'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
   });
 }

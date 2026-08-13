@@ -1065,15 +1065,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     String message, {
     required String source,
   }) async {
-    final text = message.trim();
-    if (text.isEmpty) return;
-    UiFeedbackService.showSnackBar(
-      context,
-      text,
-      source: source,
-      duration: const Duration(seconds: 3),
-      enableCopy: false,
-    );
+    showInvitationUserMessage(context, message, source: source);
   }
 
   List<Widget> _lockedSlotRows(Set<int> lockedSlots) {
@@ -1285,6 +1277,22 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     if (value == null || value.trim().isEmpty) return null;
     return _decodeB64_32(value);
   }
+}
+
+void showInvitationUserMessage(
+  BuildContext context,
+  String message, {
+  String source = 'invitations.fetch',
+}) {
+  final text = message.trim();
+  if (text.isEmpty) return;
+  UiFeedbackService.showSnackBar(
+    context,
+    text,
+    source: source,
+    duration: const Duration(seconds: 3),
+    enableCopy: false,
+  );
 }
 
 bool shouldReloadInvitationsProjection({
