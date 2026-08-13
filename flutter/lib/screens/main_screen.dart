@@ -20,6 +20,17 @@ import 'relationships_screen.dart';
 import 'settings_screen.dart';
 import 'wasm_plugins_screen.dart';
 
+@visibleForTesting
+Widget chatUnreadNavigationIcon(int unreadCount) {
+  const icon = Icon(Icons.extension);
+  if (unreadCount <= 0) return icon;
+  return Badge.count(
+    key: const ValueKey<String>('chat-unread-badge'),
+    count: unreadCount,
+    child: icon,
+  );
+}
+
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -45,6 +56,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _relationshipCount = 0;
   int _pendingInvitations = 0;
   int _invitationsProjectionRefreshRevision = 0;
+  int _chatUnreadCount = 0;
   bool _isNeste = true;
   String _ledgerHashHex = '0';
   int _ledgerVersion = 0;
@@ -250,7 +262,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         result.chat.messages.isNotEmpty ||
         result.chat.tradeSignals.isNotEmpty) {
       _loadCapsuleData();
+      await _refreshChatUnreadCount(capsuleHex: result.capsuleHex);
     }
+  }
+
+  Future<void> _refreshChatUnreadCount({String? capsuleHex}) async {
+    final expectedCapsule =
+        (capsuleHex ?? _activeCapsuleHex).trim().toLowerCase();
+    if (expectedCapsule.isEmpty) return;
+    final count = await _module.chatDelivery.unreadCachedMessageCount();
+    if (!mounted || expectedCapsule != _activeCapsuleHex) return;
+    setState(() {
+      _chatUnreadCount = count;
+    });
   }
 
   void _scheduleLaunchReceive() {
@@ -327,6 +351,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         capsuleHex: activeCapsuleHex,
       );
     });
+    unawaited(_refreshChatUnreadCount(capsuleHex: activeCapsuleHex));
   }
 
   String _bytesToHex(Uint8List bytes) =>
@@ -484,6 +509,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           key: ValueKey('plugins-$_activeCapsuleHex-$_ledgerVersion'),
           embedded: true,
           runtime: _runtime,
+          onChatUnreadChanged: _refreshChatUnreadCount,
         );
       case 4:
         return SettingsScreen(
@@ -747,21 +773,24 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             _selectedIndex = index;
           });
         },
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.grid_3x3),
             label: 'Starters',
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.mail), label: 'Invitations'),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.mail),
+            label: 'Invitations',
+          ),
+          const BottomNavigationBarItem(
             icon: Icon(Icons.people),
             label: 'Relationships',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.extension),
+            icon: chatUnreadNavigationIcon(_chatUnreadCount),
             label: 'Plugins',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.settings),
             label: 'Settings',
           ),

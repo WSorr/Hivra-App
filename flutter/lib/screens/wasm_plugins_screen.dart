@@ -47,8 +47,14 @@ projectCachedMessagesBeforeChatRefresh({
 class WasmPluginsScreen extends StatefulWidget {
   final bool embedded;
   final AppRuntimeService? runtime;
+  final VoidCallback? onChatUnreadChanged;
 
-  const WasmPluginsScreen({super.key, this.embedded = false, this.runtime});
+  const WasmPluginsScreen({
+    super.key,
+    this.embedded = false,
+    this.runtime,
+    this.onChatUnreadChanged,
+  });
 
   @override
   State<WasmPluginsScreen> createState() => _WasmPluginsScreenState();
@@ -638,6 +644,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
           setState(() {
             _chatInbox = messages;
           });
+          unawaited(_markProjectedChatMessagesRead(messages));
         },
       );
       final result = receive;
@@ -697,6 +704,18 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     } finally {
       _refreshingChatInbox = false;
     }
+  }
+
+  Future<void> _markProjectedChatMessagesRead(
+    List<CapsuleChatInboxMessage> messages,
+  ) async {
+    if (messages.isEmpty) return;
+    try {
+      await _module.chatDelivery.markCachedMessagesRead(messages);
+    } catch (_) {
+      return;
+    }
+    widget.onChatUnreadChanged?.call();
   }
 
   @override

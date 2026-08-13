@@ -11,6 +11,7 @@ import '../models/relationship.dart';
 import 'bingx_futures_execution_command_service.dart';
 import 'capsule_address_service.dart';
 import 'capsule_chat_deferred_inbox_store.dart';
+import 'capsule_file_store.dart';
 import 'capsule_ffi_worker_queue.dart';
 import 'manual_consensus_check_service.dart';
 import 'ledger_view_support.dart';
@@ -93,6 +94,7 @@ class CapsuleDeliveryInboxStore {
 
   final int maxCapsules;
   final int maxRecordsPerCapsule;
+  final CapsuleFileStore _fileStore;
 
   final Map<String, Map<String, CapsuleChatInboxMessage>> _messagesByCapsule =
       <String, Map<String, CapsuleChatInboxMessage>>{};
@@ -100,12 +102,16 @@ class CapsuleDeliveryInboxStore {
   final Map<String, Map<String, CapsuleTradeSignalInboxMessage>>
   _signalsByCapsule = <String, Map<String, CapsuleTradeSignalInboxMessage>>{};
   final List<String> _capsuleOrder = <String>[];
+  final Map<String, Future<void>> _readStateWriteTails =
+      <String, Future<void>>{};
 
   CapsuleDeliveryInboxStore({
     this.maxCapsules = defaultMaxCapsules,
     this.maxRecordsPerCapsule = defaultMaxRecordsPerCapsule,
+    CapsuleFileStore fileStore = const CapsuleFileStore(),
   }) : assert(maxCapsules > 0),
-       assert(maxRecordsPerCapsule > 0);
+       assert(maxRecordsPerCapsule > 0),
+       _fileStore = fileStore;
 
   List<CapsuleChatInboxMessage> loadMessages(String capsuleRootHex) {
     final normalized = capsuleRootHex.trim().toLowerCase();
@@ -165,6 +171,88 @@ class CapsuleDeliveryInboxStore {
     _messagesByCapsule.remove(normalized);
     _signalsByCapsule.remove(normalized);
     _capsuleOrder.remove(normalized);
+  }
+
+  Future<int> unreadMessageCount(String capsuleRootHex) async {
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    if (!_isHex64(normalized)) return 0;
+    final retainedIds = loadMessages(normalized).map((message) => message.id);
+    final readIds = await _loadReadMessageIds(normalized);
+    return retainedIds.where((id) => !readIds.contains(id)).length;
+  }
+
+  Future<void> markMessagesRead(
+    String capsuleRootHex,
+    Iterable<String> messageIds,
+  ) async {
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    if (!_isHex64(normalized)) return;
+    final ids = messageIds.toList(growable: false);
+    final previous = _readStateWriteTails[normalized] ?? Future<void>.value();
+    final next = previous
+        .catchError((Object _) {})
+        .then((_) => _markMessagesReadNow(normalized, ids));
+    _readStateWriteTails[normalized] = next;
+    try {
+      await next;
+    } finally {
+      if (identical(_readStateWriteTails[normalized], next)) {
+        _readStateWriteTails.remove(normalized);
+      }
+    }
+  }
+
+  Future<void> _markMessagesReadNow(
+    String capsuleRootHex,
+    Iterable<String> messageIds,
+  ) async {
+    final retainedIds = loadMessages(
+      capsuleRootHex,
+    ).map((message) => message.id);
+    final retainedSet = retainedIds.toSet();
+    final nextReadIds = await _loadReadMessageIds(capsuleRootHex);
+    nextReadIds.addAll(
+      messageIds.map((id) => id.trim()).where(retainedSet.contains),
+    );
+    nextReadIds.removeWhere((id) => !retainedSet.contains(id));
+    final bounded = nextReadIds.toList()..sort();
+    if (bounded.length > maxRecordsPerCapsule) {
+      bounded.removeRange(0, bounded.length - maxRecordsPerCapsule);
+    }
+    final capsuleDir = await _fileStore.capsuleDirForHex(
+      capsuleRootHex,
+      create: true,
+    );
+    await _fileStore.writeChatReadState(
+      capsuleDir,
+      jsonEncode(<String, Object?>{
+        'version': 1,
+        'capsule_root_hex': capsuleRootHex,
+        'read_message_ids': bounded,
+      }),
+    );
+  }
+
+  Future<Set<String>> _loadReadMessageIds(String capsuleRootHex) async {
+    try {
+      final capsuleDir = await _fileStore.capsuleDirForHex(capsuleRootHex);
+      final raw = await _fileStore.readChatReadState(capsuleDir);
+      if (raw == null) return <String>{};
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map ||
+          decoded['version'] != 1 ||
+          decoded['capsule_root_hex'] != capsuleRootHex ||
+          decoded['read_message_ids'] is! List) {
+        return <String>{};
+      }
+      final ids = decoded['read_message_ids'] as List;
+      if (ids.any((id) => id is! String || id.trim().isEmpty)) {
+        return <String>{};
+      }
+      return ids.cast<String>().toSet();
+    } catch (_) {
+      return <String>{};
+    }
   }
 
   void _touchCapsule(String capsuleRootHex) {
@@ -289,6 +377,23 @@ class CapsuleChatDeliveryService {
       return const <CapsuleTradeSignalInboxMessage>[];
     }
     return _deliveryInboxStore.loadTradeSignals(_hex(root));
+  }
+
+  Future<int> unreadCachedMessageCount() async {
+    final root = _runtime.capsuleRootPublicKey();
+    if (root == null || root.length != 32) return 0;
+    return _deliveryInboxStore.unreadMessageCount(_hex(root));
+  }
+
+  Future<void> markCachedMessagesRead(
+    Iterable<CapsuleChatInboxMessage> messages,
+  ) async {
+    final root = _runtime.capsuleRootPublicKey();
+    if (root == null || root.length != 32) return;
+    await _deliveryInboxStore.markMessagesRead(
+      _hex(root),
+      messages.map((message) => message.id),
+    );
   }
 
   Future<CapsuleChatDeliverySendResult> sendCanonicalEnvelope({
