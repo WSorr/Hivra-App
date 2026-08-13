@@ -3000,9 +3000,37 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     fail-closed, quarantine recovery through the canonical router, bounded
     retention/tombstones, exact deferred event identity, Capsule isolation and
     deletion, full automated gates, protected PR, and packaged platform smoke.
-  - Status: implementation and automated evidence complete on the short-lived
-    branch (2026-08-13); protected-PR verification and fresh packaged macOS and
-    Android smoke remain open. No following pass, tag, or Release is selected.
+  - Status: complete on `main` at `c9caa7e` (2026-08-13). PR `#58`, its
+    required check, and post-merge run `31667408208` passed. Smoke-only Release
+    artifacts from the same source used build `100030024`; macOS SHA-256 was
+    `0e29224a7c0c78948c1bb588e1ff74497d39571dd7e014da1e6b24a37abdd295`
+    and Android SHA-256 was
+    `f48f438721ed909597a8b6ffc7f038fc0b512456c10079232756a9ce3969a72b`.
+    Android accepted `M2A-DURABLE-C9CAA7E-02`, restored it after process
+    `20784 -> 23041`, and displayed it once. macOS restored the Android `sync`
+    message after process `70422 -> 71616` and displayed it once. An initially
+    incomplete Android-side pair attestation was repaired through the existing
+    canonical Chat attestation exchange; no alternate route or code change was
+    required. No tag or Release was created.
+
+- `1.x Capsule-scoped Chat Unread Indicator`
+  - Goal: surface accepted unread Chat messages on the cross-screen shell while
+    preserving the existing durable native handoff and Flutter Chat projection
+    as the only inbox path.
+  - Audit boundary: identify the sole read-state owner, define a stable
+    Capsule-scoped read cursor over existing message identity, and prove unread
+    count behavior across passive receive, Chat open, refresh, restart, Capsule
+    switch, retention eviction, and deletion.
+  - Sealed paths: no second inbox or message DTO family, no Core/Ledger unread
+    fact, no transport change, no OS push/background service, no attachment
+    lifecycle, and no badge derived from network success alone.
+  - Required negative vectors: replay cannot increment twice; opening another
+    Capsule cannot clear or expose the active Capsule count; refresh failure
+    cannot hide retained unread state; eviction/deletion cannot resurrect a
+    count; a message becomes read only through the canonical Chat workspace.
+  - Status: audit selected (2026-08-13). Runtime implementation remains blocked
+    until the owner, cursor semantics, lifecycle, and regression matrix are
+    presented and verified.
 
 - `13.1 AI-Assisted Trading Analysis`
   - Goal:
