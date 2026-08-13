@@ -2981,6 +2981,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
 
 ## Planned Product Tracks
 
+- `1.x Chat Durable Receive Handoff`
+  - Finding: authenticated chat ingress returned `consumed` after writing only
+    to a process-memory native queue, then the FFI receive call destructively
+    removed that queue before Flutter consensus filtering and projection.
+    Restart or a crash in either window could permanently hide an acknowledged
+    message. The stable adapter event id was also omitted from the FFI payload.
+  - Invariant: one authenticated event is either atomically retained by the
+    existing encrypted Capsule-scoped Chat owner or returns `retry`; restart,
+    repeated receive, consensus defer, and projection failure cannot create a
+    loss, duplicate, cross-Capsule record, or alternate receive route.
+  - Boundary: replace the volatile handoff inside the existing native Chat
+    owner, retain exact event identity through the existing deferred store, and
+    keep Flutter as a projection consumer. Core, Ledger, transport wire format,
+    attachments, notifications, unread UI, and a second inbox owner remain
+    sealed.
+  - Exit evidence: encrypted-at-rest restart/reopen, replay dedupe, corruption
+    fail-closed, quarantine recovery through the canonical router, bounded
+    retention/tombstones, exact deferred event identity, Capsule isolation and
+    deletion, full automated gates, protected PR, and packaged platform smoke.
+  - Status: implementation and automated evidence complete on the short-lived
+    branch (2026-08-13); protected-PR verification and fresh packaged macOS and
+    Android smoke remain open. No following pass, tag, or Release is selected.
+
 - `13.1 AI-Assisted Trading Analysis`
   - Goal:
     - connect the existing Capsule Analyst/Hivra Engineer AI tooling to the

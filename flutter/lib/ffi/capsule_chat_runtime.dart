@@ -64,3 +64,23 @@ Map<String, Object?> drainCapsuleChatInWorker(Map<String, Object?> args) {
     'lastError': hivra.lastErrorMessage(),
   };
 }
+
+Map<String, Object?> acknowledgeCapsuleChatInWorker(Map<String, Object?> args) {
+  final hivra = HivraBindings();
+  if (!_bootstrapWorkerRuntime(hivra, args)) {
+    return <String, Object?>{
+      'result': -1004,
+      'lastError': 'Worker bootstrap failed',
+    };
+  }
+  final eventIds =
+      (args['eventIds'] as List<Object?>?)
+          ?.map((value) => value.toString())
+          .toList(growable: false) ??
+      const <String>[];
+  final result = hivra.acknowledgeCapsuleChatEvents(eventIds);
+  return <String, Object?>{
+    'result': result,
+    'lastError': hivra.lastErrorMessage(),
+  };
+}

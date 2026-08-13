@@ -65,6 +65,15 @@ Future<Map<String, Object?>> _defaultReceiveWorkerRunner(
   );
 }
 
+Future<Map<String, Object?>> _defaultAcknowledgeWorkerRunner(
+  Map<String, Object?> args,
+) {
+  return compute<Map<String, Object?>, Map<String, Object?>>(
+    acknowledgeCapsuleChatInWorker,
+    args,
+  );
+}
+
 List<Relationship> _emptyRelationships() => const <Relationship>[];
 Future<List<CapsuleAddressCard>> _emptyTrustedCards() async =>
     const <CapsuleAddressCard>[];
@@ -213,6 +222,7 @@ class CapsuleChatDeliveryService {
   final ChatTrustedCardsLoader _listTrustedCards;
   final ChatWorkerRunner _sendWorkerRunner;
   final ChatWorkerRunner _receiveWorkerRunner;
+  final ChatWorkerRunner _acknowledgeWorkerRunner;
   final CapsuleFfiWorkerQueue _workerQueue;
   final CapsuleChatDeferredInboxStore _deferredInboxStore;
   final CapsuleDeliveryInboxStore _deliveryInboxStore;
@@ -231,6 +241,7 @@ class CapsuleChatDeliveryService {
     ChatTrustedCardsLoader? listTrustedCards,
     ChatWorkerRunner sendWorkerRunner = _defaultSendWorkerRunner,
     ChatWorkerRunner receiveWorkerRunner = _defaultReceiveWorkerRunner,
+    ChatWorkerRunner acknowledgeWorkerRunner = _defaultAcknowledgeWorkerRunner,
     CapsuleFfiWorkerQueue? workerQueue,
     CapsuleChatDeferredInboxStore? deferredInboxStore,
     CapsuleDeliveryInboxStore? deliveryInboxStore,
@@ -246,6 +257,7 @@ class CapsuleChatDeliveryService {
        _listTrustedCards = listTrustedCards ?? _emptyTrustedCards,
        _sendWorkerRunner = sendWorkerRunner,
        _receiveWorkerRunner = receiveWorkerRunner,
+       _acknowledgeWorkerRunner = acknowledgeWorkerRunner,
        _workerQueue = workerQueue ?? CapsuleFfiWorkerQueue.shared,
        _deferredInboxStore =
            deferredInboxStore ?? const CapsuleChatDeferredInboxStore(),
@@ -491,12 +503,14 @@ class CapsuleChatDeliveryService {
     var deferredByConsensus = 0;
     final remainingDeferred = <CapsuleChatDeferredInboxItem>[];
     final nextDeferred = <CapsuleChatDeferredInboxItem>[];
+    final terminalEventIds = <String>{};
     final now = _nowUtc();
     final activeCapsuleHex = bootstrap['activeCapsuleHex']?.toString() ?? '';
     final deferredItems = await _deferredInboxStore.load(localRootHex ?? '');
     final incomingItems = <_ChatTransportItem>[
       for (final item in deferredItems)
         _ChatTransportItem(
+          eventId: item.adapterEventId,
           fromHex: item.fromHex,
           payloadJson: item.payloadJson,
           timestampMs: item.timestampMs,
@@ -507,14 +521,17 @@ class CapsuleChatDeliveryService {
     for (final item in decoded) {
       if (item is! Map) continue;
       final map = Map<String, dynamic>.from(item);
+      final eventId = map['event_id']?.toString().trim() ?? '';
       final fromHex = (map['from_hex']?.toString().trim().toLowerCase() ?? '');
       final payloadJson = map['payload_json']?.toString() ?? '';
       final timestampMs = _toInt(map['timestamp_ms']) ?? 0;
       if (!_isLowerHex64(fromHex) || payloadJson.isEmpty) {
+        if (eventId.isNotEmpty) terminalEventIds.add(eventId);
         continue;
       }
       incomingItems.add(
         _ChatTransportItem(
+          eventId: eventId,
           fromHex: fromHex,
           payloadJson: payloadJson,
           timestampMs: timestampMs,
@@ -535,12 +552,14 @@ class CapsuleChatDeliveryService {
       }
       final isSignablePeer = signable.isSignable;
       if (!isSignablePeer) {
-        if (_shouldDeferForConsensus(signable) && localRootHex != null) {
+        final shouldDefer = _shouldDeferForConsensus(signable);
+        if (shouldDefer && localRootHex != null) {
           deferredByConsensus += 1;
           final deferredItem = item.deferredItem;
           if (deferredItem == null) {
             nextDeferred.add(
               _deferredInboxStore.create(
+                adapterEventId: item.eventId,
                 capsuleHex: localRootHex,
                 fromHex: fromHex,
                 payloadJson: payloadJson,
@@ -558,6 +577,10 @@ class CapsuleChatDeliveryService {
           }
         } else {
           droppedByConsensus += 1;
+          if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
+        }
+        if (item.eventId.isNotEmpty && shouldDefer) {
+          terminalEventIds.add(item.eventId);
         }
         continue;
       }
@@ -566,7 +589,13 @@ class CapsuleChatDeliveryService {
       if (envelope != null) {
         final id =
             envelope['envelope_hash_hex']!.isEmpty
-                ? _stableMessageId(consensusPeerHex, timestampMs, payloadJson)
+                ? (item.eventId.isEmpty
+                    ? _stableMessageId(
+                      consensusPeerHex,
+                      timestampMs,
+                      payloadJson,
+                    )
+                    : item.eventId)
                 : envelope['envelope_hash_hex']!;
 
         byId[id] = CapsuleChatInboxMessage(
@@ -588,6 +617,7 @@ class CapsuleChatDeliveryService {
       );
       if (executionDecision != null) {
         byExecutionDecisionId[executionDecision.id] = executionDecision;
+        if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
         continue;
       }
 
@@ -606,11 +636,15 @@ class CapsuleChatDeliveryService {
           receiptCreatedAtUtc: executionReceipt['receipt_created_at_utc']!,
           timestampMs: timestampMs,
         );
+        if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
         continue;
       }
 
       final tradeSignal = _parseTradeSignalEnvelope(payloadJson);
-      if (tradeSignal == null) continue;
+      if (tradeSignal == null) {
+        if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
+        continue;
+      }
       final signalId = tradeSignal['signal_id']!;
       final id = tradeSignalInboxRecordId(
         fromHex: consensusPeerHex,
@@ -633,6 +667,7 @@ class CapsuleChatDeliveryService {
         canonicalIntentJson: tradeSignal['canonical_intent_json']!,
         timestampMs: timestampMs,
       );
+      if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
     }
 
     final messages =
@@ -658,6 +693,30 @@ class CapsuleChatDeliveryService {
         items: deferredById.values,
         now: now,
       );
+    }
+    if (terminalEventIds.isNotEmpty) {
+      final acknowledgement = await _workerQueue.run(
+        _ffiQueueKey(bootstrapOwner),
+        () => _acknowledgeWorkerRunner(<String, Object?>{
+          ...bootstrap,
+          'eventIds': terminalEventIds.toList()..sort(),
+        }),
+      );
+      final acknowledgementCode = (acknowledgement['result'] as int?) ?? -1003;
+      if (acknowledgementCode != 0) {
+        return CapsuleChatDeliveryReceiveResult(
+          code: acknowledgementCode,
+          errorMessage:
+              acknowledgement['lastError']?.toString() ??
+              'Chat handoff acknowledgement failed',
+          droppedByConsensus: droppedByConsensus,
+          deferredByConsensus: deferredByConsensus,
+          messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
+          tradeSignals: List<CapsuleTradeSignalInboxMessage>.unmodifiable(
+            tradeSignals,
+          ),
+        );
+      }
     }
     final executionDecisions =
         byExecutionDecisionId.values.toList()
@@ -1097,12 +1156,14 @@ class CapsuleChatDeliveryService {
 }
 
 class _ChatTransportItem {
+  final String eventId;
   final String fromHex;
   final String payloadJson;
   final int timestampMs;
   final CapsuleChatDeferredInboxItem? deferredItem;
 
   const _ChatTransportItem({
+    this.eventId = '',
     required this.fromHex,
     required this.payloadJson,
     required this.timestampMs,

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:typed_data';
 import 'dart:io' show Directory, File, Platform;
@@ -57,12 +58,10 @@ typedef HivraSeedDeleteDart = int Function();
 
 typedef HivraSetApplicationStorageRootC = Int32 Function(Pointer<Int8> path);
 typedef HivraSetApplicationStorageRootDart = int Function(Pointer<Int8> path);
-typedef HivraDeleteInboundQuarantineC = Int32 Function(
-  Pointer<Uint8> capsuleId,
-);
-typedef HivraDeleteInboundQuarantineDart = int Function(
-  Pointer<Uint8> capsuleId,
-);
+typedef HivraDeleteInboundQuarantineC =
+    Int32 Function(Pointer<Uint8> capsuleId);
+typedef HivraDeleteInboundQuarantineDart =
+    int Function(Pointer<Uint8> capsuleId);
 
 typedef HivraCapsuleCreateC =
     Int32 Function(
@@ -162,6 +161,10 @@ typedef HivraReceiveCapsuleChatJsonC =
     Int32 Function(Pointer<Pointer<Int8>> outJson);
 typedef HivraReceiveCapsuleChatJsonDart =
     int Function(Pointer<Pointer<Int8>> outJson);
+typedef HivraAckCapsuleChatEventsJsonC =
+    Int32 Function(Pointer<Int8> eventIdsJson);
+typedef HivraAckCapsuleChatEventsJsonDart =
+    int Function(Pointer<Int8> eventIdsJson);
 
 typedef HivraSendPairConsensusAttestationC =
     Int32 Function(Pointer<Uint8> toPubkey, Pointer<Int8> payloadJson);
@@ -355,6 +358,7 @@ class HivraBindings {
   HivraSignRootDigest32Dart? _signRootDigest32;
   HivraSendCapsuleChatDart? _sendCapsuleChat;
   HivraReceiveCapsuleChatJsonDart? _receiveCapsuleChatJson;
+  HivraAckCapsuleChatEventsJsonDart? _ackCapsuleChatEventsJson;
   HivraSendPairConsensusAttestationDart? _sendPairConsensusAttestation;
   HivraReceivePairConsensusAttestationsJsonDart?
   _receivePairConsensusAttestationsJson;
@@ -620,6 +624,17 @@ class HivraBindings {
               .asFunction();
     } catch (_) {
       _receiveCapsuleChatJson = null;
+    }
+
+    try {
+      _ackCapsuleChatEventsJson =
+          _lib
+              .lookup<NativeFunction<HivraAckCapsuleChatEventsJsonC>>(
+                'hivra_ack_capsule_chat_events_json',
+              )
+              .asFunction();
+    } catch (_) {
+      _ackCapsuleChatEventsJson = null;
     }
 
     try {
@@ -1127,6 +1142,18 @@ class HivraBindings {
       return (code: code, json: json);
     } finally {
       calloc.free(outPtr);
+    }
+  }
+
+  int acknowledgeCapsuleChatEvents(List<String> eventIds) {
+    if (eventIds.isEmpty) return 0;
+    final acknowledge = _ackCapsuleChatEventsJson;
+    if (acknowledge == null) return -1002;
+    final raw = jsonEncode(eventIds).toNativeUtf8();
+    try {
+      return acknowledge(raw.cast<Int8>());
+    } finally {
+      calloc.free(raw);
     }
   }
 

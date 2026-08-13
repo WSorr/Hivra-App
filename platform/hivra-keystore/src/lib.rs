@@ -9,6 +9,7 @@ use zeroize::Zeroize;
 
 const QUARANTINE_RECORD_KEY_LABEL: &[u8] = b"HIVRA_INBOUND_QUARANTINE_RECORD_KEY_v1";
 const QUARANTINE_SNAPSHOT_KEY_LABEL: &[u8] = b"HIVRA_INBOUND_QUARANTINE_SNAPSHOT_KEY_v1";
+const CHAT_HANDOFF_KEY_LABEL: &[u8] = b"HIVRA_CHAT_HANDOFF_KEY_v1";
 const SEALED_PAYLOAD_VERSION: u8 = 1;
 const AES_GCM_NONCE_LEN: usize = 12;
 
@@ -151,6 +152,24 @@ pub fn open_inbound_quarantine_snapshot(
     open_with_label(seed, QUARANTINE_SNAPSHOT_KEY_LABEL, associated_data, sealed)
 }
 
+/// Authenticated-encrypts the Capsule-scoped chat handoff snapshot.
+pub fn seal_chat_handoff_snapshot(
+    seed: &Seed,
+    associated_data: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8>> {
+    seal_with_label(seed, CHAT_HANDOFF_KEY_LABEL, associated_data, plaintext)
+}
+
+/// Authenticated-decrypts the Capsule-scoped chat handoff snapshot.
+pub fn open_chat_handoff_snapshot(
+    seed: &Seed,
+    associated_data: &[u8],
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    open_with_label(seed, CHAT_HANDOFF_KEY_LABEL, associated_data, sealed)
+}
+
 fn seal_with_label(
     seed: &Seed,
     label: &[u8],
@@ -284,14 +303,22 @@ mod tests {
         let plaintext = b"authenticated envelope";
         let record = seal_inbound_quarantine_record(&seed, aad, plaintext).unwrap();
         let snapshot = seal_inbound_quarantine_snapshot(&seed, aad, plaintext).unwrap();
+        let chat = seal_chat_handoff_snapshot(&seed, aad, plaintext).unwrap();
 
         assert_ne!(record, snapshot);
+        assert_ne!(record, chat);
+        assert_ne!(snapshot, chat);
         assert_eq!(
             open_inbound_quarantine_record(&seed, aad, &record).unwrap(),
             plaintext
         );
         assert!(open_inbound_quarantine_record(&seed, b"wrong", &record).is_err());
         assert!(open_inbound_quarantine_snapshot(&seed, aad, &record).is_err());
+        assert_eq!(
+            open_chat_handoff_snapshot(&seed, aad, &chat).unwrap(),
+            plaintext
+        );
+        assert!(open_chat_handoff_snapshot(&seed, aad, &snapshot).is_err());
     }
 
     #[test]

@@ -132,6 +132,7 @@ void main() {
         'created_at_utc': '2026-06-13T09:00:00.000Z',
         'canonical_intent_json': '{"symbol":"BTC-USDT"}',
       });
+      final acknowledged = <String>[];
       final chatService = CapsuleChatDeliveryService(
         runtime: runtime,
         manualChecks: checks,
@@ -141,6 +142,7 @@ void main() {
               'result': 1,
               'json': jsonEncode(<Map<String, Object?>>[
                 <String, Object?>{
+                  'event_id': 'trade-event-one',
                   'from_hex': peerHex,
                   'payload_json': payloadJson,
                   'timestamp_ms': 1,
@@ -148,6 +150,14 @@ void main() {
               ]),
               'lastError': null,
             },
+        acknowledgeWorkerRunner: (args) async {
+          acknowledged.addAll(
+            (args['eventIds'] as List<Object?>).map(
+              (value) => value.toString(),
+            ),
+          );
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
       );
       final droneService = CapsuleChatDeliveryService(
         runtime: runtime,
@@ -163,8 +173,60 @@ void main() {
         droneService.loadCachedTradeSignals().single.signalId,
         equals('sig-shared'),
       );
+      expect(acknowledged, equals(<String>['trade-event-one']));
     },
   );
+
+  test('chat handoff acknowledgement failure is fail-closed', () async {
+    const peerHex =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    const localRootHex =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    final service = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+        const ManualConsensusCheck(
+          peerHex: peerHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      ]),
+      receiveWorkerRunner:
+          (_) async => <String, Object?>{
+            'result': 1,
+            'json': jsonEncode(<Map<String, Object?>>[
+              <String, Object?>{
+                'event_id': 'unsupported-event-one',
+                'from_hex': peerHex,
+                'payload_json': '{"unsupported":true}',
+                'timestamp_ms': 1,
+              },
+            ]),
+            'lastError': null,
+          },
+      acknowledgeWorkerRunner:
+          (_) async => <String, Object?>{
+            'result': -9,
+            'lastError': 'durable acknowledgement failed',
+          },
+    );
+
+    final result = await service.drainAndFilter();
+
+    expect(result.code, -9);
+    expect(result.errorMessage, 'durable acknowledgement failed');
+  });
 
   test(
     'workspace keeps passive chat visible when the next refresh times out',
@@ -778,9 +840,9 @@ void main() {
     final envelope = jsonEncode(<String, Object?>{
       'message_text': 'hello',
       'created_at_utc': '2026-07-14T09:00:00.000Z',
-      'envelope_hash_hex':
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'envelope_hash_hex': '',
     });
+    final acknowledgedEventIds = <String>[];
     final blockedService = CapsuleChatDeliveryService(
       runtime: _FakeRuntime(
         capsuleRootKey: _hexToBytes(localRootHex),
@@ -817,6 +879,7 @@ void main() {
             'result': 0,
             'json': jsonEncode(<Map<String, Object?>>[
               <String, Object?>{
+                'event_id': 'nostr-event-one',
                 'from_hex': peerRootHex,
                 'payload_json': envelope,
                 'timestamp_ms': 1,
@@ -824,6 +887,12 @@ void main() {
             ]),
             'lastError': null,
           },
+      acknowledgeWorkerRunner: (args) async {
+        acknowledgedEventIds.addAll(
+          (args['eventIds'] as List<Object?>).map((value) => value.toString()),
+        );
+        return <String, Object?>{'result': 0, 'lastError': null};
+      },
     );
 
     final blocked = await blockedService.drainAndFilter();
@@ -877,15 +946,23 @@ void main() {
             'json': null,
             'lastError': null,
           },
+      acknowledgeWorkerRunner: (args) async {
+        acknowledgedEventIds.addAll(
+          (args['eventIds'] as List<Object?>).map((value) => value.toString()),
+        );
+        return <String, Object?>{'result': 0, 'lastError': null};
+      },
     );
 
     final ready = await readyService.drainAndFilter();
 
     expect(ready.messages, hasLength(1));
+    expect(ready.messages.single.id, equals('nostr-event-one'));
     expect(ready.messages.single.messageText, equals('hello'));
     expect(ready.droppedByConsensus, 0);
     expect(ready.deferredByConsensus, 0);
     expect(await deferredStore.load(localRootHex), isEmpty);
+    expect(acknowledgedEventIds, contains('nostr-event-one'));
   });
 
   group('CapsuleChatDeliveryService execution command flow', () {
