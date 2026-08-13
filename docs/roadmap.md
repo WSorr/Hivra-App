@@ -2921,7 +2921,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     challenges, receipts, and reconciliation retain their existing owners.
   - Not included: Git/CI producer, background host, automatic publication,
     provider authority expansion, plugin ABI changes, or release work.
-  - Status: implementation active on a protected feature branch (2026-08-13).
+  - Status: complete on `main` at `caed6d4` (2026-08-13); protected PR `#50`
+    and post-merge repository gates `31654314173` passed. No following pass is
+    selected.
 
 ## Planned Product Tracks
 
