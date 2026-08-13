@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/ai_doctor_credential_store.dart';
 import 'package:hivra_app/services/inference_provider_adapter.dart';
+import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 class _FakeSecureStorage extends FlutterSecureStorage {
   final Map<String, String> values = <String, String>{};
@@ -71,21 +74,44 @@ class _ThrowingSecureStorage extends FlutterSecureStorage {
 
 void main() {
   group('AiDoctorCredentialStore', () {
+    late Directory tempHome;
+    late UserVisibleDataDirectoryService directories;
+
+    setUp(() async {
+      tempHome = await Directory.systemTemp.createTemp('hivra-ai-credentials-');
+      directories = UserVisibleDataDirectoryService(
+        homeOverride: tempHome.path,
+      );
+    });
+
+    tearDown(() async {
+      if (await tempHome.exists()) {
+        await tempHome.delete(recursive: true);
+      }
+    });
+
+    AiDoctorCredentialStore buildStore(FlutterSecureStorage secureStorage) {
+      return AiDoctorCredentialStore(
+        secureStorage: secureStorage,
+        directories: directories,
+      );
+    }
+
     test('stores OpenAI key only in secure storage', () async {
       final secureStorage = _FakeSecureStorage();
-      final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+      final store = buildStore(secureStorage);
 
       await store.saveOpenAiApiKey(' sk-test ');
 
       expect(await store.loadOpenAiApiKey(), 'sk-test');
       expect(await store.loadPreferredProvider(), InferenceProviderKind.openAi);
-      expect(secureStorage.values.values, contains('sk-test'));
-      expect(secureStorage.values.values, contains('openai'));
+      expect(secureStorage.values, hasLength(1));
+      expect(secureStorage.values.values.single, 'sk-test');
     });
 
     test('clears OpenAI key', () async {
       final secureStorage = _FakeSecureStorage();
-      final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+      final store = buildStore(secureStorage);
       await store.saveOpenAiApiKey('sk-test');
 
       await store.clearOpenAiApiKey();
@@ -97,7 +123,7 @@ void main() {
 
     test('stores provider keys independently', () async {
       final secureStorage = _FakeSecureStorage();
-      final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+      final store = buildStore(secureStorage);
 
       await store.saveApiKey(InferenceProviderKind.openAi, 'sk-openai');
       await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
@@ -119,33 +145,36 @@ void main() {
         await store.loadPreferredProvider(),
         InferenceProviderKind.localOpenAiCompatible,
       );
-      expect(secureStorage.values.length, 4);
+      expect(secureStorage.values.length, 3);
     });
 
-    test('stores explicit preferred provider without key material', () async {
+    test('stores explicit preferred provider outside secure storage', () async {
       final secureStorage = _FakeSecureStorage();
-      final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+      final store = buildStore(secureStorage);
 
       await store.savePreferredProvider(InferenceProviderKind.gemini);
 
       expect(await store.loadPreferredProvider(), InferenceProviderKind.gemini);
-      expect(secureStorage.values.length, 1);
-      expect(secureStorage.values.values.single, 'gemini');
+      expect(secureStorage.values, isEmpty);
     });
 
     test('unlocks provider once and reuses the in-memory session', () async {
       final secureStorage = _FakeSecureStorage();
-      final writer = AiDoctorCredentialStore(secureStorage: secureStorage);
+      final writer = buildStore(secureStorage);
       await writer.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
-      writer.lockSession();
+      final restartedProcess = buildStore(secureStorage);
       secureStorage.readCounts.clear();
 
-      final provider = await writer.unlockPreferredProviderSession();
+      final provider = await restartedProcess.unlockPreferredProviderSession();
       expect(provider, InferenceProviderKind.gemini);
-      expect(writer.isPreferredProviderUnlocked, isTrue);
-      expect(writer.sessionApiKey(InferenceProviderKind.gemini), 'gemini-key');
+      expect(restartedProcess.isPreferredProviderUnlocked, isTrue);
+      expect(
+        restartedProcess.sessionApiKey(InferenceProviderKind.gemini),
+        'gemini-key',
+      );
+      expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 1);
 
-      await writer.unlockPreferredProviderSession();
+      await restartedProcess.unlockPreferredProviderSession();
       expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 1);
     });
 
@@ -153,7 +182,7 @@ void main() {
       'explicit session unlock does not rewrite preferred provider',
       () async {
         final secureStorage = _FakeSecureStorage();
-        final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+        final store = buildStore(secureStorage);
         await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
         await store.saveApiKey(InferenceProviderKind.openAi, 'openai-key');
         await store.savePreferredProvider(InferenceProviderKind.gemini);
@@ -165,13 +194,14 @@ void main() {
           await store.loadPreferredProvider(),
           InferenceProviderKind.gemini,
         );
-        expect(secureStorage.values.values, contains('gemini'));
+        expect(secureStorage.values.values, contains('gemini-key'));
+        expect(secureStorage.values.values, isNot(contains('gemini')));
       },
     );
 
     test('locking clears only the process session', () async {
       final secureStorage = _FakeSecureStorage();
-      final store = AiDoctorCredentialStore(secureStorage: secureStorage);
+      final store = buildStore(secureStorage);
       await store.saveApiKey(InferenceProviderKind.gemini, 'gemini-key');
 
       store.lockSession();
@@ -189,17 +219,13 @@ void main() {
       'restart keeps configuration locked until explicit unlock without key re-entry',
       () async {
         final secureStorage = _FakeSecureStorage();
-        final firstProcess = AiDoctorCredentialStore(
-          secureStorage: secureStorage,
-        );
+        final firstProcess = buildStore(secureStorage);
         await firstProcess.saveApiKey(
           InferenceProviderKind.gemini,
           'gemini-key',
         );
 
-        final restartedProcess = AiDoctorCredentialStore(
-          secureStorage: secureStorage,
-        );
+        final restartedProcess = buildStore(secureStorage);
 
         expect(restartedProcess.isPreferredProviderUnlocked, isFalse);
         expect(restartedProcess.sessionPreferredProvider, isNull);
@@ -221,10 +247,57 @@ void main() {
       },
     );
 
-    test('fails closed when secure storage is unavailable', () async {
-      final store = AiDoctorCredentialStore(
-        secureStorage: _ThrowingSecureStorage(),
+    test(
+      'migrates legacy secure preference without moving key material',
+      () async {
+        final secureStorage = _FakeSecureStorage();
+        secureStorage.values['hivra.ai_doctor.preferred_provider.v1'] =
+            'gemini';
+        secureStorage.values['hivra.ai_doctor.gemini.api_key.v1'] =
+            'gemini-key';
+
+        final migratingProcess = buildStore(secureStorage);
+        expect(
+          await migratingProcess.unlockPreferredProviderSession(),
+          InferenceProviderKind.gemini,
+        );
+        expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 2);
+        expect(
+          secureStorage.values['hivra.ai_doctor.gemini.api_key.v1'],
+          'gemini-key',
+        );
+        expect(
+          secureStorage.values,
+          isNot(contains('hivra.ai_doctor.preferred_provider.v1')),
+        );
+
+        final restartedProcess = buildStore(secureStorage);
+        secureStorage.readCounts.clear();
+        expect(
+          await restartedProcess.unlockPreferredProviderSession(),
+          InferenceProviderKind.gemini,
+        );
+        expect(secureStorage.readCounts.values.fold(0, (a, b) => a + b), 1);
+      },
+    );
+
+    test('malformed local provider preference fails closed', () async {
+      final root = await directories.rootDirectory(create: true);
+      await File(
+        '${root.path}/ai_provider_preference.v1.json',
+      ).writeAsString('{"schema_version":1,"provider_id":"unknown"}');
+      final secureStorage = _FakeSecureStorage();
+      secureStorage.values['hivra.ai_doctor.gemini.api_key.v1'] = 'gemini-key';
+
+      await expectLater(
+        buildStore(secureStorage).unlockPreferredProviderSession(),
+        throwsA(isA<StateError>()),
       );
+      expect(secureStorage.readCounts, isEmpty);
+    });
+
+    test('fails closed when secure storage is unavailable', () async {
+      final store = buildStore(_ThrowingSecureStorage());
 
       await expectLater(
         store.saveOpenAiApiKey('sk-test'),

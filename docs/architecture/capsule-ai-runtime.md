@@ -164,6 +164,11 @@ they use the same inference runtime.
 
 Inference secrets stay in platform Secure Storage under the host AI owner. A
 user explicitly unlocks the selected provider into one process-memory lease.
+The selected provider id is non-secret host configuration and is stored
+outside Secure Storage by the same owner. One explicit unlock performs at most
+one protected credential read after configuration migration; a legacy
+Keychain-stored provider id is read once and then removed without enumerating
+unrelated Keychain records.
 
 - The lease may be reused by Capsule Analyst, Developer Mode, and authorized
   drones while the app process remains open.
