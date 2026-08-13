@@ -1,7 +1,12 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'atomic_file_write_service.dart';
 import 'hivra_secure_storage_options.dart';
 import 'inference_provider_adapter.dart';
+import 'user_visible_data_directory_service.dart';
 
 class AiDoctorCredentialStore {
   static final AiDoctorCredentialStore shared = AiDoctorCredentialStore();
@@ -14,8 +19,12 @@ class AiDoctorCredentialStore {
       'hivra.ai_doctor.local_openai.base_url.v1';
   static const String _preferredProviderKey =
       'hivra.ai_doctor.preferred_provider.v1';
+  static const String _preferredProviderFileName =
+      'ai_provider_preference.v1.json';
 
   final FlutterSecureStorage _secureStorage;
+  final UserVisibleDataDirectoryService _directories;
+  final AtomicFileWriteService _atomicWrites;
   final Map<InferenceProviderKind, String> _sessionApiKeys =
       <InferenceProviderKind, String>{};
   final Map<InferenceProviderKind, String> _sessionBaseUrls =
@@ -23,10 +32,16 @@ class AiDoctorCredentialStore {
   InferenceProviderKind? _cachedPreferredProvider;
   InferenceProviderKind? _sessionPreferredProvider;
 
-  AiDoctorCredentialStore({FlutterSecureStorage? secureStorage})
-    : _secureStorage =
-          secureStorage ??
-          const FlutterSecureStorage(mOptions: hivraMacOsSecureStorageOptions);
+  AiDoctorCredentialStore({
+    FlutterSecureStorage? secureStorage,
+    UserVisibleDataDirectoryService directories =
+        const UserVisibleDataDirectoryService(),
+    AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
+  }) : _secureStorage =
+           secureStorage ??
+           const FlutterSecureStorage(mOptions: hivraMacOsSecureStorageOptions),
+       _directories = directories,
+       _atomicWrites = atomicWrites;
 
   Future<void> saveApiKey(InferenceProviderKind provider, String apiKey) async {
     final normalized = apiKey.trim();
@@ -110,14 +125,18 @@ class AiDoctorCredentialStore {
 
   Future<void> savePreferredProvider(InferenceProviderKind provider) async {
     try {
-      await _secureStorage.write(
-        key: _preferredProviderKey,
-        value: provider.id,
+      final file = await _preferredProviderFile(createRoot: true);
+      await _atomicWrites.writeString(
+        file,
+        jsonEncode(<String, Object>{
+          'schema_version': 1,
+          'provider_id': provider.id,
+        }),
       );
       _cachedPreferredProvider = provider;
       _sessionPreferredProvider = provider;
     } catch (error) {
-      throw StateError('Secure AI provider preference storage failed: $error');
+      throw StateError('AI provider preference storage failed: $error');
     }
   }
 
@@ -125,18 +144,17 @@ class AiDoctorCredentialStore {
     final cached = _cachedPreferredProvider;
     if (cached != null) return cached;
     try {
-      final stored = await _secureStorage.read(key: _preferredProviderKey);
-      final normalized = stored?.trim();
-      if (normalized == null || normalized.isEmpty) return null;
-      for (final provider in InferenceProviderKind.values) {
-        if (provider.id == normalized) {
-          _cachedPreferredProvider = provider;
-          return provider;
+      final file = await _preferredProviderFile();
+      if (await file.exists()) {
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is! Map || decoded['schema_version'] != 1) {
+          throw const FormatException('Invalid AI provider preference');
         }
+        return _cachePreferredProvider(decoded['provider_id']);
       }
-      return null;
+      return _migrateLegacyPreferredProvider();
     } catch (error) {
-      throw StateError('Secure AI provider preference load failed: $error');
+      throw StateError('AI provider preference load failed: $error');
     }
   }
 
@@ -173,6 +191,8 @@ class AiDoctorCredentialStore {
   Future<void> _clearPreferredProviderIf(InferenceProviderKind provider) async {
     final preferred = await loadPreferredProvider();
     if (preferred != provider) return;
+    final file = await _preferredProviderFile();
+    if (await file.exists()) await file.delete();
     await _secureStorage.delete(key: _preferredProviderKey);
     _cachedPreferredProvider = null;
     if (_sessionPreferredProvider == provider) {
@@ -233,6 +253,37 @@ class AiDoctorCredentialStore {
     _sessionApiKeys.clear();
     _sessionBaseUrls.clear();
     _sessionPreferredProvider = null;
+  }
+
+  Future<InferenceProviderKind?> _migrateLegacyPreferredProvider() async {
+    final legacy = await _secureStorage.read(key: _preferredProviderKey);
+    final provider = _providerForId(legacy);
+    if (provider == null) return null;
+    await savePreferredProvider(provider);
+    await _secureStorage.delete(key: _preferredProviderKey);
+    return provider;
+  }
+
+  InferenceProviderKind? _cachePreferredProvider(Object? providerId) {
+    final provider = _providerForId(providerId);
+    if (provider == null) {
+      throw const FormatException('Unknown AI provider preference');
+    }
+    _cachedPreferredProvider = provider;
+    return provider;
+  }
+
+  static InferenceProviderKind? _providerForId(Object? providerId) {
+    final normalized = providerId is String ? providerId.trim() : '';
+    for (final provider in InferenceProviderKind.values) {
+      if (provider.id == normalized) return provider;
+    }
+    return null;
+  }
+
+  Future<File> _preferredProviderFile({bool createRoot = false}) async {
+    final root = await _directories.rootDirectory(create: createRoot);
+    return File('${root.path}/$_preferredProviderFileName');
   }
 
   Future<void> saveOpenAiApiKey(String apiKey) {

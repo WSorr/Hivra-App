@@ -2925,6 +2925,23 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     and post-merge repository gates `31654314173` passed. No following pass is
     selected.
 
+- `1.x Capsule AI single-prompt unlock remediation`
+  - Finding: packaged macOS Release smoke from `0440e92` proved the complete
+    Capsule Change Feed -> Gemini proposal -> WASM draft path without an
+    external effect, but one explicit AI unlock produced two password prompts.
+  - Root cause: `AiDoctorCredentialStore` read a non-secret preferred-provider
+    id and the selected credential from separate Keychain records.
+  - Boundary: retain the same credential and runtime owners; store the
+    provider id as bounded local configuration, keep keys and protected local
+    endpoints in Secure Storage, and migrate only the exact legacy provider
+    record without enumerating unrelated Keychain entries. No provider, DTO,
+    Core, effect, or publication path is added.
+  - Exit evidence: bounded legacy migration, one protected read for every
+    post-migration cold unlock, malformed preference failure, full gates,
+    protected CI, and a fresh packaged macOS restart smoke showing one password
+    prompt and successful inference.
+  - Status: remediation active (2026-08-13).
+
 ## Planned Product Tracks
 
 - `13.1 AI-Assisted Trading Analysis`

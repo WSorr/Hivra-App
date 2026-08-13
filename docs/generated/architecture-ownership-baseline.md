@@ -311,7 +311,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_developer_remote_repository_cache_service.dart` line `65` (`AiDeveloperRemoteRepositoryCacheService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_developer_workspace_service.dart` line `134` (`AiDeveloperWorkspaceService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_doctor_chat_service.dart` line `21` (`AiDoctorChatService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_doctor_credential_store.dart` line `6` (`AiDoctorCredentialStore`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_doctor_credential_store.dart` line `11` (`AiDoctorCredentialStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_doctor_prompt_service.dart` line `56` (`AiDoctorPromptService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_patch_proposal_service.dart` line `55` (`AiPatchProposalService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_plugin_audit_service.dart` line `115` (`AiPluginAuditService`) — rule `current_flutter_service_support`
