@@ -2,12 +2,20 @@
 
 Status date: 2026-08-13
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: bounded Android Invitations refresh remediation.
+Current development focus: no next pass is selected. The bounded Android
+Invitations refresh remediation is complete on `main`. Fresh packaged Android
+Release smoke from `1ee7ef4` used build code `100030022` and SHA-256
+`6bc702e44389bb82c336660e8e5ca63f3e3849cc5f21a3540ee1dc215bbbb2bb`.
+The top-bar button produced a successful canonical manual passive receive while
+the Invitations projection retained its Capsule-scoped pending state; no
+pull-to-refresh gesture was used. Automated evidence covers projection reload
+when the Ledger version is unchanged. The remediation added no receive, inbox,
+transport, or state owner.
 The top-bar refresh already uses the canonical passive-receive owner, but its
 post-receive shell refresh did not notify the retained Invitations projection
 when the Ledger version stayed unchanged. The remediation may only make that
 existing projection reread its Capsule-scoped store; a second receive, inbox,
-transport, or state owner is forbidden. The bounded P2 Capsule AI unlock
+transport, or state owner remains forbidden. The bounded P2 Capsule AI unlock
 remediation is complete on `main`. Packaged macOS Release smoke from
 `b6c2e01` migrated the legacy provider preference, then a cold restart unlocked
 Gemini with zero password prompts and changed `Unlock AI` to `Lock AI`. Provider

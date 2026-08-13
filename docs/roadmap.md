@@ -2961,8 +2961,14 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: focused positive and no-op regression vectors, full local
     gates, protected PR and post-merge gates, then fresh Android packaged smoke
     proving the top-bar button updates the same list as pull-to-refresh.
-  - Status: remediation in progress (2026-08-13). No following pass is
-    selected.
+  - Status: complete on `main` at `1ee7ef4` (2026-08-13); protected PR `#54`,
+    PR gate `31660793494`, and post-merge gate `31660869518` passed. Fresh
+    packaged Android Release smoke used build code `100030022`, APK SHA-256
+    `6bc702e44389bb82c336660e8e5ca63f3e3849cc5f21a3540ee1dc215bbbb2bb`,
+    and proved that the top-bar button completes the canonical manual receive
+    without a pull-to-refresh gesture. The focused regression proves that its
+    revision reloads the retained Invitations projection even when the Ledger
+    version is unchanged. No following pass is selected.
 
 ## Planned Product Tracks
 
