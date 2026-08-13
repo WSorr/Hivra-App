@@ -2,13 +2,13 @@
 
 Status date: 2026-08-13
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: a bounded P2 Capsule AI unlock remediation follows
-the completed Moltbook Capsule Public Change Feed smoke. The packaged macOS
-Release path passed Capsule-scoped Change Feed -> Gemini proposal -> WASM draft
-without publication, but one unlock action requested the macOS password twice.
-The existing AI credential owner is removing the non-secret provider preference
-from Keychain while keeping provider credentials in Secure Storage; no second
-credential owner, provider path, or AI authority is added. The completed feed
+Current development focus: no next pass is selected. The bounded P2 Capsule AI
+unlock remediation is complete on `main`. Packaged macOS Release smoke from
+`b6c2e01` migrated the legacy provider preference, then a cold restart unlocked
+Gemini with zero password prompts and changed `Unlock AI` to `Lock AI`. Provider
+credentials remain in Secure Storage while the non-secret provider id belongs
+to local configuration under the same credential owner. No second credential
+owner, provider path, or AI authority was added. The completed Moltbook feed
 pass adds one
 Capsule-scoped, commitment-bound queue of explicitly confirmed public facts to
 the existing Moltbook plugin-state owner. Gemini may propose the next queued
@@ -109,7 +109,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Close the selected P2 AI unlock remediation through one-protected-read regressions, protected CI, and a fresh packaged macOS unlock smoke. Moltbook Change Feed remains complete; Git/CI ingestion, automatic publication, Remote Runner/VPS, deployment, and release remain blocked. | `architecture/capsule-ai-runtime.md`, `roadmap.md` |
+| What is the next 1.x step? | No next pass is selected. Moltbook Change Feed and the AI unlock remediation are complete; Git/CI ingestion, automatic publication, Remote Runner/VPS, deployment, and release remain blocked pending an explicit product decision. | `architecture/capsule-ai-runtime.md`, `plugins/moltbook_engagement_lifecycle_v1.md`, `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -123,7 +123,7 @@ table, then open only the linked authority for the selected work item.
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
-| **Capsule AI Runtime** | P2 unlock remediation active | The existing credential owner keeps provider credentials in Secure Storage, moves the non-secret provider id to local configuration, and retains one process lease. | One protected read per post-migration unlock, bounded non-enumerating legacy migration, malformed local preference failure, full gates, protected CI, and fresh packaged macOS smoke. | No second credential owner or AI-5; close repeated double-prompts without changing inference authority. |
+| **Capsule AI Runtime** | P2 unlock remediation complete on `main` | The existing credential owner keeps provider credentials in Secure Storage, the non-secret provider id in local configuration, and one process lease. | One protected read per post-migration unlock, bounded non-enumerating legacy migration, malformed local preference failure, PR `#52`, post-merge run `31659447915`, and packaged macOS cold-restart smoke from `b6c2e01`. | No next AI pass is selected; no second credential owner or AI-5. |
 | **Future product tracks** | Parked | AI trading advice, distributed backup drone, staking drone, and any further Moltbook authority remain unselected. Moltbook Observe/Assisted effects and explicit foreground bounded replies retain their existing reviewed boundaries. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not become active without an explicit product decision. |
 
 `12.3` passes 1-18 are complete. Any later transport remediation requires a
@@ -138,10 +138,9 @@ This is the current execution order, not a second backlog:
    full gates, protected PR `#50`, and post-merge CI at `caed6d4`. No next pass
    is selected; do not infer Git/CI ingestion, automatic publication, Remote
    Runner/VPS, background trading, or release.
-2. **P2 — active:** Close repeated macOS double-password AI unlocks through the
-   existing credential owner, one post-migration protected read, bounded legacy
-   migration, and a fresh packaged smoke. No provider, effect, or authority
-   path may be added.
+2. **P2 — complete:** AI provider preference migration and post-migration cold
+   unlock passed from `b6c2e01`; the same process lease and credential owner
+   remain canonical.
 3. **P3 — parked work:** crypto-agility protocol design, dependency upgrades,
    AI trading advice, distributed backup, and staking remain non-runtime or
    parked until the active design unit or a named release decision permits

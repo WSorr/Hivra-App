@@ -2940,7 +2940,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     post-migration cold unlock, malformed preference failure, full gates,
     protected CI, and a fresh packaged macOS restart smoke showing one password
     prompt and successful inference.
-  - Status: remediation active (2026-08-13).
+  - Status: complete on `main` at `b6c2e01` (2026-08-13); protected PR `#52`
+    and post-merge repository gates `31659447915` passed. Packaged macOS
+    Release SHA-256 `24cfabd4f81cb2d4c40e835d5a4b500eeb24a691ccc7c174466ca3992bda4ad7`
+    migrated the legacy preference; a cold restart then unlocked Gemini with
+    zero password prompts and changed `Unlock AI` to `Lock AI`. No following
+    pass is selected.
 
 ## Planned Product Tracks
 
