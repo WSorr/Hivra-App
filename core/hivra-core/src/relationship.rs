@@ -136,7 +136,10 @@ pub fn relationship_current_view_v1(
 
                 let signer = *event.signer();
                 let signer_matches_local = signer == owner || local_transport == Some(signer);
-                let signer_matches_peer = signer == current.peer_pubkey;
+                let signer_matches_peer_transport = signer == current.peer_pubkey;
+                let signer_matches_peer_root = broken.peer_root_pubkey == Some(signer)
+                    && current.peer_root_pubkey == Some(signer);
+                let signer_matches_peer = signer_matches_peer_transport || signer_matches_peer_root;
                 if !signer_matches_local && !signer_matches_peer {
                     continue;
                 }
@@ -590,6 +593,109 @@ mod tests {
         assert_eq!(view.active_peer_count, 1);
         assert_eq!(view.relationships.len(), 1);
         assert_eq!(view.relationships[0].status, "pending_remote_break");
+    }
+
+    #[test]
+    fn current_view_marks_root_signed_remote_break_pending() {
+        let owner = test_pubkey(21);
+        let local_transport = test_pubkey(22);
+        let peer_transport = test_pubkey(23);
+        let peer_root = test_pubkey(24);
+        let own_starter = test_starter_id(25);
+        let mut ledger = Ledger::new(owner);
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipEstablished,
+            established_payload(
+                peer_transport,
+                own_starter,
+                test_starter_id(26),
+                StarterKind::Seed,
+                [27u8; 32],
+                owner,
+                Some(peer_root),
+                Some(owner),
+            ),
+            30,
+            owner,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipBroken,
+            RelationshipBrokenPayload {
+                peer_pubkey: peer_transport,
+                own_starter_id: own_starter,
+                peer_root_pubkey: Some(peer_root),
+            }
+            .to_bytes(),
+            31,
+            peer_root,
+        );
+
+        let view = relationship_current_view_v1(&ledger, Some(local_transport));
+        assert_eq!(view.active_peer_count, 1);
+        assert_eq!(view.relationships.len(), 1);
+        assert_eq!(
+            view.relationships[0].starter_kind,
+            StarterKind::Seed.to_byte()
+        );
+        assert_eq!(view.relationships[0].status, "pending_remote_break");
+    }
+
+    #[test]
+    fn current_view_rejects_unbound_root_signed_remote_break() {
+        let owner = test_pubkey(31);
+        let local_transport = test_pubkey(32);
+        let peer_transport = test_pubkey(33);
+        let peer_root = test_pubkey(34);
+        let unbound_root = test_pubkey(35);
+        let own_starter = test_starter_id(36);
+        let mut ledger = Ledger::new(owner);
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipEstablished,
+            established_payload(
+                peer_transport,
+                own_starter,
+                test_starter_id(37),
+                StarterKind::Seed,
+                [38u8; 32],
+                owner,
+                Some(peer_root),
+                Some(owner),
+            ),
+            40,
+            owner,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipBroken,
+            RelationshipBrokenPayload {
+                peer_pubkey: peer_transport,
+                own_starter_id: own_starter,
+                peer_root_pubkey: Some(unbound_root),
+            }
+            .to_bytes(),
+            41,
+            unbound_root,
+        );
+        append_event(
+            &mut ledger,
+            EventKind::RelationshipBroken,
+            RelationshipBrokenPayload {
+                peer_pubkey: peer_transport,
+                own_starter_id: own_starter,
+                peer_root_pubkey: Some(unbound_root),
+            }
+            .to_bytes(),
+            42,
+            peer_root,
+        );
+
+        let view = relationship_current_view_v1(&ledger, Some(local_transport));
+        assert_eq!(view.active_peer_count, 1);
+        assert_eq!(view.relationships.len(), 1);
+        assert_eq!(view.relationships[0].status, "active");
     }
 
     #[test]

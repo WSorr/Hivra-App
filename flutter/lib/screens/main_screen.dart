@@ -31,6 +31,9 @@ Widget chatUnreadNavigationIcon(int unreadCount) {
   );
 }
 
+@visibleForTesting
+bool showGlobalHeaderRefreshForTab(int selectedIndex) => selectedIndex != 2;
+
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -754,11 +757,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: _refreshFromTopBar,
-                  tooltip: 'Refresh',
-                ),
+                if (showGlobalHeaderRefreshForTab(_selectedIndex))
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: _refreshFromTopBar,
+                    tooltip: 'Refresh',
+                  ),
               ],
             ),
           ),
