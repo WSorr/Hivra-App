@@ -2,13 +2,18 @@
 
 Status date: 2026-08-14
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Chat Contact Selection Projection`
-remediation. Packaged Android Hands smoke from build `1.0.3+100030030`
-reproduced an intermittent selection lag: a trusted contact could be chosen in
-the existing picker, while the open workspace remained on the prior selection
-until a later tap rebuilt the dialog. The peer remains owned by the existing
-Chat `TextEditingController`; the workspace may listen to that controller but
-may not add another selected-peer state, picker, DTO, service, or Chat route.
+Current development focus: no next pass selected. `1.x Chat Contact Selection
+Projection` is complete on `main` at `c56213f`. The existing Chat
+`TextEditingController` remains the sole selected-peer owner, and the workspace
+now observes that controller directly instead of waiting for an unrelated
+dialog rebuild. The negative-before/positive-after widget vector, `849/849`
+Flutter tests, full local and clean-checkout gates, protected PR `#69`, green
+post-merge repository gates, and packaged Android Hands smoke from source
+`c56213f`, build `1.0.3+100030031`, prove that one tap selected `h1un5...` and
+immediately projected the conversation header and enabled composer. Android
+artifact SHA-256 is
+`1990e92157cc623d0efb582533ee2acbf2f29a25a0eeae71c8dd5642f8dfa544`.
+No second selected-peer state, picker, DTO, service, or Chat route was added.
 The previous `1.x Chat Conversation Workspace UX` pass is complete. Protected
 PR `#67`, merge source `aafbf52`, green
 post-merge repository gates, and packaged macOS/Android Hands smoke from the
@@ -20,10 +25,7 @@ scroll, reopen, or restart. The pass keeps `WasmPluginsScreen` as workspace
 orchestrator and `CapsuleDeliveryInboxStore` plus the existing Chat delivery and
 attestation services as the sole state and lifecycle owners. It adds no receive,
 transport, inbox, DTO, service, Core/Ledger, FFI/WASM, attachment,
-background-delivery, or notification path. The contact-selection remediation
-must prove that one controller update projects the chosen peer without an
-external dialog rebuild, then pass protected PR/post-merge gates and replacement
-packaged Android Hands smoke. No tag or Release is selected.
+background-delivery, or notification path. No tag or Release is selected.
 The preceding `1.x Capsule-scoped Chat Unread Indicator` remains complete.
 The preceding durable receive handoff is complete on `main` at `c9caa7e` with
 green protected PR/post-merge gates and packaged macOS/Android restart smoke.
