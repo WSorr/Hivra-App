@@ -17,6 +17,12 @@ keeps transport acceptance distinct from peer delivery, preserves the draft
 while a conversation is being secured, and moves runtime evidence behind a
 collapsed technical disclosure. It authorizes no transport, Core, Ledger,
 FFI/WASM, attachment, background-delivery, DTO, store, or second inbox path.
+Replacement packaged smoke from `c9f8900` proved that `CUX29` entered the open
+Android timeline through passive receive, but the viewport stayed on the prior
+message. A bounded reversed-list remediation must keep the newest message at
+the normal Chat edge without adding state or lifecycle ownership. The separate
+Android finding that contact selection applies only on the second attempt is
+recorded for a later focused remediation and is not folded into this change.
 The preceding relationship remediation and bidirectional packaged Chat smoke
 remain complete. Android cold-restart persistence of the retained Chat timeline
 is still the only unclosed packaged evidence item from that smoke. No tag or
@@ -161,7 +167,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Chat open-workspace passive projection remediation active | Existing Chat delivery, attestation, timeline, unread, and Capsule-isolation owners remain canonical; the workspace may only observe the existing durable inbox. | Regression must prove a passive cached message appears while the dialog remains open without a manual or second network receive. | Protected PR and replacement packaged Hands smoke; `451648f` artifacts are failed evidence. Android cold-restart timeline evidence remains pending. |
+| **1.x maintained runtime** | Chat live-timeline viewport remediation active | Existing Chat delivery, attestation, timeline, unread, and Capsule-isolation owners remain canonical; the workspace may only observe the existing durable inbox. | Overflow regression must prove the newest passive cached message is visible while the dialog remains open without a manual or second network receive. | Protected PR and replacement packaged Hands smoke; Android second-attempt contact selection remains a separate finding. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |

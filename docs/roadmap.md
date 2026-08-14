@@ -3113,9 +3113,21 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     DTO, service, notification, or background-delivery path. A negative test
     must prove cache projection updates the open workspace without invoking the
     receive retry.
-  - Status: remediation active (2026-08-14). The `451648f` artifacts are failed
-    closure evidence; protected PR, post-merge gates, and replacement packaged
-    Hands smoke remain required. No tag or Release is selected.
+  - Replacement-smoke finding: source `c9f8900` and build `100030029` proved
+    one `CUX29` send, one passive Android acceptance, and durable timeline
+    growth from 14 to 15 while the dialog remained open. The cache projection
+    worked, but the non-reversed list retained its old viewport and left the
+    newest bubble below the visible edge.
+  - Viewport remediation: use the existing chronological message list through
+    a reversed visual list so the normal Chat position shows the newest item.
+    Overflow vectors must prove a newly projected message is visible without a
+    manual receive or animation-owned state path.
+  - Separate finding: Android contact selection applied only on the second
+    attempt during the same smoke. It remains a later focused UX remediation;
+    no contact-selection behavior is changed by the viewport fix.
+  - Status: viewport remediation active (2026-08-14). Protected PR, post-merge
+    gates, and replacement packaged Hands smoke remain required. No tag or
+    Release is selected.
 
 - `1.x Relationship Root-Signed Break Projection remediation`
   - Finding: a real remote Seed break was accepted by canonical ingress and
