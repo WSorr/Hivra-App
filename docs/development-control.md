@@ -1,21 +1,20 @@
 # Hivra Development Control
 
-Status date: 2026-08-13
+Status date: 2026-08-14
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: bounded `1.x Relationship Root-Signed Break
-Projection` remediation on a short-lived branch. A real cross-country Seed
-break proved that canonical ingress accepted and appended a root-signed
-`RelationshipBroken` fact while the Core current-view projection recognized
-only the peer transport signer. The existing projection must bind either the
-established peer transport key or its established peer root key, reject an
-unbound root, and expose the accepted remote break as pending local
-confirmation. The Relationships screen keeps its existing full
-transport-to-projection refresh as the sole visible refresh action; the
-shell-only Ledger refresh is hidden on that tab. No new relationship owner,
-event, DTO, transport route, or confirmation path is authorized. Chat timeline
-implementation is merged at `ae1af30` with green post-merge run `31706040424`,
-but its pre-remediation smoke artifacts are invalid and packaged smoke remains
-blocked until this finding is merged and rebuilt from one post-merge SHA.
+Current development focus: packaged evidence closure after the completed `1.x
+Relationship Root-Signed Break Projection` remediation. The fix is merged at
+`89c3b36` through protected PR `#63`; post-merge repository run `31710031485`
+passed. Fresh macOS and Android Release artifacts were built from that exact
+SHA. macOS Hands evidence proved that a real root-signed remote Seed break
+became pending, required the existing local confirmation, and left the
+Relationships screen with one visible canonical refresh action. Cross-platform
+Chat evidence then proved one accepted macOS-to-Android delivery, one accepted
+Android-to-macOS delivery, passive receive, unread projection, and persistence
+of the `A27` conversation after a real macOS process restart. Android cold-
+restart persistence remains the only unclosed packaged evidence item because
+the device is currently disconnected. No active runtime finding, following
+product pass, tag, or Release is selected.
 The preceding `1.x Capsule-scoped Chat Unread Indicator` remains complete.
 The preceding durable receive handoff is complete on `main` at `c9caa7e` with
 green protected PR/post-merge gates and packaged macOS/Android restart smoke.
@@ -156,7 +155,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Moltbook Capsule Public Change Feed and Trading reconciliation complete on `main` | Existing Moltbook composition path consumes one bounded Capsule-scoped queue of confirmed facts; existing WASM draft and external-effect owners remain canonical. | Commitment/replay conflict, Capsule isolation, restart, retention, malformed-state, proposal authority, draft, publication, full gates, protected PR `#50`, and post-merge run `31654314173`. | No next pass is selected; Git/CI producer, automatic publication, Remote Runner/VPS, background execution, deployment, and release remain blocked. |
+| **1.x maintained runtime** | Relationship root-signed break remediation complete; Chat packaged evidence closure active | Existing Core relationship projection and existing Capsule-scoped Chat timeline remain the sole owners. | PR `#63`, post-merge run `31710031485`, real remote-break confirmation, bidirectional packaged Chat delivery, passive receive, unread projection, and macOS cold-restart persistence passed from `89c3b36`. | Complete Android cold-restart Chat persistence; no following product pass is selected. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
