@@ -12,7 +12,7 @@ import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/hivra_file_picker_service.dart';
 import '../services/plugin_runtime_module_service.dart';
 import '../utils/peer_identity_format.dart';
-import '../utils/runtime_capability_display.dart';
+import '../widgets/capsule_chat_conversation_workspace.dart';
 import 'moltbook_ambassador_screen.dart';
 import 'trading_drone_screen.dart';
 
@@ -62,6 +62,20 @@ List<CapsuleChatInboxMessage> chatMessagesForPeer(
       .toList(growable: false);
 }
 
+@visibleForTesting
+String chatWorkspaceNoticeForSendResult(PluginChatSendResult result) {
+  return switch (result.status) {
+    PluginChatSendStatus.sent => 'Accepted by transport',
+    PluginChatSendStatus.syncing =>
+      'Securing this conversation. Your draft is preserved; press Send again when it is ready.',
+    PluginChatSendStatus.blocked =>
+      'This conversation is not ready yet. Your draft is preserved.',
+    PluginChatSendStatus.rejected => result.message,
+    PluginChatSendStatus.failed => result.message,
+    PluginChatSendStatus.capsuleChanged => result.message,
+  };
+}
+
 class WasmPluginsScreen extends StatefulWidget {
   final bool embedded;
   final AppRuntimeService? runtime;
@@ -81,9 +95,7 @@ class WasmPluginsScreen extends StatefulWidget {
 class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
   late final PluginRuntimeModule _module;
   final TextEditingController _chatPeerController = TextEditingController();
-  final TextEditingController _chatMessageController = TextEditingController(
-    text: 'hello from capsule chat',
-  );
+  final TextEditingController _chatMessageController = TextEditingController();
   List<WasmPluginRecord> _installed = const <WasmPluginRecord>[];
   WasmPluginSourceCatalog? _sourceCatalogSnapshot;
   String? _sourceCatalogError;
@@ -354,7 +366,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     }
   }
 
-  Future<String?> _selectConsensusPeer({required String hint}) async {
+  Future<String?> _selectChatContact({required String hint}) async {
     final checks = await _module.manualChecks.loadAttestedChecks();
     final labels = await _module.contactLabels.load();
     if (!mounted) return null;
@@ -365,7 +377,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       messenger.showSnackBar(
         const SnackBar(
           content: Text(
-            'No consensus peers yet. Create at least one relationship first.',
+            'No trusted contacts yet. Create at least one relationship first.',
           ),
           duration: Duration(seconds: 2),
         ),
@@ -394,7 +406,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
             children: [
               ListTile(
                 title: Text(
-                  'Select consensus peer',
+                  'New conversation',
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 subtitle: Text(hint),
@@ -415,17 +427,17 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                     ),
                   ),
                   subtitle: Text(
-                    '${check.isSignable ? 'Pair consensus verified' : 'Select to synchronize pair consensus'}\n'
+                    '${check.isSignable ? 'Ready to chat' : 'Select to secure this conversation'}\n'
                     '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(check.peerHex)}',
                   ),
                   trailing:
                       check.isSignable
                           ? const Text(
-                            'Signable',
+                            'Ready',
                             style: TextStyle(color: Colors.green),
                           )
                           : const Text(
-                            'Needs sync',
+                            'Needs verification',
                             style: TextStyle(color: Colors.orange),
                           ),
                   onTap: () => Navigator.of(sheetContext).pop(check.peerHex),
@@ -439,9 +451,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     return selectedPeerHex;
   }
 
-  Future<void> _fillPeerFromConsensus() async {
-    final selectedPeerHex = await _selectConsensusPeer(
-      hint: 'Choose exact capsule target for chat delivery.',
+  Future<void> _chooseChatContact() async {
+    final selectedPeerHex = await _selectChatContact(
+      hint: 'Choose a trusted Capsule.',
     );
     if (!mounted || selectedPeerHex == null || selectedPeerHex.isEmpty) return;
     final peerKey = PeerIdentityFormat.capsuleKeyFromRootHex(selectedPeerHex);
@@ -451,6 +463,9 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       _chatPeerController.text = selectedPeerHex;
       _chatContactLabels = labels;
       _chatSelectedPeerLabel = labels[peerKey];
+      _lastChatResponse = null;
+      _chatWorkspaceNotice = null;
+      _chatWorkspaceNoticeIsError = false;
     });
   }
 
@@ -463,7 +478,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
 
     setState(() {
       _runningChat = true;
-      _chatWorkspaceNotice = 'Preparing message...';
+      _chatWorkspaceNotice = 'Sending...';
       _chatWorkspaceNoticeIsError = false;
     });
 
@@ -475,7 +490,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       if (!mounted) return;
       setState(() {
         _lastChatResponse = result.hostResponse;
-        _chatWorkspaceNotice = result.message;
+        _chatWorkspaceNotice = chatWorkspaceNoticeForSendResult(result);
         _chatWorkspaceNoticeIsError =
             result.status != PluginChatSendStatus.sent &&
             result.status != PluginChatSendStatus.syncing;
@@ -579,27 +594,27 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                     ),
                     const Divider(height: 1),
                     Expanded(
-                      child: SingleChildScrollView(
+                      child: Padding(
                         padding: const EdgeInsets.all(20),
-                        child: _CapsuleChatPanel(
-                          running: _runningChat,
-                          refreshingInbox: _refreshingChatInbox,
+                        child: CapsuleChatConversationWorkspace(
+                          sending: _runningChat,
+                          checkingForMessages: _refreshingChatInbox,
                           lastResponse: _lastChatResponse,
-                          workspaceNotice: _chatWorkspaceNotice,
-                          workspaceNoticeIsError: _chatWorkspaceNoticeIsError,
-                          inbox: _chatInbox,
-                          droppedByConsensus: _chatDroppedByConsensus,
-                          deferredByConsensus: _chatDeferredByConsensus,
+                          notice: _chatWorkspaceNotice,
+                          noticeIsError: _chatWorkspaceNoticeIsError,
+                          messages: _chatInbox,
+                          hiddenMessageCount: _chatDroppedByConsensus,
+                          deferredMessageCount: _chatDeferredByConsensus,
                           peerController: _chatPeerController,
                           selectedPeerLabel: _chatSelectedPeerLabel,
                           contactLabels: _chatContactLabels,
                           messageController: _chatMessageController,
                           onInputChanged: () => setDialogState(() {}),
-                          onUsePeerPressed:
-                              () => runAndRefresh(_fillPeerFromConsensus),
-                          onRefreshInboxPressed:
+                          onChooseContact:
+                              () => runAndRefresh(_chooseChatContact),
+                          onRetryReceive:
                               () => runAndRefresh(_refreshCapsuleChatInbox),
-                          onRunPressed: () => runAndRefresh(_runCapsuleChat),
+                          onSend: () => runAndRefresh(_runCapsuleChat),
                         ),
                       ),
                     ),
@@ -626,7 +641,7 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
     _refreshingChatInbox = true;
     if (!silentWhenEmpty && mounted) {
       setState(() {
-        _chatWorkspaceNotice = 'Fetching inbox...';
+        _chatWorkspaceNotice = 'Checking for messages...';
         _chatWorkspaceNoticeIsError = false;
       });
     }
@@ -681,28 +696,17 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
       if (result.code < 0) {
         setState(() {
           _chatWorkspaceNotice =
-              result.errorMessage ??
-              'Chat receive failed (code ${result.code})';
+              'Could not check for new messages. Saved conversation remains available.';
           _chatWorkspaceNoticeIsError = true;
         });
         return;
       }
 
-      final hasUpdates =
-          result.messages.isNotEmpty ||
-          result.tradeSignals.isNotEmpty ||
-          result.executionDecisions.isNotEmpty ||
-          result.executionReceipts.isNotEmpty;
-      final droppedNote =
-          result.droppedByConsensus > 0
-              ? ' · dropped ${result.droppedByConsensus} by consensus'
-              : '';
-      final deferredNote =
-          result.deferredByConsensus > 0
-              ? ' · deferred ${result.deferredByConsensus} until attestation'
-              : '';
+      final hasUpdates = result.messages.isNotEmpty;
       final updateNotice =
-          'Timeline update: chat +${result.messages.length}, signals +${result.tradeSignals.length}, cmd +${result.executionDecisions.length}, receipt +${result.executionReceipts.length}$droppedNote$deferredNote';
+          result.messages.isEmpty
+              ? 'Conversation is up to date.'
+              : 'New messages: ${result.messages.length}';
       final cachedMessages =
           await _module.chatDelivery.loadCachedMessagesDurably();
       if (!mounted) return;
@@ -1717,609 +1721,6 @@ class _SectionTitle extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-class _CapsuleChatPanel extends StatelessWidget {
-  final bool running;
-  final bool refreshingInbox;
-  final PluginHostApiResponse? lastResponse;
-  final String? workspaceNotice;
-  final bool workspaceNoticeIsError;
-  final List<CapsuleChatInboxMessage> inbox;
-  final int droppedByConsensus;
-  final int deferredByConsensus;
-  final TextEditingController peerController;
-  final String? selectedPeerLabel;
-  final Map<String, String> contactLabels;
-  final TextEditingController messageController;
-  final VoidCallback onInputChanged;
-  final Future<void> Function() onUsePeerPressed;
-  final Future<void> Function() onRefreshInboxPressed;
-  final Future<void> Function() onRunPressed;
-
-  const _CapsuleChatPanel({
-    required this.running,
-    required this.refreshingInbox,
-    required this.lastResponse,
-    required this.workspaceNotice,
-    required this.workspaceNoticeIsError,
-    required this.inbox,
-    required this.droppedByConsensus,
-    required this.deferredByConsensus,
-    required this.peerController,
-    required this.selectedPeerLabel,
-    required this.contactLabels,
-    required this.messageController,
-    required this.onInputChanged,
-    required this.onUsePeerPressed,
-    required this.onRefreshInboxPressed,
-    required this.onRunPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final response = lastResponse;
-    final visibleMessages = chatMessagesForPeer(inbox, peerController.text);
-    final status = response?.status;
-    final accent = switch (status) {
-      PluginHostApiStatus.executed => const Color(0xFF75D98A),
-      PluginHostApiStatus.blocked => const Color(0xFFFFC76A),
-      PluginHostApiStatus.rejected => const Color(0xFFFF8A7A),
-      null => const Color(0xFF7F92A8),
-    };
-    final title = switch (status) {
-      PluginHostApiStatus.executed => 'Envelope prepared',
-      PluginHostApiStatus.blocked => 'Blocked by guard',
-      PluginHostApiStatus.rejected => 'Request rejected',
-      null => 'Ready',
-    };
-    final details = switch (status) {
-      PluginHostApiStatus.executed => () {
-        final hash = response?.result?['envelope_hash_hex']?.toString() ?? '';
-        return hash.isEmpty
-            ? 'Deterministic envelope created.'
-            : 'Envelope hash: ${hash.substring(0, hash.length < 16 ? hash.length : 16)}..';
-      }(),
-      PluginHostApiStatus.blocked =>
-        response!.blockingFacts.isEmpty
-            ? 'Consensus guard blocked execution.'
-            : response.blockingFacts.first.label,
-      PluginHostApiStatus.rejected => _hostRejectedMessage(
-        response!,
-        fallback: 'Input rejected by host API.',
-      ),
-      null =>
-        'Deterministic host envelope + transport send, guarded by pairwise consensus.',
-    };
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF121821),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF2B3846)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (workspaceNotice != null) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color:
-                    workspaceNoticeIsError
-                        ? const Color(0xFF2A1D1F)
-                        : const Color(0xFF173020),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color:
-                      workspaceNoticeIsError
-                          ? const Color(0xFF6B3A3F)
-                          : const Color(0xFF315F3E),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    workspaceNoticeIsError
-                        ? Icons.error_outline_rounded
-                        : Icons.check_circle_outline_rounded,
-                    size: 18,
-                    color:
-                        workspaceNoticeIsError
-                            ? const Color(0xFFFFA4A4)
-                            : const Color(0xFF75D98A),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      workspaceNotice!,
-                      style: TextStyle(
-                        color:
-                            workspaceNoticeIsError
-                                ? const Color(0xFFFFB4B4)
-                                : const Color(0xFF9BE4AA),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _PluginIconPlate(
-                icon: Icons.chat_bubble_outline_rounded,
-                accent: accent,
-                glow: accent.withAlpha(24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      details,
-                      style: const TextStyle(
-                        color: Color(0xFF9FAABA),
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _SelectedCapsuleCard(
-            label: 'Chat recipient',
-            peerHex: peerController.text,
-            localLabel: selectedPeerLabel,
-            onClear:
-                peerController.text.trim().isEmpty
-                    ? null
-                    : () {
-                      peerController.clear();
-                      onInputChanged();
-                    },
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: messageController,
-            onChanged: (_) => onInputChanged(),
-            minLines: 2,
-            maxLines: 4,
-            maxLength: 1024,
-            decoration: InputDecoration(
-              labelText: 'Message text',
-              filled: true,
-              fillColor: const Color(0xFF0F141C),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              OutlinedButton.icon(
-                onPressed: running ? null : onUsePeerPressed,
-                icon: const Icon(Icons.group_outlined),
-                label: const Text('Choose Consensus Peer'),
-              ),
-              OutlinedButton.icon(
-                onPressed:
-                    running || refreshingInbox ? null : onRefreshInboxPressed,
-                icon:
-                    refreshingInbox
-                        ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                        : const Icon(Icons.refresh_rounded),
-                label: Text(refreshingInbox ? 'Fetching' : 'Fetch Inbox'),
-              ),
-              FilledButton.icon(
-                onPressed:
-                    running ||
-                            !RegExp(
-                              r'^[0-9a-f]{64}$',
-                            ).hasMatch(peerController.text.trim()) ||
-                            messageController.text.trim().isEmpty
-                        ? null
-                        : onRunPressed,
-                icon:
-                    running
-                        ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                        : const Icon(Icons.send_rounded),
-                label: Text(running ? 'Preparing' : 'Run Capsule Chat'),
-              ),
-            ],
-          ),
-          if (response != null) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _InfoChip(
-                  icon: Icons.flag_outlined,
-                  label: 'Status: ${response.status.name}',
-                ),
-                _InfoChip(
-                  icon: Icons.tag_outlined,
-                  label: 'Method: ${response.method}',
-                ),
-                _InfoChip(
-                  icon: Icons.memory_outlined,
-                  label: 'Source: ${_executionSourceInfo(response)}',
-                ),
-                if ((response.executionRuntimeMode?.trim().isNotEmpty ?? false))
-                  _InfoChip(
-                    icon: Icons.terminal_rounded,
-                    label: 'Runtime: ${response.executionRuntimeMode!.trim()}',
-                  ),
-                if ((response.executionRuntimeAbi?.trim().isNotEmpty ?? false))
-                  _InfoChip(
-                    icon:
-                        _runtimeAbiMatches(response)
-                            ? Icons.check_circle_outline_rounded
-                            : Icons.error_outline_rounded,
-                    label: 'ABI: ${response.executionRuntimeAbi!.trim()}',
-                    accent:
-                        _runtimeAbiMatches(response)
-                            ? const Color(0xFF75D98A)
-                            : const Color(0xFFFF8A7A),
-                  ),
-                if ((response.executionRuntimeEntryExport?.trim().isNotEmpty ??
-                    false))
-                  _InfoChip(
-                    icon:
-                        _runtimeEntryMatches(response)
-                            ? Icons.check_circle_outline_rounded
-                            : Icons.error_outline_rounded,
-                    label:
-                        'Entry: ${response.executionRuntimeEntryExport!.trim()}',
-                    accent:
-                        _runtimeEntryMatches(response)
-                            ? const Color(0xFF75D98A)
-                            : const Color(0xFFFF8A7A),
-                  ),
-                if ((response.executionRuntimeModulePath?.trim().isNotEmpty ??
-                    false))
-                  _InfoChip(
-                    icon: Icons.description_outlined,
-                    label:
-                        'Module: ${_shortModulePath(response.executionRuntimeModulePath!)}',
-                  ),
-                if ((response.executionRuntimeModuleSelection
-                        ?.trim()
-                        .isNotEmpty ??
-                    false))
-                  _InfoChip(
-                    icon: Icons.rule_folder_outlined,
-                    label:
-                        'Select: ${_runtimeModuleSelectionLabel(response.executionRuntimeModuleSelection!)}',
-                  ),
-                if ((response.executionRuntimeModuleDigestHex
-                        ?.trim()
-                        .isNotEmpty ??
-                    false))
-                  _InfoChip(
-                    icon: Icons.dataset_outlined,
-                    label:
-                        'Module: ${_shortDigest(response.executionRuntimeModuleDigestHex!)}',
-                  ),
-                if ((response.executionRuntimeInvokeDigestHex
-                        ?.trim()
-                        .isNotEmpty ??
-                    false))
-                  _InfoChip(
-                    icon: Icons.fingerprint_rounded,
-                    label:
-                        'Invoke: ${_shortDigest(response.executionRuntimeInvokeDigestHex!)}',
-                  ),
-                if (response.executionCapabilities.isNotEmpty)
-                  _InfoChip(
-                    icon: Icons.verified_user_outlined,
-                    label: 'Caps: ${response.executionCapabilities.length}',
-                  ),
-                ..._runtimeCapabilityChips(response),
-              ],
-            ),
-          ],
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _InfoChip(
-                icon: Icons.mail_outline,
-                label: 'Messages: ${visibleMessages.length}',
-              ),
-              if (droppedByConsensus > 0)
-                _InfoChip(
-                  icon: Icons.filter_alt_off_outlined,
-                  label: 'Hidden by consensus: $droppedByConsensus',
-                ),
-              if (deferredByConsensus > 0)
-                _InfoChip(
-                  icon: Icons.pending_actions_outlined,
-                  label: 'Deferred until attestation: $deferredByConsensus',
-                ),
-            ],
-          ),
-          if (visibleMessages.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            const Text(
-              'Conversation timeline',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Color(0xFFCFD7E2),
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...visibleMessages.reversed
-                .take(8)
-                .map(
-                  (message) => _ChatInboxRow(
-                    message: message,
-                    localLabel:
-                        contactLabels[PeerIdentityFormat.capsuleKeyFromRootHex(
-                          message.direction ==
-                                  CapsuleChatMessageDirection.outgoing
-                              ? (message.toHex ?? '')
-                              : message.fromHex,
-                        )],
-                  ),
-                ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SelectedCapsuleCard extends StatelessWidget {
-  final String label;
-  final String peerHex;
-  final String? localLabel;
-  final VoidCallback? onClear;
-
-  const _SelectedCapsuleCard({
-    required this.label,
-    required this.peerHex,
-    required this.localLabel,
-    required this.onClear,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasPeer = peerHex.trim().isNotEmpty;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F141C),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF3B4657)),
-      ),
-      child: ListTile(
-        leading: Icon(
-          hasPeer ? Icons.account_circle_outlined : Icons.person_off_outlined,
-          color: hasPeer ? const Color(0xFFC9B2FF) : const Color(0xFF7F92A8),
-        ),
-        title: Text(label),
-        subtitle: Text(
-          hasPeer
-              ? '${PeerIdentityFormat.capsuleLabelFromRootHex(peerHex, localLabel: localLabel)}\n'
-                  '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(peerHex)}'
-              : 'Choose a trusted capsule to start a chat.',
-        ),
-        trailing:
-            onClear == null
-                ? null
-                : IconButton(
-                  tooltip: 'Clear recipient',
-                  onPressed: onClear,
-                  icon: const Icon(Icons.close_rounded),
-                ),
-      ),
-    );
-  }
-}
-
-class _ChatInboxRow extends StatelessWidget {
-  final CapsuleChatInboxMessage message;
-  final String? localLabel;
-
-  const _ChatInboxRow({required this.message, required this.localLabel});
-
-  @override
-  Widget build(BuildContext context) {
-    final isOutgoing =
-        message.direction == CapsuleChatMessageDirection.outgoing;
-    final peerHex = isOutgoing ? (message.toHex ?? '') : message.fromHex;
-    final peerLabel = PeerIdentityFormat.capsuleLabelFromRootHex(
-      peerHex,
-      localLabel: localLabel,
-    );
-    final deliveryLabel = switch (message.deliveryState) {
-      CapsuleChatMessageDeliveryState.received => 'received',
-      CapsuleChatMessageDeliveryState.pending => 'pending',
-      CapsuleChatMessageDeliveryState.transportAccepted =>
-        'accepted by transport',
-      CapsuleChatMessageDeliveryState.ambiguous => 'delivery unknown',
-      CapsuleChatMessageDeliveryState.failed => 'send failed',
-    };
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E141D),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF4A5E74)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            message.messageText,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color(0xFFE0E6EE),
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${isOutgoing ? "to" : "from"} $peerLabel · '
-            '${PeerIdentityFormat.capsuleIdentityHintFromRootHex(peerHex)} · '
-            '$deliveryLabel · ${message.createdAtUtc}',
-            style: const TextStyle(fontSize: 11, color: Color(0xFF95A5B7)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-String _executionSourceInfo(PluginHostApiResponse response) {
-  final source = response.executionSource.trim();
-  if (source.isEmpty) {
-    return 'unknown';
-  }
-
-  if (source != 'external_package') {
-    return source;
-  }
-
-  final packageId = response.executionPackageId?.trim() ?? '';
-  final digest = response.executionPackageDigestHex?.trim() ?? '';
-
-  if (packageId.isNotEmpty && digest.isNotEmpty) {
-    final shortPackageId =
-        packageId.length <= 12 ? packageId : '${packageId.substring(0, 12)}..';
-    final shortDigest =
-        digest.length <= 10 ? digest : '${digest.substring(0, 10)}..';
-    return '$source:$shortPackageId@$shortDigest';
-  }
-  if (packageId.isNotEmpty) {
-    final shortPackageId =
-        packageId.length <= 12 ? packageId : '${packageId.substring(0, 12)}..';
-    return '$source:$shortPackageId';
-  }
-  if (digest.isNotEmpty) {
-    final shortDigest =
-        digest.length <= 10 ? digest : '${digest.substring(0, 10)}..';
-    return '$source:@$shortDigest';
-  }
-  return source;
-}
-
-String _shortDigest(String value) {
-  final normalized = value.trim();
-  if (normalized.isEmpty) {
-    return 'none';
-  }
-  return normalized.length <= 10
-      ? normalized
-      : '${normalized.substring(0, 10)}..';
-}
-
-List<Widget> _runtimeCapabilityChips(PluginHostApiResponse response) {
-  final summary = summarizeRuntimeCapabilitiesForDisplay(
-    response.executionCapabilities,
-  );
-  if (summary.visibleCapabilities.isEmpty) {
-    return const <Widget>[];
-  }
-  final widgets = <Widget>[
-    for (final capability in summary.visibleCapabilities)
-      _InfoChip(icon: Icons.shield_outlined, label: capability),
-  ];
-  if (summary.hiddenCount > 0) {
-    widgets.add(
-      _InfoChip(
-        icon: Icons.more_horiz_rounded,
-        label: '+${summary.hiddenCount} more',
-      ),
-    );
-  }
-  return widgets;
-}
-
-String _hostRejectedMessage(
-  PluginHostApiResponse response, {
-  required String fallback,
-}) {
-  final code = response.errorCode?.trim() ?? '';
-  final message = response.errorMessage?.trim() ?? '';
-  switch (code) {
-    case 'runtime_invoke_invalid':
-      if (message.isNotEmpty) {
-        return 'Plugin runtime validation failed: $message';
-      }
-      return 'Plugin runtime mismatch (ABI/entry). Reinstall compatible package.';
-    case 'runtime_invoke_failed':
-      return message.isEmpty
-          ? 'Plugin runtime call failed. Retry, then reinstall package if needed.'
-          : message;
-    case 'runtime_invoke_unavailable':
-      return message.isEmpty
-          ? 'Plugin runtime unavailable for this package. Reinstall or update package.'
-          : message;
-    default:
-      return message.isEmpty ? fallback : message;
-  }
-}
-
-bool _runtimeAbiMatches(PluginHostApiResponse response) {
-  final abi = response.executionRuntimeAbi?.trim() ?? '';
-  return abi == 'hivra_host_abi_v2';
-}
-
-bool _runtimeEntryMatches(PluginHostApiResponse response) {
-  final entry = response.executionRuntimeEntryExport?.trim() ?? '';
-  return entry == 'hivra_evaluate_v1';
-}
-
-String _shortModulePath(String value) {
-  final normalized = value.trim();
-  if (normalized.isEmpty) return 'none';
-  if (normalized.length <= 28) return normalized;
-  return '${normalized.substring(0, 16)}..${normalized.substring(normalized.length - 10)}';
-}
-
-String _runtimeModuleSelectionLabel(String value) {
-  final normalized = value.trim();
-  switch (normalized) {
-    case 'manifest_module_path':
-      return 'manifest path';
-    case 'lexical_first_wasm':
-      return 'lexical first';
-    case 'package_wasm':
-      return 'raw wasm package';
-    default:
-      return normalized.isEmpty ? 'unknown' : normalized;
   }
 }
 

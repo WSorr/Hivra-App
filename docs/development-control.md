@@ -2,19 +2,18 @@
 
 Status date: 2026-08-14
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: packaged evidence closure after the completed `1.x
-Relationship Root-Signed Break Projection` remediation. The fix is merged at
-`89c3b36` through protected PR `#63`; post-merge repository run `31710031485`
-passed. Fresh macOS and Android Release artifacts were built from that exact
-SHA. macOS Hands evidence proved that a real root-signed remote Seed break
-became pending, required the existing local confirmation, and left the
-Relationships screen with one visible canonical refresh action. Cross-platform
-Chat evidence then proved one accepted macOS-to-Android delivery, one accepted
-Android-to-macOS delivery, passive receive, unread projection, and persistence
-of the `A27` conversation after a real macOS process restart. Android cold-
-restart persistence remains the only unclosed packaged evidence item because
-the device is currently disconnected. No active runtime finding, following
-product pass, tag, or Release is selected.
+Current development focus: `1.x Chat Conversation Workspace UX`. The existing
+Chat delivery, attestation, retained timeline, unread projection, and Capsule
+isolation owners remain unchanged. This bounded presentation pass replaces the
+technical plugin panel with a normal contact/conversation/composer workspace,
+keeps transport acceptance distinct from peer delivery, preserves the draft
+while a conversation is being secured, and moves runtime evidence behind a
+collapsed technical disclosure. It authorizes no transport, Core, Ledger,
+FFI/WASM, attachment, background-delivery, DTO, store, or second inbox path.
+The preceding relationship remediation and bidirectional packaged Chat smoke
+remain complete. Android cold-restart persistence of the retained Chat timeline
+is still the only unclosed packaged evidence item from that smoke. No tag or
+Release is selected.
 The preceding `1.x Capsule-scoped Chat Unread Indicator` remains complete.
 The preceding durable receive handoff is complete on `main` at `c9caa7e` with
 green protected PR/post-merge gates and packaged macOS/Android restart smoke.
@@ -145,7 +144,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No next pass is selected. Moltbook Change Feed and the AI unlock remediation are complete; Git/CI ingestion, automatic publication, Remote Runner/VPS, deployment, and release remain blocked pending an explicit product decision. | `architecture/capsule-ai-runtime.md`, `plugins/moltbook_engagement_lifecycle_v1.md`, `roadmap.md` |
+| What is the next 1.x step? | Complete the bounded Chat Conversation Workspace UX through protected PR, automated gates, and packaged Hands smoke. Moltbook automatic publication, Remote Runner/VPS, deployment, attachments, and release remain blocked. | `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -155,7 +154,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Relationship root-signed break remediation complete; Chat packaged evidence closure active | Existing Core relationship projection and existing Capsule-scoped Chat timeline remain the sole owners. | PR `#63`, post-merge run `31710031485`, real remote-break confirmation, bidirectional packaged Chat delivery, passive receive, unread projection, and macOS cold-restart persistence passed from `89c3b36`. | Complete Android cold-restart Chat persistence; no following product pass is selected. |
+| **1.x maintained runtime** | Chat Conversation Workspace UX active | Existing Chat delivery, attestation, timeline, unread, and Capsule-isolation owners remain canonical; the new widget is presentation only. | Focused widget/lifecycle tests must prove ordinary terminology, chronological directional bubbles, honest delivery state, retained history during receive failure, preserved draft, and collapsed technical evidence. | Protected PR and packaged Hands smoke; Android cold-restart timeline evidence remains pending. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
