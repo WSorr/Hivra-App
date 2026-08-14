@@ -155,6 +155,48 @@ void main() {
     );
   });
 
+  testWidgets(
+    'projects a passive cached message while the workspace remains open',
+    (tester) async {
+      final peerController = TextEditingController(text: peerHex);
+      final messageController = TextEditingController();
+      addTearDown(peerController.dispose);
+      addTearDown(messageController.dispose);
+      var cachedMessages = const <CapsuleChatInboxMessage>[];
+      var receiveRetries = 0;
+      var projectionCount = 0;
+
+      await tester.pumpWidget(
+        _testApp(
+          peerController: peerController,
+          messageController: messageController,
+          onRetryReceive: () async => receiveRetries += 1,
+          loadCachedMessages: () async => cachedMessages,
+          onMessagesProjected: (_) => projectionCount += 1,
+          cacheProjectionInterval: const Duration(milliseconds: 50),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('passive while open'), findsNothing);
+
+      cachedMessages = const <CapsuleChatInboxMessage>[
+        CapsuleChatInboxMessage(
+          id: 'passive',
+          fromHex: peerHex,
+          messageText: 'passive while open',
+          createdAtUtc: '2026-08-14T12:02:00Z',
+          envelopeHashHex: 'cc',
+          timestampMs: 3,
+        ),
+      ];
+      await tester.pump(const Duration(milliseconds: 60));
+
+      expect(find.text('passive while open'), findsOneWidget);
+      expect(receiveRetries, 0);
+      expect(projectionCount, 1);
+    },
+  );
+
   test('send notices preserve product truth and the draft contract', () {
     expect(
       chatWorkspaceNoticeForSendResult(
@@ -185,6 +227,9 @@ Widget _testApp({
   String? notice,
   bool noticeIsError = false,
   Future<void> Function()? onRetryReceive,
+  Future<List<CapsuleChatInboxMessage>> Function()? loadCachedMessages,
+  ValueChanged<List<CapsuleChatInboxMessage>>? onMessagesProjected,
+  Duration cacheProjectionInterval = const Duration(seconds: 1),
 }) {
   return MaterialApp(
     theme: ThemeData.dark(),
@@ -210,6 +255,9 @@ Widget _testApp({
             onChooseContact: () async {},
             onRetryReceive: onRetryReceive ?? () async {},
             onSend: () async {},
+            loadCachedMessages: loadCachedMessages,
+            onMessagesProjected: onMessagesProjected,
+            cacheProjectionInterval: cacheProjectionInterval,
           ),
         ),
       ),

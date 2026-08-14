@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/capsule_chat_models.dart';
@@ -21,6 +23,9 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
   final Future<void> Function() onChooseContact;
   final Future<void> Function() onRetryReceive;
   final Future<void> Function() onSend;
+  final Future<List<CapsuleChatInboxMessage>> Function()? loadCachedMessages;
+  final ValueChanged<List<CapsuleChatInboxMessage>>? onMessagesProjected;
+  final Duration cacheProjectionInterval;
 
   const CapsuleChatConversationWorkspace({
     super.key,
@@ -40,13 +45,15 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
     required this.onChooseContact,
     required this.onRetryReceive,
     required this.onSend,
+    this.loadCachedMessages,
+    this.onMessagesProjected,
+    this.cacheProjectionInterval = const Duration(seconds: 1),
   });
 
   @override
   Widget build(BuildContext context) {
     final peerHex = peerController.text.trim().toLowerCase();
     final hasPeer = RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex);
-    final visibleMessages = _messagesForPeer(messages, peerHex);
 
     return Container(
       decoration: BoxDecoration(
@@ -80,9 +87,13 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
           Expanded(
             child:
                 hasPeer
-                    ? _ConversationTimeline(
-                      messages: visibleMessages,
+                    ? _LiveConversationTimeline(
+                      messages: messages,
+                      peerHex: peerHex,
                       contactLabels: contactLabels,
+                      loadCachedMessages: loadCachedMessages,
+                      onMessagesProjected: onMessagesProjected,
+                      cacheProjectionInterval: cacheProjectionInterval,
                     )
                     : _EmptyConversation(onChooseContact: onChooseContact),
           ),
@@ -99,6 +110,125 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LiveConversationTimeline extends StatefulWidget {
+  final List<CapsuleChatInboxMessage> messages;
+  final String peerHex;
+  final Map<String, String> contactLabels;
+  final Future<List<CapsuleChatInboxMessage>> Function()? loadCachedMessages;
+  final ValueChanged<List<CapsuleChatInboxMessage>>? onMessagesProjected;
+  final Duration cacheProjectionInterval;
+
+  const _LiveConversationTimeline({
+    required this.messages,
+    required this.peerHex,
+    required this.contactLabels,
+    required this.loadCachedMessages,
+    required this.onMessagesProjected,
+    required this.cacheProjectionInterval,
+  });
+
+  @override
+  State<_LiveConversationTimeline> createState() =>
+      _LiveConversationTimelineState();
+}
+
+class _LiveConversationTimelineState extends State<_LiveConversationTimeline> {
+  Timer? _cacheProjectionTimer;
+  bool _projectionInProgress = false;
+  late List<CapsuleChatInboxMessage> _projectedMessages;
+
+  @override
+  void initState() {
+    super.initState();
+    _projectedMessages = _mergeMessages(
+      const <CapsuleChatInboxMessage>[],
+      widget.messages,
+    );
+    if (widget.loadCachedMessages != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_projectCachedMessages());
+      });
+      _cacheProjectionTimer = Timer.periodic(
+        widget.cacheProjectionInterval,
+        (_) => unawaited(_projectCachedMessages()),
+      );
+    }
+  }
+
+  @override
+  void didUpdateWidget(_LiveConversationTimeline oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _projectedMessages = _mergeMessages(_projectedMessages, widget.messages);
+  }
+
+  @override
+  void dispose() {
+    _cacheProjectionTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _projectCachedMessages() async {
+    final loadCachedMessages = widget.loadCachedMessages;
+    if (loadCachedMessages == null || _projectionInProgress) return;
+    _projectionInProgress = true;
+    try {
+      final cachedMessages = await loadCachedMessages();
+      if (!mounted) return;
+      final merged = _mergeMessages(_projectedMessages, cachedMessages);
+      if (_sameTimeline(_projectedMessages, merged)) return;
+      setState(() {
+        _projectedMessages = merged;
+      });
+      widget.onMessagesProjected?.call(merged);
+    } catch (_) {
+      return;
+    } finally {
+      _projectionInProgress = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _ConversationTimeline(
+      messages: _messagesForPeer(_projectedMessages, widget.peerHex),
+      contactLabels: widget.contactLabels,
+    );
+  }
+}
+
+List<CapsuleChatInboxMessage> _mergeMessages(
+  List<CapsuleChatInboxMessage> current,
+  List<CapsuleChatInboxMessage> incoming,
+) {
+  final byId = <String, CapsuleChatInboxMessage>{
+    for (final message in current) message.id: message,
+    for (final message in incoming) message.id: message,
+  };
+  final merged =
+      byId.values.toList()
+        ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+  return List<CapsuleChatInboxMessage>.unmodifiable(merged);
+}
+
+bool _sameTimeline(
+  List<CapsuleChatInboxMessage> current,
+  List<CapsuleChatInboxMessage> next,
+) {
+  if (current.length != next.length) return false;
+  for (var index = 0; index < current.length; index += 1) {
+    final currentMessage = current[index];
+    final nextMessage = next[index];
+    if (currentMessage.id != nextMessage.id ||
+        currentMessage.direction != nextMessage.direction ||
+        currentMessage.deliveryState != nextMessage.deliveryState ||
+        currentMessage.messageText != nextMessage.messageText ||
+        currentMessage.timestampMs != nextMessage.timestampMs) {
+      return false;
+    }
+  }
+  return true;
 }
 
 class _ConversationHeader extends StatelessWidget {

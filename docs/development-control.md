@@ -2,7 +2,14 @@
 
 Status date: 2026-08-14
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Chat Conversation Workspace UX`. The existing
+Current development focus: `1.x Chat Conversation Workspace UX` passive-
+projection remediation. Packaged Hands smoke from source `451648f` proved that
+the passive receive owner accepted and durably retained a new Android message,
+but the already-open Android conversation did not project it until the
+workspace was reopened. The remediation may observe only the existing Capsule-
+scoped durable inbox while the workspace is open; it may not add a receive,
+transport, inbox, DTO, service, or background-delivery owner. The `451648f`
+smoke artifacts are failed evidence and cannot close the pass. The existing
 Chat delivery, attestation, retained timeline, unread projection, and Capsule
 isolation owners remain unchanged. This bounded presentation pass replaces the
 technical plugin panel with a normal contact/conversation/composer workspace,
@@ -154,7 +161,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Chat Conversation Workspace UX active | Existing Chat delivery, attestation, timeline, unread, and Capsule-isolation owners remain canonical; the new widget is presentation only. | Focused widget/lifecycle tests must prove ordinary terminology, chronological directional bubbles, honest delivery state, retained history during receive failure, preserved draft, and collapsed technical evidence. | Protected PR and packaged Hands smoke; Android cold-restart timeline evidence remains pending. |
+| **1.x maintained runtime** | Chat open-workspace passive projection remediation active | Existing Chat delivery, attestation, timeline, unread, and Capsule-isolation owners remain canonical; the workspace may only observe the existing durable inbox. | Regression must prove a passive cached message appears while the dialog remains open without a manual or second network receive. | Protected PR and replacement packaged Hands smoke; `451648f` artifacts are failed evidence. Android cold-restart timeline evidence remains pending. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
