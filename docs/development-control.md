@@ -2,8 +2,15 @@
 
 Status date: 2026-08-14
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no next pass selected. `1.x Chat Conversation
-Workspace UX` is complete. Protected PR `#67`, merge source `aafbf52`, green
+Current development focus: `1.x Chat Contact Selection Projection`
+remediation. Packaged Android Hands smoke from build `1.0.3+100030030`
+reproduced an intermittent selection lag: a trusted contact could be chosen in
+the existing picker, while the open workspace remained on the prior selection
+until a later tap rebuilt the dialog. The peer remains owned by the existing
+Chat `TextEditingController`; the workspace may listen to that controller but
+may not add another selected-peer state, picker, DTO, service, or Chat route.
+The previous `1.x Chat Conversation Workspace UX` pass is complete. Protected
+PR `#67`, merge source `aafbf52`, green
 post-merge repository gates, and packaged macOS/Android Hands smoke from the
 same source at build `1.0.3+100030030` close the passive-projection and viewport
 remediations. One `CUX31 open live` send entered the already-open Android
@@ -13,10 +20,10 @@ scroll, reopen, or restart. The pass keeps `WasmPluginsScreen` as workspace
 orchestrator and `CapsuleDeliveryInboxStore` plus the existing Chat delivery and
 attestation services as the sole state and lifecycle owners. It adds no receive,
 transport, inbox, DTO, service, Core/Ledger, FFI/WASM, attachment,
-background-delivery, or notification path. The separate intermittent Android
-finding that contact selection may require a second attempt remains a focused
-UX candidate and is not part of this completed pass. No tag or Release is
-selected.
+background-delivery, or notification path. The contact-selection remediation
+must prove that one controller update projects the chosen peer without an
+external dialog rebuild, then pass protected PR/post-merge gates and replacement
+packaged Android Hands smoke. No tag or Release is selected.
 The preceding `1.x Capsule-scoped Chat Unread Indicator` remains complete.
 The preceding durable receive handoff is complete on `main` at `c9caa7e` with
 green protected PR/post-merge gates and packaged macOS/Android restart smoke.

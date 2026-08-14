@@ -52,62 +52,68 @@ class CapsuleChatConversationWorkspace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final peerHex = peerController.text.trim().toLowerCase();
-    final hasPeer = RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex);
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: peerController,
+      builder: (context, peerValue, _) {
+        final peerHex = peerValue.text.trim().toLowerCase();
+        final hasPeer = RegExp(r'^[0-9a-f]{64}$').hasMatch(peerHex);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF121821),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF2B3846)),
-      ),
-      child: Column(
-        children: [
-          _ConversationHeader(
-            peerHex: peerHex,
-            localLabel: selectedPeerLabel,
-            checkingForMessages: checkingForMessages,
-            onChooseContact: sending ? null : onChooseContact,
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF121821),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF2B3846)),
           ),
-          const Divider(height: 1, color: Color(0xFF2B3846)),
-          if (notice != null ||
-              hiddenMessageCount > 0 ||
-              deferredMessageCount > 0)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-              child: _ConversationNotice(
-                notice: notice,
-                isError: noticeIsError,
-                hiddenMessageCount: hiddenMessageCount,
-                deferredMessageCount: deferredMessageCount,
-                retrying: checkingForMessages,
-                onRetry: noticeIsError && !sending ? onRetryReceive : null,
+          child: Column(
+            children: [
+              _ConversationHeader(
+                peerHex: peerHex,
+                localLabel: selectedPeerLabel,
+                checkingForMessages: checkingForMessages,
+                onChooseContact: sending ? null : onChooseContact,
               ),
-            ),
-          Expanded(
-            child:
-                hasPeer
-                    ? _LiveConversationTimeline(
-                      messages: messages,
-                      peerHex: peerHex,
-                      contactLabels: contactLabels,
-                      loadCachedMessages: loadCachedMessages,
-                      onMessagesProjected: onMessagesProjected,
-                      cacheProjectionInterval: cacheProjectionInterval,
-                    )
-                    : _EmptyConversation(onChooseContact: onChooseContact),
+              const Divider(height: 1, color: Color(0xFF2B3846)),
+              if (notice != null ||
+                  hiddenMessageCount > 0 ||
+                  deferredMessageCount > 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                  child: _ConversationNotice(
+                    notice: notice,
+                    isError: noticeIsError,
+                    hiddenMessageCount: hiddenMessageCount,
+                    deferredMessageCount: deferredMessageCount,
+                    retrying: checkingForMessages,
+                    onRetry: noticeIsError && !sending ? onRetryReceive : null,
+                  ),
+                ),
+              Expanded(
+                child:
+                    hasPeer
+                        ? _LiveConversationTimeline(
+                          messages: messages,
+                          peerHex: peerHex,
+                          contactLabels: contactLabels,
+                          loadCachedMessages: loadCachedMessages,
+                          onMessagesProjected: onMessagesProjected,
+                          cacheProjectionInterval: cacheProjectionInterval,
+                        )
+                        : _EmptyConversation(onChooseContact: onChooseContact),
+              ),
+              const Divider(height: 1, color: Color(0xFF2B3846)),
+              _ConversationComposer(
+                enabled: hasPeer,
+                sending: sending,
+                controller: messageController,
+                onChanged: onInputChanged,
+                onSend: onSend,
+              ),
+              if (lastResponse != null)
+                _TechnicalDetails(response: lastResponse!),
+            ],
           ),
-          const Divider(height: 1, color: Color(0xFF2B3846)),
-          _ConversationComposer(
-            enabled: hasPeer,
-            sending: sending,
-            controller: messageController,
-            onChanged: onInputChanged,
-            onSend: onSend,
-          ),
-          if (lastResponse != null) _TechnicalDetails(response: lastResponse!),
-        ],
-      ),
+        );
+      },
     );
   }
 }

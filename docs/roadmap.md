@@ -3135,8 +3135,22 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `712cb1f5a55802f197a74010a06520cbcef5c976dd7d28589c09cad4d0d52fc5`;
     Android artifact SHA-256 is
     `90a8bf06510f93d22f6b6c47e093d4cd4908c5e7dbb09211a00df930a755e013`.
-  - Status: complete (2026-08-14). The separate intermittent Android contact-
-    selection finding remains unselected. No tag or Release is selected.
+  - Status: complete (2026-08-14). No tag or Release is selected.
+
+- `1.x Chat Contact Selection Projection remediation`
+  - Finding: packaged Android Hands smoke from build `1.0.3+100030030`
+    reproduced a trusted-contact choice that appeared only after a later tap
+    rebuilt the open workspace.
+  - Owner and invariant: the existing Chat peer `TextEditingController` remains
+    the sole selected-peer owner. One valid controller update must immediately
+    project exactly one selected conversation.
+  - Remediation boundary: the workspace may listen to its existing controller.
+    No second selected-peer state, picker, DTO, service, transport, inbox, Core,
+    Ledger, or Chat effect path is authorized.
+  - Required evidence: a negative-before/positive-after widget vector for one
+    controller update, full automated gates, protected PR/post-merge CI, and
+    replacement packaged Android Hands smoke proving one-tap selection.
+  - Status: active (2026-08-14). No tag or Release is selected.
 
 - `1.x Relationship Root-Signed Break Projection remediation`
   - Finding: a real remote Seed break was accepted by canonical ingress and

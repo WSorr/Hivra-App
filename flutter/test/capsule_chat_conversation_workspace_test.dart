@@ -35,6 +35,32 @@ void main() {
     expect(find.text('Envelope prepared'), findsNothing);
   });
 
+  testWidgets('projects a selected contact after one controller update', (
+    tester,
+  ) async {
+    final peerController = TextEditingController();
+    final messageController = TextEditingController();
+    addTearDown(peerController.dispose);
+    addTearDown(messageController.dispose);
+
+    await tester.pumpWidget(
+      _testApp(
+        peerController: peerController,
+        messageController: messageController,
+      ),
+    );
+
+    expect(find.text('No conversation selected'), findsOneWidget);
+    expect(find.text('Change'), findsNothing);
+
+    peerController.text = peerHex;
+    await tester.pump();
+
+    expect(find.text('No conversation selected'), findsNothing);
+    expect(find.text('Change'), findsOneWidget);
+    expect(find.byKey(const Key('capsule-chat-composer')), findsOneWidget);
+  });
+
   testWidgets('renders chronological directional bubbles with honest states', (
     tester,
   ) async {
