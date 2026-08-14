@@ -162,7 +162,18 @@ void main() {
       final messageController = TextEditingController();
       addTearDown(peerController.dispose);
       addTearDown(messageController.dispose);
-      var cachedMessages = const <CapsuleChatInboxMessage>[];
+      final initialMessages = List<CapsuleChatInboxMessage>.generate(
+        8,
+        (index) => CapsuleChatInboxMessage(
+          id: 'existing-$index',
+          fromHex: peerHex,
+          messageText: 'existing message $index',
+          createdAtUtc: '2026-08-14T12:00:00Z',
+          envelopeHashHex: 'aa$index',
+          timestampMs: index,
+        ),
+      );
+      var cachedMessages = initialMessages;
       var receiveRetries = 0;
       var projectionCount = 0;
 
@@ -170,30 +181,35 @@ void main() {
         _testApp(
           peerController: peerController,
           messageController: messageController,
+          messages: initialMessages,
           onRetryReceive: () async => receiveRetries += 1,
           loadCachedMessages: () async => cachedMessages,
           onMessagesProjected: (_) => projectionCount += 1,
           cacheProjectionInterval: const Duration(milliseconds: 50),
+          height: 400,
         ),
       );
       await tester.pump();
       expect(find.text('passive while open'), findsNothing);
 
-      cachedMessages = const <CapsuleChatInboxMessage>[
+      cachedMessages = <CapsuleChatInboxMessage>[
+        ...initialMessages,
         CapsuleChatInboxMessage(
           id: 'passive',
           fromHex: peerHex,
           messageText: 'passive while open',
           createdAtUtc: '2026-08-14T12:02:00Z',
           envelopeHashHex: 'cc',
-          timestampMs: 3,
+          timestampMs: 9,
         ),
       ];
       await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 200));
 
-      expect(find.text('passive while open'), findsOneWidget);
       expect(receiveRetries, 0);
       expect(projectionCount, 1);
+      expect(find.text('passive while open'), findsOneWidget);
     },
   );
 
@@ -230,6 +246,7 @@ Widget _testApp({
   Future<List<CapsuleChatInboxMessage>> Function()? loadCachedMessages,
   ValueChanged<List<CapsuleChatInboxMessage>>? onMessagesProjected,
   Duration cacheProjectionInterval = const Duration(seconds: 1),
+  double height = 680,
 }) {
   return MaterialApp(
     theme: ThemeData.dark(),
@@ -237,7 +254,7 @@ Widget _testApp({
       body: Center(
         child: SizedBox(
           width: 700,
-          height: 680,
+          height: height,
           child: CapsuleChatConversationWorkspace(
             sending: false,
             checkingForMessages: false,

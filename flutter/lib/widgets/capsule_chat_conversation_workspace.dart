@@ -446,10 +446,11 @@ class _ConversationTimeline extends StatelessWidget {
 
     return ListView.builder(
       key: const Key('capsule-chat-timeline'),
+      reverse: true,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
       itemCount: messages.length,
       itemBuilder: (context, index) {
-        final message = messages[index];
+        final message = messages[messages.length - index - 1];
         final peerHex =
             message.direction == CapsuleChatMessageDirection.outgoing
                 ? (message.toHex ?? '')
