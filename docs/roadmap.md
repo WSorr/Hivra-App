@@ -3102,7 +3102,20 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     than delivered, draft preservation during conversation securing, retained
     cached messages during receive failure, collapsed technical details, full
     automated gates, protected PR/post-merge CI, and packaged Hands smoke.
-  - Status: active (2026-08-14). No tag or Release is selected.
+  - Packaged-smoke finding: source `451648f` accepted and durably retained the
+    `CUX28 mac to android` message through the canonical passive receive owner,
+    but an already-open Android workspace kept its pre-receive timeline. The
+    separate dialog route rebuilt only after its own actions, so parent-shell
+    unread projection did not refresh the visible conversation.
+  - Remediation boundary: the open conversation may periodically reproject the
+    existing Capsule-scoped durable inbox. This is presentation-only and must
+    not trigger transport, add a receive listener, or create another inbox,
+    DTO, service, notification, or background-delivery path. A negative test
+    must prove cache projection updates the open workspace without invoking the
+    receive retry.
+  - Status: remediation active (2026-08-14). The `451648f` artifacts are failed
+    closure evidence; protected PR, post-merge gates, and replacement packaged
+    Hands smoke remain required. No tag or Release is selected.
 
 - `1.x Relationship Root-Signed Break Projection remediation`
   - Finding: a real remote Seed break was accepted by canonical ingress and

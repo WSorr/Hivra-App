@@ -615,6 +615,15 @@ class _WasmPluginsScreenState extends State<WasmPluginsScreen> {
                           onRetryReceive:
                               () => runAndRefresh(_refreshCapsuleChatInbox),
                           onSend: () => runAndRefresh(_runCapsuleChat),
+                          loadCachedMessages:
+                              _module.chatDelivery.loadCachedMessagesDurably,
+                          onMessagesProjected: (messages) {
+                            unawaited(
+                              _markProjectedChatMessagesRead(
+                                _chatMessagesVisibleForSelectedPeer(messages),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),
