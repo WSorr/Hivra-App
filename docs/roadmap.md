@@ -3072,9 +3072,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     timeout ambiguity, unread exclusion for outgoing records, and persistence
     failure before acknowledgement.
   - Status: implementation merged at `ae1af30` through protected PR `#62`; the
-    post-merge repository gate `31706040424` passed. Packaged restart smoke is
-    blocked by the separately discovered relationship-break projection defect,
-    so pre-remediation artifacts are invalid. No tag or Release is selected.
+    post-merge repository gate `31706040424` passed. Fresh artifacts from
+    post-remediation source `89c3b36` proved bidirectional macOS/Android
+    delivery, one transport-accepted envelope per send, passive macOS receive,
+    unread projection, and persistence of the `A27` conversation after a real
+    macOS process restart. Android cold-restart persistence remains the only
+    unclosed packaged evidence item. No tag or Release is selected.
 
 - `1.x Relationship Root-Signed Break Projection remediation`
   - Finding: a real remote Seed break was accepted by canonical ingress and
@@ -3089,12 +3092,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     the sole projection owner, and the existing Relationships full refresh
     remains the sole visible refresh on that tab. No event, DTO, transport,
     Ledger owner, confirmation use case, or parallel refresh path is added.
-  - Required evidence: Core positive root-binding and negative unbound-root
-    vectors, ingress-to-exported-Ledger-to-FFI projection regression, one
-    visible Relationships refresh action, protected PR/post-merge gates, and
-    fresh packaged macOS/Android verification from one post-merge SHA.
-  - Status: remediation in progress; prior smoke artifacts from `ae1af30` are
-    rejected. No tag or Release is selected.
+  - Evidence: Core positive root-binding and negative unbound-root vectors,
+    ingress-to-exported-Ledger-to-FFI projection regression, one visible
+    Relationships refresh action, protected PR `#63`, post-merge run
+    `31710031485`, and fresh packaged macOS/Android artifacts from `89c3b36`.
+    Real macOS Hands smoke projected the remote break as pending, preserved the
+    local-confirmation boundary, and then projected the confirmed break without
+    adding a second relationship or refresh path.
+  - Status: complete (2026-08-13). The related Chat Android cold-restart
+    evidence remains separate and pending. No tag or Release is selected.
 
 - `13.1 AI-Assisted Trading Analysis`
   - Goal:
