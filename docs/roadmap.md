@@ -3079,6 +3079,31 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     macOS process restart. Android cold-restart persistence remains the only
     unclosed packaged evidence item. No tag or Release is selected.
 
+- `1.x Chat Conversation Workspace UX`
+  - Finding: the sole Chat workspace still exposed plugin-host, transport,
+    runtime ABI, and pair-consensus controls as the primary user experience,
+    despite the underlying delivery and timeline lifecycle already being
+    canonical and cross-platform proven.
+  - Invariant and owner: `WasmPluginsScreen` remains the existing workspace
+    orchestrator, while `CapsuleDeliveryInboxStore` and the existing Chat
+    delivery/attestation services remain the sole state and lifecycle owners.
+    Presentation may rename and arrange their states but cannot reinterpret
+    transport acceptance as peer delivery.
+  - Entropy reduction: replace one 600-line technical panel with one
+    independently testable presentation widget; remove the visible manual
+    inbox action and ordinary consensus/runtime jargon; keep a receive retry
+    only when the existing receive path reports failure. Added state-owner and
+    execution-path counts remain zero.
+  - Sealed paths: no second inbox, DTO, service, transport route, Core/Ledger
+    fact, FFI/WASM contract, attachment lifecycle, OS notification service, or
+    background delivery path.
+  - Required evidence: ordinary UI terminology, trusted-contact selection,
+    chronological incoming/outgoing bubbles, `Accepted by transport` rather
+    than delivered, draft preservation during conversation securing, retained
+    cached messages during receive failure, collapsed technical details, full
+    automated gates, protected PR/post-merge CI, and packaged Hands smoke.
+  - Status: active (2026-08-14). No tag or Release is selected.
+
 - `1.x Relationship Root-Signed Break Projection remediation`
   - Finding: a real remote Seed break was accepted by canonical ingress and
     appended to the active Capsule Ledger, but the current-view projection

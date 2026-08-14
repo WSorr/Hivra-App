@@ -305,7 +305,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/starters_screen.dart` line `16` (`StartersScreen`) — rule `surface_mapping:ui_starters`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/trading_drone_screen.dart` line `25` (`TradingDroneScreen`) — rule `registry`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/transports_screen.dart` line `8` (`TransportsScreen`) — rule `surface_mapping:ui_transports`
-- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/wasm_plugins_screen.dart` line `65` (`WasmPluginsScreen`) — rule `registry`
+- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/wasm_plugins_screen.dart` line `79` (`WasmPluginsScreen`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_capsule_inspection_service.dart` line `104` (`AiCapsuleInspectionService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_developer_engineer_service.dart` line `37` (`AiDeveloperEngineerService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_developer_remote_repository_cache_service.dart` line `65` (`AiDeveloperRemoteRepositoryCacheService`) — rule `current_flutter_service_support`
@@ -477,9 +477,9 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 - `4065` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3197` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
-- `2519` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
 - `2162` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
+- `1920` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
 - `1848` lines — `flutter/lib/services/plugin_runtime_module_service.dart`
 - `1440` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
 - `1309` lines — `flutter/lib/screens/invitations_screen.dart`
