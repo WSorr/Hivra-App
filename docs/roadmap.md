@@ -3150,7 +3150,13 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Required evidence: a negative-before/positive-after widget vector for one
     controller update, full automated gates, protected PR/post-merge CI, and
     replacement packaged Android Hands smoke proving one-tap selection.
-  - Status: active (2026-08-14). No tag or Release is selected.
+  - Closure evidence: source `c56213f`, protected PR `#69`, green post-merge
+    gates, `849/849` Flutter tests, and packaged Android Hands smoke from build
+    `1.0.3+100030031`. One tap selected `h1un5...`, immediately replaced the
+    empty state with the conversation header, and enabled the composer. The
+    artifact SHA-256 is
+    `1990e92157cc623d0efb582533ee2acbf2f29a25a0eeae71c8dd5642f8dfa544`.
+  - Status: complete (2026-08-14). No tag or Release is selected.
 
 - `1.x Relationship Root-Signed Break Projection remediation`
   - Finding: a real remote Seed break was accepted by canonical ingress and
