@@ -3125,9 +3125,18 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Separate finding: Android contact selection applied only on the second
     attempt during the same smoke. It remains a later focused UX remediation;
     no contact-selection behavior is changed by the viewport fix.
-  - Status: viewport remediation active (2026-08-14). Protected PR, post-merge
-    gates, and replacement packaged Hands smoke remain required. No tag or
-    Release is selected.
+  - Closure evidence: protected PR `#67`, merge source `aafbf52`, green
+    post-merge gates, and same-source packaged macOS/Android build
+    `1.0.3+100030030`. One `CUX31 open live` send was accepted once, entered the
+    already-open Android workspace through periodic passive receive, increased
+    the retained timeline from 16 to 17, and remained visible at the normal
+    Chat edge without refresh, scrolling, reopen, or restart. macOS artifact
+    SHA-256 is
+    `712cb1f5a55802f197a74010a06520cbcef5c976dd7d28589c09cad4d0d52fc5`;
+    Android artifact SHA-256 is
+    `90a8bf06510f93d22f6b6c47e093d4cd4908c5e7dbb09211a00df930a755e013`.
+  - Status: complete (2026-08-14). The separate intermittent Android contact-
+    selection finding remains unselected. No tag or Release is selected.
 
 - `1.x Relationship Root-Signed Break Projection remediation`
   - Finding: a real remote Seed break was accepted by canonical ingress and

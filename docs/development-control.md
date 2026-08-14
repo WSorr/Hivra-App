@@ -2,31 +2,21 @@
 
 Status date: 2026-08-14
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Chat Conversation Workspace UX` passive-
-projection remediation. Packaged Hands smoke from source `451648f` proved that
-the passive receive owner accepted and durably retained a new Android message,
-but the already-open Android conversation did not project it until the
-workspace was reopened. The remediation may observe only the existing Capsule-
-scoped durable inbox while the workspace is open; it may not add a receive,
-transport, inbox, DTO, service, or background-delivery owner. The `451648f`
-smoke artifacts are failed evidence and cannot close the pass. The existing
-Chat delivery, attestation, retained timeline, unread projection, and Capsule
-isolation owners remain unchanged. This bounded presentation pass replaces the
-technical plugin panel with a normal contact/conversation/composer workspace,
-keeps transport acceptance distinct from peer delivery, preserves the draft
-while a conversation is being secured, and moves runtime evidence behind a
-collapsed technical disclosure. It authorizes no transport, Core, Ledger,
-FFI/WASM, attachment, background-delivery, DTO, store, or second inbox path.
-Replacement packaged smoke from `c9f8900` proved that `CUX29` entered the open
-Android timeline through passive receive, but the viewport stayed on the prior
-message. A bounded reversed-list remediation must keep the newest message at
-the normal Chat edge without adding state or lifecycle ownership. The separate
-Android finding that contact selection applies only on the second attempt is
-recorded for a later focused remediation and is not folded into this change.
-The preceding relationship remediation and bidirectional packaged Chat smoke
-remain complete. Android cold-restart persistence of the retained Chat timeline
-is still the only unclosed packaged evidence item from that smoke. No tag or
-Release is selected.
+Current development focus: no next pass selected. `1.x Chat Conversation
+Workspace UX` is complete. Protected PR `#67`, merge source `aafbf52`, green
+post-merge repository gates, and packaged macOS/Android Hands smoke from the
+same source at build `1.0.3+100030030` close the passive-projection and viewport
+remediations. One `CUX31 open live` send entered the already-open Android
+conversation through periodic passive receive, grew the retained timeline from
+16 to 17, and appeared immediately at the normal Chat edge without refresh,
+scroll, reopen, or restart. The pass keeps `WasmPluginsScreen` as workspace
+orchestrator and `CapsuleDeliveryInboxStore` plus the existing Chat delivery and
+attestation services as the sole state and lifecycle owners. It adds no receive,
+transport, inbox, DTO, service, Core/Ledger, FFI/WASM, attachment,
+background-delivery, or notification path. The separate intermittent Android
+finding that contact selection may require a second attempt remains a focused
+UX candidate and is not part of this completed pass. No tag or Release is
+selected.
 The preceding `1.x Capsule-scoped Chat Unread Indicator` remains complete.
 The preceding durable receive handoff is complete on `main` at `c9caa7e` with
 green protected PR/post-merge gates and packaged macOS/Android restart smoke.
