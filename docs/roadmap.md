@@ -2982,10 +2982,20 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `credential_rejected` or `permission_rejected`; changed approval evidence,
     ambiguous outcomes, missing receipts, not-found observation, and conflicts
     remain sealed. HTTP `401` and `403` retain distinct diagnostics.
-  - Status: remediation active (2026-08-15). The pass is not complete until
-    protected integration and fresh packaged macOS Hands evidence prove the
-    same operation succeeds after corrected authorization, survives restart,
-    and does not create an automatic post or duplicate community.
+  - Status: complete on `main` at `dc15de9` (2026-08-15). Protected PR `#75`
+    and post-merge repository-gates run `31881796780` passed. Packaged macOS
+    Hands smoke used Release build `1.0.3+100030035`; artifact SHA-256 is
+    `d5236f5c5f893b724882efabe9f4b87385f1d668587c5f83886f92e8c1d670fb`.
+    The original operation `moltbook-submolt-91957960...4cb9d` resumed after a
+    fresh exact acknowledgement and succeeded on attempt two with receipt
+    `7f40d1ea-e89c-4b5a-a81d-0fa0608da56f`. Independent public observation
+    matched the exact descriptor and creator `hivra_ambassador`. Cold restart
+    restored one succeeded community operation, left post/comment operation
+    counts unchanged at `5/5`, showed verified ownership, and projected
+    `m/person-first-runtime` as the local-draft destination. No automatic post,
+    duplicate community, second effect route, tag, or Release was created.
+    Test filesystem isolation issue `#76` remains a separate P2; no following
+    product pass is selected automatically.
 
 - `1.x Capsule AI single-prompt unlock remediation`
   - Finding: packaged macOS Release smoke from `0440e92` proved the complete
