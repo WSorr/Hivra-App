@@ -1539,6 +1539,7 @@ class BingxFuturesExchangeService {
     final bids = _extractOrderBookSide(row, const <String>['bids', 'bid']);
     final asks = _extractOrderBookSide(row, const <String>['asks', 'ask']);
     final timestampMs = _readStringField(row, const <String>[
+      'T',
       'time',
       'timestamp',
       'ts',
