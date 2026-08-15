@@ -15,10 +15,12 @@ Release-smoke artifact from `79e0af4`, build `1.0.3+100030037`, has SHA-256
 `f1e5383752c04a85d6c90a2a5deb2b68c63b6f45e017968ba3dd05ca3203d7dd`.
 The production adapter and snapshot builder were exercised against the live
 BingX public wire and returned a timestamped 20x20 book plus non-empty bounded
-buy-side and sell-side proxy clusters. Final packaged Trading diagnostics
-signoff remains pending because automatic Capsule activation stopped at the
-macOS Keychain password boundary; that credential gate was not bypassed. No
-next trading pass is selected until the packaged diagnostic is confirmed.
+buy-side and sell-side proxy clusters. Packaged macOS Hands diagnostics then
+activated the Capsule through the system Keychain boundary, restored zero
+managed orders, and ran the canonical `Run Intent` path. The live decision
+projected `sellside:63095.00068126` and `buyside:63086.7100533`, returned
+`noSignal`, and created no exchange effect. The pass is complete; no next
+trading pass is selected pending a short consolidation review.
 Capsule material, root keys, local account state, trading credentials,
 background execution, Remote Runner deployment, a second effect path, v2,
 tags, and Releases remain blocked. The subsequent product sequence remains
