@@ -2942,15 +2942,19 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     replay tests, full local and clean-checkout gates, protected PR/post-merge
     CI, and packaged Hands smoke through proposal and WASM draft without an
     external effect.
-  - Status: remediation active (2026-08-15). Protected PR `#71`, merge source
-    `4699624`, and post-merge repository gates passed, and packaged macOS Hands
-    smoke proved ingestion and Gemini proposal. Draft preparation then failed
-    because the screen retained the manual `development-note` bulletin id
-    instead of the queued source id. The bounded remediation projects the exact
-    queued source/category and rejects mismatch before WASM invocation; it adds
-    no owner, DTO, credential, plugin ABI, publication, or effect path.
-    Destination routing remains a separate later product decision and Remote
-    Runner/VPS and v2 remain frozen.
+  - Status: complete (2026-08-15). Protected PR `#71` merged ingestion at
+    `4699624`; packaged smoke exposed a stale manual bulletin id. Protected PR
+    `#72` merged the bounded binding remediation at `c3949bf`, and post-merge
+    repository run `31875750814` passed. Fresh packaged macOS Hands smoke from
+    `c3949bf`, build `1.0.3+100030033`, artifact SHA-256
+    `2653520a8618b0474aa71f01398563639f577c7c0cc7407c12c65ee0bf628cee`,
+    proved the exact queued source/category reached the installed WASM package
+    and persisted draft hash
+    `608238ba90b6b7e191163d79c2180f46dbd66730d2f3f861ea1fa92d86989c2f`.
+    No publication or external effect occurred. No owner, DTO, credential,
+    plugin ABI, publication, or effect path was added. Destination routing is a
+    separate later product decision; Remote Runner/VPS and v2 remain frozen,
+    and no next pass is selected automatically.
 
 - `1.x Capsule AI single-prompt unlock remediation`
   - Finding: packaged macOS Release smoke from `0440e92` proved the complete
