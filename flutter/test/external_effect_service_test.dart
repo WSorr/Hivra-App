@@ -230,6 +230,93 @@ void main() {
   );
 
   test(
+    'explicit reauthorization retries one rejected delivery with the same id',
+    () async {
+      final adapter = _FakeExternalEffectAdapter(
+        deliverResults: <Object>[
+          const ExternalEffectAdapterResult(
+            status: ExternalEffectAdapterStatus.terminalFailure,
+            errorCode: 'credential_rejected',
+            errorMessage: 'Credential rejected before delivery',
+          ),
+          _success('post-1'),
+        ],
+      );
+      final service = build(adapter);
+      await prepareApprovedQueued(service);
+
+      final rejected = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(rejected.state, ExternalEffectState.terminalFailure);
+      expect(adapter.deliverCount, 1);
+
+      final unchanged = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(unchanged.state, ExternalEffectState.terminalFailure);
+      expect(adapter.deliverCount, 1);
+
+      await expectLater(
+        service.reauthorizeRejectedDelivery(
+          pluginId: moltbookAmbassadorPluginId,
+          operationId: 'post-1',
+          approvalEvidenceHashHex: _receiptHash,
+        ),
+        throwsStateError,
+      );
+
+      final queued = await service.reauthorizeRejectedDelivery(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+        approvalEvidenceHashHex: _approvalHash,
+      );
+      expect(queued.operationId, rejected.operationId);
+      expect(queued.state, ExternalEffectState.queued);
+      expect(queued.attemptCount, 1);
+
+      final completed = await service.process(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+      );
+      expect(completed.state, ExternalEffectState.succeeded);
+      expect(completed.operationId, rejected.operationId);
+      expect(completed.attemptCount, 2);
+      expect(adapter.deliveredOperationIds, <String>['post-1', 'post-1']);
+    },
+  );
+
+  test('explicit reauthorization rejects ambiguous terminal failures', () async {
+    final adapter = _FakeExternalEffectAdapter(
+      deliverResults: const <Object>[
+        ExternalEffectAdapterResult(
+          status: ExternalEffectAdapterStatus.terminalFailure,
+          errorCode: 'provider_conflict',
+          errorMessage: 'Remote state conflicts',
+        ),
+      ],
+    );
+    final service = build(adapter);
+    await prepareApprovedQueued(service);
+    await service.process(
+      pluginId: moltbookAmbassadorPluginId,
+      operationId: 'post-1',
+    );
+
+    await expectLater(
+      service.reauthorizeRejectedDelivery(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: 'post-1',
+        approvalEvidenceHashHex: _approvalHash,
+      ),
+      throwsStateError,
+    );
+    expect(adapter.deliverCount, 1);
+  });
+
+  test(
     'reconcile-only persists and binds an exact provider reference',
     () async {
       final adapter = _FakeExternalEffectAdapter(

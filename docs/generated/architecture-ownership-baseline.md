@@ -476,7 +476,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 ### Oversized Candidate Surfaces
 
 - `4065` lines — `flutter/lib/screens/trading_drone_screen.dart`
-- `3326` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
+- `3329` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
 - `2162` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
 - `1929` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
@@ -486,8 +486,8 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `1211` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `1019` lines — `flutter/lib/services/bingx_futures_zone_decision_service.dart`
 - `979` lines — `flutter/lib/screens/ledger_inspector_screen.dart`
-- `913` lines — `flutter/lib/services/moltbook_provider_adapter.dart`
-- `905` lines — `flutter/lib/services/external_effect_service.dart`
+- `952` lines — `flutter/lib/services/external_effect_service.dart`
+- `920` lines — `flutter/lib/services/moltbook_provider_adapter.dart`
 - `885` lines — `flutter/lib/screens/relationships_screen.dart`
 - `838` lines — `flutter/lib/screens/main_screen.dart`
 - `815` lines — `flutter/lib/services/invitation_intent_handler.dart`
@@ -539,7 +539,7 @@ Largest registered owner files by line count:
 
 - `1905` lines — `moltbook_agent` — `flutter/lib/services/plugin_runtime_module_service.dart` (`PluginRuntimeModule`)
 - `1046` lines — `relationships` — `core/hivra-core/src/relationship.rs` (`Relationships`)
-- `905` lines — `external_effects` — `flutter/lib/services/external_effect_service.dart` (`ExternalEffectService`)
+- `952` lines — `external_effects` — `flutter/lib/services/external_effect_service.dart` (`ExternalEffectService`)
 - `815` lines — `invitations` — `flutter/lib/services/invitation_intent_handler.dart` (`InvitationIntentHandler`)
 - `592` lines — `capsule_addressing` — `flutter/lib/services/capsule_address_service.dart` (`CapsuleAddressService`)
 - `576` lines — `ledger_truth` — `core/hivra-core/src/ledger.rs` (`Ledger`)

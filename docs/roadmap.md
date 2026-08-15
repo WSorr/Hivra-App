@@ -2975,9 +2975,17 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     without duplicate POST, full local and clean-checkout gates, protected PR
     and post-merge CI, then packaged macOS Hands creation with public ownership
     observation and no automatic post.
-  - Status: active (2026-08-15); implementation and focused automated evidence
-    are local only. The pass is not complete until protected integration and
-    packaged Hands evidence succeed.
+  - Packaged-smoke remediation: the first Hands attempt from `acc141e`, build
+    `1.0.3+100030034`, reached exact approval but received a confirmed Moltbook
+    authorization rejection. No receipt or community was observed. A bounded
+    reauthorization may requeue only the same immutable operation after
+    `credential_rejected` or `permission_rejected`; changed approval evidence,
+    ambiguous outcomes, missing receipts, not-found observation, and conflicts
+    remain sealed. HTTP `401` and `403` retain distinct diagnostics.
+  - Status: remediation active (2026-08-15). The pass is not complete until
+    protected integration and fresh packaged macOS Hands evidence prove the
+    same operation succeeds after corrected authorization, survives restart,
+    and does not create an automatic post or duplicate community.
 
 - `1.x Capsule AI single-prompt unlock remediation`
   - Finding: packaged macOS Release smoke from `0440e92` proved the complete

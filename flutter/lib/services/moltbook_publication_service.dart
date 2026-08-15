@@ -314,6 +314,13 @@ class MoltbookPublicationService {
               ),
             )
             .toString();
+    if (canReauthorizeRejectedDelivery(operation)) {
+      return _effects.reauthorizeRejectedDelivery(
+        pluginId: moltbookAmbassadorPluginId,
+        operationId: operation.operationId,
+        approvalEvidenceHashHex: evidenceHash,
+      );
+    }
     await _effects.approve(
       pluginId: moltbookAmbassadorPluginId,
       operationId: operation.operationId,
@@ -323,6 +330,20 @@ class MoltbookPublicationService {
       pluginId: moltbookAmbassadorPluginId,
       operationId: operation.operationId,
     );
+  }
+
+  static bool canReauthorizeRejectedDelivery(
+    ExternalEffectOperation operation,
+  ) {
+    return operation.state == ExternalEffectState.terminalFailure &&
+        operation.approvalEvidenceHashHex != null &&
+        operation.receipt == null &&
+        operation.requiredAction == null &&
+        operation.attemptCount > 0 &&
+        const <String>{
+          'credential_rejected',
+          'permission_rejected',
+        }.contains(operation.lastErrorCode);
   }
 
   Future<ExternalEffectOperation> approveDelegatedReplyAndQueue({

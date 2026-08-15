@@ -3,7 +3,14 @@
 Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: `1.x Moltbook Person-First Runtime Community
-Bootstrap` is active. It extends the existing Moltbook publication owner and
+Bootstrap` is in bounded packaged-smoke remediation. The first macOS Hands
+attempt from `acc141e`, build `1.0.3+100030034`, proved exact approval and
+fail-closed delivery, but Moltbook rejected community creation authorization.
+The operation remained receipt-free and no community was created. Remediation
+must allow a new exact user acknowledgement to requeue only that same stable
+operation after confirmed `401/403` rejection; timeout, missing receipt,
+not-found observation, descriptor conflict, and unknown outcomes remain sealed.
+It extends the existing Moltbook publication owner and
 external-effect adapter with one fixed permanent community effect for
 `m/person-first-runtime`. The exact name, display name, description, active
 Capsule, and bound Moltbook account are committed before approval. Replay,
