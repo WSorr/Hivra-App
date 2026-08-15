@@ -9,6 +9,7 @@ import '../models/moltbook_provider_models.dart';
 import '../services/moltbook_publication_service.dart';
 import '../services/moltbook_public_change_feed_store.dart';
 import '../services/plugin_runtime_module_service.dart';
+import '../widgets/moltbook_person_first_runtime_community_widgets.dart';
 
 void bindMoltbookPublicChangeProposal({
   required MoltbookPublicChange change,
@@ -181,6 +182,16 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       _personaController.text = configuration.personaSummary;
       _topicsController.text = configuration.allowedTopics.join(', ');
       _categoryController.text = configuration.allowedTopics.first;
+      if (publications.any(
+        (operation) =>
+            MoltbookPublicationService.isPersonFirstRuntimeCommunityOperation(
+              operation,
+            ) &&
+            operation.state == ExternalEffectState.succeeded,
+      )) {
+        _submoltController.text =
+            MoltbookPublicationService.personFirstRuntimeSubmoltName;
+      }
       setState(() {
         _approvalMode = configuration.approvalMode;
         _triggerPolicy = configuration.triggerPolicy;
@@ -1107,6 +1118,57 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
     }
   }
 
+  Future<void> _createPersonFirstRuntimeCommunity() async {
+    setState(() => _publicationBusy = true);
+    try {
+      final operation =
+          await widget.module.prepareMoltbookPersonFirstRuntimeCommunity();
+      if (!mounted) return;
+      if (operation.state == ExternalEffectState.succeeded) {
+        _submoltController.text =
+            MoltbookPublicationService.personFirstRuntimeSubmoltName;
+        _showNotice('Person-First Runtime community ownership is verified');
+        return;
+      }
+      var executable = operation;
+      if (operation.state == ExternalEffectState.prepared) {
+        final approved = await showMoltbookPersonFirstRuntimeCommunityApproval(
+          context,
+        );
+        if (!approved || !mounted) {
+          _showNotice('Community creation remains local and unapproved');
+          return;
+        }
+        executable = await widget.module.approveMoltbookPublication(operation);
+      }
+      final result = await widget.module.processMoltbookPublication(
+        executable.operationId,
+      );
+      final publications = await widget.module.loadMoltbookPublications();
+      if (!mounted) return;
+      setState(() {
+        _publications = publications;
+        if (result.state == ExternalEffectState.succeeded) {
+          _submoltController.text =
+              MoltbookPublicationService.personFirstRuntimeSubmoltName;
+        }
+      });
+      _showNotice(
+        result.state == ExternalEffectState.succeeded
+            ? 'Person-First Runtime community created and verified'
+            : 'Community state: ${result.state.wireName} '
+                '(${result.lastErrorCode ?? "no receipt"})',
+        isError: result.state != ExternalEffectState.succeeded,
+      );
+    } catch (error) {
+      if (mounted) {
+        _showNotice('Could not create PFR community: $error', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _publicationBusy = false);
+    }
+  }
+
   Future<void> _processPublication(ExternalEffectOperation operation) async {
     setState(() => _publicationBusy = true);
     try {
@@ -1531,6 +1593,25 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
                           onReplyChanged:
                               () => setState(() => _replyDraftPreview = null),
                           onDisconnect: _disconnect,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _MoltbookWorkspaceSection(
+                        icon: Icons.hub_outlined,
+                        title: 'Person-First Runtime community',
+                        subtitle:
+                            'A category for person-owned digital architecture, not a Hivra product channel',
+                        child: MoltbookPersonFirstRuntimeCommunityCard(
+                          operation:
+                              _publications
+                                  .where(
+                                    MoltbookPublicationService
+                                        .isPersonFirstRuntimeCommunityOperation,
+                                  )
+                                  .singleOrNull,
+                          busy: _publicationBusy,
+                          connected: _binding != null,
+                          onCreate: _createPersonFirstRuntimeCommunity,
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -2287,18 +2368,29 @@ class _MoltbookPublicationCard extends StatelessWidget {
                 operation,
               );
               final isReply = payload.containsKey('post_id');
+              final isCommunity =
+                  MoltbookPublicationService.isPersonFirstRuntimeCommunityOperation(
+                    operation,
+                  );
               final postUri = MoltbookPublicationService.publishedPostUri(
                 operation,
               );
               final target =
-                  isReply
+                  isCommunity
+                      ? 'm/${payload['name']}'
+                      : isReply
                       ? payload['parent_comment_id']?.toString() ?? 'post root'
                       : 'm/${payload['submolt_name'] ?? "unknown"}';
               final exactText =
+                  payload['description']?.toString() ??
                   payload['content']?.toString() ??
                   payload['body']?.toString() ??
                   '';
-              final status = _publicationStatus(operation, postUri);
+              final status = _publicationStatus(
+                operation,
+                postUri,
+                isCommunity: isCommunity,
+              );
               final canRecheck =
                   MoltbookPublicationService.canManuallyReconcileTerminalFailure(
                     operation,
@@ -2306,7 +2398,13 @@ class _MoltbookPublicationCard extends StatelessWidget {
               return ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 12),
-                title: Text('${isReply ? "Reply" : "Post"} to $target'),
+                title: Text(
+                  '${isCommunity
+                      ? "Community"
+                      : isReply
+                      ? "Reply"
+                      : "Post"} $target',
+                ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2385,8 +2483,9 @@ class _MoltbookPublicationCard extends StatelessWidget {
 
 ({String label, IconData icon, Color color}) _publicationStatus(
   ExternalEffectOperation operation,
-  Uri? postUri,
-) {
+  Uri? postUri, {
+  bool isCommunity = false,
+}) {
   if (postUri != null) {
     return (
       label: 'Published and verified',
@@ -2399,6 +2498,13 @@ class _MoltbookPublicationCard extends StatelessWidget {
       label: 'Action required: complete verification',
       icon: Icons.verified_user_outlined,
       color: Colors.orange,
+    );
+  }
+  if (isCommunity && operation.state == ExternalEffectState.succeeded) {
+    return (
+      label: 'Community ownership verified',
+      icon: Icons.verified_rounded,
+      color: Colors.green,
     );
   }
   return switch (operation.state) {

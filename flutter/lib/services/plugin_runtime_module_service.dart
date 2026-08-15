@@ -1172,6 +1172,17 @@ class PluginRuntimeModule {
   Future<List<ExternalEffectOperation>> loadMoltbookPublications() =>
       moltbookPublications.list();
 
+  Future<ExternalEffectOperation>
+  prepareMoltbookPersonFirstRuntimeCommunity() async {
+    final operation =
+        await moltbookPublications.preparePersonFirstRuntimeCommunity();
+    await uiLog.log(
+      'moltbook.community.prepare',
+      'operation=${operation.operationId} state=${operation.state.wireName}',
+    );
+    return operation;
+  }
+
   Future<ExternalEffectOperation> prepareMoltbookPublication({
     required MoltbookDraftPreview draft,
     required String submoltName,

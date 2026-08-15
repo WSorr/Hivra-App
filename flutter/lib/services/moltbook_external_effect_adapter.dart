@@ -12,6 +12,7 @@ import 'moltbook_provider_adapter.dart';
 class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
   static const String postEffectKind = 'moltbook.post.create';
   static const String commentEffectKind = 'moltbook.comment.create';
+  static const String submoltEffectKind = 'moltbook.submolt.create';
   static const String effectKind = postEffectKind;
 
   final CapsuleScopedSecretVault _secretVault;
@@ -33,6 +34,9 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
     try {
       final payload = _validateRequest(request);
       final apiKey = await _loadCredential(request);
+      if (payload case final _MoltbookSubmoltPayload submolt) {
+        return await _deliverSubmolt(request, apiKey, submolt);
+      }
       final response = switch (payload) {
         _MoltbookPostPayload post => await _provider.createPost(
           apiKey: apiKey,
@@ -46,6 +50,8 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
           parentCommentId: comment.parentCommentId,
           content: comment.content,
         ),
+        _MoltbookSubmoltPayload() =>
+          throw StateError('Moltbook community delivery routing failed'),
       };
       final contentId = _contentId(response, payload);
       if (_verificationRequired(response)) {
@@ -101,6 +107,11 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
           request,
           apiKey,
           comment,
+        ),
+        _MoltbookSubmoltPayload submolt => await _reconcileSubmolt(
+          request,
+          apiKey,
+          submolt,
         ),
       };
     } on MoltbookProviderException catch (error) {
@@ -175,6 +186,10 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
             apiKey,
             comment,
           ),
+          _MoltbookSubmoltPayload() =>
+            throw const FormatException(
+              'Moltbook community creation has no verification challenge',
+            ),
         };
         return _afterResolvedRequiredAction(
           reconciliation,
@@ -247,8 +262,27 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
         json,
         operationId: request.operationId,
       ),
+      submoltEffectKind => _MoltbookSubmoltPayload.fromJson(json),
       _ => throw const FormatException('Unsupported Moltbook effect kind'),
     };
+  }
+
+  Future<ExternalEffectAdapterResult> _deliverSubmolt(
+    ExternalEffectAdapterRequest request,
+    String apiKey,
+    _MoltbookSubmoltPayload payload,
+  ) async {
+    try {
+      await _provider.createSubmolt(
+        apiKey: apiKey,
+        name: payload.name,
+        displayName: payload.displayName,
+        description: payload.description,
+      );
+    } on MoltbookProviderException catch (error) {
+      if (error.code != 'http_400' && error.code != 'http_409') rethrow;
+    }
+    return _reconcileSubmolt(request, apiKey, payload);
   }
 
   Future<ExternalEffectAdapterResult> _reconcilePost(
@@ -343,6 +377,51 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
       }
     }
     return _receiptNotObserved();
+  }
+
+  Future<ExternalEffectAdapterResult> _reconcileSubmolt(
+    ExternalEffectAdapterRequest request,
+    String apiKey,
+    _MoltbookSubmoltPayload payload,
+  ) async {
+    late final Map<String, dynamic> response;
+    try {
+      response = await _provider.observeSubmolt(apiKey, name: payload.name);
+    } on MoltbookProviderException catch (error) {
+      if (error.code == 'http_404') {
+        return const ExternalEffectAdapterResult(
+          status: ExternalEffectAdapterStatus.unresolved,
+          errorCode: 'receipt_not_observed',
+          errorMessage:
+              'The community is not observable yet; automatic recreation is blocked',
+        );
+      }
+      rethrow;
+    }
+    final rawSubmolt = response['submolt'];
+    if (rawSubmolt is! Map) {
+      throw const FormatException('Moltbook community response is malformed');
+    }
+    final submolt = Map<String, dynamic>.from(rawSubmolt);
+    final rawCreator = submolt['created_by'];
+    final creator =
+        rawCreator is Map ? Map<String, dynamic>.from(rawCreator) : null;
+    final matches =
+        submolt['name'] == payload.name &&
+        submolt['display_name'] == payload.displayName &&
+        submolt['description'] == payload.description &&
+        creator?['id'] == request.accountBindingId;
+    if (!matches) {
+      return const ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.terminalFailure,
+        errorCode: 'submolt_conflict',
+        errorMessage:
+            'The Moltbook community name is owned by different evidence',
+      );
+    }
+    final submoltId = _stringId(submolt['id']);
+    if (submoltId == null) return _receiptNotObserved();
+    return _success(request, submoltId);
   }
 
   static ExternalEffectAdapterResult _receiptNotObserved() {
@@ -495,18 +574,14 @@ class MoltbookExternalEffectAdapter implements ExternalEffectAdapter {
 }
 
 sealed class _MoltbookPayload {
-  String get accountName;
-  String get content;
   String get providerContentType;
 }
 
 class _MoltbookPostPayload implements _MoltbookPayload {
   final int schemaVersion;
-  @override
   final String accountName;
   final String submoltName;
   final String title;
-  @override
   final String content;
   final String operationMarker;
 
@@ -588,11 +663,9 @@ class _MoltbookPostPayload implements _MoltbookPayload {
 }
 
 class _MoltbookCommentPayload implements _MoltbookPayload {
-  @override
   final String accountName;
   final String postId;
   final String? parentCommentId;
-  @override
   final String content;
   final String operationMarker;
 
@@ -667,5 +740,62 @@ class _MoltbookCommentPayload implements _MoltbookPayload {
       throw const FormatException('Invalid Moltbook comment effect payload');
     }
     return payload;
+  }
+}
+
+class _MoltbookSubmoltPayload implements _MoltbookPayload {
+  final String name;
+  final String displayName;
+  final String description;
+
+  const _MoltbookSubmoltPayload({
+    required this.name,
+    required this.displayName,
+    required this.description,
+  });
+
+  @override
+  String get providerContentType => 'submolt';
+
+  factory _MoltbookSubmoltPayload.fromJson(Map<String, dynamic> json) {
+    const allowedFields = <String>{
+      'schema_version',
+      'name',
+      'display_name',
+      'description',
+    };
+    if (json.keys.any((field) => !allowedFields.contains(field)) ||
+        json['schema_version'] != 1) {
+      throw const FormatException(
+        'Invalid Moltbook community creation payload',
+      );
+    }
+    final payload = _MoltbookSubmoltPayload(
+      name: _required(json, 'name', 64),
+      displayName: _required(json, 'display_name', 80),
+      description: _required(json, 'description', 500),
+    );
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{0,63}$').hasMatch(payload.name)) {
+      throw const FormatException('Invalid Moltbook community name');
+    }
+    if (payload.name != moltbookPersonFirstRuntimeSubmoltName ||
+        payload.displayName != moltbookPersonFirstRuntimeSubmoltDisplayName ||
+        payload.description != moltbookPersonFirstRuntimeSubmoltDescription) {
+      throw const FormatException(
+        'Unsupported Moltbook community creation contract',
+      );
+    }
+    return payload;
+  }
+
+  static String _required(Map<String, dynamic> json, String field, int max) {
+    final value = json[field];
+    if (value is! String ||
+        value.trim() != value ||
+        value.isEmpty ||
+        value.length > max) {
+      throw FormatException('Invalid Moltbook community field: $field');
+    }
+    return value;
   }
 }

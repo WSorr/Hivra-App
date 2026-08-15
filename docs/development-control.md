@@ -2,19 +2,18 @@
 
 Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no next product pass is selected. `1.x Moltbook
-Bundled Public Change Ingestion` and its draft-binding remediation are complete
-on `main` at `c3949bf`. Protected PRs `#71` and `#72`, green post-merge gates,
-and packaged macOS Hands smoke from source `c3949bf`, build
-`1.0.3+100030033`, prove that the bundled Chat change entered the existing
-Capsule feed, Gemini proposed it, and the installed WASM package prepared one
-durable commitment-bound draft using the exact queued source id and category.
-The feed records draft hash
-`608238ba90b6b7e191163d79c2180f46dbd66730d2f3f861ea1fa92d86989c2f`.
-No publication or other external effect occurred. Credentials, feed, draft,
-effect, publication, plugin ABI, and Capsule owners remain unchanged.
-Automatic publication, destination routing changes, background execution,
-tags, Releases, Remote Runner/VPS, and v2 remain blocked. `1.x Chat Contact Selection
+Current development focus: `1.x Moltbook Person-First Runtime Community
+Bootstrap` is active. It extends the existing Moltbook publication owner and
+external-effect adapter with one fixed permanent community effect for
+`m/person-first-runtime`. The exact name, display name, description, active
+Capsule, and bound Moltbook account are committed before approval. Replay,
+double click, restart, timeout, and delayed provider visibility must never
+create a second effect; an observed descriptor or owner conflict fails closed.
+Generic community management, AI-selected destinations, automatic creation,
+post migration, background execution, tags, Releases, Remote Runner/VPS, and
+v2 remain blocked. The preceding `1.x Moltbook Bundled Public Change
+Ingestion` and its draft-binding remediation remain complete on `main` at
+`c3949bf`, with packaged macOS Hands evidence recorded in `roadmap.md`. `1.x Chat Contact Selection
 Projection` remains complete on `main` at `c56213f`. The existing Chat
 `TextEditingController` remains the sole selected-peer owner, and the workspace
 now observes that controller directly instead of waiting for an unrelated
@@ -168,7 +167,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete the bounded Chat Conversation Workspace UX through protected PR, automated gates, and packaged Hands smoke. Moltbook automatic publication, Remote Runner/VPS, deployment, attachments, and release remain blocked. | `roadmap.md` |
+| What is the next 1.x step? | Complete the bounded Moltbook Person-First Runtime community bootstrap through the existing external-effect lifecycle, protected PR, automated gates, and packaged Hands smoke. Generic routing, automatic creation/publication, Remote Runner/VPS, and release remain blocked. | `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -178,7 +177,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Chat live-timeline viewport remediation active | Existing Chat delivery, attestation, timeline, unread, and Capsule-isolation owners remain canonical; the workspace may only observe the existing durable inbox. | Overflow regression must prove the newest passive cached message is visible while the dialog remains open without a manual or second network receive. | Protected PR and replacement packaged Hands smoke; Android second-attempt contact selection remains a separate finding. |
+| **1.x maintained runtime** | Moltbook PFR community bootstrap active | Existing Moltbook publication service, external-effect journal, and provider adapter remain the sole effect owners. One fixed `person-first-runtime` descriptor is the only permitted community creation payload. | Exact descriptor/account binding, replay and Capsule isolation, wrong-owner/conflict rejection, timeout reconciliation without duplicate POST, full gates, protected PR, and packaged Hands smoke. | No generic community manager, AI-selected destination, post migration, automatic publication, or following pass. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision after the active 1.x product pass; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |

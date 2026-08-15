@@ -314,6 +314,40 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
     return json;
   }
 
+  Future<Map<String, dynamic>> createSubmolt({
+    required String apiKey,
+    required String name,
+    required String displayName,
+    required String description,
+  }) async {
+    final response = await _request(
+      method: 'POST',
+      relativePath: 'submolts',
+      apiKey: apiKey,
+      body: <String, dynamic>{
+        'name': name,
+        'display_name': displayName,
+        'description': description,
+      },
+    );
+    final json = _decodeObject(response);
+    _rejectProviderFailure(json, response);
+    return json;
+  }
+
+  Future<Map<String, dynamic>> observeSubmolt(
+    String apiKey, {
+    required String name,
+  }) async {
+    final response = await _get(
+      'submolts/${Uri.encodeComponent(name)}',
+      apiKey,
+    );
+    final json = _decodeObject(response);
+    _rejectProviderFailure(json, response);
+    return json;
+  }
+
   Future<Map<String, dynamic>> createComment({
     required String apiKey,
     required String postId,

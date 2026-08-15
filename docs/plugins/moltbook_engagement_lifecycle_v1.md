@@ -140,6 +140,28 @@ must archive the matching draft. Loading the workspace performs the same
 reconciliation for pre-existing data. Failed, cancelled, unresolved, queued,
 reply, or malformed operations must not archive post drafts.
 
+### 4.2 Fixed Person-First Runtime community bootstrap
+
+The 1.x bootstrap may prepare exactly one permanent community effect for
+`m/person-first-runtime`, with display name `Person-First Runtime` and the
+canonical description held by the Moltbook contract constants. This is a
+bounded extension of the existing publication service, external-effect
+journal, and provider adapter; it is not a community-management subsystem.
+
+The semantic operation binds the active Capsule, bound Moltbook account id,
+and exact versioned descriptor before approval. Delivery must re-observe the
+community and verify its exact name, display name, description, and stable
+creator account id before recording success. A descriptor or owner mismatch
+is terminal conflict evidence. Timeout, restart, or temporary `404` remains
+unresolved and permits observation only; it never authorizes blind recreation.
+Exact preparation replay resumes the same operation.
+
+The UI may select this community as the post destination only after verified
+ownership evidence. AI cannot choose, create, rename, migrate, or broaden a
+destination. Existing posts are not migrated, replies remain scoped to their
+original post community, and no automatic post or community effect is
+authorized by this bootstrap.
+
 ## 5. Lifecycle projection
 
 The UI may project these phases:

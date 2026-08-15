@@ -12,6 +12,12 @@ import 'moltbook_connection_service.dart';
 import 'moltbook_external_effect_adapter.dart';
 
 class MoltbookPublicationService {
+  static const String personFirstRuntimeSubmoltName =
+      moltbookPersonFirstRuntimeSubmoltName;
+  static const String personFirstRuntimeSubmoltDisplayName =
+      moltbookPersonFirstRuntimeSubmoltDisplayName;
+  static const String personFirstRuntimeSubmoltDescription =
+      moltbookPersonFirstRuntimeSubmoltDescription;
   static const String defaultSubmolt = 'general';
   static const String replyActionClass = 'reply_draft';
   static final Map<String, Future<void>> _engagementTails =
@@ -119,6 +125,46 @@ class MoltbookPublicationService {
         canonicalPayloadJson: canonicalPayload,
       );
     });
+  }
+
+  Future<ExternalEffectOperation> preparePersonFirstRuntimeCommunity() async {
+    final binding = await _loadBinding();
+    if (binding == null) {
+      throw StateError(
+        'Connect a Moltbook account before creating a community',
+      );
+    }
+    if (!binding.isClaimed || !binding.isActive) {
+      throw StateError('Moltbook account must be claimed and active');
+    }
+    final ownerHex = _effects.activeOwnerCapsuleHex;
+    final canonicalPayload = jsonEncode(<String, dynamic>{
+      'schema_version': 1,
+      'name': personFirstRuntimeSubmoltName,
+      'display_name': personFirstRuntimeSubmoltDisplayName,
+      'description': personFirstRuntimeSubmoltDescription,
+    });
+    final semanticId =
+        sha256
+            .convert(
+              utf8.encode('$ownerHex\n${binding.accountId}\n$canonicalPayload'),
+            )
+            .toString();
+    final operationId = 'moltbook-submolt-$semanticId';
+    return _withEngagementLock(
+      '$ownerHex::submolt::$personFirstRuntimeSubmoltName',
+      () async {
+        _requireSameOwner(ownerHex);
+        return _effects.prepare(
+          operationId: operationId,
+          pluginId: moltbookAmbassadorPluginId,
+          providerId: MoltbookConnectionService.providerId,
+          accountBindingId: binding.accountId,
+          effectKind: MoltbookExternalEffectAdapter.submoltEffectKind,
+          canonicalPayloadJson: canonicalPayload,
+        );
+      },
+    );
   }
 
   Future<ExternalEffectOperation> prepareReply({
@@ -248,13 +294,17 @@ class MoltbookPublicationService {
   ) async {
     _validateMoltbookOperation(operation);
     await _assertNoReplyConflict(operation);
+    final approvalKind =
+        operation.effectKind == MoltbookExternalEffectAdapter.submoltEffectKind
+            ? 'permanent_community_creation'
+            : 'permanent_publication';
     final evidenceHash =
         sha256
             .convert(
               utf8.encode(
                 jsonEncode(<String, dynamic>{
                   'schema_version': 1,
-                  'approval_kind': 'permanent_publication',
+                  'approval_kind': approvalKind,
                   'operation_id': operation.operationId,
                   'provider_id': operation.providerId,
                   'account_binding_id': operation.accountBindingId,
@@ -386,6 +436,19 @@ class MoltbookPublicationService {
     return Map<String, dynamic>.from(decoded);
   }
 
+  static bool isPersonFirstRuntimeCommunityOperation(
+    ExternalEffectOperation operation,
+  ) {
+    if (operation.effectKind !=
+        MoltbookExternalEffectAdapter.submoltEffectKind) {
+      return false;
+    }
+    final payload = decodePayload(operation);
+    return payload['name'] == personFirstRuntimeSubmoltName &&
+        payload['display_name'] == personFirstRuntimeSubmoltDisplayName &&
+        payload['description'] == personFirstRuntimeSubmoltDescription;
+  }
+
   static String? succeededPostDraftHash(ExternalEffectOperation operation) {
     if (operation.state != ExternalEffectState.succeeded ||
         operation.effectKind != MoltbookExternalEffectAdapter.postEffectKind) {
@@ -427,6 +490,12 @@ class MoltbookPublicationService {
     if (operation.state != ExternalEffectState.succeeded ||
         receipt == null ||
         receipt.providerId != MoltbookConnectionService.providerId) {
+      return null;
+    }
+    if (!const <String>{
+      MoltbookExternalEffectAdapter.postEffectKind,
+      MoltbookExternalEffectAdapter.commentEffectKind,
+    }.contains(operation.effectKind)) {
       return null;
     }
     final payload = decodePayload(operation);
@@ -475,6 +544,7 @@ class MoltbookPublicationService {
         !const <String>{
           MoltbookExternalEffectAdapter.postEffectKind,
           MoltbookExternalEffectAdapter.commentEffectKind,
+          MoltbookExternalEffectAdapter.submoltEffectKind,
         }.contains(operation.effectKind)) {
       throw const FormatException('Operation is not a Moltbook publication');
     }
