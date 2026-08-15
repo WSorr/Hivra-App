@@ -22,6 +22,31 @@ import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
 import '../utils/peer_identity_format.dart';
 
+@visibleForTesting
+Future<String> runTradingIntentWithTerminalEvidence({
+  required Future<String> Function() pipeline,
+  required Future<void> Function(String source, String message) log,
+}) async {
+  final stopwatch = Stopwatch()..start();
+  var outcome = 'error:unhandled';
+  try {
+    await log('bingx.intent.tap', 'accepted=true');
+    outcome = await pipeline();
+    return outcome;
+  } catch (error) {
+    await log(
+      'bingx.intent.error',
+      '$error elapsedMs=${stopwatch.elapsedMilliseconds}',
+    );
+    rethrow;
+  } finally {
+    await log(
+      'bingx.intent.finally',
+      'outcome=$outcome elapsedMs=${stopwatch.elapsedMilliseconds}',
+    );
+  }
+}
+
 class TradingDroneScreen extends StatefulWidget {
   final AppRuntimeService? runtime;
 
@@ -1518,9 +1543,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _intentBlockingMessage = null;
       });
     }
-    await _module.uiLog.log('bingx.intent.tap', 'accepted=true');
     try {
-      await _runIntentPipeline();
+      await runTradingIntentWithTerminalEvidence(
+        pipeline: _runIntentPipeline,
+        log: _module.uiLog.log,
+      );
+    } catch (error) {
+      await _showSnack('Intent failed: $error', seconds: 3);
     } finally {
       if (mounted) {
         setState(() {
@@ -1538,10 +1567,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     });
   }
 
-  Future<void> _runIntentPipeline() async {
+  Future<String> _runIntentPipeline() async {
     if (!_droneEnabled) {
       await _showSnack('Drone is paused. Resume before running strategy.');
-      return;
+      return 'blocked:drone_paused';
     }
     final peerHex = _peerController.text.trim().toLowerCase();
     final symbol = _symbolController.text.trim();
@@ -1553,7 +1582,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     var clientOrderId = 'ui-ord-${DateTime.now().microsecondsSinceEpoch}';
     if (symbol.isEmpty) {
       await _showSnack('Symbol is required');
-      return;
+      return 'blocked:symbol_required';
     }
     final forceAutoZonePending = _orderType == 'limit';
     if (forceAutoZonePending &&
@@ -1588,7 +1617,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         forceConsensusSignable: peerHex.isEmpty,
         zoneEvaluationSide: _side,
       );
-      if (liveDecision == null) return;
+      if (liveDecision == null) return 'blocked:market_analysis_unavailable';
       final live = liveDecision;
       if (live.zoneLowDecimal != null && live.zoneHighDecimal != null) {
         if (mounted) {
@@ -1633,7 +1662,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               'live_hash=${live.liveDecisionHashHex.substring(0, 12)}',
         );
         await _showSnack(message, seconds: 4);
-        return;
+        return 'blocked:market_decision';
       }
       final liquidityEventId = live.liquidityEventId?.trim() ?? '';
       final latestClosedBar = live.latestClosedMicroBarAtUtc?.trim() ?? '';
@@ -1644,7 +1673,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           'symbol=$symbol message=liquidity_event_evidence_missing',
         );
         await _showSnack('Liquidity event evidence is unavailable', seconds: 4);
-        return;
+        return 'blocked:liquidity_event_evidence_missing';
       }
       clientOrderId = 'hivra-${liquidityEventId.substring(0, 32)}';
       if (mounted) {
@@ -1676,7 +1705,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _setIntentProgress('Sizing risk');
     final riskReady = await _applyRiskBudgetQuantity(symbol: symbol);
     if (!riskReady) {
-      return;
+      return 'blocked:risk_sizing';
     }
     final quantityDecimal = _quantityController.text.trim();
 
@@ -1730,7 +1759,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
 
     final stopwatch = Stopwatch()..start();
-    PluginHostApiStatus? finalStatus;
     try {
       await _module.uiLog.log(
         'bingx.intent.request',
@@ -1757,7 +1785,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     : 'Pair consensus attestation blocked'),
             seconds: 3,
           );
-          return;
+          return 'blocked:consensus_attestation';
         }
       }
 
@@ -1790,7 +1818,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           )
           .timeout(_hostIntentTimeout);
       final response = useCaseResult.response;
-      if (!mounted) return;
+      if (!mounted) return 'cancelled:screen_disposed';
       setState(() {
         _lastIntentResponse = response;
         _lastPreparedLiveDecision =
@@ -1802,7 +1830,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 ? null
                 : response.errorMessage ?? 'Intent was not prepared.';
       });
-      finalStatus = response.status;
       final decisionEnvelope = useCaseResult.decisionEnvelope;
       await _module.uiLog.log(
         'bingx.intent.response',
@@ -1849,6 +1876,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           await _showSnack(message, seconds: 4);
           break;
       }
+      return 'response:${response.status.name}';
     } on TimeoutException {
       await _module.uiLog.log(
         'bingx.intent.timeout',
@@ -1858,17 +1886,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'Intent host timeout (${_hostIntentTimeout.inSeconds}s)',
         seconds: 3,
       );
-    } catch (error) {
-      await _module.uiLog.log(
-        'bingx.intent.error',
-        '$error elapsedMs=${stopwatch.elapsedMilliseconds}',
-      );
-      await _showSnack('Intent failed: $error', seconds: 3);
-    } finally {
-      await _module.uiLog.log(
-        'bingx.intent.finally',
-        'elapsedMs=${stopwatch.elapsedMilliseconds} status=${finalStatus?.name ?? "none"}',
-      );
+      return 'timeout:host_intent';
     }
   }
 
