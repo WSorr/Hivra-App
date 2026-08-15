@@ -2944,7 +2944,20 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     remain sealed. No new DTO family, market-state owner, exchange adapter,
     execution route, Capsule/Core/Ledger path, VPS deployment, tag, or Release
     is authorized by this pass.
-  - Status: selected (2026-08-15). Implementation evidence is not yet claimed.
+  - Status: implementation merged (2026-08-15) at `d2797bf`; protected PR
+    `#79` and post-merge repository gates `31891306724` passed. Packaged smoke
+    found that the live BingX depth wire uses uppercase `T`, while the existing
+    adapter accepted only legacy timestamp aliases. The same adapter owner was
+    remediated at `79e0af4`; regression coverage, protected PR `#80`, and
+    post-merge repository gates `31892115092` passed. A fresh macOS Release
+    smoke artifact from `79e0af4`, build `1.0.3+100030037`, has SHA-256
+    `f1e5383752c04a85d6c90a2a5deb2b68c63b6f45e017968ba3dd05ca3203d7dd`.
+    A live production-adapter probe parsed the timestamped 20x20 public book,
+    and the existing snapshot builder produced non-empty bounded buy-side and
+    sell-side `liquidation_proxy` clusters without creating an exchange effect.
+    Automatic packaged UI signoff stopped at the macOS Keychain password
+    boundary and did not bypass Capsule authority. The pass remains open only
+    for packaged Trading diagnostics confirmation; no next pass is selected.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed

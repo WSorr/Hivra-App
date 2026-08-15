@@ -3,24 +3,29 @@
 Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: `1.x Trading Productization — Liquidity Confluence
-Observation` is selected as the first bounded pass toward a reference-grade,
-24/7-capable Trading Drone. The existing live snapshot builder remains the
-market-observation owner and the existing zone decision service remains the
-entry-zone owner. The pass must replace the single-largest-depth-level proxy
-with a bounded deterministic confluence map over public depth clusters,
-closed-candle structure, open-interest change, funding, and aggressive trade
-flow. Because BingX exposes public depth, trades, funding, and open interest but
-not a market-wide liquidation-position map, estimates must remain explicitly
-typed as proxies and cannot claim confirmed liquidation data. This pass may
-improve diagnostics, ranking, and target/activation context, but it cannot by
-itself authorize an exchange effect. Existing freshness, one-event/one-effect,
-risk, ownership, and reconciliation gates remain mandatory. Capsule material,
-root keys, local account state, trading credentials, background execution,
-Remote Runner deployment, a second effect path, v2, tags, and Releases remain
-blocked. The subsequent product sequence is local strategy evidence, a
-Capsule-owned bounded trading mandate, a headless runner reusing the canonical
-effect lifecycle, and only then explicitly scoped remote execution with lease,
-kill switch, risk ceilings, exact receipts, and reconciliation. `1.x Moltbook
+Observation` is implemented on `main` at `d2797bf`, with the BingX public-depth
+timestamp wire remediation merged at `79e0af4`. Protected PRs `#79` and `#80`
+and post-merge repository-gates runs `31891306724` and `31892115092` passed.
+The existing live snapshot builder remains the market-observation owner and the
+existing zone decision service remains the entry-zone owner. Public depth is
+now canonicalized into bounded deterministic `liquidation_proxy` clusters over
+closed-candle structure, open-interest change, funding, and aggressive flow;
+proxy-only evidence still cannot authorize an exchange effect. A fresh macOS
+Release-smoke artifact from `79e0af4`, build `1.0.3+100030037`, has SHA-256
+`f1e5383752c04a85d6c90a2a5deb2b68c63b6f45e017968ba3dd05ca3203d7dd`.
+The production adapter and snapshot builder were exercised against the live
+BingX public wire and returned a timestamped 20x20 book plus non-empty bounded
+buy-side and sell-side proxy clusters. Final packaged Trading diagnostics
+signoff remains pending because automatic Capsule activation stopped at the
+macOS Keychain password boundary; that credential gate was not bypassed. No
+next trading pass is selected until the packaged diagnostic is confirmed.
+Capsule material, root keys, local account state, trading credentials,
+background execution, Remote Runner deployment, a second effect path, v2,
+tags, and Releases remain blocked. The subsequent product sequence remains
+local strategy evidence, a Capsule-owned bounded trading mandate, a headless
+runner reusing the canonical effect lifecycle, and only then explicitly scoped
+remote execution with lease, kill switch, risk ceilings, exact receipts, and
+reconciliation. `1.x Moltbook
 Person-First Runtime Community Bootstrap` is complete on `main` at
 `dc15de9`. Protected PR `#75` and post-merge repository-gates run
 `31881796780` passed. Packaged macOS Hands smoke used source `dc15de9`, Release
