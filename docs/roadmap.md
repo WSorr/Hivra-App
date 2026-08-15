@@ -3010,8 +3010,17 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Removed or sealed: process-local default enablement is removed. No new
     service, mandate DTO, effect path, Core/Ledger fact, plugin ABI, live order,
     background execution, Remote Runner/VPS, tag, or Release is authorized.
-  - Status: implementation and protected CI pending (2026-08-15). No following
-    product pass is selected automatically.
+  - Status: complete on `main` at `4d2f09f` (2026-08-15). Protected PR `#88`,
+    required branch gates, and post-merge run `31904504430` passed. Same-source
+    smoke-only Release build `1.0.3+100030041` proved Android enable and pause
+    persistence across separate cold restarts and left the Capsule paused;
+    macOS restored the paused state after a cold process restart and explicit
+    Keychain authorization. Source was `4d2f09f`; macOS executable SHA-256 was
+    `6a8e82254649fb3f532b1d7190309e287d9c2dd1fb2b56b4e056402d07de1e90`
+    and Android APK SHA-256 was
+    `01303b706745ce4d9ef7e2df4a3e696872f8194c4f169047116b618ecf121027`.
+    No provider effect, tag, or Release was created. No following product pass
+    is selected automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
