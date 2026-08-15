@@ -2955,9 +2955,13 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     A live production-adapter probe parsed the timestamped 20x20 public book,
     and the existing snapshot builder produced non-empty bounded buy-side and
     sell-side `liquidation_proxy` clusters without creating an exchange effect.
-    Automatic packaged UI signoff stopped at the macOS Keychain password
-    boundary and did not bypass Capsule authority. The pass remains open only
-    for packaged Trading diagnostics confirmation; no next pass is selected.
+    Packaged macOS Hands diagnostics subsequently crossed the Keychain boundary
+    through explicit user authorization, loaded the Capsule-scoped credentials,
+    restored zero managed orders, and ran only the canonical `Run Intent` path.
+    The decision projected `sellside:63095.00068126` and
+    `buyside:63086.7100533`, returned `noSignal` because the deterministic trade
+    and session-delta gates failed, and created no exchange effect. Status:
+    complete. No next pass is selected pending a short consolidation review.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
