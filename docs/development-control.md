@@ -2,20 +2,19 @@
 
 Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Moltbook Bundled Public Change Draft Binding`
-remediates the packaged Hands-smoke finding on branch
-`fix/moltbook-public-change-draft-binding`. Manifest ingestion and Gemini
-proposal succeeded from source `4699624`, but the screen retained its manual
-`development-note` bulletin id instead of projecting the queued change's exact
-source id and category. The existing screen now projects those fields, and the
-existing runtime module rejects a mismatched commitment-bound request before
-WASM execution while retaining its post-execution race check. Credentials,
-feed, draft, effect, publication, plugin ABI, and Capsule owners are unchanged;
-no external effect occurred. Exit requires regression tests, full local and
-clean-checkout gates, protected PR and post-merge CI, then a fresh packaged
-Hands smoke proving the same queued change reaches one durable WASM draft with
-no publication. Automatic publication, destination routing changes,
-background execution, tags, and Releases remain blocked. `1.x Chat Contact Selection
+Current development focus: no next product pass is selected. `1.x Moltbook
+Bundled Public Change Ingestion` and its draft-binding remediation are complete
+on `main` at `c3949bf`. Protected PRs `#71` and `#72`, green post-merge gates,
+and packaged macOS Hands smoke from source `c3949bf`, build
+`1.0.3+100030033`, prove that the bundled Chat change entered the existing
+Capsule feed, Gemini proposed it, and the installed WASM package prepared one
+durable commitment-bound draft using the exact queued source id and category.
+The feed records draft hash
+`608238ba90b6b7e191163d79c2180f46dbd66730d2f3f861ea1fa92d86989c2f`.
+No publication or other external effect occurred. Credentials, feed, draft,
+effect, publication, plugin ABI, and Capsule owners remain unchanged.
+Automatic publication, destination routing changes, background execution,
+tags, Releases, Remote Runner/VPS, and v2 remain blocked. `1.x Chat Contact Selection
 Projection` remains complete on `main` at `c56213f`. The existing Chat
 `TextEditingController` remains the sole selected-peer owner, and the workspace
 now observes that controller directly instead of waiting for an unrelated
