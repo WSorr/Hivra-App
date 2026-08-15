@@ -116,6 +116,45 @@ void main() {
     );
   });
 
+  test('only confirmed authorization rejection permits exact reauthorization', () {
+    expect(
+      MoltbookPublicationService.canReauthorizeRejectedDelivery(
+        _operation(
+          state: ExternalEffectState.terminalFailure,
+          lastErrorCode: 'credential_rejected',
+          withReceipt: false,
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      MoltbookPublicationService.canReauthorizeRejectedDelivery(
+        _operation(
+          state: ExternalEffectState.terminalFailure,
+          lastErrorCode: 'permission_rejected',
+          withReceipt: false,
+        ),
+      ),
+      isTrue,
+    );
+    for (final errorCode in <String>[
+      'submolt_conflict',
+      'timeout',
+      'receipt_not_observed',
+    ]) {
+      expect(
+        MoltbookPublicationService.canReauthorizeRejectedDelivery(
+          _operation(
+            state: ExternalEffectState.terminalFailure,
+            lastErrorCode: errorCode,
+            withReceipt: false,
+          ),
+        ),
+        isFalse,
+      );
+    }
+  });
+
   test('succeeded exact post seals a duplicate terminal failure', () {
     final succeeded = _postOperation(
       operationId: 'moltbook-post-succeeded',

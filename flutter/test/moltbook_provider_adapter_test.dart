@@ -455,6 +455,21 @@ void main() {
     );
   });
 
+  test('distinguishes permission rejection from invalid credentials', () async {
+    final adapter = MoltbookProviderAdapter(
+      send:
+          (_) async => _jsonResponse(<String, dynamic>{
+            'success': false,
+            'error': 'Forbidden',
+          }, statusCode: 403),
+    );
+
+    await expectLater(
+      adapter.observeAccount('valid-but-forbidden-key'),
+      throwsA(_providerError('permission_rejected', retryable: false)),
+    );
+  });
+
   test('maps rate limit with retry-after to retryable failure', () async {
     final adapter = MoltbookProviderAdapter(
       send:

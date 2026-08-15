@@ -95,10 +95,16 @@ unresolved -> reconcile -> succeeded | terminal_failure | unresolved
 unresolved -> reconcile(not_found) -> queued
 unresolved(required_action) -> explicit response -> succeeded | terminal_failure | unresolved
 prepared | approved | queued -> cancelled
+terminal_failure(confirmed authorization rejection)
+  -> explicit exact reauthorization -> queued
 ```
 
-`succeeded`, `terminal_failure`, and `cancelled` are terminal. Only
-`succeeded` may contain a receipt.
+`succeeded` and `cancelled` are terminal. `terminal_failure` is terminal except
+for an explicit exact reauthorization after a confirmed `401` credential
+rejection or `403` permission rejection. That bounded exception retains the
+same operation id, payload, account binding, approval evidence, and attempt
+history; timeout, missing receipt, not-found observation, descriptor conflict,
+and unknown outcomes remain sealed. Only `succeeded` may contain a receipt.
 
 Approval is bound to an immutable evidence hash. Repeating approval with
 different evidence fails closed. Reusing an operation id with different
@@ -128,7 +134,10 @@ provider, account binding, effect kind, or payload hash also fails closed.
 10. Required-action tokens are never logged or exposed as UI state. The
     adapter consumes the persisted action, and success still requires matching
     remote evidence rather than a successful challenge response alone.
-11. Once the provider accepts a required action, that action is cleared even
+11. A confirmed authorization rejection may be requeued only by a new explicit
+    user acknowledgement of the exact immutable effect. The existing operation
+    is reused; no replacement operation or blind provider retry is permitted.
+12. Once the provider accepts a required action, that action is cleared even
     when its resulting receipt is not immediately observable. The operation
     remains unresolved and reconciliation-only; expiry of the completed action
     cannot turn it into failure or authorize another delivery.

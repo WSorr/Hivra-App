@@ -162,6 +162,53 @@ class ExternalEffectService {
     );
   }
 
+  Future<ExternalEffectOperation> reauthorizeRejectedDelivery({
+    required String pluginId,
+    required String operationId,
+    required String approvalEvidenceHashHex,
+  }) {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(approvalEvidenceHashHex)) {
+      throw const FormatException(
+        'approvalEvidenceHashHex must be 64 lowercase hex',
+      );
+    }
+    final ownerHex = _requireActiveOwner();
+    return _transition(
+      ownerHex: ownerHex,
+      pluginId: pluginId,
+      operationId: operationId,
+      allowedStates: const <ExternalEffectState>{
+        ExternalEffectState.terminalFailure,
+      },
+      idempotentStates: const <ExternalEffectState>{},
+      update: (current) {
+        if (!const <String>{
+          'credential_rejected',
+          'permission_rejected',
+        }.contains(current.lastErrorCode)) {
+          throw StateError(
+            'External effect failure is not a confirmed rejected delivery',
+          );
+        }
+        if (current.receipt != null ||
+            current.requiredAction != null ||
+            current.attemptCount < 1) {
+          throw StateError(
+            'Rejected delivery evidence is incomplete or conflicting',
+          );
+        }
+        if (current.approvalEvidenceHashHex != approvalEvidenceHashHex) {
+          throw StateError('External effect approval evidence changed');
+        }
+        return _copy(
+          current,
+          state: ExternalEffectState.queued,
+          clearError: true,
+        );
+      },
+    );
+  }
+
   Future<ExternalEffectOperation> cancel({
     required String pluginId,
     required String operationId,

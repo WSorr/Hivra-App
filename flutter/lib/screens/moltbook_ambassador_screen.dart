@@ -1131,7 +1131,10 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
         return;
       }
       var executable = operation;
-      if (operation.state == ExternalEffectState.prepared) {
+      if (operation.state == ExternalEffectState.prepared ||
+          MoltbookPublicationService.canReauthorizeRejectedDelivery(
+            operation,
+          )) {
         final approved = await showMoltbookPersonFirstRuntimeCommunityApproval(
           context,
         );

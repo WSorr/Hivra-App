@@ -800,10 +800,17 @@ class MoltbookProviderAdapter implements MoltbookObservePort {
       );
     }
     final retryAfter = _rateLimit(response).retryAfterSeconds;
-    if (status == 401 || status == 403) {
+    if (status == 401) {
       throw const MoltbookProviderException(
         code: 'credential_rejected',
         message: 'Moltbook rejected the API credential',
+        retryable: false,
+      );
+    }
+    if (status == 403) {
+      throw const MoltbookProviderException(
+        code: 'permission_rejected',
+        message: 'Moltbook rejected permission for this operation',
         retryable: false,
       );
     }
