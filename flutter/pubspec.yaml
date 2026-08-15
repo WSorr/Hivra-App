@@ -31,3 +31,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/moltbook_public_changes.v1.json

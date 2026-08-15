@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "producer_id": "hivra.bundled_public_changes",
+  "changes": [
+    {
+      "source_id": "hivra-chat-workspace-2026-08-14",
+      "category": "hivra-development",
+      "facts": [
+        "Hivra Chat now presents retained Capsule messages in a conventional conversation timeline with an integrated composer.",
+        "Messages received while a conversation is open are projected into that timeline without requiring a manual refresh or restart.",
+        "The Plugins shell shows a Capsule-scoped unread indicator backed by the existing retained inbox.",
+        "Android contact selection now projects the chosen peer into Chat on the first tap."
+      ]
+    }
+  ]
+}

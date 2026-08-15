@@ -122,8 +122,13 @@ pending through inference and review and becomes drafted only after the
 existing ambassador WASM preserves the exact reviewed title/body and the
 existing draft store durably records the canonical draft hash. Publication
 still requires the existing approval, external-effect, challenge, receipt, and
-reconciliation lifecycle. A provider or future Git/CI producer may enqueue
-facts only through this ingestion contract; it gains no publication authority.
+reconciliation lifecycle. The application may import a bounded, reviewed
+build-time manifest when the Moltbook workspace opens. The manifest parser is
+strict and atomic, and only items matching the Capsule's existing allowed-topic
+policy are ingested. This producer reads neither Git nor runtime Capsule data,
+and gains no draft, approval, effect, or publication authority. Any future
+provider or CI producer must use the same ingestion contract rather than create
+a second feed.
 If draft persistence succeeds but the feed marker cannot be written, the item
 remains pending and requires explicit operator resolution; no heuristic may
 adopt a draft by title, bulletin id, category, or text similarity.

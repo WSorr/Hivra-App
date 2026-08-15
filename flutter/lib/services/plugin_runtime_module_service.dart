@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
+
 import '../models/capsule_chat_models.dart';
 import '../models/external_effect_models.dart';
 import '../models/moltbook_ambassador_models.dart';
@@ -85,6 +87,7 @@ class PluginRuntimeModule {
   final CapsuleFileStore _fileStore;
   final CapsuleScopedSecretVault _secretVault;
   final String? Function() _readActiveCapsuleRootHex;
+  final Future<String> Function() _loadMoltbookPublicChangeManifest;
   PluginRuntimeModule({
     required this.registry,
     required this.sourceCatalog,
@@ -107,10 +110,14 @@ class PluginRuntimeModule {
     required CapsuleFileStore fileStore,
     required CapsuleScopedSecretVault secretVault,
     required String? Function() readActiveCapsuleRootHex,
+    Future<String> Function()? loadMoltbookPublicChangeManifest,
   }) : _ambassadorConfiguration = ambassadorConfiguration,
        _fileStore = fileStore,
        _secretVault = secretVault,
-       _readActiveCapsuleRootHex = readActiveCapsuleRootHex;
+       _readActiveCapsuleRootHex = readActiveCapsuleRootHex,
+       _loadMoltbookPublicChangeManifest =
+           loadMoltbookPublicChangeManifest ??
+           _loadBundledMoltbookPublicChangeManifest;
 
   bool get isMoltbookAiSessionUnlocked =>
       moltbookPublicBulletinAi.isSessionUnlocked;
@@ -186,6 +193,15 @@ class PluginRuntimeModule {
 
   Future<List<MoltbookPublicChange>> loadMoltbookPublicChanges() =>
       moltbookPublicChanges.load();
+
+  Future<List<MoltbookPublicChange>>
+  ingestBundledMoltbookPublicChanges() async {
+    final configuration = await _ambassadorConfiguration.load();
+    return moltbookPublicChanges.ingestManifest(
+      await _loadMoltbookPublicChangeManifest(),
+      allowedTopics: configuration.allowedTopics.toSet(),
+    );
+  }
 
   Future<MoltbookPublicChange> recordMoltbookPublicChange({
     required String sourceId,
@@ -1761,6 +1777,9 @@ class PluginRuntimeModule {
     );
   }
 }
+
+Future<String> _loadBundledMoltbookPublicChangeManifest() => rootBundle
+    .loadString('assets/moltbook_public_changes.v1.json', cache: false);
 
 class PluginRuntimeModuleService {
   static final MoltbookCycleTriggerService _moltbookCycleTriggers =
