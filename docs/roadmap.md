@@ -2942,8 +2942,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     replay tests, full local and clean-checkout gates, protected PR/post-merge
     CI, and packaged Hands smoke through proposal and WASM draft without an
     external effect.
-  - Status: active (2026-08-15); destination routing remains a separate later
-    product decision and Remote Runner/VPS and v2 remain frozen.
+  - Status: remediation active (2026-08-15). Protected PR `#71`, merge source
+    `4699624`, and post-merge repository gates passed, and packaged macOS Hands
+    smoke proved ingestion and Gemini proposal. Draft preparation then failed
+    because the screen retained the manual `development-note` bulletin id
+    instead of the queued source id. The bounded remediation projects the exact
+    queued source/category and rejects mismatch before WASM invocation; it adds
+    no owner, DTO, credential, plugin ABI, publication, or effect path.
+    Destination routing remains a separate later product decision and Remote
+    Runner/VPS and v2 remain frozen.
 
 - `1.x Capsule AI single-prompt unlock remediation`
   - Finding: packaged macOS Release smoke from `0440e92` proved the complete

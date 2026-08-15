@@ -10,6 +10,22 @@ import '../services/moltbook_publication_service.dart';
 import '../services/moltbook_public_change_feed_store.dart';
 import '../services/plugin_runtime_module_service.dart';
 
+void bindMoltbookPublicChangeProposal({
+  required MoltbookPublicChange change,
+  required MoltbookPublicBulletinProposal proposal,
+  required TextEditingController bulletinIdController,
+  required TextEditingController categoryController,
+  required TextEditingController titleController,
+  required TextEditingController bodyController,
+  required TextEditingController factsController,
+}) {
+  bulletinIdController.text = change.sourceId;
+  categoryController.text = change.category;
+  titleController.text = proposal.title;
+  bodyController.text = proposal.body;
+  factsController.text = proposal.facts.join('\n');
+}
+
 class MoltbookAmbassadorScreen extends StatefulWidget {
   final PluginRuntimeModule module;
 
@@ -947,9 +963,15 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
       setState(() {
         _activePublicChangeCommitmentHashHex = change.commitmentHashHex;
         _publicBulletinProposal = proposal;
-        _titleHintController.text = proposal.title;
-        _reviewedBodyController.text = proposal.body;
-        _factsController.text = proposal.facts.join('\n');
+        bindMoltbookPublicChangeProposal(
+          change: change,
+          proposal: proposal,
+          bulletinIdController: _bulletinIdController,
+          categoryController: _categoryController,
+          titleController: _titleHintController,
+          bodyController: _reviewedBodyController,
+          factsController: _factsController,
+        );
         _draftPreview = null;
       });
       _showNotice(
