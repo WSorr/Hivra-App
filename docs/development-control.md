@@ -2,32 +2,17 @@
 
 Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Productization — Liquidity Confluence
-Observation` is implemented on `main` at `d2797bf`, with the BingX public-depth
-timestamp wire remediation merged at `79e0af4`. Protected PRs `#79` and `#80`
-and post-merge repository-gates runs `31891306724` and `31892115092` passed.
-The existing live snapshot builder remains the market-observation owner and the
-existing zone decision service remains the entry-zone owner. Public depth is
-now canonicalized into bounded deterministic `liquidation_proxy` clusters over
-closed-candle structure, open-interest change, funding, and aggressive flow;
-proxy-only evidence still cannot authorize an exchange effect. A fresh macOS
-Release-smoke artifact from `79e0af4`, build `1.0.3+100030037`, has SHA-256
-`f1e5383752c04a85d6c90a2a5deb2b68c63b6f45e017968ba3dd05ca3203d7dd`.
-The production adapter and snapshot builder were exercised against the live
-BingX public wire and returned a timestamped 20x20 book plus non-empty bounded
-buy-side and sell-side proxy clusters. Packaged macOS Hands diagnostics then
-activated the Capsule through the system Keychain boundary, restored zero
-managed orders, and ran the canonical `Run Intent` path. The live decision
-projected `sellside:63095.00068126` and `buyside:63086.7100533`, returned
-`noSignal`, and created no exchange effect. The pass is complete; no next
-trading pass is selected pending a short consolidation review.
-Capsule material, root keys, local account state, trading credentials,
-background execution, Remote Runner deployment, a second effect path, v2,
-tags, and Releases remain blocked. The subsequent product sequence remains
-local strategy evidence, a Capsule-owned bounded trading mandate, a headless
-runner reusing the canonical effect lifecycle, and only then explicitly scoped
-remote execution with lease, kill switch, risk ceilings, exact receipts, and
-reconciliation. `1.x Moltbook
+Current development focus: `1.x Trading Productization — Local Strategy
+Lifecycle Evidence` is selected. No new runtime owner is authorized: the
+existing live-strategy, plugin-intent, risk, execution-queue, managed-order, and
+exchange-execution owners must prove one canonical local cycle from observation
+through deterministic decision and a test-order receipt, plus blocked,
+replayed, restarted, and reconciled outcomes. `BingxFuturesExchangeExecutionUseCaseService`
+remains the sole exchange-effect owner. Live orders, background execution,
+Remote Runner/VPS, a bounded mandate, new DTO/service/effect paths, v2, tags,
+and Releases remain blocked. The preceding Liquidity Confluence Observation is
+complete; its implementation, wire remediation, packaged diagnostics, and
+proxy evidence are recorded in `roadmap.md`. `1.x Moltbook
 Person-First Runtime Community Bootstrap` is complete on `main` at
 `dc15de9`. Protected PR `#75` and post-merge repository-gates run
 `31881796780` passed. Packaged macOS Hands smoke used source `dc15de9`, Release

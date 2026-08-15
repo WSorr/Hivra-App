@@ -2963,6 +2963,27 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     and session-delta gates failed, and created no exchange effect. Status:
     complete. No next pass is selected pending a short consolidation review.
 
+- `1.x Trading Local Strategy Lifecycle Evidence`
+  - Lane: maintained 1.x product completion; this is evidence and bounded
+    remediation of the existing local path, not a new strategy or runtime.
+  - Invariant: one prepared strategy intent traverses the existing decision,
+    host, risk, queue, exchange, receipt, tracking, and reconciliation owners;
+    replay or restart cannot create a second semantic effect.
+  - Sole effect owner: `BingxFuturesExchangeExecutionUseCaseService`; the screen
+    remains an action/projection surface and cannot own an alternate effect.
+  - Threat model: changed decision/bar/event, stale zone, risk rejection,
+    transient ambiguity, duplicate action, restart, missing receipt, unrelated
+    manual order, and Capsule switch must fail closed or remain unresolved.
+  - Exit evidence: the existing adverse suites pass as one focused matrix;
+    packaged macOS diagnostics capture decision and execution hashes for a
+    test-order receipt; restart/reconciliation preserves the same ownership and
+    effect count; Android parity is assessed before closure.
+  - Removed or sealed: stale checklist ambiguity is removed. Live orders,
+    background execution, Remote Runner/VPS, mandate design, new DTO/service,
+    second exchange route, Core/Ledger writes, plugin ABI changes, tags, and
+    Releases remain sealed.
+  - Status: selected (2026-08-15). No implementation evidence is claimed yet.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
