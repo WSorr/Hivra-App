@@ -2,17 +2,18 @@
 
 Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Productization — Local Strategy
-Lifecycle Evidence` is selected. No new runtime owner is authorized: the
-existing live-strategy, plugin-intent, risk, execution-queue, managed-order, and
-exchange-execution owners must prove one canonical local cycle from observation
-through deterministic decision and a test-order receipt, plus blocked,
-replayed, restarted, and reconciled outcomes. `BingxFuturesExchangeExecutionUseCaseService`
-remains the sole exchange-effect owner. Live orders, background execution,
-Remote Runner/VPS, a bounded mandate, new DTO/service/effect paths, v2, tags,
-and Releases remain blocked. The preceding Liquidity Confluence Observation is
-complete; its implementation, wire remediation, packaged diagnostics, and
-proxy evidence are recorded in `roadmap.md`. `1.x Moltbook
+Current development focus: no next product pass is selected. `1.x Trading
+Productization — Local Strategy Lifecycle Evidence` is complete on `main` at
+`e25b1e0`. The existing live-strategy, plugin-intent, risk, execution-queue,
+managed-order, and exchange-execution owners proved one canonical local cycle:
+packaged macOS diagnostics captured a successful test-order receipt, stable
+semantic freshness, persisted ownership evidence, cold-restart reconciliation,
+and no duplicate provider effect; the same Android package loaded the Trading
+Drone, fetched 1,039 perpetual markets, rejected a paused intent before any
+effect, and restarted without adopting an unrelated order. No new runtime owner
+or route was added. Live orders, background execution, Remote Runner/VPS, a
+bounded mandate, new DTO/service/effect paths, v2, tags, and Releases remain
+blocked. `1.x Moltbook
 Person-First Runtime Community Bootstrap` is complete on `main` at
 `dc15de9`. Protected PR `#75` and post-merge repository-gates run
 `31881796780` passed. Packaged macOS Hands smoke used source `dc15de9`, Release
