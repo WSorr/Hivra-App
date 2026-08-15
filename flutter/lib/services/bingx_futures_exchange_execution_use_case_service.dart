@@ -86,7 +86,8 @@ class BingxFuturesExchangeExecutionUseCaseService {
           !fresh.canPrepareIntent ||
           fresh.liquidityEventId != liquidityEventId ||
           fresh.latestClosedMicroBarAtUtc != preparedBar ||
-          fresh.liveDecisionHashHex != preparedDecision!.liveDecisionHashHex ||
+          fresh.zoneLowDecimal != preparedDecision!.zoneLowDecimal ||
+          fresh.zoneHighDecimal != preparedDecision.zoneHighDecimal ||
           fresh.side != payload.side ||
           fresh.zoneSide != rawIntentResult['zone_side']?.toString().trim()) {
         return _result(
