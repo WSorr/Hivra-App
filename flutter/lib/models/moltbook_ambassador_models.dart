@@ -9,6 +9,15 @@ final RegExp _unsafePublicTextControls = RegExp(
   r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]',
 );
 
+const String moltbookPersonFirstRuntimeSubmoltName = 'person-first-runtime';
+const String moltbookPersonFirstRuntimeSubmoltDisplayName =
+    'Person-First Runtime';
+const String moltbookPersonFirstRuntimeSubmoltDescription =
+    'Architecture where the person—not an application or AI agent—is the '
+    'primary execution context. Identity, relationships, rules, history, '
+    'capabilities, and continuity remain person-owned, while apps and agents '
+    'stay replaceable.';
+
 bool _containsUnsafePublicTextControls(String value) =>
     _unsafePublicTextControls.hasMatch(value);
 

@@ -269,6 +269,84 @@ void main() {
       );
     });
 
+    test(
+      'PFR community creation is exact, replay-safe, and Capsule scoped',
+      () async {
+        final concurrent = await Future.wait(<Future<ExternalEffectOperation>>[
+          publications.preparePersonFirstRuntimeCommunity(),
+          publications.preparePersonFirstRuntimeCommunity(),
+        ]);
+        final first = concurrent.first;
+        final repeated = concurrent.last;
+        final restarted = _publications(
+          _effects(files, () => activeRoot),
+          binding,
+        );
+        final restored = await restarted.preparePersonFirstRuntimeCommunity();
+
+        expect(repeated.operationId, first.operationId);
+        expect(restored.operationId, first.operationId);
+        expect(
+          first.effectKind,
+          MoltbookExternalEffectAdapter.submoltEffectKind,
+        );
+        expect(MoltbookPublicationService.decodePayload(first), {
+          'schema_version': 1,
+          'name': MoltbookPublicationService.personFirstRuntimeSubmoltName,
+          'display_name':
+              MoltbookPublicationService.personFirstRuntimeSubmoltDisplayName,
+          'description':
+              MoltbookPublicationService.personFirstRuntimeSubmoltDescription,
+        });
+        expect(
+          MoltbookPublicationService.isPersonFirstRuntimeCommunityOperation(
+            first,
+          ),
+          isTrue,
+        );
+        final queued = await publications.approveAndQueue(first);
+        final expectedApprovalHash =
+            sha256
+                .convert(
+                  utf8.encode(
+                    jsonEncode(<String, dynamic>{
+                      'schema_version': 1,
+                      'approval_kind': 'permanent_community_creation',
+                      'operation_id': first.operationId,
+                      'provider_id': first.providerId,
+                      'account_binding_id': first.accountBindingId,
+                      'payload_hash_hex': first.payloadHashHex,
+                      'permanence_acknowledged': true,
+                    }),
+                  ),
+                )
+                .toString();
+        expect(queued.state, ExternalEffectState.queued);
+        expect(queued.approvalEvidenceHashHex, expectedApprovalHash);
+        expect((await restarted.list()), hasLength(1));
+
+        final renamedAccount = _publications(
+          _effects(files, () => activeRoot),
+          MoltbookConnectionBinding(
+            accountId: binding.accountId,
+            accountName: 'RenamedAgent',
+            isClaimed: binding.isClaimed,
+            isActive: binding.isActive,
+            verifiedAtUtc: binding.verifiedAtUtc,
+          ),
+        );
+        final afterRename =
+            await renamedAccount.preparePersonFirstRuntimeCommunity();
+        expect(afterRename.operationId, first.operationId);
+
+        activeRoot = _ownerB;
+        final anotherCapsule =
+            await restarted.preparePersonFirstRuntimeCommunity();
+        expect(anotherCapsule.operationId, isNot(first.operationId));
+        expect((await restarted.list()), hasLength(1));
+      },
+    );
+
     test('different prose cannot create a second active reply', () async {
       await publications.prepareReply(draft: _draft('first'));
 

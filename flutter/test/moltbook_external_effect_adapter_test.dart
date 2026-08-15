@@ -7,6 +7,7 @@ import 'package:hivra_app/models/external_effect_models.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/services/capsule_scoped_secret_vault.dart';
 import 'package:hivra_app/services/moltbook_external_effect_adapter.dart';
+import 'package:hivra_app/services/moltbook_publication_service.dart';
 import 'package:hivra_app/services/moltbook_provider_adapter.dart';
 
 void main() {
@@ -83,6 +84,170 @@ void main() {
       'parent_id': 'comment-1',
     });
   });
+
+  test(
+    'creates exact PFR community and verifies ownership by observation',
+    () async {
+      final requests = <MoltbookHttpRequest>[];
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (request) async {
+            requests.add(request);
+            if (request.method == 'POST') {
+              return _jsonResponse(<String, dynamic>{
+                'success': true,
+                'submolt': <String, dynamic>{'id': 'submolt-1'},
+              });
+            }
+            return _submoltResponse();
+          },
+        ),
+        clock: () => DateTime.utc(2026, 8, 15, 9),
+      );
+
+      final result = await adapter.deliver(_submoltRequest());
+
+      expect(result.status, ExternalEffectAdapterStatus.succeeded);
+      expect(result.receipt?.providerReceiptId, 'submolt-1');
+      expect(requests, hasLength(2));
+      expect(requests.first.method, 'POST');
+      expect(requests.first.uri.path, '/api/v1/submolts');
+      expect(jsonDecode(utf8.decode(requests.first.bodyBytes!)), {
+        'name': MoltbookPublicationService.personFirstRuntimeSubmoltName,
+        'display_name':
+            MoltbookPublicationService.personFirstRuntimeSubmoltDisplayName,
+        'description':
+            MoltbookPublicationService.personFirstRuntimeSubmoltDescription,
+      });
+      expect(requests.last.uri.path, '/api/v1/submolts/person-first-runtime');
+    },
+  );
+
+  test(
+    'PFR community reconciliation blocks recreation when not observable',
+    () async {
+      var requests = 0;
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (_) async {
+            requests++;
+            return _httpResponse(404, <String, dynamic>{
+              'success': false,
+              'error': 'Not Found',
+            });
+          },
+        ),
+      );
+
+      final result = await adapter.reconcile(_submoltRequest());
+
+      expect(result.status, ExternalEffectAdapterStatus.unresolved);
+      expect(result.errorCode, 'receipt_not_observed');
+      expect(requests, 1);
+    },
+  );
+
+  test(
+    'timed out PFR creation recovers by observation without another POST',
+    () async {
+      var postRequests = 0;
+      var getRequests = 0;
+      var created = false;
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          requestTimeout: const Duration(milliseconds: 1),
+          send: (request) async {
+            if (request.method == 'POST') {
+              postRequests++;
+              created = true;
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+              return _jsonResponse(<String, dynamic>{
+                'success': true,
+                'submolt': <String, dynamic>{'id': 'submolt-1'},
+              });
+            }
+            getRequests++;
+            expect(created, isTrue);
+            return _submoltResponse();
+          },
+        ),
+      );
+
+      final delivery = await adapter.deliver(_submoltRequest());
+      expect(delivery.status, ExternalEffectAdapterStatus.unresolved);
+      expect(delivery.errorCode, 'timeout');
+
+      final reconciliation = await adapter.reconcile(_submoltRequest());
+
+      expect(reconciliation.status, ExternalEffectAdapterStatus.succeeded);
+      expect(reconciliation.receipt?.providerReceiptId, 'submolt-1');
+      expect(postRequests, 1);
+      expect(getRequests, 1);
+    },
+  );
+
+  test(
+    'PFR community never adopts a conflicting owner or descriptor',
+    () async {
+      for (final response in <Map<String, dynamic>>[
+        _submoltBody(creatorId: 'another-account'),
+        _submoltBody(name: 'person-owned-runtime'),
+        _submoltBody(description: 'A different community.'),
+      ]) {
+        final adapter = MoltbookExternalEffectAdapter(
+          secretVault: vault,
+          provider: MoltbookProviderAdapter(
+            send: (_) async => _jsonResponse(response),
+          ),
+        );
+
+        final result = await adapter.reconcile(_submoltRequest());
+
+        expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
+        expect(result.errorCode, 'submolt_conflict');
+        expect(result.receipt, isNull);
+      }
+    },
+  );
+
+  test(
+    'community adapter rejects any non-PFR descriptor before network',
+    () async {
+      var networkCalls = 0;
+      final base = _submoltRequest();
+      final decoded =
+          jsonDecode(base.canonicalPayloadJson) as Map<String, dynamic>;
+      decoded['name'] = 'generic-community';
+      final adapter = MoltbookExternalEffectAdapter(
+        secretVault: vault,
+        provider: MoltbookProviderAdapter(
+          send: (_) async {
+            networkCalls++;
+            return _jsonResponse(const <String, dynamic>{});
+          },
+        ),
+      );
+      final request = ExternalEffectAdapterRequest(
+        ownerCapsuleHex: base.ownerCapsuleHex,
+        operationId: base.operationId,
+        pluginId: base.pluginId,
+        providerId: base.providerId,
+        accountBindingId: base.accountBindingId,
+        effectKind: base.effectKind,
+        canonicalPayloadJson: jsonEncode(decoded),
+        payloadHashHex: base.payloadHashHex,
+      );
+
+      final result = await adapter.deliver(request);
+
+      expect(result.status, ExternalEffectAdapterStatus.terminalFailure);
+      expect(result.errorCode, 'invalid_effect_payload');
+      expect(networkCalls, 0);
+    },
+  );
 
   test('accepts a target-bound v2 reply payload', () async {
     final adapter = MoltbookExternalEffectAdapter(
@@ -685,6 +850,28 @@ ExternalEffectAdapterRequest _commentRequest({int schemaVersion = 1}) {
   );
 }
 
+ExternalEffectAdapterRequest _submoltRequest() {
+  final payload = jsonEncode(<String, dynamic>{
+    'schema_version': 1,
+    'name': MoltbookPublicationService.personFirstRuntimeSubmoltName,
+    'display_name':
+        MoltbookPublicationService.personFirstRuntimeSubmoltDisplayName,
+    'description':
+        MoltbookPublicationService.personFirstRuntimeSubmoltDescription,
+  });
+  return ExternalEffectAdapterRequest(
+    ownerCapsuleHex: _owner,
+    operationId: 'submolt-1',
+    pluginId: moltbookAmbassadorPluginId,
+    providerId: 'moltbook',
+    accountBindingId: 'account-1',
+    effectKind: MoltbookExternalEffectAdapter.submoltEffectKind,
+    canonicalPayloadJson: payload,
+    payloadHashHex:
+        'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+  );
+}
+
 ExternalEffectAdapterRequest _legacyRequest() {
   const payload =
       '{"schema_version":1,"account_name":"HivraAgent",'
@@ -729,12 +916,35 @@ ExternalEffectAdapterRequest _legacyCurrentMarkerRequest() {
 }
 
 MoltbookHttpResponse _jsonResponse(Map<String, dynamic> body) {
+  return _httpResponse(200, body);
+}
+
+MoltbookHttpResponse _httpResponse(int statusCode, Map<String, dynamic> body) {
   return MoltbookHttpResponse(
-    statusCode: 200,
+    statusCode: statusCode,
     headers: const <String, String>{},
     bodyBytes: Uint8List.fromList(utf8.encode(jsonEncode(body))),
   );
 }
+
+Map<String, dynamic> _submoltBody({
+  String creatorId = 'account-1',
+  String name = MoltbookPublicationService.personFirstRuntimeSubmoltName,
+  String description =
+      MoltbookPublicationService.personFirstRuntimeSubmoltDescription,
+}) => <String, dynamic>{
+  'success': true,
+  'submolt': <String, dynamic>{
+    'id': 'submolt-1',
+    'name': name,
+    'display_name':
+        MoltbookPublicationService.personFirstRuntimeSubmoltDisplayName,
+    'description': description,
+    'created_by': <String, dynamic>{'id': creatorId, 'name': 'HivraAgent'},
+  },
+};
+
+MoltbookHttpResponse _submoltResponse() => _jsonResponse(_submoltBody());
 
 MoltbookHttpResponse _postResponse(
   String postId, {

@@ -2956,6 +2956,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     separate later product decision; Remote Runner/VPS and v2 remain frozen,
     and no next pass is selected automatically.
 
+- `1.x Moltbook Person-First Runtime Community Bootstrap`
+  - Lane: bounded 1.x Moltbook product completion. One fixed permanent
+    `m/person-first-runtime` community effect uses the existing publication
+    service, external-effect journal, and provider adapter.
+  - Invariant: the active Capsule and exact Moltbook account authorize one
+    immutable name/display-name/description commitment. Replay, double click,
+    restart, timeout, and delayed provider visibility cannot create a second
+    semantic effect or permit blind recreation.
+  - Failure boundary: wrong creator account id or changed descriptor is a
+    terminal conflict; temporary absence is unresolved observation evidence,
+    not proof that a prior POST failed.
+  - Sealed paths: no generic community manager, AI-selected destination,
+    automatic creation/publication, post migration, new DTO/service/state
+    owner, second effect route, plugin ABI, Remote Runner/VPS, or v2 work.
+  - Exit evidence: exact payload and receipt binding, wrong-owner/descriptor
+    negative vectors, Capsule isolation, replay/restart and timeout recovery
+    without duplicate POST, full local and clean-checkout gates, protected PR
+    and post-merge CI, then packaged macOS Hands creation with public ownership
+    observation and no automatic post.
+  - Status: active (2026-08-15); implementation and focused automated evidence
+    are local only. The pass is not complete until protected integration and
+    packaged Hands evidence succeed.
+
 - `1.x Capsule AI single-prompt unlock remediation`
   - Finding: packaged macOS Release smoke from `0440e92` proved the complete
     Capsule Change Feed -> Gemini proposal -> WASM draft path without an
