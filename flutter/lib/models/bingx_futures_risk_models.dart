@@ -63,6 +63,7 @@ class BingxFuturesRiskDecision {
   final String tradeRiskLimitQuoteDecimal;
   final String dailyLossQuoteDecimal;
   final String dailyLossLimitQuoteDecimal;
+  final String orderNotionalQuoteDecimal;
 
   const BingxFuturesRiskDecision({
     required this.status,
@@ -75,6 +76,7 @@ class BingxFuturesRiskDecision {
     required this.tradeRiskLimitQuoteDecimal,
     required this.dailyLossQuoteDecimal,
     required this.dailyLossLimitQuoteDecimal,
+    required this.orderNotionalQuoteDecimal,
   });
 }
 

@@ -138,6 +138,7 @@ class BingxFuturesRiskGovernorService {
         reasonMessage:
             'Order notional ${_fmtDecimal(orderNotional, scale: 8)} USDT is '
             'below BingX minimum ${_fmtDecimal(minimumNotional, scale: 8)} USDT',
+        orderNotional: orderNotional,
       );
     }
     final stopLoss = _parsePositiveDecimal(
@@ -171,6 +172,7 @@ class BingxFuturesRiskGovernorService {
         tradeRiskLimit: maxRiskQuote,
         dailyLoss: dailyLoss,
         dailyLossLimit: dailyLossLimit,
+        orderNotional: orderNotional,
       );
     }
 
@@ -185,6 +187,7 @@ class BingxFuturesRiskGovernorService {
       tradeRiskLimit: maxRiskQuote,
       dailyLoss: dailyLoss,
       dailyLossLimit: dailyLossLimit,
+      orderNotional: orderNotional,
     );
   }
 
@@ -199,6 +202,7 @@ class BingxFuturesRiskGovernorService {
     double tradeRiskLimit = 0,
     double dailyLoss = 0,
     double dailyLossLimit = 0,
+    double orderNotional = 0,
   }) {
     final canonical = jsonEncode(<String, dynamic>{
       'schema_version': 1,
@@ -228,6 +232,7 @@ class BingxFuturesRiskGovernorService {
         'trade_risk_limit_quote_decimal': _fmtDecimal(tradeRiskLimit, scale: 8),
         'daily_loss_quote_decimal': _fmtDecimal(dailyLoss, scale: 8),
         'daily_loss_limit_quote_decimal': _fmtDecimal(dailyLossLimit, scale: 8),
+        'order_notional_quote_decimal': _fmtDecimal(orderNotional, scale: 8),
       },
     });
     final digest = sha256.convert(utf8.encode(canonical)).toString();
@@ -242,6 +247,7 @@ class BingxFuturesRiskGovernorService {
       tradeRiskLimitQuoteDecimal: _fmtDecimal(tradeRiskLimit, scale: 8),
       dailyLossQuoteDecimal: _fmtDecimal(dailyLoss, scale: 8),
       dailyLossLimitQuoteDecimal: _fmtDecimal(dailyLossLimit, scale: 8),
+      orderNotionalQuoteDecimal: _fmtDecimal(orderNotional, scale: 8),
     );
   }
 

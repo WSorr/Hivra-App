@@ -444,5 +444,113 @@ void main() {
       expect(restored, isNotNull);
       expect(restored!.liquidityEventEffectClaims, hasLength(256));
     });
+
+    test('mandate commitment and atomic effect budget fail closed', () async {
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-trading-mandate-test-',
+      );
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      const capsuleHex =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const accountHex =
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      final now = DateTime.utc(2026, 8, 16, 10);
+      final mandate = BingxFuturesTradingMandate.issue(
+        capsuleRootHex: capsuleHex,
+        accountBindingHashHex: accountHex,
+        symbol: 'BTC-USDT',
+        testOrder: true,
+        issuedAtUtc: now,
+        expiresAtUtc: now.add(const Duration(hours: 1)),
+        maxOrderNotionalQuoteDecimal: '100',
+        maxRiskPerTradePercent: 2,
+        maxDailyLossPercent: 5,
+        maxConcurrentPositions: 3,
+        cooldownAfterLossStreak: 2,
+        cooldownMinutes: 60,
+        maxEffects: 1,
+      );
+      final encoded = mandate.toJson();
+      expect(
+        BingxFuturesTradingMandate.fromJsonMap(encoded)?.mandateId,
+        mandate.mandateId,
+      );
+      for (final key in <String>[
+        'capsule_root_hex',
+        'account_binding_hash_hex',
+        'symbol',
+        'test_order',
+        'expires_at_utc',
+        'max_order_notional_quote_decimal',
+        'max_effects',
+      ]) {
+        final mutation = <String, dynamic>{...encoded};
+        mutation[key] = switch (key) {
+          'capsule_root_hex' => List<String>.filled(64, 'c').join(),
+          'account_binding_hash_hex' => List<String>.filled(64, 'd').join(),
+          'symbol' => 'ETH-USDT',
+          'test_order' => false,
+          'expires_at_utc' =>
+            now.add(const Duration(minutes: 30)).toIso8601String(),
+          'max_order_notional_quote_decimal' => '101',
+          _ => 2,
+        };
+        expect(
+          BingxFuturesTradingMandate.fromJsonMap(mutation),
+          isNull,
+          reason: key,
+        );
+      }
+      final missing = <String, dynamic>{...encoded}..remove('symbol');
+      final unknown = <String, dynamic>{...encoded, 'authority': true};
+      expect(BingxFuturesTradingMandate.fromJsonMap(missing), isNull);
+      expect(BingxFuturesTradingMandate.fromJsonMap(unknown), isNull);
+
+      final store = BingxFuturesOrderTrackingStore(
+        readActiveCapsuleRootHex: () => capsuleHex,
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        ),
+      );
+      await store.save(
+        BingxFuturesOrderTrackingState(
+          trackedSymbol: null,
+          trackedOrderId: null,
+          managedOrderIds: const <String>[],
+          managedOrderSymbols: const <String, String>{},
+          droneEnabled: true,
+          tradingMandate: mandate,
+          stopLossPercent: null,
+          takeProfitRiskReward: null,
+        ),
+      );
+      Future<BingxLiquidityEventEffectReservation> reserve(String event) =>
+          store.reserveLiquidityEventEffect(
+            liquidityEventId: event,
+            clientOrderId: 'mandate-$event',
+            symbol: 'BTC-USDT',
+            side: 'buy',
+            testOrder: true,
+            recordedAtUtc:
+                now.add(const Duration(minutes: 1)).toIso8601String(),
+            accountBindingHashHex: accountHex,
+            mandateId: mandate.mandateId,
+          );
+      expect(
+        await reserve(List<String>.filled(64, '1').join()),
+        BingxLiquidityEventEffectReservation.acquired,
+      );
+      expect(
+        await reserve(List<String>.filled(64, '2').join()),
+        BingxLiquidityEventEffectReservation.unavailable,
+      );
+      final restored = await store.load();
+      expect(
+        restored!.liquidityEventEffectClaims.values.single.mandateId,
+        mandate.mandateId,
+      );
+    });
   });
 }

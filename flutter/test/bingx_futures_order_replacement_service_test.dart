@@ -243,6 +243,7 @@ BingxFuturesRiskDecision _riskAllowed() {
     tradeRiskLimitQuoteDecimal: '2',
     dailyLossQuoteDecimal: '0',
     dailyLossLimitQuoteDecimal: '5',
+    orderNotionalQuoteDecimal: '10',
   );
 }
 

@@ -7,6 +7,7 @@ import 'bingx_futures_order_tracking_models.dart';
 enum BingxFuturesExchangeExecutionUseCaseStatus {
   invalidIntent,
   executionPaused,
+  mandateBlocked,
   staleIntent,
   duplicateLiquidityEvent,
   effectClaimUnavailable,

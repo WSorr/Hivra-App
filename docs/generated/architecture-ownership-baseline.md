@@ -324,7 +324,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `CAPABILITY_OWNER` — `flutter/lib/services/backup_service.dart` line `5` (`BackupService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_credential_store.dart` line `11` (`BingxFuturesCredentialStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart` line `174` (`BingxFuturesDeterministicReplayHarnessService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart` line `20` (`BingxFuturesExchangeExecutionUseCaseService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart` line `22` (`BingxFuturesExchangeExecutionUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_risk_input_service.dart` line `65` (`BingxFuturesExchangeRiskInputService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_service.dart` line `11` (`BingxFuturesExchangeService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_execution_command_service.dart` line `38` (`BingxExecutionCommandReplayStore`) — rule `current_flutter_service_support`
@@ -475,7 +475,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 ### Oversized Candidate Surfaces
 
-- `4119` lines — `flutter/lib/screens/trading_drone_screen.dart`
+- `4210` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3329` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
 - `2163` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`

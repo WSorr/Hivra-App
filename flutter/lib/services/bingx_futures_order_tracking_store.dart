@@ -62,6 +62,7 @@ class BingxFuturesOrderTrackingStore {
                   state.liquidityEventEffectClaims
               : state.liquidityEventEffectClaims,
       droneEnabled: state.droneEnabled,
+      tradingMandate: state.tradingMandate,
       stopLossPercent: state.stopLossPercent,
       takeProfitRiskReward: state.takeProfitRiskReward,
     );
@@ -102,6 +103,7 @@ class BingxFuturesOrderTrackingStore {
     required bool testOrder,
     required String recordedAtUtc,
     String? accountBindingHashHex,
+    String? mandateId,
   }) {
     final capsuleRootHex = activeCapsuleRootHex;
     if (capsuleRootHex == null) {
@@ -120,6 +122,7 @@ class BingxFuturesOrderTrackingStore {
       testOrder: testOrder,
       recordedAtUtc: recordedAtUtc,
       accountBindingHashHex: accountBindingHashHex,
+      mandateId: mandateId,
     );
   }
 
@@ -135,6 +138,7 @@ class BingxFuturesOrderTrackingStore {
     required bool testOrder,
     required String recordedAtUtc,
     String? accountBindingHashHex,
+    String? mandateId,
   }) {
     return _serialized(
       () => _reserveLiquidityEventEffect(
@@ -148,6 +152,7 @@ class BingxFuturesOrderTrackingStore {
         testOrder: testOrder,
         recordedAtUtc: recordedAtUtc,
         accountBindingHashHex: accountBindingHashHex,
+        mandateId: mandateId,
       ),
     );
   }
@@ -163,6 +168,7 @@ class BingxFuturesOrderTrackingStore {
     required bool testOrder,
     required String recordedAtUtc,
     String? accountBindingHashHex,
+    String? mandateId,
   }) async {
     final file = await _stateFileForCapsule(capsuleRootHex, createDir: true);
     if (file == null) return BingxLiquidityEventEffectReservation.unavailable;
@@ -178,6 +184,7 @@ class BingxFuturesOrderTrackingStore {
       status: BingxLiquidityEventEffectClaimStatus.reserved,
       orderId: null,
       accountBindingHashHex: accountBindingHashHex?.trim().toLowerCase(),
+      mandateId: mandateId?.trim().toLowerCase(),
       recordedAtUtc: recordedAtUtc,
     );
     if (BingxLiquidityEventEffectClaim.fromJsonMap(claim.toJson()) == null) {
@@ -185,6 +192,26 @@ class BingxFuturesOrderTrackingStore {
     }
     if (current.liquidityEventEffectClaims.containsKey(claim.storageKey)) {
       return BingxLiquidityEventEffectReservation.alreadyClaimed;
+    }
+    if (claim.mandateId != null) {
+      final mandate = current.tradingMandate;
+      final recordedAt = DateTime.tryParse(recordedAtUtc)?.toUtc();
+      final mandateClaims =
+          current.liquidityEventEffectClaims.values
+              .where((value) => value.mandateId == claim.mandateId)
+              .length;
+      if (current.droneEnabled != true ||
+          mandate == null ||
+          mandate.mandateId != claim.mandateId ||
+          mandate.capsuleRootHex != capsuleRootHex.trim().toLowerCase() ||
+          mandate.accountBindingHashHex != claim.accountBindingHashHex ||
+          mandate.symbol != claim.symbol ||
+          mandate.testOrder != claim.testOrder ||
+          recordedAt == null ||
+          !mandate.isActiveAt(recordedAt) ||
+          mandateClaims >= mandate.maxEffects) {
+        return BingxLiquidityEventEffectReservation.unavailable;
+      }
     }
     if (current.liquidityEventEffectClaims.length >= _maxLiquidityEventClaims) {
       return BingxLiquidityEventEffectReservation.unavailable;
@@ -255,6 +282,7 @@ class BingxFuturesOrderTrackingStore {
         status: BingxLiquidityEventEffectClaimStatus.confirmed,
         orderId: orderId.trim().isEmpty ? null : orderId.trim(),
         accountBindingHashHex: existing.accountBindingHashHex,
+        mandateId: existing.mandateId,
         lifecycleStatus: existing.lifecycleStatus,
         lifecycleEvidenceAtUtc: existing.lifecycleEvidenceAtUtc,
         lifecycleDiagnostic: existing.lifecycleDiagnostic,
@@ -312,6 +340,7 @@ class BingxFuturesOrderTrackingStore {
       liquidityEventEffectClaims:
           Map<String, BingxLiquidityEventEffectClaim>.unmodifiable(claims),
       droneEnabled: state.droneEnabled,
+      tradingMandate: state.tradingMandate,
       stopLossPercent: state.stopLossPercent,
       takeProfitRiskReward: state.takeProfitRiskReward,
     );
