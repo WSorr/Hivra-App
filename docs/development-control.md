@@ -2,8 +2,8 @@
 
 Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Durable Emergency Pause` is active as
-a bounded product remediation. The existing Capsule-scoped
+Current development focus: no next product pass is selected. `1.x Trading
+Durable Emergency Pause` is complete on `main` at `4d2f09f`. The existing Capsule-scoped
 `BingxFuturesOrderTrackingStore` remains the sole operational-state owner and
 `BingxFuturesExchangeExecutionUseCaseService` remains the sole exchange-effect
 owner. Trading now starts fail-closed, explicit enable/pause state survives
@@ -11,7 +11,17 @@ restart and Capsule switching, and the execution owner checks the durable state
 before risk work and again immediately before claim/queue. Missing, legacy, or
 malformed control state cannot authorize an effect. This closes the
 process-local `_droneEnabled = true` path without creating a mandate runtime,
-new service, second effect route, Core/Ledger fact, or plugin ABI. The preceding
+new service, second effect route, Core/Ledger fact, or plugin ABI. Protected PR
+`#88`, required branch gates, and post-merge repository-gates run
+`31904504430` passed. Same-source smoke-only Release build
+`1.0.3+100030041` proved Android enabled and paused states across separate cold
+restarts, then left the Capsule paused. macOS restored the paused state after a
+cold process restart and explicit Keychain authorization. Source was
+`4d2f09f`; the macOS executable SHA-256 was
+`6a8e82254649fb3f532b1d7190309e287d9c2dd1fb2b56b4e056402d07de1e90`
+and the Android APK SHA-256 was
+`01303b706745ce4d9ef7e2df4a3e696872f8194c4f169047116b618ecf121027`.
+No provider effect, tag, or Release was created. The preceding
 `1.x Trading Productization — Local Strategy Lifecycle Evidence` is complete on
 `main` at `e25b1e0`. The existing live-strategy, plugin-intent, risk,
 execution-queue, managed-order, and exchange-execution owners proved one canonical local cycle:
