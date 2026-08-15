@@ -996,8 +996,10 @@ require_absent "$MOLTBOOK_DRAFT_STORE" "ledger|ExternalEffect|MoltbookProviderAd
   "Moltbook local drafts do not become ledger, remote effects, or provider calls"
 require_present "$MOLTBOOK_AMBASSADOR_SCREEN" "Approve permanent publication" \
   "Moltbook workspace requires exact human publication approval"
-require_present "$MOLTBOOK_PUBLICATION" "approval_kind.*permanent_publication" \
-  "Moltbook approval evidence binds the public permanence decision"
+require_present "$MOLTBOOK_PUBLICATION" "permanent_publication" \
+  "Moltbook post/reply approval evidence binds the public permanence decision"
+require_present "$MOLTBOOK_PUBLICATION" "permanent_community_creation" \
+  "Moltbook community approval evidence binds the exact permanent creation decision"
 require_present "$MOLTBOOK_EFFECT_ADAPTER" "automatic resubmission is blocked" \
   "Moltbook reconciliation cannot blindly duplicate an ambiguous post"
 require_present "$MOLTBOOK_EFFECT_ADAPTER" "request\\.ownerCapsuleHex" \
