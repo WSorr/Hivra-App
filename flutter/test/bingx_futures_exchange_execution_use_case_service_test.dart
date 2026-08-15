@@ -178,11 +178,74 @@ void main() {
       expect(result.errorCode, 'liquidity_event_stale');
     });
 
-    test('blocks same event after live market decision changes', () async {
+    test(
+      'allows same semantic event across volatile snapshot changes',
+      () async {
+        var placeOrderCalled = false;
+        final exchange = BingxFuturesExchangeService();
+        final store = _trackingStore(tempHome);
+        final service = BingxFuturesExchangeExecutionUseCaseService(
+          exchange: exchange,
+          queue: BingxFuturesExecutionQueueService(
+            exchangeService: exchange,
+            placeOrderRunner: ({
+              required credentials,
+              required intent,
+              required testOrder,
+            }) async {
+              placeOrderCalled = true;
+              return BingxFuturesOrderExecutionResult(
+                isSuccess: true,
+                httpStatusCode: 200,
+                exchangeCode: '0',
+                exchangeMessage: 'ok',
+                orderId: 'semantic-event-order',
+                endpointPath: '/test-order',
+                signedPayloadHashHex: List<String>.filled(64, 'e').join(),
+                responseBody: '{}',
+                intentHashHex: intent.intentHashHex,
+              );
+            },
+          ),
+          riskHistory: riskHistory,
+          orderTrackingStore: store,
+        );
+
+        final result = await service.execute(
+          screen: 'test',
+          rawIntentResult: _zoneIntent,
+          credentials: _credentials,
+          riskPolicy: _policy,
+          fallbackEquityQuote: 100,
+          testOrder: true,
+          preparedDecision: _decision(),
+          refreshDecision: () async => _decision(liveHashHex: '5'),
+        );
+
+        expect(
+          result.status,
+          BingxFuturesExchangeExecutionUseCaseStatus.executed,
+        );
+        expect(placeOrderCalled, isTrue);
+      },
+    );
+
+    test('blocks same event when its executable zone changes', () async {
+      var placeOrderCalled = false;
       final exchange = BingxFuturesExchangeService();
       final service = BingxFuturesExchangeExecutionUseCaseService(
         exchange: exchange,
-        queue: BingxFuturesExecutionQueueService(exchangeService: exchange),
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            placeOrderCalled = true;
+            throw StateError('must not execute');
+          },
+        ),
         riskHistory: riskHistory,
       );
 
@@ -194,7 +257,7 @@ void main() {
         fallbackEquityQuote: 100,
         testOrder: true,
         preparedDecision: _decision(),
-        refreshDecision: () async => _decision(liveHashHex: '5'),
+        refreshDecision: () async => _decision(zoneLowDecimal: '98'),
       );
 
       expect(
@@ -202,6 +265,7 @@ void main() {
         BingxFuturesExchangeExecutionUseCaseStatus.staleIntent,
       );
       expect(result.errorCode, 'liquidity_event_stale');
+      expect(placeOrderCalled, isFalse);
     });
 
     test('restart preserves receipt and blocks a second effect', () async {
@@ -1095,14 +1159,16 @@ BingxFuturesLiveDecisionResult _decision({
   String eventHex = 'a',
   String liveHashHex = '4',
   String barAtUtc = '2026-08-11T10:00:00.000Z',
+  String zoneLowDecimal = '99',
+  String zoneHighDecimal = '101',
 }) {
   return BingxFuturesLiveDecisionResult(
     canPrepareIntent: true,
     decision: BingxTvhDecisionKind.long,
     side: 'buy',
     zoneSide: 'buyside',
-    zoneLowDecimal: '99',
-    zoneHighDecimal: '101',
+    zoneLowDecimal: zoneLowDecimal,
+    zoneHighDecimal: zoneHighDecimal,
     zoneConflict: false,
     marketSnapshotHashHex: List<String>.filled(64, '1').join(),
     featureHashHex: List<String>.filled(64, '2').join(),
