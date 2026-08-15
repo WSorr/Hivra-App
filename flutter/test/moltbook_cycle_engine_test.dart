@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,6 +42,7 @@ void main() {
   late _HeartbeatHost heartbeatHost;
   late _CycleAi ai;
   late _RecordingDraftStore drafts;
+  late MoltbookPublicChangeFeedStore publicChanges;
   late MoltbookCycleTriggerService triggers;
   late PluginRuntimeModule module;
 
@@ -61,10 +63,7 @@ void main() {
       moltbookFeedCheckpoint: checkpoint,
       moltbookPublications: publications,
       moltbookPublicBulletinAi: ai,
-      moltbookPublicChanges: MoltbookPublicChangeFeedStore(
-        fileStore: _UnusedFileStore(),
-        readActiveCapsuleRootHex: () => activeRoot,
-      ),
+      moltbookPublicChanges: publicChanges,
       moltbookCycleTriggers: cycleTriggers,
       ambassadorConfiguration: configuration,
       fileStore: _UnusedFileStore(),
@@ -82,6 +81,10 @@ void main() {
     heartbeatHost = _HeartbeatHost();
     ai = _CycleAi();
     drafts = _RecordingDraftStore();
+    publicChanges = MoltbookPublicChangeFeedStore(
+      fileStore: _MemoryFileStore(),
+      readActiveCapsuleRootHex: () => activeRoot,
+    );
     triggers = MoltbookCycleTriggerService();
     module = buildModule(triggers);
   });
@@ -96,6 +99,40 @@ void main() {
 
     expect(result.state, ExternalEffectState.succeeded);
     expect(drafts.deletedHashes, <String>{'f' * 64});
+  });
+
+  test('queued public change mismatch is rejected before WASM', () async {
+    final change = await publicChanges.record(
+      sourceId: 'queued-change',
+      category: 'hivra',
+      facts: const <String>['A confirmed public change.'],
+    );
+
+    for (final identity in <({String bulletinId, String category})>[
+      (bulletinId: 'development-note', category: change.category),
+      (bulletinId: change.sourceId, category: 'general'),
+    ]) {
+      await expectLater(
+        module.prepareMoltbookDraft(
+          bulletinId: identity.bulletinId,
+          releaseTag: 'development',
+          category: identity.category,
+          facts: change.facts,
+          titleHint: 'Confirmed update',
+          reviewedBody: 'A reviewed public update.',
+          audience: 'agent-developers',
+          publicChangeCommitmentHashHex: change.commitmentHashHex,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'Draft identity does not match the queued public change',
+          ),
+        ),
+      );
+    }
+    expect(heartbeatHost.executeCount, 0);
   });
 
   test('duplicate wake shares one in-flight Capsule account cycle', () async {
@@ -865,7 +902,7 @@ class _EnabledConfiguration implements MoltbookAmbassadorConfigurationStore {
         agentName: 'Hivra Agent',
         agentDescription: 'Capsule ambassador',
         personaSummary: 'Technical Hivra updates',
-        allowedTopics: const <String>['hivra'],
+        allowedTopics: const <String>['hivra', 'general'],
         approvalMode: approvalMode,
         triggerPolicy: triggerPolicy,
         enabled: enabled,
@@ -1176,6 +1213,36 @@ class _CycleAi implements MoltbookPublicBulletinAiService {
 }
 
 class _UnusedFileStore implements CapsuleFileStore {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _MemoryFileStore implements CapsuleFileStore {
+  final Map<String, String> _state = <String, String>{};
+
+  @override
+  Future<Directory> capsuleDirForHex(
+    String pubKeyHex, {
+    bool create = false,
+  }) async => Directory('/memory/$pubKeyHex');
+
+  @override
+  Future<String?> readPluginState(
+    Directory capsuleDir,
+    String pluginId,
+    String fileName,
+  ) async => _state['${capsuleDir.path}/$pluginId/$fileName'];
+
+  @override
+  Future<void> writePluginState(
+    Directory capsuleDir,
+    String pluginId,
+    String fileName,
+    String rawJson,
+  ) async {
+    _state['${capsuleDir.path}/$pluginId/$fileName'] = rawJson;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

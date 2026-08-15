@@ -1489,6 +1489,33 @@ class PluginRuntimeModule {
       'moltbook.draft.prepare',
       'start owner=$operationCapsuleHex bulletin=${_safeLogValue(bulletinId)}',
     );
+    if (publicChangeCommitmentHashHex != null) {
+      final change =
+          (await moltbookPublicChanges.load())
+              .where(
+                (candidate) =>
+                    candidate.commitmentHashHex ==
+                    publicChangeCommitmentHashHex,
+              )
+              .singleOrNull;
+      if (change == null || !change.isPending) {
+        await uiLog.log(
+          'moltbook.draft.prepare',
+          'rejected code=public_change_unavailable',
+        );
+        throw StateError('Pending public change is unavailable');
+      }
+      if (bulletinId.trim() != change.sourceId ||
+          normalizedCategory != change.category) {
+        await uiLog.log(
+          'moltbook.draft.prepare',
+          'rejected code=public_change_binding_mismatch',
+        );
+        throw StateError(
+          'Draft identity does not match the queued public change',
+        );
+      }
+    }
     final response = await pluginHostApi.executeWithRuntimeHook(
       PluginHostApiRequest(
         schemaVersion: pluginHostApiSchemaVersion,
