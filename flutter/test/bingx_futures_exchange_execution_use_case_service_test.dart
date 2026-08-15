@@ -204,9 +204,13 @@ void main() {
       expect(result.errorCode, 'liquidity_event_stale');
     });
 
-    test('durable event claim blocks a second exchange effect', () async {
+    test('restart preserves receipt and blocks a second effect', () async {
       var placeOrderCalls = 0;
       var activeCapsule = List<String>.filled(64, 'd').join();
+      final originalCapsule = activeCapsule;
+      final fileStore = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      );
       final exchange = BingxFuturesExchangeService(
         requestSender: (request) async {
           if (request.uri.path.endsWith('/quote/contracts')) {
@@ -230,40 +234,44 @@ void main() {
       );
       final trackingStore = BingxFuturesOrderTrackingStore(
         readActiveCapsuleRootHex: () => activeCapsule,
-        fileStore: CapsuleFileStore(
-          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
-        ),
+        fileStore: fileStore,
       );
-      final service = BingxFuturesExchangeExecutionUseCaseService(
-        exchange: exchange,
-        queue: BingxFuturesExecutionQueueService(
-          exchangeService: exchange,
-          placeOrderRunner: ({
-            required credentials,
-            required intent,
-            required testOrder,
-          }) async {
-            placeOrderCalls += 1;
-            activeCapsule = List<String>.filled(64, 'e').join();
-            return BingxFuturesOrderExecutionResult(
-              isSuccess: true,
-              httpStatusCode: 200,
-              exchangeCode: '0',
-              exchangeMessage: 'ok',
-              orderId: 'order-$placeOrderCalls',
-              endpointPath: '/test-order',
-              signedPayloadHashHex: List<String>.filled(64, 'e').join(),
-              responseBody: '{}',
-              intentHashHex: intent.intentHashHex,
-            );
-          },
-        ),
-        riskHistory: riskHistory,
-        orderTrackingStore: trackingStore,
-      );
+      BingxFuturesExchangeExecutionUseCaseService buildUseCase(
+        BingxFuturesOrderTrackingStore store,
+      ) {
+        return BingxFuturesExchangeExecutionUseCaseService(
+          exchange: exchange,
+          queue: BingxFuturesExecutionQueueService(
+            exchangeService: exchange,
+            placeOrderRunner: ({
+              required credentials,
+              required intent,
+              required testOrder,
+            }) async {
+              placeOrderCalls += 1;
+              activeCapsule = List<String>.filled(64, 'e').join();
+              return BingxFuturesOrderExecutionResult(
+                isSuccess: true,
+                httpStatusCode: 200,
+                exchangeCode: '0',
+                exchangeMessage: 'ok',
+                orderId: 'order-$placeOrderCalls',
+                endpointPath: '/test-order',
+                signedPayloadHashHex: List<String>.filled(64, 'e').join(),
+                responseBody: '{}',
+                intentHashHex: intent.intentHashHex,
+              );
+            },
+          ),
+          riskHistory: riskHistory,
+          orderTrackingStore: store,
+        );
+      }
 
-      Future<BingxFuturesExchangeExecutionUseCaseResult> execute() {
-        return service.execute(
+      Future<BingxFuturesExchangeExecutionUseCaseResult> execute(
+        BingxFuturesExchangeExecutionUseCaseService useCase,
+      ) {
+        return useCase.execute(
           screen: 'test',
           rawIntentResult: _zoneIntent,
           credentials: _credentials,
@@ -275,31 +283,56 @@ void main() {
         );
       }
 
-      final first = await execute();
+      final first = await execute(buildUseCase(trackingStore));
       final originalCapsuleState = await trackingStore.loadForCapsule(
-        List<String>.filled(64, 'd').join(),
+        originalCapsule,
       );
       final switchedCapsuleState = await trackingStore.loadForCapsule(
         List<String>.filled(64, 'e').join(),
       );
-      activeCapsule = List<String>.filled(64, 'd').join();
-      final second = await execute();
+      activeCapsule = originalCapsule;
+      final restartedStore = BingxFuturesOrderTrackingStore(
+        readActiveCapsuleRootHex: () => activeCapsule,
+        fileStore: fileStore,
+      );
+      final restartedUseCase = buildUseCase(restartedStore);
+      final restoredAfterRestart = await restartedStore.load();
+      final second = await execute(restartedUseCase);
 
       expect(first.status, BingxFuturesExchangeExecutionUseCaseStatus.executed);
+      expect(first.queuedExecution!.execution.orderId, 'order-1');
+      expect(first.queuedExecution!.execution.endpointPath, '/test-order');
+      expect(first.executionEnvelope!.envelopeHashHex, hasLength(64));
+      expect(
+        first.executionEnvelope!.canonicalJson,
+        contains('"order_id":"order-1"'),
+      );
+      expect(
+        first.executionEnvelope!.canonicalJson,
+        contains('"intent_hash_hex":"${_zoneIntent['intent_hash_hex']}"'),
+      );
       expect(
         second.status,
         BingxFuturesExchangeExecutionUseCaseStatus.duplicateLiquidityEvent,
       );
+      expect(second.queuedExecution, isNull);
       expect(placeOrderCalls, 1);
       expect(switchedCapsuleState, isNull);
-      final restored = originalCapsuleState;
+      expect(restoredAfterRestart!.toJson(), originalCapsuleState!.toJson());
+      final claim =
+          restoredAfterRestart.liquidityEventEffectClaims.values.single;
+      expect(claim.status, BingxLiquidityEventEffectClaimStatus.confirmed);
+      expect(claim.orderId, 'order-1');
+      expect(claim.symbol, 'BTC-USDT');
+      expect(claim.side, 'buy');
+      expect(claim.clientOrderId, _zoneIntent['client_order_id']);
+      expect(claim.intentHashHex, _zoneIntent['intent_hash_hex']);
+      expect(claim.canonicalIntentJson, _zoneIntent['canonical_intent_json']);
       expect(
-        restored!.liquidityEventEffectClaims.values.single.status,
-        BingxLiquidityEventEffectClaimStatus.confirmed,
-      );
-      expect(
-        restored.liquidityEventEffectClaims.values.single.orderId,
-        'order-1',
+        claim.accountBindingHashHex,
+        BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+          _credentials,
+        ),
       );
     });
 
