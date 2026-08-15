@@ -2908,6 +2908,44 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     checkout, and post-merge repository gates `31644669310` passed. No
     following pass is selected.
 
+- `1.x Trading Productization and 24/7 Readiness`
+  - Product objective: make Trading Drone a reference-grade capability that
+    can observe, decide, execute, recover, and reconcile continuously without
+    turning AI into authority or moving the Capsule onto a server.
+  - Proven baseline: freshness, one liquidity event to at most one effect,
+    managed-order ownership, restart recovery, reconciliation, deterministic
+    risk gating, and public shadow evidence already have canonical owners.
+  - Product sequence is ordered and fail-closed:
+    1. build a truthful public-market liquidity confluence map;
+    2. prove one local strategy lifecycle with replay and adverse vectors;
+    3. bind unattended actions to a Capsule-owned bounded trading mandate;
+    4. run the same decision and effect contracts in a headless host;
+    5. authorize scoped remote execution only with lease, kill switch, account
+       binding, risk ceilings, exact receipts, and restart reconciliation.
+  - Current selected pass: `Liquidity Confluence Observation`. The existing
+    live snapshot builder owns public observations and the existing zone
+    decision service owns entry-zone semantics. Replace the single-largest
+    bid/ask proxy with bounded deterministic clusters combining depth, closed
+    structure, open-interest change, funding, and aggressive flow. Market-wide
+    liquidation positions are not exposed by the current BingX public API, so
+    inferred clusters remain `liquidation_proxy`; they may rank context,
+    targets, and activation areas but cannot independently authorize an order.
+  - Threat model: spoofed walls, rapidly withdrawn depth, stale snapshots,
+    crossed or malformed books, duplicated levels, outlier notionals, changed
+    funding/OI windows, proxy/confirmed-data confusion, and a cluster becoming
+    an accidental second entry owner must fail closed or remain diagnostic.
+  - Exit evidence: deterministic clustering and ordering, bounded inputs and
+    outputs, permutation stability after canonicalization, stale/malformed/
+    spoof-prone negative vectors, explicit proxy provenance, unchanged effect
+    count for proxy-only evidence, full local and clean-checkout gates,
+    protected PR/post-merge CI, and packaged Trading diagnostics smoke.
+  - Removed or sealed: the current single-largest-level representation is
+    removed; proxy-as-confirmed-liquidation and proxy-only order authorization
+    remain sealed. No new DTO family, market-state owner, exchange adapter,
+    execution route, Capsule/Core/Ledger path, VPS deployment, tag, or Release
+    is authorized by this pass.
+  - Status: selected (2026-08-15). Implementation evidence is not yet claimed.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
