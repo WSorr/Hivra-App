@@ -372,3 +372,12 @@ funding, and strategy policy. The existing `evaluate()` remains the local
 consensus wrapper and delegates to that same market evaluator only after its
 local guard passes. The public replay harness calls `evaluateMarket()` directly;
 no synthetic consensus value or disabled consensus flag remains on that path.
+
+## 12. Local Bounded Mandate Boundary
+
+The normative mandate contract is section 5.3.3 of
+`bingx_futures_trading_drone_spec_v1.md`. The local product proves that contract
+before any headless-host pass: one Capsule-scoped operational owner, one
+exchange-effect owner, exact account/symbol/mode/time/notional/risk/effect
+bounds, explicit revocation, and fail-closed restart behavior. This section
+does not duplicate those semantics and authorizes no Remote Runner or VPS.

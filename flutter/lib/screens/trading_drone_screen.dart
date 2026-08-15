@@ -128,6 +128,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _fittingMaxNotional = false;
   bool _useTestOrderEndpoint = true;
   bool _droneEnabled = false;
+  BingxFuturesTradingMandate? _tradingMandate;
   bool _tradingControlLoaded = false;
   bool _savingTradingControl = false;
   double _stopLossPercent = _defaultStopLossPercent;
@@ -388,6 +389,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               _managedOrderProvenance,
             ),
         droneEnabled: _droneEnabled,
+        tradingMandate: _tradingMandate,
         stopLossPercent: _stopLossPercent,
         takeProfitRiskReward: _takeProfitRiskReward,
       );
@@ -410,8 +412,55 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   Future<void> _changeDroneEnabled(bool value) async {
     if (!_tradingControlLoaded || _savingTradingControl) return;
+    BingxFuturesTradingMandate? nextMandate = _tradingMandate;
+    if (value) {
+      if (_orderType != 'limit') {
+        await _showSnack(
+          'Bounded trading currently requires the Limit strategy path.',
+        );
+        return;
+      }
+      final credentials = await _ensureCredentialsLoaded();
+      final capsuleRootHex = _module.orderTrackingStore.activeCapsuleRootHex;
+      final symbol = _symbolController.text.trim().toUpperCase();
+      final maxNotional = double.tryParse(
+        _maxNotionalUsdtController.text.trim(),
+      );
+      if (credentials == null || capsuleRootHex == null) {
+        await _showSnack('Capsule and BingX credentials are required.');
+        return;
+      }
+      if (symbol.isEmpty || maxNotional == null || maxNotional <= 0) {
+        await _showSnack('Symbol and positive max notional are required.');
+        return;
+      }
+      final confirmed = await _confirmTradingMandate(
+        symbol: symbol,
+        maxNotional: maxNotional,
+      );
+      if (!confirmed) return;
+      final now = DateTime.now().toUtc();
+      nextMandate = BingxFuturesTradingMandate.issue(
+        capsuleRootHex: capsuleRootHex,
+        accountBindingHashHex: _module.accountBindingHashHex(credentials),
+        symbol: symbol,
+        testOrder: _useTestOrderEndpoint,
+        issuedAtUtc: now,
+        expiresAtUtc: now.add(const Duration(hours: 24)),
+        maxOrderNotionalQuoteDecimal: maxNotional.toString(),
+        maxRiskPerTradePercent: _executionRiskPolicy.maxRiskPerTradePercent,
+        maxDailyLossPercent: _executionRiskPolicy.maxDailyLossPercent,
+        maxConcurrentPositions: _executionRiskPolicy.maxConcurrentPositions,
+        cooldownAfterLossStreak: _executionRiskPolicy.cooldownAfterLossStreak,
+        cooldownMinutes: _executionRiskPolicy.cooldownMinutes,
+        maxEffects: 32,
+      );
+    } else {
+      nextMandate = nextMandate?.revoke(DateTime.now().toUtc());
+    }
     setState(() {
       _droneEnabled = value;
+      _tradingMandate = nextMandate;
       _savingTradingControl = true;
     });
     await _persistOpenOrdersTrackingState(source: 'drone_control_changed');
@@ -420,6 +469,42 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _savingTradingControl = false;
       });
     }
+  }
+
+  Future<bool> _confirmTradingMandate({
+    required String symbol,
+    required double maxNotional,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Authorize bounded trading'),
+            content: Text(
+              'Capsule: ${_module.orderTrackingStore.activeCapsuleRootHex!.substring(0, 12)}…\n'
+              'Account: current BingX credential\n'
+              'Symbol: $symbol\n'
+              'Mode: ${_useTestOrderEndpoint ? "test" : "live"}\n'
+              'Max order: ${maxNotional.toStringAsFixed(2)} USDT\n'
+              'Risk: ${_executionRiskPolicy.maxRiskPerTradePercent}% per trade, '
+              '${_executionRiskPolicy.maxDailyLossPercent}% daily\n'
+              'Maximum effects: 32\n'
+              'Expires: 24 hours\n\n'
+              'Emergency Pause revokes this mandate.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Authorize'),
+              ),
+            ],
+          ),
+    );
+    return result == true;
   }
 
   Future<void> _restoreOpenOrdersTrackingState() async {
@@ -436,6 +521,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         ..clear()
         ..addAll(state.managedOrderProvenance);
       _droneEnabled = state.droneEnabled == true;
+      _tradingMandate = state.tradingMandate;
+      if (_tradingMandate?.isActiveAt(DateTime.now().toUtc()) != true) {
+        _droneEnabled = false;
+      }
       final restoredStopLossPercent = state.stopLossPercent;
       if (restoredStopLossPercent != null &&
           _stopLossPercentOptions.contains(restoredStopLossPercent)) {
@@ -2206,6 +2295,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               BingxFuturesExchangeExecutionUseCaseStatus.staleIntent ||
           useCaseResult.status ==
               BingxFuturesExchangeExecutionUseCaseStatus.executionPaused ||
+          useCaseResult.status ==
+              BingxFuturesExchangeExecutionUseCaseStatus.mandateBlocked ||
           useCaseResult.status ==
               BingxFuturesExchangeExecutionUseCaseStatus
                   .duplicateLiquidityEvent ||

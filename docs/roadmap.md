@@ -3022,6 +3022,27 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     No provider effect, tag, or Release was created. No following product pass
     is selected automatically.
 
+- `1.x Trading Capsule-Owned Bounded Mandate`
+  - Lane: maintained 1.x Trading productization; local authority proof before
+    any headless-host work.
+  - Invariant: every new exchange order effect is bound to one active
+    Capsule-owned mandate covering the exact account, symbol, test/live mode,
+    validity window, max notional, deterministic risk policy, and effect
+    budget.
+  - Sole owners: the existing order-tracking store owns mandate state and the
+    existing exchange-execution use case owns enforcement and provider effect.
+  - Removed or sealed: process-local/static UI policy cannot independently
+    authorize an effect; legacy enablement, mutation-in-place, implicit renewal,
+    cross-Capsule/account reuse, budget overrun, Remote Runner/VPS, background
+    execution, second effect route, Core/Ledger fact, and plugin ABI remain
+    sealed.
+  - Exit evidence: semantic commitment mutations, expiry/revocation, restart,
+    Capsule/account/symbol/mode mismatch, policy escalation, notional ceiling,
+    atomic effect-budget exhaustion, full local and clean-checkout gates,
+    protected PR/post-merge CI, and same-source packaged control smoke without
+    a live provider effect.
+  - Status: selected (2026-08-16); implementation and evidence in progress.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

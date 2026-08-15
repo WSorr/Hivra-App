@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 enum BingxLiquidityEventEffectClaimStatus { reserved, confirmed }
 
 enum BingxManagedOrderLifecycleStatus {
@@ -15,6 +19,316 @@ enum BingxLiquidityEventEffectReservation {
   unavailable,
 }
 
+class BingxFuturesTradingMandate {
+  static const int schemaVersion = 1;
+
+  final String mandateId;
+  final String capsuleRootHex;
+  final String accountBindingHashHex;
+  final String symbol;
+  final bool testOrder;
+  final String issuedAtUtc;
+  final String expiresAtUtc;
+  final String maxOrderNotionalQuoteDecimal;
+  final double maxRiskPerTradePercent;
+  final double maxDailyLossPercent;
+  final int maxConcurrentPositions;
+  final int cooldownAfterLossStreak;
+  final int cooldownMinutes;
+  final int maxEffects;
+  final String? revokedAtUtc;
+
+  const BingxFuturesTradingMandate._({
+    required this.mandateId,
+    required this.capsuleRootHex,
+    required this.accountBindingHashHex,
+    required this.symbol,
+    required this.testOrder,
+    required this.issuedAtUtc,
+    required this.expiresAtUtc,
+    required this.maxOrderNotionalQuoteDecimal,
+    required this.maxRiskPerTradePercent,
+    required this.maxDailyLossPercent,
+    required this.maxConcurrentPositions,
+    required this.cooldownAfterLossStreak,
+    required this.cooldownMinutes,
+    required this.maxEffects,
+    required this.revokedAtUtc,
+  });
+
+  factory BingxFuturesTradingMandate.issue({
+    required String capsuleRootHex,
+    required String accountBindingHashHex,
+    required String symbol,
+    required bool testOrder,
+    required DateTime issuedAtUtc,
+    required DateTime expiresAtUtc,
+    required String maxOrderNotionalQuoteDecimal,
+    required double maxRiskPerTradePercent,
+    required double maxDailyLossPercent,
+    required int maxConcurrentPositions,
+    required int cooldownAfterLossStreak,
+    required int cooldownMinutes,
+    required int maxEffects,
+  }) {
+    final fields = _normalizeFields(
+      capsuleRootHex: capsuleRootHex,
+      accountBindingHashHex: accountBindingHashHex,
+      symbol: symbol,
+      testOrder: testOrder,
+      issuedAtUtc: issuedAtUtc.toUtc().toIso8601String(),
+      expiresAtUtc: expiresAtUtc.toUtc().toIso8601String(),
+      maxOrderNotionalQuoteDecimal: maxOrderNotionalQuoteDecimal,
+      maxRiskPerTradePercent: maxRiskPerTradePercent,
+      maxDailyLossPercent: maxDailyLossPercent,
+      maxConcurrentPositions: maxConcurrentPositions,
+      cooldownAfterLossStreak: cooldownAfterLossStreak,
+      cooldownMinutes: cooldownMinutes,
+      maxEffects: maxEffects,
+    );
+    return BingxFuturesTradingMandate._(
+      mandateId: _deriveId(fields),
+      capsuleRootHex: fields['capsule_root_hex']! as String,
+      accountBindingHashHex: fields['account_binding_hash_hex']! as String,
+      symbol: fields['symbol']! as String,
+      testOrder: fields['test_order']! as bool,
+      issuedAtUtc: fields['issued_at_utc']! as String,
+      expiresAtUtc: fields['expires_at_utc']! as String,
+      maxOrderNotionalQuoteDecimal:
+          fields['max_order_notional_quote_decimal']! as String,
+      maxRiskPerTradePercent: fields['max_risk_per_trade_percent']! as double,
+      maxDailyLossPercent: fields['max_daily_loss_percent']! as double,
+      maxConcurrentPositions: fields['max_concurrent_positions']! as int,
+      cooldownAfterLossStreak: fields['cooldown_after_loss_streak']! as int,
+      cooldownMinutes: fields['cooldown_minutes']! as int,
+      maxEffects: fields['max_effects']! as int,
+      revokedAtUtc: null,
+    );
+  }
+
+  bool isActiveAt(DateTime nowUtc) {
+    final issued = DateTime.tryParse(issuedAtUtc)?.toUtc();
+    final expires = DateTime.tryParse(expiresAtUtc)?.toUtc();
+    final now = nowUtc.toUtc();
+    return revokedAtUtc == null &&
+        issued != null &&
+        expires != null &&
+        !now.isBefore(issued) &&
+        now.isBefore(expires);
+  }
+
+  BingxFuturesTradingMandate revoke(DateTime revokedAtUtc) {
+    return BingxFuturesTradingMandate._(
+      mandateId: mandateId,
+      capsuleRootHex: capsuleRootHex,
+      accountBindingHashHex: accountBindingHashHex,
+      symbol: symbol,
+      testOrder: testOrder,
+      issuedAtUtc: issuedAtUtc,
+      expiresAtUtc: expiresAtUtc,
+      maxOrderNotionalQuoteDecimal: maxOrderNotionalQuoteDecimal,
+      maxRiskPerTradePercent: maxRiskPerTradePercent,
+      maxDailyLossPercent: maxDailyLossPercent,
+      maxConcurrentPositions: maxConcurrentPositions,
+      cooldownAfterLossStreak: cooldownAfterLossStreak,
+      cooldownMinutes: cooldownMinutes,
+      maxEffects: maxEffects,
+      revokedAtUtc: revokedAtUtc.toUtc().toIso8601String(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'version': schemaVersion,
+    'mandate_id': mandateId,
+    ..._semanticFields,
+    'revoked_at_utc': revokedAtUtc,
+  };
+
+  static BingxFuturesTradingMandate? fromJsonMap(Map<String, dynamic> map) {
+    const expectedKeys = <String>{
+      'version',
+      'mandate_id',
+      'capsule_root_hex',
+      'account_binding_hash_hex',
+      'symbol',
+      'test_order',
+      'issued_at_utc',
+      'expires_at_utc',
+      'max_order_notional_quote_decimal',
+      'max_risk_per_trade_percent',
+      'max_daily_loss_percent',
+      'max_concurrent_positions',
+      'cooldown_after_loss_streak',
+      'cooldown_minutes',
+      'max_effects',
+      'revoked_at_utc',
+    };
+    if (map.keys.toSet().difference(expectedKeys).isNotEmpty ||
+        expectedKeys.difference(map.keys.toSet()).isNotEmpty ||
+        map['test_order'] is! bool) {
+      return null;
+    }
+    if (map['version'] != schemaVersion) return null;
+    try {
+      final maxConcurrentPositions = _readExactInt(
+        map['max_concurrent_positions'],
+      );
+      final cooldownAfterLossStreak = _readExactInt(
+        map['cooldown_after_loss_streak'],
+      );
+      final cooldownMinutes = _readExactInt(map['cooldown_minutes']);
+      final maxEffects = _readExactInt(map['max_effects']);
+      if (maxConcurrentPositions == null ||
+          cooldownAfterLossStreak == null ||
+          cooldownMinutes == null ||
+          maxEffects == null) {
+        return null;
+      }
+      final fields = _normalizeFields(
+        capsuleRootHex: map['capsule_root_hex']?.toString() ?? '',
+        accountBindingHashHex:
+            map['account_binding_hash_hex']?.toString() ?? '',
+        symbol: map['symbol']?.toString() ?? '',
+        testOrder: map['test_order'] == true,
+        issuedAtUtc: map['issued_at_utc']?.toString() ?? '',
+        expiresAtUtc: map['expires_at_utc']?.toString() ?? '',
+        maxOrderNotionalQuoteDecimal:
+            map['max_order_notional_quote_decimal']?.toString() ?? '',
+        maxRiskPerTradePercent:
+            (map['max_risk_per_trade_percent'] as num?)?.toDouble() ?? 0,
+        maxDailyLossPercent:
+            (map['max_daily_loss_percent'] as num?)?.toDouble() ?? 0,
+        maxConcurrentPositions: maxConcurrentPositions,
+        cooldownAfterLossStreak: cooldownAfterLossStreak,
+        cooldownMinutes: cooldownMinutes,
+        maxEffects: maxEffects,
+      );
+      final mandateId =
+          map['mandate_id']?.toString().trim().toLowerCase() ?? '';
+      if (mandateId != _deriveId(fields)) return null;
+      final revokedRaw = map['revoked_at_utc']?.toString().trim() ?? '';
+      if (revokedRaw.isNotEmpty &&
+          DateTime.tryParse(revokedRaw)?.isUtc != true) {
+        return null;
+      }
+      return BingxFuturesTradingMandate._(
+        mandateId: mandateId,
+        capsuleRootHex: fields['capsule_root_hex']! as String,
+        accountBindingHashHex: fields['account_binding_hash_hex']! as String,
+        symbol: fields['symbol']! as String,
+        testOrder: fields['test_order']! as bool,
+        issuedAtUtc: fields['issued_at_utc']! as String,
+        expiresAtUtc: fields['expires_at_utc']! as String,
+        maxOrderNotionalQuoteDecimal:
+            fields['max_order_notional_quote_decimal']! as String,
+        maxRiskPerTradePercent: fields['max_risk_per_trade_percent']! as double,
+        maxDailyLossPercent: fields['max_daily_loss_percent']! as double,
+        maxConcurrentPositions: fields['max_concurrent_positions']! as int,
+        cooldownAfterLossStreak: fields['cooldown_after_loss_streak']! as int,
+        cooldownMinutes: fields['cooldown_minutes']! as int,
+        maxEffects: fields['max_effects']! as int,
+        revokedAtUtc: revokedRaw.isEmpty ? null : revokedRaw,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic> get _semanticFields => _normalizeFields(
+    capsuleRootHex: capsuleRootHex,
+    accountBindingHashHex: accountBindingHashHex,
+    symbol: symbol,
+    testOrder: testOrder,
+    issuedAtUtc: issuedAtUtc,
+    expiresAtUtc: expiresAtUtc,
+    maxOrderNotionalQuoteDecimal: maxOrderNotionalQuoteDecimal,
+    maxRiskPerTradePercent: maxRiskPerTradePercent,
+    maxDailyLossPercent: maxDailyLossPercent,
+    maxConcurrentPositions: maxConcurrentPositions,
+    cooldownAfterLossStreak: cooldownAfterLossStreak,
+    cooldownMinutes: cooldownMinutes,
+    maxEffects: maxEffects,
+  );
+
+  static Map<String, dynamic> _normalizeFields({
+    required String capsuleRootHex,
+    required String accountBindingHashHex,
+    required String symbol,
+    required bool testOrder,
+    required String issuedAtUtc,
+    required String expiresAtUtc,
+    required String maxOrderNotionalQuoteDecimal,
+    required double maxRiskPerTradePercent,
+    required double maxDailyLossPercent,
+    required int maxConcurrentPositions,
+    required int cooldownAfterLossStreak,
+    required int cooldownMinutes,
+    required int maxEffects,
+  }) {
+    final owner = capsuleRootHex.trim().toLowerCase();
+    final account = accountBindingHashHex.trim().toLowerCase();
+    final normalizedSymbol = symbol.trim().toUpperCase();
+    final issued = DateTime.tryParse(issuedAtUtc)?.toUtc();
+    final expires = DateTime.tryParse(expiresAtUtc)?.toUtc();
+    final maxNotional = double.tryParse(maxOrderNotionalQuoteDecimal.trim());
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(owner) ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(account) ||
+        normalizedSymbol.isEmpty ||
+        issued == null ||
+        expires == null ||
+        !expires.isAfter(issued) ||
+        expires.difference(issued) > const Duration(hours: 24) ||
+        maxNotional == null ||
+        !maxNotional.isFinite ||
+        maxNotional <= 0 ||
+        !maxRiskPerTradePercent.isFinite ||
+        maxRiskPerTradePercent <= 0 ||
+        !maxDailyLossPercent.isFinite ||
+        maxDailyLossPercent <= 0 ||
+        maxConcurrentPositions <= 0 ||
+        cooldownAfterLossStreak <= 0 ||
+        cooldownMinutes < 0 ||
+        maxEffects <= 0 ||
+        maxEffects > 256) {
+      throw const FormatException('Invalid bounded trading mandate');
+    }
+    return <String, dynamic>{
+      'capsule_root_hex': owner,
+      'account_binding_hash_hex': account,
+      'symbol': normalizedSymbol,
+      'test_order': testOrder,
+      'issued_at_utc': issued.toIso8601String(),
+      'expires_at_utc': expires.toIso8601String(),
+      'max_order_notional_quote_decimal': _decimal(maxNotional),
+      'max_risk_per_trade_percent': maxRiskPerTradePercent,
+      'max_daily_loss_percent': maxDailyLossPercent,
+      'max_concurrent_positions': maxConcurrentPositions,
+      'cooldown_after_loss_streak': cooldownAfterLossStreak,
+      'cooldown_minutes': cooldownMinutes,
+      'max_effects': maxEffects,
+    };
+  }
+
+  static String _deriveId(Map<String, dynamic> fields) =>
+      sha256
+          .convert(
+            utf8.encode(
+              'hivra:bingx-futures-trading-mandate:v1\n${jsonEncode(fields)}',
+            ),
+          )
+          .toString();
+
+  static String _decimal(double value) =>
+      value.toStringAsFixed(8).replaceFirst(RegExp(r'\.?0+$'), '');
+
+  static int? _readExactInt(Object? value) {
+    if (value is! num || !value.isFinite || value != value.truncate()) {
+      return null;
+    }
+    return value.toInt();
+  }
+}
+
 class BingxLiquidityEventEffectClaim {
   final String liquidityEventId;
   final String clientOrderId;
@@ -26,6 +340,7 @@ class BingxLiquidityEventEffectClaim {
   final BingxLiquidityEventEffectClaimStatus status;
   final String? orderId;
   final String? accountBindingHashHex;
+  final String? mandateId;
   final BingxManagedOrderLifecycleStatus lifecycleStatus;
   final String? lifecycleEvidenceAtUtc;
   final String? lifecycleDiagnostic;
@@ -42,6 +357,7 @@ class BingxLiquidityEventEffectClaim {
     required this.status,
     required this.orderId,
     this.accountBindingHashHex,
+    this.mandateId,
     this.lifecycleStatus = BingxManagedOrderLifecycleStatus.unresolved,
     this.lifecycleEvidenceAtUtc,
     this.lifecycleDiagnostic,
@@ -61,6 +377,7 @@ class BingxLiquidityEventEffectClaim {
     'status': status.name,
     'order_id': orderId,
     'account_binding_hash_hex': accountBindingHashHex,
+    'mandate_id': mandateId,
     'lifecycle_status': lifecycleStatus.name,
     'lifecycle_evidence_at_utc': lifecycleEvidenceAtUtc,
     'lifecycle_diagnostic': lifecycleDiagnostic,
@@ -105,6 +422,7 @@ class BingxLiquidityEventEffectClaim {
           RegExp(r'^[0-9a-f]{64}$').hasMatch(accountBindingHashHex)
               ? accountBindingHashHex
               : null,
+      mandateId: _readOptionalSha256(map['mandate_id']),
       lifecycleStatus: lifecycleStatus,
       lifecycleEvidenceAtUtc: _readOptionalString(
         map['lifecycle_evidence_at_utc'],
@@ -135,6 +453,7 @@ class BingxLiquidityEventEffectClaim {
               : BingxLiquidityEventEffectClaimStatus.confirmed,
       orderId: nextOrderId,
       accountBindingHashHex: accountBindingHashHex,
+      mandateId: mandateId,
       lifecycleStatus: lifecycleStatus,
       lifecycleEvidenceAtUtc: evidenceAtUtc,
       lifecycleDiagnostic: diagnostic,
@@ -292,6 +611,11 @@ String? _readOptionalString(Object? value) {
   return normalized.isEmpty ? null : normalized;
 }
 
+String? _readOptionalSha256(Object? value) {
+  final normalized = value?.toString().trim().toLowerCase() ?? '';
+  return RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized) ? normalized : null;
+}
+
 class BingxFuturesOrderTrackingState {
   final String? trackedSymbol;
   final String? trackedOrderId;
@@ -300,6 +624,7 @@ class BingxFuturesOrderTrackingState {
   final Map<String, BingxManagedOrderProvenance> managedOrderProvenance;
   final Map<String, BingxLiquidityEventEffectClaim> liquidityEventEffectClaims;
   final bool? droneEnabled;
+  final BingxFuturesTradingMandate? tradingMandate;
   final double? stopLossPercent;
   final double? takeProfitRiskReward;
 
@@ -312,6 +637,7 @@ class BingxFuturesOrderTrackingState {
     this.liquidityEventEffectClaims =
         const <String, BingxLiquidityEventEffectClaim>{},
     this.droneEnabled,
+    this.tradingMandate,
     required this.stopLossPercent,
     required this.takeProfitRiskReward,
   });
@@ -324,6 +650,7 @@ class BingxFuturesOrderTrackingState {
       managedOrderProvenance.isEmpty &&
       liquidityEventEffectClaims.isEmpty &&
       droneEnabled == null &&
+      tradingMandate == null &&
       stopLossPercent == null &&
       takeProfitRiskReward == null;
 
@@ -335,7 +662,7 @@ class BingxFuturesOrderTrackingState {
         liquidityEventEffectClaims.entries.toList()
           ..sort((a, b) => a.key.compareTo(b.key));
     return <String, dynamic>{
-      'version': 5,
+      'version': 6,
       'tracked_symbol': trackedSymbol?.trim().toUpperCase(),
       'tracked_order_id': trackedOrderId?.trim(),
       'managed_order_ids': managedOrderIds,
@@ -347,6 +674,7 @@ class BingxFuturesOrderTrackingState {
         for (final entry in sortedClaims) entry.key: entry.value.toJson(),
       },
       'drone_enabled': droneEnabled,
+      'trading_mandate': tradingMandate?.toJson(),
       'stop_loss_percent': stopLossPercent,
       'take_profit_risk_reward': takeProfitRiskReward,
     };
@@ -357,6 +685,13 @@ class BingxFuturesOrderTrackingState {
     final trackedOrderId = map['tracked_order_id']?.toString().trim();
     final droneEnabled =
         map['drone_enabled'] is bool ? map['drone_enabled'] as bool : null;
+    final mandateRaw = map['trading_mandate'];
+    final tradingMandate =
+        mandateRaw is Map
+            ? BingxFuturesTradingMandate.fromJsonMap(
+              Map<String, dynamic>.from(mandateRaw),
+            )
+            : null;
     final stopLossPercent = _readPositiveDouble(map['stop_loss_percent']);
     final takeProfitRiskReward = _readPositiveDouble(
       map['take_profit_risk_reward'],
@@ -438,6 +773,7 @@ class BingxFuturesOrderTrackingState {
       liquidityEventEffectClaims:
           Map<String, BingxLiquidityEventEffectClaim>.unmodifiable(claims),
       droneEnabled: droneEnabled,
+      tradingMandate: tradingMandate,
       stopLossPercent: stopLossPercent,
       takeProfitRiskReward: takeProfitRiskReward,
     );

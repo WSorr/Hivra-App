@@ -17,6 +17,8 @@ import 'bingx_futures_order_tracking_store.dart';
 import 'bingx_futures_risk_governor_service.dart';
 import 'bingx_futures_risk_history_service.dart';
 
+part 'bingx_futures_exchange_execution_mandate.dart';
+
 class BingxFuturesExchangeExecutionUseCaseService {
   final BingxFuturesExchangeService _exchange;
   final BingxFuturesExecutionQueueService _queue;
@@ -25,6 +27,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
   final BingxFuturesRiskHistoryService _riskHistory;
   final BingxFuturesObservabilityEnvelopeService _observability;
   final BingxFuturesOrderTrackingStore? _orderTrackingStore;
+  final DateTime Function() _nowUtc;
 
   const BingxFuturesExchangeExecutionUseCaseService({
     required BingxFuturesExchangeService exchange,
@@ -37,13 +40,15 @@ class BingxFuturesExchangeExecutionUseCaseService {
     BingxFuturesOrderTrackingStore? orderTrackingStore,
     BingxFuturesObservabilityEnvelopeService observability =
         const BingxFuturesObservabilityEnvelopeService(),
+    DateTime Function()? nowUtc,
   }) : _exchange = exchange,
        _queue = queue,
        _riskInput = riskInput,
        _riskGovernor = riskGovernor,
        _riskHistory = riskHistory,
        _orderTrackingStore = orderTrackingStore,
-       _observability = observability;
+       _observability = observability,
+       _nowUtc = nowUtc ?? DateTime.now;
 
   Future<BingxFuturesExchangeExecutionUseCaseResult> execute({
     required String screen,
@@ -69,6 +74,10 @@ class BingxFuturesExchangeExecutionUseCaseService {
     final initialControlBlock = await _tradingControlBlock(
       payload: payload,
       capsuleRootHex: executionCapsuleRootHex,
+      credentials: credentials,
+      riskPolicy: riskPolicy,
+      testOrder: testOrder,
+      orderNotionalQuoteDecimal: null,
     );
     if (initialControlBlock != null) return initialControlBlock;
 
@@ -160,16 +169,48 @@ class BingxFuturesExchangeExecutionUseCaseService {
     final finalControlBlock = await _tradingControlBlock(
       payload: payload,
       capsuleRootHex: executionCapsuleRootHex,
+      credentials: credentials,
+      riskPolicy: riskPolicy,
+      testOrder: testOrder,
+      orderNotionalQuoteDecimal: risk.decision!.orderNotionalQuoteDecimal,
     );
     if (finalControlBlock != null) return finalControlBlock;
 
+    if (liquidityEventId.isEmpty) {
+      return _result(
+        status: BingxFuturesExchangeExecutionUseCaseStatus.mandateBlocked,
+        payload: payload,
+        riskDecision: risk.decision,
+        errorCode: 'trading_mandate_event_required',
+        errorMessage:
+            'Bounded trading requires a fresh claimed liquidity event.',
+        diagnostics: risk.diagnostics,
+      );
+    }
+
     if (liquidityEventId.isNotEmpty) {
       final orderTrackingStore = _orderTrackingStore!;
+      final mandateId =
+          (await orderTrackingStore.loadForCapsule(
+            executionCapsuleRootHex!,
+          ))?.tradingMandate?.mandateId;
+      if (mandateId == null) {
+        return _result(
+          status:
+              BingxFuturesExchangeExecutionUseCaseStatus.effectClaimUnavailable,
+          payload: payload,
+          riskDecision: risk.decision,
+          errorCode: 'trading_mandate_unavailable',
+          errorMessage:
+              'Execution blocked because the trading mandate is unavailable.',
+          diagnostics: risk.diagnostics,
+        );
+      }
       BingxLiquidityEventEffectReservation reservation;
       try {
         reservation = await orderTrackingStore
             .reserveLiquidityEventEffectForCapsule(
-              capsuleRootHex: executionCapsuleRootHex!,
+              capsuleRootHex: executionCapsuleRootHex,
               liquidityEventId: liquidityEventId,
               clientOrderId: payload.clientOrderId,
               symbol: payload.symbol,
@@ -178,8 +219,9 @@ class BingxFuturesExchangeExecutionUseCaseService {
               canonicalIntentJson:
                   rawIntentResult['canonical_intent_json']?.toString(),
               testOrder: testOrder,
-              recordedAtUtc: DateTime.now().toUtc().toIso8601String(),
+              recordedAtUtc: _nowUtc().toUtc().toIso8601String(),
               accountBindingHashHex: accountBindingHashHex(credentials),
+              mandateId: mandateId,
             );
       } catch (error) {
         return _result(
@@ -270,40 +312,6 @@ class BingxFuturesExchangeExecutionUseCaseService {
       executionEnvelope: envelope,
       diagnostics: executionDiagnostics,
     );
-  }
-
-  Future<BingxFuturesExchangeExecutionUseCaseResult?> _tradingControlBlock({
-    required BingxFuturesIntentPayload payload,
-    required String? capsuleRootHex,
-  }) async {
-    final orderTrackingStore = _orderTrackingStore;
-    if (orderTrackingStore == null || capsuleRootHex == null) {
-      return _result(
-        status: BingxFuturesExchangeExecutionUseCaseStatus.executionPaused,
-        payload: payload,
-        errorCode: 'trading_control_unavailable',
-        errorMessage:
-            'Execution blocked because trading control is unavailable.',
-      );
-    }
-    try {
-      final control = await orderTrackingStore.loadForCapsule(capsuleRootHex);
-      if (control?.droneEnabled == true) return null;
-      return _result(
-        status: BingxFuturesExchangeExecutionUseCaseStatus.executionPaused,
-        payload: payload,
-        errorCode: 'trading_paused',
-        errorMessage: 'Trading is paused for this Capsule.',
-      );
-    } catch (_) {
-      return _result(
-        status: BingxFuturesExchangeExecutionUseCaseStatus.executionPaused,
-        payload: payload,
-        errorCode: 'trading_control_unavailable',
-        errorMessage:
-            'Execution blocked because trading control is unavailable.',
-      );
-    }
   }
 
   static String accountBindingHashHex(BingxFuturesApiCredentials credentials) {
@@ -575,6 +583,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
       liquidityEventEffectClaims:
           Map<String, BingxLiquidityEventEffectClaim>.unmodifiable(claims),
       droneEnabled: current.droneEnabled,
+      tradingMandate: current.tradingMandate,
       stopLossPercent: current.stopLossPercent,
       takeProfitRiskReward: current.takeProfitRiskReward,
     );

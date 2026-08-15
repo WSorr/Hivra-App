@@ -384,10 +384,123 @@ void main() {
         expect(
           result.status,
           BingxFuturesExchangeExecutionUseCaseStatus.executed,
+          reason: result.errorCode,
         );
         expect(placeOrderCalled, isTrue);
       },
     );
+
+    test('bounded mandate rejects scope and authority mutations', () async {
+      var placeOrderCalled = false;
+      final store = _trackingStore(tempHome);
+      final now = DateTime.utc(2026, 8, 16, 12);
+      final exchange = BingxFuturesExchangeService();
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            placeOrderCalled = true;
+            throw StateError('must not execute');
+          },
+        ),
+        riskHistory: riskHistory,
+        orderTrackingStore: store,
+        nowUtc: () => now,
+      );
+
+      Future<BingxFuturesExchangeExecutionUseCaseResult> run(
+        BingxFuturesTradingMandate mandate, {
+        BingxFuturesApiCredentials credentials = _credentials,
+      }) async {
+        await store.save(
+          BingxFuturesOrderTrackingState(
+            trackedSymbol: null,
+            trackedOrderId: null,
+            managedOrderIds: const <String>[],
+            managedOrderSymbols: const <String, String>{},
+            droneEnabled: true,
+            tradingMandate: mandate,
+            stopLossPercent: null,
+            takeProfitRiskReward: null,
+          ),
+        );
+        return service.execute(
+          screen: 'test',
+          rawIntentResult: _zoneIntent,
+          credentials: credentials,
+          riskPolicy: _policy,
+          fallbackEquityQuote: 100,
+          testOrder: true,
+          preparedDecision: _decision(),
+          refreshDecision: () async => _decision(),
+        );
+      }
+
+      final mutations = <BingxFuturesTradingMandate>[
+        _mandate(now: now, capsuleRootHex: List<String>.filled(64, 'b').join()),
+        _mandate(
+          now: now,
+          accountBindingHashHex: List<String>.filled(64, 'c').join(),
+        ),
+        _mandate(now: now, symbol: 'ETH-USDT'),
+        _mandate(now: now, testOrder: false),
+        _mandate(now: now.subtract(const Duration(hours: 2))),
+        _mandate(now: now, maxNotional: '5'),
+        _mandate(now: now, maxRiskPerTradePercent: 1),
+        _mandate(now: now).revoke(now),
+      ];
+      for (final mandate in mutations) {
+        final result = await run(mandate);
+        expect(
+          result.status,
+          BingxFuturesExchangeExecutionUseCaseStatus.mandateBlocked,
+          reason: mandate.mandateId,
+        );
+      }
+      expect(placeOrderCalled, isFalse);
+    });
+
+    test('bounded mandate rejects effects without an event claim', () async {
+      var placeOrderCalled = false;
+      final exchange = BingxFuturesExchangeService();
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            placeOrderCalled = true;
+            throw StateError('must not execute');
+          },
+        ),
+        riskHistory: riskHistory,
+        orderTrackingStore: executionControlStore,
+      );
+      final direct = <String, dynamic>{..._zoneIntent, 'entry_mode': 'direct'};
+      final result = await service.execute(
+        screen: 'test',
+        rawIntentResult: direct,
+        credentials: _credentials,
+        riskPolicy: _policy,
+        fallbackEquityQuote: 100,
+        testOrder: true,
+      );
+
+      expect(
+        result.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.mandateBlocked,
+      );
+      expect(result.errorCode, 'trading_mandate_event_required');
+      expect(placeOrderCalled, isFalse);
+    });
 
     test('blocks same event when its executable zone changes', () async {
       var placeOrderCalled = false;
@@ -630,6 +743,7 @@ void main() {
     });
 
     test('blocks live execution when exchange risk inputs use fallback', () async {
+      await _setDroneEnabled(executionControlStore, true, testOrder: false);
       var placeOrderCalled = false;
       final exchange = BingxFuturesExchangeService(
         requestSender: (request) async {
@@ -708,6 +822,7 @@ void main() {
     });
 
     test('blocks live execution from persisted exchange loss streak', () async {
+      await _setDroneEnabled(executionControlStore, true, testOrder: false);
       var placeOrderCalled = false;
       final now = DateTime.now().toUtc();
       final exchange = BingxFuturesExchangeService(
@@ -1209,8 +1324,11 @@ BingxFuturesOrderTrackingStore _trackingStore(Directory tempHome) {
 
 Future<void> _setDroneEnabled(
   BingxFuturesOrderTrackingStore store,
-  bool enabled,
-) {
+  bool enabled, {
+  bool testOrder = true,
+}) {
+  final now = DateTime.now().toUtc();
+  final capsuleRootHex = store.activeCapsuleRootHex!;
   return store.save(
     BingxFuturesOrderTrackingState(
       trackedSymbol: null,
@@ -1218,6 +1336,27 @@ Future<void> _setDroneEnabled(
       managedOrderIds: const <String>[],
       managedOrderSymbols: const <String, String>{},
       droneEnabled: enabled,
+      tradingMandate:
+          enabled
+              ? BingxFuturesTradingMandate.issue(
+                capsuleRootHex: capsuleRootHex,
+                accountBindingHashHex:
+                    BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+                      _credentials,
+                    ),
+                symbol: 'BTC-USDT',
+                testOrder: testOrder,
+                issuedAtUtc: now,
+                expiresAtUtc: now.add(const Duration(hours: 24)),
+                maxOrderNotionalQuoteDecimal: '1000000000',
+                maxRiskPerTradePercent: _policy.maxRiskPerTradePercent,
+                maxDailyLossPercent: _policy.maxDailyLossPercent,
+                maxConcurrentPositions: _policy.maxConcurrentPositions,
+                cooldownAfterLossStreak: _policy.cooldownAfterLossStreak,
+                cooldownMinutes: _policy.cooldownMinutes,
+                maxEffects: 32,
+              )
+              : null,
       stopLossPercent: null,
       takeProfitRiskReward: null,
     ),
@@ -1307,6 +1446,36 @@ const BingxFuturesRiskPolicy _policy = BingxFuturesRiskPolicy(
   cooldownAfterLossStreak: 2,
   cooldownMinutes: 60,
 );
+
+BingxFuturesTradingMandate _mandate({
+  required DateTime now,
+  String? capsuleRootHex,
+  String? accountBindingHashHex,
+  String symbol = 'BTC-USDT',
+  bool testOrder = true,
+  String maxNotional = '1000',
+  double maxRiskPerTradePercent = 2,
+}) {
+  return BingxFuturesTradingMandate.issue(
+    capsuleRootHex: capsuleRootHex ?? List<String>.filled(64, 'a').join(),
+    accountBindingHashHex:
+        accountBindingHashHex ??
+        BingxFuturesExchangeExecutionUseCaseService.accountBindingHashHex(
+          _credentials,
+        ),
+    symbol: symbol,
+    testOrder: testOrder,
+    issuedAtUtc: now,
+    expiresAtUtc: now.add(const Duration(hours: 1)),
+    maxOrderNotionalQuoteDecimal: maxNotional,
+    maxRiskPerTradePercent: maxRiskPerTradePercent,
+    maxDailyLossPercent: 5,
+    maxConcurrentPositions: 3,
+    cooldownAfterLossStreak: 2,
+    cooldownMinutes: 60,
+    maxEffects: 32,
+  );
+}
 
 const Map<String, dynamic> _marketIntent = <String, dynamic>{
   'client_order_id': 'ord-1',

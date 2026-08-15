@@ -275,6 +275,43 @@ credential enters the tracking journal. Test-order validation has no provider
 order lifecycle and therefore remains explicitly unresolved rather than being
 queried as a live order.
 
+### 5.3.3 Capsule-Owned Bounded Trading Mandate
+
+Every new exchange order effect requires one active, versioned mandate owned
+by the selected Capsule. The mandate is capability-owned Trading operational
+state, not a Core or Ledger fact and not a generic agent authorization.
+
+The semantic commitment binds the Capsule root scope, exact non-secret BingX
+account binding, one symbol, test/live mode, issue and expiry times, maximum
+order notional, deterministic risk policy, and maximum effect count. Its
+domain-separated SHA-256 identifier is stable for those exact semantics.
+Changing any bound field creates a different mandate rather than mutating or
+extending the old authority. A mandate lasts at most 24 hours and authorizes at
+most 256 effects; the current product surface issues at most 32.
+The current mandate action set is exactly the canonical limit/zone lifecycle;
+direct or market effects remain blocked because they have no liquidity-event
+claim against which the atomic effect budget can be consumed.
+
+The existing Capsule-scoped order-tracking store is the sole mandate-state
+owner. The existing exchange-execution use case is the sole enforcement and
+effect owner. It MUST verify pause state, Capsule, account, symbol, mode,
+validity window, exact risk policy, notional ceiling, and remaining effect
+budget before risk work and again immediately before the event claim. The
+store atomically binds the claim to the same mandate and fails closed on
+revocation, expiry, scope mismatch, or exhausted budget.
+
+`Resume` is an explicit local authorization of the exact displayed bounds.
+`Emergency Pause` both disables trading and records revocation; resuming
+requires a new commitment. Missing, legacy, malformed, expired, or revoked
+mandate state cannot authorize an effect. Restart and Capsule switching do not
+renew or transfer authority. Reconciliation remains read-only and cannot
+create, enlarge, or renew a mandate.
+
+This contract adds no scheduler, background process, remote lease, credential
+transfer, provider route, plugin ABI, Core path, or Ledger fact. A future
+headless host must call the same execution owner and cannot convert shadow
+evidence into mandate authority.
+
 ### 5.4 Microstructure Confirmation
 
 - taker-flow delta from recent trades:
