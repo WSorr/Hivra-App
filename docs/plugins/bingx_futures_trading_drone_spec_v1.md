@@ -302,6 +302,17 @@ queried as a live order.
     MUST NOT be normalized as liquidation-level evidence.
   - orderbook-derived estimates MUST be labeled `liquidation_proxy`; only a
     dedicated market-wide feed may set liquidation state to `known`.
+  - the public-depth proxy map groups valid same-side levels into deterministic
+    5 bps distance buckets around current price, aggregates duplicate notionals,
+    and retains at most three ranked clusters per side;
+  - ranking may use closed-candle structure proximity, open-interest growth,
+    funding crowding direction, and aggressive trade flow, but every retained
+    level remains a proxy rather than observed liquidation-position evidence;
+  - depth older than 30 seconds, more than 5 seconds in the future, crossed
+    against current price, malformed, non-positive, or outside bounded input
+    retention MUST NOT produce a liquidation proxy;
+  - canonical input permutation MUST produce the same ordered proxy prices;
+    proxy-only evidence MUST NOT change exchange-effect eligibility.
 
 External HTF levels MUST have an explicit deterministic lifecycle:
 
@@ -342,6 +353,8 @@ If liquidation-level feed is unavailable:
 Orderbook depth is **not** a required decision feature for v1 TVH.
 
 - raw bid/ask imbalance must not block or authorize a trade by itself,
+- bounded depth clusters may rank liquidation-proxy context and activation or
+  target areas, but cannot independently select an entry zone,
 - hidden/triggered liquidity is treated through activation events (section 3.1).
 
 ---

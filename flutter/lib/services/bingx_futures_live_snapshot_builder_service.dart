@@ -192,7 +192,10 @@ class BingxFuturesLiveSnapshotBuilderService {
         candles1h: _closedKlines('1h', k1h.klines, observationTime),
         depth: depth,
         trades: trades.trades,
+        openInterest: openInterestRows,
+        fundingRateDecimal: funding.fundingRateDecimal,
         priceDecimal: price.priceDecimal!,
+        observedAtUtc: observationTime,
       );
       final sessions = _deriveSessions(tradeRows);
       final orderBookLevels = _mapOrderBook(depth);
@@ -351,7 +354,10 @@ class BingxFuturesLiveSnapshotBuilderService {
     required List<BingxFuturesPublicKline> candles1h,
     required BingxFuturesPublicOrderBookResult depth,
     required List<BingxFuturesPublicTrade> trades,
+    required List<BingxFuturesOpenInterestPoint> openInterest,
+    required String fundingRateDecimal,
     required String priceDecimal,
+    required DateTime observedAtUtc,
   }) {
     final highs1h = candles1h
         .map((k) => num.tryParse(k.highDecimal) ?? 0)
@@ -414,7 +420,11 @@ class BingxFuturesLiveSnapshotBuilderService {
     final liquidation = _deriveLiquidationProxyLevels(
       depth: depth,
       trades: trades,
+      openInterest: openInterest,
+      fundingRateDecimal: fundingRateDecimal,
+      structurePrices: <num>[...highs1h, ...lows1h, ...highs5m, ...lows5m],
       priceDecimal: priceDecimal,
+      observedAtUtc: observedAtUtc,
     );
     return <BingxFuturesLiquidityLevel>[...baseLevels, ...liquidation];
   }
@@ -504,30 +514,26 @@ class BingxFuturesLiveSnapshotBuilderService {
   List<BingxFuturesLiquidityLevel> _deriveLiquidationProxyLevels({
     required BingxFuturesPublicOrderBookResult depth,
     required List<BingxFuturesPublicTrade> trades,
+    required List<BingxFuturesOpenInterestPoint> openInterest,
+    required String fundingRateDecimal,
+    required List<num> structurePrices,
     required String priceDecimal,
+    required DateTime observedAtUtc,
   }) {
     final mid = num.tryParse(priceDecimal) ?? 0;
     if (mid <= 0) return const <BingxFuturesLiquidityLevel>[];
-
-    ({num price, num qty, num notional})? bestBid;
-    for (final bid in depth.bids) {
-      final price = num.tryParse(bid.priceDecimal) ?? 0;
-      final qty = num.tryParse(bid.quantityDecimal) ?? 0;
-      if (price <= 0 || qty <= 0 || price >= mid) continue;
-      final notional = price * qty;
-      if (bestBid == null || notional > bestBid.notional) {
-        bestBid = (price: price, qty: qty, notional: notional);
-      }
+    final depthTimestampMs = int.tryParse(depth.timestampMs?.trim() ?? '');
+    if (depthTimestampMs == null) {
+      return const <BingxFuturesLiquidityLevel>[];
     }
-    ({num price, num qty, num notional})? bestAsk;
-    for (final ask in depth.asks) {
-      final price = num.tryParse(ask.priceDecimal) ?? 0;
-      final qty = num.tryParse(ask.quantityDecimal) ?? 0;
-      if (price <= 0 || qty <= 0 || price <= mid) continue;
-      final notional = price * qty;
-      if (bestAsk == null || notional > bestAsk.notional) {
-        bestAsk = (price: price, qty: qty, notional: notional);
-      }
+    final depthTime = DateTime.fromMillisecondsSinceEpoch(
+      depthTimestampMs,
+      isUtc: true,
+    );
+    final depthAge = observedAtUtc.toUtc().difference(depthTime);
+    if (depthAge > const Duration(seconds: 30) ||
+        depthAge < const Duration(seconds: -5)) {
+      return const <BingxFuturesLiquidityLevel>[];
     }
 
     final buyAggression = trades
@@ -546,31 +552,171 @@ class BingxFuturesLiveSnapshotBuilderService {
           return qty > 0 && price > 0 ? qty * price : 0;
         })
         .fold<num>(0, (acc, value) => acc + value);
+    final oiDeltaPct = _openInterestDeltaPct(openInterest);
+    final fundingRate = num.tryParse(fundingRateDecimal) ?? 0;
 
-    final levels = <BingxFuturesLiquidityLevel>[];
-    if (bestAsk != null &&
-        (buyAggression >= sellAggression * 0.8 || sellAggression == 0)) {
-      levels.add(
-        BingxFuturesLiquidityLevel(
-          kind: 'liquidation_proxy',
-          side: 'sellside',
-          timeframe: '5m',
-          priceDecimal: _fmt(bestAsk.price),
-        ),
+    return <BingxFuturesLiquidityLevel>[
+      ..._rankDepthClusters(
+        levels: depth.asks,
+        side: 'sellside',
+        mid: mid,
+        requireAboveMid: true,
+        directionalAggression: buyAggression,
+        opposingAggression: sellAggression,
+        oiDeltaPct: oiDeltaPct,
+        fundingCrowdingAligned: fundingRate < 0,
+        structurePrices: structurePrices,
+      ),
+      ..._rankDepthClusters(
+        levels: depth.bids,
+        side: 'buyside',
+        mid: mid,
+        requireAboveMid: false,
+        directionalAggression: sellAggression,
+        opposingAggression: buyAggression,
+        oiDeltaPct: oiDeltaPct,
+        fundingCrowdingAligned: fundingRate > 0,
+        structurePrices: structurePrices,
+      ),
+    ];
+  }
+
+  List<BingxFuturesLiquidityLevel> _rankDepthClusters({
+    required List<BingxFuturesPublicOrderBookLevel> levels,
+    required String side,
+    required num mid,
+    required bool requireAboveMid,
+    required num directionalAggression,
+    required num opposingAggression,
+    required num oiDeltaPct,
+    required bool fundingCrowdingAligned,
+    required List<num> structurePrices,
+  }) {
+    const clusterWidthBps = 5.0;
+    const maxInputLevels = 100;
+    const maxOutputClusters = 3;
+    final buckets = <int, _DepthClusterAccumulator>{};
+    final canonicalLevels =
+        levels
+            .map((level) {
+              final price = num.tryParse(level.priceDecimal) ?? 0;
+              final quantity = num.tryParse(level.quantityDecimal) ?? 0;
+              return (price: price, quantity: quantity);
+            })
+            .where((level) => level.price > 0 && level.quantity > 0)
+            .where(
+              (level) =>
+                  requireAboveMid ? level.price > mid : level.price < mid,
+            )
+            .toList()
+          ..sort((left, right) {
+            final byPrice = left.price.compareTo(right.price);
+            if (byPrice != 0) return byPrice;
+            return left.quantity.compareTo(right.quantity);
+          });
+    for (final level in canonicalLevels.take(maxInputLevels)) {
+      final price = level.price;
+      final quantity = level.quantity;
+      final distanceBps = ((price - mid).abs() / mid) * 10000;
+      final bucket = (distanceBps / clusterWidthBps).floor();
+      final accumulator = buckets.putIfAbsent(
+        bucket,
+        () => _DepthClusterAccumulator(),
       );
+      final notional = price * quantity;
+      accumulator.notional += notional;
+      accumulator.weightedPrice += price * notional;
     }
-    if (bestBid != null &&
-        (sellAggression >= buyAggression * 0.8 || buyAggression == 0)) {
-      levels.add(
-        BingxFuturesLiquidityLevel(
-          kind: 'liquidation_proxy',
-          side: 'buyside',
-          timeframe: '5m',
-          priceDecimal: _fmt(bestBid.price),
-        ),
-      );
+    if (buckets.isEmpty) {
+      return const <BingxFuturesLiquidityLevel>[];
     }
-    return levels;
+
+    final totalNotional = buckets.values.fold<num>(
+      0,
+      (total, cluster) => total + cluster.notional,
+    );
+    if (totalNotional <= 0) {
+      return const <BingxFuturesLiquidityLevel>[];
+    }
+    final totalAggression = directionalAggression + opposingAggression;
+    final aggressionShare =
+        totalAggression <= 0
+            ? 0.0
+            : (directionalAggression / totalAggression).toDouble();
+    final candidates =
+        buckets.values.map((cluster) {
+            final center = cluster.weightedPrice / cluster.notional;
+            final depthShare = cluster.notional / totalNotional;
+            final structureDistanceBps = structurePrices
+                .where((price) => price > 0)
+                .map((price) => ((center - price).abs() / mid) * 10000)
+                .fold<num>(
+                  double.infinity,
+                  (best, value) => value < best ? value : best,
+                );
+            final structureScore =
+                structureDistanceBps <= 20
+                    ? 0.15
+                    : structureDistanceBps <= 50
+                    ? 0.05
+                    : 0.0;
+            final oiScore = oiDeltaPct >= 0.005 ? 0.05 : 0.0;
+            final fundingScore = fundingCrowdingAligned ? 0.05 : 0.0;
+            final flowScore =
+                aggressionShare >= 0.6
+                    ? 0.10
+                    : aggressionShare >= 0.5
+                    ? 0.05
+                    : 0.0;
+            return _RankedDepthCluster(
+              center: center,
+              depthShare: depthShare,
+              score:
+                  depthShare +
+                  structureScore +
+                  oiScore +
+                  fundingScore +
+                  flowScore,
+            );
+          }).toList()
+          ..sort((left, right) {
+            final byScore = right.score.compareTo(left.score);
+            if (byScore != 0) return byScore;
+            return left.center.compareTo(right.center);
+          });
+
+    final selected = <_RankedDepthCluster>[];
+    for (final candidate in candidates) {
+      if (selected.isNotEmpty &&
+          (candidate.depthShare < 0.12 || candidate.score < 0.22)) {
+        continue;
+      }
+      selected.add(candidate);
+      if (selected.length == maxOutputClusters) break;
+    }
+    selected.sort((left, right) => left.center.compareTo(right.center));
+    return selected
+        .map(
+          (cluster) => BingxFuturesLiquidityLevel(
+            kind: 'liquidation_proxy',
+            side: side,
+            timeframe: '5m',
+            priceDecimal: _fmt(cluster.center),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  num _openInterestDeltaPct(List<BingxFuturesOpenInterestPoint> values) {
+    if (values.length < 2) return 0;
+    final sorted =
+        values.toList()..sort(
+          (left, right) => left.timestampUtc.compareTo(right.timestampUtc),
+        );
+    final first = num.tryParse(sorted.first.openInterestDecimal) ?? 0;
+    final last = num.tryParse(sorted.last.openInterestDecimal) ?? 0;
+    if (first <= 0) return 0;
+    return (last - first) / first;
   }
 
   String _msToUtcIso(String rawMs) {
@@ -584,4 +730,21 @@ class BingxFuturesLiveSnapshotBuilderService {
   String _fmt(num value) {
     return value.toStringAsFixed(8).replaceFirst(RegExp(r'\.?0+$'), '');
   }
+}
+
+class _DepthClusterAccumulator {
+  num notional = 0;
+  num weightedPrice = 0;
+}
+
+class _RankedDepthCluster {
+  final num center;
+  final num depthShare;
+  final num score;
+
+  const _RankedDepthCluster({
+    required this.center,
+    required this.depthShare,
+    required this.score,
+  });
 }

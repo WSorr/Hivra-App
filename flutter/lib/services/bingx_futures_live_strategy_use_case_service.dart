@@ -73,6 +73,13 @@ class BingxFuturesLiveStrategyUseCaseService {
           symbol: snapshot.symbol,
           decision: decision,
           consensusSignable: command.isConsensusSignable,
+          liquidationProxyLevels: snapshot.snapshotInput!.liquidityLevels
+              .where(
+                (level) =>
+                    level.kind.trim().toLowerCase() == 'liquidation_proxy',
+              )
+              .map((level) => '${level.side}:${level.priceDecimal}')
+              .toList(growable: false),
         ),
       );
     } on FormatException catch (error) {
@@ -91,6 +98,7 @@ class BingxFuturesLiveStrategyUseCaseService {
     required String symbol,
     required BingxFuturesLiveDecisionResult decision,
     required bool consensusSignable,
+    required List<String> liquidationProxyLevels,
   }) {
     return 'symbol=$symbol '
         'can_prepare=${decision.canPrepareIntent} '
@@ -103,6 +111,7 @@ class BingxFuturesLiveStrategyUseCaseService {
         'anchor_source=${decision.zoneAnchorSource ?? "-"} '
         'anchor_lifecycle=${decision.zoneAnchorLifecycle ?? "-"} '
         'anchor_executable=${decision.zoneAnchorExecutable} '
+        'liquidation_proxies=${liquidationProxyLevels.isEmpty ? "-" : liquidationProxyLevels.join(",")} '
         'trend15m=${decision.trend15m} '
         'trend4h=${decision.trend4h} '
         'trend1d=${decision.trend1d} '
