@@ -61,6 +61,7 @@ class BingxFuturesOrderTrackingStore {
               ? existing?.liquidityEventEffectClaims ??
                   state.liquidityEventEffectClaims
               : state.liquidityEventEffectClaims,
+      droneEnabled: state.droneEnabled,
       stopLossPercent: state.stopLossPercent,
       takeProfitRiskReward: state.takeProfitRiskReward,
     );
@@ -310,6 +311,7 @@ class BingxFuturesOrderTrackingStore {
       managedOrderProvenance: state.managedOrderProvenance,
       liquidityEventEffectClaims:
           Map<String, BingxLiquidityEventEffectClaim>.unmodifiable(claims),
+      droneEnabled: state.droneEnabled,
       stopLossPercent: state.stopLossPercent,
       takeProfitRiskReward: state.takeProfitRiskReward,
     );

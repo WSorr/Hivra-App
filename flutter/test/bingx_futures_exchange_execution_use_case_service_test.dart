@@ -21,6 +21,7 @@ void main() {
   group('BingxFuturesExchangeExecutionUseCaseService', () {
     late Directory tempHome;
     late BingxFuturesRiskHistoryService riskHistory;
+    late BingxFuturesOrderTrackingStore executionControlStore;
 
     setUp(() async {
       tempHome = await Directory.systemTemp.createTemp('hivra-risk-execution-');
@@ -30,6 +31,8 @@ void main() {
           dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
         ),
       );
+      executionControlStore = _trackingStore(tempHome);
+      await _setDroneEnabled(executionControlStore, true);
     });
 
     tearDown(() async {
@@ -53,6 +56,7 @@ void main() {
           },
         ),
         riskHistory: riskHistory,
+        orderTrackingStore: executionControlStore,
       );
 
       final result = await service.execute(
@@ -68,6 +72,157 @@ void main() {
         result.status,
         BingxFuturesExchangeExecutionUseCaseStatus.invalidIntent,
       );
+      expect(placeOrderCalled, isFalse);
+    });
+
+    test(
+      'blocks execution when durable trading control is unavailable',
+      () async {
+        var placeOrderCalled = false;
+        final exchange = BingxFuturesExchangeService();
+        final service = BingxFuturesExchangeExecutionUseCaseService(
+          exchange: exchange,
+          queue: BingxFuturesExecutionQueueService(
+            exchangeService: exchange,
+            placeOrderRunner: ({
+              required credentials,
+              required intent,
+              required testOrder,
+            }) async {
+              placeOrderCalled = true;
+              throw StateError('must not execute');
+            },
+          ),
+          riskHistory: riskHistory,
+        );
+
+        final result = await service.execute(
+          screen: 'test',
+          rawIntentResult: _marketIntent,
+          credentials: _credentials,
+          riskPolicy: _policy,
+          fallbackEquityQuote: 100,
+          testOrder: true,
+        );
+
+        expect(
+          result.status,
+          BingxFuturesExchangeExecutionUseCaseStatus.executionPaused,
+        );
+        expect(result.errorCode, 'trading_control_unavailable');
+        expect(placeOrderCalled, isFalse);
+      },
+    );
+
+    test(
+      'restored Capsule pause blocks execution before provider access',
+      () async {
+        var placeOrderCalled = false;
+        final store = _trackingStore(tempHome);
+        await _setDroneEnabled(store, false);
+        final restartedStore = _trackingStore(tempHome);
+        final exchange = BingxFuturesExchangeService();
+        final service = BingxFuturesExchangeExecutionUseCaseService(
+          exchange: exchange,
+          queue: BingxFuturesExecutionQueueService(
+            exchangeService: exchange,
+            placeOrderRunner: ({
+              required credentials,
+              required intent,
+              required testOrder,
+            }) async {
+              placeOrderCalled = true;
+              throw StateError('must not execute');
+            },
+          ),
+          riskHistory: riskHistory,
+          orderTrackingStore: restartedStore,
+        );
+
+        final result = await service.execute(
+          screen: 'test',
+          rawIntentResult: _marketIntent,
+          credentials: _credentials,
+          riskPolicy: _policy,
+          fallbackEquityQuote: 100,
+          testOrder: true,
+        );
+
+        expect(
+          result.status,
+          BingxFuturesExchangeExecutionUseCaseStatus.executionPaused,
+        );
+        expect(result.errorCode, 'trading_paused');
+        expect(placeOrderCalled, isFalse);
+      },
+    );
+
+    test('pause during risk refresh blocks the final provider effect', () async {
+      var placeOrderCalled = false;
+      var pauseWritten = false;
+      final store = _trackingStore(tempHome);
+      await _setDroneEnabled(store, true);
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          if (!pauseWritten && request.uri.path.endsWith('/quote/contracts')) {
+            pauseWritten = true;
+            await _setDroneEnabled(store, false);
+          }
+          if (request.uri.path.endsWith('/quote/contracts')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","tradeMinQuantity":0.001,"tradeMinUSDT":2,"quantityPrecision":3,"pricePrecision":2}]}',
+            );
+          }
+          if (request.uri.path.endsWith('/quote/price')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":{"price":"100"}}',
+            );
+          }
+          return const BingxHttpResponse(
+            statusCode: 503,
+            body: '{"code":503,"msg":"test fallback"}',
+          );
+        },
+      );
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            placeOrderCalled = true;
+            throw StateError('must not execute');
+          },
+        ),
+        riskHistory: riskHistory,
+        orderTrackingStore: store,
+      );
+
+      final result = await service.execute(
+        screen: 'test',
+        rawIntentResult: <String, dynamic>{
+          ..._marketIntent,
+          'quantity_decimal': '0.03',
+          'stop_loss_decimal': '95',
+        },
+        credentials: _credentials,
+        riskPolicy: _policy,
+        fallbackEquityQuote: 100,
+        testOrder: true,
+      );
+
+      expect(pauseWritten, isTrue);
+      expect(
+        result.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.executionPaused,
+      );
+      expect(result.errorCode, 'trading_paused');
       expect(placeOrderCalled, isFalse);
     });
 
@@ -94,6 +249,7 @@ void main() {
           },
         ),
         riskHistory: riskHistory,
+        orderTrackingStore: executionControlStore,
       );
 
       final result = await service.execute(
@@ -130,6 +286,7 @@ void main() {
           },
         ),
         riskHistory: riskHistory,
+        orderTrackingStore: executionControlStore,
       );
 
       final result = await service.execute(
@@ -158,6 +315,7 @@ void main() {
         exchange: exchange,
         queue: BingxFuturesExecutionQueueService(exchangeService: exchange),
         riskHistory: riskHistory,
+        orderTrackingStore: executionControlStore,
       );
 
       final result = await service.execute(
@@ -184,6 +342,7 @@ void main() {
         var placeOrderCalled = false;
         final exchange = BingxFuturesExchangeService();
         final store = _trackingStore(tempHome);
+        await _setDroneEnabled(store, true);
         final service = BingxFuturesExchangeExecutionUseCaseService(
           exchange: exchange,
           queue: BingxFuturesExecutionQueueService(
@@ -247,6 +406,7 @@ void main() {
           },
         ),
         riskHistory: riskHistory,
+        orderTrackingStore: executionControlStore,
       );
 
       final result = await service.execute(
@@ -300,6 +460,7 @@ void main() {
         readActiveCapsuleRootHex: () => activeCapsule,
         fileStore: fileStore,
       );
+      await _setDroneEnabled(trackingStore, true);
       BingxFuturesExchangeExecutionUseCaseService buildUseCase(
         BingxFuturesOrderTrackingStore store,
       ) {
@@ -437,6 +598,7 @@ void main() {
           },
         ),
         riskHistory: riskHistory,
+        orderTrackingStore: executionControlStore,
       );
 
       final result = await service.execute(
@@ -516,6 +678,7 @@ void main() {
           },
         ),
         riskHistory: riskHistory,
+        orderTrackingStore: executionControlStore,
       );
 
       final result = await service.execute(
@@ -615,6 +778,7 @@ void main() {
           },
         ),
         riskHistory: riskHistory,
+        orderTrackingStore: executionControlStore,
       );
 
       final result = await service.execute(
@@ -1039,6 +1203,23 @@ BingxFuturesOrderTrackingStore _trackingStore(Directory tempHome) {
     readActiveCapsuleRootHex: () => List<String>.filled(64, 'a').join(),
     fileStore: CapsuleFileStore(
       dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+    ),
+  );
+}
+
+Future<void> _setDroneEnabled(
+  BingxFuturesOrderTrackingStore store,
+  bool enabled,
+) {
+  return store.save(
+    BingxFuturesOrderTrackingState(
+      trackedSymbol: null,
+      trackedOrderId: null,
+      managedOrderIds: const <String>[],
+      managedOrderSymbols: const <String, String>{},
+      droneEnabled: enabled,
+      stopLossPercent: null,
+      takeProfitRiskReward: null,
     ),
   );
 }
