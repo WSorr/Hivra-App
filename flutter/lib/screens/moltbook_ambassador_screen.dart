@@ -144,6 +144,7 @@ class _MoltbookAmbassadorScreenState extends State<MoltbookAmbassadorScreen> {
 
   Future<void> _load() async {
     try {
+      await widget.module.ingestBundledMoltbookPublicChanges();
       final results = await Future.wait<Object?>(<Future<Object?>>[
         widget.module.loadAmbassadorConfiguration(),
         widget.module.loadMoltbookBinding(),

@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/moltbook_ambassador_models.dart';
 import 'package:hivra_app/models/plugin_contract_ids.dart';
 import 'package:hivra_app/services/atomic_file_write_service.dart';
 import 'package:hivra_app/services/capsule_file_store.dart';
@@ -9,6 +11,8 @@ import 'package:hivra_app/services/moltbook_public_change_feed_store.dart';
 import 'package:hivra_app/services/user_visible_data_directory_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late Directory home;
   late CapsuleFileStore files;
   late MoltbookPublicChangeFeedStore store;
@@ -57,6 +61,170 @@ void main() {
       );
     },
   );
+
+  test('bundled manifest is atomic, idempotent, and Capsule scoped', () async {
+    final inserted = await store.ingestManifest(
+      _manifest(),
+      allowedTopics: const <String>{'hivra-development'},
+    );
+    expect(inserted.single.sourceId, 'hivra-chat-workspace-2026-08-14');
+
+    final replay = await store.ingestManifest(
+      _manifest(),
+      allowedTopics: const <String>{'hivra-development'},
+    );
+    expect(replay, isEmpty);
+    expect(await store.load(), hasLength(1));
+
+    final restarted = MoltbookPublicChangeFeedStore(
+      fileStore: files,
+      readActiveCapsuleRootHex: () => activeRoot,
+    );
+    expect(
+      await restarted.ingestManifest(
+        _manifest(),
+        allowedTopics: const <String>{'hivra-development'},
+      ),
+      isEmpty,
+    );
+
+    activeRoot = _rootB;
+    expect(
+      await restarted.ingestManifest(
+        _manifest(),
+        allowedTopics: const <String>{'hivra-development'},
+      ),
+      hasLength(1),
+    );
+    expect(await restarted.load(), hasLength(1));
+  });
+
+  test('packaged manifest produces one pending public change', () async {
+    final raw = await rootBundle.loadString(
+      'assets/moltbook_public_changes.v1.json',
+    );
+    final inserted = await store.ingestManifest(
+      raw,
+      allowedTopics:
+          MoltbookAmbassadorConfiguration.defaults().allowedTopics.toSet(),
+    );
+
+    expect(inserted, hasLength(1));
+    expect((await store.nextPending())?.sourceId, inserted.single.sourceId);
+  });
+
+  test(
+    'bundled manifest rejects malformed and conflicting input atomically',
+    () async {
+      final malformed = jsonDecode(_manifest()) as Map<String, dynamic>;
+      (malformed['changes'] as List).add(<String, dynamic>{
+        'source_id': 'invalid change id',
+        'category': 'hivra-development',
+        'facts': <String>['This entry must reject the complete manifest.'],
+      });
+      await expectLater(
+        store.ingestManifest(
+          jsonEncode(malformed),
+          allowedTopics: const <String>{'hivra-development'},
+        ),
+        throwsFormatException,
+      );
+      expect(await store.load(), isEmpty);
+
+      await store.ingestManifest(
+        _manifest(),
+        allowedTopics: const <String>{'hivra-development'},
+      );
+      final conflicting = jsonDecode(_manifest()) as Map<String, dynamic>;
+      ((conflicting['changes'] as List).single
+          as Map<String, dynamic>)['facts'] = <String>[
+        'Different facts cannot reuse this source id.',
+      ];
+      await expectLater(
+        store.ingestManifest(
+          jsonEncode(conflicting),
+          allowedTopics: const <String>{'hivra-development'},
+        ),
+        throwsStateError,
+      );
+      expect((await store.load()).single.facts, <String>[
+        'Chat presents retained messages in a conversation timeline.',
+      ]);
+    },
+  );
+
+  test('bundled manifest rejects duplicate source ids atomically', () async {
+    final duplicate = jsonDecode(_manifest()) as Map<String, dynamic>;
+    (duplicate['changes'] as List).add(
+      Map<String, dynamic>.from((duplicate['changes'] as List).single as Map),
+    );
+
+    await expectLater(
+      store.ingestManifest(
+        jsonEncode(duplicate),
+        allowedTopics: const <String>{'hivra-development'},
+      ),
+      throwsFormatException,
+    );
+    expect(await store.load(), isEmpty);
+  });
+
+  test('Capsule switch aborts bundled manifest persistence', () async {
+    var ownerReads = 0;
+    final switchingStore = MoltbookPublicChangeFeedStore(
+      fileStore: files,
+      readActiveCapsuleRootHex: () {
+        ownerReads++;
+        return ownerReads == 1 ? _rootA : _rootB;
+      },
+    );
+
+    await expectLater(
+      switchingStore.ingestManifest(
+        _manifest(),
+        allowedTopics: const <String>{'hivra-development'},
+      ),
+      throwsStateError,
+    );
+    activeRoot = _rootA;
+    expect(await store.load(), isEmpty);
+    activeRoot = _rootB;
+    expect(await store.load(), isEmpty);
+  });
+
+  test(
+    'bundled manifest rejects unknown fields and skips disallowed topics',
+    () async {
+      final unknown = jsonDecode(_manifest()) as Map<String, dynamic>;
+      unknown['unexpected'] = true;
+      await expectLater(
+        store.ingestManifest(
+          jsonEncode(unknown),
+          allowedTopics: const <String>{'hivra-development'},
+        ),
+        throwsFormatException,
+      );
+      expect(
+        await store.ingestManifest(
+          _manifest(),
+          allowedTopics: const <String>{'capsule-runtime'},
+        ),
+        isEmpty,
+      );
+      expect(await store.load(), isEmpty);
+    },
+  );
+
+  test('bundled manifest rejects oversized raw input before parsing', () async {
+    await expectLater(
+      store.ingestManifest(
+        ' ' * (MoltbookPublicChangeFeedStore.maxManifestCharacters + 1),
+        allowedTopics: const <String>{'hivra-development'},
+      ),
+      throwsFormatException,
+    );
+    expect(await store.load(), isEmpty);
+  });
 
   test('feed and drafted state remain Capsule scoped across restart', () async {
     final change = await store.record(
@@ -171,3 +339,17 @@ const String _rootA =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const String _rootB =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+String _manifest() => jsonEncode(<String, dynamic>{
+  'schema_version': 1,
+  'producer_id': 'hivra.bundled_public_changes',
+  'changes': <Map<String, dynamic>>[
+    <String, dynamic>{
+      'source_id': 'hivra-chat-workspace-2026-08-14',
+      'category': 'hivra-development',
+      'facts': <String>[
+        'Chat presents retained messages in a conversation timeline.',
+      ],
+    },
+  ],
+});

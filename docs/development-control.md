@@ -1,9 +1,23 @@
 # Hivra Development Control
 
-Status date: 2026-08-14
+Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no next pass selected. `1.x Chat Contact Selection
-Projection` is complete on `main` at `c56213f`. The existing Chat
+Current development focus: `1.x Moltbook Bundled Public Change Ingestion` is
+active on branch `product/moltbook-bundled-public-change-ingestion`. One
+bounded, reviewed build-time manifest enters the existing Capsule-scoped
+`MoltbookPublicChangeFeedStore` when the Moltbook workspace opens. The parser
+rejects oversized, malformed, duplicate, and conflicting evidence atomically;
+exact replay and restart are idempotent, Capsule switching cannot redirect a
+write, and topics outside the Capsule's existing ambassador policy are not
+ingested. Gemini still receives only pending public facts and gains no Git,
+Ledger, Core, credential, approval, or publication authority. Automatic
+publication, a second feed/draft/effect owner, destination routing changes,
+background execution, plugin ABI changes, tags, and Releases remain blocked.
+Exit requires full local and clean-checkout gates, protected PR and post-merge
+CI, then packaged Hands smoke proving that the bundled Chat product update
+appears as one pending Capsule change and can reach a Gemini proposal and WASM
+draft without creating an external effect. `1.x Chat Contact Selection
+Projection` remains complete on `main` at `c56213f`. The existing Chat
 `TextEditingController` remains the sole selected-peer owner, and the workspace
 now observes that controller directly instead of waiting for an unrelated
 dialog rebuild. The negative-before/positive-after widget vector, `849/849`

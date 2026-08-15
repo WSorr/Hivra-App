@@ -2925,6 +2925,26 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     and post-merge repository gates `31654314173` passed. No following pass is
     selected.
 
+- `1.x Moltbook Bundled Public Change Ingestion`
+  - Scope: import one bounded, reviewed build-time product-change manifest into
+    the existing Capsule-scoped public change feed when the Moltbook workspace
+    opens, so ordinary builds can present confirmed development facts without
+    manual re-entry.
+  - Invariants: strict version and producer binding, bounded raw input and
+    entry count, atomic validation before persistence, exact replay and restart
+    idempotency, source-id conflict rejection, Capsule-switch protection, and
+    existing allowed-topic enforcement.
+  - Sealed paths: no Git, Ledger, Core, Analyst, credential, or private Capsule
+    access; no second feed, draft, effect, or publication path; no automatic
+    approval or publication.
+  - Exit evidence: actual packaged asset vector, malformed/oversized/unknown/
+    duplicate/conflicting negative vectors, Capsule isolation and restart
+    replay tests, full local and clean-checkout gates, protected PR/post-merge
+    CI, and packaged Hands smoke through proposal and WASM draft without an
+    external effect.
+  - Status: active (2026-08-15); destination routing remains a separate later
+    product decision and Remote Runner/VPS and v2 remain frozen.
+
 - `1.x Capsule AI single-prompt unlock remediation`
   - Finding: packaged macOS Release smoke from `0440e92` proved the complete
     Capsule Change Feed -> Gemini proposal -> WASM draft path without an

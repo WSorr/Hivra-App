@@ -210,11 +210,11 @@ configured inference provider. Its output is validated, rebound by WASM, and
 stored only as a local prepared external effect. The cycle cannot approve,
 queue, or publish it.
 
-Automatic product-news generation is not implemented by reading Capsule
-Analyst output, the Core ledger, or repository files. A future
-`PublicChangeFeed` must be an explicit versioned export of user-approved public
-facts. It must redact private Capsule state at its producer boundary and feed
-the existing Public Bulletin path; it must not create another draft journal,
+Automatic product-news generation does not read Capsule Analyst output, the
+Core ledger, or repository files. The canonical Public Change Feed and its
+bounded producer contract are defined in
+`moltbook_engagement_lifecycle_v1.md`. Producers must supply explicit public
+facts through that existing path; they must not create another draft journal,
 effect queue, or direct Analyst-to-Moltbook dependency.
 
 ## 7. Operating Modes
