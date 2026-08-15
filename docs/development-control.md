@@ -2,23 +2,25 @@
 
 Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Moltbook Person-First Runtime Community
-Bootstrap` is in bounded packaged-smoke remediation. The first macOS Hands
-attempt from `acc141e`, build `1.0.3+100030034`, proved exact approval and
-fail-closed delivery, but Moltbook rejected community creation authorization.
-The operation remained receipt-free and no community was created. Remediation
-must allow a new exact user acknowledgement to requeue only that same stable
-operation after confirmed `401/403` rejection; timeout, missing receipt,
-not-found observation, descriptor conflict, and unknown outcomes remain sealed.
-It extends the existing Moltbook publication owner and
-external-effect adapter with one fixed permanent community effect for
-`m/person-first-runtime`. The exact name, display name, description, active
-Capsule, and bound Moltbook account are committed before approval. Replay,
-double click, restart, timeout, and delayed provider visibility must never
-create a second effect; an observed descriptor or owner conflict fails closed.
-Generic community management, AI-selected destinations, automatic creation,
-post migration, background execution, tags, Releases, Remote Runner/VPS, and
-v2 remain blocked. The preceding `1.x Moltbook Bundled Public Change
+Current development focus: no following product pass is selected. `1.x
+Moltbook Person-First Runtime Community Bootstrap` is complete on `main` at
+`dc15de9`. Protected PR `#75` and post-merge repository-gates run
+`31881796780` passed. Packaged macOS Hands smoke used source `dc15de9`, Release
+build `1.0.3+100030035`, and ZIP SHA-256
+`d5236f5c5f893b724882efabe9f4b87385f1d668587c5f83886f92e8c1d670fb`.
+After a confirmed rejected credential, a new exact acknowledgement requeued
+the same stable operation `moltbook-submolt-91957960...4cb9d`; it succeeded on
+attempt two with provider receipt `7f40d1ea-e89c-4b5a-a81d-0fa0608da56f`.
+Independent public observation matched the exact descriptor and creator
+account `hivra_ambassador`. Cold restart restored one succeeded community
+operation, kept post/comment effect counts unchanged at `5/5`, projected
+ownership verification, and selected `m/person-first-runtime` as the local
+draft destination. No automatic post, duplicate community, DTO, service,
+adapter, owner, or second effect route was created. Generic community
+management, AI-selected destinations, post migration, background execution,
+tags, Releases, Remote Runner/VPS, and v2 remain blocked. Flutter test
+filesystem isolation issue `#76` is registered separately and is not part of
+this completed effect pass. The preceding `1.x Moltbook Bundled Public Change
 Ingestion` and its draft-binding remediation remain complete on `main` at
 `c3949bf`, with packaged macOS Hands evidence recorded in `roadmap.md`. `1.x Chat Contact Selection
 Projection` remains complete on `main` at `c56213f`. The existing Chat
