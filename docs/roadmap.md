@@ -2993,6 +2993,26 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     restart without adopting unrelated orders. No following product pass is
     selected automatically.
 
+- `1.x Trading Durable Emergency Pause`
+  - Lane: maintained 1.x trading productization; bounded remediation before any
+    mandate or remote-host design.
+  - Invariant: a Capsule that is paused cannot create an exchange effect after
+    restart, Capsule switch, missing/corrupt state, or a pause written while
+    risk inputs are refreshing.
+  - Owners: the existing `BingxFuturesOrderTrackingStore` owns the
+    Capsule-scoped control bit; `BingxFuturesExchangeExecutionUseCaseService`
+    remains the sole exchange-effect owner and verifies durable control before
+    risk work and immediately before claim/queue.
+  - Evidence: state schema v5 preserves explicit enabled and paused values,
+    legacy or malformed values resolve fail-closed, Capsule scopes remain
+    isolated, and focused tests prove restart plus mid-flight pause rejection
+    without provider access.
+  - Removed or sealed: process-local default enablement is removed. No new
+    service, mandate DTO, effect path, Core/Ledger fact, plugin ABI, live order,
+    background execution, Remote Runner/VPS, tag, or Release is authorized.
+  - Status: implementation and protected CI pending (2026-08-15). No following
+    product pass is selected automatically.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

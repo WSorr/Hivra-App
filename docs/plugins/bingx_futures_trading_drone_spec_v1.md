@@ -804,16 +804,18 @@ Each recipient capsule MUST run a local gate before exchange execution.
 
 Gate checks (in order):
 
-1. consensus guard signable for sender peer
-2. envelope shape and field validity
-3. target capsule match (`target_capsule_root_hex == local capsule root`)
-4. TTL validity (`now <= expires_at_utc`)
-5. anti-replay (`command_id` not seen before)
-6. risk policy:
+1. Capsule-scoped durable trading control is present and explicitly enabled;
+   missing, legacy, malformed, paused, or cross-Capsule state fails closed
+2. consensus guard signable for sender peer
+3. envelope shape and field validity
+4. target capsule match (`target_capsule_root_hex == local capsule root`)
+5. TTL validity (`now <= expires_at_utc`)
+6. anti-replay (`command_id` not seen before)
+7. risk policy:
    - symbol in allowlist
    - leverage <= configured max
    - risk_percent <= configured max
-7. optional local intent linkage:
+8. optional local intent linkage:
    - known `intent_hash_hex` in local plugin inbox/journal
 
 If any check fails: reject command and emit deterministic receipt.

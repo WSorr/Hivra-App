@@ -66,6 +66,11 @@ class BingxFuturesExchangeExecutionUseCaseService {
       );
     }
     final executionCapsuleRootHex = _orderTrackingStore?.activeCapsuleRootHex;
+    final initialControlBlock = await _tradingControlBlock(
+      payload: payload,
+      capsuleRootHex: executionCapsuleRootHex,
+    );
+    if (initialControlBlock != null) return initialControlBlock;
 
     final liquidityEventId = preparedDecision?.liquidityEventId?.trim() ?? '';
     if (payload.entryMode == 'zone_pending') {
@@ -152,25 +157,19 @@ class BingxFuturesExchangeExecutionUseCaseService {
       );
     }
 
+    final finalControlBlock = await _tradingControlBlock(
+      payload: payload,
+      capsuleRootHex: executionCapsuleRootHex,
+    );
+    if (finalControlBlock != null) return finalControlBlock;
+
     if (liquidityEventId.isNotEmpty) {
-      final orderTrackingStore = _orderTrackingStore;
-      if (orderTrackingStore == null || executionCapsuleRootHex == null) {
-        return _result(
-          status:
-              BingxFuturesExchangeExecutionUseCaseStatus.effectClaimUnavailable,
-          payload: payload,
-          riskDecision: risk.decision,
-          errorCode: 'liquidity_event_claim_store_unavailable',
-          errorMessage:
-              'Execution blocked because the event claim store is unavailable.',
-          diagnostics: risk.diagnostics,
-        );
-      }
+      final orderTrackingStore = _orderTrackingStore!;
       BingxLiquidityEventEffectReservation reservation;
       try {
         reservation = await orderTrackingStore
             .reserveLiquidityEventEffectForCapsule(
-              capsuleRootHex: executionCapsuleRootHex,
+              capsuleRootHex: executionCapsuleRootHex!,
               liquidityEventId: liquidityEventId,
               clientOrderId: payload.clientOrderId,
               symbol: payload.symbol,
@@ -271,6 +270,40 @@ class BingxFuturesExchangeExecutionUseCaseService {
       executionEnvelope: envelope,
       diagnostics: executionDiagnostics,
     );
+  }
+
+  Future<BingxFuturesExchangeExecutionUseCaseResult?> _tradingControlBlock({
+    required BingxFuturesIntentPayload payload,
+    required String? capsuleRootHex,
+  }) async {
+    final orderTrackingStore = _orderTrackingStore;
+    if (orderTrackingStore == null || capsuleRootHex == null) {
+      return _result(
+        status: BingxFuturesExchangeExecutionUseCaseStatus.executionPaused,
+        payload: payload,
+        errorCode: 'trading_control_unavailable',
+        errorMessage:
+            'Execution blocked because trading control is unavailable.',
+      );
+    }
+    try {
+      final control = await orderTrackingStore.loadForCapsule(capsuleRootHex);
+      if (control?.droneEnabled == true) return null;
+      return _result(
+        status: BingxFuturesExchangeExecutionUseCaseStatus.executionPaused,
+        payload: payload,
+        errorCode: 'trading_paused',
+        errorMessage: 'Trading is paused for this Capsule.',
+      );
+    } catch (_) {
+      return _result(
+        status: BingxFuturesExchangeExecutionUseCaseStatus.executionPaused,
+        payload: payload,
+        errorCode: 'trading_control_unavailable',
+        errorMessage:
+            'Execution blocked because trading control is unavailable.',
+      );
+    }
   }
 
   static String accountBindingHashHex(BingxFuturesApiCredentials credentials) {
@@ -541,6 +574,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
           Map<String, BingxManagedOrderProvenance>.unmodifiable(provenance),
       liquidityEventEffectClaims:
           Map<String, BingxLiquidityEventEffectClaim>.unmodifiable(claims),
+      droneEnabled: current.droneEnabled,
       stopLossPercent: current.stopLossPercent,
       takeProfitRiskReward: current.takeProfitRiskReward,
     );

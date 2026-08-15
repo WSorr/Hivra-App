@@ -2,10 +2,19 @@
 
 Status date: 2026-08-15
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no next product pass is selected. `1.x Trading
-Productization — Local Strategy Lifecycle Evidence` is complete on `main` at
-`e25b1e0`. The existing live-strategy, plugin-intent, risk, execution-queue,
-managed-order, and exchange-execution owners proved one canonical local cycle:
+Current development focus: `1.x Trading Durable Emergency Pause` is active as
+a bounded product remediation. The existing Capsule-scoped
+`BingxFuturesOrderTrackingStore` remains the sole operational-state owner and
+`BingxFuturesExchangeExecutionUseCaseService` remains the sole exchange-effect
+owner. Trading now starts fail-closed, explicit enable/pause state survives
+restart and Capsule switching, and the execution owner checks the durable state
+before risk work and again immediately before claim/queue. Missing, legacy, or
+malformed control state cannot authorize an effect. This closes the
+process-local `_droneEnabled = true` path without creating a mandate runtime,
+new service, second effect route, Core/Ledger fact, or plugin ABI. The preceding
+`1.x Trading Productization — Local Strategy Lifecycle Evidence` is complete on
+`main` at `e25b1e0`. The existing live-strategy, plugin-intent, risk,
+execution-queue, managed-order, and exchange-execution owners proved one canonical local cycle:
 packaged macOS diagnostics captured a successful test-order receipt, stable
 semantic freshness, persisted ownership evidence, cold-restart reconciliation,
 and no duplicate provider effect; the same Android package loaded the Trading
@@ -13,7 +22,8 @@ Drone, fetched 1,039 perpetual markets, rejected a paused intent before any
 effect, and restarted without adopting an unrelated order. No new runtime owner
 or route was added. Live orders, background execution, Remote Runner/VPS, a
 bounded mandate, new DTO/service/effect paths, v2, tags, and Releases remain
-blocked. `1.x Moltbook
+blocked. A bounded trading mandate and remote host remain later explicit
+decisions; this remediation authorizes neither. `1.x Moltbook
 Person-First Runtime Community Bootstrap` is complete on `main` at
 `dc15de9`. Protected PR `#75` and post-merge repository-gates run
 `31881796780` passed. Packaged macOS Hands smoke used source `dc15de9`, Release

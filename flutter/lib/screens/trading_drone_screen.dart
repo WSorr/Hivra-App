@@ -127,7 +127,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   bool _cancelingOrder = false;
   bool _fittingMaxNotional = false;
   bool _useTestOrderEndpoint = true;
-  bool _droneEnabled = true;
+  bool _droneEnabled = false;
+  bool _tradingControlLoaded = false;
+  bool _savingTradingControl = false;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
 
@@ -385,6 +387,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
             Map<String, BingxManagedOrderProvenance>.unmodifiable(
               _managedOrderProvenance,
             ),
+        droneEnabled: _droneEnabled,
         stopLossPercent: _stopLossPercent,
         takeProfitRiskReward: _takeProfitRiskReward,
       );
@@ -405,6 +408,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
   }
 
+  Future<void> _changeDroneEnabled(bool value) async {
+    if (!_tradingControlLoaded || _savingTradingControl) return;
+    setState(() {
+      _droneEnabled = value;
+      _savingTradingControl = true;
+    });
+    await _persistOpenOrdersTrackingState(source: 'drone_control_changed');
+    if (mounted) {
+      setState(() {
+        _savingTradingControl = false;
+      });
+    }
+  }
+
   Future<void> _restoreOpenOrdersTrackingState() async {
     try {
       final state = await _module.orderTrackingStore.load();
@@ -418,6 +435,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _managedOrderProvenance
         ..clear()
         ..addAll(state.managedOrderProvenance);
+      _droneEnabled = state.droneEnabled == true;
       final restoredStopLossPercent = state.stopLossPercent;
       if (restoredStopLossPercent != null &&
           _stopLossPercentOptions.contains(restoredStopLossPercent)) {
@@ -493,6 +511,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.exchange.tracking.restore.error',
         '$error',
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _tradingControlLoaded = true;
+        });
+      }
     }
   }
 
@@ -1568,6 +1592,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   }
 
   Future<String> _runIntentPipeline() async {
+    if (!_tradingControlLoaded || _savingTradingControl) {
+      await _showSnack('Trading control is not ready yet.');
+      return 'blocked:trading_control_unavailable';
+    }
     if (!_droneEnabled) {
       await _showSnack('Drone is paused. Resume before running strategy.');
       return 'blocked:drone_paused';
@@ -2176,6 +2204,8 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       }
       if (useCaseResult.status ==
               BingxFuturesExchangeExecutionUseCaseStatus.staleIntent ||
+          useCaseResult.status ==
+              BingxFuturesExchangeExecutionUseCaseStatus.executionPaused ||
           useCaseResult.status ==
               BingxFuturesExchangeExecutionUseCaseStatus
                   .duplicateLiquidityEvent ||
@@ -3418,16 +3448,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
               SwitchListTile.adaptive(
                 value: _droneEnabled,
                 onChanged:
-                    _runningIntent
+                    _runningIntent ||
+                            !_tradingControlLoaded ||
+                            _savingTradingControl
                         ? null
                         : (value) {
-                          setState(() {
-                            _droneEnabled = value;
-                          });
+                          unawaited(_changeDroneEnabled(value));
                         },
                 title: const Text('Drone enabled'),
                 subtitle: Text(
-                  _droneEnabled
+                  !_tradingControlLoaded || _savingTradingControl
+                      ? 'Loading Capsule trading control.'
+                      : _droneEnabled
                       ? 'Strategy can prepare and execute orders.'
                       : 'Paused. New strategy runs are blocked.',
                   style: const TextStyle(color: Color(0xFF97A3B5)),
@@ -3568,7 +3600,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     label: const Text('Choose Trusted Capsule'),
                   ),
                   FilledButton.icon(
-                    onPressed: _runningIntent ? null : _runIntent,
+                    onPressed:
+                        _runningIntent ||
+                                !_tradingControlLoaded ||
+                                _savingTradingControl
+                            ? null
+                            : _runIntent,
                     icon:
                         _runningIntent
                             ? const SizedBox(
@@ -3583,13 +3620,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   ),
                   FilledButton.tonalIcon(
                     onPressed:
-                        _runningIntent
+                        _runningIntent ||
+                                !_tradingControlLoaded ||
+                                _savingTradingControl
                             ? null
-                            : () {
-                              setState(() {
-                                _droneEnabled = !_droneEnabled;
-                              });
-                            },
+                            : () =>
+                                unawaited(_changeDroneEnabled(!_droneEnabled)),
                     icon: Icon(
                       _droneEnabled
                           ? Icons.pause_circle_outline_rounded

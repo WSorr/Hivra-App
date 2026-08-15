@@ -51,6 +51,7 @@ void main() {
               recordedAtUtc: '2026-06-12T12:00:00.000Z',
             ),
           },
+          droneEnabled: false,
           stopLossPercent: 10.0,
           takeProfitRiskReward: 2.0,
         ),
@@ -65,6 +66,7 @@ void main() {
         'ord-2': 'BNB-USDT',
       });
       expect(restored.managedOrderProvenance.keys, <String>['ord-1']);
+      expect(restored.droneEnabled, isFalse);
       expect(
         restored.managedOrderProvenance['ord-1']!.liveDecisionHashHex,
         'live-1',
@@ -115,6 +117,7 @@ void main() {
       expect(restored, isNotNull);
       expect(restored!.managedOrderIds, <String>['ord-legacy']);
       expect(restored.managedOrderProvenance, isEmpty);
+      expect(restored.droneEnabled, isNull);
     });
 
     test('drops malformed provenance without losing valid tracking state', () {
@@ -163,6 +166,7 @@ void main() {
           trackedOrderId: 'ord-c',
           managedOrderIds: <String>['ord-c'],
           managedOrderSymbols: <String, String>{'ord-c': 'BTC-USDT'},
+          droneEnabled: false,
           stopLossPercent: 7.0,
           takeProfitRiskReward: 1.5,
         ),
@@ -189,6 +193,7 @@ void main() {
           trackedOrderId: 'ord-d',
           managedOrderIds: <String>['ord-d'],
           managedOrderSymbols: <String, String>{'ord-d': 'SOL-USDT'},
+          droneEnabled: true,
           stopLossPercent: 12.0,
           takeProfitRiskReward: 3.0,
         ),
@@ -201,6 +206,7 @@ void main() {
       expect(first!.trackedSymbol, 'BTC-USDT');
       expect(first.trackedOrderId, 'ord-c');
       expect(first.managedOrderSymbols, <String, String>{'ord-c': 'BTC-USDT'});
+      expect(first.droneEnabled, isFalse);
       expect(first.stopLossPercent, 7.0);
       expect(first.takeProfitRiskReward, 1.5);
       expect(first.liquidityEventEffectClaims, hasLength(1));
@@ -212,6 +218,7 @@ void main() {
       expect(second!.trackedSymbol, 'SOL-USDT');
       expect(second.trackedOrderId, 'ord-d');
       expect(second.managedOrderSymbols, <String, String>{'ord-d': 'SOL-USDT'});
+      expect(second.droneEnabled, isTrue);
       expect(second.stopLossPercent, 12.0);
       expect(second.takeProfitRiskReward, 3.0);
       expect(second.liquidityEventEffectClaims, isEmpty);
@@ -303,6 +310,48 @@ void main() {
       expect(restored.managedOrderSymbols, isEmpty);
       expect(restored.stopLossPercent, 5.0);
       expect(restored.takeProfitRiskReward, 3.0);
+    });
+
+    test('persists an explicit Capsule pause without order state', () async {
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-trading-pause-test-',
+      );
+      addTearDown(() async {
+        if (await tempHome.exists()) {
+          await tempHome.delete(recursive: true);
+        }
+      });
+
+      const capsuleHex =
+          '1212121212121212121212121212121212121212121212121212121212121212';
+      final fileStore = CapsuleFileStore(
+        dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+      );
+      final store = BingxFuturesOrderTrackingStore(
+        readActiveCapsuleRootHex: () => capsuleHex,
+        fileStore: fileStore,
+      );
+
+      await store.save(
+        const BingxFuturesOrderTrackingState(
+          trackedSymbol: null,
+          trackedOrderId: null,
+          managedOrderIds: <String>[],
+          managedOrderSymbols: <String, String>{},
+          droneEnabled: false,
+          stopLossPercent: null,
+          takeProfitRiskReward: null,
+        ),
+      );
+
+      final restarted = BingxFuturesOrderTrackingStore(
+        readActiveCapsuleRootHex: () => capsuleHex,
+        fileStore: fileStore,
+      );
+      final restored = await restarted.load();
+      expect(restored, isNotNull);
+      expect(restored!.droneEnabled, isFalse);
+      expect(restored.isEmpty, isFalse);
     });
 
     test('serializes, bounds, and restores liquidity event claims', () async {

@@ -299,6 +299,7 @@ class BingxFuturesOrderTrackingState {
   final Map<String, String> managedOrderSymbols;
   final Map<String, BingxManagedOrderProvenance> managedOrderProvenance;
   final Map<String, BingxLiquidityEventEffectClaim> liquidityEventEffectClaims;
+  final bool? droneEnabled;
   final double? stopLossPercent;
   final double? takeProfitRiskReward;
 
@@ -310,6 +311,7 @@ class BingxFuturesOrderTrackingState {
     this.managedOrderProvenance = const <String, BingxManagedOrderProvenance>{},
     this.liquidityEventEffectClaims =
         const <String, BingxLiquidityEventEffectClaim>{},
+    this.droneEnabled,
     required this.stopLossPercent,
     required this.takeProfitRiskReward,
   });
@@ -321,6 +323,7 @@ class BingxFuturesOrderTrackingState {
       managedOrderSymbols.isEmpty &&
       managedOrderProvenance.isEmpty &&
       liquidityEventEffectClaims.isEmpty &&
+      droneEnabled == null &&
       stopLossPercent == null &&
       takeProfitRiskReward == null;
 
@@ -332,7 +335,7 @@ class BingxFuturesOrderTrackingState {
         liquidityEventEffectClaims.entries.toList()
           ..sort((a, b) => a.key.compareTo(b.key));
     return <String, dynamic>{
-      'version': 4,
+      'version': 5,
       'tracked_symbol': trackedSymbol?.trim().toUpperCase(),
       'tracked_order_id': trackedOrderId?.trim(),
       'managed_order_ids': managedOrderIds,
@@ -343,6 +346,7 @@ class BingxFuturesOrderTrackingState {
       'liquidity_event_effect_claims': <String, dynamic>{
         for (final entry in sortedClaims) entry.key: entry.value.toJson(),
       },
+      'drone_enabled': droneEnabled,
       'stop_loss_percent': stopLossPercent,
       'take_profit_risk_reward': takeProfitRiskReward,
     };
@@ -351,6 +355,8 @@ class BingxFuturesOrderTrackingState {
   static BingxFuturesOrderTrackingState? fromJsonMap(Map<String, dynamic> map) {
     final trackedSymbol = map['tracked_symbol']?.toString().trim();
     final trackedOrderId = map['tracked_order_id']?.toString().trim();
+    final droneEnabled =
+        map['drone_enabled'] is bool ? map['drone_enabled'] as bool : null;
     final stopLossPercent = _readPositiveDouble(map['stop_loss_percent']);
     final takeProfitRiskReward = _readPositiveDouble(
       map['take_profit_risk_reward'],
@@ -431,6 +437,7 @@ class BingxFuturesOrderTrackingState {
           ),
       liquidityEventEffectClaims:
           Map<String, BingxLiquidityEventEffectClaim>.unmodifiable(claims),
+      droneEnabled: droneEnabled,
       stopLossPercent: stopLossPercent,
       takeProfitRiskReward: takeProfitRiskReward,
     );
