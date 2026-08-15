@@ -2982,7 +2982,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     background execution, Remote Runner/VPS, mandate design, new DTO/service,
     second exchange route, Core/Ledger writes, plugin ABI changes, tags, and
     Releases remain sealed.
-  - Status: selected (2026-08-15). No implementation evidence is claimed yet.
+  - Status: complete (2026-08-15) on `main` at `e25b1e0`. Protected PR `#86`
+    and post-merge repository gates passed. Packaged macOS Release build
+    `1.0.3+100030040` produced one successful `/order/test` receipt after exact
+    semantic freshness and risk checks, persisted the operation provenance,
+    restored the unresolved ownership evidence after a cold restart, and did
+    not repeat the provider effect. The matching Android package loaded the
+    Trading Drone, fetched 1,039 perpetual markets, rejected `Run Intent` as
+    `blocked:drone_paused` without an exchange call, and reopened after a cold
+    restart without adopting unrelated orders. No following product pass is
+    selected automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
