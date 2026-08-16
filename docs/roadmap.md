@@ -3041,7 +3041,21 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     atomic effect-budget exhaustion, full local and clean-checkout gates,
     protected PR/post-merge CI, and same-source packaged control smoke without
     a live provider effect.
-  - Status: selected (2026-08-16); implementation and evidence in progress.
+  - Status: complete on `main` at `61f8f1d` (2026-08-16). Protected PR `#91`,
+    required branch gates `31915301503`, and post-merge repository gates
+    `31915346326` passed. Same-source automatic packaged control smoke created
+    one test-mode mandate on macOS, preserved its exact id across cold restart,
+    revoked it through Emergency Pause, and preserved the revoked state across
+    another cold restart. The pre-existing effect-claim count remained one and
+    no new provider effect was requested. The Android upgrade preserved its
+    Capsules and opened the shared Trading UI paused; `Run Intent` was not
+    invoked. Source was `61f8f1d`; macOS Release build `1.0.3+100030017` ZIP
+    SHA-256 was
+    `3bec7a6ce665de33345eee5cd1a079d29efacfe5d0b2f1bb2886915279e19b9a`, and
+    Android Release build `1.0.3+100030042` APK SHA-256 was
+    `9c68811a0aae3f08d61f22d9668166cff29d62b9bc1786f5c68d7239be20a755`.
+    No live order, background execution, Remote Runner/VPS, tag, or Release was
+    created. No following product pass is selected automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
