@@ -21,6 +21,7 @@ import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
 import '../services/bingx_futures_trading_cycle_use_case_service.dart';
+import '../utils/bingx_futures_zone_evidence_formatter.dart';
 import '../utils/peer_identity_format.dart';
 
 @visibleForTesting
@@ -166,6 +167,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   List<String> _availablePerpSymbols = const <String>[];
   List<BingxFuturesSignalRankEntry> _signalRankEntries =
       const <BingxFuturesSignalRankEntry>[];
+  Map<String, BingxFuturesLiveDecisionResult> _signalDecisionByHash =
+      const <String, BingxFuturesLiveDecisionResult>{};
+  BingxFuturesLiveDecisionResult? _displayedZoneDecision;
 
   static const BingxFuturesRiskPolicy _executionRiskPolicy =
       BingxFuturesRiskPolicy(
@@ -872,6 +876,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (!mounted || selected == null || selected.isEmpty) return;
     setState(() {
       _symbolController.text = selected;
+      _displayedZoneDecision = null;
     });
     await _module.uiLog.log(
       'bingx.symbols.select',
@@ -980,6 +985,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       if (!mounted) return;
       setState(() {
         _signalRankEntries = ranked.entries;
+        _signalDecisionByHash = <String, BingxFuturesLiveDecisionResult>{
+          for (final candidate in candidates)
+            candidate.decision.liveDecisionHashHex: candidate.decision,
+        };
         _signalRankExpanded = true;
       });
       final top = ranked.entries.isEmpty ? null : ranked.entries.first;
@@ -1158,8 +1167,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   Future<void> _applySignalRankEntry(BingxFuturesSignalRankEntry entry) async {
     if (!mounted) return;
+    final decision = _signalDecisionByHash[entry.liveDecisionHashHex];
     setState(() {
       _symbolController.text = entry.symbol;
+      _displayedZoneDecision = decision;
       if (entry.side != null) {
         _side = entry.side!;
         _zoneSide = entry.side == 'buy' ? 'sellside' : 'buyside';
@@ -1202,6 +1213,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (mounted) {
       setState(() {
         _symbolController.text = normalizedSymbol;
+        _displayedZoneDecision = null;
         _quantityController.text = _playbookQtyForSymbol(normalizedSymbol);
         _side = 'sell';
         _orderType = 'limit';
@@ -1713,6 +1725,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (mounted) {
       setState(() {
         if (decision != null) {
+          _displayedZoneDecision = decision;
           _lastPreparedLiveDecision = cycle.isPrepared ? decision : null;
           _side = decision.side ?? _side;
           _zoneSide = decision.zoneSide ?? _zoneSide;
@@ -2250,6 +2263,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     setState(() {
       _peerController.text = signal.fromHex;
       _symbolController.text = decoded['symbol']?.toString() ?? signal.symbol;
+      _displayedZoneDecision = null;
       _quantityController.text =
           decoded['quantity_decimal']?.toString() ?? signal.quantityDecimal;
       _side = decoded['side']?.toString() ?? signal.side;
@@ -3460,7 +3474,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                             onSubmitted: (value) {
                               final symbol = value.trim().toUpperCase();
                               if (symbol.isEmpty) return;
-                              _symbolController.text = symbol;
+                              setState(() {
+                                _symbolController.text = symbol;
+                                _displayedZoneDecision = null;
+                              });
                               unawaited(
                                 _maybeRetargetOpenOrdersTracking(
                                   symbol: symbol,
@@ -3741,7 +3758,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       controller: _zoneLowController,
                       readOnly: true,
                       decoration: InputDecoration(
-                        labelText: 'Zone Low',
+                        labelText: 'Pending Zone Low',
                         filled: true,
                         fillColor: const Color(0xFF0F141C),
                         border: OutlineInputBorder(
@@ -3756,7 +3773,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                       controller: _zoneHighController,
                       readOnly: true,
                       decoration: InputDecoration(
-                        labelText: 'Zone High',
+                        labelText: 'Pending Zone High',
                         filled: true,
                         fillColor: const Color(0xFF0F141C),
                         border: OutlineInputBorder(
@@ -3766,6 +3783,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _displayedZoneDecision == null
+                    ? 'Pending liquidity zone — not current market price. Run Intent revalidates it.'
+                    : formatBingxFuturesZoneEvidence(_displayedZoneDecision!),
+                style: const TextStyle(color: Color(0xFF97A3B5), fontSize: 12),
               ),
               const SizedBox(height: 10),
               Wrap(

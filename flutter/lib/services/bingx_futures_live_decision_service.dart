@@ -154,6 +154,7 @@ class BingxFuturesLiveDecisionService {
       trend15m: features.trendDirection.name,
       trend4h: zone?.trend4h ?? 'flat',
       trend1d: zone?.trend1d ?? 'flat',
+      referencePriceDecimal: input.snapshotInput.prices.lastTradePriceDecimal,
     );
   }
 
@@ -171,6 +172,7 @@ class BingxFuturesLiveDecisionService {
     required String trend15m,
     required String trend4h,
     required String trend1d,
+    required String referencePriceDecimal,
   }) {
     final zoneLowDecimal =
         zone == null ? null : _formatDecimal(zone.zoneLow, scale: 8);
@@ -252,6 +254,7 @@ class BingxFuturesLiveDecisionService {
       liquidityEventId: zone?.liquidityEventId,
       liquidityEventAtUtc: zone?.liquidityEventAtUtc,
       latestClosedMicroBarAtUtc: zone?.latestClosedMicroBarAtUtc,
+      referencePriceDecimal: referencePriceDecimal,
     );
   }
 

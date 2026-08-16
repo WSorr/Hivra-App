@@ -30,6 +30,7 @@ void main() {
       expect(first.liquidityEventId, matches(RegExp(r'^[0-9a-f]{64}$')));
       expect(first.liquidityEventAtUtc, isNotNull);
       expect(first.latestClosedMicroBarAtUtc, isNotNull);
+      expect(first.referencePriceDecimal, '102.50');
       expect(first.liveDecisionHashHex, second.liveDecisionHashHex);
       expect(first.canonicalJson, second.canonicalJson);
     });
@@ -53,6 +54,7 @@ void main() {
       expect(permuted.tvhDecisionHashHex, base.tvhDecisionHashHex);
       expect(permuted.liveDecisionHashHex, base.liveDecisionHashHex);
       expect(permuted.liquidityEventId, base.liquidityEventId);
+      expect(permuted.referencePriceDecimal, base.referencePriceDecimal);
       expect(
         permuted.latestClosedMicroBarAtUtc,
         base.latestClosedMicroBarAtUtc,

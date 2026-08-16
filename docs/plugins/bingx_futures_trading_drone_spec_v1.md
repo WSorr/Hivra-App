@@ -396,6 +396,14 @@ Local `olderHigh/recentHigh/olderLow/recentLow` values may be emitted as
 `fresh` HTF pivot nor a current confirmed micro sweep/reclaim exists, the live
 decision MUST emit `liquidity_anchor_unavailable`.
 
+The Trading UI MUST present executable HTF bounds as a **pending liquidity
+zone**, not as current market price. Its existing live-decision projection MUST
+show the anchor timeframe/source, formation time, age at the latest closed
+observation, signed distance from the reference price, and that `Run Intent`
+revalidates the zone. A ranked scan selection may project the matching retained
+live decision, but changing the symbol MUST clear that evidence and execution
+MUST continue to use a newly computed decision.
+
 If liquidation-level feed is unavailable:
 
 - liquidation score is marked `unknown`,
