@@ -1,14 +1,21 @@
 # Hivra Development Control
 
-Status date: 2026-08-16
+Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Headless Cycle Port` is the selected
-bounded product pass. One capability-owned application use case composes the
+Current development focus: `1.x Trading Headless Cycle Port` is complete on
+`main` at `b00ba99`. One capability-owned application use case composes the
 existing live-strategy, sizing, WASM intent, and exchange-execution owners for
-the solo limit path. The foreground UI delegates that path to the same port a
-future headless host must use. Scheduler, daemon, VPS deployment, remote
-credentials, lease activation, live order, background execution, second effect
-route, Core/Ledger facts, tag, and Release remain blocked. The preceding `1.x
+the solo limit path. Packaged macOS and Android Release builds from that exact
+source both prepared a current decision envelope with `effect=false`; no
+exchange execution was requested. Manual smoke also found one separate P2:
+Trading UI labels an unswept HTF pending-liquidity anchor as `READY` and shows
+plain `Zone Low/High` values without source time, age, distance, or an explicit
+warning that the values are not current market prices. The canonical strategy
+correctly recomputes the anchor on `Run Intent`; the finding is presentation
+ambiguity, not stale-cache or stale-intent reuse. Scheduler, daemon, VPS
+deployment, remote credentials, lease activation, live order, background
+execution, second effect route, Core/Ledger facts, tag, and Release remain
+blocked. The preceding `1.x
 Trading Capsule-Owned Bounded Mandate` is complete on `main` at `61f8f1d`. The existing
 Capsule-scoped `BingxFuturesOrderTrackingStore` remains the sole mandate-state
 owner and `BingxFuturesExchangeExecutionUseCaseService` remains the sole
@@ -235,7 +242,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete the selected Trading Headless Cycle Port through the existing application composition and exchange-effect owners. Scheduler, Remote Runner/VPS deployment, background execution, and release remain blocked. | `roadmap.md` |
+| What is the next 1.x step? | Resolve the bounded Trading pending-zone presentation P2 before any Remote Runner/VPS work: preserve the existing zone owner and expose source time/age/distance so an unswept HTF anchor cannot be mistaken for current market price. | `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -245,7 +252,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading headless cycle port active | The capability-owned cycle use case composes existing decision, sizing, WASM intent, and exchange-effect owners; the screen delegates the solo limit path. | Same command/result path for foreground and future headless invocation; adverse cycle vectors, full gates, protected PR, and packaged preparation smoke. | No scheduler, daemon, Remote Runner/VPS deployment, remote credential, background execution, second effect path, Core/Ledger fact, tag, or Release. |
+| **1.x maintained runtime** | Trading headless cycle port complete; pending-zone presentation P2 open | The capability-owned cycle use case composes existing decision, sizing, WASM intent, and exchange-effect owners; the screen delegates the solo limit path. The existing live-decision owner remains authoritative for anchor semantics. | PR `#93`, green required/post-merge gates, adverse cycle vectors, and same-source macOS/Android packaged preparation smoke with `intent_prepared` and zero provider effects. | Expose HTF anchor source time/age/distance through the existing UI projection before Remote Runner/VPS; no new DTO, owner, effect path, Core/Ledger fact, tag, or Release. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |

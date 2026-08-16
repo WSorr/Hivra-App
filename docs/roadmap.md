@@ -3080,7 +3080,26 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: focused cycle and existing execution suites, full local and
     clean-checkout gates, protected PR/post-merge CI, then same-source packaged
     preparation smoke with zero provider effect.
-  - Status: selected (2026-08-16); implementation and evidence in progress.
+  - Status: complete on `main` at `b00ba99` (2026-08-17). Protected PR `#93`,
+    required branch gates `31920130783`, and post-merge repository gates
+    `31920174774` passed. Same-source Hands smoke used Release build
+    `1.0.3+100030043`: macOS prepared ETH-USDT with a decision envelope and
+    `effect=false`; Android prepared BTC-USDT with a decision envelope and
+    `effect=false`. No `bingx.exchange.execute` event, provider effect, tag, or
+    Release was created. macOS ZIP SHA-256 was
+    `7f351669d99905205c4c0ce16c939380890cc559c5b7b996c704501e09cfa160`;
+    Android APK SHA-256 was
+    `f9f7bf91c4f8ff414a8d29d0a8f79ee85ec451938701242eefc8991c1cfaa173`.
+    Smoke found a separate presentation P2: the UI shows an unswept HTF
+    pending-liquidity anchor as `READY` and labels its bounds only as `Zone
+    Low/High`, without source time, age, distance, or clarification that the
+    bounds are not current market prices. The BTC evidence was recomputed on
+    `Run Intent` from a `4h_fresh_high`; independent reconstruction placed the
+    selected unswept pivot at 2026-07-27T04:00:00Z, 124 closed 4h bars before
+    the observed snapshot. This does not contradict the canonical `fresh =
+    unswept` lifecycle or prove stale-cache reuse, but the UI ambiguity must be
+    remediated through the existing decision/projection path before Remote
+    Runner/VPS work. No algorithmic age policy is changed by this checkpoint.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
