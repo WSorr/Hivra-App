@@ -26,6 +26,7 @@ Legend:
 | Capsule-owned bounded trading mandate | DONE | The existing tracking store owns one versioned mandate commitment; the existing exchange execution owner checks exact Capsule/account/symbol/mode/time/notional/risk/effect bounds and binds each event claim to it | Keep mutation, expiry, revoke, restart, Capsule/account isolation, policy escalation, notional, and atomic effect-budget regressions green |
 | Managed-order restart recovery + reconciliation | DONE | The existing execution use case reconciles only locally persisted, account-bound order/client ids through exact provider reads; terminal and unresolved evidence remain distinct and no missing order is recreated or adopted | Keep exact-status, not-found, timeout, account-mismatch, reserved-claim recovery, Capsule-switch, and manual-order isolation regressions green |
 | Durable Capsule emergency pause | DONE | The existing Capsule-scoped tracking store persists explicit control state; the exchange execution owner checks it before risk work and immediately before claim/queue, while missing, legacy, malformed, restarted, or cross-Capsule state fails closed | Keep unavailable, restart, Capsule-isolation, and mid-flight pause regressions green |
+| Canonical solo trading cycle port | DONE | `BingxFuturesTradingCycleUseCaseService` composes the existing live-strategy, sizing, WASM intent, and exchange-execution owners; `TradingDroneScreen` delegates solo limit preparation to it | Keep invalid input, missing event, sizing failure, missing credential, refresh, and single-effect delegation regressions green; scheduler/VPS remains blocked |
 | Risk governor before execution | DONE | `TradingDroneScreen` delegates execution risk to `BingxFuturesExchangeExecutionUseCaseService` | Keep policy regression and envelope checks green |
 | Exchange contract minimums before execution | DONE | Public contract rules feed minimum quantity/notional into `BingxFuturesRiskGovernorService` | Keep ETH-style minimum-size regression green |
 | Realized-loss risk inputs | DONE | Authenticated BingX `REALIZED_PNL` records are normalized into one Capsule-scoped atomic risk projection; UTC daily PnL, loss streak, and last-loss time feed the governor | Keep persistence, dedupe, truncation, and live cooldown regressions green |
@@ -103,6 +104,7 @@ Legend:
 - [ ] `flutter test test/bingx_futures_execution_queue_service_test.dart`
 - [ ] `flutter test test/bingx_futures_order_revalidation_service_test.dart`
 - [ ] `flutter test test/bingx_futures_order_replacement_service_test.dart`
+- [ ] `flutter test test/bingx_futures_trading_cycle_use_case_service_test.dart`
 - [ ] `flutter test test/bingx_futures_order_tracking_store_test.dart`
 - [ ] `flutter test test/bingx_futures_exchange_execution_use_case_service_test.dart`
 - [ ] `flutter test test/bingx_futures_observability_envelope_service_test.dart`

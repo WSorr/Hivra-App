@@ -73,6 +73,7 @@ Decision pipeline services:
 - `flutter/lib/services/bingx_futures_tvh_rule_engine_service.dart`
 - `flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart`
 - `flutter/lib/services/bingx_futures_mode_orchestrator_service.dart`
+- `flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart`
 
 Execution/safety services:
 
@@ -88,6 +89,8 @@ UI surfaces:
 - `flutter/lib/screens/wasm_plugins_screen.dart`
 
 Rule: UI must not fork decision semantics independently from service pipeline.
+The solo limit-strategy action enters the canonical trading-cycle use case;
+future headless composition must reuse that port rather than copy screen logic.
 
 ---
 

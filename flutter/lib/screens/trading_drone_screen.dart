@@ -20,6 +20,7 @@ import '../services/app_runtime_service.dart';
 import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
+import '../services/bingx_futures_trading_cycle_use_case_service.dart';
 import '../utils/peer_identity_format.dart';
 
 @visibleForTesting
@@ -1680,6 +1681,88 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     });
   }
 
+  Future<String> _runCanonicalSoloCycle({required String symbol}) async {
+    final maximumNotional = num.tryParse(
+      _maxNotionalUsdtController.text.trim(),
+    );
+    if (maximumNotional == null || maximumNotional <= 0) {
+      await _showSnack('Max notional must be a positive number');
+      return 'blocked:risk_notional_invalid';
+    }
+    _setIntentProgress('Analyzing market');
+    final cycle = await _module.cycleUseCase.run(
+      BingxFuturesTradingCycleCommand(
+        screen: 'trading_drone',
+        symbol: symbol,
+        preferredSide: _side,
+        maximumNotionalQuote: maximumNotional,
+        stopLossPercent: _stopLossPercent,
+        takeProfitRiskReward: _takeProfitRiskReward,
+        credentials: _resolveCredentials(),
+        riskPolicy: _executionRiskPolicy,
+        fallbackEquityQuote: _fallbackRiskEquityQuote,
+        testOrder: _useTestOrderEndpoint,
+        executeEffect: false,
+        recentMicroBars: _recentMicroBars,
+        zoneNearBps: _zoneNearBps,
+        zoneFarBps: _zoneFarBps,
+      ),
+    );
+    final decision = cycle.decision;
+    final response = cycle.intent?.response;
+    if (mounted) {
+      setState(() {
+        if (decision != null) {
+          _lastPreparedLiveDecision = cycle.isPrepared ? decision : null;
+          _side = decision.side ?? _side;
+          _zoneSide = decision.zoneSide ?? _zoneSide;
+          _entryMode = 'zone_pending';
+          _zonePriceRule = 'zone_mid';
+          _zoneLowController.text = decision.zoneLowDecimal ?? '';
+          _zoneHighController.text = decision.zoneHighDecimal ?? '';
+          _triggerPriceController.text =
+              decision.side == 'buy'
+                  ? decision.zoneHighDecimal ?? ''
+                  : decision.zoneLowDecimal ?? '';
+          _strategyTagController.text =
+              _module.strategyNaming.tagForDecision(decision.decision) ?? '';
+        }
+        if (cycle.sizing?.quantityDecimal != null) {
+          _quantityController.text = cycle.sizing!.quantityDecimal!;
+        }
+        if (cycle.stopLossDecimal != null) {
+          _stopLossController.text = cycle.stopLossDecimal!;
+        }
+        if (cycle.takeProfitDecimal != null) {
+          _takeProfitController.text = cycle.takeProfitDecimal!;
+        }
+        _lastIntentResponse = response;
+        _intentBlockingMessage = cycle.isPrepared ? null : cycle.reasonMessage;
+      });
+    }
+    await _module.uiLog.log(
+      'bingx.trading_cycle.result',
+      'status=${cycle.status.name} code=${cycle.reasonCode} '
+          'symbol=$symbol effect=false '
+          'live_hash=${decision?.liveDecisionHashHex ?? "-"}',
+    );
+    final envelope = cycle.intent?.decisionEnvelope;
+    if (envelope != null) {
+      await _module.uiLog.log(
+        'drone.decision.envelope',
+        'hash=${envelope.envelopeHashHex} kind=decision screen=trading_drone',
+      );
+    }
+    if (cycle.isPrepared && response != null) {
+      final hash = response.result?['intent_hash_hex']?.toString() ?? '';
+      final shortHash = hash.length >= 12 ? '${hash.substring(0, 12)}..' : hash;
+      await _showSnack('BingX intent prepared: $shortHash');
+      return 'response:${response.status.name}';
+    }
+    await _showSnack(cycle.reasonMessage, seconds: 4);
+    return 'blocked:${cycle.reasonCode}';
+  }
+
   Future<String> _runIntentPipeline() async {
     if (!_tradingControlLoaded || _savingTradingControl) {
       await _showSnack('Trading control is not ready yet.');
@@ -1721,6 +1804,10 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         'bingx.strategy.entry_mode.auto',
         'forced=zone_pending rule=zone_mid side=$_zoneSide order_type=$_orderType',
       );
+    }
+
+    if (peerHex.isEmpty && _orderType == 'limit') {
+      return _runCanonicalSoloCycle(symbol: symbol);
     }
 
     final isZonePending = _entryMode == 'zone_pending';

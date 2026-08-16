@@ -53,6 +53,28 @@ Mode invariants:
 - Mode differences are orchestration-only (when/why to run), not decision-logic differences.
 - For identical normalized snapshot and identical policy config, both modes MUST produce identical decision payload/hash.
 
+### 2.2 Canonical Trading Cycle Port
+
+`BingxFuturesTradingCycleUseCaseService` is the capability-owned application
+port for one solo limit-strategy cycle. It composes the existing live-strategy,
+order-sizing, WASM intent, and exchange-execution use cases without taking over
+their decision, plugin, risk, mandate, claim, queue, provider, receipt, or
+reconciliation ownership.
+
+The port accepts one bounded cycle command and returns one explicit prepared,
+blocked, or executed result. The exact liquidity event determines the stable
+client order id. A cycle cannot prepare an intent without an executable event,
+closed-bar evidence, valid sizing, and the existing WASM contract result. When
+effect execution is requested, the port MUST delegate only to
+`BingxFuturesExchangeExecutionUseCaseService`, which revalidates freshness,
+mandate, risk, event claim, and provider outcome.
+
+The foreground solo/limit UI uses this port instead of rebuilding the same
+cycle in the screen. A future headless host may invoke the same port, but this
+contract does not provide a scheduler, daemon, credential transfer, deployment,
+lease, or remote authority. Pair-scoped consensus and manual exchange tools
+remain distinct foreground actions until a later bounded convergence pass.
+
 ---
 
 ## 3. Data Inputs from Exchange (Required for TVH v1)

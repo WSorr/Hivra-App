@@ -2,8 +2,14 @@
 
 Status date: 2026-08-16
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no next product pass is selected. `1.x Trading
-Capsule-Owned Bounded Mandate` is complete on `main` at `61f8f1d`. The existing
+Current development focus: `1.x Trading Headless Cycle Port` is the selected
+bounded product pass. One capability-owned application use case composes the
+existing live-strategy, sizing, WASM intent, and exchange-execution owners for
+the solo limit path. The foreground UI delegates that path to the same port a
+future headless host must use. Scheduler, daemon, VPS deployment, remote
+credentials, lease activation, live order, background execution, second effect
+route, Core/Ledger facts, tag, and Release remain blocked. The preceding `1.x
+Trading Capsule-Owned Bounded Mandate` is complete on `main` at `61f8f1d`. The existing
 Capsule-scoped `BingxFuturesOrderTrackingStore` remains the sole mandate-state
 owner and `BingxFuturesExchangeExecutionUseCaseService` remains the sole
 exchange-effect and enforcement owner. Every new order effect now requires one
@@ -229,7 +235,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | None selected. Trading Capsule-Owned Bounded Mandate is complete; Remote Runner/VPS, background execution, and release remain blocked pending an explicit product decision. | `roadmap.md` |
+| What is the next 1.x step? | Complete the selected Trading Headless Cycle Port through the existing application composition and exchange-effect owners. Scheduler, Remote Runner/VPS deployment, background execution, and release remain blocked. | `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -239,7 +245,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading bounded mandate complete; no next pass selected | The existing Capsule-scoped order-tracking store owns one versioned mandate value; the existing exchange-execution use case remains the sole effect owner. | Exact commitment mutations, expiry/revoke, account/Capsule/mode isolation, policy/notional/effect bounds, full gates, protected PR, and packaged macOS/Android control smoke passed. | No scheduler, Remote Runner/VPS, background execution, second effect path, Core/Ledger fact, tag, or Release. |
+| **1.x maintained runtime** | Trading headless cycle port active | The capability-owned cycle use case composes existing decision, sizing, WASM intent, and exchange-effect owners; the screen delegates the solo limit path. | Same command/result path for foreground and future headless invocation; adverse cycle vectors, full gates, protected PR, and packaged preparation smoke. | No scheduler, daemon, Remote Runner/VPS deployment, remote credential, background execution, second effect path, Core/Ledger fact, tag, or Release. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |

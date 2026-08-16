@@ -16,6 +16,7 @@ import 'bingx_futures_risk_governor_service.dart';
 import 'bingx_futures_risk_history_service.dart';
 import 'bingx_futures_signal_rank_use_case_service.dart';
 import 'bingx_futures_strategy_naming_service.dart';
+import 'bingx_futures_trading_cycle_use_case_service.dart';
 import 'bingx_futures_volume_growth_filter_service.dart';
 import 'capsule_chat_delivery_service.dart';
 import 'capsule_contact_label_store.dart';
@@ -44,6 +45,7 @@ class TradingDroneModule {
   final BingxFuturesLiveStrategyUseCaseService liveStrategyUseCase;
   final BingxFuturesStrategyNamingService strategyNaming;
   final BingxFuturesVolumeGrowthFilterService volumeGrowthFilter;
+  final BingxFuturesTradingCycleUseCaseService cycleUseCase;
   final CapsuleChatDeliveryService chatDelivery;
   final CapsulePassiveReceivePort passiveReceive;
   final CapsuleContactLabelStore contactLabels;
@@ -70,6 +72,7 @@ class TradingDroneModule {
     required this.liveStrategyUseCase,
     required this.strategyNaming,
     required this.volumeGrowthFilter,
+    required this.cycleUseCase,
     required this.chatDelivery,
     required this.passiveReceive,
     required this.contactLabels,
@@ -100,6 +103,25 @@ class TradingDroneModuleService {
     final riskGovernor = const BingxFuturesRiskGovernorService();
     final riskHistory = runtime.buildBingxFuturesRiskHistoryService();
     final orderTrackingStore = runtime.buildBingxFuturesOrderTrackingStore();
+    final orderSizing = BingxFuturesOrderSizingService(
+      exchange: exchangeService,
+    );
+    final intentUseCase = BingxFuturesIntentUseCaseService(
+      hostApi: pluginHostApi,
+      observability: observability,
+    );
+    final executionUseCase = BingxFuturesExchangeExecutionUseCaseService(
+      exchange: exchangeService,
+      queue: executionQueue,
+      riskInput: exchangeRiskInput,
+      riskGovernor: riskGovernor,
+      riskHistory: riskHistory,
+      orderTrackingStore: orderTrackingStore,
+      observability: observability,
+    );
+    final liveStrategyUseCase = BingxFuturesLiveStrategyUseCaseService(
+      exchange: exchangeService,
+    );
     return TradingDroneModule(
       pluginHostApi: pluginHostApi,
       manualChecks: runtime.buildManualConsensusCheckService(),
@@ -107,33 +129,26 @@ class TradingDroneModuleService {
       exchangeService: exchangeService,
       orderTrackingStore: orderTrackingStore,
       exchangeRiskInput: exchangeRiskInput,
-      orderSizing: BingxFuturesOrderSizingService(exchange: exchangeService),
+      orderSizing: orderSizing,
       riskGovernor: riskGovernor,
       riskHistory: riskHistory,
       observability: observability,
-      intentUseCase: BingxFuturesIntentUseCaseService(
-        hostApi: pluginHostApi,
-        observability: observability,
-      ),
-      executionUseCase: BingxFuturesExchangeExecutionUseCaseService(
-        exchange: exchangeService,
-        queue: executionQueue,
-        riskInput: exchangeRiskInput,
-        riskGovernor: riskGovernor,
-        riskHistory: riskHistory,
-        orderTrackingStore: orderTrackingStore,
-        observability: observability,
-      ),
+      intentUseCase: intentUseCase,
+      executionUseCase: executionUseCase,
       signalRankUseCase: BingxFuturesSignalRankUseCaseService(
         hostApi: pluginHostApi,
       ),
       orderRevalidation: const BingxFuturesOrderRevalidationService(),
       orderReplacement: const BingxFuturesOrderReplacementService(),
-      liveStrategyUseCase: BingxFuturesLiveStrategyUseCaseService(
-        exchange: exchangeService,
-      ),
+      liveStrategyUseCase: liveStrategyUseCase,
       strategyNaming: const BingxFuturesStrategyNamingService(),
       volumeGrowthFilter: const BingxFuturesVolumeGrowthFilterService(),
+      cycleUseCase: BingxFuturesTradingCycleUseCaseService(
+        liveStrategy: liveStrategyUseCase,
+        orderSizing: orderSizing,
+        intentUseCase: intentUseCase,
+        executionUseCase: executionUseCase,
+      ),
       chatDelivery: runtime.buildCapsuleChatDeliveryService(),
       passiveReceive: runtime.passiveReceive,
       contactLabels: runtime.buildCapsuleContactLabelStore(),
