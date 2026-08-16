@@ -2922,7 +2922,7 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     4. run the same decision and effect contracts in a headless host;
     5. authorize scoped remote execution only with lease, kill switch, account
        binding, risk ceilings, exact receipts, and restart reconciliation.
-  - Current selected pass: `Liquidity Confluence Observation`. The existing
+  - Completed rung: `Liquidity Confluence Observation`. The existing
     live snapshot builder owns public observations and the existing zone
     decision service owns entry-zone semantics. Replace the single-largest
     bid/ask proxy with bounded deterministic clusters combining depth, closed
@@ -3056,6 +3056,31 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `9c68811a0aae3f08d61f22d9668166cff29d62b9bc1786f5c68d7239be20a755`.
     No live order, background execution, Remote Runner/VPS, tag, or Release was
     created. No following product pass is selected automatically.
+
+- `1.x Trading Headless Cycle Port`
+  - Lane: bounded 1.x Trading productization between the proven local mandate
+    and any separately authorized host/deployment work.
+  - Invariant: foreground solo limit preparation and a future headless host use
+    one capability-owned cycle command/result path. Decision, sizing, WASM
+    intent, mandate/risk/freshness enforcement, event claim, provider effect,
+    receipt, and reconciliation retain their existing owners.
+  - Sole application owner: `TradingDroneModuleService` composes
+    `BingxFuturesTradingCycleUseCaseService`; the latter replaces the
+    screen-owned solo limit orchestration and delegates an optional effect only
+    to `BingxFuturesExchangeExecutionUseCaseService`.
+  - Threat model and negative vectors: invalid symbol/side/budget, missing or
+    changed event evidence, blocked sizing, rejected WASM intent, missing
+    credential, stale refresh, revoked/expired mandate, duplicate event, and
+    provider ambiguity must stop before or remain inside their canonical owner.
+  - Removed or sealed: the solo limit UI no longer owns a parallel market ->
+    sizing -> intent composition. Scheduler, daemon, SSH/VPS deployment,
+    credential transfer, lease activation, live order, background execution,
+    second provider/effect route, Core/Ledger fact, plugin ABI, tag, and Release
+    remain sealed.
+  - Exit evidence: focused cycle and existing execution suites, full local and
+    clean-checkout gates, protected PR/post-merge CI, then same-source packaged
+    preparation smoke with zero provider effect.
+  - Status: selected (2026-08-16); implementation and evidence in progress.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
