@@ -3493,8 +3493,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     remain beneath the suite sandbox, a unique real Capsule path remains
     absent, bootstrap/owner/lifetime/probe mutations fail the architecture
     gate, and full Flutter/Rust/repository and clean-checkout gates pass.
-  - Status: selected (2026-08-17). No product pass, V2 pass, deployment, tag,
-    or Release is selected automatically.
+  - Status: complete on `main` at `24eb042` (2026-08-17). Protected PR `#111`,
+    required run `32036080325`, and post-merge run `32036163520` passed.
+    Flutter `921/921`, analyze, Rust workspace, full review gates, and clean
+    detached-checkout validation passed. Issue `#76` is closed. No following
+    product pass, V2 pass, deployment, tag, or Release is selected
+    automatically.
 
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
