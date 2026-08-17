@@ -2,8 +2,20 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no following pass is selected automatically. `1.x
-Trading Remote Runner Pass F — Public-Only Bounded Scheduler` is complete on
+Current development focus: `1.x Trading Remote Runner Pass G — Verifiable
+Standalone Host Artifact` is selected. One existing probe entrypoint may be
+compiled into one host-native executable only from a completely clean tree and
+the pinned Dart SDK. One strict manifest binds its exact SHA-256, size, source
+commit, platform, entrypoint, and `public-market-shadow-only` authority profile.
+The verifier rejects mutation, unknown manifest shape, linked state, non-native
+files, and authenticated exchange authority markers. Dart AOT output is not
+claimed byte-reproducible; provenance binds the one produced artifact. No
+transfer, Linux deployment, systemd/Docker unit, VPS change, credential,
+account read, Capsule state, lease, receiver, external anchor, or effect route
+is authorized. Exit evidence requires verifier negative tests, dirty-tree
+rejection, one clean host-native package, full local and clean-checkout gates,
+protected PR, and green post-merge CI. The preceding `1.x Trading Remote Runner
+Pass F — Public-Only Bounded Scheduler` is complete on
 `main` at `712177f` through protected PR `#115`; required run `32043346812` and
 post-merge run `32043400512` passed. The existing
 `flutter/tool/trading_remote_shadow_probe.dart` composition root may run only

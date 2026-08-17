@@ -3247,6 +3247,27 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     or path was added. This pass does not claim unattended VPS or 24/7 trading
     readiness. No following pass is selected automatically.
 
+- `1.x Trading Remote Runner Pass G — Verifiable Standalone Host Artifact`
+  - Lane: bounded 1.x Trading packaging before any host transfer or deployment.
+  - Invariant: one completely clean source commit and pinned Dart SDK produce
+    one host-native public-only binary whose exact bytes, source, platform,
+    entrypoint, and authority profile are bound by one strict manifest.
+  - Sole owner: `public_shadow_runner_artifact.sh` owns only package creation
+    and verification around the existing probe; it owns no runtime state,
+    scheduling, deployment, credential, account, or effect lifecycle.
+  - Removed or sealed: a target host no longer needs the Flutter source tree or
+    SDK to execute the probe. Dirty-source packaging, overwrite, malformed
+    manifests, byte substitution, and authenticated authority markers fail
+    closed. Transfer, Linux evidence, VPS installation, supervisor, site or
+    Amnezia changes, credentials, account reads, external anchoring, and remote
+    effects remain sealed.
+  - Exit evidence: verifier hash/shape/authority negative tests, dirty-tree
+    rejection, one clean host-native package, full local and clean-checkout
+    gates, protected PR, and green post-merge CI.
+  - Status: selected (2026-08-17). Dart AOT is explicitly not claimed
+    byte-reproducible; this pass binds one exact artifact and authorizes no
+    following pass.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

@@ -7,6 +7,7 @@ PUBLIC_SNAPSHOT="$ROOT/flutter/lib/services/bingx_futures_live_snapshot_builder_
 PUBLIC_STRATEGY="$ROOT/flutter/lib/services/bingx_futures_live_strategy_use_case_service.dart"
 SHADOW_PROBE="$ROOT/flutter/tool/trading_remote_shadow_probe.dart"
 SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart"
+RUNNER_ARTIFACT="$ROOT/tools/trading/public_shadow_runner_artifact.sh"
 EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart"
 TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
 STATUS=0
@@ -44,6 +45,18 @@ shadow_probe_is_bounded_scheduler() {
     [ -n "$delay_line" ] &&
     [ "$cycle_line" -lt "$delay_line" ] &&
     ! rg -q 'Timer\.periodic|while \(true\)|scheduleAtFixedRate|retry' "$1"
+}
+
+runner_artifact_is_verifiable() {
+  [ -x "$1" ] &&
+    rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-artifact-v1"' "$1" &&
+    rg -q 'AUTHORITY_PROFILE="public-market-shadow-only"' "$1" &&
+    rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
+    rg -q 'build output must stay outside the repository' "$1" &&
+    rg -q 'binary_sha256=' "$1" &&
+    rg -q 'artifact binary SHA-256 mismatch' "$1" &&
+    rg -q 'forbidden authenticated exchange authority markers' "$1" &&
+    rg -q 'dart compile exe "tool/trading_remote_shadow_probe.dart"' "$1"
 }
 
 shadow_stream_is_durable() {
@@ -148,6 +161,13 @@ else
   fail "live shadow probe scheduler lost bounded cadence or serial execution"
 fi
 
+if runner_artifact_is_verifiable "$RUNNER_ARTIFACT" &&
+  "$RUNNER_ARTIFACT" --self-test >/dev/null; then
+  pass "standalone runner artifact binds clean source, exact bytes, and public-only authority"
+else
+  fail "standalone runner artifact lost provenance or public-only verification"
+fi
+
 if rg -q "BingxFuturesShadowStreamStore" "$SHADOW_PROBE" &&
   rg -q "'stream-dir'" "$SHADOW_PROBE" &&
   ! rg -q "'output'" "$SHADOW_PROBE" &&
@@ -169,9 +189,10 @@ PROBE_MUTATION="$(mktemp)"
 STREAM_MUTATION="$(mktemp)"
 CHECKPOINT_MUTATION="$(mktemp)"
 SCHEDULER_MUTATION="$(mktemp)"
+ARTIFACT_MUTATION="$(mktemp)"
 EXECUTION_MUTATION="$(mktemp)"
 CYCLE_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -184,6 +205,8 @@ sed 's/await _commitCheckpoint(checkpoint);/await Future<void>.value();/' \
   "$SHADOW_STREAM" > "$CHECKPOINT_MUTATION"
 sed 's/await runOnce(cycleNumber);/await Future<void>.value();/' \
   "$SHADOW_PROBE" > "$SCHEDULER_MUTATION"
+sed 's/AUTHORITY_PROFILE="public-market-shadow-only"/AUTHORITY_PROFILE="full-exchange-authority"/' \
+  "$RUNNER_ARTIFACT" > "$ARTIFACT_MUTATION"
 sed 's/final executionSucceeded = queued\.execution\.isSuccess;/final executionSucceeded = true;/' \
   "$EXECUTION_USE_CASE" > "$EXECUTION_MUTATION"
 sed 's/execution\.queuedExecution?\.execution\.isSuccess == true/true/' \
@@ -191,12 +214,13 @@ sed 's/execution\.queuedExecution?\.execution\.isSuccess == true/true/' \
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
+  ! runner_artifact_is_verifiable "$ARTIFACT_MUTATION" && \
   ! shadow_stream_is_durable "$STREAM_MUTATION" && \
   ! shadow_stream_is_durable "$CHECKPOINT_MUTATION" && \
   ! execution_outcome_is_truthful "$EXECUTION_MUTATION" "$CYCLE_MUTATION"; then
-  pass "public-only, scheduler, durable-stream, and execution-outcome mutations are rejected"
+  pass "public-only, scheduler, artifact, durable-stream, and execution-outcome mutations are rejected"
 else
-  fail "public-only, scheduler, durable-stream, or execution-outcome mutation self-test failed"
+  fail "public-only, scheduler, artifact, durable-stream, or execution-outcome mutation self-test failed"
 fi
 
 exit "$STATUS"
