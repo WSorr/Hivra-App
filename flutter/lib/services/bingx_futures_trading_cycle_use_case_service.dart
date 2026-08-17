@@ -322,24 +322,28 @@ class BingxFuturesTradingCycleUseCaseService {
         return refreshed.decision;
       },
     );
+    final executionSucceeded =
+        execution.status ==
+            BingxFuturesExchangeExecutionUseCaseStatus.executed &&
+        execution.queuedExecution?.execution.isSuccess == true;
     return BingxFuturesTradingCycleResult(
       status:
-          execution.status ==
-                  BingxFuturesExchangeExecutionUseCaseStatus.executed
+          executionSucceeded
               ? BingxFuturesTradingCycleStatus.executed
               : BingxFuturesTradingCycleStatus.executionBlocked,
       reasonCode:
           execution.errorCode ??
-          (execution.status ==
-                  BingxFuturesExchangeExecutionUseCaseStatus.executed
+          (executionSucceeded
               ? 'effect_executed'
+              : execution.status ==
+                  BingxFuturesExchangeExecutionUseCaseStatus.executed
+              ? 'exchange_effect_failed'
               : execution.status.name),
       reasonMessage:
           execution.errorMessage ??
-          (execution.status ==
-                  BingxFuturesExchangeExecutionUseCaseStatus.executed
+          (executionSucceeded
               ? 'Exchange effect executed.'
-              : 'Exchange effect was blocked.'),
+              : 'Exchange effect did not produce a success receipt.'),
       decision: decision,
       sizing: sizing,
       intent: intent,

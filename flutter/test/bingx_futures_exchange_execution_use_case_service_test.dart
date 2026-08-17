@@ -390,6 +390,61 @@ void main() {
       },
     );
 
+    test('reports rejected provider effect as execution failure', () async {
+      final exchange = BingxFuturesExchangeService();
+      final store = _trackingStore(tempHome);
+      await _setDroneEnabled(store, true);
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            return BingxFuturesOrderExecutionResult(
+              isSuccess: false,
+              httpStatusCode: 400,
+              exchangeCode: '100001',
+              exchangeMessage: 'provider rejected order',
+              orderId: null,
+              endpointPath: '/test-order',
+              signedPayloadHashHex: List<String>.filled(64, 'e').join(),
+              responseBody: '{}',
+              intentHashHex: intent.intentHashHex,
+            );
+          },
+        ),
+        riskHistory: riskHistory,
+        orderTrackingStore: store,
+      );
+
+      final result = await service.execute(
+        screen: 'test',
+        rawIntentResult: _zoneIntent,
+        credentials: _credentials,
+        riskPolicy: _policy,
+        fallbackEquityQuote: 100,
+        testOrder: true,
+        preparedDecision: _decision(),
+        refreshDecision: () async => _decision(),
+      );
+
+      expect(
+        result.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.executionFailed,
+      );
+      expect(result.queuedExecution!.execution.isSuccess, isFalse);
+      expect(result.errorCode, 'exchange_effect_failed');
+      expect(result.errorMessage, 'provider rejected order');
+      final state = await store.load();
+      expect(
+        state!.liquidityEventEffectClaims.values.single.status,
+        BingxLiquidityEventEffectClaimStatus.reserved,
+      );
+    });
+
     test('bounded mandate rejects scope and authority mutations', () async {
       var placeOrderCalled = false;
       final store = _trackingStore(tempHome);

@@ -13,6 +13,7 @@ enum BingxFuturesExchangeExecutionUseCaseStatus {
   effectClaimUnavailable,
   riskUnavailable,
   riskBlocked,
+  executionFailed,
   executed,
 }
 

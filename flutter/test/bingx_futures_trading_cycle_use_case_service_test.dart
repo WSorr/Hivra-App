@@ -131,9 +131,7 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 20));
           return _intentResult(command);
         },
-        executionRunner: _executionRunner(
-          onCall: () => executionCalls += 1,
-        ),
+        executionRunner: _executionRunner(onCall: () => executionCalls += 1),
       );
 
       final result = await service.run(_command(executeEffect: true));
@@ -178,6 +176,31 @@ void main() {
         expect(executionCalls, 1);
         expect(liveCalls, 2);
         expect(refreshed!.liquidityEventId, _eventId);
+      },
+    );
+
+    test(
+      'rejects contradictory executed outcome without provider success',
+      () async {
+        final service = _service(
+          executionRunner:
+              ({
+                required screen,
+                required rawIntentResult,
+                required credentials,
+                required riskPolicy,
+                required fallbackEquityQuote,
+                required testOrder,
+                preparedDecision,
+                refreshDecision,
+              }) async => _providerRejectedResult,
+        );
+
+        final result = await service.run(_command(executeEffect: true));
+
+        expect(result.status, BingxFuturesTradingCycleStatus.executionBlocked);
+        expect(result.reasonCode, 'exchange_effect_failed');
+        expect(result.isPrepared, isFalse);
       },
     );
   });
@@ -391,6 +414,37 @@ const _executedResult = BingxFuturesExchangeExecutionUseCaseResult(
     canonicalJson: '{}',
     envelopeHashHex:
         '8888888888888888888888888888888888888888888888888888888888888888',
+  ),
+  errorCode: null,
+  errorMessage: null,
+  diagnostics: <String>[],
+);
+
+const _providerRejectedResult = BingxFuturesExchangeExecutionUseCaseResult(
+  status: BingxFuturesExchangeExecutionUseCaseStatus.executed,
+  payload: null,
+  riskDecision: null,
+  queuedExecution: BingxQueuedExecutionResult(
+    execution: BingxFuturesOrderExecutionResult(
+      isSuccess: false,
+      httpStatusCode: 400,
+      exchangeCode: '100001',
+      exchangeMessage: 'rejected',
+      orderId: null,
+      endpointPath: '/order/test',
+      signedPayloadHashHex: _hash1,
+      responseBody: '{}',
+      intentHashHex: _hash5,
+    ),
+    attempts: 1,
+    fromIdempotentCache: false,
+    exhaustedRetries: false,
+    idempotencyKey: 'effect-rejected',
+  ),
+  executionEnvelope: BingxFuturesLogEnvelope(
+    canonicalJson: '{}',
+    envelopeHashHex:
+        '9999999999999999999999999999999999999999999999999999999999999999',
   ),
   errorCode: null,
   errorMessage: null,
