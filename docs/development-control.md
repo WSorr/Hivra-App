@@ -2,7 +2,19 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Flutter Test Runtime Isolation Remediation` is
+Current development focus: `1.x Trading Remote Runner Pass E — Authenticated
+Bounded Stream Compaction` is selected. The existing
+`BingxFuturesShadowStreamStore` remains the sole runner-retention owner. A full
+authenticated 256-entry tail may advance only after its exact final signed
+evidence is durably committed as the local checkpoint; restart continues the
+global sequence and predecessor hash without resetting or creating another
+journal. Corrupt, foreign-key, partial, conflicting, linked, or non-file state
+fails closed. Scheduler, daemon, VPS deployment, external anchor, lease,
+credentials, account reads, Capsule state, remote effects, tags, and Releases
+remain unauthorized. Exit evidence requires compaction/restart, crash overlap,
+conflict/no-delete, filesystem-type, concurrency, mutation-gate, full local and
+clean-checkout gates, protected PR, and green post-merge CI. The preceding
+`1.x Flutter Test Runtime Isolation Remediation` is
 complete on `main` at `24eb042` through protected PR `#111`; required run
 `32036080325` and post-merge run `32036163520` passed.
 `UserVisibleDataDirectoryService` remains the sole home-resolution owner. Every
@@ -306,7 +318,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No next pass is selected automatically. Confirmed Trading outcome-truth and shadow identity-initialization findings remain candidates for separate bounded remediation. | `roadmap.md` |
+| What is the next 1.x step? | Trading Remote Runner Pass E is selected to replace the authenticated shadow stream's finite 256-entry dead end with one bounded checkpointed continuation path. | `roadmap.md`, Trading Drone goal contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -316,7 +328,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Chat durable handoff capacity remediation complete; no next pass selected | The existing native handoff owns bounded pre-projection retention; the existing Flutter delivery inbox owns durable timeline projection and only then permits ACK. | PR `#103`, runs `32024383365`/`32024462405`, Flutter `911/911`, analyze, Rust workspace, full review gates, clean checkout, Rust Chat `6/6`, and Flutter Chat `32/32` passed. | Trading truthful execution outcome and shadow identity initialization remain separate findings. No release or Remote Runner pass is selected automatically. |
+| **1.x maintained runtime** | Trading Remote Runner Pass E selected | The existing shadow-stream store owns authenticated bounded compaction; canonical signed evidence remains the only checkpoint wire. | Full-tail continuation, crash-overlap recovery, conflict/no-delete and mutation evidence are required before closure. | Scheduler, VPS deployment, external anchoring, leases, account reads, and remote effects remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |

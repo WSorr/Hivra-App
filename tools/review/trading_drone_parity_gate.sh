@@ -30,7 +30,11 @@ shadow_probe_has_authority() {
 
 shadow_stream_is_durable() {
   local unexpected_deletes
-  unexpected_deletes="$(rg -n '\.delete\(' "$1" | rg -v '(interrupted|pending)\.delete\(' || true)"
+  local checkpoint_commit_line
+  local checkpoint_cleanup_line
+  unexpected_deletes="$(rg -n '\.delete\(' "$1" | rg -v '(interrupted|pending)\.delete\(|await entry\.delete\(\);' || true)"
+  checkpoint_commit_line="$(rg -n 'await _commitCheckpoint\(checkpoint\);' "$1" | cut -d: -f1)"
+  checkpoint_cleanup_line="$(rg -n 'await _deleteCheckpointedEvidence\(checkpoint\);' "$1" | head -1 | cut -d: -f1)"
   rg -q 'static const int maxEntries = 256;' "$1" &&
     rg -q 'static const int _lockAttemptLimit = 100;' "$1" &&
     rg -q "_pendingDirectoryName = 'pending'" "$1" &&
@@ -43,6 +47,14 @@ shadow_stream_is_durable() {
     rg -q 'pending\.create\(exclusive: true\)' "$1" &&
     rg -q 'pending\.writeAsBytes\(evidence\.wireBytes, flush: true\)' "$1" &&
     rg -q 'pending\.rename\(committed\.path\)' "$1" &&
+    rg -q "_checkpointFileName = 'stream_checkpoint.v1.json'" "$1" &&
+    rg -q 'evidence\.sequence % maxEntries != 0' "$1" &&
+    rg -q 'shadow checkpoint overlap conflict' "$1" &&
+    rg -q 'await pending\.writeAsBytes\(checkpoint\.wireBytes, flush: true\)' "$1" &&
+    rg -q 'await pending\.rename\(committed\.path\)' "$1" &&
+    [ -n "$checkpoint_commit_line" ] &&
+    [ -n "$checkpoint_cleanup_line" ] &&
+    [ "$checkpoint_commit_line" -lt "$checkpoint_cleanup_line" ] &&
     rg -q 'authenticateShadowEvidence' "$1" &&
     [ -z "$unexpected_deletes" ]
 }
@@ -117,7 +129,7 @@ if rg -q "BingxFuturesShadowStreamStore" "$SHADOW_PROBE" &&
   ! rg -q "'output'" "$SHADOW_PROBE" &&
   shadow_stream_is_durable "$SHADOW_STREAM" &&
   ! shadow_probe_has_authority "$SHADOW_STREAM"; then
-  pass "shadow stream is authenticated, bounded, immutable, and authority-free"
+  pass "shadow stream is authenticated, bounded, checkpointed, and authority-free"
 else
   fail "shadow stream lost restart, retention, or authority boundaries"
 fi
@@ -131,9 +143,10 @@ fi
 PUBLIC_MUTATION="$(mktemp)"
 PROBE_MUTATION="$(mktemp)"
 STREAM_MUTATION="$(mktemp)"
+CHECKPOINT_MUTATION="$(mktemp)"
 EXECUTION_MUTATION="$(mktemp)"
 CYCLE_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -142,6 +155,8 @@ sed -e 's/static const int _lockAttemptLimit = 100;/static const int _lockAttemp
   -e 's/await pending\.rename(identity\.path);/await identity.writeAsString(encoded, flush: true);/' \
   "$SHADOW_STREAM" > "$STREAM_MUTATION"
 printf '\nvoid deleteEvidence(File committed) => committed.delete();\n' >> "$STREAM_MUTATION"
+sed 's/await _commitCheckpoint(checkpoint);/await Future<void>.value();/' \
+  "$SHADOW_STREAM" > "$CHECKPOINT_MUTATION"
 sed 's/final executionSucceeded = queued\.execution\.isSuccess;/final executionSucceeded = true;/' \
   "$EXECUTION_USE_CASE" > "$EXECUTION_MUTATION"
 sed 's/execution\.queuedExecution?\.execution\.isSuccess == true/true/' \
@@ -149,6 +164,7 @@ sed 's/execution\.queuedExecution?\.execution\.isSuccess == true/true/' \
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_stream_is_durable "$STREAM_MUTATION" && \
+  ! shadow_stream_is_durable "$CHECKPOINT_MUTATION" && \
   ! execution_outcome_is_truthful "$EXECUTION_MUTATION" "$CYCLE_MUTATION"; then
   pass "public-only, durable-stream, and execution-outcome mutations are rejected"
 else
