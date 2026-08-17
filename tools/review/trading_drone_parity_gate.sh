@@ -53,19 +53,40 @@ shadow_probe_is_bounded_scheduler() {
 
 runner_artifact_is_verifiable() {
   [ -x "$1" ] &&
-    rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-artifact-v1"' "$1" &&
+    rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"' "$1" &&
     rg -q 'AUTHORITY_PROFILE="public-market-shadow-only"' "$1" &&
     rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
     rg -q 'build output must stay outside the repository' "$1" &&
     rg -q 'binary_sha256=' "$1" &&
+    rg -q 'unit_sha256=' "$1" &&
+    rg -q 'bundle_install_path=' "$1" &&
+    rg -q 'unit_link_path=' "$1" &&
     rg -q 'dependency_lock_sha256=' "$1" &&
     rg -q 'dart pub get --enforce-lockfile' "$1" &&
     rg -q 'the only cross-build target is linux/x64' "$1" &&
     rg -q 'artifact binary does not match Linux x64 manifest' "$1" &&
     rg -q 'artifact binary SHA-256 mismatch' "$1" &&
+    rg -q 'artifact unit does not match the canonical source' "$1" &&
     rg -q 'forbidden authenticated exchange authority markers' "$1" &&
     rg -q 'dart compile exe' "$1" &&
     rg -q '"tool/trading_remote_shadow_probe.dart"' "$1"
+}
+
+runner_bundle_install_is_fail_closed() {
+  [ -x "$1" ] &&
+    rg -q -- '--ephemeral-install-smoke <artifact-dir>' "$1" &&
+    rg -q 'ephemeral install smoke requires root' "$1" &&
+    rg -q 'another public-shadow install operation is active' "$1" &&
+    rg -q '\[ ! -e "\$target" \] && \[ ! -L "\$target" \]' "$1" &&
+    rg -q 'ephemeral install target already exists' "$1" &&
+    rg -q 'systemd-creds encrypt --name=runner-seed' "$1" &&
+    rg -q 'systemctl link "\$UNIT_INSTALL_PATH"' "$1" &&
+    rg -q 'systemctl is-enabled "\$UNIT_NAME"' "$1" &&
+    rg -q 'systemctl start "\$UNIT_NAME"' "$1" &&
+    rg -q 'systemctl clean --what=state "\$UNIT_NAME"' "$1" &&
+    rg -q 'ephemeral install cleanup retained:' "$1" &&
+    rg -q 'exact unit installed, started, and removed without enablement' "$1" &&
+    ! rg -q 'systemctl enable' "$1"
 }
 
 runner_package_is_pinned() {
@@ -331,9 +352,15 @@ fi
 if runner_artifact_is_verifiable "$RUNNER_ARTIFACT" &&
   runner_package_is_pinned "$RUNNER_PACKAGE" "$RUNNER_PACKAGE_LOCK" &&
   "$RUNNER_ARTIFACT" --self-test >/dev/null; then
-  pass "standalone runner artifact binds pinned dependencies, target, exact bytes, and public-only authority"
+  pass "standalone runner bundle binds pinned dependencies, binary, unit, target, paths, and public-only authority"
 else
-  fail "standalone runner artifact lost dependency, target, provenance, or authority verification"
+  fail "standalone runner bundle lost dependency, unit, target, path, provenance, or authority verification"
+fi
+
+if runner_bundle_install_is_fail_closed "$RUNNER_ARTIFACT"; then
+  pass "runner bundle exact-unit smoke is collision-safe, encrypted, non-enabled, and self-cleaning"
+else
+  fail "runner bundle exact-unit smoke lost collision, credential, enablement, or cleanup safety"
 fi
 
 if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; then
@@ -378,7 +405,11 @@ SUPERVISOR_RESTART_MUTATION="$(mktemp)"
 SUPERVISOR_MEMORY_MUTATION="$(mktemp)"
 SUPERVISOR_CREDENTIAL_MUTATION="$(mktemp)"
 SUPERVISOR_LISTENER_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION"' EXIT
+BUNDLE_UNIT_MUTATION="$(mktemp)"
+BUNDLE_ENABLE_MUTATION="$(mktemp)"
+BUNDLE_COLLISION_MUTATION="$(mktemp)"
+BUNDLE_CLEANUP_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -409,6 +440,14 @@ sed 's#^LoadCredentialEncrypted=.*#Environment=HIVRA_SHADOW_RUNNER_SEED_HEX=unsa
   "$RUNNER_SUPERVISOR" > "$SUPERVISOR_CREDENTIAL_MUTATION"
 sed '/^SocketBindDeny=any$/d' \
   "$RUNNER_SUPERVISOR" > "$SUPERVISOR_LISTENER_MUTATION"
+sed '/artifact unit does not match the canonical source/d' \
+  "$RUNNER_ARTIFACT" > "$BUNDLE_UNIT_MUTATION"
+sed 's/systemctl link "\$UNIT_INSTALL_PATH"/systemctl enable "\$UNIT_NAME"/' \
+  "$RUNNER_ARTIFACT" > "$BUNDLE_ENABLE_MUTATION"
+sed 's/\[ ! -e "\$target" \] && \[ ! -L "\$target" \]/true/' \
+  "$RUNNER_ARTIFACT" > "$BUNDLE_COLLISION_MUTATION"
+sed '/systemctl clean --what=state "\$UNIT_NAME"/d' \
+  "$RUNNER_ARTIFACT" > "$BUNDLE_CLEANUP_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
@@ -421,10 +460,14 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_supervisor_is_fail_closed "$SUPERVISOR_RESTART_MUTATION" "$SHADOW_PROBE" && \
   ! runner_supervisor_is_fail_closed "$SUPERVISOR_MEMORY_MUTATION" "$SHADOW_PROBE" && \
   ! runner_supervisor_is_fail_closed "$SUPERVISOR_CREDENTIAL_MUTATION" "$SHADOW_PROBE" && \
-  ! runner_supervisor_is_fail_closed "$SUPERVISOR_LISTENER_MUTATION" "$SHADOW_PROBE"; then
-  pass "public-only, scheduler, artifact, supervisor, durable-stream, and execution-outcome mutations are rejected"
+  ! runner_supervisor_is_fail_closed "$SUPERVISOR_LISTENER_MUTATION" "$SHADOW_PROBE" && \
+  ! runner_artifact_is_verifiable "$BUNDLE_UNIT_MUTATION" && \
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_ENABLE_MUTATION" && \
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_COLLISION_MUTATION" && \
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_CLEANUP_MUTATION"; then
+  pass "public-only, scheduler, bundle, install, supervisor, durable-stream, and execution-outcome mutations are rejected"
 else
-  fail "public-only, scheduler, artifact, supervisor, durable-stream, or execution-outcome mutation self-test failed"
+  fail "public-only, scheduler, bundle, install, supervisor, durable-stream, or execution-outcome mutation self-test failed"
 fi
 
 exit "$STATUS"
