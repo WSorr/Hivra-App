@@ -3396,9 +3396,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     replay dedupe, record FIFO eviction, tombstone FIFO overwrite, corruption
     fail-closed, full Flutter/Rust/repository gates, clean checkout, protected
     PR, and green post-merge CI.
-  - Status: selected and in progress (2026-08-17). Trading outcome truth and
-    shadow identity initialization remain separate findings; no release or
-    following product pass is selected automatically.
+  - Status: complete on `main` at `340c8a6` (2026-08-17). Protected PR `#103`,
+    required run `32024383365`, and post-merge run `32024462405` passed.
+    Flutter `911/911`, analyze, Rust workspace, full review gates, clean
+    checkout, Rust Chat `6/6`, and Flutter Chat `32/32` passed. Trading outcome
+    truth and shadow identity initialization remain separate findings; no
+    release or following product pass is selected automatically.
 
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
