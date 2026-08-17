@@ -177,10 +177,10 @@ all point to the same behavior.
 
 ## 11. Remote Runner Shadow Boundary
 
-Status: Pass D durable shadow-stream implementation and its bounded
-crash-atomic append remediation are complete. No following remote-runtime pass
-is selected, and daemon, deployment, leases, account access, and remote
-effects are not authorized.
+Status: Pass D durable shadow-stream implementation and crash-atomic append
+remediation are complete. Pass E authenticated bounded compaction is selected;
+daemon, deployment, external anchoring, leases, account access, and remote
+effects remain unauthorized.
 
 ### 11.1 Purpose And Sole Owner
 
@@ -478,6 +478,31 @@ Required run `32021137109` and post-merge run `32021215679` passed together
 with Flutter `910/910`, analyze, Rust workspace, full review gates, clean
 checkout, and `15/15` focused crash-atomic adverse tests. No following pass is
 selected automatically.
+
+### 11.12 Pass E: Authenticated Bounded Stream Compaction
+
+Pass E removes the finite 256-entry dead end without adding a scheduler,
+daemon, receiver, deployment unit, lease, credential, account read, Capsule
+state, or effect path. `BingxFuturesShadowStreamStore` remains the sole
+runner-retention owner and the existing canonical signed shadow evidence
+remains the only checkpoint format.
+
+Only a full, ordered, authenticated tail may be compacted. Its final canonical
+evidence is flushed and atomically committed as the next local checkpoint
+before any covered evidence file is deleted. The checkpoint binds the exact
+runner key, global sequence, predecessor chain head, and evidence hash. The
+next append continues at `checkpoint.sequence + 1`; restart may finish an
+exact committed-checkpoint overlap but rejects corruption, key confusion,
+partial or conflicting overlap, non-file checkpoint state, and cleanup beyond
+the checkpoint sequence. Interrupted checkpoint bytes are confined to one
+fixed pending filename and grant no continuity.
+
+The retained tail remains bounded at 256 entries while global sequence and
+hash continuity can advance beyond it. A local checkpoint does not prove that
+the host directory was not rolled back or deleted; rollback-resistant external
+anchoring remains mandatory before any remotely authorized account or exchange
+effect. Pass E therefore unlocks evaluation of a public-only bounded daemon,
+not VPS deployment or trading authority.
 
 ## 12. Local Bounded Mandate Boundary
 

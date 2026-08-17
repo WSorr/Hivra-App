@@ -21,6 +21,9 @@ class BingxFuturesShadowStreamStore {
   static const String _identityFileName = 'stream_identity.v1.json';
   static const String _pendingIdentityFileName =
       'stream_identity.v1.json.pending';
+  static const String _checkpointFileName = 'stream_checkpoint.v1.json';
+  static const String _pendingCheckpointFileName =
+      'stream_checkpoint.v1.json.pending';
   static const String _lockFileName = 'stream.lock';
   static const String _evidenceDirectoryName = 'evidence';
   static const String _pendingDirectoryName = 'pending';
@@ -71,15 +74,18 @@ class BingxFuturesShadowStreamStore {
       await _prepareStreamDirectories();
       await _ensureKnownRootEntries();
       await _bindIdentity(runnerKeyId);
+      await _clearInterruptedCheckpointWrite();
       await _clearInterruptedPendingWrite();
-      final entries = await _loadEntries(
+      var checkpoint = await _loadCheckpoint(
         runnerKeyId,
         trustedRunnerKey: trustedRunnerKey,
       );
-      if (entries.length >= maxEntries) {
-        throw StateError('shadow evidence stream reached bounded capacity');
-      }
-      final previous = entries.isEmpty ? null : entries.last;
+      var entries = await _loadEntries(
+        runnerKeyId,
+        trustedRunnerKey: trustedRunnerKey,
+        checkpoint: checkpoint,
+      );
+      final previous = entries.isEmpty ? checkpoint : entries.last;
       final nextSequence = (previous?.sequence ?? 0) + 1;
       final previousHash = previous?.evidenceHashHex ?? _emptyEvidenceHash;
       final evidence = await produce(nextSequence, previousHash);
@@ -90,6 +96,11 @@ class BingxFuturesShadowStreamStore {
         sequence: nextSequence,
         previousEvidenceHashHex: previousHash,
       );
+      if (entries.length >= maxEntries) {
+        checkpoint = entries.last;
+        await _commitCheckpoint(checkpoint);
+        await _deleteCheckpointedEvidence(checkpoint);
+      }
       await _commitEvidence(evidence);
       return evidence;
     } finally {
@@ -184,6 +195,8 @@ class BingxFuturesShadowStreamStore {
     const allowed = <String>{
       _identityFileName,
       _pendingIdentityFileName,
+      _checkpointFileName,
+      _pendingCheckpointFileName,
       _lockFileName,
       _evidenceDirectoryName,
       _pendingDirectoryName,
@@ -272,15 +285,58 @@ class BingxFuturesShadowStreamStore {
   Future<void> _requireEmptyUnboundStream() async {
     final evidence = Directory('${directory.path}/$_evidenceDirectoryName');
     final pending = Directory('${directory.path}/$_pendingDirectoryName');
+    final checkpointType = await FileSystemEntity.type(
+      '${directory.path}/$_checkpointFileName',
+      followLinks: false,
+    );
+    final pendingCheckpointType = await FileSystemEntity.type(
+      '${directory.path}/$_pendingCheckpointFileName',
+      followLinks: false,
+    );
     if (!(await evidence.list(followLinks: false).isEmpty) ||
-        !(await pending.list(followLinks: false).isEmpty)) {
+        !(await pending.list(followLinks: false).isEmpty) ||
+        checkpointType != FileSystemEntityType.notFound ||
+        pendingCheckpointType != FileSystemEntityType.notFound) {
       throw const FormatException('unbound shadow stream contains state');
     }
+  }
+
+  Future<BingxFuturesShadowEvidence?> _loadCheckpoint(
+    String runnerKeyId, {
+    required SimplePublicKey trustedRunnerKey,
+  }) async {
+    final checkpoint = File('${directory.path}/$_checkpointFileName');
+    final checkpointType = await FileSystemEntity.type(
+      checkpoint.path,
+      followLinks: false,
+    );
+    if (checkpointType == FileSystemEntityType.notFound) return null;
+    if (checkpointType != FileSystemEntityType.file) {
+      throw const FileSystemException('shadow checkpoint is not a file');
+    }
+    if (await checkpoint.length() > _maxEvidenceBytes) {
+      throw const FormatException('shadow checkpoint is oversized');
+    }
+    final evidence = _evidenceOwner.parseShadowEvidence(
+      await checkpoint.readAsBytes(),
+      maxEncodedBytes: _maxEvidenceBytes,
+    );
+    if (evidence.sequence < maxEntries ||
+        evidence.sequence % maxEntries != 0 ||
+        evidence.runnerKeyId != runnerKeyId ||
+        !await _evidenceOwner.authenticateShadowEvidence(
+          evidence: evidence,
+          trustedRunnerKey: trustedRunnerKey,
+        )) {
+      throw const FormatException('invalid shadow checkpoint');
+    }
+    return evidence;
   }
 
   Future<List<BingxFuturesShadowEvidence>> _loadEntries(
     String runnerKeyId, {
     required SimplePublicKey trustedRunnerKey,
+    required BingxFuturesShadowEvidence? checkpoint,
   }) async {
     final evidenceDirectory = Directory(
       '${directory.path}/$_evidenceDirectoryName',
@@ -298,8 +354,6 @@ class BingxFuturesShadowStreamStore {
     }
     files.sort((left, right) => left.path.compareTo(right.path));
     final entries = <BingxFuturesShadowEvidence>[];
-    var expectedSequence = 1;
-    var expectedPreviousHash = _emptyEvidenceHash;
     for (final file in files) {
       final name = file.uri.pathSegments.last;
       final match = RegExp(
@@ -312,10 +366,8 @@ class BingxFuturesShadowStreamStore {
         await file.readAsBytes(),
         maxEncodedBytes: _maxEvidenceBytes,
       );
-      if (int.parse(match.group(1)!) != expectedSequence ||
+      if (int.parse(match.group(1)!) != evidence.sequence ||
           match.group(2) != evidence.evidenceHashHex ||
-          evidence.sequence != expectedSequence ||
-          evidence.previousEvidenceHashHex != expectedPreviousHash ||
           evidence.runnerKeyId != runnerKeyId ||
           !await _evidenceOwner.authenticateShadowEvidence(
             evidence: evidence,
@@ -324,10 +376,102 @@ class BingxFuturesShadowStreamStore {
         throw const FormatException('shadow evidence chain conflict');
       }
       entries.add(evidence);
-      expectedSequence++;
-      expectedPreviousHash = evidence.evidenceHashHex;
+    }
+    if (entries.isEmpty) return entries;
+
+    for (var index = 1; index < entries.length; index++) {
+      final previous = entries[index - 1];
+      final current = entries[index];
+      if (current.sequence != previous.sequence + 1 ||
+          current.previousEvidenceHashHex != previous.evidenceHashHex) {
+        throw const FormatException('shadow evidence chain conflict');
+      }
+    }
+
+    final first = entries.first;
+    if (checkpoint == null) {
+      if (first.sequence != 1 ||
+          first.previousEvidenceHashHex != _emptyEvidenceHash) {
+        throw const FormatException('shadow evidence chain conflict');
+      }
+      return entries;
+    }
+
+    if (first.sequence <= checkpoint.sequence) {
+      final last = entries.last;
+      if (last.sequence != checkpoint.sequence ||
+          last.evidenceHashHex != checkpoint.evidenceHashHex) {
+        throw const FormatException('shadow checkpoint overlap conflict');
+      }
+      await _deleteCheckpointedEvidence(checkpoint);
+      return <BingxFuturesShadowEvidence>[];
+    }
+
+    if (first.sequence != checkpoint.sequence + 1 ||
+        first.previousEvidenceHashHex != checkpoint.evidenceHashHex) {
+      throw const FormatException('shadow evidence chain conflict');
     }
     return entries;
+  }
+
+  Future<void> _clearInterruptedCheckpointWrite() async {
+    final pending = File('${directory.path}/$_pendingCheckpointFileName');
+    final pendingType = await FileSystemEntity.type(
+      pending.path,
+      followLinks: false,
+    );
+    if (pendingType == FileSystemEntityType.notFound) return;
+    if (pendingType != FileSystemEntityType.file) {
+      throw const FileSystemException(
+        'shadow pending checkpoint is not a file',
+      );
+    }
+    await pending.delete();
+  }
+
+  Future<void> _commitCheckpoint(BingxFuturesShadowEvidence checkpoint) async {
+    final committed = File('${directory.path}/$_checkpointFileName');
+    final pending = File('${directory.path}/$_pendingCheckpointFileName');
+    await _rejectLink(committed.path);
+    await _rejectLink(pending.path);
+    if (await FileSystemEntity.type(committed.path, followLinks: false) !=
+            FileSystemEntityType.notFound &&
+        await FileSystemEntity.type(committed.path, followLinks: false) !=
+            FileSystemEntityType.file) {
+      throw const FileSystemException('shadow checkpoint is not a file');
+    }
+    await pending.create(exclusive: true);
+    try {
+      await pending.writeAsBytes(checkpoint.wireBytes, flush: true);
+      await pending.rename(committed.path);
+    } catch (_) {
+      if (await FileSystemEntity.type(pending.path, followLinks: false) ==
+          FileSystemEntityType.file) {
+        await pending.delete();
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _deleteCheckpointedEvidence(
+    BingxFuturesShadowEvidence checkpoint,
+  ) async {
+    final evidenceDirectory = Directory(
+      '${directory.path}/$_evidenceDirectoryName',
+    );
+    await for (final entry in evidenceDirectory.list(followLinks: false)) {
+      if (entry is! File) {
+        throw const FormatException('invalid shadow evidence entry type');
+      }
+      await _rejectLink(entry.path);
+      final match = RegExp(
+        r'^([0-9]{12})-([0-9a-f]{64})\.json$',
+      ).firstMatch(entry.uri.pathSegments.last);
+      if (match == null || int.parse(match.group(1)!) > checkpoint.sequence) {
+        throw const FormatException('shadow checkpoint cleanup conflict');
+      }
+      await entry.delete();
+    }
   }
 
   Future<void> _clearInterruptedPendingWrite() async {

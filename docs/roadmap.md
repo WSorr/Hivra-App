@@ -3199,6 +3199,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     checkout, and `15/15` focused crash-atomic adverse tests passed. No
     following pass is selected automatically.
 
+- `1.x Trading Remote Runner Pass E — Authenticated Bounded Stream Compaction`
+  - Lane: bounded 1.x Trading productization before any scheduler or VPS work.
+  - Invariant: one full authenticated tail is replaced only by its exact final
+    signed checkpoint committed before cleanup; global sequence and predecessor
+    continuity never reset across compaction or restart.
+  - Sole owner: the existing `BingxFuturesShadowStreamStore`; the canonical
+    shadow evidence remains the checkpoint wire and authentication contract.
+  - Removed or sealed: the 256-entry terminal capacity dead end is removed.
+    Unauthenticated deletion, conflicting overlap, key confusion, partial
+    checkpoint success, a second journal, daemon, deployment, lease, account
+    access, Capsule state, and remote effects remain sealed.
+  - Exit evidence: full-tail continuation, restart, committed-before-cleanup
+    recovery, conflicting checkpoint no-delete, non-file and interrupted state,
+    concurrency, structural mutation, full local and clean-checkout gates,
+    protected PR, and green post-merge CI.
+  - Status: selected (2026-08-17). This local checkpoint does not provide
+    rollback resistance; external anchoring remains a separate prerequisite
+    before any remotely authorized effect.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

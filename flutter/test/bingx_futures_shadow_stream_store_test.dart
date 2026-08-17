@@ -189,6 +189,24 @@ void main() {
     });
 
     test(
+      'does not bind an identity over a checkpoint-shaped directory',
+      () async {
+        await _prepareEmptyStream(temp);
+        await Directory('${temp.path}/stream_checkpoint.v1.json').create();
+        final identity = File('${temp.path}/stream_identity.v1.json');
+
+        await expectLater(
+          BingxFuturesShadowStreamStore(
+            directory: temp,
+          ).append(trustedRunnerKey: publicKey, produce: produce),
+          throwsFormatException,
+        );
+
+        expect(await identity.exists(), isFalse);
+      },
+    );
+
+    test(
       'serializes concurrent append attempts into distinct sequences',
       () async {
         final firstStore = BingxFuturesShadowStreamStore(directory: temp);
@@ -454,47 +472,205 @@ void main() {
       );
     });
 
+    test('compacts a full authenticated tail and continues globally', () async {
+      final store = BingxFuturesShadowStreamStore(directory: temp);
+      final latest = await _fillTail(
+        store: store,
+        publicKey: publicKey,
+        produce: produce,
+      );
+
+      final next = await store.append(
+        trustedRunnerKey: publicKey,
+        produce: produce,
+      );
+      final checkpoint = const BingxFuturesDeterministicReplayHarnessService()
+          .parseShadowEvidence(
+            await File('${temp.path}/stream_checkpoint.v1.json').readAsBytes(),
+          );
+
+      expect(checkpoint.sequence, BingxFuturesShadowStreamStore.maxEntries);
+      expect(checkpoint.evidenceHashHex, latest.evidenceHashHex);
+      expect(next.sequence, BingxFuturesShadowStreamStore.maxEntries + 1);
+      expect(next.previousEvidenceHashHex, latest.evidenceHashHex);
+      expect(await _evidenceFiles(temp), hasLength(1));
+
+      final restarted = await BingxFuturesShadowStreamStore(
+        directory: temp,
+      ).append(trustedRunnerKey: publicKey, produce: produce);
+      expect(restarted.sequence, BingxFuturesShadowStreamStore.maxEntries + 2);
+      expect(restarted.previousEvidenceHashHex, next.evidenceHashHex);
+
+      var secondTail = restarted;
+      final evidenceDirectory = Directory('${temp.path}/evidence');
+      for (
+        var sequence = restarted.sequence + 1;
+        sequence <= BingxFuturesShadowStreamStore.maxEntries * 2;
+        sequence++
+      ) {
+        secondTail = await produce(sequence, secondTail.evidenceHashHex);
+        final file = File(
+          '${evidenceDirectory.path}/'
+          '${sequence.toString().padLeft(12, '0')}-'
+          '${secondTail.evidenceHashHex}.json',
+        );
+        await file.writeAsBytes(secondTail.wireBytes, flush: true);
+      }
+      final afterSecondCompaction = await BingxFuturesShadowStreamStore(
+        directory: temp,
+      ).append(trustedRunnerKey: publicKey, produce: produce);
+      final secondCheckpoint =
+          const BingxFuturesDeterministicReplayHarnessService()
+              .parseShadowEvidence(
+                await File(
+                  '${temp.path}/stream_checkpoint.v1.json',
+                ).readAsBytes(),
+              );
+
+      expect(
+        secondCheckpoint.sequence,
+        BingxFuturesShadowStreamStore.maxEntries * 2,
+      );
+      expect(secondCheckpoint.evidenceHashHex, secondTail.evidenceHashHex);
+      expect(
+        afterSecondCompaction.sequence,
+        BingxFuturesShadowStreamStore.maxEntries * 2 + 1,
+      );
+      expect(
+        afterSecondCompaction.previousEvidenceHashHex,
+        secondTail.evidenceHashHex,
+      );
+      expect(await _evidenceFiles(temp), hasLength(1));
+    });
+
+    test('does not compact a full tail when observation fails', () async {
+      final store = BingxFuturesShadowStreamStore(directory: temp);
+      await _fillTail(store: store, publicKey: publicKey, produce: produce);
+
+      await expectLater(
+        store.append(
+          trustedRunnerKey: publicKey,
+          produce: (sequence, previousHash) => throw StateError('timeout'),
+        ),
+        throwsStateError,
+      );
+
+      expect(
+        await File('${temp.path}/stream_checkpoint.v1.json').exists(),
+        isFalse,
+      );
+      expect(
+        await _evidenceFiles(temp),
+        hasLength(BingxFuturesShadowStreamStore.maxEntries),
+      );
+    });
+
+    test('recovers a checkpoint committed before tail cleanup', () async {
+      final store = BingxFuturesShadowStreamStore(directory: temp);
+      final latest = await _fillTail(
+        store: store,
+        publicKey: publicKey,
+        produce: produce,
+      );
+      await File(
+        '${temp.path}/stream_checkpoint.v1.json',
+      ).writeAsBytes(latest.wireBytes, flush: true);
+
+      final next = await BingxFuturesShadowStreamStore(
+        directory: temp,
+      ).append(trustedRunnerKey: publicKey, produce: produce);
+
+      expect(next.sequence, BingxFuturesShadowStreamStore.maxEntries + 1);
+      expect(next.previousEvidenceHashHex, latest.evidenceHashHex);
+      expect(await _evidenceFiles(temp), hasLength(1));
+    });
+
     test(
-      'fails closed at bounded capacity without deleting evidence',
+      'rejects a conflicting checkpoint without deleting the tail',
       () async {
         final store = BingxFuturesShadowStreamStore(directory: temp);
-        var latest = await store.append(
-          trustedRunnerKey: publicKey,
+        final latest = await _fillTail(
+          store: store,
+          publicKey: publicKey,
           produce: produce,
         );
-        final evidenceDirectory = Directory('${temp.path}/evidence');
-        for (
-          var sequence = 2;
-          sequence <= BingxFuturesShadowStreamStore.maxEntries;
-          sequence++
-        ) {
-          latest = await produce(sequence, latest.evidenceHashHex);
-          final file = File(
-            '${evidenceDirectory.path}/'
-            '${sequence.toString().padLeft(12, '0')}-'
-            '${latest.evidenceHashHex}.json',
-          );
-          await file.writeAsBytes(latest.wireBytes, flush: true);
-        }
-        var produced = false;
+        final conflicting = await _evidence(
+          latest.sequence,
+          latest.previousEvidenceHashHex,
+          signingKey,
+          publicKey,
+          decisionHashHex: '6' * 64,
+        );
+        await File(
+          '${temp.path}/stream_checkpoint.v1.json',
+        ).writeAsBytes(conflicting.wireBytes, flush: true);
 
         await expectLater(
-          store.append(
-            trustedRunnerKey: publicKey,
-            produce: (sequence, previousHash) async {
-              produced = true;
-              return produce(sequence, previousHash);
-            },
-          ),
-          throwsStateError,
+          BingxFuturesShadowStreamStore(
+            directory: temp,
+          ).append(trustedRunnerKey: publicKey, produce: produce),
+          throwsFormatException,
         );
-        expect(produced, isFalse);
         expect(
           await _evidenceFiles(temp),
           hasLength(BingxFuturesShadowStreamStore.maxEntries),
         );
       },
     );
+
+    test(
+      'rejects a foreign-runner checkpoint without deleting the tail',
+      () async {
+        final store = BingxFuturesShadowStreamStore(directory: temp);
+        final latest = await _fillTail(
+          store: store,
+          publicKey: publicKey,
+          produce: produce,
+        );
+        final foreignSigningKey = await Ed25519().newKeyPairFromSeed(
+          List<int>.filled(32, 8),
+        );
+        final foreignPublicKey = await foreignSigningKey.extractPublicKey();
+        final foreignCheckpoint = await _evidence(
+          latest.sequence,
+          latest.previousEvidenceHashHex,
+          foreignSigningKey,
+          foreignPublicKey,
+        );
+        await File(
+          '${temp.path}/stream_checkpoint.v1.json',
+        ).writeAsBytes(foreignCheckpoint.wireBytes, flush: true);
+
+        await expectLater(
+          BingxFuturesShadowStreamStore(
+            directory: temp,
+          ).append(trustedRunnerKey: publicKey, produce: produce),
+          throwsFormatException,
+        );
+        expect(
+          await _evidenceFiles(temp),
+          hasLength(BingxFuturesShadowStreamStore.maxEntries),
+        );
+      },
+    );
+
+    test('clears only the fixed interrupted checkpoint write', () async {
+      final store = BingxFuturesShadowStreamStore(directory: temp);
+      final first = await store.append(
+        trustedRunnerKey: publicKey,
+        produce: produce,
+      );
+      final pending = File('${temp.path}/stream_checkpoint.v1.json.pending');
+      await pending.writeAsString('{partial', flush: true);
+
+      final second = await BingxFuturesShadowStreamStore(
+        directory: temp,
+      ).append(trustedRunnerKey: publicKey, produce: produce);
+
+      expect(second.sequence, 2);
+      expect(second.previousEvidenceHashHex, first.evidenceHashHex);
+      expect(await pending.exists(), isFalse);
+    });
   });
 }
 
@@ -507,8 +683,9 @@ Future<BingxFuturesShadowEvidence> _evidence(
   int sequence,
   String previousEvidenceHashHex,
   SimpleKeyPair signingKey,
-  SimplePublicKey publicKey,
-) async {
+  SimplePublicKey publicKey, {
+  String? decisionHashHex,
+}) async {
   const owner = BingxFuturesDeterministicReplayHarnessService();
   final unsigned = BingxFuturesShadowEvidence(
     runnerBuildId: 'runner-build-test',
@@ -519,7 +696,7 @@ Future<BingxFuturesShadowEvidence> _evidence(
     policyHashHex: '2' * 64,
     marketSnapshotHashHex: '3' * 64,
     featureHashHex: '4' * 64,
-    decisionHashHex: '5' * 64,
+    decisionHashHex: decisionHashHex ?? '5' * 64,
     decision: 'long',
     observedAtEpochMs: 1770000000000 + sequence,
     validUntilEpochMs: 1770000060000 + sequence,
@@ -532,6 +709,32 @@ Future<BingxFuturesShadowEvidence> _evidence(
     keyPair: signingKey,
   );
   return unsigned.withSignature(_encodeHex(signature.bytes));
+}
+
+Future<BingxFuturesShadowEvidence> _fillTail({
+  required BingxFuturesShadowStreamStore store,
+  required SimplePublicKey publicKey,
+  required BingxFuturesShadowEvidenceProducer produce,
+}) async {
+  var latest = await store.append(
+    trustedRunnerKey: publicKey,
+    produce: produce,
+  );
+  final evidenceDirectory = Directory('${store.directory.path}/evidence');
+  for (
+    var sequence = 2;
+    sequence <= BingxFuturesShadowStreamStore.maxEntries;
+    sequence++
+  ) {
+    latest = await produce(sequence, latest.evidenceHashHex);
+    final file = File(
+      '${evidenceDirectory.path}/'
+      '${sequence.toString().padLeft(12, '0')}-'
+      '${latest.evidenceHashHex}.json',
+    );
+    await file.writeAsBytes(latest.wireBytes, flush: true);
+  }
+  return latest;
 }
 
 String _encodeHex(List<int> bytes) =>
