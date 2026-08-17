@@ -2,7 +2,17 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Chat Execution Control Durable Lifecycle
+Current development focus: `1.x Flutter Test Runtime Isolation Remediation` is
+selected. `UserVisibleDataDirectoryService` remains the sole home-resolution
+owner. Every Flutter test using default filesystem owners must run beneath one
+suite-scoped temporary home retained through test completion; explicit
+per-test overrides retain precedence. Real runtime and user-visible Hivra roots
+are sealed from test reads, writes, migration, and cleanup. Exit evidence
+requires a default-owner filesystem/log probe, real-root negative assertion,
+mutation-tested architecture gate, full Flutter/Rust/repository gates, clean
+checkout, protected PR, and green post-merge CI. No production storage route,
+DTO, service, owner, runtime behavior, product pass, V2 pass, deployment, tag,
+or Release is authorized. The preceding `1.x Chat Execution Control Durable Lifecycle
 Remediation` is complete on `main` at `bb4b52a` through protected PR `#109`;
 required run `32032243278` and post-merge run `32032343388` passed. The existing native Chat
 handoff remains the sole transport ingress owner and the existing

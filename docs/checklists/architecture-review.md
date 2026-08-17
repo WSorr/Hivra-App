@@ -253,6 +253,9 @@ Use this checklist when reviewing structural changes, not just feature behavior.
 
 - [ ] Action path follows `UI intent -> use-case boundary -> runtime/FFI call -> ledger append -> projection rebuild -> UI render`.
 - [ ] Effectful operations (network, filesystem, keys, time) stay behind runtime boundaries.
+- [ ] Flutter tests using default filesystem owners retain one suite temporary
+      home through test completion and prove that the real Hivra runtime root
+      remains untouched.
 - [ ] Async flows resolve once and ignore stale completions from superseded operations.
 - [ ] UI action surfaces close immediately on submit, then show short result status.
 - [ ] Screens consume shared projection services and do not reinterpret terminal states locally.

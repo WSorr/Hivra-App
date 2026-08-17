@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'atomic_file_write_service.dart';
@@ -27,6 +28,7 @@ class UserVisibleDataDirectoryService {
     'bingx_futures_credentials.json',
   ];
   static Future<void> _migrationTail = Future<void>.value();
+  static String? _testHomeOverride;
 
   final String? _homeOverride;
   final AtomicFileWriteService _atomicWrites;
@@ -36,6 +38,14 @@ class UserVisibleDataDirectoryService {
     AtomicFileWriteService atomicWrites = const AtomicFileWriteService(),
   }) : _homeOverride = homeOverride,
        _atomicWrites = atomicWrites;
+
+  @visibleForTesting
+  static String? get testHomeOverride => _testHomeOverride;
+
+  @visibleForTesting
+  static void setTestHomeOverride(String? path) {
+    _testHomeOverride = path;
+  }
 
   Future<Directory> rootDirectory({bool create = false}) async {
     final root = await _runtimeRootDirectory();
@@ -48,7 +58,7 @@ class UserVisibleDataDirectoryService {
   }
 
   Future<Directory> userVisibleRootDirectory({bool create = false}) async {
-    final home = _homeOverride ?? Platform.environment['HOME'];
+    final home = _resolvedHome;
     Directory root;
 
     if (home != null && home.isNotEmpty) {
@@ -105,8 +115,12 @@ class UserVisibleDataDirectoryService {
   }
 
   Future<Directory> _runtimeRootDirectory() async {
-    final home = _homeOverride ?? Platform.environment['HOME'];
-    if (Platform.isMacOS && home != null && home.isNotEmpty) {
+    final home = _resolvedHome;
+    if ((_homeOverride != null ||
+            _testHomeOverride != null ||
+            Platform.isMacOS) &&
+        home != null &&
+        home.isNotEmpty) {
       return Directory('$home/Library/Application Support/$_rootName');
     }
 
@@ -291,7 +305,7 @@ class UserVisibleDataDirectoryService {
   }
 
   Future<Directory?> _legacyContainerDocumentsDirectory() async {
-    final home = _homeOverride ?? Platform.environment['HOME'];
+    final home = _resolvedHome;
     if (home == null || home.isEmpty) return null;
     return Directory(
       '$home/Library/Containers/$_legacyContainerBundleId/Data/Documents',
@@ -308,4 +322,7 @@ class UserVisibleDataDirectoryService {
       return null;
     }
   }
+
+  String? get _resolvedHome =>
+      _homeOverride ?? _testHomeOverride ?? Platform.environment['HOME'];
 }
