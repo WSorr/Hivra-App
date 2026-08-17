@@ -21,6 +21,7 @@ class BingxFuturesShadowStreamStore {
   static const String _identityFileName = 'stream_identity.v1.json';
   static const String _lockFileName = 'stream.lock';
   static const String _evidenceDirectoryName = 'evidence';
+  static const String _pendingDirectoryName = 'pending';
   static const String _emptyEvidenceHash =
       '0000000000000000000000000000000000000000000000000000000000000000';
   static final Map<String, Future<void>> _mutationTails =
@@ -65,9 +66,10 @@ class BingxFuturesShadowStreamStore {
     final lock = await lockFile.open(mode: FileMode.append);
     try {
       await _acquireLock(lock);
-      await _prepareEvidenceDirectory();
+      await _prepareStreamDirectories();
       await _ensureKnownRootEntries();
       await _bindIdentity(runnerKeyId);
+      await _clearInterruptedPendingWrite();
       final entries = await _loadEntries(
         runnerKeyId,
         trustedRunnerKey: trustedRunnerKey,
@@ -86,13 +88,7 @@ class BingxFuturesShadowStreamStore {
         sequence: nextSequence,
         previousEvidenceHashHex: previousHash,
       );
-      final evidenceFile = File(
-        '${directory.path}/$_evidenceDirectoryName/'
-        '${nextSequence.toString().padLeft(12, '0')}-'
-        '${evidence.evidenceHashHex}.json',
-      );
-      await evidenceFile.create(exclusive: true);
-      await evidenceFile.writeAsBytes(evidence.wireBytes, flush: true);
+      await _commitEvidence(evidence);
       return evidence;
     } finally {
       try {
@@ -152,23 +148,33 @@ class BingxFuturesShadowStreamStore {
     }
   }
 
-  Future<void> _prepareEvidenceDirectory() async {
-    final evidenceDirectory = Directory(
-      '${directory.path}/$_evidenceDirectoryName',
+  Future<void> _prepareStreamDirectories() async {
+    await _prepareChildDirectory(
+      _evidenceDirectoryName,
+      label: 'shadow evidence',
     );
-    final evidenceType = await FileSystemEntity.type(
-      evidenceDirectory.path,
+    await _prepareChildDirectory(
+      _pendingDirectoryName,
+      label: 'shadow pending evidence',
+    );
+  }
+
+  Future<void> _prepareChildDirectory(
+    String name, {
+    required String label,
+  }) async {
+    final child = Directory('${directory.path}/$name');
+    final childType = await FileSystemEntity.type(
+      child.path,
       followLinks: false,
     );
-    if (evidenceType == FileSystemEntityType.link) {
-      throw const FileSystemException('shadow evidence directory is a link');
+    if (childType == FileSystemEntityType.link) {
+      throw FileSystemException('$label directory is a link');
     }
-    if (evidenceType == FileSystemEntityType.notFound) {
-      await evidenceDirectory.create();
-    } else if (evidenceType != FileSystemEntityType.directory) {
-      throw const FileSystemException(
-        'shadow evidence path is not a directory',
-      );
+    if (childType == FileSystemEntityType.notFound) {
+      await child.create();
+    } else if (childType != FileSystemEntityType.directory) {
+      throw FileSystemException('$label path is not a directory');
     }
   }
 
@@ -177,6 +183,7 @@ class BingxFuturesShadowStreamStore {
       _identityFileName,
       _lockFileName,
       _evidenceDirectoryName,
+      _pendingDirectoryName,
     };
     await for (final entry in directory.list(followLinks: false)) {
       if (!allowed.contains(
@@ -263,6 +270,62 @@ class BingxFuturesShadowStreamStore {
       expectedPreviousHash = evidence.evidenceHashHex;
     }
     return entries;
+  }
+
+  Future<void> _clearInterruptedPendingWrite() async {
+    final pendingDirectory = Directory(
+      '${directory.path}/$_pendingDirectoryName',
+    );
+    File? interrupted;
+    await for (final entry in pendingDirectory.list(followLinks: false)) {
+      if (entry is! File ||
+          interrupted != null ||
+          !RegExp(
+            r'^[0-9]{12}-[0-9a-f]{64}\.json\.pending$',
+          ).hasMatch(entry.uri.pathSegments.last)) {
+        throw const FormatException('invalid shadow pending evidence state');
+      }
+      await _rejectLink(entry.path);
+      interrupted = entry;
+    }
+    if (interrupted != null) {
+      await interrupted.delete();
+    }
+  }
+
+  Future<void> _commitEvidence(BingxFuturesShadowEvidence evidence) async {
+    final fileName =
+        '${evidence.sequence.toString().padLeft(12, '0')}-'
+        '${evidence.evidenceHashHex}.json';
+    final committed = File(
+      '${directory.path}/$_evidenceDirectoryName/$fileName',
+    );
+    final pending = File(
+      '${directory.path}/$_pendingDirectoryName/$fileName.pending',
+    );
+    if (await FileSystemEntity.type(committed.path, followLinks: false) !=
+            FileSystemEntityType.notFound ||
+        await FileSystemEntity.type(pending.path, followLinks: false) !=
+            FileSystemEntityType.notFound) {
+      throw const FileSystemException('shadow evidence target already exists');
+    }
+    await pending.create(exclusive: true);
+    try {
+      await pending.writeAsBytes(evidence.wireBytes, flush: true);
+      if (await FileSystemEntity.type(committed.path, followLinks: false) !=
+          FileSystemEntityType.notFound) {
+        throw const FileSystemException(
+          'shadow evidence target appeared during commit',
+        );
+      }
+      await pending.rename(committed.path);
+    } catch (_) {
+      if (await FileSystemEntity.type(pending.path, followLinks: false) ==
+          FileSystemEntityType.file) {
+        await pending.delete();
+      }
+      rethrow;
+    }
   }
 
   Future<void> _validateProducedEvidence(

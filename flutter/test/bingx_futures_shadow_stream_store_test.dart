@@ -181,6 +181,100 @@ void main() {
       );
     });
 
+    test('discards one interrupted pending write before continuing', () async {
+      final store = BingxFuturesShadowStreamStore(directory: temp);
+      final first = await store.append(
+        trustedRunnerKey: publicKey,
+        produce: produce,
+      );
+      final pendingDirectory = Directory('${temp.path}/pending');
+      final interrupted = File(
+        '${pendingDirectory.path}/000000000002-${'f' * 64}.json.pending',
+      );
+      await interrupted.writeAsString('{partial', flush: true);
+
+      final second = await BingxFuturesShadowStreamStore(
+        directory: temp,
+      ).append(trustedRunnerKey: publicKey, produce: produce);
+
+      expect(second.sequence, 2);
+      expect(second.previousEvidenceHashHex, first.evidenceHashHex);
+      expect(await pendingDirectory.list().toList(), isEmpty);
+      expect(await _evidenceFiles(temp), hasLength(2));
+    });
+
+    test('fails closed without deleting unknown pending state', () async {
+      final store = BingxFuturesShadowStreamStore(directory: temp);
+      await store.append(trustedRunnerKey: publicKey, produce: produce);
+      final unknown = File('${temp.path}/pending/not-a-prepared-write');
+      await unknown.writeAsString('unknown', flush: true);
+      var produced = false;
+
+      await expectLater(
+        store.append(
+          trustedRunnerKey: publicKey,
+          produce: (sequence, previousHash) async {
+            produced = true;
+            return produce(sequence, previousHash);
+          },
+        ),
+        throwsFormatException,
+      );
+      expect(produced, isFalse);
+      expect(await unknown.readAsString(), 'unknown');
+    });
+
+    test('fails closed without deleting multiple pending writes', () async {
+      final store = BingxFuturesShadowStreamStore(directory: temp);
+      await store.append(trustedRunnerKey: publicKey, produce: produce);
+      final pendingDirectory = Directory('${temp.path}/pending');
+      final first = File(
+        '${pendingDirectory.path}/000000000002-${'a' * 64}.json.pending',
+      );
+      final second = File(
+        '${pendingDirectory.path}/000000000002-${'b' * 64}.json.pending',
+      );
+      await first.writeAsString('first', flush: true);
+      await second.writeAsString('second', flush: true);
+
+      await expectLater(
+        store.append(trustedRunnerKey: publicKey, produce: produce),
+        throwsFormatException,
+      );
+      expect(await first.readAsString(), 'first');
+      expect(await second.readAsString(), 'second');
+    });
+
+    test(
+      'never overwrites a committed target that appears before commit',
+      () async {
+        final store = BingxFuturesShadowStreamStore(directory: temp);
+        late File conflict;
+
+        await expectLater(
+          store.append(
+            trustedRunnerKey: publicKey,
+            produce: (sequence, previousHash) async {
+              final evidence = await produce(sequence, previousHash);
+              conflict = File(
+                '${temp.path}/evidence/'
+                '${sequence.toString().padLeft(12, '0')}-'
+                '${evidence.evidenceHashHex}.json',
+              );
+              await conflict.writeAsString('existing', flush: true);
+              return evidence;
+            },
+          ),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(await conflict.readAsString(), 'existing');
+        expect(
+          await Directory('${temp.path}/pending').list().toList(),
+          isEmpty,
+        );
+      },
+    );
+
     test('rejects producer sequence and predecessor conflicts', () async {
       final store = BingxFuturesShadowStreamStore(directory: temp);
 

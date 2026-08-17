@@ -177,9 +177,10 @@ all point to the same behavior.
 
 ## 11. Remote Runner Shadow Boundary
 
-Status: Pass D durable shadow-stream implementation complete; no following
-remote-runtime pass is selected, and daemon, deployment, leases, account
-access, and remote effects are not authorized
+Status: Pass D durable shadow-stream implementation complete; its bounded
+crash-atomic append remediation is active. No following remote-runtime pass is
+selected, and daemon, deployment, leases, account access, and remote effects
+are not authorized.
 
 ### 11.1 Purpose And Sole Owner
 
@@ -434,14 +435,14 @@ existing harness, and creates one new evidence file exclusively. Restart
 therefore continues the same authenticated hash chain. A public observation
 failure or exhausted lock budget creates no evidence.
 
-Retention is bounded at 256 entries and has no deletion, eviction, repair,
-rotation, or reset API. Full capacity, malformed or truncated evidence, an
-invalid retained signature, key confusion, unknown files, non-canonical wire,
-sequence reuse, predecessor conflict, linked stream paths, and concurrent
-append conflict fail closed. Recovery never guesses a predecessor and never
-rewrites retained evidence. Deleting or rolling back the complete stream
-directory remains a host-integrity event that cannot be distinguished without
-a separately authorized external anchor.
+Retention is bounded at 256 entries and has no committed-evidence deletion,
+eviction, repair, rotation, or reset API. Full capacity, malformed or truncated
+evidence, an invalid retained signature, key confusion, unknown files,
+non-canonical wire, sequence reuse, predecessor conflict, linked stream paths,
+and concurrent append conflict fail closed. Recovery never guesses a
+predecessor and never rewrites retained evidence. Deleting or rolling back the
+complete stream directory remains a host-integrity event that cannot be
+distinguished without a separately authorized external anchor.
 
 Pass D exit evidence requires restart continuation, same-process and actual
 cross-process concurrency, exhausted lock budget, producer failure,
@@ -451,6 +452,26 @@ structural mutation gate. It
 seals stateless sequence reuse by the probe. Scheduling, stream rotation,
 transport/ingestion, local acceptance state, VPS deployment, lease activation,
 account reads, and remote exchange effects remain separate decisions.
+
+### 11.11 Pass D Remediation: Crash-Atomic Append Commit
+
+The committed filename is the sole append commit point. The existing stream
+store writes canonical evidence to one exclusive pending file, flushes its
+bytes, and atomically renames it into the committed evidence directory while
+holding the existing bounded inter-process lock. A crash before rename leaves
+no committed entry; restart may remove only one regular pending file whose
+name exactly matches the canonical pending pattern. Unknown, linked, or
+multiple pending entries fail closed.
+
+Committed evidence is never deleted, replaced, rewritten, or repaired. A
+pre-existing committed target is a conflict, not permission to overwrite it.
+This remediation seals the crash window in which a final evidence filename
+could become visible before its bytes were durable. It adds no owner, DTO,
+scheduler, receiver, credential, Capsule state, or effect path. Exit evidence
+requires interrupted-pending recovery, unknown-pending rejection,
+committed-target conflict rejection, retained-corruption rejection, structural
+negative mutation, full local and clean-checkout gates, protected PR gates,
+and green post-merge CI.
 
 ## 12. Local Bounded Mandate Boundary
 

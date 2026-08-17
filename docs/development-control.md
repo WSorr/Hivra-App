@@ -2,10 +2,10 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Remote Runner Pass D — Durable Shadow
-Stream and Restart Continuity` is complete on `main` at `014180c` through
-protected PR `#99`. Required PR run `32001611779` and post-merge run
-`32001689942` passed. The existing deterministic replay harness remains the
+Current development focus: bounded `1.x Trading Remote Runner Pass D`
+crash-atomic append remediation is active. Pass D remains complete on `main`
+at `014180c` through protected PR `#99`; required PR run `32001611779` and
+post-merge run `32001689942` passed. The existing deterministic replay harness remains the
 shadow-evidence semantics and authentication owner. The public-only probe now
 appends through one runner-only store that authenticates retained evidence and
 continues its immutable sequence/predecessor chain after restart. Retention is
@@ -244,7 +244,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No next pass is selected. Pass D proved one bounded authenticated public shadow chain across restart; daemon, deployment, leases, account access, and remote effects remain blocked. | `roadmap.md` |
+| What is the next 1.x step? | Close the selected Pass D crash-atomic append remediation. The final filename must appear only after a flushed pending write; daemon, deployment, leases, account access, and remote effects remain blocked. | `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -254,7 +254,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading Remote Runner Pass D complete; no next pass selected | The existing replay harness remains evidence owner; one runner-only store retains bounded authenticated sequence continuity across restart. | PR `#99`, runs `32001611779`/`32001689942`, Flutter `906/906`, analyze, Rust workspace, full review gates, clean checkout, and `25/25` focused restart/adverse tests passed. | Daemon scheduling, rotation, transport/ingestion, VPS deployment, leases, account reads, remote effects, tags, and Releases require separate explicit decisions. |
+| **1.x maintained runtime** | Pass D complete; crash-atomic append remediation active | The existing replay harness remains evidence owner; the existing runner-only store must commit a flushed pending write by atomic rename and may clean only strict uncommitted pending state. | Pass D evidence remains PR `#99` and runs `32001611779`/`32001689942`; remediation evidence is pending focused adverse tests, full gates, protected PR, and post-merge CI. | Committed evidence deletion remains forbidden. Daemon scheduling, rotation, transport/ingestion, VPS deployment, leases, account reads, remote effects, tags, and Releases require separate explicit decisions. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
