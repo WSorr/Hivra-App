@@ -180,9 +180,9 @@ all point to the same behavior.
 Status: Pass D durable shadow-stream implementation and crash-atomic append
 remediation are complete. Pass E authenticated bounded compaction is complete
 on `main` at `8c5c644` through protected PR `#113`; required run `32042296142`
-and post-merge run `32042345162` passed. No following pass is selected; daemon,
-deployment, external anchoring, leases, account access, and remote effects
-remain unauthorized.
+and post-merge run `32042345162` passed. Pass F public-only bounded scheduling
+is selected. Unbounded daemon operation, deployment, external anchoring,
+leases, account access, and remote effects remain unauthorized.
 
 ### 11.1 Purpose And Sole Owner
 
@@ -511,6 +511,30 @@ Implementation evidence: focused store `27/27`, combined shadow/replay
 detached-checkout, and the checkpoint-before-cleanup negative mutation passed.
 No new DTO, service, owner, journal, credential, scheduler, deployment, Capsule
 state, account read, or effect route was added.
+
+### 11.13 Pass F: Public-Only Bounded Scheduler
+
+Pass F extends only the existing one-shot probe composition root. One command
+may request between 1 and 288 strictly serial observations. Multiple
+observations require an explicit fixed delay between 60 and 3600 seconds. A
+delay begins only after the preceding observation and authenticated append
+complete, so cycles never overlap and slow provider responses cannot create a
+second in-flight observation.
+
+The first observation, validation, append, lock, or delay failure terminates
+the command with a non-zero result. There is no internal retry, backoff,
+catch-up, skipped-cycle synthesis, inferred success, or endless mode. Restart
+re-enters the existing authenticated stream and continues its sequence through
+the existing store; it does not create scheduler state or another journal.
+
+The probe still accepts only public market scope, runner metadata, one
+runner-only seed, and the existing stream directory. It accepts no Capsule,
+exchange credential, account state, mandate, approval, lease, or effect. Pass F
+adds no service, DTO, receiver, supervisor, deployment unit, background OS
+integration, VPS configuration, or exchange path. Its exit evidence requires
+serial cadence, exact bounded-argument rejection, stop-on-first-failure,
+authority and scheduler mutation tests, full local and clean-checkout gates,
+protected PR, and green post-merge CI.
 
 ## 12. Local Bounded Mandate Boundary
 

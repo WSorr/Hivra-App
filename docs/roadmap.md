@@ -3223,6 +3223,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     external anchoring remains a separate prerequisite before any remotely
     authorized effect. No following pass is selected automatically.
 
+- `1.x Trading Remote Runner Pass F — Public-Only Bounded Scheduler`
+  - Lane: bounded 1.x Trading productization before deployment or authority.
+  - Invariant: one existing probe process runs at most 288 public observations
+    strictly serially, with an explicit 60–3600 second delay after each
+    successful append; the first failure stops without retry or inferred
+    success.
+  - Sole owner: the existing `trading_remote_shadow_probe.dart` composition
+    root schedules the existing harness and stream store. No scheduler service,
+    journal, receiver, supervisor, or deployment owner is added.
+  - Removed or sealed: repeated manual one-shot invocation is replaced by one
+    bounded command. Overlap, endless loops, catch-up, hidden retry, scheduler
+    state, VPS configuration, credentials, account reads, Capsule state,
+    leases, remote effects, tags, and Releases remain sealed.
+  - Exit evidence: serial cadence, stop-on-first-failure, invalid bounds,
+    scheduler and authority mutation tests, full local and clean-checkout
+    gates, protected PR, and green post-merge CI.
+  - Status: selected (2026-08-17). This pass does not claim unattended VPS or
+    24/7 trading readiness and does not authorize a following pass.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
