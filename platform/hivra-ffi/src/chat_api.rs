@@ -256,7 +256,7 @@ fn persist_chat_handoff(
     });
     while snapshot.records.len() > CHAT_INBOX_CAPACITY {
         let evicted = snapshot.records.remove(0);
-        snapshot.tombstones.push(evicted.event_id);
+        append_chat_tombstones(&mut snapshot, std::iter::once(evicted.event_id));
     }
     while bincode::serialized_size(&snapshot).unwrap_or(u64::MAX)
         > CHAT_HANDOFF_MAX_PLAINTEXT_BYTES as u64
@@ -265,14 +265,24 @@ fn persist_chat_handoff(
             return Err("record exceeds snapshot capacity".to_string());
         }
         let evicted = snapshot.records.remove(0);
-        snapshot.tombstones.push(evicted.event_id);
-    }
-    snapshot.tombstones.sort();
-    snapshot.tombstones.dedup();
-    if snapshot.tombstones.len() > CHAT_TOMBSTONE_CAPACITY {
-        return Err("tombstone capacity exhausted".to_string());
+        append_chat_tombstones(&mut snapshot, std::iter::once(evicted.event_id));
     }
     write_chat_handoff(&snapshot, seed)
+}
+
+fn append_chat_tombstones(
+    snapshot: &mut ChatHandoffSnapshotV1,
+    event_ids: impl IntoIterator<Item = String>,
+) {
+    for event_id in event_ids {
+        if !snapshot.tombstones.iter().any(|item| item == &event_id) {
+            snapshot.tombstones.push(event_id);
+        }
+    }
+    if snapshot.tombstones.len() > CHAT_TOMBSTONE_CAPACITY {
+        let overflow = snapshot.tombstones.len() - CHAT_TOMBSTONE_CAPACITY;
+        snapshot.tombstones.drain(..overflow);
+    }
 }
 
 pub(crate) fn list_chat_handoff(
@@ -312,12 +322,7 @@ fn acknowledge_chat_handoff(
             true
         }
     });
-    snapshot.tombstones.extend(acknowledged);
-    snapshot.tombstones.sort();
-    snapshot.tombstones.dedup();
-    if snapshot.tombstones.len() > CHAT_TOMBSTONE_CAPACITY {
-        return Err("tombstone capacity exhausted".to_string());
-    }
+    append_chat_tombstones(&mut snapshot, acknowledged);
     write_chat_handoff(&snapshot, seed)
 }
 
@@ -527,6 +532,37 @@ mod ingress_tests {
             .iter()
             .any(|item| item.event_id == "event-0000"));
         assert!(reopened.tombstones.contains(&"event-0000".to_string()));
+    }
+
+    #[test]
+    fn tombstone_capacity_overwrites_oldest_without_blocking_acknowledgement() {
+        let _guard = crate::inbound_quarantine::TEST_LOCK.lock().unwrap();
+        let root = tempdir().unwrap();
+        crate::inbound_quarantine::set_application_storage_root(root.path()).unwrap();
+        let local_pubkey = [241; 32];
+        let capsule = state(240, 1);
+        let seed = Seed::new([239; 32]);
+        let mut snapshot = load_chat_handoff(&capsule, local_pubkey, &seed).unwrap();
+        snapshot.tombstones = (0..CHAT_TOMBSTONE_CAPACITY)
+            .map(|index| format!("event-{index:05}"))
+            .collect();
+        snapshot.records.push(QueuedChatMessage {
+            event_id: "event-new".to_string(),
+            from_hex: bytes_to_hex(&[242; 32]),
+            to_hex: bytes_to_hex(&local_pubkey),
+            payload_json: "{}".to_string(),
+            timestamp_ms: 10_000,
+        });
+        write_chat_handoff(&snapshot, &seed).unwrap();
+
+        acknowledge_chat_handoff(&capsule, local_pubkey, &seed, &["event-new".to_string()])
+            .unwrap();
+
+        let reopened = load_chat_handoff(&capsule, local_pubkey, &seed).unwrap();
+        assert!(reopened.records.is_empty());
+        assert_eq!(reopened.tombstones.len(), CHAT_TOMBSTONE_CAPACITY);
+        assert!(!reopened.tombstones.contains(&"event-00000".to_string()));
+        assert!(reopened.tombstones.contains(&"event-new".to_string()));
     }
 }
 

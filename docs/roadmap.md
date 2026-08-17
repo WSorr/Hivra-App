@@ -3376,6 +3376,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     canonical Chat attestation exchange; no alternate route or code change was
     required. No tag or Release was created.
 
+- `1.x Chat Durable Handoff Capacity Remediation`
+  - Finding: ordinary Chat messages committed to the existing durable Flutter
+    timeline without adding their adapter event id to the later handoff ACK;
+    replay therefore retained the same native record indefinitely. Separately,
+    acknowledged and evicted ids accumulated until tombstone capacity stopped
+    the handoff permanently.
+  - Invariant: one ordinary message ACK occurs only after successful durable
+    timeline merge. Handoff records and replay tombstones are bounded FIFO
+    windows; new state replaces the oldest retained state without a second
+    inbox or unbounded growth. Timeline persistence failure never ACKs.
+  - Sole owners: the existing native Chat handoff owns pre-projection records
+    and bounded replay tombstones; `CapsuleDeliveryInboxStore` owns the durable
+    Capsule-scoped timeline.
+  - Removed or sealed: missing normal-message ACK and terminal tombstone
+    exhaustion. Transport, Core, Ledger, FFI shape, DTO, inbox, notification,
+    and Chat effect routes remain unchanged.
+  - Exit evidence: normal-message durable ACK, persistence-failure no-ACK,
+    replay dedupe, record FIFO eviction, tombstone FIFO overwrite, corruption
+    fail-closed, full Flutter/Rust/repository gates, clean checkout, protected
+    PR, and green post-merge CI.
+  - Status: selected and in progress (2026-08-17). Trading outcome truth and
+    shadow identity initialization remain separate findings; no release or
+    following product pass is selected automatically.
+
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
     preserving the existing durable native handoff and Flutter Chat projection

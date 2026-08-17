@@ -486,7 +486,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `1905` lines — `flutter/lib/services/plugin_runtime_module_service.dart`
 - `1440` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
 - `1309` lines — `flutter/lib/screens/invitations_screen.dart`
-- `1211` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
+- `1212` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `1019` lines — `flutter/lib/services/bingx_futures_zone_decision_service.dart`
 - `979` lines — `flutter/lib/screens/ledger_inspector_screen.dart`
 - `952` lines — `flutter/lib/services/external_effect_service.dart`
