@@ -3318,7 +3318,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     leases, and effects remain sealed.
   - Exit evidence: focused artifact/parity gates, negative authority mutation,
     full local and clean-checkout gates, protected PR `review-gates`, and green
-    post-merge CI. Status: selected; implementation evidence is pending.
+    post-merge CI.
+  - Status: complete on `main` at `1770ded` (2026-08-17) through protected PR
+    `#121`; required run `32057547066` and post-merge run `32057670511` passed.
+    The required Ubuntu job built and verified one ephemeral Linux x64 artifact,
+    executed it without runner authority, reached the exact canonical
+    missing-authority rejection, preserved a clean post-review checkout, and
+    uploaded nothing. No owner, runtime/effect path, VPS change, credential,
+    account read, tag, or Release was added. No following pass is selected
+    automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed

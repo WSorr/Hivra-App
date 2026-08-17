@@ -2,17 +2,22 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Remote Runner Pass I — Linux Runtime
-Startup Evidence` is selected as one bounded packaging/CI pass. The existing
-artifact script must build and verify the exact Linux x64 ELF in the required
-Ubuntu gate, remove runner authority from the process environment, execute the
-binary, and accept only the probe's exact fail-closed missing-authority result.
-The artifact is ephemeral and is not uploaded. Public network observation,
-runner credentials, transfer, installation, supervisor configuration, VPS
-access, site or Amnezia changes, account reads, external anchoring, and effects
-remain unauthorized. Completion requires local and clean-checkout gates,
-protected PR review-gates, and green post-merge CI. The preceding `1.x Trading
-Remote Runner Pass H — Pinned Linux x64 Artifact Evidence` is complete
+Current development focus: no following pass is selected automatically. `1.x
+Trading Remote Runner Pass I — Linux Runtime Startup Evidence` is complete on
+`main` at `1770ded` through protected PR `#121`; required run `32057547066`
+and post-merge run `32057670511` passed. The existing artifact script built and
+verified one ephemeral Linux x64 ELF in the required Ubuntu job, removed runner
+authority from the child environment, executed the binary, and accepted only
+the canonical probe's exact fail-closed missing-authority result. Loader
+failure, target mismatch, inherited seed, unexpected output, false success,
+artifact upload, and review-gate checkout mutation fail closed. Local and clean
+checkout gates, Rust workspace, Flutter analyze, repeat full Flutter `931/931`,
+focused concurrency `3/3`, required PR gates, and post-merge CI passed. No
+artifact was uploaded. Public provider execution, transfer, installation,
+supervisor configuration, VPS access, site or Amnezia changes, credentials,
+account reads, external anchoring, Capsule state, leases, and effects remain
+unauthorized. The preceding `1.x Trading Remote Runner Pass H — Pinned Linux
+x64 Artifact Evidence` is complete
 on `main` at `ea36a8b` through protected PR `#119`; required run `32054282257`
 and post-merge run `32054365614` passed. The existing packaging owner uses one
 minimal pure-Dart dependency closure with an exact lock and compiles only the

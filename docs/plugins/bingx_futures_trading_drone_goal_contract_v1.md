@@ -644,6 +644,12 @@ SSH, site and Amnezia configuration, credentials, account reads, external
 anchoring, Capsule state, leases, remote effects, tags, and Releases remain
 sealed.
 
+Implementation evidence: protected PR `#121`, required run `32057547066`, and
+post-merge run `32057670511` passed. The required Ubuntu job built and verified
+the ephemeral Linux x64 artifact, entered the canonical probe, observed the
+exact missing-authority rejection, preserved a clean checkout after repository
+review, and uploaded nothing. No runtime owner or effect path was added.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of
