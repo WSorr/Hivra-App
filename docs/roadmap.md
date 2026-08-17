@@ -3351,6 +3351,35 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     no stderr; website and VPN continuity; zero residual process/path state.
     Status: complete (2026-08-17). No following pass is selected automatically.
 
+- `1.x Trading Remote Runner Pass K — Ephemeral VPS Resource Soak Evidence`
+  - Lane: bounded 1.x Trading host-resource evidence; no installation,
+    supervisor, credential, account, effect, or release work.
+  - Invariant: one exact public-only artifact completes 60 strictly serial
+    observations inside one finite transient cgroup while website and VPN
+    continuity remain unchanged; all process and path state is removed.
+  - Sole owner: the existing probe scheduler owns cadence and the existing
+    shadow store owns evidence retention. The transient cgroup constrains the
+    process but owns no runtime state, retry, journal, authority, or effect.
+  - Removed or sealed: one-cycle RSS is no longer extrapolated into an
+    unattended-host budget. A `MemoryHigh=48 MiB` preflight caused sustained
+    reclaim pressure and cadence degradation, and the measured natural peak
+    leaves insufficient production margin under 64 MiB. Persistent units,
+    users, paths, credentials, account reads, external anchors, leases, remote
+    effects, tags, and Releases remain sealed.
+  - Evidence: clean source `f98ce25`; Linux artifact SHA-256
+    `8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`;
+    60 observations in 3,740 seconds under `MemoryMax=128 MiB`, no swap, and
+    `TasksMax=16`; peak 66,367,488 bytes (63.29 MiB); post-collection current
+    range 47,095,808–52,887,552 bytes and median 50,786,304 bytes; sequence
+    `60`; final evidence hash
+    `68915ba57a35e92d50003492030e48ef5c27394d2842b0442b0a783725547945`;
+    no stderr; website and VPN continuity; zero residual unit/process/path
+    state.
+  - Next decision unlocked: a separate resource-bounded supervisor contract
+    may start with a fail-closed 128 MiB ceiling. Tightening that ceiling,
+    including to 96 MiB, requires longer-duration evidence. Status: complete
+    (2026-08-18). No following pass is selected automatically.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
