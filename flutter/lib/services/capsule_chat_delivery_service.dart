@@ -22,6 +22,8 @@ import 'transport_health_policy_service.dart';
 // transport still completes on a later relay.
 const Duration _chatSendWorkerTimeout = Duration(seconds: 35);
 const Duration _chatDrainWorkerTimeout = Duration(seconds: 10);
+const int _receiptPendingDeliveryCode = -2010;
+const int _receiptRetryLimitPerDrain = 8;
 
 String tradeSignalInboxRecordId({
   required String fromHex,
@@ -474,6 +476,33 @@ class CapsuleChatDeliveryService {
       decoded = List<dynamic>.from(parsed);
     }
 
+    final activeCapsuleHex =
+        bootstrap['activeCapsuleHex']?.toString().trim().toLowerCase() ??
+        localRootHex ??
+        '';
+    final timelineHydrated =
+        _isLowerHex64(activeCapsuleHex) &&
+        await _deliveryInboxStore.hydrateCapsule(activeCapsuleHex);
+    final containsExecutionControl = decoded.any((raw) {
+      if (raw is! Map) return false;
+      final payloadJson = raw['payload_json']?.toString() ?? '';
+      final envelope = _parseJsonMap(payloadJson);
+      return envelope != null &&
+          (envelope['command_kind'] ==
+                  BingxFuturesExecutionCommandService.commandKind ||
+              envelope['receipt_kind'] ==
+                  BingxFuturesExecutionCommandService.receiptKind);
+    });
+    if (containsExecutionControl && !timelineHydrated) {
+      return CapsuleChatDeliveryReceiveResult(
+        code: -2005,
+        errorMessage: 'Chat control timeline is unavailable or invalid',
+        droppedByConsensus: 0,
+        deferredByConsensus: 0,
+        messages: const <CapsuleChatInboxMessage>[],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+      );
+    }
     final identityIndex = await _loadPeerIdentityIndex();
     final signableCache = <String, ConsensusSignableResult>{};
 
@@ -498,7 +527,6 @@ class CapsuleChatDeliveryService {
     final nextDeferred = <CapsuleChatDeferredInboxItem>[];
     final terminalEventIds = <String>{};
     final now = _nowUtc();
-    final activeCapsuleHex = bootstrap['activeCapsuleHex']?.toString() ?? '';
     final deferredItems = await _deferredInboxStore.load(localRootHex ?? '');
     final incomingItems = <_ChatTransportItem>[
       for (final item in deferredItems)
@@ -618,7 +646,15 @@ class CapsuleChatDeliveryService {
 
       final executionReceipt = _parseExecutionReceiptEnvelope(payloadJson);
       if (executionReceipt != null) {
-        final id = _stableMessageId(consensusPeerHex, timestampMs, payloadJson);
+        if (executionReceipt['target_capsule_root_hex'] != consensusPeerHex ||
+            executionReceipt['peer_hex'] != activeCapsuleHex) {
+          if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
+          continue;
+        }
+        final id = _executionControlId(
+          consensusPeerHex,
+          executionReceipt['command_id']!,
+        );
         byExecutionReceiptId[id] = CapsuleExecutionReceiptInboxMessage(
           id: id,
           fromHex: consensusPeerHex,
@@ -676,6 +712,8 @@ class CapsuleChatDeliveryService {
         activeCapsuleHex,
         messages: messages,
         tradeSignals: tradeSignals,
+        executionDecisions: byExecutionDecisionId.values,
+        executionReceipts: byExecutionReceiptId.values,
       );
     } catch (error) {
       return CapsuleChatDeliveryReceiveResult(
@@ -702,6 +740,51 @@ class CapsuleChatDeliveryService {
         now: now,
       );
     }
+    final pendingExecutionDecisions =
+        byExecutionDecisionId.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    try {
+      if (timelineHydrated || pendingExecutionDecisions.isNotEmpty) {
+        await _retryPendingExecutionReceipts(
+          activeCapsuleHex,
+          include: pendingExecutionDecisions,
+        );
+      }
+      final durableById = <String, CapsuleExecutionCommandDecisionMessage>{
+        for (final decision in _deliveryInboxStore.loadExecutionDecisions(
+          activeCapsuleHex,
+        ))
+          decision.id: decision,
+      };
+      for (final id in byExecutionDecisionId.keys.toList(growable: false)) {
+        final durable = durableById[id];
+        if (durable != null) byExecutionDecisionId[id] = durable;
+      }
+      final durableReceiptsById = <String, CapsuleExecutionReceiptInboxMessage>{
+        for (final receipt in _deliveryInboxStore.loadExecutionReceipts(
+          activeCapsuleHex,
+        ))
+          receipt.id: receipt,
+      };
+      for (final id in byExecutionReceiptId.keys.toList(growable: false)) {
+        final durable = durableReceiptsById[id];
+        if (durable != null) byExecutionReceiptId[id] = durable;
+      }
+    } catch (error) {
+      return CapsuleChatDeliveryReceiveResult(
+        code: -2005,
+        errorMessage: 'Execution receipt persistence failed: $error',
+        droppedByConsensus: droppedByConsensus,
+        deferredByConsensus: deferredByConsensus,
+        messages: List<CapsuleChatInboxMessage>.unmodifiable(messages),
+        tradeSignals: List<CapsuleTradeSignalInboxMessage>.unmodifiable(
+          tradeSignals,
+        ),
+      );
+    }
+    final executionDecisions =
+        byExecutionDecisionId.values.toList()
+          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     if (terminalEventIds.isNotEmpty) {
       final acknowledgement = await _workerQueue.run(
         _ffiQueueKey(bootstrapOwner),
@@ -726,9 +809,6 @@ class CapsuleChatDeliveryService {
         );
       }
     }
-    final executionDecisions =
-        byExecutionDecisionId.values.toList()
-          ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     final executionReceipts =
         byExecutionReceiptId.values.toList()
           ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
@@ -770,6 +850,14 @@ class CapsuleChatDeliveryService {
 
     final localCapsuleRootHex = _localCapsuleRootHex() ?? '';
     final commandId = decoded['command_id']?.toString().trim() ?? '-';
+    for (final retained in _deliveryInboxStore.loadExecutionDecisions(
+      localCapsuleRootHex,
+    )) {
+      if (retained.fromHex == consensusPeerHex &&
+          retained.commandId == commandId) {
+        return retained;
+      }
+    }
     final decision = _executionCommandService.evaluateIncomingCommand(
       commandEnvelopeJson: payloadJson,
       localCapsuleRootHex: localCapsuleRootHex,
@@ -780,19 +868,11 @@ class CapsuleChatDeliveryService {
       hasKnownIntentHash: _hasKnownIntentHash,
     );
 
-    final receiptSend = await sendCanonicalEnvelope(
-      peerHex: consensusPeerHex,
-      canonicalEnvelopeJson: decision.canonicalReceiptJson,
-    );
     final decisionValue =
         decision.status == BingxExecutionDecisionStatus.accepted
             ? 'accepted'
             : 'rejected';
-    final id = _stableMessageId(
-      consensusPeerHex,
-      timestampMs,
-      '${decision.receiptHashHex}|$commandId|$decisionValue',
-    );
+    final id = _executionControlId(consensusPeerHex, commandId);
     return CapsuleExecutionCommandDecisionMessage(
       id: id,
       fromHex: consensusPeerHex,
@@ -801,10 +881,55 @@ class CapsuleChatDeliveryService {
       decisionCode: decision.decisionCode,
       decisionMessage: decision.decisionMessage,
       receiptHashHex: decision.receiptHashHex,
-      receiptDeliveryCode: receiptSend.code,
-      receiptDeliveryError: receiptSend.errorMessage,
+      canonicalReceiptJson: decision.canonicalReceiptJson,
+      receiptDeliveryCode: _receiptPendingDeliveryCode,
+      receiptDeliveryError: 'Execution receipt is pending delivery.',
       timestampMs: timestampMs,
     );
+  }
+
+  Future<void> _retryPendingExecutionReceipts(
+    String capsuleRootHex, {
+    Iterable<CapsuleExecutionCommandDecisionMessage> include =
+        const <CapsuleExecutionCommandDecisionMessage>[],
+  }) async {
+    final byId = <String, CapsuleExecutionCommandDecisionMessage>{
+      for (final decision in _deliveryInboxStore.loadExecutionDecisions(
+        capsuleRootHex,
+      ))
+        decision.id: decision,
+      for (final decision in include) decision.id: decision,
+    };
+    final pending = byId.values
+        .where(
+          (decision) =>
+              decision.receiptDeliveryCode != 0 &&
+              decision.canonicalReceiptJson != null,
+        )
+        .take(_receiptRetryLimitPerDrain)
+        .toList(growable: false);
+    for (final decision in pending) {
+      final delivery = await sendCanonicalEnvelope(
+        peerHex: decision.fromHex,
+        canonicalEnvelopeJson: decision.canonicalReceiptJson!,
+        expectedCapsuleRootHex: capsuleRootHex,
+      );
+      await _deliveryInboxStore.mergeDurably(
+        capsuleRootHex,
+        messages: const <CapsuleChatInboxMessage>[],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+        executionDecisions: <CapsuleExecutionCommandDecisionMessage>[
+          decision.copyWithReceiptDelivery(
+            code: delivery.code,
+            error: delivery.errorMessage,
+          ),
+        ],
+      );
+    }
+  }
+
+  String _executionControlId(String peerHex, String commandId) {
+    return sha256.convert(utf8.encode('$peerHex|$commandId')).toString();
   }
 
   ManualConsensusCheck? _manualConsensusForPeer(String peerHex) {

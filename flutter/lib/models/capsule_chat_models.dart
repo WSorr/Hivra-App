@@ -121,6 +121,7 @@ class CapsuleExecutionCommandDecisionMessage {
   final String decisionCode;
   final String decisionMessage;
   final String receiptHashHex;
+  final String? canonicalReceiptJson;
   final int receiptDeliveryCode;
   final String? receiptDeliveryError;
   final int timestampMs;
@@ -133,10 +134,30 @@ class CapsuleExecutionCommandDecisionMessage {
     required this.decisionCode,
     required this.decisionMessage,
     required this.receiptHashHex,
+    this.canonicalReceiptJson,
     required this.receiptDeliveryCode,
     required this.receiptDeliveryError,
     required this.timestampMs,
   });
+
+  CapsuleExecutionCommandDecisionMessage copyWithReceiptDelivery({
+    required int code,
+    required String? error,
+  }) {
+    return CapsuleExecutionCommandDecisionMessage(
+      id: id,
+      fromHex: fromHex,
+      commandId: commandId,
+      decision: decision,
+      decisionCode: decisionCode,
+      decisionMessage: decisionMessage,
+      receiptHashHex: receiptHashHex,
+      canonicalReceiptJson: canonicalReceiptJson,
+      receiptDeliveryCode: code,
+      receiptDeliveryError: error,
+      timestampMs: timestampMs,
+    );
+  }
 }
 
 class CapsuleExecutionReceiptInboxMessage {

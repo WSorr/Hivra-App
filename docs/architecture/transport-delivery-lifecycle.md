@@ -191,6 +191,23 @@ second inbox owner. Flutter acknowledges an ordinary Chat event only after the
 existing Capsule-scoped timeline commits it durably. Projection failure leaves
 the handoff record available for retry.
 
+The same acknowledgement boundary applies to execution-control envelopes that
+already enter through the 1.x Chat delivery capability path. The existing
+`CapsuleDeliveryInboxStore` retains the evaluated command decision, exact
+canonical receipt bytes, receipt hash and delivery outcome, or the authenticated
+incoming receipt before the adapter event is acknowledged. A failed receipt
+send is not reconstructed and does not re-run policy evaluation: the exact
+durable receipt is retried through the existing send route after restart.
+Incoming receipts are accepted only when the authenticated envelope sender is
+the declared target Capsule and the declared peer is the active local Capsule.
+Stored decision identity is bound to `(sender Capsule, command_id)` and stored
+canonical bytes must reproduce the retained receipt hash. A conflicting replay
+is terminally rejected without replacing the first retained semantics.
+Corruption, wrong scope, missing timeline key, or persistence failure leaves
+ingress unacknowledged. This is a bounded 1.x compatibility owner, not authority to move
+trading effects into Chat, add execution facts to Core/Ledger, or define the V2
+capability-storage topology.
+
 Handoff records and replay tombstones are bounded FIFO windows. A new record
 may replace the oldest unprojected record only after atomically retaining its
 event id as a tombstone. A new tombstone replaces the oldest tombstone instead

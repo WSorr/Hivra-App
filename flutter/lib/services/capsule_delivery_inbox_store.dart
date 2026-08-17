@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart' as cryptography;
 
 import '../models/capsule_chat_models.dart';
@@ -31,6 +32,12 @@ class CapsuleDeliveryInboxStore {
 
   final Map<String, Map<String, CapsuleTradeSignalInboxMessage>>
   _signalsByCapsule = <String, Map<String, CapsuleTradeSignalInboxMessage>>{};
+  final Map<String, Map<String, CapsuleExecutionCommandDecisionMessage>>
+  _executionDecisionsByCapsule =
+      <String, Map<String, CapsuleExecutionCommandDecisionMessage>>{};
+  final Map<String, Map<String, CapsuleExecutionReceiptInboxMessage>>
+  _executionReceiptsByCapsule =
+      <String, Map<String, CapsuleExecutionReceiptInboxMessage>>{};
   final List<String> _capsuleOrder = <String>[];
   final Set<String> _hydratedCapsules = <String>{};
   final Map<String, Future<void>> _timelineWriteTails =
@@ -83,13 +90,44 @@ class CapsuleDeliveryInboxStore {
         if (message == null) return false;
         loaded[message.id] = message;
       }
+      final loadedDecisions =
+          <String, CapsuleExecutionCommandDecisionMessage>{};
+      final rawDecisions = decoded['execution_decisions'];
+      if (rawDecisions != null && rawDecisions is! List) return false;
+      for (final item in (rawDecisions as List? ?? const <Object?>[])) {
+        final decision = _decodeExecutionDecision(item, normalized);
+        if (decision == null) return false;
+        loadedDecisions[decision.id] = decision;
+      }
+      final loadedReceipts = <String, CapsuleExecutionReceiptInboxMessage>{};
+      final rawReceipts = decoded['execution_receipts'];
+      if (rawReceipts != null && rawReceipts is! List) return false;
+      for (final item in (rawReceipts as List? ?? const <Object?>[])) {
+        final receipt = _decodeExecutionReceipt(item, normalized);
+        if (receipt == null) return false;
+        loadedReceipts[receipt.id] = receipt;
+      }
       _hydratedCapsules.add(normalized);
       final existing = _messagesByCapsule[normalized];
       if (existing != null) loaded.addAll(existing);
-      if (loaded.isEmpty) return true;
-      _messagesByCapsule[normalized] = loaded;
+      final existingDecisions = _executionDecisionsByCapsule[normalized];
+      if (existingDecisions != null) loadedDecisions.addAll(existingDecisions);
+      final existingReceipts = _executionReceiptsByCapsule[normalized];
+      if (existingReceipts != null) loadedReceipts.addAll(existingReceipts);
+      if (loaded.isNotEmpty) _messagesByCapsule[normalized] = loaded;
+      if (loadedDecisions.isNotEmpty) {
+        _executionDecisionsByCapsule[normalized] = loadedDecisions;
+      }
+      if (loadedReceipts.isNotEmpty) {
+        _executionReceiptsByCapsule[normalized] = loadedReceipts;
+      }
+      if (loaded.isEmpty && loadedDecisions.isEmpty && loadedReceipts.isEmpty) {
+        return true;
+      }
       _touchCapsule(normalized);
       _retainNewestMessages(loaded);
+      _retainNewestExecutionDecisions(loadedDecisions);
+      _retainNewestExecutionReceipts(loadedReceipts);
       _retainNewestCapsules();
       return true;
     } catch (_) {
@@ -101,19 +139,55 @@ class CapsuleDeliveryInboxStore {
     String capsuleRootHex, {
     required Iterable<CapsuleChatInboxMessage> messages,
     required Iterable<CapsuleTradeSignalInboxMessage> tradeSignals,
+    Iterable<CapsuleExecutionCommandDecisionMessage> executionDecisions =
+        const <CapsuleExecutionCommandDecisionMessage>[],
+    Iterable<CapsuleExecutionReceiptInboxMessage> executionReceipts =
+        const <CapsuleExecutionReceiptInboxMessage>[],
   }) async {
     final normalized = capsuleRootHex.trim().toLowerCase();
     if (!_isHex64(normalized)) return;
     final incomingMessages = messages.toList(growable: false);
-    if (incomingMessages.isEmpty) {
+    final incomingDecisions = executionDecisions.toList(growable: false);
+    final incomingReceipts = executionReceipts.toList(growable: false);
+    if (incomingMessages.isEmpty &&
+        incomingDecisions.isEmpty &&
+        incomingReceipts.isEmpty) {
       merge(normalized, messages: incomingMessages, tradeSignals: tradeSignals);
       return;
     }
     if (!await hydrateCapsule(normalized)) {
       throw StateError('Existing Chat timeline is unavailable or invalid');
     }
-    merge(normalized, messages: incomingMessages, tradeSignals: tradeSignals);
-    if (incomingMessages.isNotEmpty) await _persistTimeline(normalized);
+    merge(
+      normalized,
+      messages: incomingMessages,
+      tradeSignals: tradeSignals,
+      executionDecisions: incomingDecisions,
+      executionReceipts: incomingReceipts,
+    );
+    await _persistTimeline(normalized);
+  }
+
+  List<CapsuleExecutionCommandDecisionMessage> loadExecutionDecisions(
+    String capsuleRootHex,
+  ) {
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    final records =
+        _executionDecisionsByCapsule[normalized]?.values.toList() ??
+        <CapsuleExecutionCommandDecisionMessage>[];
+    records.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    return List<CapsuleExecutionCommandDecisionMessage>.unmodifiable(records);
+  }
+
+  List<CapsuleExecutionReceiptInboxMessage> loadExecutionReceipts(
+    String capsuleRootHex,
+  ) {
+    final normalized = capsuleRootHex.trim().toLowerCase();
+    final records =
+        _executionReceiptsByCapsule[normalized]?.values.toList() ??
+        <CapsuleExecutionReceiptInboxMessage>[];
+    records.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    return List<CapsuleExecutionReceiptInboxMessage>.unmodifiable(records);
   }
 
   Future<void> upsertMessageDurably(
@@ -146,12 +220,23 @@ class CapsuleDeliveryInboxStore {
     String capsuleRootHex, {
     required Iterable<CapsuleChatInboxMessage> messages,
     required Iterable<CapsuleTradeSignalInboxMessage> tradeSignals,
+    Iterable<CapsuleExecutionCommandDecisionMessage> executionDecisions =
+        const <CapsuleExecutionCommandDecisionMessage>[],
+    Iterable<CapsuleExecutionReceiptInboxMessage> executionReceipts =
+        const <CapsuleExecutionReceiptInboxMessage>[],
   }) {
     final normalized = capsuleRootHex.trim().toLowerCase();
     if (!_isHex64(normalized)) return;
     final incomingMessages = messages.toList(growable: false);
     final incomingSignals = tradeSignals.toList(growable: false);
-    if (incomingMessages.isEmpty && incomingSignals.isEmpty) return;
+    final incomingDecisions = executionDecisions.toList(growable: false);
+    final incomingReceipts = executionReceipts.toList(growable: false);
+    if (incomingMessages.isEmpty &&
+        incomingSignals.isEmpty &&
+        incomingDecisions.isEmpty &&
+        incomingReceipts.isEmpty) {
+      return;
+    }
 
     _touchCapsule(normalized);
     if (incomingMessages.isNotEmpty) {
@@ -177,6 +262,31 @@ class CapsuleDeliveryInboxStore {
       }
       _retainNewestSignals(signalsById);
     }
+    if (incomingDecisions.isNotEmpty) {
+      final decisionsById = _executionDecisionsByCapsule.putIfAbsent(
+        normalized,
+        () => <String, CapsuleExecutionCommandDecisionMessage>{},
+      );
+      for (final decision in incomingDecisions) {
+        final existing = decisionsById[decision.id];
+        if (existing == null ||
+            _sameExecutionDecisionSemantics(existing, decision)) {
+          decisionsById[decision.id] = decision;
+        }
+      }
+      _retainNewestExecutionDecisions(decisionsById);
+    }
+    if (incomingReceipts.isNotEmpty) {
+      final receiptsById = _executionReceiptsByCapsule.putIfAbsent(
+        normalized,
+        () => <String, CapsuleExecutionReceiptInboxMessage>{},
+      );
+      for (final receipt in incomingReceipts) {
+        final existing = receiptsById[receipt.id];
+        if (existing == null) receiptsById[receipt.id] = receipt;
+      }
+      _retainNewestExecutionReceipts(receiptsById);
+    }
     _retainNewestCapsules();
   }
 
@@ -184,6 +294,8 @@ class CapsuleDeliveryInboxStore {
     final normalized = capsuleRootHex.trim().toLowerCase();
     _messagesByCapsule.remove(normalized);
     _signalsByCapsule.remove(normalized);
+    _executionDecisionsByCapsule.remove(normalized);
+    _executionReceiptsByCapsule.remove(normalized);
     _capsuleOrder.remove(normalized);
     _hydratedCapsules.remove(normalized);
     _timelineWriteTails.remove(normalized);
@@ -300,6 +412,8 @@ class CapsuleDeliveryInboxStore {
 
   Future<void> _persistTimelineNow(String capsuleRootHex) async {
     final messages = loadMessages(capsuleRootHex);
+    final executionDecisions = loadExecutionDecisions(capsuleRootHex);
+    final executionReceipts = loadExecutionReceipts(capsuleRootHex);
     final capsuleDir = await _fileStore.capsuleDirForHex(
       capsuleRootHex,
       create: true,
@@ -319,6 +433,39 @@ class CapsuleDeliveryInboxStore {
               'timestamp_ms': message.timestampMs,
               'direction': message.direction.name,
               'delivery_state': message.deliveryState.name,
+            },
+          )
+          .toList(growable: false),
+      'execution_decisions': executionDecisions
+          .map(
+            (decision) => <String, Object?>{
+              'id': decision.id,
+              'from_hex': decision.fromHex,
+              'command_id': decision.commandId,
+              'decision': decision.decision,
+              'decision_code': decision.decisionCode,
+              'decision_message': decision.decisionMessage,
+              'receipt_hash_hex': decision.receiptHashHex,
+              'canonical_receipt_json': decision.canonicalReceiptJson,
+              'receipt_delivery_code': decision.receiptDeliveryCode,
+              'receipt_delivery_error': decision.receiptDeliveryError,
+              'timestamp_ms': decision.timestampMs,
+            },
+          )
+          .toList(growable: false),
+      'execution_receipts': executionReceipts
+          .map(
+            (receipt) => <String, Object?>{
+              'id': receipt.id,
+              'from_hex': receipt.fromHex,
+              'command_id': receipt.commandId,
+              'decision': receipt.decision,
+              'decision_code': receipt.decisionCode,
+              'decision_message': receipt.decisionMessage,
+              'target_capsule_root_hex': receipt.targetCapsuleRootHex,
+              'peer_hex': receipt.peerHex,
+              'receipt_created_at_utc': receipt.receiptCreatedAtUtc,
+              'timestamp_ms': receipt.timestampMs,
             },
           )
           .toList(growable: false),
@@ -469,6 +616,116 @@ class CapsuleDeliveryInboxStore {
     );
   }
 
+  CapsuleExecutionCommandDecisionMessage? _decodeExecutionDecision(
+    Object? raw,
+    String capsuleRootHex,
+  ) {
+    if (raw is! Map) return null;
+    final map = Map<String, Object?>.from(raw);
+    final id = map['id']?.toString() ?? '';
+    final fromHex = map['from_hex']?.toString() ?? '';
+    final commandId = map['command_id']?.toString() ?? '';
+    final decision = map['decision']?.toString() ?? '';
+    final decisionCode = map['decision_code']?.toString() ?? '';
+    final decisionMessage = map['decision_message']?.toString() ?? '';
+    final receiptHashHex = map['receipt_hash_hex']?.toString() ?? '';
+    final canonicalReceiptJson = map['canonical_receipt_json']?.toString();
+    final receiptDeliveryCode = map['receipt_delivery_code'];
+    final receiptDeliveryError = map['receipt_delivery_error']?.toString();
+    final timestampMs = map['timestamp_ms'];
+    Map<String, Object?>? canonicalReceipt;
+    try {
+      final decoded = jsonDecode(canonicalReceiptJson ?? '');
+      if (decoded is Map) canonicalReceipt = Map<String, Object?>.from(decoded);
+    } catch (_) {}
+    if (!_isHex64(id) ||
+        !_isHex64(fromHex) ||
+        commandId.isEmpty ||
+        (decision != 'accepted' && decision != 'rejected') ||
+        decisionCode.isEmpty ||
+        decisionMessage.isEmpty ||
+        !_isHex64(receiptHashHex) ||
+        canonicalReceiptJson == null ||
+        canonicalReceiptJson.isEmpty ||
+        sha256.convert(utf8.encode(canonicalReceiptJson)).toString() !=
+            receiptHashHex ||
+        canonicalReceipt?['receipt_kind'] != 'futures_execution_receipt_v1' ||
+        canonicalReceipt?['command_id'] != commandId ||
+        canonicalReceipt?['decision'] != decision ||
+        canonicalReceipt?['decision_code'] != decisionCode ||
+        canonicalReceipt?['decision_message'] != decisionMessage ||
+        canonicalReceipt?['target_capsule_root_hex'] != capsuleRootHex ||
+        canonicalReceipt?['peer_hex'] != fromHex ||
+        id != _executionControlId(fromHex, commandId) ||
+        receiptDeliveryCode is! int ||
+        timestampMs is! int) {
+      return null;
+    }
+    return CapsuleExecutionCommandDecisionMessage(
+      id: id,
+      fromHex: fromHex,
+      commandId: commandId,
+      decision: decision,
+      decisionCode: decisionCode,
+      decisionMessage: decisionMessage,
+      receiptHashHex: receiptHashHex,
+      canonicalReceiptJson: canonicalReceiptJson,
+      receiptDeliveryCode: receiptDeliveryCode,
+      receiptDeliveryError: receiptDeliveryError,
+      timestampMs: timestampMs,
+    );
+  }
+
+  CapsuleExecutionReceiptInboxMessage? _decodeExecutionReceipt(
+    Object? raw,
+    String capsuleRootHex,
+  ) {
+    if (raw is! Map) return null;
+    final map = Map<String, Object?>.from(raw);
+    final id = map['id']?.toString() ?? '';
+    final fromHex = map['from_hex']?.toString() ?? '';
+    final commandId = map['command_id']?.toString() ?? '';
+    final decision = map['decision']?.toString() ?? '';
+    final decisionCode = map['decision_code']?.toString() ?? '';
+    final decisionMessage = map['decision_message']?.toString() ?? '';
+    final targetCapsuleRootHex =
+        map['target_capsule_root_hex']?.toString() ?? '';
+    final peerHex = map['peer_hex']?.toString() ?? '';
+    final receiptCreatedAtUtc = map['receipt_created_at_utc']?.toString() ?? '';
+    final timestampMs = map['timestamp_ms'];
+    if (!_isHex64(id) ||
+        !_isHex64(fromHex) ||
+        commandId.isEmpty ||
+        (decision != 'accepted' && decision != 'rejected') ||
+        decisionCode.isEmpty ||
+        decisionMessage.isEmpty ||
+        !_isHex64(targetCapsuleRootHex) ||
+        !_isHex64(peerHex) ||
+        targetCapsuleRootHex != fromHex ||
+        peerHex != capsuleRootHex ||
+        id != _executionControlId(fromHex, commandId) ||
+        receiptCreatedAtUtc.isEmpty ||
+        timestampMs is! int) {
+      return null;
+    }
+    return CapsuleExecutionReceiptInboxMessage(
+      id: id,
+      fromHex: fromHex,
+      commandId: commandId,
+      decision: decision,
+      decisionCode: decisionCode,
+      decisionMessage: decisionMessage,
+      targetCapsuleRootHex: targetCapsuleRootHex,
+      peerHex: peerHex,
+      receiptCreatedAtUtc: receiptCreatedAtUtc,
+      timestampMs: timestampMs,
+    );
+  }
+
+  String _executionControlId(String peerHex, String commandId) {
+    return sha256.convert(utf8.encode('$peerHex|$commandId')).toString();
+  }
+
   void _touchCapsule(String capsuleRootHex) {
     _capsuleOrder.remove(capsuleRootHex);
     _capsuleOrder.add(capsuleRootHex);
@@ -512,6 +769,38 @@ class CapsuleDeliveryInboxStore {
     }
   }
 
+  void _retainNewestExecutionDecisions(
+    Map<String, CapsuleExecutionCommandDecisionMessage> recordsById,
+  ) {
+    if (recordsById.length <= maxRecordsPerCapsule) return;
+    final oldestFirst =
+        recordsById.values.toList()..sort((a, b) {
+          final timestampOrder = a.timestampMs.compareTo(b.timestampMs);
+          return timestampOrder != 0 ? timestampOrder : a.id.compareTo(b.id);
+        });
+    for (final record in oldestFirst.take(
+      recordsById.length - maxRecordsPerCapsule,
+    )) {
+      recordsById.remove(record.id);
+    }
+  }
+
+  void _retainNewestExecutionReceipts(
+    Map<String, CapsuleExecutionReceiptInboxMessage> recordsById,
+  ) {
+    if (recordsById.length <= maxRecordsPerCapsule) return;
+    final oldestFirst =
+        recordsById.values.toList()..sort((a, b) {
+          final timestampOrder = a.timestampMs.compareTo(b.timestampMs);
+          return timestampOrder != 0 ? timestampOrder : a.id.compareTo(b.id);
+        });
+    for (final record in oldestFirst.take(
+      recordsById.length - maxRecordsPerCapsule,
+    )) {
+      recordsById.remove(record.id);
+    }
+  }
+
   bool _sameMessageSemantics(
     CapsuleChatInboxMessage existing,
     CapsuleChatInboxMessage candidate,
@@ -524,6 +813,20 @@ class CapsuleDeliveryInboxStore {
         existing.envelopeHashHex == candidate.envelopeHashHex &&
         existing.timestampMs == candidate.timestampMs &&
         existing.direction == candidate.direction;
+  }
+
+  bool _sameExecutionDecisionSemantics(
+    CapsuleExecutionCommandDecisionMessage existing,
+    CapsuleExecutionCommandDecisionMessage candidate,
+  ) {
+    return existing.id == candidate.id &&
+        existing.fromHex == candidate.fromHex &&
+        existing.commandId == candidate.commandId &&
+        existing.decision == candidate.decision &&
+        existing.decisionCode == candidate.decisionCode &&
+        existing.decisionMessage == candidate.decisionMessage &&
+        existing.receiptHashHex == candidate.receiptHashHex &&
+        existing.canonicalReceiptJson == candidate.canonicalReceiptJson;
   }
 
   static bool _isHex64(String value) =>

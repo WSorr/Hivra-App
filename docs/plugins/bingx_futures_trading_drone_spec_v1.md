@@ -940,4 +940,12 @@ Fields:
 
 - command/receipt envelopes are plugin-domain artifacts (inbox/journal projection),
 - do not extend Core ledger invariants for exchange noise,
-- anti-replay state is kept in plugin execution journal/state.
+- the existing 1.x delivery capability owner durably retains evaluated command
+  decisions and incoming receipts before adapter acknowledgement; it is a
+  compatibility boundary, not a second exchange-effect owner,
+- a failed outgoing receipt retains and retries the exact canonical bytes after
+  restart; command policy is not re-evaluated to reconstruct a receipt,
+- receipt sender/target/local-peer binding and canonical receipt hash are
+  verified before retained state is trusted,
+- durable command identity supplies restart-safe anti-replay for the current
+  1.x path; a separate plugin execution journal must not duplicate it.
