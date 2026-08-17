@@ -65,6 +65,8 @@ runner_artifact_is_verifiable() {
     rg -q 'dart pub get --enforce-lockfile' "$1" &&
     rg -q 'the only cross-build target is linux/x64' "$1" &&
     rg -q 'artifact binary does not match Linux x64 manifest' "$1" &&
+    rg -q 'unsupported host-native executable header' "$1" &&
+    rg -q 'machine == 62' "$1" &&
     rg -q 'artifact binary SHA-256 mismatch' "$1" &&
     rg -q 'artifact unit does not match the canonical source' "$1" &&
     rg -q 'forbidden authenticated exchange authority markers' "$1" &&

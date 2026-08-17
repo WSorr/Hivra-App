@@ -91,6 +91,45 @@ file_size() {
   wc -c < "$1" | tr -d '[:space:]'
 }
 
+binary_target() {
+  python3 - "$1" <<'PY'
+import pathlib
+import struct
+import sys
+
+data = pathlib.Path(sys.argv[1]).read_bytes()[:4096]
+if len(data) >= 20 and data[:4] == b"\x7fELF" and data[4:6] == b"\x02\x01":
+    machine = struct.unpack_from("<H", data, 18)[0]
+    if machine == 62:
+        print("linux/x64")
+        raise SystemExit(0)
+if len(data) >= 8 and data[:4] == b"\xcf\xfa\xed\xfe":
+    cpu_type = struct.unpack_from("<I", data, 4)[0]
+    if cpu_type == 0x0100000C:
+        print("darwin/arm64")
+        raise SystemExit(0)
+    if cpu_type == 0x01000007:
+        print("darwin/x64")
+        raise SystemExit(0)
+if len(data) >= 8 and data[:4] in {b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"}:
+    architecture_size = 20 if data[:4] == b"\xca\xfe\xba\xbe" else 32
+    count = struct.unpack_from(">I", data, 4)[0]
+    if count < 1 or count > 32 or len(data) < 8 + count * architecture_size:
+        raise SystemExit("invalid universal Mach-O header")
+    targets = []
+    for index in range(count):
+        cpu_type = struct.unpack_from(">I", data, 8 + index * architecture_size)[0]
+        if cpu_type == 0x0100000C:
+            targets.append("darwin/arm64")
+        elif cpu_type == 0x01000007:
+            targets.append("darwin/x64")
+    if targets:
+        print("+".join(targets))
+        raise SystemExit(0)
+raise SystemExit("unsupported host-native executable header")
+PY
+}
+
 baseline_value() {
   local key="$1"
   local value
@@ -296,26 +335,17 @@ PY
     die "artifact dependency lock SHA-256 mismatch"
   git -C "$ROOT" merge-base --is-ancestor "$source_commit" HEAD >/dev/null 2>&1 ||
     die "artifact source commit is not available in repository history"
-  local file_description
-  file_description="$(file "$binary")"
-  printf '%s\n' "$file_description" | grep -q 'executable' ||
-    die "artifact is not a host-native executable"
+  local detected_targets
+  detected_targets="$(binary_target "$binary")" ||
+    die "artifact is not a supported host-native executable"
   case "$target_os/$target_arch" in
-    linux/x64)
-      printf '%s\n' "$file_description" | grep -Eq 'ELF 64-bit.*x86-64' ||
-        die "artifact binary does not match Linux x64 manifest"
-      ;;
-    darwin/arm64)
-      printf '%s\n' "$file_description" | grep -Eq 'Mach-O 64-bit executable arm64' ||
-        die "artifact binary does not match Darwin arm64 manifest"
-      ;;
-    darwin/x86_64|darwin/x64)
-      printf '%s\n' "$file_description" | grep -Eq 'Mach-O 64-bit executable x86_64' ||
-        die "artifact binary does not match Darwin x64 manifest"
-      ;;
-    *)
-      die "artifact target is not an allowed packaging target"
-      ;;
+    linux/x64) [[ "+$detected_targets+" = *"+linux/x64+"* ]] ||
+      die "artifact binary does not match Linux x64 manifest" ;;
+    darwin/arm64) [[ "+$detected_targets+" = *"+darwin/arm64+"* ]] ||
+      die "artifact binary does not match Darwin arm64 manifest" ;;
+    darwin/x86_64|darwin/x64) [[ "+$detected_targets+" = *"+darwin/x64+"* ]] ||
+      die "artifact binary does not match Darwin x64 manifest" ;;
+    *) die "artifact target is not an allowed packaging target" ;;
   esac
   if grep -aEq \
     'openApi/swap/v2/trade/(order|leverage|marginType)|BingxFuturesApiCredentials|placeOrder|cancelOrder' \
