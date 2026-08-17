@@ -285,6 +285,30 @@ class BingxFuturesDeterministicReplayHarnessService {
     return sha256.convert(utf8.encode(canonical)).toString();
   }
 
+  String runnerKeyId(SimplePublicKey runnerKey) =>
+      sha256.convert(runnerKey.bytes).toString();
+
+  Future<bool> authenticateShadowEvidence({
+    required BingxFuturesShadowEvidence evidence,
+    required SimplePublicKey trustedRunnerKey,
+  }) async {
+    if (evidence.signatureSuite != 'ed25519-v1' ||
+        evidence.runnerKeyId != runnerKeyId(trustedRunnerKey)) {
+      return false;
+    }
+    try {
+      return await Ed25519().verify(
+        evidence.signingPayload,
+        signature: Signature(
+          _decodeHex(evidence.signatureHex),
+          publicKey: trustedRunnerKey,
+        ),
+      );
+    } on Object {
+      return false;
+    }
+  }
+
   BingxFuturesShadowEvidence buildShadowEvidence({
     required BingxFuturesReplayRunResult publicRun,
     required String runnerBuildId,
@@ -327,6 +351,8 @@ class BingxFuturesDeterministicReplayHarnessService {
     required String packageDigestHex,
     required String hostAbi,
     required DateTime observedAtUtc,
+    required int sequence,
+    required String previousEvidenceHashHex,
     Duration validity = const Duration(seconds: 60),
   }) async {
     final normalizedSymbol = symbol.trim().toUpperCase();
@@ -335,6 +361,8 @@ class BingxFuturesDeterministicReplayHarnessService {
         !_isCanonicalAscii(pluginId) ||
         !_isCanonicalAscii(pluginVersion) ||
         !_isSha256(packageDigestHex) ||
+        !_isSha256(previousEvidenceHashHex) ||
+        sequence < 1 ||
         !_isCanonicalAscii(hostAbi) ||
         validity <= Duration.zero ||
         validity > const Duration(seconds: 60)) {
@@ -363,9 +391,9 @@ class BingxFuturesDeterministicReplayHarnessService {
       hostAbi: hostAbi,
       observedAtEpochMs: observedAt.millisecondsSinceEpoch,
       validUntilEpochMs: observedAt.add(validity).millisecondsSinceEpoch,
-      sequence: 1,
-      previousEvidenceHashHex: _emptyShadowEvidenceHash,
-      runnerKeyId: sha256.convert(publicKey.bytes).toString(),
+      sequence: sequence,
+      previousEvidenceHashHex: previousEvidenceHashHex,
+      runnerKeyId: runnerKeyId(publicKey),
     );
     final signature = await Ed25519().sign(
       unsigned.signingPayload,
@@ -419,20 +447,13 @@ class BingxFuturesDeterministicReplayHarnessService {
             maxValidityMs) {
       return BingxFuturesShadowEvidenceVerdict.malformed;
     }
-    final trustedKeyId = sha256.convert(trustedRunnerKey.bytes).toString();
-    if (evidence.runnerKeyId != trustedKeyId) {
+    if (evidence.runnerKeyId != runnerKeyId(trustedRunnerKey)) {
       return BingxFuturesShadowEvidenceVerdict.wrongRunner;
     }
-    try {
-      final signatureBytes = _decodeHex(evidence.signatureHex);
-      final isValid = await Ed25519().verify(
-        evidence.signingPayload,
-        signature: Signature(signatureBytes, publicKey: trustedRunnerKey),
-      );
-      if (!isValid) {
-        return BingxFuturesShadowEvidenceVerdict.invalidSignature;
-      }
-    } on Object {
+    if (!await authenticateShadowEvidence(
+      evidence: evidence,
+      trustedRunnerKey: trustedRunnerKey,
+    )) {
       return BingxFuturesShadowEvidenceVerdict.invalidSignature;
     }
     if (evidence.runnerBuildId != expectedRunnerBuildId ||

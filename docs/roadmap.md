@@ -3143,6 +3143,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     OpenSSL independently verified its Ed25519 signature. No following pass is
     selected automatically.
 
+- `1.x Trading Remote Runner Pass D — Durable Shadow Stream and Restart Continuity`
+  - Lane: bounded 1.x Trading productization; no release or deployment work.
+  - Invariant: one runner key resumes one authenticated immutable evidence
+    chain after process restart; no observation failure, retry, or concurrent
+    process may reuse a sequence or fork the predecessor hash.
+  - Sole owner: `BingxFuturesShadowStreamStore` owns runner-only durable
+    retention; the existing replay harness retains evidence semantics,
+    authentication, public decision, and canonical wire ownership.
+  - Removed or sealed: the probe can no longer restart at sequence `1` when a
+    stream exists; retained evidence cannot be overwritten, evicted, repaired,
+    or silently reset by the store. Capsule/order/effect journals remain sealed
+    out of the remote shadow path.
+  - Exit evidence: authenticated restart continuation, same-process and real
+    cross-process serialization, exhausted lock budget, failed-observation
+    no-write, corruption, signature mutation, wrong key, sequence/predecessor conflict,
+    unknown-entry, bounded-capacity, structural mutation, full local and clean
+    checkout gates, protected PR, and green post-merge CI.
+  - Remaining boundary: stream rotation, rollback-resistant external anchors,
+    scheduler/daemon, transport/receiver, VPS deployment, lease activation,
+    account reads, local acceptance state, remote effects, tag, and Release are
+    unauthorized.
+  - Status: selected (2026-08-17); implementation evidence pending protected
+    PR and post-merge CI.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
