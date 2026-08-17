@@ -79,6 +79,7 @@ runner_bundle_install_is_fail_closed() {
     rg -q -- '--ephemeral-install-smoke <artifact-dir>' "$1" &&
     rg -q 'ephemeral install smoke requires root' "$1" &&
     rg -q 'another public-shadow install operation is active' "$1" &&
+    rg -q "trap 'rm -f \"\\\$lock_path\"' EXIT" "$1" &&
     rg -q '^  bundle_installed=0$' "$1" &&
     rg -q '^  credential_installed=0$' "$1" &&
     rg -q '^  unit_linked=0$' "$1" &&

@@ -465,6 +465,7 @@ ephemeral_install_smoke() {
   local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
   exec 9>"$lock_path"
   flock -n 9 || die "another public-shadow install operation is active"
+  trap 'rm -f "$lock_path"' EXIT
 
   local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
   local state_private="/var/lib/private/hivra-trading-public-shadow"
