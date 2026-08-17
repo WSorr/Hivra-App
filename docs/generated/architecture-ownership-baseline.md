@@ -428,7 +428,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/transport_health_policy_service.dart` line `43` (`TransportHealthPolicyService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ui_event_log_service.dart` line `10` (`UiEventLogService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ui_feedback_service.dart` line `8` (`UiFeedbackService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/user_visible_data_directory_service.dart` line `9` (`UserVisibleDataDirectoryService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/user_visible_data_directory_service.dart` line `10` (`UserVisibleDataDirectoryService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/wasm_plugin_capability_policy_service.dart` line `1` (`WasmPluginCapabilityPolicyService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/wasm_plugin_package_preflight_service.dart` line `31` (`WasmPluginPackagePreflightService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/wasm_plugin_registry_service.dart` line `10` (`WasmPluginRegistryService`) — rule `current_flutter_service_support`

@@ -112,6 +112,74 @@ PY
   fi
 }
 
+check_flutter_test_storage_isolation() {
+  if python3 - \
+    "$USER_VISIBLE_DATA_DIRECTORY" \
+    "$FLUTTER_TEST_CONFIG" \
+    "$FLUTTER_TEST_STORAGE_ISOLATION_TEST" <<'PY'
+import sys
+from pathlib import Path
+
+
+def validate(service, config, regression):
+    resolution = "_homeOverride ?? _testHomeOverride ?? Platform.environment['HOME']"
+    if resolution not in service:
+        raise ValueError("test sandbox is not in the canonical home-resolution path")
+    if "static String? _testHomeOverride;" not in service:
+        raise ValueError("canonical filesystem owner has no suite test override")
+    if "setTestHomeOverride(sandbox.path);" not in config:
+        raise ValueError("Flutter suite does not install a temporary home")
+    if "tearDownAll(cleanup);" not in config:
+        raise ValueError("Flutter suite does not retain its sandbox through test execution")
+    if config.index("setTestHomeOverride(sandbox.path);") > config.index("await testMain();"):
+        raise ValueError("Flutter suite installs its sandbox after test registration")
+    if config.index("tearDownAll(cleanup);") > config.index("await testMain();"):
+        raise ValueError("Flutter suite schedules cleanup after test registration")
+    if "setTestHomeOverride(null);" not in config:
+        raise ValueError("Flutter suite does not release its process override")
+    if "sandbox.delete(recursive: true)" not in config:
+        raise ValueError("Flutter suite does not delete its own sandbox")
+    if "finally" in config:
+        raise ValueError("Flutter suite may reset its sandbox before registered tests run")
+    required_regression = (
+        "const fileStore = CapsuleFileStore();",
+        "const UiEventLogService().log(",
+        "expect(await realState.exists(), isFalse);",
+        "startsWith(Directory(sandbox!).absolute.path)",
+    )
+    missing = [item for item in required_regression if item not in regression]
+    if missing:
+        raise ValueError(f"Flutter storage isolation regression is incomplete: {missing}")
+
+
+service = Path(sys.argv[1]).read_text(encoding="utf-8")
+config = Path(sys.argv[2]).read_text(encoding="utf-8")
+regression = Path(sys.argv[3]).read_text(encoding="utf-8")
+try:
+    validate(service, config, regression)
+    mutations = (
+        (service.replace("_homeOverride ?? _testHomeOverride ?? Platform.environment['HOME']", "_homeOverride ?? Platform.environment['HOME']"), config, regression),
+        (service, config.replace("  UserVisibleDataDirectoryService.setTestHomeOverride(sandbox.path);\n", ""), regression),
+        (service, config.replace("  tearDownAll(cleanup);\n", "  await cleanup();\n"), regression),
+        (service, config, regression.replace("      expect(await realState.exists(), isFalse);\n", "")),
+    )
+    for mutated_service, mutated_config, mutated_regression in mutations:
+        try:
+            validate(mutated_service, mutated_config, mutated_regression)
+        except ValueError:
+            continue
+        raise ValueError("negative Flutter test-storage mutation was accepted")
+except ValueError as error:
+    print(error, file=sys.stderr)
+    raise SystemExit(1)
+PY
+  then
+    pass "Flutter tests isolate default filesystem owners from real runtime data"
+  else
+    fail "Flutter tests isolate default filesystem owners from real runtime data"
+  fi
+}
+
 check_crypto_fixed_size_compatibility_boundary() {
   local pattern='(?i)(pubkey|public_key|private_key|secret_key|signer|sign(?:ature)?|seed).{0,100}\[u8;\s*(32|64)\]|\[u8;\s*(32|64)\].{0,100}(pubkey|public_key|private_key|secret_key|signer|sign(?:ature)?|seed)|pubkey32|signature64|cardSignature64'
   local matches
@@ -187,6 +255,9 @@ CHECKLIST="$ROOT/docs/checklists/architecture-review.md"
 ROADMAP="$ROOT/docs/roadmap.md"
 DEVELOPMENT_CONTROL="$ROOT/docs/development-control.md"
 EXEC_DISCIPLINE="$ROOT/docs/architecture-execution-discipline.md"
+USER_VISIBLE_DATA_DIRECTORY="$ROOT/flutter/lib/services/user_visible_data_directory_service.dart"
+FLUTTER_TEST_CONFIG="$ROOT/flutter/test/flutter_test_config.dart"
+FLUTTER_TEST_STORAGE_ISOLATION_TEST="$ROOT/flutter/test/flutter_test_storage_isolation_test.dart"
 V2_BLUEPRINT="$ROOT/docs/architecture-v2-blueprint.md"
 PLATFORM_TOOLCHAIN="$ROOT/docs/platform-toolchain-evolution.md"
 CONTINUOUS_LEDGER_PROTOCOL="$ROOT/docs/architecture/continuous-ledger-protocol-v5.md"
@@ -315,6 +386,7 @@ require_present "$SPEC" 'PFR is not a second runtime layer, a new Core entity, o
 require_present "$CHECKLIST" 'preserves the Person-First Runtime \(PFR\)' \
   "architecture review protects person-first ownership"
 check_architecture_economy_keeper
+check_flutter_test_storage_isolation
 if python3 "$ROOT/tools/architecture/validate_starter_inventory_contract.py"; then
   pass "V2 Starter inventory contract remains bound to Pass A and the normative blueprint"
 else

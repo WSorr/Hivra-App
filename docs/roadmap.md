@@ -3475,6 +3475,27 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     detached-checkout gates, and focused Chat delivery `33/33` passed. No
     deployment, tag, Release, or following product pass is selected.
 
+- `1.x Flutter Test Runtime Isolation Remediation`
+  - Finding: Flutter tests constructing production-default filesystem owners
+    could resolve the real user home and write fixture Capsule state or logs
+    into an active packaged Hivra runtime.
+  - Invariant: every Flutter test suite uses one retained temporary home before
+    any default filesystem owner resolves a path. Explicit per-test overrides
+    remain authoritative, while the real runtime and user-visible roots remain
+    untouched.
+  - Sole owner: `UserVisibleDataDirectoryService` continues to resolve runtime
+    and user-visible roots. The suite bootstrap supplies test context without
+    creating a production storage path or second owner.
+  - Removed or sealed: default test access to real Capsule files, logs,
+    migration inputs, and cleanup targets. Production path resolution and all
+    runtime DTO, service, Core, Ledger, plugin, and effect routes are unchanged.
+  - Exit evidence: default `CapsuleFileStore` and `UiEventLogService` writes
+    remain beneath the suite sandbox, a unique real Capsule path remains
+    absent, bootstrap/owner/lifetime/probe mutations fail the architecture
+    gate, and full Flutter/Rust/repository and clean-checkout gates pass.
+  - Status: selected (2026-08-17). No product pass, V2 pass, deployment, tag,
+    or Release is selected automatically.
+
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
     preserving the existing durable native handoff and Flutter Chat projection

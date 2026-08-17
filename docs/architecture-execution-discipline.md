@@ -99,6 +99,17 @@ Rules:
 - projection and policy functions remain pure for identical inputs
 - side effects must not run from widget build/render paths
 
+### Test Filesystem Isolation
+
+Flutter tests that use production-default filesystem owners MUST install one
+suite-scoped temporary home before test registration and retain it until all
+registered tests finish. `UserVisibleDataDirectoryService` remains the sole
+home-resolution owner; explicit per-test overrides take precedence over the
+suite sandbox. Tests MUST NOT read or write the real Hivra runtime or
+user-visible roots, and cleanup may delete only the sandbox created by that
+suite. The architecture gate and an executable negative probe MUST fail if the
+bootstrap, owner binding, lifetime, or real-root absence proof is removed.
+
 ## 4. Async Resolution Discipline
 
 For each async flow:
