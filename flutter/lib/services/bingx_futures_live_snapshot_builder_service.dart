@@ -1,6 +1,6 @@
 import '../models/bingx_futures_market_snapshot_models.dart';
 import '../models/bingx_futures_exchange_models.dart';
-import 'bingx_futures_exchange_service.dart';
+import 'bingx_futures_public_market_data_port.dart';
 
 DateTime _systemClockUtc() => DateTime.now().toUtc();
 
@@ -28,9 +28,8 @@ class BingxFuturesLiveSnapshotBuilderService {
   }) : _clockUtc = clockUtc;
 
   Future<BingxFuturesLiveSnapshotBuildResult> fetchAndBuild({
-    required BingxFuturesExchangeService exchange,
+    required BingxFuturesPublicMarketDataPort exchange,
     required String symbol,
-    BingxFuturesApiCredentials? credentials,
   }) async {
     final normalizedSymbol = symbol.trim().toUpperCase();
     if (normalizedSymbol.isEmpty) {

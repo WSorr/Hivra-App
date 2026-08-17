@@ -376,6 +376,47 @@ consensus wrapper and delegates to that same market evaluator only after its
 local guard passes. The public replay harness calls `evaluateMarket()` directly;
 no synthetic consensus value or disabled consensus flag remains on that path.
 
+### 11.9 Pass C Live Public Shadow Probe
+
+Pass C adds one bounded, one-shot headless probe. It is an observation tool,
+not a daemon, scheduler, acceptance journal, lease, deployment unit, or trading
+runtime. `BingxFuturesDeterministicReplayHarnessService` remains the shadow
+evidence owner and produces the existing canonical wire. The probe adds no
+second evidence contract or decision implementation.
+
+The live market pipeline depends on `BingxFuturesPublicMarketDataPort`, whose
+surface contains only the public quote, candle, depth, trade, funding, and open
+interest reads required by the existing snapshot builder. Credentials are not
+accepted by the live snapshot or strategy command. The concrete BingX adapter
+may implement both public and authenticated provider operations for the local
+application, but the shadow composition receives only the public port.
+
+One invocation:
+
+1. fetches one bounded public snapshot for one explicit symbol;
+2. runs the existing public market replay and policy;
+3. binds build, plugin, package, ABI, policy, snapshot, feature, decision,
+   validity, runner key, sequence `1`, and the empty predecessor hash;
+4. signs the canonical commitment with a runner-only Ed25519 compatibility
+   key supplied through process environment;
+5. writes one new canonical evidence file and refuses to overwrite it.
+
+The probe cannot accept a Capsule, account, exchange credential, mandate,
+approval, consensus fact, order state, or effect request. Public input failure,
+invalid metadata, invalid runner seed, invalid validity, or an existing output
+path fails closed without evidence. Pass C has no retained sequence state, so
+it proves only a single live observation. Restart continuity, scheduling,
+deployment, lease activation, account reads, and remote execution remain
+separate unauthorized decisions.
+
+The Trading parity gate structurally rejects credential/full-adapter authority
+in the public pipeline and local authority/effect owners in the probe. Its
+negative mutation self-test proves those checks fail closed. Pass C exit
+evidence requires focused regressions, full repository gates, one live public
+probe, independent signature verification, protected PR gates, and green
+post-merge CI. It seals direct reuse of the app-wide Trading module as a remote
+host and still seals Capsule-on-VPS, trading-key-on-VPS, and remote effects.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

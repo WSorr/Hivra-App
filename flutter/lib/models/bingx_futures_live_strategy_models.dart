@@ -1,9 +1,7 @@
-import 'bingx_futures_exchange_models.dart';
 import 'bingx_futures_live_decision_models.dart';
 
 class BingxFuturesLiveStrategyCommand {
   final String symbol;
-  final BingxFuturesApiCredentials? credentials;
   final bool isConsensusSignable;
   final List<String> blockingFactCodes;
   final int recentMicroBars;
@@ -13,7 +11,6 @@ class BingxFuturesLiveStrategyCommand {
 
   const BingxFuturesLiveStrategyCommand({
     required this.symbol,
-    required this.credentials,
     required this.isConsensusSignable,
     required this.blockingFactCodes,
     required this.recentMicroBars,

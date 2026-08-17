@@ -4,9 +4,12 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/models/bingx_futures_tvh_rule_models.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
+import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.dart';
+import 'package:hivra_app/services/bingx_futures_public_market_data_port.dart';
 
 void main() {
   group('BingxFuturesDeterministicReplayHarnessService', () {
@@ -141,6 +144,129 @@ void main() {
         ),
         BingxFuturesShadowEvidenceVerdict.accepted,
       );
+    });
+
+    test('produces signed one-shot evidence from public live input', () async {
+      final fixture = _fixtureLong();
+      final marketData = _PublicMarketDataStub();
+      var loadedSymbol = '';
+      final liveService = BingxFuturesDeterministicReplayHarnessService(
+        policy: const BingxTvhPolicy(
+          minAbsTradeDelta: 0.5,
+          minAbsSessionNetDelta: 1.0,
+          maxAbsFundingRate: 0.01,
+          requireWhaleActivation: true,
+          requireConsensusSignable: true,
+        ),
+        loadLiveSnapshot: ({required exchange, required symbol}) async {
+          expect(exchange, same(marketData));
+          loadedSymbol = symbol;
+          return BingxFuturesLiveSnapshotBuildResult(
+            isSuccess: true,
+            errorCode: '0',
+            errorMessage: 'ok',
+            snapshotInput: fixture.snapshotInput,
+            symbol: symbol,
+          );
+        },
+      );
+      final signingKey = await _runnerSigningKey();
+      final publicKey = await signingKey.extractPublicKey();
+
+      final evidence = await liveService.runLivePublicShadow(
+        marketData: marketData,
+        symbol: ' btc-usdt ',
+        signingKey: signingKey,
+        runnerBuildId: 'runner-build-live',
+        pluginId: 'hivra.bingx-futures-trading',
+        pluginVersion: '0.2.7-plugins',
+        packageDigestHex: _packageDigest,
+        hostAbi: 'dart-headless-v1',
+        observedAtUtc: DateTime.fromMillisecondsSinceEpoch(
+          1770000000000,
+          isUtc: true,
+        ),
+      );
+
+      expect(loadedSymbol, 'BTC-USDT');
+      expect(evidence.sequence, 1);
+      expect(evidence.previousEvidenceHashHex, _emptyEvidenceHash);
+      expect(evidence.runnerKeyId, _runnerKeyId(publicKey));
+      expect(evidence.validUntilEpochMs - evidence.observedAtEpochMs, 60000);
+      expect(
+        await Ed25519().verify(
+          evidence.signingPayload,
+          signature: Signature(
+            _decodeHex(evidence.signatureHex),
+            publicKey: publicKey,
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('fails closed when public live input is unavailable', () async {
+      var loadCount = 0;
+      final liveService = BingxFuturesDeterministicReplayHarnessService(
+        loadLiveSnapshot: ({required exchange, required symbol}) async {
+          loadCount++;
+          return BingxFuturesLiveSnapshotBuildResult(
+            isSuccess: false,
+            errorCode: 'public_timeout',
+            errorMessage: 'timeout',
+            snapshotInput: null,
+            symbol: symbol,
+          );
+        },
+      );
+
+      await expectLater(
+        liveService.runLivePublicShadow(
+          marketData: _PublicMarketDataStub(),
+          symbol: 'BTC-USDT',
+          signingKey: await _runnerSigningKey(),
+          runnerBuildId: 'runner-build-live',
+          pluginId: 'hivra.bingx-futures-trading',
+          pluginVersion: '0.2.7-plugins',
+          packageDigestHex: _packageDigest,
+          hostAbi: 'dart-headless-v1',
+          observedAtUtc: DateTime.fromMillisecondsSinceEpoch(
+            1770000000000,
+            isUtc: true,
+          ),
+        ),
+        throwsStateError,
+      );
+      expect(loadCount, 1);
+    });
+
+    test('rejects malformed live metadata before public observation', () async {
+      var loadCount = 0;
+      final liveService = BingxFuturesDeterministicReplayHarnessService(
+        loadLiveSnapshot: ({required exchange, required symbol}) async {
+          loadCount++;
+          throw StateError('must not load');
+        },
+      );
+
+      await expectLater(
+        liveService.runLivePublicShadow(
+          marketData: _PublicMarketDataStub(),
+          symbol: 'BTC-USDT',
+          signingKey: await _runnerSigningKey(),
+          runnerBuildId: 'runner build with spaces',
+          pluginId: 'hivra.bingx-futures-trading',
+          pluginVersion: '0.2.7-plugins',
+          packageDigestHex: 'not-a-digest',
+          hostAbi: 'dart-headless-v1',
+          observedAtUtc: DateTime.fromMillisecondsSinceEpoch(
+            1770000000000,
+            isUtc: true,
+          ),
+        ),
+        throwsFormatException,
+      );
+      expect(loadCount, 0);
     });
 
     test('keeps local consensus blocking out of public shadow evidence', () {
@@ -438,6 +564,50 @@ void main() {
   });
 }
 
+class _PublicMarketDataStub implements BingxFuturesPublicMarketDataPort {
+  @override
+  Future<BingxFuturesPublicOrderBookResult> getPublicDepth({
+    required String symbol,
+    int limit = 20,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<BingxFuturesPublicKlinesResult> getPublicKlines({
+    required String symbol,
+    required String interval,
+    int limit = 120,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<BingxFuturesPublicOpenInterestResult> getPublicOpenInterest({
+    required String symbol,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<BingxFuturesPublicOpenInterestHistoryResult>
+  getPublicOpenInterestHistory({
+    required String symbol,
+    String period = '5m',
+    int limit = 24,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<BingxFuturesPublicPremiumIndexResult> getPublicPremiumIndex({
+    required String symbol,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<BingxFuturesPublicPriceResult> getPublicPrice({
+    required String symbol,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<BingxFuturesPublicTradesResult> getPublicTrades({
+    required String symbol,
+    int limit = 100,
+  }) => throw UnimplementedError();
+}
+
 const _packageDigest =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _emptyEvidenceHash =
@@ -558,6 +728,11 @@ BingxFuturesShadowEvidence _copyEvidence(
 String _hex(List<int> bytes) {
   return bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
 }
+
+List<int> _decodeHex(String value) => <int>[
+  for (var offset = 0; offset < value.length; offset += 2)
+    int.parse(value.substring(offset, offset + 2), radix: 16),
+];
 
 BingxFuturesReplayFixture _fixtureLong() {
   return BingxFuturesReplayFixture(

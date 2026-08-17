@@ -357,7 +357,6 @@ class BingxFuturesTradingCycleUseCaseService {
     return _runLiveStrategy(
       BingxFuturesLiveStrategyCommand(
         symbol: symbol,
-        credentials: command.credentials,
         isConsensusSignable: true,
         blockingFactCodes: const <String>[],
         recentMicroBars: command.recentMicroBars,

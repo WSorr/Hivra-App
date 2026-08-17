@@ -6,12 +6,28 @@ import 'package:cryptography/cryptography.dart';
 import '../models/bingx_futures_market_snapshot_models.dart';
 import '../models/bingx_futures_tvh_rule_models.dart';
 import 'bingx_futures_feature_extractor_service.dart';
+import 'bingx_futures_live_snapshot_builder_service.dart';
 import 'bingx_futures_market_snapshot_service.dart';
+import 'bingx_futures_public_market_data_port.dart';
 import 'bingx_futures_tvh_rule_engine_service.dart';
 
 const _shadowEvidenceDomain = 'hivra:trading-shadow-evidence:v1\n';
 const _emptyShadowEvidenceHash =
     '0000000000000000000000000000000000000000000000000000000000000000';
+
+typedef BingxFuturesLiveShadowSnapshotLoader =
+    Future<BingxFuturesLiveSnapshotBuildResult> Function({
+      required BingxFuturesPublicMarketDataPort exchange,
+      required String symbol,
+    });
+
+Future<BingxFuturesLiveSnapshotBuildResult> _loadDefaultLiveShadowSnapshot({
+  required BingxFuturesPublicMarketDataPort exchange,
+  required String symbol,
+}) => const BingxFuturesLiveSnapshotBuilderService().fetchAndBuild(
+  exchange: exchange,
+  symbol: symbol,
+);
 
 enum BingxFuturesShadowEvidenceVerdict {
   accepted,
@@ -176,6 +192,7 @@ class BingxFuturesDeterministicReplayHarnessService {
   final BingxFuturesFeatureExtractorService _featureExtractor;
   final BingxFuturesTvhRuleEngineService _ruleEngine;
   final BingxTvhPolicy _policy;
+  final BingxFuturesLiveShadowSnapshotLoader _loadLiveSnapshot;
 
   const BingxFuturesDeterministicReplayHarnessService({
     BingxFuturesMarketSnapshotService snapshotService =
@@ -185,10 +202,12 @@ class BingxFuturesDeterministicReplayHarnessService {
     BingxFuturesTvhRuleEngineService ruleEngine =
         const BingxFuturesTvhRuleEngineService(),
     BingxTvhPolicy policy = const BingxTvhPolicy(),
+    BingxFuturesLiveShadowSnapshotLoader? loadLiveSnapshot,
   }) : _snapshotService = snapshotService,
        _featureExtractor = featureExtractor,
        _ruleEngine = ruleEngine,
-       _policy = policy;
+       _policy = policy,
+       _loadLiveSnapshot = loadLiveSnapshot ?? _loadDefaultLiveShadowSnapshot;
 
   BingxFuturesReplayRunResult runFixture(BingxFuturesReplayFixture fixture) {
     final snapshotDigest = _snapshotService.build(fixture.snapshotInput);
@@ -296,6 +315,63 @@ class BingxFuturesDeterministicReplayHarnessService {
       previousEvidenceHashHex: previousEvidenceHashHex,
       runnerKeyId: runnerKeyId,
     );
+  }
+
+  Future<BingxFuturesShadowEvidence> runLivePublicShadow({
+    required BingxFuturesPublicMarketDataPort marketData,
+    required String symbol,
+    required SimpleKeyPair signingKey,
+    required String runnerBuildId,
+    required String pluginId,
+    required String pluginVersion,
+    required String packageDigestHex,
+    required String hostAbi,
+    required DateTime observedAtUtc,
+    Duration validity = const Duration(seconds: 60),
+  }) async {
+    final normalizedSymbol = symbol.trim().toUpperCase();
+    if (normalizedSymbol.isEmpty ||
+        !_isCanonicalAscii(runnerBuildId) ||
+        !_isCanonicalAscii(pluginId) ||
+        !_isCanonicalAscii(pluginVersion) ||
+        !_isSha256(packageDigestHex) ||
+        !_isCanonicalAscii(hostAbi) ||
+        validity <= Duration.zero ||
+        validity > const Duration(seconds: 60)) {
+      throw const FormatException('invalid live shadow probe input');
+    }
+    final snapshot = await _loadLiveSnapshot(
+      exchange: marketData,
+      symbol: normalizedSymbol,
+    );
+    if (!snapshot.isSuccess || snapshot.snapshotInput == null) {
+      throw StateError('public snapshot unavailable: ${snapshot.errorCode}');
+    }
+    final publicKey = await signingKey.extractPublicKey();
+    final publicRun = runPublicMarket(
+      fixtureId: 'live:$normalizedSymbol',
+      snapshotInput: snapshot.snapshotInput!,
+      fundingRateDecimal: snapshot.snapshotInput!.funding.fundingRateDecimal,
+    );
+    final observedAt = observedAtUtc.toUtc();
+    final unsigned = buildShadowEvidence(
+      publicRun: publicRun,
+      runnerBuildId: runnerBuildId,
+      pluginId: pluginId,
+      pluginVersion: pluginVersion,
+      packageDigestHex: packageDigestHex,
+      hostAbi: hostAbi,
+      observedAtEpochMs: observedAt.millisecondsSinceEpoch,
+      validUntilEpochMs: observedAt.add(validity).millisecondsSinceEpoch,
+      sequence: 1,
+      previousEvidenceHashHex: _emptyShadowEvidenceHash,
+      runnerKeyId: sha256.convert(publicKey.bytes).toString(),
+    );
+    final signature = await Ed25519().sign(
+      unsigned.signingPayload,
+      keyPair: signingKey,
+    );
+    return unsigned.withSignature(_encodeHex(signature.bytes));
   }
 
   Future<BingxFuturesShadowEvidenceVerdict> verifyShadowEvidence({
@@ -449,6 +525,9 @@ class BingxFuturesDeterministicReplayHarnessService {
 
   bool _isSha256(String value) => RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
 
+  bool _isCanonicalAscii(String value) =>
+      RegExp(r'^[A-Za-z0-9._:-]{1,128}$').hasMatch(value);
+
   String _requiredString(Map<String, dynamic> map, String key) {
     final value = map[key];
     if (value is! String || value.isEmpty) {
@@ -459,7 +538,7 @@ class BingxFuturesDeterministicReplayHarnessService {
 
   String _requiredAscii(Map<String, dynamic> map, String key) {
     final value = _requiredString(map, key);
-    if (!RegExp(r'^[A-Za-z0-9._:-]{1,128}$').hasMatch(value)) {
+    if (!_isCanonicalAscii(value)) {
       throw FormatException('$key must use canonical ASCII');
     }
     return value;
@@ -490,4 +569,7 @@ class BingxFuturesDeterministicReplayHarnessService {
         int.parse(value.substring(offset, offset + 2), radix: 16),
     ];
   }
+
+  String _encodeHex(List<int> bytes) =>
+      bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 }

@@ -4,11 +4,12 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import '../models/bingx_futures_exchange_models.dart';
+import 'bingx_futures_public_market_data_port.dart';
 
 typedef BingxHttpRequestSender =
     Future<BingxHttpResponse> Function(BingxHttpRequest request);
 
-class BingxFuturesExchangeService {
+class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
   static const Duration _httpTimeout = Duration(seconds: 12);
   static const String _defaultBaseUrl = 'https://open-api.bingx.com';
   static const String _publicPricePath = '/openApi/swap/v2/quote/price';
@@ -386,6 +387,7 @@ class BingxFuturesExchangeService {
     );
   }
 
+  @override
   Future<BingxFuturesPublicPriceResult> getPublicPrice({
     required String symbol,
   }) async {
@@ -440,6 +442,7 @@ class BingxFuturesExchangeService {
     );
   }
 
+  @override
   Future<BingxFuturesPublicKlinesResult> getPublicKlines({
     required String symbol,
     required String interval,
@@ -519,6 +522,7 @@ class BingxFuturesExchangeService {
     );
   }
 
+  @override
   Future<BingxFuturesPublicOrderBookResult> getPublicDepth({
     required String symbol,
     int limit = 20,
@@ -567,6 +571,7 @@ class BingxFuturesExchangeService {
     );
   }
 
+  @override
   Future<BingxFuturesPublicTradesResult> getPublicTrades({
     required String symbol,
     int limit = 100,
@@ -647,6 +652,7 @@ class BingxFuturesExchangeService {
     );
   }
 
+  @override
   Future<BingxFuturesPublicPremiumIndexResult> getPublicPremiumIndex({
     required String symbol,
   }) async {
@@ -720,6 +726,7 @@ class BingxFuturesExchangeService {
     );
   }
 
+  @override
   Future<BingxFuturesPublicOpenInterestResult> getPublicOpenInterest({
     required String symbol,
   }) async {
@@ -775,6 +782,7 @@ class BingxFuturesExchangeService {
     );
   }
 
+  @override
   Future<BingxFuturesPublicOpenInterestHistoryResult>
   getPublicOpenInterestHistory({
     required String symbol,

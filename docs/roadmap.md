@@ -3117,6 +3117,28 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     No next pass, tag, Release, scheduler, or Remote Runner/VPS deployment is
     selected by this evidence checkpoint.
 
+- `1.x Trading Remote Runner Pass C — Live Public Shadow Probe`
+  - Lane: bounded 1.x Trading productization; no release or deployment work.
+  - Invariant: a headless process can reproduce one live public market decision
+    and emit the existing authenticated shadow wire without receiving Capsule,
+    account, credential, mandate, order, consensus, or effect authority.
+  - Sole owner: `BingxFuturesDeterministicReplayHarnessService` retains shadow
+    evidence semantics. `BingxFuturesPublicMarketDataPort` is only the narrowed
+    provider contract; the CLI is a replaceable one-shot composition boundary.
+  - Removed or sealed: credentials are removed from live snapshot and strategy
+    commands, the public pipeline no longer depends on the concrete
+    effect-capable exchange adapter, and direct reuse of the app-wide Trading
+    module as a remote host is forbidden.
+  - Exit evidence: canonical metadata and validity rejection, public-input
+    failure, signature verification, no-overwrite output, authority-boundary
+    mutation tests, full Flutter/Rust/repository gates, one live BingX public
+    observation, protected PR gates, and green post-merge CI.
+  - Remaining boundary: retained sequence state, restart continuity, daemon,
+    scheduler, VPS deployment, lease activation, account reads, remote effects,
+    tag, and Release remain unauthorized and unimplemented.
+  - Status: implementation and local evidence complete (2026-08-17); protected
+    PR and post-merge gates pending.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
