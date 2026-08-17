@@ -2,8 +2,16 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: bounded `1.x Trading Remote Runner Pass D`
-crash-atomic append remediation is complete on `main` at `ede2eb3` through
+Current development focus: `1.x Chat Durable Handoff Capacity Remediation` is
+active. The existing native Chat handoff remains the sole transport-to-
+capability retention owner, and `CapsuleDeliveryInboxStore` remains the sole
+durable Flutter timeline owner. Ordinary messages must acknowledge their exact
+adapter event only after durable timeline merge; handoff records and replay
+tombstones must remain bounded FIFO windows that overwrite oldest retained
+state instead of permanently exhausting capacity. No second inbox, transport,
+DTO, Core/Ledger fact, or notification path is authorized. The preceding
+bounded `1.x Trading Remote Runner Pass D` crash-atomic append remediation is
+complete on `main` at `ede2eb3` through
 protected PR `#101`; required PR run `32021137109` and post-merge run
 `32021215679` passed. The existing deterministic replay harness remains the
 shadow-evidence semantics and authentication owner. The public-only probe now
@@ -244,7 +252,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No next pass is selected. Pass D and its crash-atomic append remediation are complete; daemon, deployment, leases, account access, and remote effects remain blocked. | `roadmap.md` |
+| What is the next 1.x step? | Close the selected Chat durable handoff capacity remediation. Normal messages ACK only after durable projection, and bounded records/tombstones overwrite oldest retained state without creating another inbox. | `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not start from the chronological history in `roadmap.md`. Start from this
@@ -254,7 +262,7 @@ table, then open only the linked authority for the selected work item.
 
 | Line | State | Current unit | Completion evidence | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Pass D and crash-atomic append remediation complete; no next pass selected | The existing replay harness remains evidence owner; the existing runner-only store commits a flushed pending write by atomic rename and may clean only strict uncommitted pending state. | PR `#101`, runs `32021137109`/`32021215679`, Flutter `910/910`, analyze, Rust workspace, full review gates, clean checkout, and `15/15` focused adverse tests passed. | Committed evidence deletion remains forbidden. Daemon scheduling, rotation, transport/ingestion, VPS deployment, leases, account reads, remote effects, tags, and Releases require separate explicit decisions. |
+| **1.x maintained runtime** | Chat durable handoff capacity remediation active | The existing native handoff owns bounded pre-projection retention; the existing Flutter delivery inbox owns durable timeline projection and only then permits ACK. | Focused normal-message ACK, projection-failure no-ACK, FIFO record eviction, replay dedupe, and tombstone-overwrite evidence is required before protected PR merge. | Trading truthful execution outcome and shadow identity initialization remain separate findings. No release, Remote Runner, or next pass is selected automatically. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |

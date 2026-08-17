@@ -874,6 +874,10 @@ require_present "$FFI_CHAT_API" 'Err\(error\) => \{' \
   "chat durable handoff exposes a fail-closed write-error branch"
 require_present "$FFI_CHAT_API" 'InboundRouteResult::Retry' \
   "chat durable handoff failure applies retry backpressure"
+require_present "$FFI_CHAT_API" 'snapshot\.tombstones\.drain\(\.\.overflow\)' \
+  "chat handoff overwrites oldest bounded replay tombstones"
+require_absent "$FFI_CHAT_API" 'tombstone capacity exhausted' \
+  "chat handoff cannot stop permanently at tombstone capacity"
 require_present "$FFI_ATTESTATION_API" 'return InboundRouteResult::Retry;' \
   "full attestation inbox applies retry backpressure"
 require_absent "$INV_ACTIONS" '_pendingRetryPumpByCapsule|_schedulePendingOutgoingRetryPump' \

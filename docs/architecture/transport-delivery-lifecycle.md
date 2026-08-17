@@ -187,11 +187,21 @@ For Capsule Chat, `consumed` requires an atomic encrypted handoff into the
 existing Capsule-scoped chat capability owner. A process-memory queue is not a
 terminal handoff. The handoff record retains the exact adapter event id and is
 read non-destructively; Flutter may filter and project it but cannot become a
-second inbox owner. Records are bounded, ordered deterministically, and old
-records leave replay tombstones before removal. Corrupt storage, wrong Capsule,
-wrong network, wrong transport endpoint, authentication failure, or write
-failure returns `retry` and cannot advance acknowledgement. Chat content and
-read/unread state remain operational capability data outside Core and Ledger.
+second inbox owner. Flutter acknowledges an ordinary Chat event only after the
+existing Capsule-scoped timeline commits it durably. Projection failure leaves
+the handoff record available for retry.
+
+Handoff records and replay tombstones are bounded FIFO windows. A new record
+may replace the oldest unprojected record only after atomically retaining its
+event id as a tombstone. A new tombstone replaces the oldest tombstone instead
+of permanently stopping Chat at capacity. Replay older than that retained
+window may re-enter the handoff after process restart, but the stable message
+identity and existing durable timeline make the projection idempotent. This
+bounded capability policy does not weaken the separate fail-closed quarantine
+retention contract. Corrupt storage, wrong Capsule, wrong network, wrong
+transport endpoint, authentication failure, or write failure returns `retry`
+and cannot advance acknowledgement. Chat content and read/unread state remain
+operational capability data outside Core and Ledger.
 
 Quarantine recovery MUST re-enter the same canonical FFI ingress router with
 the original adapter event id and envelope. It cannot invoke a capability

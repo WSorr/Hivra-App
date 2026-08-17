@@ -600,6 +600,7 @@ class CapsuleChatDeliveryService {
           envelopeHashHex: envelope['envelope_hash_hex']!,
           timestampMs: timestampMs,
         );
+        if (item.eventId.isNotEmpty) terminalEventIds.add(item.eventId);
         continue;
       }
 

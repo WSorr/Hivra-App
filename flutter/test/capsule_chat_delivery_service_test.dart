@@ -408,6 +408,75 @@ void main() {
     });
   });
 
+  test('durably persisted chat message acknowledges its handoff event', () async {
+    const peerHex =
+        '1111111111111111111111111111111111111111111111111111111111111111';
+    const localRootHex =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    final tempHome = await Directory.systemTemp.createTemp('hivra-chat-');
+    addTearDown(() async {
+      if (await tempHome.exists()) await tempHome.delete(recursive: true);
+    });
+    final acknowledged = <String>[];
+    final service = CapsuleChatDeliveryService(
+      runtime: _FakeRuntime(
+        capsuleRootKey: _hexToBytes(localRootHex),
+        workerBootstrap: const <String, Object?>{
+          'activeCapsuleHex': localRootHex,
+        },
+      ),
+      manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+        const ManualConsensusCheck(
+          peerHex: peerHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      ]),
+      deliveryInboxStore: CapsuleDeliveryInboxStore(
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        ),
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 12)),
+      ),
+      receiveWorkerRunner:
+          (_) async => <String, Object?>{
+            'result': 1,
+            'json': jsonEncode(<Map<String, Object?>>[
+              <String, Object?>{
+                'event_id': 'chat-event-one',
+                'from_hex': peerHex,
+                'payload_json': jsonEncode(<String, Object?>{
+                  'message_text': 'durable handoff',
+                  'created_at_utc': '2026-08-17T12:00:00.000Z',
+                  'envelope_hash_hex':
+                      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                }),
+                'timestamp_ms': 1,
+              },
+            ]),
+            'lastError': null,
+          },
+      acknowledgeWorkerRunner: (args) async {
+        acknowledged.addAll(
+          (args['eventIds'] as List<Object?>).map((value) => value.toString()),
+        );
+        return <String, Object?>{'result': 0, 'lastError': null};
+      },
+    );
+
+    final result = await service.drainAndFilter();
+
+    expect(result.messages.single.messageText, 'durable handoff');
+    expect(acknowledged, <String>['chat-event-one']);
+  });
+
   test(
     'trade signals received by chat remain available to trading drone',
     () async {
