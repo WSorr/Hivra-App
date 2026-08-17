@@ -3,8 +3,8 @@
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: `1.x Chat Execution Control Durable Lifecycle
-Remediation` is active on branch
-`fix/chat-execution-control-durable-lifecycle`. The existing native Chat
+Remediation` is complete on `main` at `bb4b52a` through protected PR `#109`;
+required run `32032243278` and post-merge run `32032343388` passed. The existing native Chat
 handoff remains the sole transport ingress owner and the existing
 `CapsuleDeliveryInboxStore` remains the sole 1.x Flutter delivery-capability
 retention owner. An authenticated execution command or receipt may advance its
@@ -14,7 +14,9 @@ receipt and retries it after restart without re-evaluating the command. Receipt
 sender, target, peer, Capsule, command id, canonical hash, and stable record id
 remain bound and fail closed. No second inbox, execution route, provider
 effect, Core/Ledger fact, plugin ABI, scheduler, deployment, tag, or Release is
-authorized. The preceding `1.x Trading Shadow Identity Atomic Commit
+authorized. Flutter `920/920`, analyze, Rust workspace, full review gates,
+clean detached-checkout gates, and focused Chat delivery `33/33` passed. No
+following pass is selected automatically. The preceding `1.x Trading Shadow Identity Atomic Commit
 Remediation` is complete on `main` at `2af3de5` through protected PR `#107`;
 required run `32027671293` and post-merge run `32027767936` passed.
 `BingxFuturesShadowStreamStore` remains the sole runner-only identity and
