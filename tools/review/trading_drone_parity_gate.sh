@@ -79,9 +79,14 @@ runner_bundle_install_is_fail_closed() {
     rg -q -- '--ephemeral-install-smoke <artifact-dir>' "$1" &&
     rg -q 'ephemeral install smoke requires root' "$1" &&
     rg -q 'another public-shadow install operation is active' "$1" &&
+    rg -q '^  bundle_installed=0$' "$1" &&
+    rg -q '^  credential_installed=0$' "$1" &&
+    rg -q '^  unit_linked=0$' "$1" &&
+    rg -q '^  unit_loaded=0$' "$1" &&
     rg -q '\[ ! -e "\$target" \] && \[ ! -L "\$target" \]' "$1" &&
     rg -q 'ephemeral install target already exists' "$1" &&
     rg -q 'systemd-creds encrypt --name=runner-seed' "$1" &&
+    rg -q 'chmod 0755 "\$pending_bundle"' "$1" &&
     rg -q 'systemctl link "\$UNIT_INSTALL_PATH"' "$1" &&
     rg -q 'systemctl is-enabled "\$UNIT_NAME"' "$1" &&
     rg -q 'systemctl start "\$UNIT_NAME"' "$1" &&
@@ -411,7 +416,8 @@ BUNDLE_UNIT_MUTATION="$(mktemp)"
 BUNDLE_ENABLE_MUTATION="$(mktemp)"
 BUNDLE_COLLISION_MUTATION="$(mktemp)"
 BUNDLE_CLEANUP_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION"' EXIT
+BUNDLE_TRAP_SCOPE_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -450,6 +456,8 @@ sed 's/\[ ! -e "\$target" \] && \[ ! -L "\$target" \]/true/' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_COLLISION_MUTATION"
 sed '/systemctl clean --what=state "\$UNIT_NAME"/d' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_CLEANUP_MUTATION"
+sed 's/^  unit_loaded=0$/  local unit_loaded=0/' \
+  "$RUNNER_ARTIFACT" > "$BUNDLE_TRAP_SCOPE_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
@@ -466,7 +474,8 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_artifact_is_verifiable "$BUNDLE_UNIT_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_ENABLE_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_COLLISION_MUTATION" && \
-  ! runner_bundle_install_is_fail_closed "$BUNDLE_CLEANUP_MUTATION"; then
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_CLEANUP_MUTATION" && \
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_TRAP_SCOPE_MUTATION"; then
   pass "public-only, scheduler, bundle, install, supervisor, durable-stream, and execution-outcome mutations are rejected"
 else
   fail "public-only, scheduler, bundle, install, supervisor, durable-stream, or execution-outcome mutation self-test failed"

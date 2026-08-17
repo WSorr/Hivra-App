@@ -482,14 +482,14 @@ ephemeral_install_smoke() {
     die "ephemeral install unit is already loaded"
   fi
 
-  local opt_parent_created=0
-  local credential_parent_created=0
-  local bundle_installed=0
-  local credential_installed=0
-  local unit_linked=0
-  local unit_loaded=0
-  local pending_bundle=""
-  local pending_credential=""
+  opt_parent_created=0
+  credential_parent_created=0
+  bundle_installed=0
+  credential_installed=0
+  unit_linked=0
+  unit_loaded=0
+  pending_bundle=""
+  pending_credential=""
   cleanup_ephemeral_install() {
     set +e
     if [ "$unit_loaded" = 1 ]; then
@@ -524,6 +524,7 @@ ephemeral_install_smoke() {
   install -m 0755 "$directory/$BINARY_NAME" "$pending_bundle/$BINARY_NAME"
   install -m 0644 "$directory/$UNIT_NAME" "$pending_bundle/$UNIT_NAME"
   install -m 0600 "$directory/$MANIFEST_NAME" "$pending_bundle/$MANIFEST_NAME"
+  chmod 0755 "$pending_bundle"
   [ "$(sha256_file "$pending_bundle/$BINARY_NAME")" = \
     "$(sed -n 's/^binary_sha256=//p' "$directory/$MANIFEST_NAME")" ] ||
     die "staged binary hash mismatch"
