@@ -29,9 +29,6 @@ jobs:
         with:
           sdk: 3.11.0
 
-      - name: Review gates
-        run: bash tools/review/review_all.sh
-
       - name: Prove Linux x64 runner startup boundary
         run: |
           artifact_root="$(mktemp -d)"
@@ -39,6 +36,16 @@ jobs:
           trap 'rm -rf "$artifact_root"' EXIT
           bash tools/trading/public_shadow_runner_artifact.sh --build "$artifact" --target-os linux --target-arch x64
           bash tools/trading/public_shadow_runner_artifact.sh --runtime-smoke "$artifact"
+
+      - name: Review gates
+        run: bash tools/review/review_all.sh
+
+      - name: Verify review gates preserve clean checkout
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            exit 1
+          fi
 
       - name: Manual signoff checker self-test
         run: bash tools/release/check_manual_release_signoff.sh --self-test

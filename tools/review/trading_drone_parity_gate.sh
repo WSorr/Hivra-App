@@ -78,6 +78,12 @@ runner_package_is_pinned() {
 }
 
 runner_linux_smoke_is_fail_closed() {
+  local build_line
+  local review_line
+  local clean_line
+  build_line="$(rg -n 'name: Prove Linux x64 runner startup boundary' "$2" | cut -d: -f1)"
+  review_line="$(rg -n 'name: Review gates' "$2" | cut -d: -f1)"
+  clean_line="$(rg -n 'name: Verify review gates preserve clean checkout' "$2" | cut -d: -f1)"
   rg -q -- '--runtime-smoke <artifact-dir>' "$1" &&
     rg -q 'runtime smoke requires a Linux x64 artifact' "$1" &&
     rg -q 'runtime smoke requires a Linux x64 host' "$1" &&
@@ -87,6 +93,9 @@ runner_linux_smoke_is_fail_closed() {
     rg -q 'sdk: 3\.11\.0' "$2" &&
     rg -q 'public_shadow_runner_artifact\.sh --build "\$artifact" --target-os linux --target-arch x64' "$2" &&
     rg -q 'public_shadow_runner_artifact\.sh --runtime-smoke "\$artifact"' "$2" &&
+    rg -q 'git status --porcelain' "$2" &&
+    [ -n "$build_line" ] && [ -n "$review_line" ] && [ -n "$clean_line" ] &&
+    [ "$build_line" -lt "$review_line" ] && [ "$review_line" -lt "$clean_line" ] &&
     ! rg -q 'upload-artifact' "$2"
 }
 
@@ -229,9 +238,10 @@ CHECKPOINT_MUTATION="$(mktemp)"
 SCHEDULER_MUTATION="$(mktemp)"
 ARTIFACT_MUTATION="$(mktemp)"
 RUNTIME_SMOKE_MUTATION="$(mktemp)"
+CI_CLEAN_MUTATION="$(mktemp)"
 EXECUTION_MUTATION="$(mktemp)"
 CYCLE_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -248,6 +258,8 @@ sed 's/AUTHORITY_PROFILE="public-market-shadow-only"/AUTHORITY_PROFILE="full-exc
   "$RUNNER_ARTIFACT" > "$ARTIFACT_MUTATION"
 sed 's/env -u HIVRA_SHADOW_RUNNER_SEED_HEX/env/' \
   "$RUNNER_ARTIFACT" > "$RUNTIME_SMOKE_MUTATION"
+sed '/name: Verify review gates preserve clean checkout/,+6d' \
+  "$CI_REPOSITORY_GATES" > "$CI_CLEAN_MUTATION"
 sed 's/final executionSucceeded = queued\.execution\.isSuccess;/final executionSucceeded = true;/' \
   "$EXECUTION_USE_CASE" > "$EXECUTION_MUTATION"
 sed 's/execution\.queuedExecution?\.execution\.isSuccess == true/true/' \
@@ -257,6 +269,7 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
   ! runner_artifact_is_verifiable "$ARTIFACT_MUTATION" && \
   ! runner_linux_smoke_is_fail_closed "$RUNTIME_SMOKE_MUTATION" "$CI_REPOSITORY_GATES" && \
+  ! runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_CLEAN_MUTATION" && \
   ! shadow_stream_is_durable "$STREAM_MUTATION" && \
   ! shadow_stream_is_durable "$CHECKPOINT_MUTATION" && \
   ! execution_outcome_is_truthful "$EXECUTION_MUTATION" "$CYCLE_MUTATION"; then
