@@ -177,8 +177,9 @@ all point to the same behavior.
 
 ## 11. Remote Runner Shadow Boundary
 
-Status: Pass C complete; Pass D durable shadow-stream implementation selected;
-daemon, deployment, leases, account access, and remote effects are not authorized
+Status: Pass D durable shadow-stream implementation complete; no following
+remote-runtime pass is selected, and daemon, deployment, leases, account
+access, and remote effects are not authorized
 
 ### 11.1 Purpose And Sole Owner
 
