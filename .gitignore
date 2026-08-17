@@ -25,6 +25,8 @@ Cargo.lock
 
 # Local tooling
 /.tooling/
+__pycache__/
+*.py[cod]
 
 # Local release artifacts
 /dist/
