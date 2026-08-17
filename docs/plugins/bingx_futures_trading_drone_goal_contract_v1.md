@@ -618,6 +618,32 @@ Target, source, lock, byte, shape, and authority negative tests, Flutter
 packaging, protected PR, and post-merge CI passed. No runtime owner or path was
 added.
 
+### 11.16 Pass I: Linux Runtime Startup Evidence
+
+Pass I executes the exact verified Linux x64 artifact inside the existing
+required Ubuntu repository-gate job. The existing artifact script remains the
+sole packaging and host-compatibility evidence owner, and the existing probe
+remains the sole executable entrypoint. No runner, deployment, or process
+supervisor owner is added.
+
+Runtime startup evidence is deliberately authority-free and network-free. The
+smoke removes `HIVRA_SHADOW_RUNNER_SEED_HEX` from the child environment, starts
+the verified ELF on a matching Linux x64 host, and accepts only the probe's
+exact application-level missing-authority rejection. A loader failure,
+unexpected standard output, success exit, different error, target mismatch, or
+inherited runner seed fails the gate. Reaching the exact rejection proves that
+the Linux binary entered the canonical probe before any stream path or public
+provider call could be selected.
+
+The CI job builds from its clean checkout with the exact Dart SDK and pinned
+dependency lock, verifies the manifest and bytes, executes the smoke, then
+deletes the ephemeral output. It does not upload or publish the artifact. This
+pass does not prove live provider compatibility or VPS compatibility, and it
+does not transfer, install, supervise, schedule, or configure the process. VPS,
+SSH, site and Amnezia configuration, credentials, account reads, external
+anchoring, Capsule state, leases, remote effects, tags, and Releases remain
+sealed.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

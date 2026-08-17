@@ -22,11 +22,45 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --build <absolute-output-dir>
     [--target-os linux --target-arch x64]
   tools/trading/public_shadow_runner_artifact.sh --verify <artifact-dir>
+  tools/trading/public_shadow_runner_artifact.sh --runtime-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --self-test
 
 The build mode requires a completely clean worktree and the pinned Dart SDK.
 It produces one host-native executable and one exact provenance manifest.
 EOF
+}
+
+runtime_smoke_artifact() {
+  local directory="$1"
+  local binary="$directory/$BINARY_NAME"
+  local manifest="$directory/$MANIFEST_NAME"
+  verify_artifact "$directory" >/dev/null
+  [ "$(sed -n 's/^target_os=//p' "$manifest")" = "linux" ] &&
+    [ "$(sed -n 's/^target_arch=//p' "$manifest")" = "x64" ] ||
+    die "runtime smoke requires a Linux x64 artifact"
+  [ "$(host_os)" = "linux" ] && [ "$(host_arch)" = "x64" ] ||
+    die "runtime smoke requires a Linux x64 host"
+
+  local smoke_root
+  smoke_root="$(mktemp -d)"
+  local stdout_file="$smoke_root/stdout"
+  local stderr_file="$smoke_root/stderr"
+  if env -u HIVRA_SHADOW_RUNNER_SEED_HEX \
+    "$binary" >"$stdout_file" 2>"$stderr_file"; then
+    rm -rf "$smoke_root"
+    die "runtime smoke accepted missing runner authority"
+  fi
+  [ ! -s "$stdout_file" ] || {
+    rm -rf "$smoke_root"
+    die "runtime smoke produced unexpected standard output"
+  }
+  [ "$(cat "$stderr_file")" = \
+    "trading shadow probe failed: FormatException: HIVRA_SHADOW_RUNNER_SEED_HEX must be 32-byte lowercase hex" ] || {
+    rm -rf "$smoke_root"
+    die "runtime smoke did not reach the fail-closed probe boundary"
+  }
+  rm -rf "$smoke_root"
+  echo "PASS trading-runner-artifact: Linux x64 runtime starts and rejects missing authority"
 }
 
 die() {
@@ -317,6 +351,10 @@ self_test() {
   write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   verify_artifact "$artifact" >/dev/null
 
+  if (runtime_smoke_artifact "$artifact") >/dev/null 2>&1; then
+    die "self-test accepted a non-runner executable for runtime smoke"
+  fi
+
   sed -i.bak 's/^binary_sha256=./binary_sha256=0/' "$artifact/$MANIFEST_NAME"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
     die "self-test accepted a changed binary hash"
@@ -371,7 +409,7 @@ self_test() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify)
+    --build|--verify|--runtime-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -408,6 +446,11 @@ case "$MODE" in
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
       die "verify reads the target only from the manifest"
     verify_artifact "$ARTIFACT_DIR"
+    ;;
+  runtime-smoke)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+      die "runtime smoke reads the target only from the manifest"
+    runtime_smoke_artifact "$ARTIFACT_DIR"
     ;;
   self-test)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||

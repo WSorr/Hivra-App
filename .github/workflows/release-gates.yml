@@ -24,8 +24,28 @@ jobs:
           bash tools/toolchain/verify_environment.sh --self-test
           bash tools/toolchain/verify_environment.sh --static
 
+      - name: Install pinned Dart SDK
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: 3.11.0
+
+      - name: Prove Linux x64 runner startup boundary
+        run: |
+          artifact_root="$(mktemp -d)"
+          artifact="$artifact_root/linux-x64"
+          trap 'rm -rf "$artifact_root"' EXIT
+          bash tools/trading/public_shadow_runner_artifact.sh --build "$artifact" --target-os linux --target-arch x64
+          bash tools/trading/public_shadow_runner_artifact.sh --runtime-smoke "$artifact"
+
       - name: Review gates
         run: bash tools/review/review_all.sh
+
+      - name: Verify review gates preserve clean checkout
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            exit 1
+          fi
 
       - name: Manual signoff checker self-test
         run: bash tools/release/check_manual_release_signoff.sh --self-test
