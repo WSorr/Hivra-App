@@ -178,9 +178,11 @@ all point to the same behavior.
 ## 11. Remote Runner Shadow Boundary
 
 Status: Pass D durable shadow-stream implementation and crash-atomic append
-remediation are complete. Pass E authenticated bounded compaction is selected;
-daemon, deployment, external anchoring, leases, account access, and remote
-effects remain unauthorized.
+remediation are complete. Pass E authenticated bounded compaction is complete
+on `main` at `8c5c644` through protected PR `#113`; required run `32042296142`
+and post-merge run `32042345162` passed. No following pass is selected; daemon,
+deployment, external anchoring, leases, account access, and remote effects
+remain unauthorized.
 
 ### 11.1 Purpose And Sole Owner
 
@@ -503,6 +505,12 @@ the host directory was not rolled back or deleted; rollback-resistant external
 anchoring remains mandatory before any remotely authorized account or exchange
 effect. Pass E therefore unlocks evaluation of a public-only bounded daemon,
 not VPS deployment or trading authority.
+
+Implementation evidence: focused store `27/27`, combined shadow/replay
+`39/39`, Flutter `927/927`, analyze, Rust workspace, full review gates, clean
+detached-checkout, and the checkpoint-before-cleanup negative mutation passed.
+No new DTO, service, owner, journal, credential, scheduler, deployment, Capsule
+state, account read, or effect route was added.
 
 ## 12. Local Bounded Mandate Boundary
 
