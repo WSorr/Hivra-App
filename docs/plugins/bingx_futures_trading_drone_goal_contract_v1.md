@@ -680,6 +680,45 @@ isolated resource-bounded supervisor contract; it does not authorize that
 contract, durable runner identity, deployment, credentials, account reads,
 external anchoring, leases, or effects.
 
+### 11.18 Pass K: Ephemeral VPS Resource Soak Evidence
+
+Pass K characterizes the existing public-only runner under an enforced host
+resource ceiling without installing a service or adding another runtime owner.
+The exact manifest-verified Linux x64 artifact runs 60 strictly serial public
+observations through the existing bounded scheduler and shadow store. One
+transient cgroup supplies `MemoryMax=128 MiB`, zero swap, `TasksMax=16`, low CPU
+scheduling weight, a finite runtime, and process cleanup. It is evidence
+containment only, not a supervisor or deployment contract.
+
+The soak fails closed on a non-zero runner result, stderr, missing or duplicate
+cycle, sequence discontinuity, cgroup limit breach, website regression, VPN
+container replacement or restart, residual unit, residual process, or residual
+temporary path. It accepts no BingX API key, Capsule material, account state,
+mandate, approval, order, listener, or effect request. The runner-only signing
+seed is generated inside the temporary host path, exists only in the child
+environment, and is removed with the process and directory.
+
+Evidence from clean source `f98ce25`: the artifact SHA-256 remained
+`8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`;
+60 `BTC-USDT` observations completed in 3,740 seconds; all 60 signed evidence
+entries committed in order; the final evidence hash was
+`68915ba57a35e92d50003492030e48ef5c27394d2842b0442b0a783725547945`;
+and stderr remained empty. Peak sampled cgroup memory was 66,367,488 bytes
+(63.29 MiB). After the initial allocation ramp and collection, sampled current
+memory stayed between 47,095,808 and 52,887,552 bytes, with a 50,786,304-byte
+median. The website remained HTTP `200`, all existing VPN container identities
+and start times were unchanged, and final unit/process/path cleanup was exact.
+
+A preliminary `MemoryHigh=48 MiB` run produced sustained reclaim pressure and
+cadence degradation, so that threshold is rejected. Because the natural peak
+left less than 1 MiB beneath a 64 MiB hard ceiling, Pass K does not authorize a
+64 MiB production budget. A future supervisor contract must begin at a
+fail-closed 128 MiB ceiling; any tighter claim, including 96 MiB, requires a
+separate longer-duration soak. This evidence permits that supervisor contract
+to be evaluated separately. It does not authorize installation, durable runner
+identity, external anchoring, credentials, account reads, leases, remote
+effects, tags, or Releases.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

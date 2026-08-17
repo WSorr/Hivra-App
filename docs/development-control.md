@@ -1,10 +1,18 @@
 # Hivra Development Control
 
-Status date: 2026-08-17
+Status date: 2026-08-18
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: no following pass is selected automatically. `1.x
-Trading Remote Runner Pass J — Ephemeral VPS Public Observation Evidence` is
-complete. The exact public-only Linux x64 artifact from clean source `12c8f30`
+Trading Remote Runner Pass K — Ephemeral VPS Resource Soak Evidence` is
+complete. Sixty serial public observations completed under a transient 128 MiB
+ceiling with a 63.29 MiB measured peak, no stderr, no service regression, and
+exact cleanup. A 64 MiB production budget is rejected as marginless. Section
+11.18 of the [Trading Drone goal contract](plugins/bingx_futures_trading_drone_goal_contract_v1.md)
+owns the exact evidence and [the roadmap](roadmap.md) owns its history. No
+supervisor, deployment, credential, account read, effect, tag, or Release is
+authorized. The preceding `1.x Trading Remote Runner Pass J — Ephemeral VPS
+Public Observation Evidence` is complete. The exact public-only Linux x64
+artifact from clean source `12c8f30`
 with SHA-256 `8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`
 was transferred only to a unique temporary directory on the audited Debian 13
 x86-64 host. One low-priority public `BTC-USDT` observation completed in 3.213
