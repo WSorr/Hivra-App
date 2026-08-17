@@ -3264,9 +3264,14 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: verifier hash/shape/authority negative tests, dirty-tree
     rejection, one clean host-native package, full local and clean-checkout
     gates, protected PR, and green post-merge CI.
-  - Status: selected (2026-08-17). Dart AOT is explicitly not claimed
-    byte-reproducible; this pass binds one exact artifact and authorizes no
-    following pass.
+  - Status: complete on `main` at `3fbe8f2` (2026-08-17) through protected PR
+    `#117`; required run `32044373306` and post-merge run `32044425543` passed.
+    The post-merge Darwin arm64 artifact is 6,917,488 bytes with SHA-256
+    `4782f3f119f1975dc4ed7005f94ad96526ae6f9753377483102e0c1adf498282`.
+    Verifier negative tests, dirty-tree rejection, Flutter `931/931`, analyze,
+    Rust workspace, full review gates, and clean detached-checkout packaging
+    passed. Dart AOT is explicitly not claimed byte-reproducible. No new owner
+    or path was added, and no following pass is selected automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
