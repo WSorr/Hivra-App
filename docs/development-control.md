@@ -2,18 +2,23 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Remote Runner Pass E — Authenticated
-Bounded Stream Compaction` is selected. The existing
+Current development focus: no following pass is selected automatically. `1.x
+Trading Remote Runner Pass E — Authenticated Bounded Stream Compaction` is
+complete on `main` at `8c5c644` through protected PR `#113`; required run
+`32042296142` and post-merge run `32042345162` passed. The existing
 `BingxFuturesShadowStreamStore` remains the sole runner-retention owner. A full
-authenticated 256-entry tail may advance only after its exact final signed
+authenticated 256-entry tail advances only after its exact final signed
 evidence is durably committed as the local checkpoint; restart continues the
 global sequence and predecessor hash without resetting or creating another
 journal. Corrupt, foreign-key, partial, conflicting, linked, or non-file state
-fails closed. Scheduler, daemon, VPS deployment, external anchor, lease,
-credentials, account reads, Capsule state, remote effects, tags, and Releases
-remain unauthorized. Exit evidence requires compaction/restart, crash overlap,
-conflict/no-delete, filesystem-type, concurrency, mutation-gate, full local and
-clean-checkout gates, protected PR, and green post-merge CI. The preceding
+fails closed. Focused store `27/27`, combined shadow/replay `39/39`, Flutter
+`927/927`, analyze, Rust workspace, full review gates, clean detached-checkout,
+and the checkpoint-before-cleanup mutation test passed. No new DTO, service,
+owner, journal, credential, scheduler, deployment, Capsule state, account read,
+or effect route was added. Scheduler, daemon, VPS deployment, external anchor,
+lease, remote effects, tags, and Releases remain unauthorized. A local
+checkpoint does not provide rollback resistance; external anchoring remains a
+separate prerequisite before any remotely authorized effect. The preceding
 `1.x Flutter Test Runtime Isolation Remediation` is
 complete on `main` at `24eb042` through protected PR `#111`; required run
 `32036080325` and post-merge run `32036163520` passed.
