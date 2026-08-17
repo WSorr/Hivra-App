@@ -183,9 +183,11 @@ on `main` at `8c5c644` through protected PR `#113`; required run `32042296142`
 and post-merge run `32042345162` passed. Pass F public-only bounded scheduling
 is complete on `main` at `712177f` through protected PR `#115`; required run
 `32043346812` and post-merge run `32043400512` passed. Pass G verifiable
-standalone artifact packaging is selected. Unbounded daemon operation,
+standalone artifact packaging is complete on `main` at `3fbe8f2` through
+protected PR `#117`; required run `32044373306` and post-merge run
+`32044425543` passed. No following pass is selected. Unbounded daemon operation,
 deployment, external anchoring, leases, account access, and remote effects
-remain unauthorized; host transfer and deployment remain separate decisions.
+remain unauthorized.
 
 ### 11.1 Purpose And Sole Owner
 
@@ -573,6 +575,13 @@ route. It does not transfer an artifact, build Linux evidence, install on the
 VPS, configure systemd/Docker, touch the existing site or Amnezia service, or
 claim unattended operation. Those remain separate decisions after protected
 packaging evidence.
+
+Implementation evidence: the post-merge Darwin arm64 artifact built from
+`3fbe8f2` is 6,917,488 bytes with SHA-256
+`4782f3f119f1975dc4ed7005f94ad96526ae6f9753377483102e0c1adf498282`.
+Verifier negative tests, dirty-tree rejection, Flutter `931/931`, analyze, Rust
+workspace, full review gates, clean detached-checkout packaging, protected PR,
+and green post-merge CI passed. No new runtime owner or path was added.
 
 ## 12. Local Bounded Mandate Boundary
 
