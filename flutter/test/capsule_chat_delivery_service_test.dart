@@ -1757,6 +1757,19 @@ void main() {
     test(
       'evaluates incoming futures execution command and emits receipt decision',
       () async {
+        final tempHome = await Directory.systemTemp.createTemp(
+          'hivra-control-',
+        );
+        addTearDown(() async {
+          if (await tempHome.exists()) await tempHome.delete(recursive: true);
+        });
+        final deliveryStore = CapsuleDeliveryInboxStore(
+          fileStore: CapsuleFileStore(
+            dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+          ),
+          loadTimelineSeed:
+              (_) async => Uint8List.fromList(List<int>.filled(32, 41)),
+        );
         final replayStore = InMemoryBingxExecutionCommandReplayStore();
         final commandService = BingxFuturesExecutionCommandService(
           replayStore: replayStore,
@@ -1779,7 +1792,12 @@ void main() {
         );
 
         final service = CapsuleChatDeliveryService(
-          runtime: _FakeRuntime(capsuleRootKey: _hexToBytes(localRootHex)),
+          runtime: _FakeRuntime(
+            capsuleRootKey: _hexToBytes(localRootHex),
+            workerBootstrap: const <String, Object?>{
+              'activeCapsuleHex': localRootHex,
+            },
+          ),
           manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
             const ManualConsensusCheck(
               peerHex: peerHex,
@@ -1801,6 +1819,7 @@ void main() {
                 maxRiskPercent: 2,
               ),
           nowUtc: () => DateTime.utc(2026, 4, 25, 12, 1, 0),
+          deliveryInboxStore: deliveryStore,
           receiveWorkerRunner:
               (_) async => <String, Object?>{
                 'result': 0,
@@ -1835,7 +1854,206 @@ void main() {
       },
     );
 
+    test('retries the exact durable execution receipt after restart', () async {
+      final tempHome = await Directory.systemTemp.createTemp(
+        'hivra-control-restart-',
+      );
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      final dirs = UserVisibleDataDirectoryService(homeOverride: tempHome.path);
+      Future<Uint8List?> loadSeed(_) async =>
+          Uint8List.fromList(List<int>.filled(32, 43));
+      CapsuleDeliveryInboxStore buildStore() => CapsuleDeliveryInboxStore(
+        fileStore: CapsuleFileStore(dirs: dirs),
+        loadTimelineSeed: loadSeed,
+      );
+      const transportHex =
+          '3333333333333333333333333333333333333333333333333333333333333333';
+      const trustedCards = <CapsuleAddressCard>[
+        CapsuleAddressCard(
+          rootKey: 'h1-test-peer',
+          rootHex: peerHex,
+          nostrNpub: 'npub1-test-peer',
+          nostrHex: transportHex,
+        ),
+      ];
+      const checks = <ManualConsensusCheck>[
+        ManualConsensusCheck(
+          peerHex: peerHex,
+          peerLabel: 'peer',
+          invitationCount: 1,
+          relationshipCount: 1,
+          hashHex:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          canonicalJson: '{}',
+          isSignable: true,
+          blockingFacts: <ConsensusBlockingFact>[],
+        ),
+      ];
+      final commandEnvelope = BingxFuturesExecutionCommandService(
+        replayStore: InMemoryBingxExecutionCommandReplayStore(),
+      ).buildCommandEnvelope(
+        commandId: 'cmd-restart',
+        intentHashHex:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        symbol: 'BTCUSDT',
+        side: 'buy',
+        quantityDecimal: '0.1',
+        entryPriceDecimal: '65000',
+        stopLossDecimal: '64000',
+        takeProfitDecimal: '68000',
+        leverageDecimal: '3',
+        riskPercentDecimal: '1.5',
+        createdAtUtc: DateTime.utc(2026, 4, 25, 12).toIso8601String(),
+        expiresAtUtc: DateTime.utc(2026, 4, 25, 12, 5).toIso8601String(),
+        targetCapsuleRootHex: localRootHex,
+      );
+      String? firstReceipt;
+      final acknowledged = <String>[];
+      final firstStore = buildStore();
+      final firstService = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
+        manualChecks: _FakeManualConsensusCheckService(checks),
+        listTrustedCards: () async => trustedCards,
+        deliveryInboxStore: firstStore,
+        executionCommandService: BingxFuturesExecutionCommandService(
+          replayStore: InMemoryBingxExecutionCommandReplayStore(),
+        ),
+        executionPolicyForPeer:
+            (_) => const BingxExecutionPolicy(
+              allowedSymbols: <String>{'BTCUSDT'},
+              maxLeverage: 5,
+              maxRiskPercent: 2,
+            ),
+        nowUtc: () => DateTime.utc(2026, 4, 25, 12, 1),
+        receiveWorkerRunner:
+            (_) async => <String, Object?>{
+              'result': 0,
+              'json': jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'event_id': 'execution-command-event',
+                  'from_hex': peerHex,
+                  'payload_json': commandEnvelope,
+                  'timestamp_ms': 1,
+                },
+              ]),
+              'lastError': null,
+            },
+        sendWorkerRunner: (args) async {
+          firstReceipt = args['payloadJson']?.toString();
+          return <String, Object?>{
+            'result': -1003,
+            'lastError': 'temporary relay timeout',
+          };
+        },
+        acknowledgeWorkerRunner: (args) async {
+          acknowledged.addAll(
+            (args['eventIds'] as List<Object?>).map((value) => '$value'),
+          );
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
+      );
+
+      final first = await firstService.drainAndFilter();
+
+      expect(first.executionDecisions, hasLength(1));
+      expect(first.executionDecisions.single.receiptDeliveryCode, -1003);
+      expect(firstReceipt, isNotNull);
+      expect(acknowledged, <String>['execution-command-event']);
+
+      String? retriedReceipt;
+      var retryCalls = 0;
+      final restartedStore = buildStore();
+      final restartedService = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
+        manualChecks: _FakeManualConsensusCheckService(checks),
+        listTrustedCards: () async => trustedCards,
+        deliveryInboxStore: restartedStore,
+        receiveWorkerRunner:
+            (_) async => <String, Object?>{
+              'result': 0,
+              'json': '[]',
+              'lastError': null,
+            },
+        sendWorkerRunner: (args) async {
+          retryCalls += 1;
+          retriedReceipt = args['payloadJson']?.toString();
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
+      );
+
+      final restarted = await restartedService.drainAndFilter();
+
+      expect(restarted.code, 0);
+      expect(retryCalls, 1);
+      expect(retriedReceipt, firstReceipt);
+      final retained = restartedStore.loadExecutionDecisions(localRootHex);
+      expect(retained, hasLength(1));
+      expect(retained.single.commandId, 'cmd-restart');
+      expect(retained.single.receiptDeliveryCode, 0);
+      expect(retained.single.canonicalReceiptJson, firstReceipt);
+
+      var unavailableTimelineAcknowledged = false;
+      final unavailableTimelineService = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
+        manualChecks: _FakeManualConsensusCheckService(checks),
+        deliveryInboxStore: CapsuleDeliveryInboxStore(
+          fileStore: CapsuleFileStore(dirs: dirs),
+          loadTimelineSeed: (_) async => null,
+        ),
+        receiveWorkerRunner:
+            (_) async => <String, Object?>{
+              'result': 0,
+              'json': jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'event_id': 'unavailable-timeline-command-event',
+                  'from_hex': peerHex,
+                  'payload_json': commandEnvelope,
+                  'timestamp_ms': 2,
+                },
+              ]),
+              'lastError': null,
+            },
+        acknowledgeWorkerRunner: (_) async {
+          unavailableTimelineAcknowledged = true;
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
+      );
+
+      final unavailable = await unavailableTimelineService.drainAndFilter();
+
+      expect(unavailable.code, -2005);
+      expect(unavailableTimelineAcknowledged, isFalse);
+    });
+
     test('parses incoming execution receipt envelope', () async {
+      final tempHome = await Directory.systemTemp.createTemp('hivra-control-');
+      addTearDown(() async {
+        if (await tempHome.exists()) await tempHome.delete(recursive: true);
+      });
+      final deliveryStore = CapsuleDeliveryInboxStore(
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        ),
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 42)),
+      );
       final payloadJson = jsonEncode(<String, Object?>{
         'schema_version': 1,
         'receipt_kind': 'futures_execution_receipt_v1',
@@ -1845,14 +2063,20 @@ void main() {
         'decision': 'rejected',
         'decision_code': 'policy_symbol_blocked',
         'decision_message': 'Symbol is not allowed by local policy',
-        'target_capsule_root_hex': localRootHex,
-        'peer_hex': peerHex,
+        'target_capsule_root_hex': peerHex,
+        'peer_hex': localRootHex,
         'receipt_created_at_utc':
             DateTime.utc(2026, 4, 25, 12, 2, 0).toIso8601String(),
       });
 
+      final acknowledged = <String>[];
       final service = CapsuleChatDeliveryService(
-        runtime: _FakeRuntime(capsuleRootKey: _hexToBytes(localRootHex)),
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
         manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
           const ManualConsensusCheck(
             peerHex: peerHex,
@@ -1866,11 +2090,13 @@ void main() {
             blockingFacts: <ConsensusBlockingFact>[],
           ),
         ]),
+        deliveryInboxStore: deliveryStore,
         receiveWorkerRunner:
             (_) async => <String, Object?>{
               'result': 0,
               'json': jsonEncode(<Map<String, Object?>>[
                 <String, Object?>{
+                  'event_id': 'execution-receipt-event',
                   'from_hex': peerHex,
                   'payload_json': payloadJson,
                   'timestamp_ms': 99,
@@ -1878,6 +2104,12 @@ void main() {
               ]),
               'lastError': null,
             },
+        acknowledgeWorkerRunner: (args) async {
+          acknowledged.addAll(
+            (args['eventIds'] as List<Object?>).map((value) => '$value'),
+          );
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
       );
 
       final result = await service.drainAndFilter();
@@ -1891,6 +2123,98 @@ void main() {
         result.executionReceipts.single.decisionCode,
         equals('policy_symbol_blocked'),
       );
+      expect(acknowledged, <String>['execution-receipt-event']);
+
+      final restartedStore = CapsuleDeliveryInboxStore(
+        fileStore: CapsuleFileStore(
+          dirs: UserVisibleDataDirectoryService(homeOverride: tempHome.path),
+        ),
+        loadTimelineSeed:
+            (_) async => Uint8List.fromList(List<int>.filled(32, 42)),
+      );
+      expect(await restartedStore.hydrateCapsule(localRootHex), isTrue);
+      final retained = restartedStore.loadExecutionReceipts(localRootHex);
+      expect(retained, hasLength(1));
+      expect(retained.single.commandId, 'cmd-9');
+      expect(retained.single.fromHex, peerHex);
+      await restartedStore.mergeDurably(
+        localRootHex,
+        messages: const <CapsuleChatInboxMessage>[],
+        tradeSignals: const <CapsuleTradeSignalInboxMessage>[],
+        executionReceipts: <CapsuleExecutionReceiptInboxMessage>[
+          CapsuleExecutionReceiptInboxMessage(
+            id: retained.single.id,
+            fromHex: peerHex,
+            commandId: 'cmd-9',
+            decision: 'accepted',
+            decisionCode: 'conflicting_acceptance',
+            decisionMessage:
+                'Conflicting replay must not replace first receipt',
+            targetCapsuleRootHex: peerHex,
+            peerHex: localRootHex,
+            receiptCreatedAtUtc:
+                DateTime.utc(2026, 4, 25, 12, 3).toIso8601String(),
+            timestampMs: 100,
+          ),
+        ],
+      );
+      expect(
+        restartedStore.loadExecutionReceipts(localRootHex).single.decision,
+        'rejected',
+      );
+
+      final wrongBinding =
+          Map<String, Object?>.from(jsonDecode(payloadJson) as Map)
+            ..['command_id'] = 'cmd-wrong-binding'
+            ..['target_capsule_root_hex'] = localRootHex;
+      final rejectedEventIds = <String>[];
+      final rejectingService = CapsuleChatDeliveryService(
+        runtime: _FakeRuntime(
+          capsuleRootKey: _hexToBytes(localRootHex),
+          workerBootstrap: const <String, Object?>{
+            'activeCapsuleHex': localRootHex,
+          },
+        ),
+        manualChecks: _FakeManualConsensusCheckService(<ManualConsensusCheck>[
+          const ManualConsensusCheck(
+            peerHex: peerHex,
+            peerLabel: 'peer',
+            invitationCount: 1,
+            relationshipCount: 1,
+            hashHex:
+                'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+            canonicalJson: '{}',
+            isSignable: true,
+            blockingFacts: <ConsensusBlockingFact>[],
+          ),
+        ]),
+        deliveryInboxStore: restartedStore,
+        receiveWorkerRunner:
+            (_) async => <String, Object?>{
+              'result': 0,
+              'json': jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'event_id': 'wrong-binding-receipt-event',
+                  'from_hex': peerHex,
+                  'payload_json': jsonEncode(wrongBinding),
+                  'timestamp_ms': 100,
+                },
+              ]),
+              'lastError': null,
+            },
+        acknowledgeWorkerRunner: (args) async {
+          rejectedEventIds.addAll(
+            (args['eventIds'] as List<Object?>).map((value) => '$value'),
+          );
+          return <String, Object?>{'result': 0, 'lastError': null};
+        },
+      );
+
+      final rejected = await rejectingService.drainAndFilter();
+
+      expect(rejected.executionReceipts, isEmpty);
+      expect(rejectedEventIds, <String>['wrong-binding-receipt-event']);
+      expect(restartedStore.loadExecutionReceipts(localRootHex), hasLength(1));
     });
   });
 }

@@ -357,9 +357,9 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPOSITION_SUPPORT` — `flutter/lib/services/capsule_ai_runtime_service.dart` line `197` (`CapsuleInferenceRuntime`) — rule `composition_root`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_ai_runtime_service.dart` line `225` (`CapsuleAiRuntimeService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_deferred_inbox_store.dart` line `105` (`CapsuleChatDeferredInboxStore`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_delivery_service.dart` line `96` (`CapsuleChatDeliveryService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_chat_delivery_service.dart` line `98` (`CapsuleChatDeliveryService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_contact_label_store.dart` line `7` (`CapsuleContactLabelStore`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_delivery_inbox_store.dart` line `14` (`CapsuleDeliveryInboxStore`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_delivery_inbox_store.dart` line `15` (`CapsuleDeliveryInboxStore`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/capsule_delivery_lifecycle_service.dart` line `36` (`CapsuleDeliveryLifecycleService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_diagnostics_service.dart` line `13` (`CapsuleDiagnosticsService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/capsule_ffi_worker_queue.dart` line `7` (`CapsuleFfiWorkerQueue`) — rule `current_flutter_service_support`
@@ -485,14 +485,15 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `1929` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
 - `1905` lines — `flutter/lib/services/plugin_runtime_module_service.dart`
 - `1440` lines — `flutter/lib/screens/capsule_doctor_screen.dart`
+- `1337` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `1309` lines — `flutter/lib/screens/invitations_screen.dart`
-- `1212` lines — `flutter/lib/services/capsule_chat_delivery_service.dart`
 - `1019` lines — `flutter/lib/services/bingx_futures_zone_decision_service.dart`
 - `979` lines — `flutter/lib/screens/ledger_inspector_screen.dart`
 - `952` lines — `flutter/lib/services/external_effect_service.dart`
 - `920` lines — `flutter/lib/services/moltbook_provider_adapter.dart`
 - `885` lines — `flutter/lib/screens/relationships_screen.dart`
 - `838` lines — `flutter/lib/screens/main_screen.dart`
+- `834` lines — `flutter/lib/services/capsule_delivery_inbox_store.dart`
 - `815` lines — `flutter/lib/services/invitation_intent_handler.dart`
 - `801` lines — `flutter/lib/services/moltbook_external_effect_adapter.dart`
 

@@ -3450,6 +3450,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     checkout, and `21/21` focused tests passed. No following pass, deployment,
     tag, or Release is selected automatically.
 
+- `1.x Chat Execution Control Durable Lifecycle Remediation`
+  - Finding: authenticated execution commands and receipts were acknowledged
+    out of the native Chat handoff after process-memory projection only. The
+    command replay store was process-local, and a failed receipt send lost the
+    exact deterministic receipt across restart.
+  - Invariant: command decisions and incoming receipts commit durably before
+    handoff acknowledgement. Failed receipt delivery retains and retries the
+    exact canonical bytes without policy re-evaluation. Receipt sender, target,
+    local peer, command identity, canonical hash, and Capsule scope remain
+    bound and fail closed.
+  - Sole owners: the native Chat handoff remains the transport ingress owner;
+    the existing `CapsuleDeliveryInboxStore` remains the sole bounded 1.x
+    delivery-capability retention owner. The exchange-effect owner, Core,
+    Ledger, plugin ABI, and V2 topology remain unchanged.
+  - Required evidence: persistence-failure no-ACK, command decision restart,
+    exact receipt retry after restart, incoming receipt restart, replay dedupe,
+    conflicting stable-id sealing, binding/hash mutation rejection, bounded
+    retention, legacy Chat timeline compatibility, full automated gates, clean
+    checkout, protected PR, and green post-merge CI.
+  - Status: active on branch
+    `fix/chat-execution-control-durable-lifecycle` (2026-08-17). No deployment,
+    tag, Release, or following product pass is selected.
+
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
     preserving the existing durable native handoff and Flutter Chat projection
