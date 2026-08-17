@@ -10,6 +10,7 @@ SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart
 RUNNER_ARTIFACT="$ROOT/tools/trading/public_shadow_runner_artifact.sh"
 RUNNER_PACKAGE="$ROOT/tools/trading/public_shadow_runner_package/pubspec.yaml"
 RUNNER_PACKAGE_LOCK="$ROOT/tools/trading/public_shadow_runner_package/pubspec.lock"
+CI_REPOSITORY_GATES="$ROOT/.github/workflows/release-gates.yml"
 EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart"
 TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
 STATUS=0
@@ -74,6 +75,19 @@ runner_package_is_pinned() {
     rg -q '^    version: "3\.0\.7"$' "$2" &&
     rg -q '^    version: "2\.9\.0"$' "$2" &&
     rg -q '^  dart: "3\.11\.0"$' "$2"
+}
+
+runner_linux_smoke_is_fail_closed() {
+  rg -q -- '--runtime-smoke <artifact-dir>' "$1" &&
+    rg -q 'runtime smoke requires a Linux x64 artifact' "$1" &&
+    rg -q 'runtime smoke requires a Linux x64 host' "$1" &&
+    rg -q 'env -u HIVRA_SHADOW_RUNNER_SEED_HEX' "$1" &&
+    rg -q 'runtime smoke did not reach the fail-closed probe boundary' "$1" &&
+    rg -q 'dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260' "$2" &&
+    rg -q 'sdk: 3\.11\.0' "$2" &&
+    rg -q 'public_shadow_runner_artifact\.sh --build "\$artifact" --target-os linux --target-arch x64' "$2" &&
+    rg -q 'public_shadow_runner_artifact\.sh --runtime-smoke "\$artifact"' "$2" &&
+    ! rg -q 'upload-artifact' "$2"
 }
 
 shadow_stream_is_durable() {
@@ -186,6 +200,12 @@ else
   fail "standalone runner artifact lost dependency, target, provenance, or authority verification"
 fi
 
+if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; then
+  pass "required CI builds and starts the verified Linux runner without authority or artifact publication"
+else
+  fail "required CI lost the fail-closed Linux runtime startup evidence"
+fi
+
 if rg -q "BingxFuturesShadowStreamStore" "$SHADOW_PROBE" &&
   rg -q "'stream-dir'" "$SHADOW_PROBE" &&
   ! rg -q "'output'" "$SHADOW_PROBE" &&
@@ -208,9 +228,10 @@ STREAM_MUTATION="$(mktemp)"
 CHECKPOINT_MUTATION="$(mktemp)"
 SCHEDULER_MUTATION="$(mktemp)"
 ARTIFACT_MUTATION="$(mktemp)"
+RUNTIME_SMOKE_MUTATION="$(mktemp)"
 EXECUTION_MUTATION="$(mktemp)"
 CYCLE_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -225,6 +246,8 @@ sed 's/await runOnce(cycleNumber);/await Future<void>.value();/' \
   "$SHADOW_PROBE" > "$SCHEDULER_MUTATION"
 sed 's/AUTHORITY_PROFILE="public-market-shadow-only"/AUTHORITY_PROFILE="full-exchange-authority"/' \
   "$RUNNER_ARTIFACT" > "$ARTIFACT_MUTATION"
+sed 's/env -u HIVRA_SHADOW_RUNNER_SEED_HEX/env/' \
+  "$RUNNER_ARTIFACT" > "$RUNTIME_SMOKE_MUTATION"
 sed 's/final executionSucceeded = queued\.execution\.isSuccess;/final executionSucceeded = true;/' \
   "$EXECUTION_USE_CASE" > "$EXECUTION_MUTATION"
 sed 's/execution\.queuedExecution?\.execution\.isSuccess == true/true/' \
@@ -233,6 +256,7 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
   ! runner_artifact_is_verifiable "$ARTIFACT_MUTATION" && \
+  ! runner_linux_smoke_is_fail_closed "$RUNTIME_SMOKE_MUTATION" "$CI_REPOSITORY_GATES" && \
   ! shadow_stream_is_durable "$STREAM_MUTATION" && \
   ! shadow_stream_is_durable "$CHECKPOINT_MUTATION" && \
   ! execution_outcome_is_truthful "$EXECUTION_MUTATION" "$CYCLE_MUTATION"; then

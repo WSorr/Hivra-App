@@ -2,8 +2,17 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no following pass is selected automatically. `1.x
-Trading Remote Runner Pass H — Pinned Linux x64 Artifact Evidence` is complete
+Current development focus: `1.x Trading Remote Runner Pass I — Linux Runtime
+Startup Evidence` is selected as one bounded packaging/CI pass. The existing
+artifact script must build and verify the exact Linux x64 ELF in the required
+Ubuntu gate, remove runner authority from the process environment, execute the
+binary, and accept only the probe's exact fail-closed missing-authority result.
+The artifact is ephemeral and is not uploaded. Public network observation,
+runner credentials, transfer, installation, supervisor configuration, VPS
+access, site or Amnezia changes, account reads, external anchoring, and effects
+remain unauthorized. Completion requires local and clean-checkout gates,
+protected PR review-gates, and green post-merge CI. The preceding `1.x Trading
+Remote Runner Pass H — Pinned Linux x64 Artifact Evidence` is complete
 on `main` at `ea36a8b` through protected PR `#119`; required run `32054282257`
 and post-merge run `32054365614` passed. The existing packaging owner uses one
 minimal pure-Dart dependency closure with an exact lock and compiles only the

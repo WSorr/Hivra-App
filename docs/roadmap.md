@@ -3301,6 +3301,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     owner or path was added. Linux runtime compatibility and deployment are not
     claimed, and no following pass is selected automatically.
 
+- `1.x Trading Remote Runner Pass I — Linux Runtime Startup Evidence`
+  - Lane: bounded 1.x Trading packaging/CI; no host deployment or release work.
+  - Invariant: the exact manifest-verified Linux x64 ELF starts on a matching
+    Linux host and reaches the canonical probe's fail-closed missing-authority
+    boundary with the runner seed removed from its environment.
+  - Sole owner: the existing artifact script owns packaging and runtime-startup
+    evidence; the existing probe remains the sole entrypoint. No service,
+    receiver, supervisor, deployment, credential, account, or effect owner is
+    added.
+  - Removed or sealed: Linux runtime compatibility can no longer be inferred
+    from ELF shape alone. Loader failure, target mismatch, inherited authority,
+    unexpected output, and false success fail closed. The ephemeral artifact is
+    not uploaded. Public provider execution, transfer, VPS/SSH, installation,
+    site or Amnezia changes, credentials, account reads, external anchoring,
+    leases, and effects remain sealed.
+  - Exit evidence: focused artifact/parity gates, negative authority mutation,
+    full local and clean-checkout gates, protected PR `review-gates`, and green
+    post-merge CI. Status: selected; implementation evidence is pending.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
