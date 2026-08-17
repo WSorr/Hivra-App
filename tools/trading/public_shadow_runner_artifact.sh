@@ -7,10 +7,18 @@ ENTRYPOINT="$FLUTTER_DIR/tool/trading_remote_shadow_probe.dart"
 BASELINE="$ROOT/toolchains/hivra-baseline.conf"
 PACKAGE_DIR="$ROOT/tools/trading/public_shadow_runner_package"
 PACKAGE_LOCK="$PACKAGE_DIR/pubspec.lock"
+UNIT_SOURCE="$ROOT/tools/trading/hivra-trading-public-shadow-runner.service"
 BINARY_NAME="hivra-trading-public-shadow-runner"
+UNIT_NAME="hivra-trading-public-shadow-runner.service"
 MANIFEST_NAME="ARTIFACT-MANIFEST.v1"
-SCHEMA_VERSION="hivra-trading-public-shadow-runner-artifact-v1"
+SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"
 AUTHORITY_PROFILE="public-market-shadow-only"
+BUNDLE_INSTALL_PATH="/opt/hivra/trading-public-shadow"
+BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$BINARY_NAME"
+UNIT_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$UNIT_NAME"
+UNIT_LINK_PATH="/etc/systemd/system/$UNIT_NAME"
+CREDENTIAL_INSTALL_PATH="/etc/credstore.encrypted/hivra-trading-public-shadow.seed"
+STATE_DIRECTORY="/var/lib/hivra-trading-public-shadow"
 MODE=""
 ARTIFACT_DIR=""
 TARGET_OS=""
@@ -23,10 +31,13 @@ Usage:
     [--target-os linux --target-arch x64]
   tools/trading/public_shadow_runner_artifact.sh --verify <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --runtime-smoke <artifact-dir>
+  tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --self-test
 
 The build mode requires a completely clean worktree and the pinned Dart SDK.
-It produces one host-native executable and one exact provenance manifest.
+It produces one host-native executable, the exact systemd unit, and one exact
+provenance manifest. Ephemeral install smoke requires a root Linux systemd host
+with empty canonical target paths; it never enables the unit.
 EOF
 }
 
@@ -80,6 +91,45 @@ file_size() {
   wc -c < "$1" | tr -d '[:space:]'
 }
 
+binary_target() {
+  python3 - "$1" <<'PY'
+import pathlib
+import struct
+import sys
+
+data = pathlib.Path(sys.argv[1]).read_bytes()[:4096]
+if len(data) >= 20 and data[:4] == b"\x7fELF" and data[4:6] == b"\x02\x01":
+    machine = struct.unpack_from("<H", data, 18)[0]
+    if machine == 62:
+        print("linux/x64")
+        raise SystemExit(0)
+if len(data) >= 8 and data[:4] == b"\xcf\xfa\xed\xfe":
+    cpu_type = struct.unpack_from("<I", data, 4)[0]
+    if cpu_type == 0x0100000C:
+        print("darwin/arm64")
+        raise SystemExit(0)
+    if cpu_type == 0x01000007:
+        print("darwin/x64")
+        raise SystemExit(0)
+if len(data) >= 8 and data[:4] in {b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"}:
+    architecture_size = 20 if data[:4] == b"\xca\xfe\xba\xbe" else 32
+    count = struct.unpack_from(">I", data, 4)[0]
+    if count < 1 or count > 32 or len(data) < 8 + count * architecture_size:
+        raise SystemExit("invalid universal Mach-O header")
+    targets = []
+    for index in range(count):
+        cpu_type = struct.unpack_from(">I", data, 8 + index * architecture_size)[0]
+        if cpu_type == 0x0100000C:
+            targets.append("darwin/arm64")
+        elif cpu_type == 0x01000007:
+            targets.append("darwin/x64")
+    if targets:
+        print("+".join(targets))
+        raise SystemExit(0)
+raise SystemExit("unsupported host-native executable header")
+PY
+}
+
 baseline_value() {
   local key="$1"
   local value
@@ -114,6 +164,7 @@ write_manifest() {
   local target_arch="$5"
   local dependency_lock_sha="$6"
   local binary="$directory/$BINARY_NAME"
+  local unit="$directory/$UNIT_NAME"
   cat > "$directory/$MANIFEST_NAME" <<EOF
 schema_version=$SCHEMA_VERSION
 source_commit=$source_commit
@@ -127,27 +178,61 @@ authority_profile=$AUTHORITY_PROFILE
 binary_file=$BINARY_NAME
 binary_sha256=$(sha256_file "$binary")
 binary_size=$(file_size "$binary")
+unit_file=$UNIT_NAME
+unit_sha256=$(sha256_file "$unit")
+bundle_install_path=$BUNDLE_INSTALL_PATH
+binary_install_path=$BINARY_INSTALL_PATH
+unit_install_path=$UNIT_INSTALL_PATH
+unit_link_path=$UNIT_LINK_PATH
+credential_install_path=$CREDENTIAL_INSTALL_PATH
+state_directory=$STATE_DIRECTORY
 EOF
 }
 
 verify_artifact() {
   local directory="$1"
   local binary="$directory/$BINARY_NAME"
+  local unit="$directory/$UNIT_NAME"
   local manifest="$directory/$MANIFEST_NAME"
   [ -d "$directory" ] && [ ! -L "$directory" ] ||
     die "artifact directory must be a real directory"
   [ -f "$binary" ] && [ ! -L "$binary" ] && [ -x "$binary" ] ||
     die "artifact binary must be one executable regular file"
+  [ -f "$unit" ] && [ ! -L "$unit" ] && [ ! -x "$unit" ] ||
+    die "artifact unit must be one non-executable regular file"
   [ -f "$manifest" ] && [ ! -L "$manifest" ] ||
     die "artifact manifest must be one regular file"
-  [ "$(find "$directory" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = "2" ] ||
+  [ "$(find "$directory" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = "3" ] ||
     die "artifact directory contains unknown entries"
 
-  python3 - "$manifest" "$SCHEMA_VERSION" "$AUTHORITY_PROFILE" "$BINARY_NAME" <<'PY'
+  python3 - \
+    "$manifest" \
+    "$SCHEMA_VERSION" \
+    "$AUTHORITY_PROFILE" \
+    "$BINARY_NAME" \
+    "$UNIT_NAME" \
+    "$BUNDLE_INSTALL_PATH" \
+    "$BINARY_INSTALL_PATH" \
+    "$UNIT_INSTALL_PATH" \
+    "$UNIT_LINK_PATH" \
+    "$CREDENTIAL_INSTALL_PATH" \
+    "$STATE_DIRECTORY" <<'PY'
 import re
 import sys
 
-path, schema, authority, binary_name = sys.argv[1:]
+(
+    path,
+    schema,
+    authority,
+    binary_name,
+    unit_name,
+    bundle_install_path,
+    binary_install_path,
+    unit_install_path,
+    unit_link_path,
+    credential_install_path,
+    state_directory,
+) = sys.argv[1:]
 expected = [
     "schema_version",
     "source_commit",
@@ -161,6 +246,14 @@ expected = [
     "binary_file",
     "binary_sha256",
     "binary_size",
+    "unit_file",
+    "unit_sha256",
+    "bundle_install_path",
+    "binary_install_path",
+    "unit_install_path",
+    "unit_link_path",
+    "credential_install_path",
+    "state_directory",
 ]
 lines = open(path, "r", encoding="utf-8").read().splitlines()
 if len(lines) != len(expected):
@@ -197,17 +290,35 @@ if not re.fullmatch(r"[0-9a-f]{64}", parsed["binary_sha256"]):
     raise SystemExit("invalid binary SHA-256")
 if not re.fullmatch(r"[1-9][0-9]*", parsed["binary_size"]):
     raise SystemExit("invalid binary size")
+if parsed["unit_file"] != unit_name:
+    raise SystemExit("unit filename mismatch")
+if not re.fullmatch(r"[0-9a-f]{64}", parsed["unit_sha256"]):
+    raise SystemExit("invalid unit SHA-256")
+if parsed["bundle_install_path"] != bundle_install_path:
+    raise SystemExit("bundle install path mismatch")
+if parsed["binary_install_path"] != binary_install_path:
+    raise SystemExit("binary install path mismatch")
+if parsed["unit_install_path"] != unit_install_path:
+    raise SystemExit("unit install path mismatch")
+if parsed["unit_link_path"] != unit_link_path:
+    raise SystemExit("unit link path mismatch")
+if parsed["credential_install_path"] != credential_install_path:
+    raise SystemExit("credential install path mismatch")
+if parsed["state_directory"] != state_directory:
+    raise SystemExit("state directory mismatch")
 PY
 
   local expected_sha
   local expected_size
   local expected_lock_sha
+  local expected_unit_sha
   local source_commit
   local target_os
   local target_arch
   expected_sha="$(sed -n 's/^binary_sha256=//p' "$manifest")"
   expected_size="$(sed -n 's/^binary_size=//p' "$manifest")"
   expected_lock_sha="$(sed -n 's/^dependency_lock_sha256=//p' "$manifest")"
+  expected_unit_sha="$(sed -n 's/^unit_sha256=//p' "$manifest")"
   source_commit="$(sed -n 's/^source_commit=//p' "$manifest")"
   target_os="$(sed -n 's/^target_os=//p' "$manifest")"
   target_arch="$(sed -n 's/^target_arch=//p' "$manifest")"
@@ -215,31 +326,26 @@ PY
     die "artifact binary SHA-256 mismatch"
   [ "$(file_size "$binary")" = "$expected_size" ] ||
     die "artifact binary size mismatch"
+  [ "$(sha256_file "$unit")" = "$expected_unit_sha" ] ||
+    die "artifact unit SHA-256 mismatch"
+  cmp -s "$unit" "$UNIT_SOURCE" ||
+    die "artifact unit does not match the canonical source"
   [ -f "$PACKAGE_LOCK" ] &&
     [ "$(sha256_file "$PACKAGE_LOCK")" = "$expected_lock_sha" ] ||
     die "artifact dependency lock SHA-256 mismatch"
   git -C "$ROOT" merge-base --is-ancestor "$source_commit" HEAD >/dev/null 2>&1 ||
     die "artifact source commit is not available in repository history"
-  local file_description
-  file_description="$(file "$binary")"
-  printf '%s\n' "$file_description" | grep -q 'executable' ||
-    die "artifact is not a host-native executable"
+  local detected_targets
+  detected_targets="$(binary_target "$binary")" ||
+    die "artifact is not a supported host-native executable"
   case "$target_os/$target_arch" in
-    linux/x64)
-      printf '%s\n' "$file_description" | grep -Eq 'ELF 64-bit.*x86-64' ||
-        die "artifact binary does not match Linux x64 manifest"
-      ;;
-    darwin/arm64)
-      printf '%s\n' "$file_description" | grep -Eq 'Mach-O 64-bit executable arm64' ||
-        die "artifact binary does not match Darwin arm64 manifest"
-      ;;
-    darwin/x86_64|darwin/x64)
-      printf '%s\n' "$file_description" | grep -Eq 'Mach-O 64-bit executable x86_64' ||
-        die "artifact binary does not match Darwin x64 manifest"
-      ;;
-    *)
-      die "artifact target is not an allowed packaging target"
-      ;;
+    linux/x64) [[ "+$detected_targets+" = *"+linux/x64+"* ]] ||
+      die "artifact binary does not match Linux x64 manifest" ;;
+    darwin/arm64) [[ "+$detected_targets+" = *"+darwin/arm64+"* ]] ||
+      die "artifact binary does not match Darwin arm64 manifest" ;;
+    darwin/x86_64|darwin/x64) [[ "+$detected_targets+" = *"+darwin/x64+"* ]] ||
+      die "artifact binary does not match Darwin x64 manifest" ;;
+    *) die "artifact target is not an allowed packaging target" ;;
   esac
   if grep -aEq \
     'openApi/swap/v2/trade/(order|leverage|marginType)|BingxFuturesApiCredentials|placeOrder|cancelOrder' \
@@ -326,6 +432,8 @@ PY
   )
   rm -f "$pending/package_config.json"
   chmod 700 "$pending/$BINARY_NAME"
+  cp "$UNIT_SOURCE" "$pending/$UNIT_NAME"
+  chmod 600 "$pending/$UNIT_NAME"
   write_manifest \
     "$pending" \
     "$(git -C "$ROOT" rev-parse HEAD)" \
@@ -340,6 +448,172 @@ PY
   echo "PASS trading-runner-artifact: built $output"
 }
 
+ephemeral_install_smoke() {
+  local directory="$1"
+  verify_artifact "$directory" >/dev/null
+  [ "$(sed -n 's/^target_os=//p' "$directory/$MANIFEST_NAME")" = "linux" ] &&
+    [ "$(sed -n 's/^target_arch=//p' "$directory/$MANIFEST_NAME")" = "x64" ] ||
+    die "ephemeral install smoke requires a Linux x64 bundle"
+  [ "$(host_os)" = "linux" ] && [ "$(host_arch)" = "x64" ] ||
+    die "ephemeral install smoke requires a Linux x64 host"
+  [ "$(id -u)" = "0" ] || die "ephemeral install smoke requires root"
+  command -v flock >/dev/null 2>&1 || die "flock is required"
+  command -v openssl >/dev/null 2>&1 || die "openssl is required"
+  command -v systemctl >/dev/null 2>&1 || die "systemctl is required"
+  command -v systemd-creds >/dev/null 2>&1 || die "systemd-creds is required"
+
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  trap 'rm -f "$lock_path"' EXIT
+
+  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  local state_private="/var/lib/private/hivra-trading-public-shadow"
+  for target in \
+    "$BUNDLE_INSTALL_PATH" \
+    "$UNIT_LINK_PATH" \
+    "$CREDENTIAL_INSTALL_PATH" \
+    "$STATE_DIRECTORY" \
+    "$state_private" \
+    "$wants_path"; do
+    [ ! -e "$target" ] && [ ! -L "$target" ] ||
+      die "ephemeral install target already exists: $target"
+  done
+  if systemctl cat "$UNIT_NAME" >/dev/null 2>&1; then
+    die "ephemeral install unit is already loaded"
+  fi
+
+  opt_parent_created=0
+  credential_parent_created=0
+  bundle_installed=0
+  credential_installed=0
+  unit_linked=0
+  unit_loaded=0
+  pending_bundle=""
+  pending_credential=""
+  cleanup_ephemeral_install() {
+    set +e
+    if [ "$unit_loaded" = 1 ]; then
+      systemctl stop "$UNIT_NAME" >/dev/null 2>&1
+      systemctl clean --what=state "$UNIT_NAME" >/dev/null 2>&1
+    fi
+    if [ "$unit_linked" = 1 ] && [ -L "$UNIT_LINK_PATH" ] &&
+      [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ]; then
+      rm -f "$UNIT_LINK_PATH"
+    fi
+    systemctl daemon-reload >/dev/null 2>&1
+    [ "$credential_installed" = 1 ] && rm -f "$CREDENTIAL_INSTALL_PATH"
+    [ "$bundle_installed" = 1 ] && rm -rf "$BUNDLE_INSTALL_PATH"
+    [ -z "$pending_bundle" ] || rm -rf "$pending_bundle"
+    [ -z "$pending_credential" ] || rm -f "$pending_credential"
+    if [ "$credential_parent_created" = 1 ]; then
+      rmdir /etc/credstore.encrypted >/dev/null 2>&1
+    fi
+    if [ "$opt_parent_created" = 1 ]; then
+      rmdir /opt/hivra >/dev/null 2>&1
+    fi
+    rm -f "$lock_path"
+  }
+  trap cleanup_ephemeral_install EXIT INT TERM
+
+  if [ ! -d /opt/hivra ]; then
+    install -d -m 0755 /opt/hivra
+    opt_parent_created=1
+  fi
+  [ ! -L /opt/hivra ] || die "/opt/hivra must not be a symlink"
+  pending_bundle="$(mktemp -d /opt/hivra/.trading-public-shadow.pending.XXXXXX)"
+  install -m 0755 "$directory/$BINARY_NAME" "$pending_bundle/$BINARY_NAME"
+  install -m 0644 "$directory/$UNIT_NAME" "$pending_bundle/$UNIT_NAME"
+  install -m 0600 "$directory/$MANIFEST_NAME" "$pending_bundle/$MANIFEST_NAME"
+  chmod 0755 "$pending_bundle"
+  [ "$(sha256_file "$pending_bundle/$BINARY_NAME")" = \
+    "$(sed -n 's/^binary_sha256=//p' "$directory/$MANIFEST_NAME")" ] ||
+    die "staged binary hash mismatch"
+  [ "$(sha256_file "$pending_bundle/$UNIT_NAME")" = \
+    "$(sed -n 's/^unit_sha256=//p' "$directory/$MANIFEST_NAME")" ] ||
+    die "staged unit hash mismatch"
+  mv "$pending_bundle" "$BUNDLE_INSTALL_PATH"
+  pending_bundle=""
+  bundle_installed=1
+
+  if [ ! -d /etc/credstore.encrypted ]; then
+    install -d -m 0700 /etc/credstore.encrypted
+    credential_parent_created=1
+  fi
+  [ ! -L /etc/credstore.encrypted ] ||
+    die "/etc/credstore.encrypted must not be a symlink"
+  pending_credential="$(mktemp /etc/credstore.encrypted/.hivra-shadow.pending.XXXXXX)"
+  openssl rand -hex 32 | tr -d '\n' |
+    systemd-creds encrypt --name=runner-seed - "$pending_credential" >/dev/null
+  chmod 0600 "$pending_credential"
+  mv "$pending_credential" "$CREDENTIAL_INSTALL_PATH"
+  pending_credential=""
+  credential_installed=1
+
+  systemctl link "$UNIT_INSTALL_PATH" >/dev/null
+  unit_linked=1
+  [ -L "$UNIT_LINK_PATH" ] &&
+    [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ] ||
+    die "systemd unit link mismatch"
+  systemctl daemon-reload
+  unit_loaded=1
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "ephemeral unit became enabled" ;;
+  esac
+
+  local started_at
+  started_at="$(date --iso-8601=seconds)"
+  systemctl start "$UNIT_NAME"
+  local log=""
+  local active_state=""
+  for _ in $(seq 1 120); do
+    log="$(journalctl -u "$UNIT_NAME" --since "$started_at" --no-pager -o cat)"
+    if printf '%s\n' "$log" | grep -q '^shadow_evidence_appended='; then
+      break
+    fi
+    active_state="$(systemctl show -p ActiveState --value "$UNIT_NAME")"
+    [ "$active_state" != "failed" ] || {
+      printf '%s\n' "$log" >&2
+      die "ephemeral exact unit failed before evidence append"
+    }
+    sleep 1
+  done
+  local evidence
+  evidence="$(printf '%s\n' "$log" | grep '^shadow_evidence_appended=' | tail -1)"
+  [ -n "$evidence" ] || die "ephemeral exact unit produced no evidence"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "active" ] ||
+    die "ephemeral exact unit is not active after first cycle"
+  [ "$(systemctl show -p NRestarts --value "$UNIT_NAME")" = "0" ] ||
+    die "ephemeral exact unit restarted unexpectedly"
+  printf '%s\n' "$evidence"
+  systemctl show "$UNIT_NAME" \
+    -p MemoryMax \
+    -p MemorySwapMax \
+    -p TasksMax \
+    -p DynamicUser \
+    -p SocketBindDeny \
+    -p RestrictAddressFamilies \
+    -p NRestarts \
+    --no-pager
+
+  cleanup_ephemeral_install
+  trap - EXIT INT TERM
+  for target in \
+    "$BUNDLE_INSTALL_PATH" \
+    "$UNIT_LINK_PATH" \
+    "$CREDENTIAL_INSTALL_PATH" \
+    "$STATE_DIRECTORY" \
+    "$state_private" \
+    "$wants_path"; do
+    [ ! -e "$target" ] && [ ! -L "$target" ] ||
+      die "ephemeral install cleanup retained: $target"
+  done
+  systemctl cat "$UNIT_NAME" >/dev/null 2>&1 &&
+    die "ephemeral install cleanup retained the loaded unit"
+  echo "PASS trading-runner-artifact: exact unit installed, started, and removed without enablement"
+}
+
 self_test() {
   local root
   root="$(mktemp -d)"
@@ -348,6 +622,8 @@ self_test() {
   mkdir "$artifact"
   cp /bin/echo "$artifact/$BINARY_NAME"
   chmod 700 "$artifact/$BINARY_NAME"
+  cp "$UNIT_SOURCE" "$artifact/$UNIT_NAME"
+  chmod 600 "$artifact/$UNIT_NAME"
   write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   verify_artifact "$artifact" >/dev/null
 
@@ -358,6 +634,21 @@ self_test() {
   sed -i.bak 's/^binary_sha256=./binary_sha256=0/' "$artifact/$MANIFEST_NAME"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
     die "self-test accepted a changed binary hash"
+  fi
+  mv "$artifact/$MANIFEST_NAME.bak" "$artifact/$MANIFEST_NAME"
+
+  printf '\n# mutation\n' >> "$artifact/$UNIT_NAME"
+  if (verify_artifact "$artifact") >/dev/null 2>&1; then
+    die "self-test accepted a changed supervisor unit"
+  fi
+  cp "$UNIT_SOURCE" "$artifact/$UNIT_NAME"
+  chmod 600 "$artifact/$UNIT_NAME"
+
+  sed -i.bak \
+    's#^binary_install_path=.*#binary_install_path=/tmp/runner#' \
+    "$artifact/$MANIFEST_NAME"
+  if (verify_artifact "$artifact") >/dev/null 2>&1; then
+    die "self-test accepted an alternate install path"
   fi
   mv "$artifact/$MANIFEST_NAME.bak" "$artifact/$MANIFEST_NAME"
 
@@ -409,7 +700,7 @@ self_test() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke)
+    --build|--verify|--runtime-smoke|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -451,6 +742,11 @@ case "$MODE" in
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
       die "runtime smoke reads the target only from the manifest"
     runtime_smoke_artifact "$ARTIFACT_DIR"
+    ;;
+  ephemeral-install-smoke)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+      die "ephemeral install smoke reads the target only from the manifest"
+    ephemeral_install_smoke "$ARTIFACT_DIR"
     ;;
   self-test)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||

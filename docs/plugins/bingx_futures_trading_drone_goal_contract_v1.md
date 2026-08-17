@@ -772,6 +772,51 @@ enablement, boot persistence, exact-unit runtime smoke, external anchoring,
 leases, account reads, remote effects, tags, and Releases remain separate and
 unauthorized.
 
+### 11.20 Pass M: Verifiable Bundle and Ephemeral Exact-Unit Install
+
+Pass M extends the existing runner artifact owner rather than creating an
+installer or deployment service. One bundle contains exactly the Linux runner,
+the canonical systemd unit, and one ordered manifest. The manifest binds the
+binary and unit SHA-256 values, source commit, dependency lock, target,
+authority profile, atomic bundle destination, binary and unit paths, systemd
+link path, encrypted credential path, and state directory. Unknown entries,
+unit substitution, binary mutation, target drift, source drift, authority
+markers, or alternate install paths fail verification.
+
+The bundle directory is staged beside its final `/opt` destination and enters
+that destination through one rename. The systemd unit is linked from that
+immutable bundle only after every staged byte is verified. The smoke path
+requires root, Linux x64, an exclusive host lock, and the complete absence of
+all canonical bundle, unit-link, credential, state, and enablement paths. It
+refuses to adopt, overwrite, back up, repair, or delete pre-existing host state.
+This makes bundle publication atomic and leaves every later host mutation
+non-enabled and safely removable; it does not claim a cross-filesystem
+transaction that Linux cannot provide.
+
+The exact checked-in unit receives one temporary runner-only signing seed via
+`systemd-creds` and `LoadCredentialEncrypted=`. Plaintext seed bytes are piped
+directly into encryption and are never written to a file or process
+environment. The smoke starts the linked unit without `enable`, waits for the
+first authenticated public-shadow evidence append, verifies zero restarts and
+the fixed resource/network boundaries, then stops the unit, asks systemd to
+clean its state, removes only paths created by this invocation, reloads systemd,
+and proves that no canonical path or loaded unit remains.
+
+Threats closed by this pass are binary/unit mix-and-match, manifest path
+confusion, symlink or pre-existing-path adoption, concurrent install races,
+plaintext credential persistence, accidental boot enablement, false success
+before evidence append, and cleanup that silently leaves authority or service
+state behind. Negative self-tests independently mutate unit bytes, install
+paths, collision guards, enablement, and state cleanup. The existing parity
+gate remains the sole review owner.
+
+This pass proves only installation mechanics for the public-market shadow
+runner. It creates no account read, exchange credential, Capsule authority,
+mandate, lease, order/effect route, listener, persistent service, external
+anchor, release artifact, tag, or Release. A persistent host identity and
+boot-enabled observation service require a separate decision after this smoke
+evidence is closed.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

@@ -3422,6 +3422,33 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     enablement. Status: complete (2026-08-18). No following pass is selected
     automatically.
 
+- `1.x Trading Remote Runner Pass M — Verifiable Bundle and Ephemeral Exact-Unit Install`
+  - Lane: bounded 1.x Trading packaging and host-installation evidence; no
+    persistent deployment, account access, effect, or release work.
+  - Invariant: one verified binary/unit/manifest bundle enters its canonical
+    `/opt` destination through one rename. The exact unit may be linked and
+    started without enablement only when every canonical target is absent; one
+    authenticated public evidence append must be observed before success, and
+    exact cleanup must leave no unit, credential, bundle, state, or enablement
+    path.
+  - Sole owner: the existing `public_shadow_runner_artifact.sh` owns bundle
+    construction, verification, and the bounded ephemeral smoke. Systemd
+    retains process lifecycle/resource ownership, the existing probe retains
+    composition/cadence, and the existing shadow store retains evidence. No
+    installer service, DTO, journal, credential owner, or effect path is added.
+  - Removed or sealed: mixed binary/unit bundles, alternate destinations,
+    symlink or pre-existing-state adoption, concurrent install races,
+    plaintext seed files/environment, `systemctl enable`, false success before
+    evidence, and incomplete cleanup fail closed. Persistent installation,
+    boot enablement, durable runner identity, external anchoring, account
+    reads, leases, remote effects, tags, and Releases remain sealed.
+  - Exit evidence: bundle and parity self-tests with independent unit/path/
+    collision/enablement/cleanup mutations; clean Linux x64 bundle build and
+    verification; exact-unit ephemeral VPS smoke; website, listener, and
+    Amnezia continuity; full local and clean-checkout gates; protected PR and
+    green post-merge CI. Status: implementation candidate (2026-08-18). No
+    following pass is selected automatically.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
