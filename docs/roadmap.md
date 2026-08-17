@@ -3100,6 +3100,22 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     unswept` lifecycle or prove stale-cache reuse, but the UI ambiguity must be
     remediated through the existing decision/projection path before Remote
     Runner/VPS work. No algorithmic age policy is changed by this checkpoint.
+    The bounded presentation remediation is complete on `main` at `6c6c7aa`
+    (2026-08-17). Protected PR `#95`, required branch gates `31979736936`, and
+    post-merge repository gates `31979798382` passed. One pure formatter and an
+    optional existing-result projection field expose source, formation time,
+    age, signed distance, and `Run Intent` revalidation without changing the
+    decision hash, strategy policy, owner, DTO family, or effect path. Hands
+    smoke used same-source macOS and Android Release build
+    `1.0.3+100030044`. Both platforms displayed the pending-zone evidence,
+    cleared it on symbol change, and recomputed it through `Run Intent` with
+    `effect=false`; no `bingx.exchange.execute` event occurred. The smoke-only
+    macOS ZIP SHA-256 was
+    `8d9f8e4db34753ecbde10d89baeaffed50a79547c6e6f421d45c2a8cf9efb050`;
+    Android APK SHA-256 was
+    `30bd88aed3bd48d15c5641851e7e973e59928c6bdaabb2d30ef8c5e1225857e6`.
+    No next pass, tag, Release, scheduler, or Remote Runner/VPS deployment is
+    selected by this evidence checkpoint.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
