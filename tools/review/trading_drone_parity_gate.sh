@@ -27,12 +27,17 @@ shadow_probe_has_authority() {
 }
 
 shadow_stream_is_durable() {
+  local unexpected_deletes
+  unexpected_deletes="$(rg -n '\.delete\(' "$1" | rg -v '(interrupted|pending)\.delete\(' || true)"
   rg -q 'static const int maxEntries = 256;' "$1" &&
     rg -q 'static const int _lockAttemptLimit = 100;' "$1" &&
+    rg -q "_pendingDirectoryName = 'pending'" "$1" &&
     rg -q 'FileLock\.exclusive' "$1" &&
-    rg -q 'create\(exclusive: true\)' "$1" &&
+    rg -q 'pending\.create\(exclusive: true\)' "$1" &&
+    rg -q 'pending\.writeAsBytes\(evidence\.wireBytes, flush: true\)' "$1" &&
+    rg -q 'pending\.rename\(committed\.path\)' "$1" &&
     rg -q 'authenticateShadowEvidence' "$1" &&
-    ! rg -q '\.delete\(' "$1"
+    [ -z "$unexpected_deletes" ]
 }
 
 if [ ! -f "$CHECKLIST" ]; then
@@ -113,7 +118,7 @@ printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
 printf '\nplaceOrder\n' >> "$PROBE_MUTATION"
 sed 's/static const int _lockAttemptLimit = 100;/static const int _lockAttemptLimit = 0;/' \
   "$SHADOW_STREAM" > "$STREAM_MUTATION"
-printf '\nvoid deleteEvidence() => File("evidence").delete();\n' >> "$STREAM_MUTATION"
+printf '\nvoid deleteEvidence(File committed) => committed.delete();\n' >> "$STREAM_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_stream_is_durable "$STREAM_MUTATION"; then

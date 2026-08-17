@@ -3170,6 +3170,32 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     checkout, and `25/25` focused restart/adverse tests passed. No following
     pass is selected automatically.
 
+- `1.x Trading Remote Runner Pass D Remediation — Crash-Atomic Shadow Append`
+  - Lane: bounded remediation of the existing runner-only durable stream; no
+    release, deployment, scheduler, receiver, account, or effect work.
+  - Finding: the final committed file was created before its canonical bytes
+    were flushed, so process termination could leave a visible empty or
+    truncated committed entry and permanently block restart.
+  - Invariant: one exclusive pending write is flushed before atomic rename;
+    rename is the sole commit point. Restart may remove only one regular file
+    with the exact canonical pending name. Committed evidence is never deleted,
+    replaced, rewritten, or repaired.
+  - Sole owner: the existing `BingxFuturesShadowStreamStore`; the replay
+    harness retains evidence semantics and authentication ownership.
+  - Removed or sealed: the partial-committed-file crash window and any cleanup
+    interpretation that could delete committed evidence. Unknown, linked, or
+    multiple pending state fails closed.
+  - Exit evidence: interrupted pending recovery, unknown pending rejection,
+    committed target conflict, retained corruption rejection, structural
+    negative mutation, full local and clean-checkout gates, protected PR, and
+    green post-merge CI.
+  - Remaining boundary: rollback-resistant anchors, rotation, daemon,
+    scheduler, transport/receiver, VPS deployment, leases, account reads,
+    local acceptance state, remote effects, tag, and Release remain
+    unauthorized.
+  - Status: selected and in progress (2026-08-17). No following pass is
+    selected automatically.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
