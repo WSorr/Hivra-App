@@ -2,8 +2,10 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Remote Runner Pass H — Pinned Linux
-x64 Artifact Evidence` is selected. The existing packaging owner uses one
+Current development focus: no following pass is selected automatically. `1.x
+Trading Remote Runner Pass H — Pinned Linux x64 Artifact Evidence` is complete
+on `main` at `ea36a8b` through protected PR `#119`; required run `32054282257`
+and post-merge run `32054365614` passed. The existing packaging owner uses one
 minimal pure-Dart dependency closure with an exact lock and compiles only the
 explicit `linux/x64` cross-target. The manifest binds the dependency-lock
 SHA-256 and verification requires an ELF x86-64 executable matching the exact
@@ -11,9 +13,16 @@ target. Package substitution, unlocked resolution, target confusion, binary
 mutation, and authenticated effect markers fail closed. No Linux execution,
 transfer, installation, systemd/Docker, VPS change, network/resource policy,
 credential, account read, Capsule state, lease, external anchor, or effect
-route is authorized. Exit evidence requires pinned dependency validation,
-target/binary negative tests, one clean Linux x64 artifact, full local and
-clean-checkout gates, protected PR, and green post-merge CI. The preceding
+route is authorized. The post-merge ELF x86-64 artifact is 7,807,720 bytes with
+SHA-256 `8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`;
+its dependency-lock SHA-256 is
+`f5443e020cbafc892fb75080be84899d3d7f6196be1dc0f7525d73f1eac789ac`.
+Pinned dependency validation, target/binary/source/authority negative tests,
+Flutter `931/931`, analyze, Rust workspace, full review gates, clean detached-
+checkout packaging, protected PR, and green post-merge CI passed. Linux runtime
+execution, transfer, deployment, VPS configuration, supervisor, network or
+resource policy, credentials, account reads, external anchoring, and effects
+remain unauthorized. The preceding
 `1.x Trading Remote Runner Pass G — Verifiable Standalone Host Artifact` is complete
 on `main` at `3fbe8f2` through protected PR `#117`; required run `32044373306`
 and post-merge run `32044425543` passed. One existing probe entrypoint may be

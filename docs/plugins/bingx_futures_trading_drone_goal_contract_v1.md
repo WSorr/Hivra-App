@@ -185,8 +185,9 @@ is complete on `main` at `712177f` through protected PR `#115`; required run
 `32043346812` and post-merge run `32043400512` passed. Pass G verifiable
 standalone artifact packaging is complete on `main` at `3fbe8f2` through
 protected PR `#117`; required run `32044373306` and post-merge run
-`32044425543` passed. Pass H pinned Linux x64 artifact evidence is selected. It
-changes only the existing packaging dependency and target closure. Unbounded
+`32044425543` passed. Pass H pinned Linux x64 artifact evidence is complete on
+`main` at `ea36a8b` through protected PR `#119`; required run `32054282257` and
+post-merge run `32054365614` passed. No following pass is selected. Unbounded
 daemon operation, Linux execution, transfer, installation, deployment,
 external anchoring, leases, account access, remote effects, supervisor
 configuration, and VPS changes remain unauthorized.
@@ -606,6 +607,16 @@ Docker, firewall, DNS, ports, CPU/memory limits, restart policy, or logging, or
 touch the existing site and Amnezia service. It adds no credential, account
 read, Capsule state, lease, external anchor, or exchange effect. Those require
 separate host evidence and deployment decisions.
+
+Implementation evidence: the post-merge ELF x86-64 artifact built from
+`ea36a8b` is 7,807,720 bytes with SHA-256
+`8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`.
+The dependency-lock SHA-256 is
+`f5443e020cbafc892fb75080be84899d3d7f6196be1dc0f7525d73f1eac789ac`.
+Target, source, lock, byte, shape, and authority negative tests, Flutter
+`931/931`, analyze, Rust workspace, full review gates, clean detached-checkout
+packaging, protected PR, and post-merge CI passed. No runtime owner or path was
+added.
 
 ## 12. Local Bounded Mandate Boundary
 
