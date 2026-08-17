@@ -737,9 +737,11 @@ forbidden.
 
 The runner seed is a runner-only evidence-signing identity. The probe accepts
 it from exactly one source: the existing ephemeral environment boundary or one
-absolute regular credential file that grants no group or other permissions.
-The two sources are mutually exclusive, and linked, relative, permissive,
-malformed, or missing files fail before stream or network access. The
+absolute regular credential file. Ordinary files grant no group or other
+permissions; the canonical protected systemd credential path accepts only the
+exact root-owned `0440` delivery produced for `DynamicUser=`. The two sources
+are mutually exclusive, and linked, relative, broadly readable, malformed, or
+missing files fail before stream or network access. The
 supervisor uses `LoadCredentialEncrypted=` plus `%d/runner-seed`; it contains no
 seed, environment secret, Capsule material, or exchange credential.
 
@@ -753,10 +755,11 @@ package digest, ABI, stream path, run count, and cadence are fixed rather than
 loaded from a mutable environment file.
 
 The existing trading parity gate semantically parses the unit and its exact
-command, verifies the seed-file ingress in the probe, and rejects independent
-mutations to restart policy, memory ceiling, credential delivery, and listener
-denial. Focused Dart tests cover valid file delivery plus ambiguous, relative,
-linked, and permissive negative cases. Debian systemd 257 accepted the unit
+command, verifies the seed-file ingress and protected systemd credential mode
+in the probe, and rejects independent mutations to restart policy, memory
+ceiling, credential delivery, and listener denial. Focused Dart tests cover
+valid ordinary/systemd delivery plus ambiguous, relative, linked, and
+permissive negative cases. Debian systemd 257 accepted the unit
 syntax; offline `systemd-analyze security` reported exposure `1.5 OK`. The only
 exact-unit verify failure was the expected absence of the not-yet-installed
 binary.

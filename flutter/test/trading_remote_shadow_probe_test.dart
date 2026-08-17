@@ -186,4 +186,30 @@ void main() {
       );
     },
   );
+
+  test('runner seed permissions recognize only protected systemd delivery', () {
+    expect(runnerSeedFilePermissionsAreSafe('/tmp/runner-seed', 0x180), isTrue);
+    expect(
+      runnerSeedFilePermissionsAreSafe('/tmp/runner-seed', 0x1a0),
+      isFalse,
+    );
+    expect(
+      runnerSeedFilePermissionsAreSafe(
+        '/run/credentials/hivra-shadow.service/runner-seed',
+        0x120,
+      ),
+      isTrue,
+    );
+    expect(
+      runnerSeedFilePermissionsAreSafe(
+        '/run/credentials/hivra-shadow.service/runner-seed',
+        0x124,
+      ),
+      isFalse,
+    );
+    expect(
+      runnerSeedFilePermissionsAreSafe('/tmp/runner-seed', 0x120),
+      isFalse,
+    );
+  });
 }

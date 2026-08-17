@@ -217,7 +217,9 @@ required_probe = [
     "'runner-seed-file'",
     "runner seed sources are ambiguous",
     "followLinks: false",
-    "stat.mode & 0x3f != 0",
+    "runnerSeedFilePermissionsAreSafe(seedFilePath, stat.mode)",
+    "^/run/credentials/[A-Za-z0-9_.@-]+\\.service/runner-seed$",
+    "permissions == 0x120",
 ]
 if any(fragment not in probe for fragment in required_probe):
     raise SystemExit(1)

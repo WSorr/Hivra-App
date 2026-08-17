@@ -130,12 +130,19 @@ Future<List<int>> readRunnerSeedBytes(
     );
   }
   final stat = await File(seedFilePath).stat();
-  if (stat.mode & 0x3f != 0) {
-    throw const FormatException(
-      'runner seed file must not grant group or other permissions',
-    );
+  if (!runnerSeedFilePermissionsAreSafe(seedFilePath, stat.mode)) {
+    throw const FormatException('runner seed file permissions are not private');
   }
   return _decodeSeed(await File(seedFilePath).readAsString());
+}
+
+bool runnerSeedFilePermissionsAreSafe(String path, int mode) {
+  final permissions = mode & 0x1ff;
+  final systemdCredential = RegExp(
+    r'^/run/credentials/[A-Za-z0-9_.@-]+\.service/runner-seed$',
+  ).hasMatch(path);
+  if (systemdCredential) return permissions == 0x120;
+  return permissions & 0x3f == 0;
 }
 
 ({int runCount, Duration? interval}) _parseSchedule(

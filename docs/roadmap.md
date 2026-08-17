@@ -3386,7 +3386,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Invariant: one successful bounded 288-cycle public-only batch may restart;
     any provider, validation, append, cadence, timeout, signal, or OOM failure
     remains stopped. The runner seed enters from exactly one strict encrypted
-    credential file rather than unit environment or CLI text.
+    credential file rather than unit environment or CLI text; ordinary private
+    files and exact protected systemd `0440` delivery remain distinct.
   - Sole owner: systemd owns only process lifecycle and resource containment;
     the existing probe owns composition/cadence and the existing shadow store
     owns evidence continuity. One justified unit contract is added, with zero
