@@ -3239,8 +3239,13 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: serial cadence, stop-on-first-failure, invalid bounds,
     scheduler and authority mutation tests, full local and clean-checkout
     gates, protected PR, and green post-merge CI.
-  - Status: selected (2026-08-17). This pass does not claim unattended VPS or
-    24/7 trading readiness and does not authorize a following pass.
+  - Status: complete on `main` at `712177f` (2026-08-17) through protected PR
+    `#115`; required run `32043346812` and post-merge run `32043400512` passed.
+    Scheduler `4/4`, combined scheduler/shadow/replay `45/45`, Flutter
+    `931/931`, analyze, Rust workspace, full review gates, clean detached-
+    checkout, and scheduler/authority negative mutations passed. No new owner
+    or path was added. This pass does not claim unattended VPS or 24/7 trading
+    readiness. No following pass is selected automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed

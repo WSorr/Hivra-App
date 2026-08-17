@@ -181,8 +181,10 @@ Status: Pass D durable shadow-stream implementation and crash-atomic append
 remediation are complete. Pass E authenticated bounded compaction is complete
 on `main` at `8c5c644` through protected PR `#113`; required run `32042296142`
 and post-merge run `32042345162` passed. Pass F public-only bounded scheduling
-is selected. Unbounded daemon operation, deployment, external anchoring,
-leases, account access, and remote effects remain unauthorized.
+is complete on `main` at `712177f` through protected PR `#115`; required run
+`32043346812` and post-merge run `32043400512` passed. No following pass is
+selected. Unbounded daemon operation, deployment, external anchoring, leases,
+account access, and remote effects remain unauthorized.
 
 ### 11.1 Purpose And Sole Owner
 
@@ -535,6 +537,12 @@ integration, VPS configuration, or exchange path. Its exit evidence requires
 serial cadence, exact bounded-argument rejection, stop-on-first-failure,
 authority and scheduler mutation tests, full local and clean-checkout gates,
 protected PR, and green post-merge CI.
+
+Implementation evidence: scheduler `4/4`, combined scheduler/shadow/replay
+`45/45`, Flutter `931/931`, analyze, Rust workspace, full review gates, clean
+detached-checkout, and scheduler/authority negative mutations passed. No new
+service, DTO, journal, receiver, supervisor, deployment unit, credential,
+account read, Capsule state, lease, or effect route was added.
 
 ## 12. Local Bounded Mandate Boundary
 
