@@ -650,6 +650,36 @@ the ephemeral Linux x64 artifact, entered the canonical probe, observed the
 exact missing-authority rejection, preserved a clean checkout after repository
 review, and uploaded nothing. No runtime owner or effect path was added.
 
+### 11.17 Pass J: Ephemeral VPS Public Observation Evidence
+
+Pass J proves one live public observation on the audited target host without
+installing or supervising the runner. The exact manifest-verified Linux x64
+artifact is copied only into one unique temporary directory. The host generates
+one ephemeral runner-only signing seed, runs one low-priority bounded cycle,
+captures process resource evidence, and removes the seed from the environment.
+Cleanup removes the process output, shadow stream, manifest, binary, and
+temporary directory.
+
+The smoke accepts no BingX API key, Capsule key, account identifier, mandate,
+approval, consensus fact, order state, or effect request. It creates no user,
+service, container, listener, firewall rule, nginx route, package installation,
+or persistent host path. Website health and every pre-existing VPN container
+must remain unchanged before and after the cycle. A transfer mismatch, wrong
+binary hash or size, timeout, runner error, missing evidence append, service
+regression, residual process, or residual temporary path fails the smoke.
+
+Evidence from clean source `12c8f30`: artifact SHA-256
+`8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`;
+one `BTC-USDT` public cycle completed in 3.213 seconds with peak RSS 24,072 KiB,
+appended sequence `1`, and emitted evidence hash
+`5c8f75b6b7fb32b9f09e4c2b1a33ceec16d18068a0144eb0ca7d06f21986013b`.
+There was no stderr. The website remained healthy, all existing VPN containers
+remained running, no listener changed, and final process/path cleanup was
+confirmed. This evidence permits a later consolidation decision about one
+isolated resource-bounded supervisor contract; it does not authorize that
+contract, durable runner identity, deployment, credentials, account reads,
+external anchoring, leases, or effects.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of
