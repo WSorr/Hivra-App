@@ -3380,6 +3380,32 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     including to 96 MiB, requires longer-duration evidence. Status: complete
     (2026-08-18). No following pass is selected automatically.
 
+- `1.x Trading Remote Runner Pass L — Fail-Closed Public-Shadow Supervisor Contract`
+  - Lane: bounded 1.x Trading host lifecycle contract; no installation,
+    enablement, credential creation, account access, effect, or release work.
+  - Invariant: one successful bounded 288-cycle public-only batch may restart;
+    any provider, validation, append, cadence, timeout, signal, or OOM failure
+    remains stopped. The runner seed enters from exactly one strict encrypted
+    credential file rather than unit environment or CLI text.
+  - Sole owner: systemd owns only process lifecycle and resource containment;
+    the existing probe owns composition/cadence and the existing shadow store
+    owns evidence continuity. One justified unit contract is added, with zero
+    new domain, credential, journal, decision, or effect owner.
+  - Removed or sealed: `Restart=always`/`on-failure`, environment secrets,
+    linked/permissive seed files, 64 MiB limits, swap, unconstrained tasks,
+    listener binding, mutable argument environments, and endless runtime are
+    rejected. Bundle creation, installation, enablement, durable credential,
+    exact-unit runtime smoke, external anchoring, leases, account reads, remote
+    effects, tags, and Releases remain sealed.
+  - Exit evidence: focused seed-file/scheduler tests, semantic unit parsing,
+    restart/memory/credential/listener negative mutations, systemd 257 syntax
+    verification, offline hardening analysis, full local and clean-checkout
+    gates, protected PR, and green post-merge CI.
+  - Next decision unlocked: one verifiable artifact/unit bundle and atomic
+    ephemeral install smoke may be evaluated separately before any persistent
+    enablement. Status: implementation candidate (2026-08-18). No following
+    pass is selected automatically.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

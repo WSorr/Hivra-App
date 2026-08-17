@@ -16,8 +16,9 @@ Future<void> main(List<String> args) async {
   try {
     final options = _parseArgs(args);
     final schedule = _parseSchedule(options);
-    final seedHex = Platform.environment['HIVRA_SHADOW_RUNNER_SEED_HEX'] ?? '';
-    final signingKey = await Ed25519().newKeyPairFromSeed(_decodeSeed(seedHex));
+    final signingKey = await Ed25519().newKeyPairFromSeed(
+      await readRunnerSeedBytes(options),
+    );
     final publicKey = await signingKey.extractPublicKey();
     final stream = BingxFuturesShadowStreamStore(
       directory: Directory(_required(options, 'stream-dir')),
@@ -87,6 +88,7 @@ Map<String, String> _parseArgs(List<String> args) {
     'package-digest-hex',
     'host-abi',
     'stream-dir',
+    'runner-seed-file',
     'run-count',
     'interval-seconds',
   };
@@ -105,6 +107,35 @@ Map<String, String> _parseArgs(List<String> args) {
     parsed[key] = args[++index];
   }
   return parsed;
+}
+
+Future<List<int>> readRunnerSeedBytes(
+  Map<String, String> options, {
+  Map<String, String>? environment,
+}) async {
+  final seedFilePath = options['runner-seed-file'];
+  final seedFromEnvironment =
+      (environment ?? Platform.environment)['HIVRA_SHADOW_RUNNER_SEED_HEX'];
+  if (seedFilePath != null && seedFromEnvironment != null) {
+    throw const FormatException('runner seed sources are ambiguous');
+  }
+  if (seedFilePath == null) {
+    return _decodeSeed(seedFromEnvironment ?? '');
+  }
+  if (!File(seedFilePath).isAbsolute ||
+      FileSystemEntity.typeSync(seedFilePath, followLinks: false) !=
+          FileSystemEntityType.file) {
+    throw const FormatException(
+      'runner seed file must be one absolute regular file',
+    );
+  }
+  final stat = await File(seedFilePath).stat();
+  if (stat.mode & 0x3f != 0) {
+    throw const FormatException(
+      'runner seed file must not grant group or other permissions',
+    );
+  }
+  return _decodeSeed(await File(seedFilePath).readAsString());
 }
 
 ({int runCount, Duration? interval}) _parseSchedule(
