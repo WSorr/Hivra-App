@@ -1,15 +1,13 @@
 import '../models/bingx_futures_live_decision_models.dart';
-import '../models/bingx_futures_exchange_models.dart';
 import '../models/bingx_futures_live_strategy_models.dart';
-import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_live_decision_service.dart';
 import 'bingx_futures_live_snapshot_builder_service.dart';
+import 'bingx_futures_public_market_data_port.dart';
 
 typedef BingxLiveSnapshotLoader = Future<BingxFuturesLiveSnapshotBuildResult>
     Function({
-  required BingxFuturesExchangeService exchange,
+  required BingxFuturesPublicMarketDataPort exchange,
   required String symbol,
-  BingxFuturesApiCredentials? credentials,
 });
 
 typedef BingxLiveDecisionEvaluator = BingxFuturesLiveDecisionResult Function(
@@ -17,12 +15,12 @@ typedef BingxLiveDecisionEvaluator = BingxFuturesLiveDecisionResult Function(
 );
 
 class BingxFuturesLiveStrategyUseCaseService {
-  final BingxFuturesExchangeService _exchange;
+  final BingxFuturesPublicMarketDataPort _exchange;
   final BingxLiveSnapshotLoader _loadSnapshot;
   final BingxLiveDecisionEvaluator _evaluateDecision;
 
   BingxFuturesLiveStrategyUseCaseService({
-    required BingxFuturesExchangeService exchange,
+    required BingxFuturesPublicMarketDataPort exchange,
     BingxFuturesLiveSnapshotBuilderService snapshotBuilder =
         const BingxFuturesLiveSnapshotBuilderService(),
     BingxFuturesLiveDecisionService decisionService =
@@ -39,7 +37,6 @@ class BingxFuturesLiveStrategyUseCaseService {
     final snapshot = await _loadSnapshot(
       exchange: _exchange,
       symbol: command.symbol,
-      credentials: command.credentials,
     );
     if (!snapshot.isSuccess || snapshot.snapshotInput == null) {
       return BingxFuturesLiveStrategyResult(

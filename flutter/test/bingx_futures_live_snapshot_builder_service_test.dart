@@ -188,10 +188,6 @@ void main() {
       final result = await builder.fetchAndBuild(
         exchange: exchange,
         symbol: 'BTC-USDT',
-        credentials: const BingxFuturesApiCredentials(
-          apiKey: 'a',
-          apiSecret: 'b',
-        ),
       );
 
       expect(result.isSuccess, isTrue);

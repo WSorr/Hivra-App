@@ -1631,7 +1631,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final result = await _module.liveStrategyUseCase.execute(
       BingxFuturesLiveStrategyCommand(
         symbol: symbol,
-        credentials: _resolveCredentials(),
         isConsensusSignable: consensus.isSignable,
         blockingFactCodes: consensus.blockingCodes,
         recentMicroBars: _recentMicroBars,

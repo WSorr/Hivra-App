@@ -15,7 +15,6 @@ void main() {
         loadSnapshot: ({
           required exchange,
           required symbol,
-          credentials,
         }) async =>
             const BingxFuturesLiveSnapshotBuildResult(
           isSuccess: false,
@@ -33,7 +32,6 @@ void main() {
       final result = await service.execute(
         const BingxFuturesLiveStrategyCommand(
           symbol: 'BTC-USDT',
-          credentials: null,
           isConsensusSignable: true,
           blockingFactCodes: <String>[],
           recentMicroBars: 8,
