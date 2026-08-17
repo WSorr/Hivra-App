@@ -3193,8 +3193,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     scheduler, transport/receiver, VPS deployment, leases, account reads,
     local acceptance state, remote effects, tag, and Release remain
     unauthorized.
-  - Status: selected and in progress (2026-08-17). No following pass is
-    selected automatically.
+  - Status: complete on `main` at `ede2eb3` (2026-08-17). Protected PR `#101`,
+    required run `32021137109`, and post-merge run `32021215679` passed.
+    Flutter `910/910`, analyze, Rust workspace, full review gates, clean
+    checkout, and `15/15` focused crash-atomic adverse tests passed. No
+    following pass is selected automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
