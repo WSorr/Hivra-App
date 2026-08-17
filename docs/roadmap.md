@@ -3444,7 +3444,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     committed corruption, committed-plus-pending ambiguity, unbound-state
     rejection, mutation-gate, full Flutter/Rust/repository gates, clean
     checkout, protected PR, and green post-merge CI.
-  - Status: selected for bounded remediation (2026-08-17).
+  - Status: complete on `main` at `2af3de5` (2026-08-17). Protected PR `#107`,
+    required run `32027671293`, and post-merge run `32027767936` passed.
+    Flutter `919/919`, analyze, Rust workspace, full review gates, clean
+    checkout, and `21/21` focused tests passed. No following pass, deployment,
+    tag, or Release is selected automatically.
 
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
