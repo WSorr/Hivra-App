@@ -3273,6 +3273,26 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     passed. Dart AOT is explicitly not claimed byte-reproducible. No new owner
     or path was added, and no following pass is selected automatically.
 
+- `1.x Trading Remote Runner Pass H — Pinned Linux x64 Artifact Evidence`
+  - Lane: bounded 1.x Trading Linux packaging evidence before any host action.
+  - Invariant: one pinned pure-Dart lock and one clean source commit produce an
+    explicit `linux/x64` binary; the manifest binds the lock SHA and verifier
+    requires matching ELF x86-64 bytes.
+  - Sole owner: the existing artifact script owns dependency resolution,
+    cross-target compilation, and verification. The existing probe remains the
+    sole entrypoint; no runtime or deployment owner is added.
+  - Removed or sealed: Linux evidence no longer requires the full Flutter Linux
+    archive or a duplicate runner. Unlocked resolution, package drift, generic
+    target expansion, and target/binary confusion fail closed. Execution,
+    transfer, installation, supervisor, VPS networking/resources, site or
+    Amnezia changes, credentials, account reads, external anchoring, and remote
+    effects remain sealed.
+  - Exit evidence: pinned lock validation, target/binary and authority negative
+    tests, one clean Linux x64 artifact, full local and clean-checkout gates,
+    protected PR, and green post-merge CI.
+  - Status: selected (2026-08-17). Linux runtime compatibility and deployment
+    are not claimed, and no following pass is authorized.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

@@ -8,6 +8,8 @@ PUBLIC_STRATEGY="$ROOT/flutter/lib/services/bingx_futures_live_strategy_use_case
 SHADOW_PROBE="$ROOT/flutter/tool/trading_remote_shadow_probe.dart"
 SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart"
 RUNNER_ARTIFACT="$ROOT/tools/trading/public_shadow_runner_artifact.sh"
+RUNNER_PACKAGE="$ROOT/tools/trading/public_shadow_runner_package/pubspec.yaml"
+RUNNER_PACKAGE_LOCK="$ROOT/tools/trading/public_shadow_runner_package/pubspec.lock"
 EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart"
 TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
 STATUS=0
@@ -54,9 +56,24 @@ runner_artifact_is_verifiable() {
     rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
     rg -q 'build output must stay outside the repository' "$1" &&
     rg -q 'binary_sha256=' "$1" &&
+    rg -q 'dependency_lock_sha256=' "$1" &&
+    rg -q 'dart pub get --enforce-lockfile' "$1" &&
+    rg -q 'the only cross-build target is linux/x64' "$1" &&
+    rg -q 'artifact binary does not match Linux x64 manifest' "$1" &&
     rg -q 'artifact binary SHA-256 mismatch' "$1" &&
     rg -q 'forbidden authenticated exchange authority markers' "$1" &&
-    rg -q 'dart compile exe "tool/trading_remote_shadow_probe.dart"' "$1"
+    rg -q 'dart compile exe' "$1" &&
+    rg -q '"tool/trading_remote_shadow_probe.dart"' "$1"
+}
+
+runner_package_is_pinned() {
+  [ -f "$1" ] && [ -f "$2" ] &&
+    rg -q '^  sdk: 3\.11\.0$' "$1" &&
+    rg -q '^  crypto: 3\.0\.7$' "$1" &&
+    rg -q '^  cryptography: 2\.9\.0$' "$1" &&
+    rg -q '^    version: "3\.0\.7"$' "$2" &&
+    rg -q '^    version: "2\.9\.0"$' "$2" &&
+    rg -q '^  dart: "3\.11\.0"$' "$2"
 }
 
 shadow_stream_is_durable() {
@@ -162,10 +179,11 @@ else
 fi
 
 if runner_artifact_is_verifiable "$RUNNER_ARTIFACT" &&
+  runner_package_is_pinned "$RUNNER_PACKAGE" "$RUNNER_PACKAGE_LOCK" &&
   "$RUNNER_ARTIFACT" --self-test >/dev/null; then
-  pass "standalone runner artifact binds clean source, exact bytes, and public-only authority"
+  pass "standalone runner artifact binds pinned dependencies, target, exact bytes, and public-only authority"
 else
-  fail "standalone runner artifact lost provenance or public-only verification"
+  fail "standalone runner artifact lost dependency, target, provenance, or authority verification"
 fi
 
 if rg -q "BingxFuturesShadowStreamStore" "$SHADOW_PROBE" &&

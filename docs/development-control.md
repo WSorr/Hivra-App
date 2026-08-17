@@ -2,8 +2,19 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no following pass is selected automatically. `1.x
-Trading Remote Runner Pass G — Verifiable Standalone Host Artifact` is complete
+Current development focus: `1.x Trading Remote Runner Pass H — Pinned Linux
+x64 Artifact Evidence` is selected. The existing packaging owner uses one
+minimal pure-Dart dependency closure with an exact lock and compiles only the
+explicit `linux/x64` cross-target. The manifest binds the dependency-lock
+SHA-256 and verification requires an ELF x86-64 executable matching the exact
+target. Package substitution, unlocked resolution, target confusion, binary
+mutation, and authenticated effect markers fail closed. No Linux execution,
+transfer, installation, systemd/Docker, VPS change, network/resource policy,
+credential, account read, Capsule state, lease, external anchor, or effect
+route is authorized. Exit evidence requires pinned dependency validation,
+target/binary negative tests, one clean Linux x64 artifact, full local and
+clean-checkout gates, protected PR, and green post-merge CI. The preceding
+`1.x Trading Remote Runner Pass G — Verifiable Standalone Host Artifact` is complete
 on `main` at `3fbe8f2` through protected PR `#117`; required run `32044373306`
 and post-merge run `32044425543` passed. One existing probe entrypoint may be
 compiled into one host-native executable only from a completely clean tree and
