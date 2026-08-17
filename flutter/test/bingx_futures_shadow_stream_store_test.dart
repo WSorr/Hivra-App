@@ -47,6 +47,147 @@ void main() {
       expect(await _evidenceFiles(temp), hasLength(2));
     });
 
+    test('commits a flushed pending identity after restart', () async {
+      await _prepareEmptyStream(temp);
+      const owner = BingxFuturesDeterministicReplayHarnessService();
+      final runnerKeyId = owner.runnerKeyId(publicKey);
+      final pending = File('${temp.path}/stream_identity.v1.json.pending');
+      await pending.writeAsString(
+        '{"schema_version":1,"runner_key_id":"$runnerKeyId"}',
+        flush: true,
+      );
+
+      final evidence = await BingxFuturesShadowStreamStore(
+        directory: temp,
+      ).append(trustedRunnerKey: publicKey, produce: produce);
+
+      expect(evidence.sequence, 1);
+      expect(await pending.exists(), isFalse);
+      expect(
+        await File('${temp.path}/stream_identity.v1.json').exists(),
+        isTrue,
+      );
+    });
+
+    test('replaces only a malformed uncommitted identity', () async {
+      await _prepareEmptyStream(temp);
+      final pending = File('${temp.path}/stream_identity.v1.json.pending');
+      await pending.writeAsString('{partial', flush: true);
+
+      final evidence = await BingxFuturesShadowStreamStore(
+        directory: temp,
+      ).append(trustedRunnerKey: publicKey, produce: produce);
+
+      expect(evidence.sequence, 1);
+      expect(await pending.exists(), isFalse);
+      expect(
+        await File('${temp.path}/stream_identity.v1.json').exists(),
+        isTrue,
+      );
+    });
+
+    test('preserves a pending identity bound to another runner', () async {
+      await _prepareEmptyStream(temp);
+      final otherSigningKey = await Ed25519().newKeyPairFromSeed(
+        List<int>.filled(32, 8),
+      );
+      final otherPublicKey = await otherSigningKey.extractPublicKey();
+      const owner = BingxFuturesDeterministicReplayHarnessService();
+      final pending = File('${temp.path}/stream_identity.v1.json.pending');
+      await pending.writeAsString(
+        '{"schema_version":1,"runner_key_id":"${owner.runnerKeyId(otherPublicKey)}"}',
+        flush: true,
+      );
+      var produced = false;
+
+      await expectLater(
+        BingxFuturesShadowStreamStore(directory: temp).append(
+          trustedRunnerKey: publicKey,
+          produce: (sequence, previousHash) async {
+            produced = true;
+            return produce(sequence, previousHash);
+          },
+        ),
+        throwsFormatException,
+      );
+
+      expect(produced, isFalse);
+      expect(await pending.exists(), isTrue);
+    });
+
+    test('preserves malformed committed identity and fails closed', () async {
+      await _prepareEmptyStream(temp);
+      final identity = File('${temp.path}/stream_identity.v1.json');
+      await identity.writeAsString('{}', flush: true);
+      var produced = false;
+
+      await expectLater(
+        BingxFuturesShadowStreamStore(directory: temp).append(
+          trustedRunnerKey: publicKey,
+          produce: (sequence, previousHash) async {
+            produced = true;
+            return produce(sequence, previousHash);
+          },
+        ),
+        throwsFormatException,
+      );
+
+      expect(produced, isFalse);
+      expect(await identity.readAsString(), '{}');
+    });
+
+    test('preserves ambiguous committed and pending identities', () async {
+      await _prepareEmptyStream(temp);
+      const owner = BingxFuturesDeterministicReplayHarnessService();
+      final runnerKeyId = owner.runnerKeyId(publicKey);
+      final encoded = '{"schema_version":1,"runner_key_id":"$runnerKeyId"}';
+      final identity = File('${temp.path}/stream_identity.v1.json');
+      final pending = File('${temp.path}/stream_identity.v1.json.pending');
+      await identity.writeAsString(encoded, flush: true);
+      await pending.writeAsString(encoded, flush: true);
+      var produced = false;
+
+      await expectLater(
+        BingxFuturesShadowStreamStore(directory: temp).append(
+          trustedRunnerKey: publicKey,
+          produce: (sequence, previousHash) async {
+            produced = true;
+            return produce(sequence, previousHash);
+          },
+        ),
+        throwsFormatException,
+      );
+
+      expect(produced, isFalse);
+      expect(await identity.readAsString(), encoded);
+      expect(await pending.readAsString(), encoded);
+    });
+
+    test('does not bind an identity over existing unbound state', () async {
+      await _prepareEmptyStream(temp);
+      final retained = File('${temp.path}/evidence/unbound.json');
+      await retained.writeAsString('existing', flush: true);
+      var produced = false;
+
+      await expectLater(
+        BingxFuturesShadowStreamStore(directory: temp).append(
+          trustedRunnerKey: publicKey,
+          produce: (sequence, previousHash) async {
+            produced = true;
+            return produce(sequence, previousHash);
+          },
+        ),
+        throwsFormatException,
+      );
+
+      expect(produced, isFalse);
+      expect(await retained.readAsString(), 'existing');
+      expect(
+        await File('${temp.path}/stream_identity.v1.json').exists(),
+        isFalse,
+      );
+    });
+
     test(
       'serializes concurrent append attempts into distinct sequences',
       () async {
@@ -355,6 +496,11 @@ void main() {
       },
     );
   });
+}
+
+Future<void> _prepareEmptyStream(Directory directory) async {
+  await Directory('${directory.path}/evidence').create();
+  await Directory('${directory.path}/pending').create();
 }
 
 Future<BingxFuturesShadowEvidence> _evidence(

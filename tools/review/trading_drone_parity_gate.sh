@@ -34,7 +34,12 @@ shadow_stream_is_durable() {
   rg -q 'static const int maxEntries = 256;' "$1" &&
     rg -q 'static const int _lockAttemptLimit = 100;' "$1" &&
     rg -q "_pendingDirectoryName = 'pending'" "$1" &&
+    rg -q "_pendingIdentityFileName =" "$1" &&
     rg -q 'FileLock\.exclusive' "$1" &&
+    rg -q 'pending\.writeAsString\(encoded, flush: true\)' "$1" &&
+    rg -q 'pending\.rename\(identity\.path\)' "$1" &&
+    rg -q '_requireEmptyUnboundStream' "$1" &&
+    rg -q 'ambiguous shadow stream identity state' "$1" &&
     rg -q 'pending\.create\(exclusive: true\)' "$1" &&
     rg -q 'pending\.writeAsBytes\(evidence\.wireBytes, flush: true\)' "$1" &&
     rg -q 'pending\.rename\(committed\.path\)' "$1" &&
@@ -133,7 +138,8 @@ cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
 printf '\nplaceOrder\n' >> "$PROBE_MUTATION"
-sed 's/static const int _lockAttemptLimit = 100;/static const int _lockAttemptLimit = 0;/' \
+sed -e 's/static const int _lockAttemptLimit = 100;/static const int _lockAttemptLimit = 0;/' \
+  -e 's/await pending\.rename(identity\.path);/await identity.writeAsString(encoded, flush: true);/' \
   "$SHADOW_STREAM" > "$STREAM_MUTATION"
 printf '\nvoid deleteEvidence(File committed) => committed.delete();\n' >> "$STREAM_MUTATION"
 sed 's/final executionSucceeded = queued\.execution\.isSuccess;/final executionSucceeded = true;/' \

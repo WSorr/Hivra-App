@@ -3426,6 +3426,26 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     initialization remains a separate finding; no following pass, tag, or
     Release is selected automatically.
 
+- `1.x Trading Shadow Identity Atomic Commit Remediation`
+  - Finding: first-run stream identity created the committed file before
+    writing and flushing its bytes, so termination could leave empty or partial
+    committed JSON and permanently block the runner-only shadow stream.
+  - Invariant: one fixed pending identity is flushed before atomic rename, and
+    no evidence is produced before identity commit. Recovery can complete exact
+    same-runner pending state or replace malformed uncommitted bytes only while
+    the stream is empty.
+  - Sole owner: `BingxFuturesShadowStreamStore` retains runner identity and
+    shadow evidence; the replay harness continues to own evidence semantics.
+  - Removed or sealed: create-final-then-write initialization, rebinding over
+    retained state, foreign-key adoption, committed corruption repair, and
+    ambiguous identity cleanup. No new DTO, owner, service, authority, effect,
+    scheduler, deployment, tag, or Release is added.
+  - Exit evidence: valid and malformed pending recovery, foreign-key pending,
+    committed corruption, committed-plus-pending ambiguity, unbound-state
+    rejection, mutation-gate, full Flutter/Rust/repository gates, clean
+    checkout, protected PR, and green post-merge CI.
+  - Status: selected for bounded remediation (2026-08-17).
+
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
     preserving the existing durable native handoff and Flutter Chat projection
