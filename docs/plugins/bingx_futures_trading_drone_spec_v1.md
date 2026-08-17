@@ -340,6 +340,20 @@ transfer, provider route, plugin ABI, Core path, or Ledger fact. A future
 headless host must call the same execution owner and cannot convert shadow
 evidence into mandate authority.
 
+### 5.3.4 Public Shadow Stream Identity Commit
+
+`BingxFuturesShadowStreamStore` remains the sole owner of runner-only stream
+identity and retained shadow evidence. Initial identity binding MUST write one
+fixed pending identity, flush it, and atomically rename it to the committed
+identity before any evidence can be produced. A restart may complete an exact
+valid pending identity for the same runner or replace malformed uncommitted
+bytes only while both evidence directories are empty.
+
+A malformed committed identity, a valid pending identity for another runner,
+simultaneous committed and pending identities, or any unbound retained state
+MUST fail closed without deletion or rebinding. Identity recovery grants no
+Capsule, credential, account, mandate, provider, scheduler, or effect authority.
+
 ### 5.4 Microstructure Confirmation
 
 - taker-flow delta from recent trades:

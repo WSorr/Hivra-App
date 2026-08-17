@@ -2,8 +2,17 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Execution Outcome Truth Remediation`
-is complete on `main` at `505c4ca` through protected PR `#105`; required run
+Current development focus: `1.x Trading Shadow Identity Atomic Commit
+Remediation` is active. `BingxFuturesShadowStreamStore` remains the sole
+runner-only identity and evidence retention owner. Initial identity binding
+must use one fixed pending file, flush, then atomic rename before producing
+evidence. Recovery is permitted only for exact uncommitted identity state while
+the stream is empty; committed corruption, foreign-key pending identity,
+committed-plus-pending ambiguity, and unbound retained state fail closed. No
+new DTO, service, owner, credential, scheduler, deployment, provider, effect,
+Core/Ledger path, tag, or Release is authorized. The preceding `1.x Trading
+Execution Outcome Truth Remediation` is complete on `main` at `505c4ca`
+through protected PR `#105`; required run
 `32025516002` and post-merge run `32025615776` passed. The existing
 `BingxFuturesExchangeExecutionUseCaseService` remains the sole provider-effect
 owner, and `BingxFuturesTradingCycleUseCaseService` remains the sole cycle
@@ -14,8 +23,7 @@ a reserved event claim remains unconfirmed and cannot authorize recreation.
 Flutter `913/913`, analyze, Rust workspace, full review gates, clean-checkout
 gates, `32/32` focused tests, required PR gates, and post-merge CI passed. No
 DTO, provider, effect route, scheduler, Remote Runner/VPS, Core/Ledger path,
-tag, or Release was added. Crash-atomic shadow identity initialization remains
-a separate confirmed finding; no following pass is selected automatically. The preceding
+tag, or Release was added. The preceding
 `1.x Chat Durable Handoff Capacity Remediation` is complete on `main` at
 `340c8a6` through protected PR `#103`; required run `32024383365` and
 post-merge run `32024462405` passed. The existing native Chat handoff remains the sole transport-to-

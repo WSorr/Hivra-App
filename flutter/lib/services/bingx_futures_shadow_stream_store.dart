@@ -19,6 +19,8 @@ class BingxFuturesShadowStreamStore {
   static const int _lockAttemptLimit = 100;
   static const Duration _lockRetryDelay = Duration(milliseconds: 25);
   static const String _identityFileName = 'stream_identity.v1.json';
+  static const String _pendingIdentityFileName =
+      'stream_identity.v1.json.pending';
   static const String _lockFileName = 'stream.lock';
   static const String _evidenceDirectoryName = 'evidence';
   static const String _pendingDirectoryName = 'pending';
@@ -181,6 +183,7 @@ class BingxFuturesShadowStreamStore {
   Future<void> _ensureKnownRootEntries() async {
     const allowed = <String>{
       _identityFileName,
+      _pendingIdentityFileName,
       _lockFileName,
       _evidenceDirectoryName,
       _pendingDirectoryName,
@@ -196,18 +199,62 @@ class BingxFuturesShadowStreamStore {
 
   Future<void> _bindIdentity(String runnerKeyId) async {
     final identity = File('${directory.path}/$_identityFileName');
+    final pending = File('${directory.path}/$_pendingIdentityFileName');
     await _rejectLink(identity.path);
-    if (!await identity.exists()) {
-      await identity.create(exclusive: true);
-      await identity.writeAsString(
-        jsonEncode(<String, Object>{
-          'schema_version': 1,
-          'runner_key_id': runnerKeyId,
-        }),
-        flush: true,
-      );
+    await _rejectLink(pending.path);
+    final identityExists = await identity.exists();
+    final pendingExists = await pending.exists();
+    if (identityExists) {
+      if (pendingExists) {
+        throw const FormatException('ambiguous shadow stream identity state');
+      }
+      if (await _readIdentityRunnerKeyId(identity) != runnerKeyId) {
+        throw const FormatException('shadow stream identity mismatch');
+      }
       return;
     }
+
+    await _requireEmptyUnboundStream();
+    if (pendingExists) {
+      String? pendingRunnerKeyId;
+      try {
+        pendingRunnerKeyId = await _readIdentityRunnerKeyId(pending);
+      } on FormatException {
+        await pending.delete();
+      }
+      if (pendingRunnerKeyId != null) {
+        if (pendingRunnerKeyId != runnerKeyId) {
+          throw const FormatException('shadow stream identity mismatch');
+        }
+        await pending.rename(identity.path);
+        return;
+      }
+    }
+
+    final encoded = jsonEncode(<String, Object>{
+      'schema_version': 1,
+      'runner_key_id': runnerKeyId,
+    });
+    await pending.create(exclusive: true);
+    try {
+      await pending.writeAsString(encoded, flush: true);
+      if (await FileSystemEntity.type(identity.path, followLinks: false) !=
+          FileSystemEntityType.notFound) {
+        throw const FileSystemException(
+          'shadow stream identity target appeared during commit',
+        );
+      }
+      await pending.rename(identity.path);
+    } catch (_) {
+      if (await FileSystemEntity.type(pending.path, followLinks: false) ==
+          FileSystemEntityType.file) {
+        await pending.delete();
+      }
+      rethrow;
+    }
+  }
+
+  Future<String> _readIdentityRunnerKeyId(File identity) async {
     if (await identity.length() > _maxIdentityBytes) {
       throw const FormatException('shadow stream identity is oversized');
     }
@@ -215,8 +262,19 @@ class BingxFuturesShadowStreamStore {
     if (decoded is! Map<String, dynamic> ||
         decoded.length != 2 ||
         decoded['schema_version'] != 1 ||
-        decoded['runner_key_id'] != runnerKeyId) {
-      throw const FormatException('shadow stream identity mismatch');
+        decoded['runner_key_id'] is! String ||
+        !_isSha256(decoded['runner_key_id'] as String)) {
+      throw const FormatException('invalid shadow stream identity');
+    }
+    return decoded['runner_key_id'] as String;
+  }
+
+  Future<void> _requireEmptyUnboundStream() async {
+    final evidence = Directory('${directory.path}/$_evidenceDirectoryName');
+    final pending = Directory('${directory.path}/$_pendingDirectoryName');
+    if (!(await evidence.list(followLinks: false).isEmpty) ||
+        !(await pending.list(followLinks: false).isEmpty)) {
+      throw const FormatException('unbound shadow stream contains state');
     }
   }
 
