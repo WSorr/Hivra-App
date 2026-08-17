@@ -3,7 +3,23 @@
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: no following pass is selected automatically. `1.x
-Trading Remote Runner Pass I — Linux Runtime Startup Evidence` is complete on
+Trading Remote Runner Pass J — Ephemeral VPS Public Observation Evidence` is
+complete. The exact public-only Linux x64 artifact from clean source `12c8f30`
+with SHA-256 `8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`
+was transferred only to a unique temporary directory on the audited Debian 13
+x86-64 host. One low-priority public `BTC-USDT` observation completed in 3.213
+seconds, appended sequence `1` with evidence hash
+`5c8f75b6b7fb32b9f09e4c2b1a33ceec16d18068a0144eb0ca7d06f21986013b`,
+used a peak resident set of 24,072 KiB, and produced no stderr. The runner-only
+signing seed was generated ephemerally on the host and removed from the process
+environment; no BingX credential, Capsule material, account read, order,
+effect, service, listener, or persistent runner state was introduced. The
+existing website remained HTTP `200`, all pre-existing VPN containers remained
+running, and the temporary process, stream, manifest, binary, and directory
+were removed. Supervisor installation, durable host identity, credentials,
+account access, external anchoring, leases, effects, tags, and Releases remain
+unauthorized. The preceding `1.x Trading Remote Runner Pass I — Linux Runtime
+Startup Evidence` is complete on
 `main` at `1770ded` through protected PR `#121`; required run `32057547066`
 and post-merge run `32057670511` passed. The existing artifact script built and
 verified one ephemeral Linux x64 ELF in the required Ubuntu job, removed runner

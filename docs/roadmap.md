@@ -3328,6 +3328,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     account read, tag, or Release was added. No following pass is selected
     automatically.
 
+- `1.x Trading Remote Runner Pass J — Ephemeral VPS Public Observation Evidence`
+  - Lane: bounded 1.x Trading host-compatibility evidence; no installation,
+    supervisor, credential, account, effect, or release work.
+  - Invariant: one exact public-only artifact runs one low-priority observation
+    from a unique temporary host directory, while the website and existing VPN
+    containers remain healthy; every transferred and generated smoke artifact
+    is removed afterward.
+  - Sole owner: the existing probe owns the cycle and the existing shadow store
+    owns its temporary stream. The host adds no service, container, receiver,
+    listener, journal, account, or effect owner.
+  - Removed or sealed: target-host public provider and resource compatibility
+    are no longer inferred from CI startup alone. Binary mismatch, timeout,
+    runner failure, service regression, and residual process/path state fail
+    closed. Durable identity, installation, supervisor, credentials, account
+    reads, external anchoring, leases, and effects remain sealed.
+  - Evidence: clean source `12c8f30`; Linux artifact SHA-256
+    `8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`;
+    one 3.213-second public observation; peak RSS 24,072 KiB; sequence `1`;
+    evidence hash
+    `5c8f75b6b7fb32b9f09e4c2b1a33ceec16d18068a0144eb0ca7d06f21986013b`;
+    no stderr; website and VPN continuity; zero residual process/path state.
+    Status: complete (2026-08-17). No following pass is selected automatically.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
