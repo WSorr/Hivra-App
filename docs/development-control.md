@@ -3,7 +3,29 @@
 Status date: 2026-08-18
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: no following pass is selected automatically. `1.x
-Trading Remote Runner Pass L — Fail-Closed Public-Shadow Supervisor Contract`
+Trading Remote Runner Pass M — Verifiable Bundle and Ephemeral Exact-Unit
+Install` is complete on `main` at `0ba5bcc` through protected PR `#127`;
+required run `32077843922` and post-merge run `32078130235` passed. The clean
+Linux x64 bundle from `b80dc8d` (tree-identical to the merged commit) bound its
+binary, canonical unit, manifest, and install paths; its binary SHA-256 was
+`5c662b67da2fabfe0201d8126f4fa18950fa4731294662572f07eb7ca8aad393`
+and its unit SHA-256 was
+`61d582064ee8be1f1ef53b19f6b4fc28f2cf415d24173b69d53fb6a129fa8583`.
+The exact checked-in unit was atomically published under `/opt`, linked without
+enablement, received one temporary encrypted runner-only credential, and
+appended public evidence hash
+`86e375726c05b2230c298b5b73e7b4e4c3d4c5577a3de8428f72f93040af4807`
+at cycle `1/288` with zero restarts and the exact 128 MiB/no-swap/16-task
+limits. The smoke then removed its bundle, unit link, credential, systemd state,
+lock, and temporary source. The website remained HTTP `200`, all Amnezia
+container identities/start times and zero restart counts were unchanged, and
+the listener set was identical. Two pre-final attempts failed closed before
+evidence and exposed a non-portable `file` dependency plus EXIT-trap scope;
+both were removed with regression gates before the final bundle was built.
+Persistent installation, boot enablement, durable runner identity, external
+anchoring, account reads, leases, effects, tags, and Releases remain
+unauthorized. The preceding `1.x Trading Remote Runner Pass L — Fail-Closed
+Public-Shadow Supervisor Contract`
 is complete on `main` at `dc6ce3a` through protected PR `#125`; required run
 `32075468982` and post-merge run `32076142166` passed. One systemd contract owns
 only process lifecycle and resource containment: successful bounded batches may

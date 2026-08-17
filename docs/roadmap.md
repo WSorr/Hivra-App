@@ -3446,8 +3446,26 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     collision/enablement/cleanup mutations; clean Linux x64 bundle build and
     verification; exact-unit ephemeral VPS smoke; website, listener, and
     Amnezia continuity; full local and clean-checkout gates; protected PR and
-    green post-merge CI. Status: implementation candidate (2026-08-18). No
-    following pass is selected automatically.
+    green post-merge CI.
+  - Evidence: implementation merged on `main` at `0ba5bcc` through protected
+    PR `#127`; required run `32077843922` and post-merge run `32078130235`
+    passed. Full Flutter `934/934`, Flutter analyze, Rust workspace, repository
+    gates, and clean detached-checkout review passed. The clean Linux x64
+    bundle from `b80dc8d` (tree-identical to the merge) contained a 7,810,680-
+    byte binary with SHA-256
+    `5c662b67da2fabfe0201d8126f4fa18950fa4731294662572f07eb7ca8aad393`
+    and the canonical unit with SHA-256
+    `61d582064ee8be1f1ef53b19f6b4fc28f2cf415d24173b69d53fb6a129fa8583`.
+    The exact unit appended evidence hash
+    `86e375726c05b2230c298b5b73e7b4e4c3d4c5577a3de8428f72f93040af4807`
+    at cycle `1/288`, had zero restarts, and exposed the exact 128 MiB,
+    no-swap, 16-task, DynamicUser, address-family, and listener-denial
+    properties. Final cleanup left no bundle, unit, credential, state, lock,
+    source, or enablement path. Website HTTP status, Amnezia container
+    identities/start times, restart counts, and listeners remained unchanged.
+    Two earlier attempts failed closed and drove removal of the implicit
+    `file` package dependency plus correction of EXIT-trap rollback scope.
+    Status: complete (2026-08-18). No following pass is selected automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
