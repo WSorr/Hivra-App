@@ -3419,8 +3419,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: rejected provider and contradictory-wrapper regressions,
     executable mutation-gate, full Flutter/Rust/repository gates, clean
     checkout, protected PR, and green post-merge CI.
-  - Status: selected for bounded remediation (2026-08-17). Crash-atomic shadow
-    identity initialization remains a separate finding and is not included.
+  - Status: complete on `main` at `505c4ca` (2026-08-17). Protected PR `#105`,
+    required run `32025516002`, and post-merge run `32025615776` passed.
+    Flutter `913/913`, analyze, Rust workspace, full review gates, clean
+    checkout, and `32/32` focused tests passed. Crash-atomic shadow identity
+    initialization remains a separate finding; no following pass, tag, or
+    Release is selected automatically.
 
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
