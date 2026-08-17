@@ -3136,8 +3136,12 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Remaining boundary: retained sequence state, restart continuity, daemon,
     scheduler, VPS deployment, lease activation, account reads, remote effects,
     tag, and Release remain unauthorized and unimplemented.
-  - Status: implementation and local evidence complete (2026-08-17); protected
-    PR and post-merge gates pending.
+  - Status: complete on `main` at `a7158d1` (2026-08-17). Protected PR `#97`,
+    required run `31993523725`, and post-merge run `31993593095` passed. A live
+    public observation produced decision `long` and evidence hash
+    `c116410ff689cec4833f332e64c6dce9601e2d218f68da409955c20813f4c311`;
+    OpenSSL independently verified its Ed25519 signature. No following pass is
+    selected automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
