@@ -3469,9 +3469,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     conflicting stable-id sealing, binding/hash mutation rejection, bounded
     retention, legacy Chat timeline compatibility, full automated gates, clean
     checkout, protected PR, and green post-merge CI.
-  - Status: active on branch
-    `fix/chat-execution-control-durable-lifecycle` (2026-08-17). No deployment,
-    tag, Release, or following product pass is selected.
+  - Status: complete on `main` at `bb4b52a` (2026-08-17). Protected PR `#109`,
+    required run `32032243278`, and post-merge run `32032343388` passed.
+    Flutter `920/920`, analyze, Rust workspace, full review gates, clean
+    detached-checkout gates, and focused Chat delivery `33/33` passed. No
+    deployment, tag, Release, or following product pass is selected.
 
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
