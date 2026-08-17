@@ -3,29 +3,38 @@ import 'dart:io';
 import 'package:cryptography/cryptography.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
+import 'package:hivra_app/services/bingx_futures_shadow_stream_store.dart';
 
 Future<void> main(List<String> args) async {
   try {
     final options = _parseArgs(args);
     final seedHex = Platform.environment['HIVRA_SHADOW_RUNNER_SEED_HEX'] ?? '';
     final signingKey = await Ed25519().newKeyPairFromSeed(_decodeSeed(seedHex));
-    final output = File(_required(options, 'output'));
-    final evidence = await const BingxFuturesDeterministicReplayHarnessService()
-        .runLivePublicShadow(
-          marketData: BingxFuturesExchangeService(),
-          symbol: _required(options, 'symbol'),
-          signingKey: signingKey,
-          runnerBuildId: _required(options, 'runner-build-id'),
-          pluginId: _required(options, 'plugin-id'),
-          pluginVersion: _required(options, 'plugin-version'),
-          packageDigestHex: _required(options, 'package-digest-hex'),
-          hostAbi: _required(options, 'host-abi'),
-          observedAtUtc: DateTime.now().toUtc(),
-        );
-    await output.create(exclusive: true);
-    await output.writeAsBytes(evidence.wireBytes, flush: true);
+    final publicKey = await signingKey.extractPublicKey();
+    final stream = BingxFuturesShadowStreamStore(
+      directory: Directory(_required(options, 'stream-dir')),
+    );
+    final evidence = await stream.append(
+      trustedRunnerKey: publicKey,
+      produce:
+          (sequence, previousEvidenceHashHex) =>
+              const BingxFuturesDeterministicReplayHarnessService()
+                  .runLivePublicShadow(
+                    marketData: BingxFuturesExchangeService(),
+                    symbol: _required(options, 'symbol'),
+                    signingKey: signingKey,
+                    runnerBuildId: _required(options, 'runner-build-id'),
+                    pluginId: _required(options, 'plugin-id'),
+                    pluginVersion: _required(options, 'plugin-version'),
+                    packageDigestHex: _required(options, 'package-digest-hex'),
+                    hostAbi: _required(options, 'host-abi'),
+                    observedAtUtc: DateTime.now().toUtc(),
+                    sequence: sequence,
+                    previousEvidenceHashHex: previousEvidenceHashHex,
+                  ),
+    );
     stdout.writeln(
-      'shadow_evidence_written=${output.path} '
+      'shadow_evidence_appended=${evidence.sequence} '
       'evidence_hash=${evidence.evidenceHashHex}',
     );
   } on Object catch (error) {
@@ -42,7 +51,7 @@ Map<String, String> _parseArgs(List<String> args) {
     'plugin-version',
     'package-digest-hex',
     'host-abi',
-    'output',
+    'stream-dir',
   };
   final parsed = <String, String>{};
   for (var index = 0; index < args.length; index++) {

@@ -186,6 +186,8 @@ void main() {
           1770000000000,
           isUtc: true,
         ),
+        sequence: 1,
+        previousEvidenceHashHex: _emptyEvidenceHash,
       );
 
       expect(loadedSymbol, 'BTC-USDT');
@@ -234,6 +236,8 @@ void main() {
             1770000000000,
             isUtc: true,
           ),
+          sequence: 1,
+          previousEvidenceHashHex: _emptyEvidenceHash,
         ),
         throwsStateError,
       );
@@ -263,6 +267,8 @@ void main() {
             1770000000000,
             isUtc: true,
           ),
+          sequence: 1,
+          previousEvidenceHashHex: _emptyEvidenceHash,
         ),
         throwsFormatException,
       );

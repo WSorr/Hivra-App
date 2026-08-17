@@ -6,6 +6,7 @@ CHECKLIST="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
 PUBLIC_SNAPSHOT="$ROOT/flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart"
 PUBLIC_STRATEGY="$ROOT/flutter/lib/services/bingx_futures_live_strategy_use_case_service.dart"
 SHADOW_PROBE="$ROOT/flutter/tool/trading_remote_shadow_probe.dart"
+SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart"
 STATUS=0
 
 pass() {
@@ -23,6 +24,15 @@ public_pipeline_has_authority() {
 
 shadow_probe_has_authority() {
   rg -q 'TradingDroneModuleService|BingxFuturesExchangeExecutionUseCaseService|BingxFuturesOrderTrackingStore|ExternalEffect|placeOrder|cancelOrder' "$1"
+}
+
+shadow_stream_is_durable() {
+  rg -q 'static const int maxEntries = 256;' "$1" &&
+    rg -q 'static const int _lockAttemptLimit = 100;' "$1" &&
+    rg -q 'FileLock\.exclusive' "$1" &&
+    rg -q 'create\(exclusive: true\)' "$1" &&
+    rg -q 'authenticateShadowEvidence' "$1" &&
+    ! rg -q '\.delete\(' "$1"
 }
 
 if [ ! -f "$CHECKLIST" ]; then
@@ -83,18 +93,33 @@ else
   pass "live shadow probe has no local authority or effect owner"
 fi
 
+if rg -q "BingxFuturesShadowStreamStore" "$SHADOW_PROBE" &&
+  rg -q "'stream-dir'" "$SHADOW_PROBE" &&
+  ! rg -q "'output'" "$SHADOW_PROBE" &&
+  shadow_stream_is_durable "$SHADOW_STREAM" &&
+  ! shadow_probe_has_authority "$SHADOW_STREAM"; then
+  pass "shadow stream is authenticated, bounded, immutable, and authority-free"
+else
+  fail "shadow stream lost restart, retention, or authority boundaries"
+fi
+
 PUBLIC_MUTATION="$(mktemp)"
 PROBE_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION"' EXIT
+STREAM_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
 printf '\nplaceOrder\n' >> "$PROBE_MUTATION"
+sed 's/static const int _lockAttemptLimit = 100;/static const int _lockAttemptLimit = 0;/' \
+  "$SHADOW_STREAM" > "$STREAM_MUTATION"
+printf '\nvoid deleteEvidence() => File("evidence").delete();\n' >> "$STREAM_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
-  shadow_probe_has_authority "$PROBE_MUTATION"; then
-  pass "public-only boundary negative mutations are rejected"
+  shadow_probe_has_authority "$PROBE_MUTATION" && \
+  ! shadow_stream_is_durable "$STREAM_MUTATION"; then
+  pass "public-only and durable-stream negative mutations are rejected"
 else
-  fail "public-only boundary negative mutation self-test failed"
+  fail "public-only or durable-stream negative mutation self-test failed"
 fi
 
 exit "$STATUS"

@@ -177,8 +177,8 @@ all point to the same behavior.
 
 ## 11. Remote Runner Shadow Boundary
 
-Status: Pass B remediation complete; Pass C and remote runtime implementation
-are not authorized
+Status: Pass C complete; Pass D durable shadow-stream implementation selected;
+daemon, deployment, leases, account access, and remote effects are not authorized
 
 ### 11.1 Purpose And Sole Owner
 
@@ -416,6 +416,40 @@ evidence requires focused regressions, full repository gates, one live public
 probe, independent signature verification, protected PR gates, and green
 post-merge CI. It seals direct reuse of the app-wide Trading module as a remote
 host and still seals Capsule-on-VPS, trading-key-on-VPS, and remote effects.
+
+### 11.10 Pass D Durable Shadow Stream And Restart Continuity
+
+Pass D gives the existing one-shot probe one runner-only persistence owner. It
+does not add a scheduler, daemon, receiver, lease, deployment unit, account
+read, Capsule state, or effect path. `BingxFuturesDeterministicReplayHarnessService`
+continues to own evidence semantics and authentication;
+`BingxFuturesShadowStreamStore` owns only durable ordered retention.
+
+The store binds one immutable stream identity to the exact runner key. Under a
+process-local mutation tail and a bounded inter-process file-lock acquisition,
+every append authenticates all retained canonical evidence, reconstructs the
+exact sequence and predecessor hash, produces the next evidence through the
+existing harness, and creates one new evidence file exclusively. Restart
+therefore continues the same authenticated hash chain. A public observation
+failure or exhausted lock budget creates no evidence.
+
+Retention is bounded at 256 entries and has no deletion, eviction, repair,
+rotation, or reset API. Full capacity, malformed or truncated evidence, an
+invalid retained signature, key confusion, unknown files, non-canonical wire,
+sequence reuse, predecessor conflict, linked stream paths, and concurrent
+append conflict fail closed. Recovery never guesses a predecessor and never
+rewrites retained evidence. Deleting or rolling back the complete stream
+directory remains a host-integrity event that cannot be distinguished without
+a separately authorized external anchor.
+
+Pass D exit evidence requires restart continuation, same-process and actual
+cross-process concurrency, exhausted lock budget, producer failure,
+corruption/signature mutation, key confusion, sequence/predecessor conflict,
+unknown-entry, and bounded-full negative tests plus the existing public-only
+structural mutation gate. It
+seals stateless sequence reuse by the probe. Scheduling, stream rotation,
+transport/ingestion, local acceptance state, VPS deployment, lease activation,
+account reads, and remote exchange effects remain separate decisions.
 
 ## 12. Local Bounded Mandate Boundary
 
