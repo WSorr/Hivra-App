@@ -3290,8 +3290,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Exit evidence: pinned lock validation, target/binary and authority negative
     tests, one clean Linux x64 artifact, full local and clean-checkout gates,
     protected PR, and green post-merge CI.
-  - Status: selected (2026-08-17). Linux runtime compatibility and deployment
-    are not claimed, and no following pass is authorized.
+  - Status: complete on `main` at `ea36a8b` (2026-08-17) through protected PR
+    `#119`; required run `32054282257` and post-merge run `32054365614` passed.
+    The post-merge ELF x86-64 artifact is 7,807,720 bytes with SHA-256
+    `8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`;
+    dependency-lock SHA-256 is
+    `f5443e020cbafc892fb75080be84899d3d7f6196be1dc0f7525d73f1eac789ac`.
+    Flutter `931/931`, analyze, Rust workspace, full review gates, clean
+    detached-checkout packaging, and negative mutations passed. No runtime
+    owner or path was added. Linux runtime compatibility and deployment are not
+    claimed, and no following pass is selected automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
