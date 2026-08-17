@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import '../tool/trading_remote_shadow_probe.dart';
@@ -103,5 +105,111 @@ void main() {
     await expectRejected(2, const Duration(seconds: 59));
     await expectRejected(2, const Duration(seconds: 3601));
     await expectRejected(2, const Duration(milliseconds: 60001));
+  });
+
+  test(
+    'runner seed file is strict and mutually exclusive with environment',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'hivra-runner-seed-test.',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final seed = List<String>.filled(32, '01').join();
+      final seedFile = File('${directory.path}/runner-seed');
+      await seedFile.writeAsString(seed, flush: true);
+      expect(
+        (await Process.run('chmod', <String>['600', seedFile.path])).exitCode,
+        0,
+      );
+
+      expect(
+        await readRunnerSeedBytes(<String, String>{
+          'runner-seed-file': seedFile.path,
+        }, environment: const <String, String>{}),
+        List<int>.filled(32, 1),
+      );
+      expect(
+        await readRunnerSeedBytes(
+          const <String, String>{},
+          environment: <String, String>{'HIVRA_SHADOW_RUNNER_SEED_HEX': seed},
+        ),
+        List<int>.filled(32, 1),
+      );
+      await expectLater(
+        readRunnerSeedBytes(
+          <String, String>{'runner-seed-file': seedFile.path},
+          environment: <String, String>{'HIVRA_SHADOW_RUNNER_SEED_HEX': seed},
+        ),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test(
+    'runner seed file rejects relative, linked, and permissive files',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'hivra-runner-seed-adverse.',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final seedFile = File('${directory.path}/runner-seed');
+      await seedFile.writeAsString(List<String>.filled(32, '02').join());
+      expect(
+        (await Process.run('chmod', <String>['644', seedFile.path])).exitCode,
+        0,
+      );
+
+      await expectLater(
+        readRunnerSeedBytes(const <String, String>{
+          'runner-seed-file': 'relative-seed',
+        }, environment: const <String, String>{}),
+        throwsFormatException,
+      );
+      await expectLater(
+        readRunnerSeedBytes(<String, String>{
+          'runner-seed-file': seedFile.path,
+        }, environment: const <String, String>{}),
+        throwsFormatException,
+      );
+
+      expect(
+        (await Process.run('chmod', <String>['600', seedFile.path])).exitCode,
+        0,
+      );
+      final link = Link('${directory.path}/runner-seed-link');
+      await link.create(seedFile.path);
+      await expectLater(
+        readRunnerSeedBytes(<String, String>{
+          'runner-seed-file': link.path,
+        }, environment: const <String, String>{}),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test('runner seed permissions recognize only protected systemd delivery', () {
+    expect(runnerSeedFilePermissionsAreSafe('/tmp/runner-seed', 0x180), isTrue);
+    expect(
+      runnerSeedFilePermissionsAreSafe('/tmp/runner-seed', 0x1a0),
+      isFalse,
+    );
+    expect(
+      runnerSeedFilePermissionsAreSafe(
+        '/run/credentials/hivra-shadow.service/runner-seed',
+        0x120,
+      ),
+      isTrue,
+    );
+    expect(
+      runnerSeedFilePermissionsAreSafe(
+        '/run/credentials/hivra-shadow.service/runner-seed',
+        0x124,
+      ),
+      isFalse,
+    );
+    expect(
+      runnerSeedFilePermissionsAreSafe('/tmp/runner-seed', 0x120),
+      isFalse,
+    );
   });
 }

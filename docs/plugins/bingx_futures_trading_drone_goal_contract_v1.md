@@ -719,6 +719,59 @@ to be evaluated separately. It does not authorize installation, durable runner
 identity, external anchoring, credentials, account reads, leases, remote
 effects, tags, or Releases.
 
+### 11.19 Pass L: Fail-Closed Public-Shadow Supervisor Contract
+
+Pass L defines one executable systemd contract for the existing public-only
+runner without installing or enabling it. Systemd owns only process lifecycle
+and resource containment. The existing probe remains the sole composition
+root, and `BingxFuturesShadowStreamStore` remains the sole evidence continuity
+owner. No scheduler, stream, credential, account, decision, or effect owner is
+duplicated.
+
+The unit starts one bounded 288-cycle batch at a fixed 300-second cadence. A
+successful batch may restart after 60 seconds; any provider, validation,
+append, cadence, timeout, signal, or OOM failure remains stopped. Start limits
+also stop accidental rapid successful exits. `Restart=always`,
+`Restart=on-failure`, internal retry, catch-up, and inferred success are
+forbidden.
+
+The runner seed is a runner-only evidence-signing identity. The probe accepts
+it from exactly one source: the existing ephemeral environment boundary or one
+absolute regular credential file. Ordinary files grant no group or other
+permissions; the canonical protected systemd credential path accepts only the
+exact root-owned `0440` delivery produced for `DynamicUser=`. The two sources
+are mutually exclusive, and linked, relative, broadly readable, malformed, or
+missing files fail before stream or network access. The
+supervisor uses `LoadCredentialEncrypted=` plus `%d/runner-seed`; it contains no
+seed, environment secret, Capsule material, or exchange credential.
+
+The unit fixes `MemoryMax=128M`, `MemorySwapMax=0`, `TasksMax=16`, low CPU and
+I/O weights, a 25-hour runtime ceiling, a dynamic user, a private 0700 state
+directory, an empty capability set, read-only system/home boundaries, process
+and kernel isolation, native system calls, bounded journal rate, and
+`SocketBindDeny=any`. It permits only Unix, IPv4, and IPv6 client address
+families needed for public HTTPS and DNS. Its exact symbol, plugin identity,
+package digest, ABI, stream path, run count, and cadence are fixed rather than
+loaded from a mutable environment file.
+
+The existing trading parity gate semantically parses the unit and its exact
+command, verifies the seed-file ingress and protected systemd credential mode
+in the probe, and rejects independent mutations to restart policy, memory
+ceiling, credential delivery, and listener denial. Focused Dart tests cover
+valid ordinary/systemd delivery plus ambiguous, relative, linked, and
+permissive negative cases. Debian systemd 257 accepted the unit
+syntax; offline `systemd-analyze security` reported exposure `1.5 OK`. The only
+exact-unit verify failure was the expected absence of the not-yet-installed
+binary.
+
+Pass L removes environment-secret supervisor designs, hidden failure retry,
+unbounded memory/swap/tasks, and listener-capable service defaults from the
+design space. It adds one justified process-lifecycle contract and no domain or
+effect path. Artifact/unit bundling, atomic installation, credential creation,
+enablement, boot persistence, exact-unit runtime smoke, external anchoring,
+leases, account reads, remote effects, tags, and Releases remain separate and
+unauthorized.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

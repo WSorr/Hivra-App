@@ -10,6 +10,7 @@ SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart
 RUNNER_ARTIFACT="$ROOT/tools/trading/public_shadow_runner_artifact.sh"
 RUNNER_PACKAGE="$ROOT/tools/trading/public_shadow_runner_package/pubspec.yaml"
 RUNNER_PACKAGE_LOCK="$ROOT/tools/trading/public_shadow_runner_package/pubspec.lock"
+RUNNER_SUPERVISOR="$ROOT/tools/trading/hivra-trading-public-shadow-runner.service"
 CI_REPOSITORY_GATES="$ROOT/.github/workflows/release-gates.yml"
 EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart"
 TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
@@ -97,6 +98,132 @@ runner_linux_smoke_is_fail_closed() {
     [ -n "$build_line" ] && [ -n "$review_line" ] && [ -n "$clean_line" ] &&
     [ "$build_line" -lt "$review_line" ] && [ "$review_line" -lt "$clean_line" ] &&
     ! rg -q 'upload-artifact' "$2"
+}
+
+runner_supervisor_is_fail_closed() {
+  python3 - "$1" "$2" <<'PY'
+import configparser
+import pathlib
+import shlex
+import sys
+
+unit_path, probe_path = sys.argv[1:]
+parser = configparser.ConfigParser(interpolation=None, strict=True)
+parser.optionxform = str
+try:
+    with open(unit_path, "r", encoding="utf-8") as handle:
+        parser.read_file(handle)
+except (OSError, configparser.Error):
+    raise SystemExit(1)
+
+if parser.sections() != ["Unit", "Service", "Install"]:
+    raise SystemExit(1)
+unit = parser["Unit"]
+service = parser["Service"]
+install = parser["Install"]
+required_unit = {
+    "Description": "Hivra Trading public-market shadow runner",
+    "Documentation": "https://github.com/WSorr/Hivra-App",
+    "Wants": "network-online.target",
+    "After": "network-online.target",
+    "StartLimitIntervalSec": "26h",
+    "StartLimitBurst": "2",
+}
+required_service = {
+    "Type": "exec",
+    "DynamicUser": "yes",
+    "StateDirectory": "hivra-trading-public-shadow",
+    "StateDirectoryMode": "0700",
+    "WorkingDirectory": "/var/lib/hivra-trading-public-shadow",
+    "LoadCredentialEncrypted": "runner-seed:/etc/credstore.encrypted/hivra-trading-public-shadow.seed",
+    "Restart": "on-success",
+    "RestartSec": "60s",
+    "RuntimeMaxSec": "25h",
+    "TimeoutStartSec": "30s",
+    "TimeoutStopSec": "30s",
+    "KillMode": "mixed",
+    "OOMPolicy": "stop",
+    "MemoryMax": "128M",
+    "MemorySwapMax": "0",
+    "TasksMax": "16",
+    "CPUWeight": "10",
+    "IOWeight": "10",
+    "Nice": "10",
+    "UMask": "0077",
+    "NoNewPrivileges": "yes",
+    "PrivateTmp": "yes",
+    "PrivateDevices": "yes",
+    "ProtectSystem": "strict",
+    "ProtectHome": "yes",
+    "ProtectProc": "invisible",
+    "ProcSubset": "pid",
+    "ProtectKernelTunables": "yes",
+    "ProtectKernelModules": "yes",
+    "ProtectKernelLogs": "yes",
+    "ProtectControlGroups": "yes",
+    "ProtectClock": "yes",
+    "ProtectHostname": "yes",
+    "RestrictRealtime": "yes",
+    "RestrictSUIDSGID": "yes",
+    "RestrictNamespaces": "yes",
+    "LockPersonality": "yes",
+    "MemoryDenyWriteExecute": "yes",
+    "CapabilityBoundingSet": "",
+    "AmbientCapabilities": "",
+    "SystemCallArchitectures": "native",
+    "SystemCallFilter": "@system-service",
+    "RestrictAddressFamilies": "AF_UNIX AF_INET AF_INET6",
+    "SocketBindDeny": "any",
+    "IPAccounting": "yes",
+    "StandardOutput": "journal",
+    "StandardError": "journal",
+    "LogRateLimitIntervalSec": "1h",
+    "LogRateLimitBurst": "400",
+}
+allowed_service = set(required_service) | {"ExecStartPre", "ExecStart"}
+if set(unit) != set(required_unit) or set(service) != allowed_service:
+    raise SystemExit(1)
+if any(unit.get(key) != value for key, value in required_unit.items()):
+    raise SystemExit(1)
+if any(service.get(key) != value for key, value in required_service.items()):
+    raise SystemExit(1)
+if set(install) != {"WantedBy"} or install.get("WantedBy") != "multi-user.target":
+    raise SystemExit(1)
+if "Environment" in service or "EnvironmentFile" in service or "MemoryHigh" in service:
+    raise SystemExit(1)
+
+expected_binary = "/opt/hivra/trading-public-shadow/hivra-trading-public-shadow-runner"
+if service.get("ExecStartPre") != f"/usr/bin/test -x {expected_binary}":
+    raise SystemExit(1)
+command = shlex.split(service.get("ExecStart", ""))
+expected = [
+    expected_binary,
+    "--runner-seed-file", "%d/runner-seed",
+    "--symbol", "BTC-USDT",
+    "--runner-build-id", "systemd-public-shadow-v1",
+    "--plugin-id", "hivra.bingx-futures-trading",
+    "--plugin-version", "0.2.3",
+    "--package-digest-hex", "2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889",
+    "--host-abi", "wasm32-wasi-preview1",
+    "--stream-dir", "/var/lib/hivra-trading-public-shadow/stream",
+    "--run-count", "288",
+    "--interval-seconds", "300",
+]
+if command != expected:
+    raise SystemExit(1)
+
+probe = pathlib.Path(probe_path).read_text(encoding="utf-8")
+required_probe = [
+    "'runner-seed-file'",
+    "runner seed sources are ambiguous",
+    "followLinks: false",
+    "runnerSeedFilePermissionsAreSafe(seedFilePath, stat.mode)",
+    "^/run/credentials/[A-Za-z0-9_.@-]+\\.service/runner-seed$",
+    "permissions == 0x120",
+]
+if any(fragment not in probe for fragment in required_probe):
+    raise SystemExit(1)
+PY
 }
 
 shadow_stream_is_durable() {
@@ -215,6 +342,12 @@ else
   fail "required CI lost the fail-closed Linux runtime startup evidence"
 fi
 
+if runner_supervisor_is_fail_closed "$RUNNER_SUPERVISOR" "$SHADOW_PROBE"; then
+  pass "public-shadow supervisor is resource-bounded, credential-file-only, and failure-stopping"
+else
+  fail "public-shadow supervisor lost resource, credential, or restart boundaries"
+fi
+
 if rg -q "BingxFuturesShadowStreamStore" "$SHADOW_PROBE" &&
   rg -q "'stream-dir'" "$SHADOW_PROBE" &&
   ! rg -q "'output'" "$SHADOW_PROBE" &&
@@ -241,7 +374,11 @@ RUNTIME_SMOKE_MUTATION="$(mktemp)"
 CI_CLEAN_MUTATION="$(mktemp)"
 EXECUTION_MUTATION="$(mktemp)"
 CYCLE_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
+SUPERVISOR_RESTART_MUTATION="$(mktemp)"
+SUPERVISOR_MEMORY_MUTATION="$(mktemp)"
+SUPERVISOR_CREDENTIAL_MUTATION="$(mktemp)"
+SUPERVISOR_LISTENER_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -264,6 +401,14 @@ sed 's/final executionSucceeded = queued\.execution\.isSuccess;/final executionS
   "$EXECUTION_USE_CASE" > "$EXECUTION_MUTATION"
 sed 's/execution\.queuedExecution?\.execution\.isSuccess == true/true/' \
   "$TRADING_CYCLE" > "$CYCLE_MUTATION"
+sed 's/^Restart=on-success$/Restart=always/' \
+  "$RUNNER_SUPERVISOR" > "$SUPERVISOR_RESTART_MUTATION"
+sed 's/^MemoryMax=128M$/MemoryMax=64M/' \
+  "$RUNNER_SUPERVISOR" > "$SUPERVISOR_MEMORY_MUTATION"
+sed 's#^LoadCredentialEncrypted=.*#Environment=HIVRA_SHADOW_RUNNER_SEED_HEX=unsafe#' \
+  "$RUNNER_SUPERVISOR" > "$SUPERVISOR_CREDENTIAL_MUTATION"
+sed '/^SocketBindDeny=any$/d' \
+  "$RUNNER_SUPERVISOR" > "$SUPERVISOR_LISTENER_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
@@ -272,10 +417,14 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_CLEAN_MUTATION" && \
   ! shadow_stream_is_durable "$STREAM_MUTATION" && \
   ! shadow_stream_is_durable "$CHECKPOINT_MUTATION" && \
-  ! execution_outcome_is_truthful "$EXECUTION_MUTATION" "$CYCLE_MUTATION"; then
-  pass "public-only, scheduler, artifact, durable-stream, and execution-outcome mutations are rejected"
+  ! execution_outcome_is_truthful "$EXECUTION_MUTATION" "$CYCLE_MUTATION" && \
+  ! runner_supervisor_is_fail_closed "$SUPERVISOR_RESTART_MUTATION" "$SHADOW_PROBE" && \
+  ! runner_supervisor_is_fail_closed "$SUPERVISOR_MEMORY_MUTATION" "$SHADOW_PROBE" && \
+  ! runner_supervisor_is_fail_closed "$SUPERVISOR_CREDENTIAL_MUTATION" "$SHADOW_PROBE" && \
+  ! runner_supervisor_is_fail_closed "$SUPERVISOR_LISTENER_MUTATION" "$SHADOW_PROBE"; then
+  pass "public-only, scheduler, artifact, supervisor, durable-stream, and execution-outcome mutations are rejected"
 else
-  fail "public-only, scheduler, artifact, durable-stream, or execution-outcome mutation self-test failed"
+  fail "public-only, scheduler, artifact, supervisor, durable-stream, or execution-outcome mutation self-test failed"
 fi
 
 exit "$STATUS"
