@@ -2,8 +2,17 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no following pass is selected automatically. `1.x
-Trading Remote Runner Pass E — Authenticated Bounded Stream Compaction` is
+Current development focus: `1.x Trading Remote Runner Pass F — Public-Only
+Bounded Scheduler` is selected. The existing
+`flutter/tool/trading_remote_shadow_probe.dart` composition root may run only
+1–288 serial public observations with an explicit 60–3600 second delay. A
+failure stops the process without overlap, internal retry, inferred success,
+or scheduler state. No service, DTO, receiver, supervisor, deployment unit,
+VPS configuration, credential, account read, Capsule state, lease, or effect
+route is authorized. Exit evidence requires cadence and stop-on-failure tests,
+bounded-argument and authority mutations, full local and clean-checkout gates,
+protected PR, and green post-merge CI. The preceding `1.x Trading Remote Runner
+Pass E — Authenticated Bounded Stream Compaction` is
 complete on `main` at `8c5c644` through protected PR `#113`; required run
 `32042296142` and post-merge run `32042345162` passed. The existing
 `BingxFuturesShadowStreamStore` remains the sole runner-retention owner. A full

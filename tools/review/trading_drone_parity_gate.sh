@@ -28,6 +28,24 @@ shadow_probe_has_authority() {
   rg -q 'TradingDroneModuleService|BingxFuturesExchangeExecutionUseCaseService|BingxFuturesOrderTrackingStore|ExternalEffect|placeOrder|cancelOrder' "$1"
 }
 
+shadow_probe_is_bounded_scheduler() {
+  local cycle_line
+  local delay_line
+  cycle_line="$(rg -n 'await runOnce\(cycleNumber\);' "$1" | head -1 | cut -d: -f1)"
+  delay_line="$(rg -n 'await delay\(interval!\);' "$1" | head -1 | cut -d: -f1)"
+  rg -q 'const int maxScheduledRuns = 288;' "$1" &&
+    rg -q 'const int minScheduleIntervalSeconds = 60;' "$1" &&
+    rg -q 'const int maxScheduleIntervalSeconds = 3600;' "$1" &&
+    rg -q "'run-count'" "$1" &&
+    rg -q "'interval-seconds'" "$1" &&
+    rg -q 'runCount < 1 \|\| runCount > maxScheduledRuns' "$1" &&
+    rg -q 'runCount > 1 && interval == null' "$1" &&
+    [ -n "$cycle_line" ] &&
+    [ -n "$delay_line" ] &&
+    [ "$cycle_line" -lt "$delay_line" ] &&
+    ! rg -q 'Timer\.periodic|while \(true\)|scheduleAtFixedRate|retry' "$1"
+}
+
 shadow_stream_is_durable() {
   local unexpected_deletes
   local checkpoint_commit_line
@@ -124,6 +142,12 @@ else
   pass "live shadow probe has no local authority or effect owner"
 fi
 
+if shadow_probe_is_bounded_scheduler "$SHADOW_PROBE"; then
+  pass "live shadow probe scheduler is bounded, serial, and retry-free"
+else
+  fail "live shadow probe scheduler lost bounded cadence or serial execution"
+fi
+
 if rg -q "BingxFuturesShadowStreamStore" "$SHADOW_PROBE" &&
   rg -q "'stream-dir'" "$SHADOW_PROBE" &&
   ! rg -q "'output'" "$SHADOW_PROBE" &&
@@ -144,9 +168,10 @@ PUBLIC_MUTATION="$(mktemp)"
 PROBE_MUTATION="$(mktemp)"
 STREAM_MUTATION="$(mktemp)"
 CHECKPOINT_MUTATION="$(mktemp)"
+SCHEDULER_MUTATION="$(mktemp)"
 EXECUTION_MUTATION="$(mktemp)"
 CYCLE_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -157,18 +182,21 @@ sed -e 's/static const int _lockAttemptLimit = 100;/static const int _lockAttemp
 printf '\nvoid deleteEvidence(File committed) => committed.delete();\n' >> "$STREAM_MUTATION"
 sed 's/await _commitCheckpoint(checkpoint);/await Future<void>.value();/' \
   "$SHADOW_STREAM" > "$CHECKPOINT_MUTATION"
+sed 's/await runOnce(cycleNumber);/await Future<void>.value();/' \
+  "$SHADOW_PROBE" > "$SCHEDULER_MUTATION"
 sed 's/final executionSucceeded = queued\.execution\.isSuccess;/final executionSucceeded = true;/' \
   "$EXECUTION_USE_CASE" > "$EXECUTION_MUTATION"
 sed 's/execution\.queuedExecution?\.execution\.isSuccess == true/true/' \
   "$TRADING_CYCLE" > "$CYCLE_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
+  ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
   ! shadow_stream_is_durable "$STREAM_MUTATION" && \
   ! shadow_stream_is_durable "$CHECKPOINT_MUTATION" && \
   ! execution_outcome_is_truthful "$EXECUTION_MUTATION" "$CYCLE_MUTATION"; then
-  pass "public-only, durable-stream, and execution-outcome mutations are rejected"
+  pass "public-only, scheduler, durable-stream, and execution-outcome mutations are rejected"
 else
-  fail "public-only, durable-stream, or execution-outcome mutation self-test failed"
+  fail "public-only, scheduler, durable-stream, or execution-outcome mutation self-test failed"
 fi
 
 exit "$STATUS"
