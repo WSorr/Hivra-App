@@ -7,6 +7,8 @@ PUBLIC_SNAPSHOT="$ROOT/flutter/lib/services/bingx_futures_live_snapshot_builder_
 PUBLIC_STRATEGY="$ROOT/flutter/lib/services/bingx_futures_live_strategy_use_case_service.dart"
 SHADOW_PROBE="$ROOT/flutter/tool/trading_remote_shadow_probe.dart"
 SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart"
+EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart"
+TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
 STATUS=0
 
 pass() {
@@ -38,6 +40,13 @@ shadow_stream_is_durable() {
     rg -q 'pending\.rename\(committed\.path\)' "$1" &&
     rg -q 'authenticateShadowEvidence' "$1" &&
     [ -z "$unexpected_deletes" ]
+}
+
+execution_outcome_is_truthful() {
+  rg -q 'final executionSucceeded = queued\.execution\.isSuccess;' "$1" &&
+    rg -q 'BingxFuturesExchangeExecutionUseCaseStatus\.executionFailed' "$1" &&
+    rg -q "errorCode: executionSucceeded \? null : 'exchange_effect_failed'" "$1" &&
+    rg -q 'execution\.queuedExecution\?\.execution\.isSuccess == true' "$2"
 }
 
 if [ ! -f "$CHECKLIST" ]; then
@@ -108,10 +117,18 @@ else
   fail "shadow stream lost restart, retention, or authority boundaries"
 fi
 
+if execution_outcome_is_truthful "$EXECUTION_USE_CASE" "$TRADING_CYCLE"; then
+  pass "executed outcome requires explicit provider success"
+else
+  fail "execution owner or cycle can report success without provider success"
+fi
+
 PUBLIC_MUTATION="$(mktemp)"
 PROBE_MUTATION="$(mktemp)"
 STREAM_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION"' EXIT
+EXECUTION_MUTATION="$(mktemp)"
+CYCLE_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -119,12 +136,17 @@ printf '\nplaceOrder\n' >> "$PROBE_MUTATION"
 sed 's/static const int _lockAttemptLimit = 100;/static const int _lockAttemptLimit = 0;/' \
   "$SHADOW_STREAM" > "$STREAM_MUTATION"
 printf '\nvoid deleteEvidence(File committed) => committed.delete();\n' >> "$STREAM_MUTATION"
+sed 's/final executionSucceeded = queued\.execution\.isSuccess;/final executionSucceeded = true;/' \
+  "$EXECUTION_USE_CASE" > "$EXECUTION_MUTATION"
+sed 's/execution\.queuedExecution?\.execution\.isSuccess == true/true/' \
+  "$TRADING_CYCLE" > "$CYCLE_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
-  ! shadow_stream_is_durable "$STREAM_MUTATION"; then
-  pass "public-only and durable-stream negative mutations are rejected"
+  ! shadow_stream_is_durable "$STREAM_MUTATION" && \
+  ! execution_outcome_is_truthful "$EXECUTION_MUTATION" "$CYCLE_MUTATION"; then
+  pass "public-only, durable-stream, and execution-outcome mutations are rejected"
 else
-  fail "public-only or durable-stream negative mutation self-test failed"
+  fail "public-only, durable-stream, or execution-outcome mutation self-test failed"
 fi
 
 exit "$STATUS"

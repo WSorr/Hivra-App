@@ -3403,6 +3403,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     truth and shadow identity initialization remain separate findings; no
     release or following product pass is selected automatically.
 
+- `1.x Trading Execution Outcome Truth Remediation`
+  - Finding: the canonical execution owner returned `executed` even when the
+    nested BingX provider result reported failure, and the trading cycle trusted
+    that wrapper status without independently requiring provider success.
+  - Invariant: `executed` requires explicit provider success. Rejection,
+    exhausted retry, timeout, missing success evidence, and contradictory
+    wrapper state remain non-success and cannot confirm or recreate an effect.
+  - Sole owners: `BingxFuturesExchangeExecutionUseCaseService` owns provider
+    outcome truth; `BingxFuturesTradingCycleUseCaseService` consumes it for the
+    one canonical cycle result.
+  - Removed or sealed: false executed projection after provider rejection and
+    success inference from enum state alone. No DTO, provider, queue, effect
+    route, scheduler, Remote Runner/VPS, Core, Ledger, tag, or Release is added.
+  - Exit evidence: rejected provider and contradictory-wrapper regressions,
+    executable mutation-gate, full Flutter/Rust/repository gates, clean
+    checkout, protected PR, and green post-merge CI.
+  - Status: selected for bounded remediation (2026-08-17). Crash-atomic shadow
+    identity initialization remains a separate finding and is not included.
+
 - `1.x Capsule-scoped Chat Unread Indicator`
   - Goal: surface accepted unread Chat messages on the cross-screen shell while
     preserving the existing durable native handoff and Flutter Chat projection

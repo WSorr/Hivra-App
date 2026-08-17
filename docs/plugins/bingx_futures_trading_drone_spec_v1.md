@@ -69,6 +69,12 @@ effect execution is requested, the port MUST delegate only to
 `BingxFuturesExchangeExecutionUseCaseService`, which revalidates freshness,
 mandate, risk, event claim, and provider outcome.
 
+The `executed` outcome requires both the canonical execution-owner status and
+an explicit successful provider result. Provider rejection, exhausted retry,
+timeout, missing success evidence, or a contradictory wrapper status remains a
+failed effect. A failed provider result MUST NOT confirm the reserved event
+claim and MUST NOT authorize recreation through this or another cycle path.
+
 The foreground solo/limit UI uses this port instead of rebuilding the same
 cycle in the screen. A future headless host may invoke the same port, but this
 contract does not provide a scheduler, daemon, credential transfer, deployment,

@@ -304,12 +304,22 @@ class BingxFuturesExchangeExecutionUseCaseService {
       liveDecisionHashHex:
           rawIntentResult['live_decision_hash_hex']?.toString().trim(),
     );
+    final executionSucceeded = queued.execution.isSuccess;
     return _result(
-      status: BingxFuturesExchangeExecutionUseCaseStatus.executed,
+      status:
+          executionSucceeded
+              ? BingxFuturesExchangeExecutionUseCaseStatus.executed
+              : BingxFuturesExchangeExecutionUseCaseStatus.executionFailed,
       payload: payload,
       riskDecision: risk.decision,
       queuedExecution: queued,
       executionEnvelope: envelope,
+      errorCode: executionSucceeded ? null : 'exchange_effect_failed',
+      errorMessage:
+          executionSucceeded
+              ? null
+              : (_nonEmpty(queued.execution.exchangeMessage) ??
+                  'Exchange effect failed without a success receipt.'),
       diagnostics: executionDiagnostics,
     );
   }

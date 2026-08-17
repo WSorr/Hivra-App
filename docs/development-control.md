@@ -2,9 +2,18 @@
 
 Status date: 2026-08-17
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Chat Durable Handoff Capacity Remediation` is
-complete on `main` at `340c8a6` through protected PR `#103`; required run
-`32024383365` and post-merge run `32024462405` passed. The existing native Chat handoff remains the sole transport-to-
+Current development focus: `1.x Trading Execution Outcome Truth Remediation`
+is active. `BingxFuturesExchangeExecutionUseCaseService` remains the sole
+provider-effect owner, and `BingxFuturesTradingCycleUseCaseService` remains the
+sole cycle consumer. A cycle may report `executed` only when the canonical
+execution owner and the nested provider result both prove success. Provider
+rejection, timeout, missing success evidence, or contradictory wrapper status
+must remain non-success; a reserved event claim remains unconfirmed and cannot
+authorize recreation. No DTO, provider, effect route, scheduler, Remote
+Runner/VPS, Core/Ledger path, tag, or Release is authorized. The preceding
+`1.x Chat Durable Handoff Capacity Remediation` is complete on `main` at
+`340c8a6` through protected PR `#103`; required run `32024383365` and
+post-merge run `32024462405` passed. The existing native Chat handoff remains the sole transport-to-
 capability retention owner, and `CapsuleDeliveryInboxStore` remains the sole
 durable Flutter timeline owner. Ordinary messages must acknowledge their exact
 adapter event only after durable timeline merge; handoff records and replay
