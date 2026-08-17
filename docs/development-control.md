@@ -3,14 +3,27 @@
 Status date: 2026-08-18
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: no following pass is selected automatically. `1.x
-Trading Remote Runner Pass K — Ephemeral VPS Resource Soak Evidence` is
-complete. Sixty serial public observations completed under a transient 128 MiB
-ceiling with a 63.29 MiB measured peak, no stderr, no service regression, and
-exact cleanup. A 64 MiB production budget is rejected as marginless. Section
-11.18 of the [Trading Drone goal contract](plugins/bingx_futures_trading_drone_goal_contract_v1.md)
-owns the exact evidence and [the roadmap](roadmap.md) owns its history. No
-supervisor, deployment, credential, account read, effect, tag, or Release is
-authorized. The preceding `1.x Trading Remote Runner Pass J — Ephemeral VPS
+Trading Remote Runner Pass L — Fail-Closed Public-Shadow Supervisor Contract`
+is complete on `main` at `dc6ce3a` through protected PR `#125`; required run
+`32075468982` and post-merge run `32076142166` passed. One systemd contract owns
+only process lifecycle and resource containment: successful bounded batches may
+restart, while provider, validation, append, timeout, signal, OOM, and malformed
+credential failures remain stopped. The clean Linux x64 smoke artifact from
+`775378d` (tree-identical to the merged commit) had SHA-256
+`64264ae0bca4b0b90d768c4ce254f3ae7d488d16eb1c8b93ace8a9e5d8f08868`.
+An isolated transient VPS smoke appended one public evidence record with hash
+`e33532cf2e19cd86480ed95998217b0cbf9ccc5999b850a791b7e71a9ca6413e`;
+the malformed-credential case remained failed with exit status `1` and zero
+restarts after the 60-second restart window. The exact 128 MiB/no-swap/16-task
+limits and protected systemd credential delivery were observed. The website
+remained HTTP `200`, Amnezia containers retained zero restarts, listeners were
+unchanged, and all test unit/path state was removed. Installation, enablement,
+durable credential creation, account access, external anchoring, leases,
+effects, tags, and Releases remain unauthorized. The preceding `1.x Trading
+Remote Runner Pass K — Ephemeral VPS Resource Soak Evidence` is complete: sixty
+serial public observations completed under a transient 128 MiB ceiling with a
+63.29 MiB measured peak, and a 64 MiB production budget remains rejected as
+marginless. The preceding `1.x Trading Remote Runner Pass J — Ephemeral VPS
 Public Observation Evidence` is complete. The exact public-only Linux x64
 artifact from clean source `12c8f30`
 with SHA-256 `8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`

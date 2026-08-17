@@ -3402,10 +3402,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     restart/memory/credential/listener negative mutations, systemd 257 syntax
     verification, offline hardening analysis, full local and clean-checkout
     gates, protected PR, and green post-merge CI.
+  - Evidence: implementation merged on `main` at `dc6ce3a` through protected
+    PR `#125`; required run `32075468982` and post-merge run `32076142166`
+    passed. Full Flutter `934/934`, Flutter analyze, Rust workspace, repository
+    gates, focused `7/7`, and clean detached-checkout review passed. A clean
+    Linux x64 artifact from `775378d` (tree-identical to the merged commit) had
+    SHA-256
+    `64264ae0bca4b0b90d768c4ce254f3ae7d488d16eb1c8b93ace8a9e5d8f08868`
+    and size 7,810,680 bytes. An isolated transient VPS smoke appended one
+    public evidence record with hash
+    `e33532cf2e19cd86480ed95998217b0cbf9ccc5999b850a791b7e71a9ca6413e`.
+    The malformed-credential case remained failed with exit status `1` and
+    zero restarts after the 60-second restart window. The exact 128 MiB,
+    no-swap, 16-task, protected-credential, and no-listener boundaries were
+    observed; the website remained HTTP `200`, Amnezia containers retained
+    zero restarts, listeners were unchanged, and all smoke state was removed.
   - Next decision unlocked: one verifiable artifact/unit bundle and atomic
     ephemeral install smoke may be evaluated separately before any persistent
-    enablement. Status: implementation candidate (2026-08-18). No following
-    pass is selected automatically.
+    enablement. Status: complete (2026-08-18). No following pass is selected
+    automatically.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
