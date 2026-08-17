@@ -185,9 +185,11 @@ is complete on `main` at `712177f` through protected PR `#115`; required run
 `32043346812` and post-merge run `32043400512` passed. Pass G verifiable
 standalone artifact packaging is complete on `main` at `3fbe8f2` through
 protected PR `#117`; required run `32044373306` and post-merge run
-`32044425543` passed. No following pass is selected. Unbounded daemon operation,
-deployment, external anchoring, leases, account access, and remote effects
-remain unauthorized.
+`32044425543` passed. Pass H pinned Linux x64 artifact evidence is selected. It
+changes only the existing packaging dependency and target closure. Unbounded
+daemon operation, Linux execution, transfer, installation, deployment,
+external anchoring, leases, account access, remote effects, supervisor
+configuration, and VPS changes remain unauthorized.
 
 ### 11.1 Purpose And Sole Owner
 
@@ -582,6 +584,28 @@ Implementation evidence: the post-merge Darwin arm64 artifact built from
 Verifier negative tests, dirty-tree rejection, Flutter `931/931`, analyze, Rust
 workspace, full review gates, clean detached-checkout packaging, protected PR,
 and green post-merge CI passed. No new runtime owner or path was added.
+
+### 11.15 Pass H: Pinned Linux x64 Artifact Evidence
+
+Pass H proves that the existing public-only entrypoint can become one Linux
+x86-64 executable without downloading the 1.5 GB Flutter Linux archive or
+creating a second implementation. A temporary package map resolves the existing
+canonical `hivra_app` imports without changing the Flutter source contract. One
+packaging-only pubspec and exact lock pin the minimal `crypto` and
+`cryptography` dependency closure; the manifest binds the lockfile SHA-256.
+
+Cross-compilation accepts only the explicit pair `linux/x64`. Verification
+requires the produced bytes to be an ELF 64-bit x86-64 executable and rejects
+a manifest whose target does not match the binary. Host-native Darwin
+packaging remains available through the same owner. No generic target matrix,
+package resolver service, alternate entrypoint, or second runner is added.
+
+This pass does not execute the Linux binary, prove VPS libc compatibility,
+transfer or install files, create a user or directory, configure systemd,
+Docker, firewall, DNS, ports, CPU/memory limits, restart policy, or logging, or
+touch the existing site and Amnezia service. It adds no credential, account
+read, Capsule state, lease, external anchor, or exchange effect. Those require
+separate host evidence and deployment decisions.
 
 ## 12. Local Bounded Mandate Boundary
 

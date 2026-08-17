@@ -1,0 +1,7 @@
+name: hivra_trading_public_shadow_runner_package
+publish_to: none
+environment:
+  sdk: 3.11.0
+dependencies:
+  crypto: 3.0.7
+  cryptography: 2.9.0
