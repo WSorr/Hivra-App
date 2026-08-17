@@ -177,10 +177,10 @@ all point to the same behavior.
 
 ## 11. Remote Runner Shadow Boundary
 
-Status: Pass D durable shadow-stream implementation complete; its bounded
-crash-atomic append remediation is active. No following remote-runtime pass is
-selected, and daemon, deployment, leases, account access, and remote effects
-are not authorized.
+Status: Pass D durable shadow-stream implementation and its bounded
+crash-atomic append remediation are complete. No following remote-runtime pass
+is selected, and daemon, deployment, leases, account access, and remote
+effects are not authorized.
 
 ### 11.1 Purpose And Sole Owner
 
@@ -472,6 +472,12 @@ requires interrupted-pending recovery, unknown-pending rejection,
 committed-target conflict rejection, retained-corruption rejection, structural
 negative mutation, full local and clean-checkout gates, protected PR gates,
 and green post-merge CI.
+
+The remediation completed on `main` at `ede2eb3` through protected PR `#101`.
+Required run `32021137109` and post-merge run `32021215679` passed together
+with Flutter `910/910`, analyze, Rust workspace, full review gates, clean
+checkout, and `15/15` focused crash-atomic adverse tests. No following pass is
+selected automatically.
 
 ## 12. Local Bounded Mandate Boundary
 
