@@ -22,13 +22,8 @@ Future<void> main(List<String> args) async {
           hostAbi: _required(options, 'host-abi'),
           observedAtUtc: DateTime.now().toUtc(),
         );
-    final sink = await output.open(mode: FileMode.writeOnlyExclusive);
-    try {
-      await sink.writeFrom(evidence.wireBytes);
-      await sink.flush();
-    } finally {
-      await sink.close();
-    }
+    await output.create(exclusive: true);
+    await output.writeAsBytes(evidence.wireBytes, flush: true);
     stdout.writeln(
       'shadow_evidence_written=${output.path} '
       'evidence_hash=${evidence.evidenceHashHex}',
