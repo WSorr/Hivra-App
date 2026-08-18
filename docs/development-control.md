@@ -6,7 +6,8 @@ Current development focus: `1.x Trading Remote Runner Pass T — Mandate-Bound
 Prepared Exchange Credential` is selected. It may bind one dedicated
 subaccount credential to the exact prepared Capsule-signed mandate and retain
 only host-encrypted prepared state. Its repository implementation is merged at
-`3fc455b`; merge-SHA host evidence and status closure remain pending. Runner
+`3fc455b`; a bounded remediation now hides both API key and secret during TTY
+entry before merge-SHA host evidence may continue. Runner
 access, account reads, leases, remote effects, release, and 2.0 work remain
 unauthorized.
 

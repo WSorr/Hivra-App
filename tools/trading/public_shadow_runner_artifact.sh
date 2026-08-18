@@ -1131,7 +1131,7 @@ provision_exchange_credential() {
   local credential_json
   if [ -t 0 ]; then
     local api_key api_secret
-    IFS= read -r -p "BingX API key: " api_key
+    IFS= read -r -s -p "BingX API key: " api_key
     IFS= read -r -s -p "BingX API secret: " api_secret
     printf '\n' >&2
     credential_json="$(

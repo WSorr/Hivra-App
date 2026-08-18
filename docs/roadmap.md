@@ -3800,7 +3800,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     subaccount exists. No identifier or secret is retained in the repository;
     this report is not verification of permissions and grants no authority.
   - Status: implementation merged on `main` at `3fc455b` through protected PR
-    `#144`; merge-SHA host evidence and status closure remain pending.
+    `#144`; host evidence exposed that interactive entry hid the secret but
+    echoed the API key. A bounded remediation must hide both values and add a
+    negative mutation before merge-SHA host evidence and status closure resume.
 
 - `External Personal-Agent Runtime Pattern Audit`
   - Scope: preserve anonymized external personal-agent runtime observations
