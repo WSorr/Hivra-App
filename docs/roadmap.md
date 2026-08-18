@@ -3799,10 +3799,22 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - External readiness: the operator reports that one dedicated BingX futures
     subaccount exists. No identifier or secret is retained in the repository;
     this report is not verification of permissions and grants no authority.
-  - Status: implementation merged on `main` at `3fc455b` through protected PR
-    `#144`; host evidence exposed that interactive entry hid the secret but
-    echoed the API key. A bounded remediation must hide both values and add a
-    negative mutation before merge-SHA host evidence and status closure resume.
+  - Status: complete (2026-08-18). Implementation merged on `main` at
+    `3fc455b` through protected PR `#144`; hidden-input remediation merged at
+    `dc0fdd8` through protected PR `#147`. Exact-`dc0fdd8` VPS evidence used a
+    freshly initialized runner and a freshly exported Capsule-signed mandate
+    bound to the rotated dedicated subaccount key. Admission and exact mandate
+    replay were idempotent; a mutated mandate failed closed. Credential
+    provisioning retained one regular mode-`0600` host-encrypted artifact;
+    exact credential replay left its encrypted bytes unchanged, and a wrong
+    account binding neither replaced it nor retained temporary plaintext. The
+    runner remained disabled and inactive, and its systemd unit had no exchange
+    credential binding. Exact uninstall removed the runner, mandate, seed, and
+    encrypted exchange credential. The website origin remained HTTP `200`, all
+    four Amnezia containers and the normalized listener baseline were unchanged,
+    and evidence remains outside the repository. No account read, lease,
+    scheduling authority, exchange effect, tag, or Release occurred. No next
+    pass is selected.
 
 - `External Personal-Agent Runtime Pattern Audit`
   - Scope: preserve anonymized external personal-agent runtime observations
