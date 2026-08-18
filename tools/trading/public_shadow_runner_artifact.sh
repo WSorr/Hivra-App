@@ -12,7 +12,7 @@ BINARY_NAME="hivra-trading-public-shadow-runner"
 UNIT_NAME="hivra-trading-public-shadow-runner.service"
 MANIFEST_NAME="ARTIFACT-MANIFEST.v1"
 SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"
-AUTHORITY_PROFILE="public-market-shadow-only"
+AUTHORITY_PROFILE="public-market-shadow-plus-transient-account-read"
 BUNDLE_INSTALL_PATH="/opt/hivra/trading-public-shadow"
 BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$BINARY_NAME"
 UNIT_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$UNIT_NAME"
@@ -49,6 +49,8 @@ Usage:
     --mandate-artifact <absolute-json-file>
   tools/trading/public_shadow_runner_artifact.sh --provision-exchange-credential <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
+  tools/trading/public_shadow_runner_artifact.sh --probe-exchange-account <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --uninstall-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --self-test
@@ -66,6 +68,9 @@ stores one prepared artifact without activating exchange authority.
 Credential provisioning accepts the API key and secret only from a hidden TTY
 prompt or exact two-line stdin, verifies the prepared mandate account binding,
 and stores host-encrypted prepared state without exposing it to the runner.
+Account probing uses one collected transient systemd unit, supplies both
+encrypted credentials only to that process, permits exactly balance, positions,
+and open-orders GETs, and emits only a bounded redacted verdict.
 EOF
 }
 
@@ -429,10 +434,18 @@ PY
       die "artifact binary does not match Darwin x64 manifest" ;;
     *) die "artifact target is not an allowed packaging target" ;;
   esac
+  for marker in \
+    'openApi/swap/v2/user/balance' \
+    'openApi/swap/v2/user/positions' \
+    'openApi/swap/v2/trade/openOrders' \
+    'hivra-trading-account-read-evidence-v1'; do
+    grep -aFq "$marker" "$binary" ||
+      die "artifact is missing the bounded account-read marker: $marker"
+  done
   if grep -aEq \
-    'openApi/swap/v2/trade/(order|leverage|marginType)|BingxFuturesApiCredentials|placeOrder|cancelOrder' \
+    'openApi/swap/v2/trade/order([^s]|$)|openApi/swap/v2/trade/(leverage|marginType)|placeOrder|cancelOrder|switchLeverage|switchMarginType' \
     "$binary"; then
-    die "artifact contains forbidden authenticated exchange authority markers"
+    die "artifact contains forbidden exchange-effect authority markers"
   fi
   echo "PASS trading-runner-artifact: verified $directory"
 }
@@ -1196,6 +1209,189 @@ PY
   exec 9>&-
 }
 
+validate_account_read_evidence() {
+  local source="$1"
+  local expected_operation="$2"
+  local expected_runner="$3"
+  local expected_account="$4"
+  python3 - "$source" "$expected_operation" "$expected_runner" "$expected_account" <<'PY'
+import datetime
+import hashlib
+import json
+import pathlib
+import re
+import sys
+
+source, expected_operation, expected_runner, expected_account = sys.argv[1:]
+raw = pathlib.Path(source).read_bytes()
+if len(raw) < 2 or len(raw) > 2048 or not raw.endswith(b"\n") or raw.endswith(b"\n\n"):
+    raise SystemExit("account-read evidence is not one bounded line")
+try:
+    text = raw[:-1].decode("utf-8")
+    value = json.loads(text)
+except (UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit("account-read evidence is not strict UTF-8 JSON")
+expected_keys = [
+    "contract_version", "mandate_operation_id", "runner_key_id",
+    "account_binding_hash_hex", "observed_at_utc", "checks", "effect",
+]
+if not isinstance(value, dict) or list(value) != expected_keys:
+    raise SystemExit("account-read evidence root shape is not canonical")
+if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
+    raise SystemExit("account-read evidence bytes are not canonical")
+if value["contract_version"] != "hivra-trading-account-read-evidence-v1":
+    raise SystemExit("account-read evidence version mismatch")
+hex64 = re.compile(r"[0-9a-f]{64}")
+for key, expected in (
+    ("mandate_operation_id", expected_operation),
+    ("runner_key_id", expected_runner),
+    ("account_binding_hash_hex", expected_account),
+):
+    if not isinstance(value[key], str) or hex64.fullmatch(value[key]) is None or value[key] != expected:
+        raise SystemExit(f"account-read evidence {key} mismatch")
+try:
+    observed = datetime.datetime.fromisoformat(value["observed_at_utc"].replace("Z", "+00:00"))
+except (AttributeError, ValueError):
+    raise SystemExit("account-read evidence time is invalid")
+if observed.tzinfo is None or observed.utcoffset() != datetime.timedelta(0):
+    raise SystemExit("account-read evidence time is not UTC")
+if value["checks"] != [
+    {"name": "balance", "success": True},
+    {"name": "positions", "success": True},
+    {"name": "open_orders", "success": True},
+] or value["effect"] is not False:
+    raise SystemExit("account-read evidence is incomplete or effectful")
+print(hashlib.sha256(text.encode("utf-8")).hexdigest())
+PY
+}
+
+probe_exchange_account_once() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  command -v systemd-run >/dev/null 2>&1 || die "systemd-run is required"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "account probe refused the installed runner key id"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "account probe requires an inactive public-shadow runner"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "account probe requires a disabled public-shadow runner" ;;
+  esac
+  [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+    [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+    die "account probe requires one prepared exchange credential"
+
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  local work
+  work="$(mktemp -d /run/hivra-trading-account-read.XXXXXX)"
+  trap 'rm -rf "$work"; rm -f "$lock_path"' EXIT INT TERM
+
+  local mandate="$STATE_DIRECTORY/mandates/prepared.v1.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "account probe requires one prepared mandate"
+  install -m 0600 "$mandate" "$work/mandate.json"
+  mkdir "$work/verified"
+  verify_remote_mandate_artifact \
+    "$work/mandate.json" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
+
+  local operation_id account_binding expires_at
+  local -a mandate_fields=()
+  mapfile -t mandate_fields < <(python3 - "$work/mandate.json" <<'PY'
+import json
+import sys
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+print(value["operation_id"])
+print(value["mandate"]["account_binding_hash_hex"])
+print(value["mandate"]["expires_at_utc"])
+PY
+)
+  [ "${#mandate_fields[@]}" = 3 ] || die "account probe mandate fields are incomplete"
+  operation_id="${mandate_fields[0]}"
+  account_binding="${mandate_fields[1]}"
+  expires_at="${mandate_fields[2]}"
+
+  local transient_name="hivra-trading-account-read-${operation_id:0:12}-$$"
+  local credential_dir="/run/credentials/$transient_name.service"
+  [ "$(systemctl show -p LoadState --value "$transient_name.service" 2>/dev/null || true)" = "not-found" ] ||
+    die "account probe transient unit already exists"
+
+  if ! systemd-run \
+    --unit="$transient_name" \
+    --service-type=exec \
+    --wait --pipe --collect --quiet \
+    --property=DynamicUser=yes \
+    --property=LoadCredentialEncrypted="runner-seed:$CREDENTIAL_INSTALL_PATH" \
+    --property=LoadCredentialEncrypted="bingx-exchange:$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
+    --property=RuntimeMaxSec=60s \
+    --property=TimeoutStartSec=60s \
+    --property=TimeoutStopSec=10s \
+    --property=KillMode=mixed \
+    --property=OOMPolicy=stop \
+    --property=MemoryMax=128M \
+    --property=MemorySwapMax=0 \
+    --property=TasksMax=16 \
+    --property=CPUWeight=10 \
+    --property=IOWeight=10 \
+    --property=Nice=10 \
+    --property=UMask=0077 \
+    --property=NoNewPrivileges=yes \
+    --property=PrivateTmp=yes \
+    --property=PrivateDevices=yes \
+    --property=ProtectSystem=strict \
+    --property=ProtectHome=yes \
+    --property=ProtectProc=invisible \
+    --property=ProcSubset=pid \
+    --property=ProtectKernelTunables=yes \
+    --property=ProtectKernelModules=yes \
+    --property=ProtectKernelLogs=yes \
+    --property=ProtectControlGroups=yes \
+    --property=ProtectClock=yes \
+    --property=ProtectHostname=yes \
+    --property=RestrictRealtime=yes \
+    --property=RestrictSUIDSGID=yes \
+    --property=RestrictNamespaces=yes \
+    --property=LockPersonality=yes \
+    --property=MemoryDenyWriteExecute=yes \
+    --property=CapabilityBoundingSet= \
+    --property=AmbientCapabilities= \
+    --property=SystemCallArchitectures=native \
+    --property=SystemCallFilter=@system-service \
+    --property="RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" \
+    --property=SocketBindDeny=any \
+    --property=IPAccounting=yes \
+    "$BINARY_INSTALL_PATH" \
+      --mode account-read \
+      --runner-seed-file "$credential_dir/runner-seed" \
+      --account-read-credential-file "$credential_dir/bingx-exchange" \
+      --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
+      --expected-account-binding-hash "$account_binding" \
+      --mandate-operation-id "$operation_id" \
+      --mandate-expires-at-utc "$expires_at" \
+      >"$work/stdout" 2>"$work/stderr"; then
+    die "account probe failed without exposing provider output"
+  fi
+  [ ! -s "$work/stderr" ] || die "account probe produced unexpected standard error"
+  local evidence_hash
+  evidence_hash="$(validate_account_read_evidence \
+    "$work/stdout" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" "$account_binding")"
+  for _ in $(seq 1 50); do
+    [ "$(systemctl show -p LoadState --value "$transient_name.service" 2>/dev/null || true)" = "not-found" ] && break
+    sleep 0.1
+  done
+  [ "$(systemctl show -p LoadState --value "$transient_name.service" 2>/dev/null || true)" = "not-found" ] ||
+    die "account probe retained its transient unit"
+
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: completed one redacted mandate-bound account read evidence_hash=$evidence_hash effect=false"
+}
+
 install_disabled() {
   local directory="$1"
   require_install_host "$directory"
@@ -1462,6 +1658,11 @@ self_test() {
   local artifact="$root/artifact"
   mkdir "$artifact"
   cp /bin/echo "$artifact/$BINARY_NAME"
+  printf '%s\n' \
+    'openApi/swap/v2/user/balance' \
+    'openApi/swap/v2/user/positions' \
+    'openApi/swap/v2/trade/openOrders' \
+    'hivra-trading-account-read-evidence-v1' >> "$artifact/$BINARY_NAME"
   chmod 700 "$artifact/$BINARY_NAME"
   cp "$UNIT_SOURCE" "$artifact/$UNIT_NAME"
   chmod 600 "$artifact/$UNIT_NAME"
@@ -1561,8 +1762,44 @@ self_test() {
   printf '\nplaceOrder\n' >> "$artifact/$BINARY_NAME"
   write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
-    die "self-test accepted an authenticated authority marker"
+    die "self-test accepted an exchange-effect authority marker"
   fi
+
+  local account_evidence="$root/account-read-evidence.json"
+  local account_operation account_runner account_binding
+  account_operation="$(printf 'operation' | sha256_stdin)"
+  account_runner="$(printf 'runner' | sha256_stdin)"
+  account_binding="$(printf 'account' | sha256_stdin)"
+  python3 - "$account_evidence" "$account_operation" "$account_runner" "$account_binding" <<'PY'
+import datetime
+import json
+import pathlib
+import sys
+
+path, operation, runner, account = sys.argv[1:]
+value = {
+    "contract_version": "hivra-trading-account-read-evidence-v1",
+    "mandate_operation_id": operation,
+    "runner_key_id": runner,
+    "account_binding_hash_hex": account,
+    "observed_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+    "checks": [
+        {"name": "balance", "success": True},
+        {"name": "positions", "success": True},
+        {"name": "open_orders", "success": True},
+    ],
+    "effect": False,
+}
+pathlib.Path(path).write_text(json.dumps(value, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+  validate_account_read_evidence \
+    "$account_evidence" "$account_operation" "$account_runner" "$account_binding" >/dev/null
+  sed -i.bak 's/"effect":false/"effect":true/' "$account_evidence"
+  if (validate_account_read_evidence \
+    "$account_evidence" "$account_operation" "$account_runner" "$account_binding") >/dev/null 2>&1; then
+    die "self-test accepted effectful account-read evidence"
+  fi
+  mv "$account_evidence.bak" "$account_evidence"
 
   local mandate_test="$root/mandate-test"
   mkdir "$mandate_test"
@@ -1675,7 +1912,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--provision-exchange-credential|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--provision-exchange-credential|--probe-exchange-account|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -1787,6 +2024,12 @@ case "$MODE" in
       [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
       die "credential provisioning requires only runner identity and stdin"
     provision_exchange_credential "$ARTIFACT_DIR"
+    ;;
+  probe-exchange-account)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
+      die "account probe requires only runner identity and prepared host state"
+    probe_exchange_account_once "$ARTIFACT_DIR"
     ;;
   uninstall-disabled)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&

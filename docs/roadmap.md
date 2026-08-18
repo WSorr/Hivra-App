@@ -3816,6 +3816,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     scheduling authority, exchange effect, tag, or Release occurred. No next
     pass is selected.
 
+- `1.x Trading Remote Runner Pass U — Mandate-Bound One-Shot Account Read`
+  - Lane: maintained 1.x host account-read reachability only.
+  - Invariant: the exact prepared credential may reach only one collected
+    transient process after runner, mandate, account, operation, and expiry
+    binding; the persistent public-shadow unit never receives it.
+  - Sole owner: the existing `public_shadow_runner_artifact.sh` host lifecycle;
+    the existing `BingxFuturesExchangeService` remains the signed provider-read
+    adapter.
+  - Threat model: credential or payload logging, stale mandate, wrong runner or
+    account, mixed-mode arguments, endpoint or HTTP-method confusion, provider
+    failure, retained transient state, listener creation, and implicit effect
+    authority fail closed.
+  - Removed or sealed: ambiguity that a prepared credential is either unusable
+    or implicitly available to the long-running runner is removed. Only
+    balance, positions, and open-orders GETs are admitted; account persistence,
+    scheduling, leases, POST/DELETE, orders, cancellation, reconciliation,
+    Core/Ledger, FFI/UI, plugin ABI, tag, and Release remain sealed.
+  - Exit evidence: focused process tests, executable negative mutations, full
+    local and clean-checkout gates, protected PR/post-merge CI, then merge-SHA
+    VPS proof of one redacted read, transient collection, exact uninstall, and
+    unchanged website/Amnezia/listener baselines.
+  - Status: selected (2026-08-18); implementation and host evidence pending.
+
 - `External Personal-Agent Runtime Pattern Audit`
   - Scope: preserve anonymized external personal-agent runtime observations
     and evaluate them against Hivra's product axis and three architecture laws.
