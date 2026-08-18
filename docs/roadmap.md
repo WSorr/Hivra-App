@@ -3759,7 +3759,21 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - exchange credentials, account reads, leases, listener/transport,
       scheduling authority, orders, cancellation, reconciliation, tags,
       Releases, generic mandate runtime, and 2.0 implementation.
-  - Status: implementation and verification active (2026-08-18).
+  - Status: complete on `main` at `ee5936f` (2026-08-18); protected PR
+    `#142` and post-merge repository gates `32121361795` passed. The exact
+    merge-SHA macOS Release exported operation
+    `2fc88f1a806c371317e49f8ea16ffadd794554554e602d7af41dad99a610b198`
+    for runner
+    `05ee31d3b7bc92138192b5d0b6c67ad5989e747d16b2563a4e90338c86d0c242`.
+    The VPS admitted SHA-256
+    `a6bbccd14c8615ff3a0da1ef1d672c7f5aa8f73ab2e7287df2906e8bd58bf7f4`,
+    accepted exact replay idempotently, rejected a symbol mutation, retained
+    byte-identical evidence, remained disabled and inactive, and removed every
+    canonical path on exact uninstall. The site stayed HTTP `200`; all four
+    Amnezia containers and the listener set were byte-identical immediately
+    before and after uninstall. Evidence is retained outside the repository in
+    `/Volumes/Dev/projects/hivra-artifacts/trading-remote-mandate`. The local
+    smoke mandate was then revoked. No next pass is selected.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
