@@ -900,6 +900,31 @@ not make remote evidence rollback-resistant and does not authorize Capsule or
 exchange credentials, account reads, mandate delivery, leases, trading
 decisions, orders, cancellation, reconciliation, listeners, tags, or Releases.
 
+### 11.24 Pass R: Portable External Evidence Anchor
+
+The existing artifact owner may atomically export exactly two files from the
+installed public-shadow stream: the exact committed signed evidence bytes and
+the Ed25519 public key whose SHA-256 is the operator-confirmed
+`runner_key_id`. The output path must be absolute, new, and collision-free;
+the host export remains explicitly untrusted until verified away from that
+host. It does not define a second evidence format, receiver, transport, or
+state owner.
+
+The existing deterministic replay harness remains the sole semantic verifier.
+It parses bounded canonical `trading-shadow-evidence-v1` bytes, authenticates
+their suite and runner binding, accepts an exact retained replay or the exact
+next sequence linked to the retained evidence hash, and rejects rollback,
+sequence conflict, chain fork, malformed bytes, wrong identity, and invalid
+signature. Rollback detection therefore depends on retaining an accepted
+anchor outside the VPS; copying a first anchor alone is not a claim of host
+integrity or historical completeness.
+
+This pass only makes existing public observation evidence portable and
+independently checkable. It grants no network listener, Capsule or exchange
+credential, account read, mandate, lease, trading decision, order, cancel,
+reconciliation, tag, or Release authority. Credential loss/rotation and remote
+effects remain separate blocked product decisions.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

@@ -24,6 +24,7 @@ ARTIFACT_DIR=""
 TARGET_OS=""
 TARGET_ARCH=""
 EXPECTED_RUNNER_KEY_ID=""
+ANCHOR_OUTPUT=""
 
 usage() {
   cat <<'EOF'
@@ -38,6 +39,9 @@ Usage:
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --deactivate <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
+  tools/trading/public_shadow_runner_artifact.sh --export-anchor <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+    --anchor-output <absolute-new-directory>
   tools/trading/public_shadow_runner_artifact.sh --uninstall-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --self-test
@@ -48,7 +52,8 @@ provenance manifest. Host lifecycle modes require a root Linux systemd host.
 Installation requires empty canonical target paths and leaves the exact unit
 disabled and inactive. Initialization proves its persistent identity without
 enabling it. Activation requires that exact identity. Uninstall refuses drifted
-or foreign-owned paths.
+or foreign-owned paths. Anchor export atomically copies the exact latest signed
+evidence and its public key; acceptance happens only after off-host verification.
 EOF
 }
 
@@ -746,6 +751,92 @@ deactivate_identity_bound() {
   echo "PASS trading-runner-artifact: deactivated runner_key_id=$EXPECTED_RUNNER_KEY_ID"
 }
 
+export_external_anchor() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  [ -n "$ANCHOR_OUTPUT" ] && [ "${ANCHOR_OUTPUT#/}" != "$ANCHOR_OUTPUT" ] ||
+    die "anchor output must be one absolute path"
+  [ ! -e "$ANCHOR_OUTPUT" ] && [ ! -L "$ANCHOR_OUTPUT" ] ||
+    die "anchor output already exists"
+  local output_parent
+  local output_name
+  output_parent="$(dirname "$ANCHOR_OUTPUT")"
+  output_name="$(basename "$ANCHOR_OUTPUT")"
+  [ -d "$output_parent" ] && [ ! -L "$output_parent" ] ||
+    die "anchor output parent must be one real directory"
+  [ "$output_name" != "." ] && [ "$output_name" != ".." ] ||
+    die "anchor output name is invalid"
+
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  pending_anchor=""
+  rollback_anchor_export() {
+    set +e
+    [ -z "$pending_anchor" ] || rm -rf "$pending_anchor"
+    rm -f "$lock_path"
+  }
+  trap rollback_anchor_export EXIT INT TERM
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "anchor export refused the installed runner key id"
+
+  local log_line
+  log_line="$(journalctl -u "$UNIT_NAME" --no-pager -o cat |
+    grep "^shadow_evidence_appended=[1-9][0-9]* runner_key_id=$EXPECTED_RUNNER_KEY_ID " |
+    tail -1 || true)"
+  [ -n "$log_line" ] || die "anchor export found no matching runner evidence"
+  local sequence
+  local public_key_hex
+  local evidence_hash
+  sequence="$(printf '%s\n' "$log_line" |
+    sed -n 's/^shadow_evidence_appended=\([1-9][0-9]*\) .*/\1/p')"
+  public_key_hex="$(printf '%s\n' "$log_line" |
+    sed -n 's/.* runner_public_key_hex=\([0-9a-f]\{64\}\) .*/\1/p')"
+  evidence_hash="$(printf '%s\n' "$log_line" |
+    sed -n 's/.* evidence_hash=\([0-9a-f]\{64\}\) .*/\1/p')"
+  [ -n "$sequence" ] && [ "$sequence" -le 999999999999 ] &&
+    [ -n "$public_key_hex" ] && [ -n "$evidence_hash" ] ||
+    die "anchor export found malformed runner evidence metadata"
+  python3 - "$public_key_hex" "$EXPECTED_RUNNER_KEY_ID" <<'PY'
+import hashlib
+import re
+import sys
+
+public_key_hex, expected_key_id = sys.argv[1:]
+if re.fullmatch(r"[0-9a-f]{64}", public_key_hex) is None:
+    raise SystemExit("invalid runner public key")
+if hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest() != expected_key_id:
+    raise SystemExit("runner public key does not match expected key id")
+PY
+
+  local evidence_name
+  local evidence_path
+  local evidence_size
+  evidence_name="$(printf '%012d-%s.json' "$sequence" "$evidence_hash")"
+  evidence_path="$STATE_DIRECTORY/stream/evidence/$evidence_name"
+  [ -f "$evidence_path" ] && [ ! -L "$evidence_path" ] ||
+    die "anchor export requires one committed evidence file"
+  evidence_size="$(file_size "$evidence_path")"
+  [ "$evidence_size" -ge 1 ] && [ "$evidence_size" -le 8192 ] ||
+    die "anchor export requires one bounded committed evidence file"
+
+  pending_anchor="$(mktemp -d "$output_parent/.${output_name}.pending.XXXXXX")"
+  printf '%s\n' "$public_key_hex" > \
+    "$pending_anchor/runner-public-key.ed25519.hex"
+  install -m 0600 "$evidence_path" "$pending_anchor/shadow-evidence.v1.json"
+  chmod 0700 "$pending_anchor"
+  [ "$(find "$pending_anchor" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = 2 ] ||
+    die "anchor export staged unexpected entries"
+  mv "$pending_anchor" "$ANCHOR_OUTPUT"
+  pending_anchor=""
+
+  trap - EXIT INT TERM
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: exported untrusted anchor sequence=$sequence runner_key_id=$EXPECTED_RUNNER_KEY_ID evidence_hash=$evidence_hash"
+}
+
 install_disabled() {
   local directory="$1"
   require_install_host "$directory"
@@ -1082,7 +1173,7 @@ self_test() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -1109,6 +1200,12 @@ while [ $# -gt 0 ]; do
       EXPECTED_RUNNER_KEY_ID="$2"
       shift 2
       ;;
+    --anchor-output)
+      [ $# -ge 2 ] && [ -z "$ANCHOR_OUTPUT" ] ||
+        die "invalid anchor-output arguments"
+      ANCHOR_OUTPUT="$2"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -1120,53 +1217,67 @@ while [ $# -gt 0 ]; do
 done
 
 case "$MODE" in
-  build) build_artifact "$ARTIFACT_DIR" ;;
+  build)
+    [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
+      die "build does not accept identity or anchor options"
+    build_artifact "$ARTIFACT_DIR"
+    ;;
   verify)
-    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
       die "verify reads the target only from the manifest"
     verify_artifact "$ARTIFACT_DIR"
     ;;
   runtime-smoke)
-    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
       die "runtime smoke reads the target only from the manifest"
     runtime_smoke_artifact "$ARTIFACT_DIR"
     ;;
   install-disabled)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
-      [ -z "$EXPECTED_RUNNER_KEY_ID" ] ||
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
       die "disabled install reads the target only from the manifest"
     install_disabled "$ARTIFACT_DIR"
     ;;
   initialize-disabled)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
-      [ -z "$EXPECTED_RUNNER_KEY_ID" ] ||
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
       die "disabled initialization reads identity from exact evidence"
     initialize_disabled "$ARTIFACT_DIR"
     ;;
   activate)
-    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] ||
       die "activation reads the target only from the manifest"
     activate_identity_bound "$ARTIFACT_DIR"
     ;;
   deactivate)
-    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] ||
       die "deactivation reads the target only from the manifest"
     deactivate_identity_bound "$ARTIFACT_DIR"
     ;;
+  export-anchor)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+      die "anchor export reads the target only from the manifest"
+    export_external_anchor "$ARTIFACT_DIR"
+    ;;
   uninstall-disabled)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
-      [ -z "$EXPECTED_RUNNER_KEY_ID" ] ||
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
       die "disabled uninstall reads the target only from the manifest"
     uninstall_disabled "$ARTIFACT_DIR"
     ;;
   ephemeral-install-smoke)
-    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
       die "ephemeral install smoke reads the target only from the manifest"
     ephemeral_install_smoke "$ARTIFACT_DIR"
     ;;
   self-test)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
-      [ -z "$EXPECTED_RUNNER_KEY_ID" ] ||
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
       die "self-test does not accept a target"
     self_test
     ;;

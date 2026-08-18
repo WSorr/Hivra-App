@@ -6,6 +6,8 @@ CHECKLIST="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
 PUBLIC_SNAPSHOT="$ROOT/flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart"
 PUBLIC_STRATEGY="$ROOT/flutter/lib/services/bingx_futures_live_strategy_use_case_service.dart"
 SHADOW_PROBE="$ROOT/flutter/tool/trading_remote_shadow_probe.dart"
+SHADOW_ANCHOR_VERIFIER="$ROOT/flutter/tool/verify_trading_shadow_anchor.dart"
+SHADOW_EVIDENCE="$ROOT/flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart"
 SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart"
 RUNNER_ARTIFACT="$ROOT/tools/trading/public_shadow_runner_artifact.sh"
 RUNNER_PACKAGE="$ROOT/tools/trading/public_shadow_runner_package/pubspec.yaml"
@@ -34,7 +36,8 @@ shadow_probe_has_authority() {
 }
 
 shadow_probe_exposes_runner_identity() {
-  rg -Fq 'runner_key_id=${evidence.runnerKeyId}' "$1"
+  rg -Fq 'runner_key_id=${evidence.runnerKeyId}' "$1" &&
+    rg -Fq 'runner_public_key_hex=${_encodeHex(publicKey.bytes)}' "$1"
 }
 
 shadow_probe_is_bounded_scheduler() {
@@ -213,6 +216,33 @@ if not (
 if "systemctl disable" in activate or "systemctl disable" in deactivate:
     raise SystemExit(1)
 PY
+}
+
+runner_external_anchor_is_fail_closed() {
+  [ -f "$2" ] &&
+    rg -q -- '--export-anchor <artifact-dir>' "$1" &&
+    rg -q -- '--anchor-output <absolute-new-directory>' "$1" &&
+    rg -Fq '[ ! -e "$ANCHOR_OUTPUT" ] && [ ! -L "$ANCHOR_OUTPUT" ] ||' "$1" &&
+    rg -q 'anchor output already exists' "$1" &&
+    rg -q 'anchor output parent must be one real directory' "$1" &&
+    rg -q 'anchor export refused the installed runner key id' "$1" &&
+    rg -Fq 'if hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest() != expected_key_id:' "$1" &&
+    rg -q 'runner public key does not match expected key id' "$1" &&
+    rg -q 'anchor export requires one bounded committed evidence file' "$1" &&
+    rg -q 'runner-public-key\.ed25519\.hex' "$1" &&
+    rg -q 'shadow-evidence\.v1\.json' "$1" &&
+    rg -q 'exported untrusted anchor' "$1" &&
+    rg -q 'verifyShadowEvidenceContinuity' "$2" &&
+    rg -q 'anchor public key does not match runner id' "$2" &&
+    rg -q 'anchorVerdict != BingxFuturesShadowEvidenceVerdict\.exactReplay' "$2" &&
+    rg -q 'candidateVerdict != BingxFuturesShadowEvidenceVerdict\.accepted' "$2" &&
+    rg -q 'anchor directory has unexpected entries' "$2" &&
+    rg -q 'anchor evidence is not one bounded file' "$2" &&
+    rg -q 'Future<BingxFuturesShadowEvidenceVerdict> verifyShadowEvidenceContinuity' "$3" &&
+    rg -q 'authenticateShadowEvidence' "$3" &&
+    rg -q 'evidence.sequence != lastAcceptedSequence \+ 1' "$3" &&
+    rg -q 'evidence.previousEvidenceHashHex != expectedPreviousHash' "$3" &&
+    ! rg -q 'BingxFuturesApiCredentials|placeOrder|cancelOrder|HttpClient|WebSocket' "$2"
 }
 
 runner_package_is_pinned() {
@@ -501,6 +531,13 @@ else
   fail "runner activation lost identity binding, rollback, or exact deactivation"
 fi
 
+if runner_external_anchor_is_fail_closed \
+  "$RUNNER_ARTIFACT" "$SHADOW_ANCHOR_VERIFIER" "$SHADOW_EVIDENCE"; then
+  pass "portable shadow anchor preserves exact signed bytes and verifies off-host continuity"
+else
+  fail "portable shadow anchor lost exact export, authentication, or continuity rejection"
+fi
+
 if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; then
   pass "required CI builds and starts the verified Linux runner without authority or artifact publication"
 else
@@ -558,7 +595,11 @@ ACTIVATION_ROLLBACK_MUTATION="$(mktemp)"
 INITIALIZATION_ENABLE_MUTATION="$(mktemp)"
 DEACTIVATION_IDENTITY_MUTATION="$(mktemp)"
 ACTIVATION_STALE_LOG_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION"' EXIT
+ANCHOR_OVERWRITE_MUTATION="$(mktemp)"
+ANCHOR_KEY_MUTATION="$(mktemp)"
+ANCHOR_VERIFIER_MUTATION="$(mktemp)"
+ANCHOR_CONTINUITY_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -624,6 +665,14 @@ sed '/identity-bound deactivation changed runner identity/d' \
   "$RUNNER_ARTIFACT" > "$DEACTIVATION_IDENTITY_MUTATION"
 sed 's/wait_for_unit_evidence_after_cursor "\$journal_cursor"/wait_for_unit_evidence "\$started_at"/' \
   "$RUNNER_ARTIFACT" > "$ACTIVATION_STALE_LOG_MUTATION"
+sed 's/\[ ! -e "$ANCHOR_OUTPUT" \] && \[ ! -L "$ANCHOR_OUTPUT" \]/true/' \
+  "$RUNNER_ARTIFACT" > "$ANCHOR_OVERWRITE_MUTATION"
+sed 's/hashlib\.sha256(bytes\.fromhex(public_key_hex))\.hexdigest() != expected_key_id/False/' \
+  "$RUNNER_ARTIFACT" > "$ANCHOR_KEY_MUTATION"
+sed 's/anchorVerdict != BingxFuturesShadowEvidenceVerdict\.exactReplay/false/' \
+  "$SHADOW_ANCHOR_VERIFIER" > "$ANCHOR_VERIFIER_MUTATION"
+sed 's/evidence\.sequence != lastAcceptedSequence + 1/false/' \
+  "$SHADOW_EVIDENCE" > "$ANCHOR_CONTINUITY_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_exposes_runner_identity "$PROBE_IDENTITY_MUTATION" && \
@@ -651,10 +700,14 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_activation_is_identity_bound "$ACTIVATION_ROLLBACK_MUTATION" && \
   ! runner_activation_is_identity_bound "$INITIALIZATION_ENABLE_MUTATION" && \
   ! runner_activation_is_identity_bound "$DEACTIVATION_IDENTITY_MUTATION" && \
-  ! runner_activation_is_identity_bound "$ACTIVATION_STALE_LOG_MUTATION"; then
-  pass "public-only, scheduler, bundle, activation, supervisor, durable-stream, and execution-outcome mutations are rejected"
+  ! runner_activation_is_identity_bound "$ACTIVATION_STALE_LOG_MUTATION" && \
+  ! runner_external_anchor_is_fail_closed "$ANCHOR_OVERWRITE_MUTATION" "$SHADOW_ANCHOR_VERIFIER" "$SHADOW_EVIDENCE" && \
+  ! runner_external_anchor_is_fail_closed "$ANCHOR_KEY_MUTATION" "$SHADOW_ANCHOR_VERIFIER" "$SHADOW_EVIDENCE" && \
+  ! runner_external_anchor_is_fail_closed "$RUNNER_ARTIFACT" "$ANCHOR_VERIFIER_MUTATION" "$SHADOW_EVIDENCE" && \
+  ! runner_external_anchor_is_fail_closed "$RUNNER_ARTIFACT" "$SHADOW_ANCHOR_VERIFIER" "$ANCHOR_CONTINUITY_MUTATION"; then
+  pass "public-only, scheduler, bundle, activation, anchor, supervisor, durable-stream, and execution-outcome mutations are rejected"
 else
-  fail "public-only, scheduler, bundle, activation, supervisor, durable-stream, or execution-outcome mutation self-test failed"
+  fail "public-only, scheduler, bundle, activation, anchor, supervisor, durable-stream, or execution-outcome mutation self-test failed"
 fi
 
 exit "$STATUS"

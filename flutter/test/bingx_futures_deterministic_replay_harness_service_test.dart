@@ -567,6 +567,114 @@ void main() {
         BingxFuturesShadowEvidenceVerdict.malformed,
       );
     });
+
+    test(
+      'verifies an external anchor and only its exact continuation',
+      () async {
+        final signingKey = await _runnerSigningKey();
+        final publicKey = await signingKey.extractPublicKey();
+        final anchor = await _signedEvidence(
+          service: service,
+          signingKey: signingKey,
+          runnerKeyId: _runnerKeyId(publicKey),
+        );
+        final continuation = await _resign(
+          _copyEvidence(
+            anchor,
+            sequence: 2,
+            previousEvidenceHashHex: anchor.evidenceHashHex,
+          ),
+          signingKey,
+        );
+
+        expect(
+          await service.verifyShadowEvidenceContinuity(
+            untrustedWireBytes: anchor.wireBytes,
+            trustedRunnerKey: publicKey,
+            lastAcceptedSequence: anchor.sequence,
+            lastAcceptedEvidenceHashHex: anchor.evidenceHashHex,
+          ),
+          BingxFuturesShadowEvidenceVerdict.exactReplay,
+        );
+        expect(
+          await service.verifyShadowEvidenceContinuity(
+            untrustedWireBytes: continuation.wireBytes,
+            trustedRunnerKey: publicKey,
+            lastAcceptedSequence: anchor.sequence,
+            lastAcceptedEvidenceHashHex: anchor.evidenceHashHex,
+          ),
+          BingxFuturesShadowEvidenceVerdict.accepted,
+        );
+        expect(
+          await service.verifyShadowEvidenceContinuity(
+            untrustedWireBytes: anchor.wireBytes,
+            trustedRunnerKey: publicKey,
+            lastAcceptedSequence: continuation.sequence,
+            lastAcceptedEvidenceHashHex: continuation.evidenceHashHex,
+          ),
+          BingxFuturesShadowEvidenceVerdict.sequenceConflict,
+        );
+
+        final conflictingReplay = await _resign(
+          _copyEvidence(anchor, decisionHashHex: 'e' * 64),
+          signingKey,
+        );
+        expect(
+          await service.verifyShadowEvidenceContinuity(
+            untrustedWireBytes: conflictingReplay.wireBytes,
+            trustedRunnerKey: publicKey,
+            lastAcceptedSequence: anchor.sequence,
+            lastAcceptedEvidenceHashHex: anchor.evidenceHashHex,
+          ),
+          BingxFuturesShadowEvidenceVerdict.sequenceConflict,
+        );
+
+        final fork = await _resign(
+          _copyEvidence(continuation, previousEvidenceHashHex: 'f' * 64),
+          signingKey,
+        );
+        expect(
+          await service.verifyShadowEvidenceContinuity(
+            untrustedWireBytes: fork.wireBytes,
+            trustedRunnerKey: publicKey,
+            lastAcceptedSequence: anchor.sequence,
+            lastAcceptedEvidenceHashHex: anchor.evidenceHashHex,
+          ),
+          BingxFuturesShadowEvidenceVerdict.chainFork,
+        );
+        expect(
+          await service.verifyShadowEvidenceContinuity(
+            untrustedWireBytes: continuation.withSignature('00' * 64).wireBytes,
+            trustedRunnerKey: publicKey,
+            lastAcceptedSequence: anchor.sequence,
+            lastAcceptedEvidenceHashHex: anchor.evidenceHashHex,
+          ),
+          BingxFuturesShadowEvidenceVerdict.invalidSignature,
+        );
+        final foreignPublicKey = await Ed25519()
+            .newKeyPairFromSeed(List<int>.generate(32, (index) => 255 - index))
+            .then((keyPair) => keyPair.extractPublicKey());
+        expect(
+          await service.verifyShadowEvidenceContinuity(
+            untrustedWireBytes: anchor.wireBytes,
+            trustedRunnerKey: foreignPublicKey,
+            lastAcceptedSequence: anchor.sequence,
+            lastAcceptedEvidenceHashHex: anchor.evidenceHashHex,
+          ),
+          BingxFuturesShadowEvidenceVerdict.wrongRunner,
+        );
+        expect(
+          await service.verifyShadowEvidenceContinuity(
+            untrustedWireBytes: anchor.wireBytes,
+            trustedRunnerKey: publicKey,
+            lastAcceptedSequence: anchor.sequence,
+            lastAcceptedEvidenceHashHex: anchor.evidenceHashHex,
+            maxEncodedBytes: 1,
+          ),
+          BingxFuturesShadowEvidenceVerdict.oversized,
+        );
+      },
+    );
   });
 }
 
