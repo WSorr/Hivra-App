@@ -80,31 +80,47 @@ runner_artifact_is_verifiable() {
 
 runner_bundle_install_is_fail_closed() {
   local start_count
+  local bundle_remove_count
+  local final_bundle_remove_line
+  local final_state_remove_line
   start_count="$(rg -c 'systemctl start "\$UNIT_NAME"' "$1")"
+  bundle_remove_count="$(rg -c 'rm -rf "\$BUNDLE_INSTALL_PATH"' "$1")"
+  final_bundle_remove_line="$(rg -n 'rm -rf "\$BUNDLE_INSTALL_PATH"' "$1" | tail -1 | cut -d: -f1)"
+  final_state_remove_line="$(rg -n 'rm -rf "\$STATE_DIRECTORY" "\$state_private"' "$1" | tail -1 | cut -d: -f1)"
   [ -x "$1" ] &&
     rg -q -- '--ephemeral-install-smoke <artifact-dir>' "$1" &&
-    rg -q 'ephemeral install smoke requires root' "$1" &&
+    rg -q -- '--install-disabled <artifact-dir>' "$1" &&
+    rg -q -- '--uninstall-disabled <artifact-dir>' "$1" &&
+    rg -q 'host lifecycle requires root' "$1" &&
     rg -q 'another public-shadow install operation is active' "$1" &&
-    rg -q "trap 'rm -f \"\\\$lock_path\"' EXIT" "$1" &&
-    rg -q '^  bundle_installed=0$' "$1" &&
-    rg -q '^  credential_installed=0$' "$1" &&
-    rg -q '^  unit_linked=0$' "$1" &&
-    rg -q '^  unit_loaded=0$' "$1" &&
     rg -q '\[ ! -e "\$target" \] && \[ ! -L "\$target" \]' "$1" &&
-    rg -q 'ephemeral install target already exists' "$1" &&
+    rg -q 'disabled install target already exists' "$1" &&
     rg -q 'systemd-creds encrypt --name=runner-seed' "$1" &&
     rg -q 'chmod 0755 "\$pending_bundle"' "$1" &&
     rg -q 'systemctl link "\$UNIT_INSTALL_PATH"' "$1" &&
     rg -q 'systemctl is-enabled "\$UNIT_NAME"' "$1" &&
+    rg -q 'disabled install became active' "$1" &&
+    rg -q 'disabled install created boot enablement' "$1" &&
+    rg -q 'cmp -s "\$BINARY_INSTALL_PATH" "\$directory/\$BINARY_NAME"' "$1" &&
+    rg -q 'uninstall refused a drifted runner manifest' "$1" &&
+    rg -q 'uninstall refused a foreign unit link' "$1" &&
+    rg -q 'uninstall refused a foreign state link' "$1" &&
+    rg -q 'uninstall refused an enabled unit' "$1" &&
+    [ "$bundle_remove_count" = "2" ] &&
+    [ -n "$final_bundle_remove_line" ] &&
+    [ -n "$final_state_remove_line" ] &&
+    [ "$final_bundle_remove_line" -gt "$final_state_remove_line" ] &&
     [ "$start_count" = "2" ] &&
+    rg -q '^  install_disabled "\$directory"$' "$1" &&
+    rg -q '^  uninstall_disabled "\$directory"$' "$1" &&
     rg -q 'wait_for_exact_unit_evidence "\$started_at" 1' "$1" &&
     rg -q 'wait_for_exact_unit_evidence "\$restarted_at" 2' "$1" &&
     rg -q 'runner identity state disappeared across stop' "$1" &&
     rg -q 'restart continuity used an implicit supervisor restart' "$1" &&
     rg -q 'restart continuity changed or omitted the runner key id' "$1" &&
     rg -q 'systemctl clean --what=state "\$UNIT_NAME"' "$1" &&
-    rg -q 'ephemeral install cleanup retained:' "$1" &&
-    rg -q 'exact unit retained encrypted identity across restart and cleaned up without enablement' "$1" &&
+    rg -q 'disabled uninstall retained:' "$1" &&
+    rg -q 'exact disabled install retained identity and uninstalled without enablement' "$1" &&
     ! rg -q 'systemctl enable' "$1"
 }
 
@@ -438,7 +454,9 @@ BUNDLE_TRAP_SCOPE_MUTATION="$(mktemp)"
 BUNDLE_RESTART_MUTATION="$(mktemp)"
 PROBE_IDENTITY_MUTATION="$(mktemp)"
 BUNDLE_IDENTITY_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION"' EXIT
+BUNDLE_FOREIGN_STATE_MUTATION="$(mktemp)"
+BUNDLE_EARLY_ANCHOR_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -477,7 +495,7 @@ sed 's/\[ ! -e "\$target" \] && \[ ! -L "\$target" \]/true/' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_COLLISION_MUTATION"
 sed '/systemctl clean --what=state "\$UNIT_NAME"/d' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_CLEANUP_MUTATION"
-sed 's/^  unit_loaded=0$/  local unit_loaded=0/' \
+sed 's#cmp -s "$BINARY_INSTALL_PATH" "$directory/$BINARY_NAME"#true#' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_TRAP_SCOPE_MUTATION"
 sed 's/wait_for_exact_unit_evidence "$restarted_at" 2/wait_for_exact_unit_evidence "$restarted_at" 1/' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_RESTART_MUTATION"
@@ -485,6 +503,14 @@ sed '/runner_key_id=\${evidence\.runnerKeyId}/d' \
   "$SHADOW_PROBE" > "$PROBE_IDENTITY_MUTATION"
 sed 's/\[ "$first_runner_key_id" = "$second_runner_key_id" \]/true/' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_IDENTITY_MUTATION"
+sed '/uninstall refused a foreign state link/d' \
+  "$RUNNER_ARTIFACT" > "$BUNDLE_FOREIGN_STATE_MUTATION"
+awk '{
+  if ($0 ~ /rm -f "\$CREDENTIAL_INSTALL_PATH"/) {
+    print "  rm -rf \"$BUNDLE_INSTALL_PATH\""
+  }
+  print
+}' "$RUNNER_ARTIFACT" > "$BUNDLE_EARLY_ANCHOR_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_exposes_runner_identity "$PROBE_IDENTITY_MUTATION" && \
@@ -505,7 +531,9 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_CLEANUP_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_TRAP_SCOPE_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_RESTART_MUTATION" && \
-  ! runner_bundle_install_is_fail_closed "$BUNDLE_IDENTITY_MUTATION"; then
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_IDENTITY_MUTATION" && \
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_FOREIGN_STATE_MUTATION" && \
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_EARLY_ANCHOR_MUTATION"; then
   pass "public-only, scheduler, bundle, install, supervisor, durable-stream, and execution-outcome mutations are rejected"
 else
   fail "public-only, scheduler, bundle, install, supervisor, durable-stream, or execution-outcome mutation self-test failed"
