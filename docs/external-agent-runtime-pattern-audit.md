@@ -7,16 +7,12 @@ Snapshot date: 2026-08-18
 
 ## 1. Purpose
 
-This record preserves reusable product and runtime patterns observed in two
-external personal-agent projects without importing their ownership models into
-Hivra:
+This record preserves reusable product and runtime patterns observed across
+two classes of external personal-agent implementations without identifying
+those implementations or importing their ownership models into Hivra:
 
-- OpenClaw at commit
-  [`d92ebbaf725481a33f7f3cfa2e3a8b274fa948e4`](https://github.com/openclaw/openclaw/commit/d92ebbaf725481a33f7f3cfa2e3a8b274fa948e4)
-  (MIT);
-- Aithy at commit
-  [`672ca3b151eb60a4f13067267d85527c196ab566`](https://github.com/dosco/aithy/commit/672ca3b151eb60a4f13067267d85527c196ab566)
-  (Apache-2.0).
+- task-, approval-, and standing-operation-oriented runtimes;
+- context-, memory-, skill-, episode-, and artifact-oriented runtimes.
 
 The comparison is governed by `product-axis.md`, `specification.md`, and
 `architecture-execution-discipline.md`. External popularity or convenience is

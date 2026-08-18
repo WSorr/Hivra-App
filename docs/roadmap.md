@@ -3803,8 +3803,8 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `#144`; merge-SHA host evidence and status closure remain pending.
 
 - `External Personal-Agent Runtime Pattern Audit`
-  - Scope: preserve pinned OpenClaw and Aithy observations and evaluate them
-    against Hivra's product axis and three architecture laws.
+  - Scope: preserve anonymized external personal-agent runtime observations
+    and evaluate them against Hivra's product axis and three architecture laws.
   - Result: prioritize an Operations Center projection, a unified bounded
     approval surface, explicit private AI context/artifacts, and runtime-health
     advice without adding another lifecycle or authority owner.
