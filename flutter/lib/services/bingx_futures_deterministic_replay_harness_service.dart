@@ -309,6 +309,68 @@ class BingxFuturesDeterministicReplayHarnessService {
     }
   }
 
+  Future<BingxFuturesShadowEvidenceVerdict> verifyShadowEvidenceContinuity({
+    required List<int> untrustedWireBytes,
+    required SimplePublicKey trustedRunnerKey,
+    required int lastAcceptedSequence,
+    required String lastAcceptedEvidenceHashHex,
+    int maxEncodedBytes = 8192,
+  }) async {
+    if (untrustedWireBytes.length > maxEncodedBytes) {
+      return BingxFuturesShadowEvidenceVerdict.oversized;
+    }
+    late final BingxFuturesShadowEvidence evidence;
+    try {
+      evidence = parseShadowEvidence(
+        untrustedWireBytes,
+        maxEncodedBytes: maxEncodedBytes,
+      );
+    } on FormatException {
+      return BingxFuturesShadowEvidenceVerdict.malformed;
+    }
+    if (evidence.contractVersion != 'trading-shadow-evidence-v1') {
+      return BingxFuturesShadowEvidenceVerdict.unsupportedContract;
+    }
+    if (evidence.signatureSuite != 'ed25519-v1') {
+      return BingxFuturesShadowEvidenceVerdict.unsupportedSignatureSuite;
+    }
+    if (!_isSha256(evidence.packageDigestHex) ||
+        !_isSha256(evidence.policyHashHex) ||
+        !_isSha256(evidence.marketSnapshotHashHex) ||
+        !_isSha256(evidence.featureHashHex) ||
+        !_isSha256(evidence.decisionHashHex) ||
+        !_isSha256(evidence.previousEvidenceHashHex) ||
+        evidence.sequence < 1 ||
+        lastAcceptedSequence < 0 ||
+        !_isSha256(lastAcceptedEvidenceHashHex)) {
+      return BingxFuturesShadowEvidenceVerdict.malformed;
+    }
+    if (evidence.runnerKeyId != runnerKeyId(trustedRunnerKey)) {
+      return BingxFuturesShadowEvidenceVerdict.wrongRunner;
+    }
+    if (!await authenticateShadowEvidence(
+      evidence: evidence,
+      trustedRunnerKey: trustedRunnerKey,
+    )) {
+      return BingxFuturesShadowEvidenceVerdict.invalidSignature;
+    }
+    if (evidence.sequence == lastAcceptedSequence &&
+        evidence.evidenceHashHex == lastAcceptedEvidenceHashHex) {
+      return BingxFuturesShadowEvidenceVerdict.exactReplay;
+    }
+    if (evidence.sequence != lastAcceptedSequence + 1) {
+      return BingxFuturesShadowEvidenceVerdict.sequenceConflict;
+    }
+    final expectedPreviousHash =
+        lastAcceptedSequence == 0
+            ? _emptyShadowEvidenceHash
+            : lastAcceptedEvidenceHashHex;
+    if (evidence.previousEvidenceHashHex != expectedPreviousHash) {
+      return BingxFuturesShadowEvidenceVerdict.chainFork;
+    }
+    return BingxFuturesShadowEvidenceVerdict.accepted;
+  }
+
   BingxFuturesShadowEvidence buildShadowEvidence({
     required BingxFuturesReplayRunResult publicRun,
     required String runnerBuildId,

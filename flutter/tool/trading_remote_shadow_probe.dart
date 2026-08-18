@@ -53,6 +53,7 @@ Future<void> main(List<String> args) async {
         stdout.writeln(
           'shadow_evidence_appended=${evidence.sequence} '
           'runner_key_id=${evidence.runnerKeyId} '
+          'runner_public_key_hex=${_encodeHex(publicKey.bytes)} '
           'evidence_hash=${evidence.evidenceHashHex} '
           'cycle=$cycleNumber/${schedule.runCount}',
         );
@@ -205,3 +206,6 @@ List<int> _decodeSeed(String value) {
     growable: false,
   );
 }
+
+String _encodeHex(List<int> bytes) =>
+    bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();

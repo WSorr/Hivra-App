@@ -3665,6 +3665,41 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     No following pass, tag, Release, account authority, lease, or remote effect
     is selected.
 
+- `1.x Trading Remote Runner Pass R — Portable External Evidence Anchor`
+  - Lane: maintained 1.x public-shadow evidence continuity only.
+  - Invariant:
+    - an independently retained accepted anchor binds the exact runner key,
+      sequence, evidence hash, and predecessor chain; a VPS rollback or fork
+      cannot be accepted as continuation.
+  - Sole owners:
+    - `BingxFuturesDeterministicReplayHarnessService` remains the semantic
+      parser, authentication, and continuity owner;
+    - `tools/trading/public_shadow_runner_artifact.sh` only atomically exports
+      exact existing bytes and their public key.
+  - Threat model:
+    - overwrite of retained evidence, wrong runner key, malformed or oversized
+      bytes, invalid signature, sequence rollback, repeated sequence with
+      different content, and predecessor-chain fork must fail closed;
+    - a first copied anchor is not independently rollback-resistant until it is
+      retained outside the VPS and used for later continuity comparison.
+  - Exit evidence:
+    - focused authentication/continuity tests, artifact self-tests, semantic
+      mutation gate, full repository gates, and clean detached checkout;
+    - required PR and post-merge GitHub Actions;
+    - exact merge-SHA VPS export copied to macOS, independently verified, then
+      followed by one exact next anchor while reverse comparison rejects
+      rollback; site, Amnezia, and listener baselines remain unchanged.
+  - Removed or sealed:
+    - journal text and mutable VPS state can no longer be the only retained
+      evidence of public-shadow continuity; export cannot overwrite an anchor
+      or silently substitute another runner key.
+  - Still blocked:
+    - transport/listeners, Capsule or exchange credentials, account reads,
+      credential rotation/replacement, leases, mandates, trading effects,
+      reconciliation, tags, Releases, and 2.0 implementation.
+  - Status: implementation candidate active on 2026-08-18; host evidence and
+    protected integration remain pending.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
