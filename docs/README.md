@@ -188,6 +188,7 @@ Contains:
 - decision/execution envelope hash traceability
 - risk-path coverage records
 - deterministic coverage check command
+
 ### 18) `plugins/bingx_futures_trading_drone_goal_contract_v1.md` (drone goal contract)
 Use this as the operational anchor for trading-drone development cadence.
 
@@ -273,6 +274,17 @@ Contains:
 It records the implemented replacement for the v4 replay checksum. Fresh
 runtimes and append paths use v5; v4 remains a guarded migration input.
 
+### 24) `external-agent-runtime-pattern-audit.md` (research record)
+
+Use this only when evaluating personal-agent operations, approvals, AI context,
+artifacts, or runtime-health UX against Hivra's existing owners and laws.
+
+Contains:
+- pinned OpenClaw and Aithy research snapshots;
+- patterns that may be adapted without adding a second lifecycle owner;
+- patterns rejected by Hivra authority and Ledger boundaries;
+- a non-authorizing Remote Runner readiness fact and revisit trigger.
+
 ## Recommended Reading Order
 
 1. `development-control.md`
@@ -294,6 +306,7 @@ runtimes and append paths use v5; v4 remains a guarded migration input.
 17. `plugins/moltbook_agent_drone_design_v1.md` when planning the Moltbook future track
 18. `docs/platform-toolchain-evolution.md` before changing the native build stack
 19. `architecture/continuous-ledger-protocol-v5.md` before changing ledger signing, import, or persistence
+20. `external-agent-runtime-pattern-audit.md` when evaluating external personal-agent runtime patterns
 
 ## Supporting Index
 

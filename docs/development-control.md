@@ -5,8 +5,10 @@ Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android 
 Current development focus: `1.x Trading Remote Runner Pass T — Mandate-Bound
 Prepared Exchange Credential` is selected. It may bind one dedicated
 subaccount credential to the exact prepared Capsule-signed mandate and retain
-only host-encrypted prepared state. Runner access, account reads, leases,
-remote effects, release, and 2.0 work remain unauthorized.
+only host-encrypted prepared state. Its repository implementation is merged at
+`3fc455b`; merge-SHA host evidence and status closure remain pending. Runner
+access, account reads, leases, remote effects, release, and 2.0 work remain
+unauthorized.
 
 ## 1. Read This First
 
@@ -26,7 +28,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Pass T selected | The existing host lifecycle may accept one dedicated subaccount credential only when its API-key hash matches the exact active prepared mandate, then retain only host-encrypted prepared state. | Negative self-tests, protected PR/CI, and merge-SHA VPS evidence must prove replay/conflict rejection, no runner access, exact uninstall, and unchanged co-hosted workloads; account reads and effects remain blocked. |
+| **1.x maintained runtime** | Pass T implementation merged; host evidence pending | The existing host lifecycle may accept one dedicated subaccount credential only when its API-key hash matches the exact active prepared mandate, then retain only host-encrypted prepared state. | Merge-SHA VPS evidence must prove replay/conflict rejection, no runner access, exact uninstall, and unchanged co-hosted workloads; account reads and effects remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
