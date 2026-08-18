@@ -25,6 +25,7 @@ TARGET_OS=""
 TARGET_ARCH=""
 EXPECTED_RUNNER_KEY_ID=""
 ANCHOR_OUTPUT=""
+MANDATE_ARTIFACT=""
 
 usage() {
   cat <<'EOF'
@@ -42,6 +43,9 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --export-anchor <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
     --anchor-output <absolute-new-directory>
+  tools/trading/public_shadow_runner_artifact.sh --admit-mandate <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+    --mandate-artifact <absolute-json-file>
   tools/trading/public_shadow_runner_artifact.sh --uninstall-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --self-test
@@ -54,6 +58,8 @@ disabled and inactive. Initialization proves its persistent identity without
 enabling it. Activation requires that exact identity. Uninstall refuses drifted
 or foreign-owned paths. Anchor export atomically copies the exact latest signed
 evidence and its public key; acceptance happens only after off-host verification.
+Mandate admission verifies the exact Capsule signature and runner binding, then
+stores one prepared artifact without activating exchange authority.
 EOF
 }
 
@@ -837,6 +843,193 @@ PY
   echo "PASS trading-runner-artifact: exported untrusted anchor sequence=$sequence runner_key_id=$EXPECTED_RUNNER_KEY_ID evidence_hash=$evidence_hash"
 }
 
+verify_remote_mandate_artifact() {
+  local source="$1"
+  local expected_runner_key_id="$2"
+  local work="$3"
+  [ -f "$source" ] && [ ! -L "$source" ] ||
+    die "mandate artifact must be one regular file"
+  local size
+  size="$(file_size "$source")"
+  [ "$size" -ge 1 ] && [ "$size" -le 8192 ] ||
+    die "mandate artifact must contain bounded bytes"
+  if ! python3 - "$source" "$expected_runner_key_id" "$work" <<'PY'
+import datetime
+import hashlib
+import json
+import pathlib
+import re
+import sys
+
+source, expected_runner_key_id, work = sys.argv[1:]
+raw = pathlib.Path(source).read_bytes()
+try:
+    text = raw.decode("utf-8")
+    value = json.loads(text)
+except (UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit("mandate artifact is not strict UTF-8 JSON")
+expected_root = [
+    "contract_version", "operation_id", "commitment_hash_hex",
+    "runner_key_id", "mandate", "signature_suite", "signature_hex",
+]
+expected_mandate = [
+    "version", "mandate_id", "capsule_root_hex", "account_binding_hash_hex",
+    "symbol", "test_order", "issued_at_utc", "expires_at_utc",
+    "max_order_notional_quote_decimal", "max_risk_per_trade_percent",
+    "max_daily_loss_percent", "max_concurrent_positions",
+    "cooldown_after_loss_streak", "cooldown_minutes", "max_effects",
+    "revoked_at_utc",
+]
+if not isinstance(value, dict) or list(value) != expected_root:
+    raise SystemExit("mandate artifact root shape is not canonical")
+mandate = value.get("mandate")
+if not isinstance(mandate, dict) or list(mandate) != expected_mandate:
+    raise SystemExit("mandate shape is not canonical")
+if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
+    raise SystemExit("mandate artifact bytes are not canonical")
+if value["contract_version"] != "trading-remote-mandate-admission-v1":
+    raise SystemExit("mandate contract version mismatch")
+if value["signature_suite"] != "ed25519-v1":
+    raise SystemExit("mandate signature suite mismatch")
+if value["runner_key_id"] != expected_runner_key_id:
+    raise SystemExit("mandate runner binding mismatch")
+hex64 = re.compile(r"[0-9a-f]{64}")
+hex128 = re.compile(r"[0-9a-f]{128}")
+for key in ("operation_id", "commitment_hash_hex", "runner_key_id"):
+    if not isinstance(value[key], str) or hex64.fullmatch(value[key]) is None:
+        raise SystemExit(f"invalid {key}")
+if value["operation_id"] != value["commitment_hash_hex"]:
+    raise SystemExit("operation id is not the semantic commitment")
+if not isinstance(value["signature_hex"], str) or hex128.fullmatch(value["signature_hex"]) is None:
+    raise SystemExit("invalid signature")
+if mandate["version"] != 1 or mandate["revoked_at_utc"] is not None:
+    raise SystemExit("mandate is not admissible")
+if not isinstance(mandate["test_order"], bool):
+    raise SystemExit("mandate mode is invalid")
+for key in ("capsule_root_hex", "account_binding_hash_hex", "mandate_id"):
+    if not isinstance(mandate[key], str) or hex64.fullmatch(mandate[key]) is None:
+        raise SystemExit(f"invalid mandate {key}")
+if not isinstance(mandate["symbol"], str) or re.fullmatch(r"[A-Z0-9-]{1,32}", mandate["symbol"]) is None:
+    raise SystemExit("invalid mandate symbol")
+decimal_value = mandate["max_order_notional_quote_decimal"]
+if (
+    not isinstance(decimal_value, str)
+    or re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,8})?", decimal_value) is None
+    or float(decimal_value) <= 0
+):
+    raise SystemExit("invalid mandate notional")
+for key in ("max_risk_per_trade_percent", "max_daily_loss_percent"):
+    number = mandate[key]
+    if isinstance(number, bool) or not isinstance(number, (int, float)) or number <= 0:
+        raise SystemExit(f"invalid mandate {key}")
+integer_bounds = {
+    "max_concurrent_positions": (1, None),
+    "cooldown_after_loss_streak": (1, None),
+    "cooldown_minutes": (0, None),
+    "max_effects": (1, 256),
+}
+for key, (minimum, maximum) in integer_bounds.items():
+    number = mandate[key]
+    if (
+        isinstance(number, bool)
+        or not isinstance(number, int)
+        or number < minimum
+        or (maximum is not None and number > maximum)
+    ):
+        raise SystemExit(f"invalid mandate {key}")
+semantic = {key: mandate[key] for key in expected_mandate[2:-1]}
+mandate_id = hashlib.sha256(
+    b"hivra:bingx-futures-trading-mandate:v1\n" +
+    json.dumps(semantic, separators=(",", ":")).encode("utf-8")
+).hexdigest()
+if mandate["mandate_id"] != mandate_id:
+    raise SystemExit("mandate semantic id mismatch")
+commitment_semantic = {
+    "contract_version": value["contract_version"],
+    "runner_key_id": value["runner_key_id"],
+    "mandate": mandate,
+}
+commitment = hashlib.sha256(
+    b"hivra:bingx-futures-remote-mandate-admission:v1\n" +
+    json.dumps(commitment_semantic, separators=(",", ":")).encode("utf-8")
+).hexdigest()
+if value["commitment_hash_hex"] != commitment:
+    raise SystemExit("mandate commitment mismatch")
+def instant(name):
+    raw_value = mandate[name]
+    if not isinstance(raw_value, str) or not raw_value.endswith("Z"):
+        raise SystemExit(f"invalid mandate {name}")
+    try:
+        return datetime.datetime.fromisoformat(raw_value[:-1] + "+00:00")
+    except ValueError:
+        raise SystemExit(f"invalid mandate {name}")
+issued = instant("issued_at_utc")
+expires = instant("expires_at_utc")
+now = datetime.datetime.now(datetime.timezone.utc)
+if expires <= issued or expires - issued > datetime.timedelta(hours=24):
+    raise SystemExit("mandate time bounds are invalid")
+if now < issued or now >= expires:
+    raise SystemExit("mandate is not currently active")
+pathlib.Path(work, "digest.bin").write_bytes(bytes.fromhex(commitment))
+pathlib.Path(work, "signature.bin").write_bytes(bytes.fromhex(value["signature_hex"]))
+pathlib.Path(work, "capsule-public-key.der").write_bytes(
+    bytes.fromhex("302a300506032b6570032100" + mandate["capsule_root_hex"])
+)
+pathlib.Path(work, "operation-id").write_text(value["operation_id"], encoding="ascii")
+PY
+  then
+    die "mandate semantic validation failed"
+  fi
+  openssl pkeyutl -verify -pubin \
+    -inkey "$work/capsule-public-key.der" -keyform DER -rawin \
+    -in "$work/digest.bin" -sigfile "$work/signature.bin" >/dev/null 2>&1 ||
+    die "mandate Capsule signature is invalid"
+}
+
+admit_remote_mandate() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  [ -n "$MANDATE_ARTIFACT" ] && [ "${MANDATE_ARTIFACT#/}" != "$MANDATE_ARTIFACT" ] ||
+    die "mandate artifact path must be absolute"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "mandate admission refused the installed runner key id"
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  local work
+  work="$(mktemp -d)"
+  trap 'rm -rf "$work"; rm -f "$lock_path"' EXIT INT TERM
+  install -m 0600 "$MANDATE_ARTIFACT" "$work/input.json"
+  verify_remote_mandate_artifact \
+    "$work/input.json" "$EXPECTED_RUNNER_KEY_ID" "$work"
+  local target_dir="$STATE_DIRECTORY/mandates"
+  local target="$target_dir/prepared.v1.json"
+  if [ -e "$target_dir" ] || [ -L "$target_dir" ]; then
+    [ -d "$target_dir" ] && [ ! -L "$target_dir" ] ||
+      die "mandate admission refused foreign state directory"
+  else
+    install -d -m 0700 "$target_dir"
+  fi
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    [ -f "$target" ] && [ ! -L "$target" ] ||
+      die "mandate admission refused foreign retained state"
+    cmp -s "$work/input.json" "$target" ||
+      die "mandate admission refused conflicting retained authority"
+    echo "PASS trading-runner-artifact: exact remote mandate replay is idempotent"
+  else
+    local pending
+    pending="$(mktemp "$target_dir/.prepared.pending.XXXXXX")"
+    install -m 0600 "$work/input.json" "$pending"
+    mv "$pending" "$target"
+    echo "PASS trading-runner-artifact: admitted one prepared remote mandate operation_id=$(cat "$work/operation-id") runner_key_id=$EXPECTED_RUNNER_KEY_ID effect=false"
+  fi
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  rm -f "$lock_path"
+  exec 9>&-
+}
+
 install_disabled() {
   local directory="$1"
   require_install_host "$directory"
@@ -1168,12 +1361,119 @@ self_test() {
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
     die "self-test accepted an authenticated authority marker"
   fi
+
+  local mandate_test="$root/mandate-test"
+  mkdir "$mandate_test"
+  openssl genpkey -algorithm ED25519 -out "$mandate_test/capsule.pem" >/dev/null 2>&1
+  openssl pkey -in "$mandate_test/capsule.pem" -pubout -outform DER \
+    -out "$mandate_test/capsule.der" >/dev/null 2>&1
+  tail -c 32 "$mandate_test/capsule.der" | xxd -p -c 64 > "$mandate_test/capsule.hex"
+  python3 - "$mandate_test" <<'PY'
+import datetime
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+capsule = (root / "capsule.hex").read_text(encoding="ascii").strip()
+runner = hashlib.sha256(b"pass-s-runner").hexdigest()
+issued = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)
+expires = issued + datetime.timedelta(hours=1)
+semantic = {
+    "capsule_root_hex": capsule,
+    "account_binding_hash_hex": hashlib.sha256(b"account").hexdigest(),
+    "symbol": "BTC-USDT",
+    "test_order": True,
+    "issued_at_utc": issued.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    "expires_at_utc": expires.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    "max_order_notional_quote_decimal": "100",
+    "max_risk_per_trade_percent": 2.0,
+    "max_daily_loss_percent": 5.0,
+    "max_concurrent_positions": 3,
+    "cooldown_after_loss_streak": 2,
+    "cooldown_minutes": 60,
+    "max_effects": 32,
+}
+mandate_id = hashlib.sha256(
+    b"hivra:bingx-futures-trading-mandate:v1\n" +
+    json.dumps(semantic, separators=(",", ":")).encode()
+).hexdigest()
+mandate = {"version": 1, "mandate_id": mandate_id, **semantic, "revoked_at_utc": None}
+commitment_semantic = {
+    "contract_version": "trading-remote-mandate-admission-v1",
+    "runner_key_id": runner,
+    "mandate": mandate,
+}
+commitment = hashlib.sha256(
+    b"hivra:bingx-futures-remote-mandate-admission:v1\n" +
+    json.dumps(commitment_semantic, separators=(",", ":")).encode()
+).hexdigest()
+(root / "digest.bin").write_bytes(bytes.fromhex(commitment))
+(root / "metadata.json").write_text(json.dumps({
+    "runner": runner,
+    "commitment": commitment,
+    "mandate": mandate,
+}, separators=(",", ":")), encoding="utf-8")
+PY
+  openssl pkeyutl -sign -inkey "$mandate_test/capsule.pem" -rawin \
+    -in "$mandate_test/digest.bin" -out "$mandate_test/signature.bin"
+  python3 - "$mandate_test" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+metadata = json.loads((root / "metadata.json").read_text())
+artifact = {
+    "contract_version": "trading-remote-mandate-admission-v1",
+    "operation_id": metadata["commitment"],
+    "commitment_hash_hex": metadata["commitment"],
+    "runner_key_id": metadata["runner"],
+    "mandate": metadata["mandate"],
+    "signature_suite": "ed25519-v1",
+    "signature_hex": (root / "signature.bin").read_bytes().hex(),
+}
+(root / "admission.json").write_text(
+    json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
+)
+PY
+  local expected_runner
+  expected_runner="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["runner_key_id"])' "$mandate_test/admission.json")"
+  mkdir "$mandate_test/verified"
+  verify_remote_mandate_artifact \
+    "$mandate_test/admission.json" "$expected_runner" "$mandate_test/verified"
+  cp "$mandate_test/admission.json" "$mandate_test/mutated.json"
+  sed -i.bak 's/"symbol":"BTC-USDT"/"symbol":"ETH-USDT"/' "$mandate_test/mutated.json"
+  if (verify_remote_mandate_artifact "$mandate_test/mutated.json" "$expected_runner" "$mandate_test/verified") >/dev/null 2>&1; then
+    die "self-test accepted mutated mandate semantics"
+  fi
+  mv "$mandate_test/mutated.json.bak" "$mandate_test/mutated.json"
+  cp "$mandate_test/mutated.json" "$mandate_test/mutated.json.bak"
+  python3 - "$mandate_test/mutated.json" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+value = json.loads(path.read_text(encoding="utf-8"))
+signature = value["signature_hex"]
+value["signature_hex"] = ("0" if signature[0] != "0" else "1") + signature[1:]
+path.write_text(json.dumps(value, separators=(",", ":")), encoding="utf-8")
+PY
+  if (verify_remote_mandate_artifact "$mandate_test/mutated.json" "$expected_runner" "$mandate_test/verified") >/dev/null 2>&1; then
+    die "self-test accepted invalid Capsule signature"
+  fi
+  mv "$mandate_test/mutated.json.bak" "$mandate_test/mutated.json"
+  if (verify_remote_mandate_artifact "$mandate_test/admission.json" "$(printf '0%.0s' {1..64})" "$mandate_test/verified") >/dev/null 2>&1; then
+    die "self-test accepted wrong runner binding"
+  fi
   echo "PASS trading-runner-artifact: negative self-tests"
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -1206,6 +1506,12 @@ while [ $# -gt 0 ]; do
       ANCHOR_OUTPUT="$2"
       shift 2
       ;;
+    --mandate-artifact)
+      [ $# -ge 2 ] && [ -z "$MANDATE_ARTIFACT" ] ||
+        die "invalid mandate-artifact arguments"
+      MANDATE_ARTIFACT="$2"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -1215,6 +1521,10 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+if [ "$MODE" != "admit-mandate" ] && [ -n "$MANDATE_ARTIFACT" ]; then
+  die "mandate-artifact is accepted only by mandate admission"
+fi
 
 case "$MODE" in
   build)
@@ -1259,9 +1569,16 @@ case "$MODE" in
     deactivate_identity_bound "$ARTIFACT_DIR"
     ;;
   export-anchor)
-    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$MANDATE_ARTIFACT" ] ||
       die "anchor export reads the target only from the manifest"
     export_external_anchor "$ARTIFACT_DIR"
+    ;;
+  admit-mandate)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -n "$MANDATE_ARTIFACT" ] ||
+      die "mandate admission requires only runner identity and artifact"
+    admit_remote_mandate "$ARTIFACT_DIR"
     ;;
   uninstall-disabled)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
@@ -1277,7 +1594,8 @@ case "$MODE" in
     ;;
   self-test)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
-      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] ||
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] && [ -z "$ANCHOR_OUTPUT" ] &&
+      [ -z "$MANDATE_ARTIFACT" ] ||
       die "self-test does not accept a target"
     self_test
     ;;

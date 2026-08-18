@@ -3726,6 +3726,41 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     No next pass, tag, Release, credential rotation, account authority, lease,
     transport/listener, or remote effect is selected.
 
+- `1.x Trading Remote Runner Pass S — Capsule-Signed Remote Mandate Admission`
+  - Lane: maintained 1.x offline authority preparation only.
+  - Invariant:
+    - a VPS may retain Trading authority only when the exact Capsule root signs
+      the exact bounded mandate for the exact initialized runner identity.
+  - Sole owners:
+    - `BingxFuturesTradingMandate` owns authority semantics and its canonical
+      commitment;
+    - the existing Capsule root signer supplies proof without a new FFI;
+    - `public_shadow_runner_artifact.sh` remains the sole host lifecycle owner
+      and may retain verified prepared state only.
+  - Threat model:
+    - unsigned copy, field mutation, proof spoofing, suite downgrade, wrong
+      Capsule, runner, account binding, symbol, mode, time, risk or effect
+      budget, stale admission, replay conflict, and implicit overwrite fail
+      closed;
+    - exact replay is idempotent, while replacement and signed revocation are
+      deliberately not inferred.
+  - Exit evidence:
+    - canonical parser/signature vectors and host negative self-tests, full
+      local repository gates, clean detached checkout, protected PR and
+      post-merge Actions;
+    - exact merge-SHA macOS Capsule export to the initialized VPS, exact replay,
+      conflict rejection, exact uninstall, and unchanged site/Amnezia/listener
+      baselines.
+  - Removed or sealed:
+    - a copied local mandate can no longer be treated as remote authority;
+      one host cannot silently adopt a mandate signed for another runner or
+      overwrite retained authority.
+  - Still blocked:
+    - exchange credentials, account reads, leases, listener/transport,
+      scheduling authority, orders, cancellation, reconciliation, tags,
+      Releases, generic mandate runtime, and 2.0 implementation.
+  - Status: implementation and verification active (2026-08-18).
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

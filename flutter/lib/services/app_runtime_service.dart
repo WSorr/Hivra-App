@@ -144,6 +144,19 @@ class AppRuntimeService {
     return _hex(root);
   }
 
+  String? signRootCommitment(String commitmentHashHex) =>
+      _runtime.signConsensusCommitment(commitmentHashHex);
+
+  bool verifyRootCommitmentSignature({
+    required String commitmentHashHex,
+    required String capsuleRootHex,
+    required String signatureHex,
+  }) => _runtime.verifyConsensusSignature(
+    messageHashHex: commitmentHashHex,
+    participantIdHex: capsuleRootHex,
+    signatureHex: signatureHex,
+  );
+
   ConsensusRuntimeService buildConsensusRuntimeService() {
     return ConsensusRuntimeService(
       exportLedger: _runtime.exportLedger,

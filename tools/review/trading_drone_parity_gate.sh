@@ -16,6 +16,8 @@ RUNNER_SUPERVISOR="$ROOT/tools/trading/hivra-trading-public-shadow-runner.servic
 CI_REPOSITORY_GATES="$ROOT/.github/workflows/release-gates.yml"
 EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart"
 TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
+TRADING_MODELS="$ROOT/flutter/lib/models/bingx_futures_order_tracking_models.dart"
+TRADING_SCREEN="$ROOT/flutter/lib/screens/trading_drone_screen.dart"
 STATUS=0
 
 pass() {
@@ -243,6 +245,26 @@ runner_external_anchor_is_fail_closed() {
     rg -q 'evidence.sequence != lastAcceptedSequence \+ 1' "$3" &&
     rg -q 'evidence.previousEvidenceHashHex != expectedPreviousHash' "$3" &&
     ! rg -q 'BingxFuturesApiCredentials|placeOrder|cancelOrder|HttpClient|WebSocket' "$2"
+}
+
+runner_mandate_admission_is_fail_closed() {
+  rg -q 'class BingxFuturesRemoteMandateAdmission' "$2" &&
+    rg -q 'hivra:bingx-futures-remote-mandate-admission:v1' "$2" &&
+    rg -q 'raw != admission\.canonicalJson' "$2" &&
+    rg -q 'mandate\.revokedAtUtc != null' "$2" &&
+    rg -q 'verifySignature' "$2" &&
+    rg -q 'Export Remote Mandate' "$3" &&
+    rg -q -- '--admit-mandate <artifact-dir>' "$1" &&
+    rg -q 'mandate artifact must contain bounded bytes' "$1" &&
+    rg -q 'mandate artifact bytes are not canonical' "$1" &&
+    rg -q 'mandate semantic id mismatch' "$1" &&
+    rg -q 'mandate commitment mismatch' "$1" &&
+    rg -q 'mandate Capsule signature is invalid' "$1" &&
+    rg -Fq 'value["runner_key_id"] != expected_runner_key_id' "$1" &&
+    rg -q 'mandate admission refused conflicting retained authority' "$1" &&
+    rg -q 'exact remote mandate replay is idempotent' "$1" &&
+    rg -q 'effect=false' "$1" &&
+    ! rg -q 'placeOrder|cancelOrder|BingxFuturesApiCredentials' "$2"
 }
 
 runner_package_is_pinned() {
@@ -538,6 +560,13 @@ else
   fail "portable shadow anchor lost exact export, authentication, or continuity rejection"
 fi
 
+if runner_mandate_admission_is_fail_closed \
+  "$RUNNER_ARTIFACT" "$TRADING_MODELS" "$TRADING_SCREEN"; then
+  pass "remote mandate admission binds exact Capsule semantics to one runner without effect authority"
+else
+  fail "remote mandate admission lost canonical proof, runner binding, or prepared-only semantics"
+fi
+
 if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; then
   pass "required CI builds and starts the verified Linux runner without authority or artifact publication"
 else
@@ -599,7 +628,8 @@ ANCHOR_OVERWRITE_MUTATION="$(mktemp)"
 ANCHOR_KEY_MUTATION="$(mktemp)"
 ANCHOR_VERIFIER_MUTATION="$(mktemp)"
 ANCHOR_CONTINUITY_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION"' EXIT
+MANDATE_RUNNER_BINDING_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -673,6 +703,8 @@ sed 's/anchorVerdict != BingxFuturesShadowEvidenceVerdict\.exactReplay/false/' \
   "$SHADOW_ANCHOR_VERIFIER" > "$ANCHOR_VERIFIER_MUTATION"
 sed 's/evidence\.sequence != lastAcceptedSequence + 1/false/' \
   "$SHADOW_EVIDENCE" > "$ANCHOR_CONTINUITY_MUTATION"
+sed 's/value\["runner_key_id"\] != expected_runner_key_id/False/' \
+  "$RUNNER_ARTIFACT" > "$MANDATE_RUNNER_BINDING_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_exposes_runner_identity "$PROBE_IDENTITY_MUTATION" && \
@@ -704,7 +736,8 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_external_anchor_is_fail_closed "$ANCHOR_OVERWRITE_MUTATION" "$SHADOW_ANCHOR_VERIFIER" "$SHADOW_EVIDENCE" && \
   ! runner_external_anchor_is_fail_closed "$ANCHOR_KEY_MUTATION" "$SHADOW_ANCHOR_VERIFIER" "$SHADOW_EVIDENCE" && \
   ! runner_external_anchor_is_fail_closed "$RUNNER_ARTIFACT" "$ANCHOR_VERIFIER_MUTATION" "$SHADOW_EVIDENCE" && \
-  ! runner_external_anchor_is_fail_closed "$RUNNER_ARTIFACT" "$SHADOW_ANCHOR_VERIFIER" "$ANCHOR_CONTINUITY_MUTATION"; then
+  ! runner_external_anchor_is_fail_closed "$RUNNER_ARTIFACT" "$SHADOW_ANCHOR_VERIFIER" "$ANCHOR_CONTINUITY_MUTATION" && \
+  ! runner_mandate_admission_is_fail_closed "$MANDATE_RUNNER_BINDING_MUTATION" "$TRADING_MODELS" "$TRADING_SCREEN"; then
   pass "public-only, scheduler, bundle, activation, anchor, supervisor, durable-stream, and execution-outcome mutations are rejected"
 else
   fail "public-only, scheduler, bundle, activation, anchor, supervisor, durable-stream, or execution-outcome mutation self-test failed"
