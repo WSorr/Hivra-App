@@ -3542,7 +3542,28 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     smoke-comparison mutations, full local and clean-checkout gates, exact
     merge-SHA VPS continuity with infrastructure comparison, protected PR, and
     green post-merge CI.
-  - Status: selected; implementation and host evidence pending.
+  - Status: complete at merge commit `337a109` through PR `#133`. Required PR
+    run `32089923541` passed; post-merge run `32090004740` passed after one
+    infrastructure-only rerun when its first GitHub runner stalled installing
+    shell dependencies.
+  - Exact merge-SHA VPS evidence: sequence `1` and `2` exposed the same
+    `runner_key_id`
+    `3baa5401aa7dfcfdbe1d61aa3bc55e1331cfbbc7ca729bfeb99f1cb89d405255`;
+    evidence hashes were
+    `bcf576c1249b3ef987aedc4dddda42778e9ad7247647f76f5f8b27be4c79f630`
+    and
+    `8f1f5fa3409296c201d899c119c765b3a05127e11bf36f204a7c337dcf118470`.
+    The binary SHA-256 was
+    `d9c969355bc6b2131e3177f07e16eb93d2500f2b3576e8b2a8aef731abeacda5`;
+    the unit SHA-256 remained
+    `61d582064ee8be1f1ef53b19f6b4fc28f2cf415d24173b69d53fb6a129fa8583`.
+    The exact unit retained `NRestarts=0`, `MemoryMax=128 MiB`, no swap, and
+    `TasksMax=16`; cleanup removed every canonical runner path without
+    enablement. The site remained HTTP `200`, all four Amnezia containers
+    remained active, and the listener-set hash stayed unchanged at
+    `d962a1ffaa457f23708c3ec345a4479063e8de4a3a8e2bd000103adf287dae0e`.
+    Full Flutter `934/934`, analyze, Rust workspace, review gates, clean
+    checkout, and focused `34/34` passed. No following pass is selected.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
