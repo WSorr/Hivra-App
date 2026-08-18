@@ -3775,6 +3775,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `/Volumes/Dev/projects/hivra-artifacts/trading-remote-mandate`. The local
     smoke mandate was then revoked. No next pass is selected.
 
+- `1.x Trading Remote Runner Pass T — Mandate-Bound Prepared Exchange Credential`
+  - Lane: maintained 1.x host authority preparation only.
+  - Invariant: one dedicated subaccount credential may become prepared host
+    state only when its API-key hash matches the exact active Capsule-signed
+    mandate admitted for the exact installed runner.
+  - Sole owner: the existing `public_shadow_runner_artifact.sh` host lifecycle;
+    the local Capsule credential store remains unchanged and the runner process
+    receives no credential.
+  - Threat model: malformed or oversized input, wrong account binding, expired
+    or mutated mandate, wrong runner, path/symlink substitution, plaintext
+    retention, conflicting replay, implicit rotation, and secret logging fail
+    closed.
+  - Removed or sealed: plaintext files and command-line secret arguments are
+    unavailable; only host-encrypted prepared state is retained. Unit loading,
+    account reads, leases, listeners, scheduling authority, orders,
+    cancellation, reconciliation, Core/Ledger, FFI/UI, plugin ABI, tag, and
+    Release remain sealed.
+  - Exit evidence: executable negative self-tests, full local and clean
+    checkout gates, protected PR/post-merge CI, then merge-SHA VPS provisioning,
+    exact replay/conflict rejection, exact uninstall, and unchanged
+    site/Amnezia/listener baselines.
+  - Status: selected on 2026-08-18; implementation and host evidence pending.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

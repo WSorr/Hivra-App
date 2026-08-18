@@ -18,6 +18,7 @@ BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$BINARY_NAME"
 UNIT_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$UNIT_NAME"
 UNIT_LINK_PATH="/etc/systemd/system/$UNIT_NAME"
 CREDENTIAL_INSTALL_PATH="/etc/credstore.encrypted/hivra-trading-public-shadow.seed"
+EXCHANGE_CREDENTIAL_INSTALL_PATH="/etc/credstore.encrypted/hivra-trading-public-shadow.bingx"
 STATE_DIRECTORY="/var/lib/hivra-trading-public-shadow"
 MODE=""
 ARTIFACT_DIR=""
@@ -46,6 +47,8 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --admit-mandate <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
     --mandate-artifact <absolute-json-file>
+  tools/trading/public_shadow_runner_artifact.sh --provision-exchange-credential <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --uninstall-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --self-test
@@ -60,7 +63,64 @@ or foreign-owned paths. Anchor export atomically copies the exact latest signed
 evidence and its public key; acceptance happens only after off-host verification.
 Mandate admission verifies the exact Capsule signature and runner binding, then
 stores one prepared artifact without activating exchange authority.
+Credential provisioning accepts the API key and secret only from a hidden TTY
+prompt or exact two-line stdin, verifies the prepared mandate account binding,
+and stores host-encrypted prepared state without exposing it to the runner.
 EOF
+}
+
+canonicalize_exchange_credential_input() {
+  python3 -c '
+import json
+import re
+import sys
+
+raw = sys.stdin.buffer.read(2049)
+if len(raw) > 2048:
+    raise SystemExit("exchange credential input exceeds the bounded size")
+try:
+    text = raw.decode("ascii")
+except UnicodeDecodeError:
+    raise SystemExit("exchange credential input must be ASCII")
+lines = text.splitlines()
+if len(lines) != 2 or text not in {"\n".join(lines), "\n".join(lines) + "\n"}:
+    raise SystemExit("exchange credential input must contain exactly two lines")
+api_key, api_secret = lines
+if re.fullmatch(r"[!-~]{1,512}", api_key) is None:
+    raise SystemExit("exchange API key is invalid")
+if re.fullmatch(r"[!-~]{1,512}", api_secret) is None:
+    raise SystemExit("exchange API secret is invalid")
+sys.stdout.write(json.dumps(
+    {"contract_version": "bingx-exchange-credential-v1", "api_key": api_key, "api_secret": api_secret},
+    separators=(",", ":"),
+))
+'
+}
+
+exchange_credential_account_hash() {
+  python3 -c '
+import hashlib
+import json
+import sys
+
+value = json.load(sys.stdin)
+sys.stdout.write(hashlib.sha256(value["api_key"].encode("ascii")).hexdigest())
+'
+}
+
+exchange_credential_matches_account_binding() {
+  local credential_json="$1"
+  local expected_account_hash="$2"
+  [ "$(printf '%s' "$credential_json" | exchange_credential_account_hash)" = \
+    "$expected_account_hash" ]
+}
+
+sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  else
+    shasum -a 256 | awk '{print $1}'
+  fi
 }
 
 runtime_smoke_artifact() {
@@ -561,6 +621,12 @@ require_exact_installed_bundle() {
     die "host lifecycle refused a foreign unit link"
   [ -f "$CREDENTIAL_INSTALL_PATH" ] && [ ! -L "$CREDENTIAL_INSTALL_PATH" ] ||
     die "host lifecycle refused a foreign credential"
+  if [ -e "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+    [ -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ]; then
+    [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+      [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+      die "host lifecycle refused a foreign exchange credential"
+  fi
   if [ -L "$STATE_DIRECTORY" ]; then
     [ "$(readlink -f "$STATE_DIRECTORY")" = "$state_private" ] ||
       die "host lifecycle refused a foreign state link"
@@ -1030,6 +1096,106 @@ admit_remote_mandate() {
   exec 9>&-
 }
 
+provision_exchange_credential() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "credential provisioning refused the installed runner key id"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "credential provisioning requires an inactive runner"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "credential provisioning requires a disabled runner" ;;
+  esac
+
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  local work pending
+  work="$(mktemp -d /run/hivra-trading-credential.XXXXXX)"
+  pending=""
+  trap '
+    rm -rf "$work"
+    [ -z "$pending" ] || rm -f "$pending"
+    rm -f "$lock_path"
+  ' EXIT INT TERM
+
+  local mandate="$STATE_DIRECTORY/mandates/prepared.v1.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "credential provisioning requires one prepared mandate"
+  install -m 0600 "$mandate" "$work/mandate.json"
+  verify_remote_mandate_artifact \
+    "$work/mandate.json" "$EXPECTED_RUNNER_KEY_ID" "$work"
+
+  local credential_json
+  if [ -t 0 ]; then
+    local api_key api_secret
+    IFS= read -r -p "BingX API key: " api_key
+    IFS= read -r -s -p "BingX API secret: " api_secret
+    printf '\n' >&2
+    credential_json="$(
+      printf '%s\n%s\n' "$api_key" "$api_secret" |
+        canonicalize_exchange_credential_input
+    )"
+    unset api_key api_secret
+  else
+    credential_json="$(canonicalize_exchange_credential_input)"
+  fi
+
+  local account_hash expected_account_hash credential_hash
+  account_hash="$(printf '%s' "$credential_json" | exchange_credential_account_hash)"
+  expected_account_hash="$(python3 - "$work/mandate.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    print(json.load(source)["mandate"]["account_binding_hash_hex"])
+PY
+)"
+  exchange_credential_matches_account_binding \
+    "$credential_json" "$expected_account_hash" || {
+    unset credential_json
+    die "credential provisioning refused the mandate account binding"
+  }
+  credential_hash="$(printf '%s' "$credential_json" | sha256_stdin)"
+
+  if [ -e "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+    [ -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ]; then
+    [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+      [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] || {
+      unset credential_json
+      die "credential provisioning refused foreign retained state"
+    }
+    local retained_hash
+    retained_hash="$(
+      systemd-creds decrypt --name=bingx-exchange \
+        "$EXCHANGE_CREDENTIAL_INSTALL_PATH" - 2>/dev/null | sha256_stdin
+    )" || {
+      unset credential_json
+      die "credential provisioning could not verify retained state"
+    }
+    unset credential_json
+    [ "$retained_hash" = "$credential_hash" ] ||
+      die "credential provisioning refused conflicting retained credential"
+    echo "PASS trading-runner-artifact: exact prepared exchange credential replay is idempotent account_binding_hash=$account_hash effect=false"
+  else
+    pending="$(mktemp /etc/credstore.encrypted/.hivra-bingx.pending.XXXXXX)"
+    printf '%s' "$credential_json" |
+      systemd-creds encrypt --name=bingx-exchange - "$pending" >/dev/null
+    unset credential_json
+    chmod 0600 "$pending"
+    mv "$pending" "$EXCHANGE_CREDENTIAL_INSTALL_PATH"
+    pending=""
+    echo "PASS trading-runner-artifact: provisioned one mandate-bound prepared exchange credential account_binding_hash=$account_hash effect=false"
+  fi
+
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  rm -f "$lock_path"
+  exec 9>&-
+}
+
 install_disabled() {
   local directory="$1"
   require_install_host "$directory"
@@ -1044,6 +1210,7 @@ install_disabled() {
     "$BUNDLE_INSTALL_PATH" \
     "$UNIT_LINK_PATH" \
     "$CREDENTIAL_INSTALL_PATH" \
+    "$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
     "$STATE_DIRECTORY" \
     "$state_private" \
     "$wants_path"; do
@@ -1171,6 +1338,12 @@ uninstall_disabled() {
     [ -f "$CREDENTIAL_INSTALL_PATH" ] && [ ! -L "$CREDENTIAL_INSTALL_PATH" ] ||
       die "uninstall refused a foreign credential"
   fi
+  if [ -e "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+    [ -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ]; then
+    [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+      [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+      die "uninstall refused a foreign exchange credential"
+  fi
   case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
     linked|disabled|not-found) ;;
     *) die "uninstall refused an enabled unit" ;;
@@ -1191,6 +1364,7 @@ uninstall_disabled() {
   rm -f "$UNIT_LINK_PATH"
   systemctl daemon-reload
   rm -f "$CREDENTIAL_INSTALL_PATH"
+  rm -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH"
   rm -rf "$STATE_DIRECTORY" "$state_private"
   rm -rf "$BUNDLE_INSTALL_PATH"
 
@@ -1198,6 +1372,7 @@ uninstall_disabled() {
     "$BUNDLE_INSTALL_PATH" \
     "$UNIT_LINK_PATH" \
     "$CREDENTIAL_INSTALL_PATH" \
+    "$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
     "$STATE_DIRECTORY" \
     "$state_private" \
     "$wants_path"; do
@@ -1296,6 +1471,33 @@ self_test() {
   if (runtime_smoke_artifact "$artifact") >/dev/null 2>&1; then
     die "self-test accepted a non-runner executable for runtime smoke"
   fi
+
+  local credential_json
+  credential_json="$(printf 'bounded-api-key\nbounded-api-secret\n' |
+    canonicalize_exchange_credential_input)"
+  [ "$credential_json" = \
+    '{"contract_version":"bingx-exchange-credential-v1","api_key":"bounded-api-key","api_secret":"bounded-api-secret"}' ] ||
+    die "self-test did not produce canonical exchange credential bytes"
+  [ "$(printf '%s' "$credential_json" | exchange_credential_account_hash)" = \
+    "$(printf 'bounded-api-key' | sha256_stdin)" ] ||
+    die "self-test produced the wrong exchange account binding"
+  exchange_credential_matches_account_binding \
+    "$credential_json" "$(printf 'bounded-api-key' | sha256_stdin)" ||
+    die "self-test rejected the exact exchange account binding"
+  if exchange_credential_matches_account_binding \
+    "$credential_json" "$(printf 'wrong-api-key' | sha256_stdin)"; then
+    die "self-test accepted the wrong exchange account binding"
+  fi
+  if (printf 'only-one-line\n' | canonicalize_exchange_credential_input) >/dev/null 2>&1; then
+    die "self-test accepted missing exchange credential input"
+  fi
+  if (printf 'key\nsecret\nextra\n' | canonicalize_exchange_credential_input) >/dev/null 2>&1; then
+    die "self-test accepted extra exchange credential input"
+  fi
+  if (printf 'key with space\nsecret\n' | canonicalize_exchange_credential_input) >/dev/null 2>&1; then
+    die "self-test accepted malformed exchange credential input"
+  fi
+  unset credential_json
 
   sed -i.bak 's/^binary_sha256=./binary_sha256=0/' "$artifact/$MANIFEST_NAME"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
@@ -1473,7 +1675,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--provision-exchange-credential|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -1579,6 +1781,12 @@ case "$MODE" in
       [ -z "$ANCHOR_OUTPUT" ] && [ -n "$MANDATE_ARTIFACT" ] ||
       die "mandate admission requires only runner identity and artifact"
     admit_remote_mandate "$ARTIFACT_DIR"
+    ;;
+  provision-exchange-credential)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
+      die "credential provisioning requires only runner identity and stdin"
+    provision_exchange_credential "$ARTIFACT_DIR"
     ;;
   uninstall-disabled)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&

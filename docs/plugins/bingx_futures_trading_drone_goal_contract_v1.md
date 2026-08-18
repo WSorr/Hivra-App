@@ -218,10 +218,10 @@ There is no remote effect path in Pass A.
 
 ### 11.2 Permanent Authority Boundary
 
-The remote host MUST NOT receive or derive:
+The remote runner process MUST NOT receive or derive:
 
 - a Capsule seed, root key, transport key, backup, or unrestricted Ledger;
-- the local BingX trading API key or secret;
+- the local personal-account BingX trading API key or secret;
 - a user approval, consensus authority, or external-effect capability;
 - permission to place, cancel, replace, amend, or reconcile an order;
 - permission to mutate local tracking, risk, plugin, or Capsule state.
@@ -949,6 +949,30 @@ listener, scheduling decision, order, cancellation, reconciliation, or effect.
 The local exchange execution owner remains the only implemented effect path.
 No generic mandate runtime, new FFI, Core fact, Ledger event, or plugin ABI is
 introduced.
+
+### 11.26 Pass T: Mandate-Bound Prepared Exchange Credential
+
+The existing host artifact lifecycle is the sole owner of prepared remote
+credential state. It may accept one dedicated, IP-restricted BingX subaccount
+API key and secret only after the exact installed runner has one active,
+Capsule-signed prepared mandate. The SHA-256 binding of the supplied API key
+must equal that mandate's `account_binding_hash_hex`; the secret itself is not
+part of the mandate, logs, filenames, process arguments, or retained plaintext.
+
+Input is bounded ASCII received through a hidden terminal prompt or exact
+two-line standard input. The lifecycle canonicalizes it in memory and writes
+only a host-encrypted `systemd-creds` value at the canonical path. Exact
+credential replay is idempotent. A wrong account binding, expired or mutated
+mandate, wrong runner, malformed input, symlink, undecipherable retained value,
+or different retained credential fails closed rather than rotating authority.
+Exact uninstall removes the encrypted prepared value with the existing bundle.
+
+This prepared credential is deliberately absent from the systemd unit and
+runner command. The public-shadow process therefore cannot read it, perform an
+authenticated account request, or reach an exchange effect. Provisioning adds
+no listener, lease, account-read client, order path, Core/Ledger fact, FFI, UI,
+plugin ABI, or generic credential service. Exposing the prepared value to a
+bounded account-read or execution process requires a separately selected pass.
 
 ## 12. Local Bounded Mandate Boundary
 
