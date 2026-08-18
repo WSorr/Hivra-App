@@ -3828,6 +3828,14 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Authority: `external-agent-runtime-pattern-audit.md` is research only. No
     implementation pass, deployment, credential, effect, release, or 2.0 work
     is selected by this record.
+  - Forward model: preserve the Capsule as the user-owned persistent principal
+    while models, agents, devices, execution hosts, solvers, and settlement
+    providers remain replaceable. A future durable-intent capability must bind
+    deterministic policy, bounded mandate, exact effect, evidence, receipt,
+    reconciliation, and revocation without creating a second lifecycle owner.
+  - Status: parked research. `Personal Digital Root` is explanatory language
+    for a Capsule property, not a new entity or a replacement for PFR. No
+    durable-intent contract or implementation pass is selected.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed

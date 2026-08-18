@@ -283,6 +283,8 @@ Contains:
 - anonymized external personal-agent runtime observations;
 - patterns that may be adapted without adding a second lifecycle owner;
 - patterns rejected by Hivra authority and Ledger boundaries;
+- a forward scenario model centered on persistent principal, durable intent,
+  bounded mandate, effect evidence, receipt, and reconciliation;
 - a non-authorizing Remote Runner readiness fact and revisit trigger.
 
 ## Recommended Reading Order
