@@ -3525,6 +3525,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `934/934`, analyze, Rust workspace, review gates, clean checkout, and focused
     `34/34` passed. No following pass is selected.
 
+- `1.x Trading Remote Runner Pass O — Observable Runner Identity Binding`
+  - Lane: bounded 1.x public-shadow observability; no persistence, account,
+    effect, release, or 2.0 work.
+  - Invariant: every successful append exposes the exact non-secret 64-hex
+    `runner_key_id` already signed into canonical evidence, and the exact-unit
+    stop/start smoke accepts only the same fingerprint from both processes.
+  - Sole owner: canonical shadow evidence owns the key id; the existing probe
+    projects it and the existing artifact smoke verifies continuity. No DTO,
+    service, registry, credential owner, journal, or effect path is added.
+  - Removed or sealed: operators no longer infer identity from an opaque
+    evidence hash. Missing or changed fingerprint fails closed. The fingerprint
+    cannot authorize persistence, rotation, anchoring, account access, leases,
+    or effects.
+  - Exit evidence: focused probe/store tests, independent probe-output and
+    smoke-comparison mutations, full local and clean-checkout gates, exact
+    merge-SHA VPS continuity with infrastructure comparison, protected PR, and
+    green post-merge CI.
+  - Status: selected; implementation and host evidence pending.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

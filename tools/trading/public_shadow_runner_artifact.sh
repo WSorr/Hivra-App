@@ -611,6 +611,15 @@ ephemeral_install_smoke() {
     die "restart continuity used an implicit supervisor restart"
   [ "$first_evidence" != "$second_evidence" ] ||
     die "restart continuity repeated the first evidence"
+  local first_runner_key_id
+  local second_runner_key_id
+  first_runner_key_id="$(printf '%s\n' "$first_evidence" |
+    sed -n 's/.* runner_key_id=\([0-9a-f]\{64\}\) .*/\1/p')"
+  second_runner_key_id="$(printf '%s\n' "$second_evidence" |
+    sed -n 's/.* runner_key_id=\([0-9a-f]\{64\}\) .*/\1/p')"
+  [ -n "$first_runner_key_id" ] &&
+    [ "$first_runner_key_id" = "$second_runner_key_id" ] ||
+    die "restart continuity changed or omitted the runner key id"
   printf '%s\n%s\n' "$first_evidence" "$second_evidence"
   systemctl show "$UNIT_NAME" \
     -p MemoryMax \

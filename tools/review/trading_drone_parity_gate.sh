@@ -33,6 +33,10 @@ shadow_probe_has_authority() {
   rg -q 'TradingDroneModuleService|BingxFuturesExchangeExecutionUseCaseService|BingxFuturesOrderTrackingStore|ExternalEffect|placeOrder|cancelOrder' "$1"
 }
 
+shadow_probe_exposes_runner_identity() {
+  rg -Fq 'runner_key_id=${evidence.runnerKeyId}' "$1"
+}
+
 shadow_probe_is_bounded_scheduler() {
   local cycle_line
   local delay_line
@@ -97,6 +101,7 @@ runner_bundle_install_is_fail_closed() {
     rg -q 'wait_for_exact_unit_evidence "\$restarted_at" 2' "$1" &&
     rg -q 'runner identity state disappeared across stop' "$1" &&
     rg -q 'restart continuity used an implicit supervisor restart' "$1" &&
+    rg -q 'restart continuity changed or omitted the runner key id' "$1" &&
     rg -q 'systemctl clean --what=state "\$UNIT_NAME"' "$1" &&
     rg -q 'ephemeral install cleanup retained:' "$1" &&
     rg -q 'exact unit retained encrypted identity across restart and cleaned up without enablement' "$1" &&
@@ -357,6 +362,12 @@ else
   pass "live shadow probe has no local authority or effect owner"
 fi
 
+if shadow_probe_exposes_runner_identity "$SHADOW_PROBE"; then
+  pass "public shadow evidence exposes its non-secret runner identity fingerprint"
+else
+  fail "public shadow evidence lost its runner identity fingerprint"
+fi
+
 if shadow_probe_is_bounded_scheduler "$SHADOW_PROBE"; then
   pass "live shadow probe scheduler is bounded, serial, and retry-free"
 else
@@ -425,7 +436,9 @@ BUNDLE_COLLISION_MUTATION="$(mktemp)"
 BUNDLE_CLEANUP_MUTATION="$(mktemp)"
 BUNDLE_TRAP_SCOPE_MUTATION="$(mktemp)"
 BUNDLE_RESTART_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION"' EXIT
+PROBE_IDENTITY_MUTATION="$(mktemp)"
+BUNDLE_IDENTITY_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -468,8 +481,13 @@ sed 's/^  unit_loaded=0$/  local unit_loaded=0/' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_TRAP_SCOPE_MUTATION"
 sed 's/wait_for_exact_unit_evidence "$restarted_at" 2/wait_for_exact_unit_evidence "$restarted_at" 1/' \
   "$RUNNER_ARTIFACT" > "$BUNDLE_RESTART_MUTATION"
+sed '/runner_key_id=\${evidence\.runnerKeyId}/d' \
+  "$SHADOW_PROBE" > "$PROBE_IDENTITY_MUTATION"
+sed 's/\[ "$first_runner_key_id" = "$second_runner_key_id" \]/true/' \
+  "$RUNNER_ARTIFACT" > "$BUNDLE_IDENTITY_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
+  ! shadow_probe_exposes_runner_identity "$PROBE_IDENTITY_MUTATION" && \
   ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
   ! runner_artifact_is_verifiable "$ARTIFACT_MUTATION" && \
   ! runner_linux_smoke_is_fail_closed "$RUNTIME_SMOKE_MUTATION" "$CI_REPOSITORY_GATES" && \
@@ -486,7 +504,8 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_COLLISION_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_CLEANUP_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_TRAP_SCOPE_MUTATION" && \
-  ! runner_bundle_install_is_fail_closed "$BUNDLE_RESTART_MUTATION"; then
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_RESTART_MUTATION" && \
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_IDENTITY_MUTATION"; then
   pass "public-only, scheduler, bundle, install, supervisor, durable-stream, and execution-outcome mutations are rejected"
 else
   fail "public-only, scheduler, bundle, install, supervisor, durable-stream, or execution-outcome mutation self-test failed"

@@ -231,6 +231,11 @@ is signed, recent, or deterministic. Remote output remains untrusted evidence
 until the local owner validates its exact contract and compares it with the
 canonical local pipeline.
 
+Every accepted public-shadow append exposes the non-secret 64-hex
+`runner_key_id` already bound inside its signed evidence. Process restart must
+retain that exact fingerprint; omission or change fails host continuity
+evidence. The fingerprint grants no authority and is not a credential.
+
 ### 11.3 Pass A Input And Output Contract
 
 Pass A uses only provider-public market endpoints. It stores no exchange or
