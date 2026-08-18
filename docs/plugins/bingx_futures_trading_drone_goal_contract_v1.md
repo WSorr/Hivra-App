@@ -867,6 +867,38 @@ Boot enablement, credential rotation or replacement, external anchoring,
 account reads, leases, exchange effects, listeners, tags, and Releases remain
 unauthorized.
 
+### 11.23 Pass Q: Explicit Identity-Bound Activation
+
+The existing artifact owner remains the only host lifecycle owner. An exact
+persistent installation may first run while disabled only to commit and expose
+its authenticated `runner_key_id`; this initialization must finish disabled
+and inactive and must not create a boot target link. Repeating initialization
+continues the same authenticated stream and cannot replace its identity.
+
+Boot activation is a separate explicit operation. It requires the operator's
+expected 64-character lowercase-hex `runner_key_id`, the exact verified bundle,
+the exact linked unit, the encrypted runner-only credential, and the committed
+identity. The unit starts while still disabled, produces authenticated evidence
+after a pre-start journal cursor for that same identity, and only then may the
+existing owner create the exact
+`multi-user.target` enablement link. Missing or mismatched identity, bundle
+drift, foreign paths, prior enablement, concurrent lifecycle activity, failed
+startup, stale journal evidence, unexpected restart, or a different evidence key fails closed and
+rolls the unit back to disabled and inactive.
+
+Deactivation requires the same exact artifact and expected identity. It
+removes boot enablement before stopping the process, preserves the encrypted
+credential and authenticated stream for an exact later activation, and refuses
+to adopt or disable an ambiguous installation. Host reboot is not required as
+evidence because the audited VPS carries unrelated production workloads; exact
+target wiring plus active/inactive lifecycle evidence proves this boundary
+without risking those workloads.
+
+This pass authorizes only persistent public-market shadow observation. It does
+not make remote evidence rollback-resistant and does not authorize Capsule or
+exchange credentials, account reads, mandate delivery, leases, trading
+decisions, orders, cancellation, reconciliation, listeners, tags, or Releases.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

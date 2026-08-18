@@ -90,6 +90,9 @@ runner_bundle_install_is_fail_closed() {
   [ -x "$1" ] &&
     rg -q -- '--ephemeral-install-smoke <artifact-dir>' "$1" &&
     rg -q -- '--install-disabled <artifact-dir>' "$1" &&
+    rg -q -- '--initialize-disabled <artifact-dir>' "$1" &&
+    rg -q -- '--activate <artifact-dir>' "$1" &&
+    rg -q -- '--deactivate <artifact-dir>' "$1" &&
     rg -q -- '--uninstall-disabled <artifact-dir>' "$1" &&
     rg -q 'host lifecycle requires root' "$1" &&
     rg -q 'another public-shadow install operation is active' "$1" &&
@@ -110,7 +113,7 @@ runner_bundle_install_is_fail_closed() {
     [ -n "$final_bundle_remove_line" ] &&
     [ -n "$final_state_remove_line" ] &&
     [ "$final_bundle_remove_line" -gt "$final_state_remove_line" ] &&
-    [ "$start_count" = "2" ] &&
+    [ "$start_count" = "4" ] &&
     rg -q '^  install_disabled "\$directory"$' "$1" &&
     rg -q '^  uninstall_disabled "\$directory"$' "$1" &&
     rg -q 'wait_for_exact_unit_evidence "\$started_at" 1' "$1" &&
@@ -120,8 +123,89 @@ runner_bundle_install_is_fail_closed() {
     rg -q 'restart continuity changed or omitted the runner key id' "$1" &&
     rg -q 'systemctl clean --what=state "\$UNIT_NAME"' "$1" &&
     rg -q 'disabled uninstall retained:' "$1" &&
-    rg -q 'exact disabled install retained identity and uninstalled without enablement' "$1" &&
-    ! rg -q 'systemctl enable' "$1"
+    rg -q 'exact disabled install retained identity and uninstalled without enablement' "$1"
+}
+
+runner_activation_is_identity_bound() {
+  python3 - "$1" <<'PY'
+import pathlib
+import re
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+
+def body(name: str) -> str:
+    match = re.search(
+        rf"^{re.escape(name)}\(\) \{{\n(.*?)(?=^[a-zA-Z_][a-zA-Z0-9_]*\(\) \{{|\Z)",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    if match is None:
+        raise SystemExit(1)
+    return match.group(1)
+
+install = body("install_disabled")
+initialize = body("initialize_disabled")
+activate = body("activate_identity_bound")
+deactivate = body("deactivate_identity_bound")
+
+if "systemctl enable" in install or "systemctl enable" in initialize:
+    raise SystemExit(1)
+
+initialize_required = [
+    'require_exact_installed_bundle "$directory"',
+    'disabled initialization refused an enabled unit',
+    'journal_cursor="$(current_unit_journal_cursor)"',
+    'systemctl start "$UNIT_NAME"',
+    'evidence="$(wait_for_unit_evidence_after_cursor "$journal_cursor")"',
+    'installed_key_id="$(read_installed_runner_key_id)"',
+    '[ "$evidence_key_id" = "$installed_key_id" ]',
+    'systemctl stop "$UNIT_NAME"',
+    'disabled initialization created boot enablement',
+]
+if not all(value in initialize for value in initialize_required):
+    raise SystemExit(1)
+
+activate_required = [
+    "require_expected_runner_key_id",
+    'require_exact_installed_bundle "$directory"',
+    'systemctl disable "$UNIT_NAME" >/dev/null 2>&1 || true',
+    '[ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ]',
+    'journal_cursor="$(current_unit_journal_cursor)"',
+    'systemctl start "$UNIT_NAME"',
+    'evidence="$(wait_for_unit_evidence_after_cursor "$journal_cursor")"',
+    '[ "$(evidence_runner_key_id "$evidence")" = "$EXPECTED_RUNNER_KEY_ID" ]',
+    'systemctl enable "$UNIT_NAME"',
+    '[ "$(readlink -f "$wants_path")" = "$UNIT_INSTALL_PATH" ]',
+]
+if not all(value in activate for value in activate_required):
+    raise SystemExit(1)
+if not (
+    activate.index('read_installed_runner_key_id')
+    < activate.index('systemctl start "$UNIT_NAME"')
+    < activate.index('wait_for_unit_evidence_after_cursor')
+    < activate.index('systemctl enable "$UNIT_NAME"')
+):
+    raise SystemExit(1)
+
+deactivate_required = [
+    "require_expected_runner_key_id",
+    'require_exact_installed_bundle "$directory"',
+    '[ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ]',
+    'systemctl disable "$UNIT_NAME"',
+    'systemctl stop "$UNIT_NAME"',
+    'identity-bound deactivation retained boot enablement',
+    'identity-bound deactivation changed runner identity',
+]
+if not all(value in deactivate for value in deactivate_required):
+    raise SystemExit(1)
+if not (
+    deactivate.index('read_installed_runner_key_id')
+    < deactivate.index('systemctl disable "$UNIT_NAME"')
+    < deactivate.index('systemctl stop "$UNIT_NAME"')
+):
+    raise SystemExit(1)
+PY
 }
 
 runner_package_is_pinned() {
@@ -404,6 +488,12 @@ else
   fail "runner bundle exact-unit smoke lost collision, credential, enablement, or cleanup safety"
 fi
 
+if runner_activation_is_identity_bound "$RUNNER_ARTIFACT"; then
+  pass "runner activation is explicit, identity-bound, rollback-safe, and exactly reversible"
+else
+  fail "runner activation lost identity binding, rollback, or exact deactivation"
+fi
+
 if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; then
   pass "required CI builds and starts the verified Linux runner without authority or artifact publication"
 else
@@ -456,7 +546,12 @@ PROBE_IDENTITY_MUTATION="$(mktemp)"
 BUNDLE_IDENTITY_MUTATION="$(mktemp)"
 BUNDLE_FOREIGN_STATE_MUTATION="$(mktemp)"
 BUNDLE_EARLY_ANCHOR_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION"' EXIT
+ACTIVATION_IDENTITY_MUTATION="$(mktemp)"
+ACTIVATION_ROLLBACK_MUTATION="$(mktemp)"
+INITIALIZATION_ENABLE_MUTATION="$(mktemp)"
+DEACTIVATION_IDENTITY_MUTATION="$(mktemp)"
+ACTIVATION_STALE_LOG_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -511,6 +606,17 @@ awk '{
   }
   print
 }' "$RUNNER_ARTIFACT" > "$BUNDLE_EARLY_ANCHOR_MUTATION"
+sed 's/\[ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" \]/true/' \
+  "$RUNNER_ARTIFACT" > "$ACTIVATION_IDENTITY_MUTATION"
+sed '/systemctl disable "\$UNIT_NAME" >\/dev\/null 2>\&1 || true/d' \
+  "$RUNNER_ARTIFACT" > "$ACTIVATION_ROLLBACK_MUTATION"
+sed '/^initialize_disabled() {/a\
+  systemctl enable "$UNIT_NAME"' \
+  "$RUNNER_ARTIFACT" > "$INITIALIZATION_ENABLE_MUTATION"
+sed '/identity-bound deactivation changed runner identity/d' \
+  "$RUNNER_ARTIFACT" > "$DEACTIVATION_IDENTITY_MUTATION"
+sed 's/wait_for_unit_evidence_after_cursor "\$journal_cursor"/wait_for_unit_evidence "\$started_at"/' \
+  "$RUNNER_ARTIFACT" > "$ACTIVATION_STALE_LOG_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_exposes_runner_identity "$PROBE_IDENTITY_MUTATION" && \
@@ -533,10 +639,15 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_RESTART_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_IDENTITY_MUTATION" && \
   ! runner_bundle_install_is_fail_closed "$BUNDLE_FOREIGN_STATE_MUTATION" && \
-  ! runner_bundle_install_is_fail_closed "$BUNDLE_EARLY_ANCHOR_MUTATION"; then
-  pass "public-only, scheduler, bundle, install, supervisor, durable-stream, and execution-outcome mutations are rejected"
+  ! runner_bundle_install_is_fail_closed "$BUNDLE_EARLY_ANCHOR_MUTATION" && \
+  ! runner_activation_is_identity_bound "$ACTIVATION_IDENTITY_MUTATION" && \
+  ! runner_activation_is_identity_bound "$ACTIVATION_ROLLBACK_MUTATION" && \
+  ! runner_activation_is_identity_bound "$INITIALIZATION_ENABLE_MUTATION" && \
+  ! runner_activation_is_identity_bound "$DEACTIVATION_IDENTITY_MUTATION" && \
+  ! runner_activation_is_identity_bound "$ACTIVATION_STALE_LOG_MUTATION"; then
+  pass "public-only, scheduler, bundle, activation, supervisor, durable-stream, and execution-outcome mutations are rejected"
 else
-  fail "public-only, scheduler, bundle, install, supervisor, durable-stream, or execution-outcome mutation self-test failed"
+  fail "public-only, scheduler, bundle, activation, supervisor, durable-stream, or execution-outcome mutation self-test failed"
 fi
 
 exit "$STATUS"
