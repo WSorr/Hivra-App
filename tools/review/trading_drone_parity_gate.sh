@@ -63,7 +63,7 @@ shadow_probe_is_bounded_scheduler() {
 runner_artifact_is_verifiable() {
   [ -x "$1" ] &&
     rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"' "$1" &&
-    rg -q 'AUTHORITY_PROFILE="public-market-shadow-only"' "$1" &&
+    rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-transient-account-read"' "$1" &&
     rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
     rg -q 'build output must stay outside the repository' "$1" &&
     rg -q 'binary_sha256=' "$1" &&
@@ -78,7 +78,7 @@ runner_artifact_is_verifiable() {
     rg -q 'machine == 62' "$1" &&
     rg -q 'artifact binary SHA-256 mismatch' "$1" &&
     rg -q 'artifact unit does not match the canonical source' "$1" &&
-    rg -q 'forbidden authenticated exchange authority markers' "$1" &&
+    rg -q 'forbidden exchange-effect authority markers' "$1" &&
     rg -q 'dart compile exe' "$1" &&
     rg -q '"tool/trading_remote_shadow_probe.dart"' "$1"
 }
@@ -287,6 +287,42 @@ runner_exchange_credential_is_prepared_only() {
     rg -q 'effect=false' "$1" &&
     ! rg -q 'LoadCredentialEncrypted=.*bingx|LoadCredential=.*bingx' "$2" &&
     ! rg -q 'BINGX_API|api[_-]?secret|api[_-]?key' "$2"
+}
+
+runner_account_read_probe_is_fail_closed() {
+  rg -q -- '--probe-exchange-account <artifact-dir>' "$1" &&
+    rg -q 'probe_exchange_account_once' "$1" &&
+    rg -q 'account probe requires an inactive public-shadow runner' "$1" &&
+    rg -q 'account probe requires a disabled public-shadow runner' "$1" &&
+    rg -q 'account probe requires one prepared mandate' "$1" &&
+    rg -q 'account probe requires one prepared exchange credential' "$1" &&
+    rg -q 'verify_remote_mandate_artifact' "$1" &&
+    rg -q 'systemd-run' "$1" &&
+    rg -q -- '--wait --pipe --collect --quiet' "$1" &&
+    rg -q 'LoadCredentialEncrypted="runner-seed:' "$1" &&
+    rg -q 'LoadCredentialEncrypted="bingx-exchange:' "$1" &&
+    rg -q 'RuntimeMaxSec=60s' "$1" &&
+    rg -q 'MemoryMax=128M' "$1" &&
+    rg -q 'MemorySwapMax=0' "$1" &&
+    rg -q 'SocketBindDeny=any' "$1" &&
+    rg -q -- '--mode account-read' "$1" &&
+    rg -q 'validate_account_read_evidence' "$1" &&
+    rg -q 'account-read evidence bytes are not canonical' "$1" &&
+    rg -q 'account-read evidence is incomplete or effectful' "$1" &&
+    rg -q 'account probe retained its transient unit' "$1" &&
+    rg -q 'effect=false' "$1" &&
+    rg -q "const String accountReadMode = 'account-read';" "$2" &&
+    rg -q 'runMandateBoundAccountRead' "$2" &&
+    rg -q 'readExchangeCredentialFile' "$2" &&
+    rg -q 'exchange account binding mismatch' "$2" &&
+    rg -q 'mandate is expired' "$2" &&
+    rg -q 'getUserBalance' "$2" &&
+    rg -q 'getUserPositions' "$2" &&
+    rg -q 'getOpenOrders' "$2" &&
+    rg -q "'effect': false" "$2" &&
+    ! rg -q 'responseBody|accountEquityQuoteDecimal|quantityDecimal|orderId' "$2" &&
+    ! shadow_probe_has_authority "$2" &&
+    ! rg -q 'LoadCredentialEncrypted=.*bingx|LoadCredential=.*bingx' "$3"
 }
 
 runner_package_is_pinned() {
@@ -558,7 +594,7 @@ fi
 if runner_artifact_is_verifiable "$RUNNER_ARTIFACT" &&
   runner_package_is_pinned "$RUNNER_PACKAGE" "$RUNNER_PACKAGE_LOCK" &&
   "$RUNNER_ARTIFACT" --self-test >/dev/null; then
-  pass "standalone runner bundle binds pinned dependencies, binary, unit, target, paths, and public-only authority"
+  pass "standalone runner bundle binds pinned dependencies, binary, unit, target, paths, and bounded read-only authority"
 else
   fail "standalone runner bundle lost dependency, unit, target, path, provenance, or authority verification"
 fi
@@ -594,6 +630,13 @@ if runner_exchange_credential_is_prepared_only \
   pass "exchange credential provisioning is mandate-bound, host-encrypted, and unavailable to the runner"
 else
   fail "exchange credential provisioning leaked authority or lost mandate/account binding"
+fi
+
+if runner_account_read_probe_is_fail_closed \
+  "$RUNNER_ARTIFACT" "$SHADOW_PROBE" "$RUNNER_SUPERVISOR"; then
+  pass "mandate-bound account read is transient, redacted, and effect-free"
+else
+  fail "mandate-bound account read lost transient, redaction, or no-effect boundaries"
 fi
 
 if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; then
@@ -662,7 +705,10 @@ EXCHANGE_ACCOUNT_BINDING_MUTATION="$(mktemp)"
 EXCHANGE_RUNNER_ACCESS_MUTATION="$(mktemp)"
 EXCHANGE_ROLLBACK_MUTATION="$(mktemp)"
 EXCHANGE_VISIBLE_KEY_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION"' EXIT
+ACCOUNT_READ_TRANSIENT_MUTATION="$(mktemp)"
+ACCOUNT_READ_EFFECT_MUTATION="$(mktemp)"
+ACCOUNT_READ_RAW_OUTPUT_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -747,6 +793,12 @@ sed '/\[ -z "\$pending" \] || rm -f "\$pending"/d' \
   "$RUNNER_ARTIFACT" > "$EXCHANGE_ROLLBACK_MUTATION"
 sed 's/IFS= read -r -s -p "BingX API key: "/IFS= read -r -p "BingX API key: "/' \
   "$RUNNER_ARTIFACT" > "$EXCHANGE_VISIBLE_KEY_MUTATION"
+sed 's/--wait --pipe --collect --quiet/--wait --pipe --quiet/' \
+  "$RUNNER_ARTIFACT" > "$ACCOUNT_READ_TRANSIENT_MUTATION"
+sed "s/'effect': false/'effect': true/" \
+  "$SHADOW_PROBE" > "$ACCOUNT_READ_EFFECT_MUTATION"
+cp "$SHADOW_PROBE" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION"
+printf '%s\n' 'responseBody' >> "$ACCOUNT_READ_RAW_OUTPUT_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_exposes_runner_identity "$PROBE_IDENTITY_MUTATION" && \
@@ -783,10 +835,13 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_exchange_credential_is_prepared_only "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$RUNNER_SUPERVISOR" && \
   ! runner_exchange_credential_is_prepared_only "$RUNNER_ARTIFACT" "$EXCHANGE_RUNNER_ACCESS_MUTATION" && \
   ! runner_exchange_credential_is_prepared_only "$EXCHANGE_ROLLBACK_MUTATION" "$RUNNER_SUPERVISOR" && \
-  ! runner_exchange_credential_is_prepared_only "$EXCHANGE_VISIBLE_KEY_MUTATION" "$RUNNER_SUPERVISOR"; then
-  pass "public-only, scheduler, bundle, activation, anchor, credential, durable-stream, and execution-outcome mutations are rejected"
+  ! runner_exchange_credential_is_prepared_only "$EXCHANGE_VISIBLE_KEY_MUTATION" "$RUNNER_SUPERVISOR" && \
+  ! runner_account_read_probe_is_fail_closed "$ACCOUNT_READ_TRANSIENT_MUTATION" "$SHADOW_PROBE" "$RUNNER_SUPERVISOR" && \
+  ! runner_account_read_probe_is_fail_closed "$RUNNER_ARTIFACT" "$ACCOUNT_READ_EFFECT_MUTATION" "$RUNNER_SUPERVISOR" && \
+  ! runner_account_read_probe_is_fail_closed "$RUNNER_ARTIFACT" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$RUNNER_SUPERVISOR"; then
+  pass "public, scheduler, bundle, activation, anchor, credential, account-read, durable-stream, and execution-outcome mutations are rejected"
 else
-  fail "public-only, scheduler, bundle, activation, anchor, credential, durable-stream, or execution-outcome mutation self-test failed"
+  fail "public, scheduler, bundle, activation, anchor, credential, account-read, durable-stream, or execution-outcome mutation self-test failed"
 fi
 
 exit "$STATUS"

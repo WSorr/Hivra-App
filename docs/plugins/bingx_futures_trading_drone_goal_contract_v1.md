@@ -974,6 +974,37 @@ no listener, lease, account-read client, order path, Core/Ledger fact, FFI, UI,
 plugin ABI, or generic credential service. Exposing the prepared value to a
 bounded account-read or execution process requires a separately selected pass.
 
+### 11.27 Pass U: Mandate-Bound One-Shot Account Read
+
+The existing host artifact lifecycle remains the sole owner of remote prepared
+authority. It may launch one collected transient systemd process only after the
+exact installed runner, active Capsule-signed mandate, and host-encrypted
+exchange credential pass their existing bindings. The persistent public-shadow
+unit remains disabled, inactive, and unable to load the exchange credential.
+
+The transient process reuses the existing `BingxFuturesExchangeService` signed
+GET adapter and permits exactly three official BingX futures reads:
+`/openApi/swap/v2/user/balance`, `/openApi/swap/v2/user/positions`, and
+`/openApi/swap/v2/trade/openOrders`. It independently checks the runner key,
+API-key account binding, mandate operation id, and unexpired mandate before the
+first request. Any POST, DELETE, order placement, cancellation, leverage or
+margin mutation, alternate endpoint, mixed public-shadow arguments, provider
+failure, or incomplete read fails closed.
+
+The process receives both encrypted credentials through systemd's transient
+credential directory, runs under the existing 128 MiB/zero-swap/16-task and
+no-listener containment profile, and is collected after one invocation. It
+persists no account payload. Its only output is one bounded canonical verdict
+containing the mandate, runner and account commitments, UTC observation time,
+three boolean read checks, and `effect=false`; balances, positions, orders,
+provider bodies, API material, and provider messages are never projected.
+
+This pass proves account-read reachability and binding only. It grants no
+schedule, lease, account-state journal, risk decision, order ownership,
+reconciliation, cancellation, exchange effect, boot activation, Core/Ledger
+fact, FFI, UI, plugin ABI, tag, or Release. Any durable account observation or
+remote execution process requires a separately selected pass.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of
