@@ -3467,6 +3467,22 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `file` package dependency plus correction of EXIT-trap rollback scope.
     Status: complete (2026-08-18). No following pass is selected automatically.
 
+- `1.x Documentation Control Consolidation`
+  - Lane: process/documentation only; no runtime, deployment, release, or
+    product authority change.
+  - Invariant: current selection has one concise owner in
+    `development-control.md`; detailed pass evidence and debt remain here.
+  - Sole owner: the existing development board owns current navigation and this
+    roadmap owns chronological evidence. No document, registry, schema, DTO,
+    service, or gate is added.
+  - Removed or sealed: the stale Pass E selection, the duplicate chronological
+    pass narrative, and repeated Pass M SHA/smoke/CI evidence are removed from
+    the current-status board. Historical entries cannot select future work.
+  - Exit evidence: a smaller documentation diff, documentation integrity and
+    repository review gates, clean detached-checkout validation, protected PR,
+    and green post-merge CI. No following product pass is selected
+    automatically.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
