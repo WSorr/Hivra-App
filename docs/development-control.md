@@ -2,11 +2,10 @@
 
 Status date: 2026-08-18
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Remote Runner Pass S — Capsule-Signed
-Remote Mandate Admission`. The pass is limited to one offline, runner-bound,
-Capsule-signed prepared mandate through the existing Trading mandate and host
-lifecycle owners. Exchange credentials, account reads, leases, remote effects,
-release, and 2.0 work remain unauthorized.
+Current development focus: no active pass. `1.x Trading Remote Runner Pass S —
+Capsule-Signed Remote Mandate Admission` is complete. Exchange credentials,
+account reads, leases, remote effects, release, and 2.0 work remain
+unauthorized; the next unit requires an explicit consolidation decision.
 
 ## 1. Read This First
 
@@ -16,7 +15,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Finish Pass S verification and exact merge-SHA offline host admission evidence. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | No pass is selected; review the completed Trading ladder before authorizing another bounded product unit. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -26,7 +25,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Pass S active | One canonical Trading mandate commitment is signed by the Capsule root, bound to one exact runner identity, and admitted only as prepared host state. | Complete local gates, protected PR, post-merge CI, and exact merge-SHA offline VPS admission/cleanup; account reads, leases, transport/listeners, and effects remain blocked. |
+| **1.x maintained runtime** | Pass S complete; no next pass selected | One canonical Trading mandate commitment is signed by the Capsule root, bound to one exact runner identity, and admitted only as prepared host state. | Exact merge-SHA macOS export, VPS admission, replay, conflict rejection, uninstall, and co-host preservation passed; account reads, leases, transport/listeners, and effects remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
