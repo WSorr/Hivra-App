@@ -889,7 +889,8 @@ rolls the unit back to disabled and inactive.
 Deactivation requires the same exact artifact and expected identity. It
 removes boot enablement before stopping the process, preserves the encrypted
 credential and authenticated stream for an exact later activation, and refuses
-to adopt or disable an ambiguous installation. Host reboot is not required as
+to adopt or disable an ambiguous installation. Interrupted deactivation is
+retryable and never removes the canonical linked unit. Host reboot is not required as
 evidence because the audited VPS carries unrelated production workloads; exact
 target wiring plus active/inactive lifecycle evidence proves this boundary
 without risking those workloads.

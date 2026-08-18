@@ -3621,6 +3621,9 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       drift, foreign path adoption, pre-existing enablement, concurrent host
       operations, stale journal evidence, failed-start enablement residue, and
       deactivation of an ambiguous runner must fail closed.
+    - remediation after implementation review forbids `systemctl disable`
+      because it may remove the canonical `systemctl link`; rollback and
+      deactivation remove only the already verified exact boot-target link.
   - Exit evidence:
     - mutation/self-tests and the trading parity gate;
     - full repository gates and clean detached-checkout verification;

@@ -169,7 +169,8 @@ if not all(value in initialize for value in initialize_required):
 activate_required = [
     "require_expected_runner_key_id",
     'require_exact_installed_bundle "$directory"',
-    'systemctl disable "$UNIT_NAME" >/dev/null 2>&1 || true',
+    "rollback_identity_bound_activation",
+    'unlink "$wants_path"',
     '[ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ]',
     'journal_cursor="$(current_unit_journal_cursor)"',
     'systemctl start "$UNIT_NAME"',
@@ -192,18 +193,24 @@ deactivate_required = [
     "require_expected_runner_key_id",
     'require_exact_installed_bundle "$directory"',
     '[ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ]',
-    'systemctl disable "$UNIT_NAME"',
+    '[ "$(readlink -f "$wants_path")" = "$UNIT_INSTALL_PATH" ]',
+    'unlink "$wants_path"',
+    'identity-bound deactivation found inconsistent enablement',
+    'systemctl daemon-reload',
     'systemctl stop "$UNIT_NAME"',
     'identity-bound deactivation retained boot enablement',
+    'identity-bound deactivation changed the canonical unit link',
     'identity-bound deactivation changed runner identity',
 ]
 if not all(value in deactivate for value in deactivate_required):
     raise SystemExit(1)
 if not (
     deactivate.index('read_installed_runner_key_id')
-    < deactivate.index('systemctl disable "$UNIT_NAME"')
+    < deactivate.index('unlink "$wants_path"')
     < deactivate.index('systemctl stop "$UNIT_NAME"')
 ):
+    raise SystemExit(1)
+if "systemctl disable" in activate or "systemctl disable" in deactivate:
     raise SystemExit(1)
 PY
 }
@@ -608,7 +615,7 @@ awk '{
 }' "$RUNNER_ARTIFACT" > "$BUNDLE_EARLY_ANCHOR_MUTATION"
 sed 's/\[ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" \]/true/' \
   "$RUNNER_ARTIFACT" > "$ACTIVATION_IDENTITY_MUTATION"
-sed '/systemctl disable "\$UNIT_NAME" >\/dev\/null 2>\&1 || true/d' \
+sed '/unlink "\$wants_path"/d' \
   "$RUNNER_ARTIFACT" > "$ACTIVATION_ROLLBACK_MUTATION"
 sed '/^initialize_disabled() {/a\
   systemctl enable "$UNIT_NAME"' \

@@ -653,9 +653,19 @@ activate_identity_bound() {
   local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
   exec 9>"$lock_path"
   flock -n 9 || die "another public-shadow install operation is active"
-  trap 'systemctl stop "$UNIT_NAME" >/dev/null 2>&1 || true; systemctl disable "$UNIT_NAME" >/dev/null 2>&1 || true; rm -f "$lock_path"' EXIT INT TERM
-
   local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  rollback_identity_bound_activation() {
+    set +e
+    systemctl stop "$UNIT_NAME" >/dev/null 2>&1
+    if [ -L "$wants_path" ] &&
+      [ "$(readlink -f "$wants_path")" = "$UNIT_INSTALL_PATH" ]; then
+      unlink "$wants_path"
+      systemctl daemon-reload >/dev/null 2>&1
+    fi
+    rm -f "$lock_path"
+  }
+  trap rollback_identity_bound_activation EXIT INT TERM
+
   case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
     linked|disabled) ;;
     *) die "identity-bound activation requires a disabled unit" ;;
@@ -704,7 +714,17 @@ deactivate_identity_bound() {
 
   [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
     die "identity-bound deactivation refused the installed runner key id"
-  systemctl disable "$UNIT_NAME" >/dev/null
+  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  if [ -e "$wants_path" ] || [ -L "$wants_path" ]; then
+    [ -L "$wants_path" ] &&
+      [ "$(readlink -f "$wants_path")" = "$UNIT_INSTALL_PATH" ] ||
+      die "identity-bound deactivation refused an unexpected boot link"
+    unlink "$wants_path"
+  else
+    [ "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" != "enabled" ] ||
+      die "identity-bound deactivation found inconsistent enablement"
+  fi
+  systemctl daemon-reload
   systemctl stop "$UNIT_NAME"
   case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
     linked|disabled) ;;
@@ -712,9 +732,11 @@ deactivate_identity_bound() {
   esac
   [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
     die "identity-bound deactivation left the unit active"
-  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
   [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
     die "identity-bound deactivation retained boot enablement"
+  [ -L "$UNIT_LINK_PATH" ] &&
+    [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ] ||
+    die "identity-bound deactivation changed the canonical unit link"
   [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
     die "identity-bound deactivation changed runner identity"
 
