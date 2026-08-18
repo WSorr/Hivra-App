@@ -3565,6 +3565,27 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     Full Flutter `934/934`, analyze, Rust workspace, review gates, clean
     checkout, and focused `34/34` passed. No following pass is selected.
 
+- `1.x Trading Remote Runner Pass P — Persistent Disabled Install and Exact Uninstall`
+  - Lane: bounded 1.x host lifecycle; no boot enablement, account, effect,
+    release, or 2.0 work.
+  - Invariant: the existing artifact owner atomically installs one exact
+    public-shadow bundle and encrypted runner identity, leaves it disabled and
+    inactive, and removes only exact owned paths with the bundle removed last
+    so interrupted cleanup remains retryable.
+  - Sole owner: `public_shadow_runner_artifact.sh` remains the only package,
+    install, smoke, and uninstall owner. No installer, service, DTO, registry,
+    credential owner, journal, listener, or effect route is added.
+  - Removed or sealed: persistent host state no longer requires copying the
+    ephemeral smoke by hand. Collision, symlink substitution, drift, foreign
+    state, accidental enablement, concurrent lifecycle work, and partial
+    uninstall fail closed. Rotation/replacement, boot enablement, external
+    anchoring, account reads, leases, and effects remain sealed.
+  - Exit evidence: artifact self-tests and independent install/uninstall
+    mutations, full local and clean-checkout gates, exact merge-SHA VPS
+    install/start/stop/uninstall with stable `runner_key_id` and unchanged
+    website/Amnezia/listeners, protected PR, and green post-merge CI.
+  - Status: selected; implementation and host evidence pending.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing

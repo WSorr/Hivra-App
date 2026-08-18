@@ -845,6 +845,28 @@ exchange effects, tags, and Releases remain unauthorized. On the audited VPS,
 host-root or offline-disk compromise remains outside this runner-only evidence
 boundary and cannot be promoted into Capsule or trading authority.
 
+### 11.22 Pass P: Persistent Disabled Install And Exact Uninstall
+
+The existing artifact owner provides the only host installation lifecycle. It
+may atomically persist the verified bundle, exact linked unit, encrypted
+runner-only credential, and systemd-owned private state. A successful install
+ends `disabled` and `inactive`; it never creates a boot target link and never
+starts the runner implicitly.
+
+Uninstall requires the exact verified bundle as its ownership anchor. Any
+present binary, manifest, unit, link, credential, or state path must match its
+canonical type and binding before deletion begins. The bundle is removed last,
+so an interrupted uninstall remains retryable. Drift, symlink substitution,
+foreign state, boot enablement, or a concurrent lifecycle operation fails
+closed instead of deleting or adopting ambiguous host state.
+
+The host smoke uses this same install and uninstall path, explicitly starts the
+unit twice, verifies one stable `runner_key_id`, stops it, proves that identity
+state remains while disabled, and then removes every canonical runner path.
+Boot enablement, credential rotation or replacement, external anchoring,
+account reads, leases, exchange effects, listeners, tags, and Releases remain
+unauthorized.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

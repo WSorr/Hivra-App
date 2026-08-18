@@ -31,13 +31,16 @@ Usage:
     [--target-os linux --target-arch x64]
   tools/trading/public_shadow_runner_artifact.sh --verify <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --runtime-smoke <artifact-dir>
+  tools/trading/public_shadow_runner_artifact.sh --install-disabled <artifact-dir>
+  tools/trading/public_shadow_runner_artifact.sh --uninstall-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --self-test
 
 The build mode requires a completely clean worktree and the pinned Dart SDK.
 It produces one host-native executable, the exact systemd unit, and one exact
-provenance manifest. Ephemeral install smoke requires a root Linux systemd host
-with empty canonical target paths; it never enables the unit.
+provenance manifest. Host lifecycle modes require a root Linux systemd host.
+Installation requires empty canonical target paths and leaves the exact unit
+disabled and inactive. Uninstall refuses drifted or foreign-owned paths.
 EOF
 }
 
@@ -471,20 +474,24 @@ wait_for_exact_unit_evidence() {
   printf '%s\n' "$evidence"
 }
 
-ephemeral_install_smoke() {
+require_install_host() {
   local directory="$1"
   verify_artifact "$directory" >/dev/null
   [ "$(sed -n 's/^target_os=//p' "$directory/$MANIFEST_NAME")" = "linux" ] &&
     [ "$(sed -n 's/^target_arch=//p' "$directory/$MANIFEST_NAME")" = "x64" ] ||
-    die "ephemeral install smoke requires a Linux x64 bundle"
+    die "host lifecycle requires a Linux x64 bundle"
   [ "$(host_os)" = "linux" ] && [ "$(host_arch)" = "x64" ] ||
-    die "ephemeral install smoke requires a Linux x64 host"
-  [ "$(id -u)" = "0" ] || die "ephemeral install smoke requires root"
+    die "host lifecycle requires a Linux x64 host"
+  [ "$(id -u)" = "0" ] || die "host lifecycle requires root"
   command -v flock >/dev/null 2>&1 || die "flock is required"
   command -v openssl >/dev/null 2>&1 || die "openssl is required"
   command -v systemctl >/dev/null 2>&1 || die "systemctl is required"
   command -v systemd-creds >/dev/null 2>&1 || die "systemd-creds is required"
+}
 
+install_disabled() {
+  local directory="$1"
+  require_install_host "$directory"
   local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
   exec 9>"$lock_path"
   flock -n 9 || die "another public-shadow install operation is active"
@@ -500,21 +507,21 @@ ephemeral_install_smoke() {
     "$state_private" \
     "$wants_path"; do
     [ ! -e "$target" ] && [ ! -L "$target" ] ||
-      die "ephemeral install target already exists: $target"
+      die "disabled install target already exists: $target"
   done
   if systemctl cat "$UNIT_NAME" >/dev/null 2>&1; then
-    die "ephemeral install unit is already loaded"
+    die "disabled install unit is already loaded"
   fi
 
-  opt_parent_created=0
-  credential_parent_created=0
-  bundle_installed=0
-  credential_installed=0
-  unit_linked=0
-  unit_loaded=0
+  local opt_parent_created=0
+  local credential_parent_created=0
+  local bundle_installed=0
+  local credential_installed=0
+  local unit_linked=0
+  local unit_loaded=0
   pending_bundle=""
   pending_credential=""
-  cleanup_ephemeral_install() {
+  rollback_disabled_install() {
     set +e
     if [ "$unit_loaded" = 1 ]; then
       systemctl stop "$UNIT_NAME" >/dev/null 2>&1
@@ -537,7 +544,7 @@ ephemeral_install_smoke() {
     fi
     rm -f "$lock_path"
   }
-  trap cleanup_ephemeral_install EXIT INT TERM
+  trap rollback_disabled_install EXIT INT TERM
 
   if [ ! -d /opt/hivra ]; then
     install -d -m 0755 /opt/hivra
@@ -582,9 +589,93 @@ ephemeral_install_smoke() {
   unit_loaded=1
   case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
     linked|disabled) ;;
-    *) die "ephemeral unit became enabled" ;;
+    *) die "disabled install became enabled" ;;
   esac
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "disabled install became active"
+  [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
+    die "disabled install created boot enablement"
 
+  trap - EXIT INT TERM
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: installed exact unit disabled and inactive"
+}
+
+uninstall_disabled() {
+  local directory="$1"
+  require_install_host "$directory"
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  trap 'rm -f "$lock_path"' EXIT INT TERM
+
+  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  local state_private="/var/lib/private/hivra-trading-public-shadow"
+  [ -d "$BUNDLE_INSTALL_PATH" ] && [ ! -L "$BUNDLE_INSTALL_PATH" ] ||
+    die "uninstall requires the canonical real bundle directory"
+  verify_artifact "$BUNDLE_INSTALL_PATH" >/dev/null
+  cmp -s "$BINARY_INSTALL_PATH" "$directory/$BINARY_NAME" ||
+    die "uninstall refused a drifted runner binary"
+  cmp -s "$UNIT_INSTALL_PATH" "$directory/$UNIT_NAME" ||
+    die "uninstall refused a drifted runner unit"
+  cmp -s "$BUNDLE_INSTALL_PATH/$MANIFEST_NAME" "$directory/$MANIFEST_NAME" ||
+    die "uninstall refused a drifted runner manifest"
+  if [ -e "$UNIT_LINK_PATH" ] || [ -L "$UNIT_LINK_PATH" ]; then
+    [ -L "$UNIT_LINK_PATH" ] &&
+      [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ] ||
+      die "uninstall refused a foreign unit link"
+  fi
+  if [ -e "$CREDENTIAL_INSTALL_PATH" ] || [ -L "$CREDENTIAL_INSTALL_PATH" ]; then
+    [ -f "$CREDENTIAL_INSTALL_PATH" ] && [ ! -L "$CREDENTIAL_INSTALL_PATH" ] ||
+      die "uninstall refused a foreign credential"
+  fi
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled|not-found) ;;
+    *) die "uninstall refused an enabled unit" ;;
+  esac
+  [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
+    die "uninstall refused boot enablement"
+  if [ -L "$STATE_DIRECTORY" ]; then
+    [ "$(readlink -f "$STATE_DIRECTORY")" = "$state_private" ] ||
+      die "uninstall refused a foreign state link"
+  elif [ -e "$STATE_DIRECTORY" ]; then
+    [ -d "$STATE_DIRECTORY" ] || die "uninstall refused foreign state"
+  fi
+
+  if systemctl cat "$UNIT_NAME" >/dev/null 2>&1; then
+    systemctl stop "$UNIT_NAME"
+    systemctl clean --what=state "$UNIT_NAME"
+  fi
+  rm -f "$UNIT_LINK_PATH"
+  systemctl daemon-reload
+  rm -f "$CREDENTIAL_INSTALL_PATH"
+  rm -rf "$STATE_DIRECTORY" "$state_private"
+  rm -rf "$BUNDLE_INSTALL_PATH"
+
+  for target in \
+    "$BUNDLE_INSTALL_PATH" \
+    "$UNIT_LINK_PATH" \
+    "$CREDENTIAL_INSTALL_PATH" \
+    "$STATE_DIRECTORY" \
+    "$state_private" \
+    "$wants_path"; do
+    [ ! -e "$target" ] && [ ! -L "$target" ] ||
+      die "disabled uninstall retained: $target"
+  done
+  systemctl cat "$UNIT_NAME" >/dev/null 2>&1 &&
+    die "disabled uninstall retained the loaded unit"
+
+  trap - EXIT INT TERM
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: uninstalled exact disabled unit"
+}
+
+ephemeral_install_smoke() {
+  local directory="$1"
+  install_disabled "$directory"
+  trap 'uninstall_disabled "$directory" >/dev/null 2>&1 || true' EXIT INT TERM
   local started_at
   started_at="$(date --iso-8601=seconds)"
   systemctl start "$UNIT_NAME"
@@ -631,21 +722,21 @@ ephemeral_install_smoke() {
     -p NRestarts \
     --no-pager
 
-  cleanup_ephemeral_install
+  systemctl stop "$UNIT_NAME"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "persistent disabled unit did not stop"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "persistent disabled unit became enabled" ;;
+  esac
+  [ -f "$CREDENTIAL_INSTALL_PATH" ] ||
+    die "persistent disabled credential disappeared after stop"
+  [ -f "$STATE_DIRECTORY/stream/stream_identity.v1.json" ] ||
+    die "persistent disabled state disappeared after stop"
+
+  uninstall_disabled "$directory"
   trap - EXIT INT TERM
-  for target in \
-    "$BUNDLE_INSTALL_PATH" \
-    "$UNIT_LINK_PATH" \
-    "$CREDENTIAL_INSTALL_PATH" \
-    "$STATE_DIRECTORY" \
-    "$state_private" \
-    "$wants_path"; do
-    [ ! -e "$target" ] && [ ! -L "$target" ] ||
-      die "ephemeral install cleanup retained: $target"
-  done
-  systemctl cat "$UNIT_NAME" >/dev/null 2>&1 &&
-    die "ephemeral install cleanup retained the loaded unit"
-  echo "PASS trading-runner-artifact: exact unit retained encrypted identity across restart and cleaned up without enablement"
+  echo "PASS trading-runner-artifact: exact disabled install retained identity and uninstalled without enablement"
 }
 
 self_test() {
@@ -734,7 +825,7 @@ self_test() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -776,6 +867,16 @@ case "$MODE" in
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
       die "runtime smoke reads the target only from the manifest"
     runtime_smoke_artifact "$ARTIFACT_DIR"
+    ;;
+  install-disabled)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+      die "disabled install reads the target only from the manifest"
+    install_disabled "$ARTIFACT_DIR"
+    ;;
+  uninstall-disabled)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+      die "disabled uninstall reads the target only from the manifest"
+    uninstall_disabled "$ARTIFACT_DIR"
     ;;
   ephemeral-install-smoke)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
