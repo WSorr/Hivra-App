@@ -3639,7 +3639,31 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - external anchoring, credential rotation/replacement, Capsule or exchange
       credentials, account reads, leases, mandates, trading effects,
       reconciliation, listeners, tags, Releases, and 2.0 implementation.
-  - Status: implementation candidate; merge-SHA host evidence pending.
+  - Status: complete on `main` at `c897125` (2026-08-18). Implementation PR
+    `#137` passed required run `32108987807` and post-merge run `32109079206`.
+    Pre-smoke review found that generic `systemctl disable` could remove the
+    canonical linked unit; remediation PR `#138` replaced it with exact
+    boot-link removal and passed required run `32109355096` plus post-merge run
+    `32109485681`.
+  - Exact merge-SHA VPS evidence:
+    - source commit `c8971257369289f3f1de603068d168d7cfc4fcdc`;
+    - initialized sequence `1`, then activated sequence `2`, with stable
+      `runner_key_id`
+      `c5b7c4f914c329591d7e9e0628daff77d0443f4a8f57dcedb460084a449cfb03`;
+    - evidence hashes
+      `1799f0cf43eb611e4e1f7318b9ad705ccafc33d662f78ad6ebf161a23eff0e20`
+      and
+      `756d3a447c5584e90d57c0f316612057aac09489e716b0a3e1c1cf5a231513c4`;
+    - wrong-key activation failed before start; exact activation reached
+      `enabled` and `active` with `NRestarts=0`, about 20 MiB observed memory,
+      `MemoryMax=128 MiB`, zero swap, and `TasksMax=16`;
+    - exact deactivation preserved the unit link and identity; exact uninstall
+      removed every canonical runner path;
+    - no host reboot occurred; local site probes remained HTTP `200`, all four
+      Amnezia containers remained active, and listener-set hash stayed
+      `90032566b9cb2593804feef530cf2673121e52ff7856b7d19b480ce2686d4b50`.
+    No following pass, tag, Release, account authority, lease, or remote effect
+    is selected.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
