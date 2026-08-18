@@ -3796,7 +3796,24 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     checkout gates, protected PR/post-merge CI, then merge-SHA VPS provisioning,
     exact replay/conflict rejection, exact uninstall, and unchanged
     site/Amnezia/listener baselines.
-  - Status: selected on 2026-08-18; implementation and host evidence pending.
+  - External readiness: the operator reports that one dedicated BingX futures
+    subaccount exists. No identifier or secret is retained in the repository;
+    this report is not verification of permissions and grants no authority.
+  - Status: implementation merged on `main` at `3fc455b` through protected PR
+    `#144`; merge-SHA host evidence and status closure remain pending.
+
+- `External Personal-Agent Runtime Pattern Audit`
+  - Scope: preserve pinned OpenClaw and Aithy observations and evaluate them
+    against Hivra's product axis and three architecture laws.
+  - Result: prioritize an Operations Center projection, a unified bounded
+    approval surface, explicit private AI context/artifacts, and runtime-health
+    advice without adding another lifecycle or authority owner.
+  - Rejected: unrestricted host authority, broad standing permissions, second
+    truth stores, autonomous skill promotion, timeout-as-loss, and a parallel
+    mesh trust model.
+  - Authority: `external-agent-runtime-pattern-audit.md` is research only. No
+    implementation pass, deployment, credential, effect, release, or 2.0 work
+    is selected by this record.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
