@@ -33,7 +33,7 @@ from this table, then open only the linked authority for the selected unit.
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
 | **Capsule AI Runtime** | Current remediation complete | The existing credential owner and one process lease remain canonical. | No second credential owner or AI-5 is selected. |
-| **Future product tracks** | Parked | AI trading advice, distributed backup, staking, and further Moltbook authority remain unselected. | Each requires its own approved contract and capability-closure decision. |
+| **Future product tracks** | Parked | Durable intent and bounded delegation, AI trading advice, distributed backup, staking, and further Moltbook authority remain unselected. | Each requires its own approved contract and capability-closure decision. |
 
 `12.3` passes 1-18 are complete. Any later transport remediation requires a
 new named finding and bounded pass; no pass is inferred from one manual run.

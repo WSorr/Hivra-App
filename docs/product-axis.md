@@ -85,8 +85,11 @@ must re-enter the same operation. They must not create another effect path.
 
 ## 3. Permanent Product Invariants
 
-1. **User ownership:** identity, recovery authority, and confirmed Capsule
-   history remain controlled by the user-owned Capsule.
+1. **User ownership and principal continuity:** identity, recovery authority,
+   durable intent ownership, and confirmed Capsule history remain controlled
+   by the user-owned Capsule. Models, agents, devices, execution hosts,
+   application runtimes, and settlement providers remain replaceable
+   capabilities; none becomes the enduring principal.
 2. **Solo usefulness:** a Capsule can start, replay, recover, and run solo drones
    without relationships or network availability.
 3. **Local-first truth:** persisted local truth is projected before remote

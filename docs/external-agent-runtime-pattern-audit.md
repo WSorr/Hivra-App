@@ -132,3 +132,101 @@ revocation, and an operator-tested kill path.
 Re-run this audit only when a concrete Hivra product finding requires one of
 the patterns above or when an external source has materially changed. Do not
 poll competitor roadmaps into Hivra's active development board.
+
+## 8. Forward Scenario Model
+
+This section is a scenario model, not a product claim or forecast. Current
+signals support increasing agent interoperability, hybrid edge/cloud
+inference, outcome-oriented financial execution, cheaper independent
+verification, and explicit software-agent authorization. They do not prove
+that one protocol, chain, model, agent framework, or asset class will dominate.
+
+The common architecture requirement across plausible outcomes is:
+
+```text
+person
+  -> user-owned persistent principal (Capsule)
+  -> durable intent
+  -> deterministic policy and bounded mandate
+  -> replaceable intelligence provider
+  -> replaceable executor or solver
+  -> external effect
+  -> evidence and receipt
+  -> reconciliation, dispute, or compensation
+  -> Capsule-owned state
+```
+
+`Personal Digital Root` may be used as an explanatory description of the
+Capsule's continuity and authority property. It is not a new domain entity, a
+replacement for Person-First Runtime, or authorization for another identity,
+storage, DTO, or execution owner.
+
+### 8.1 Scenarios the architecture must survive
+
+1. **Cloud concentration:** most reasoning and execution run in large external
+   services. Hivra still owns disclosure, intent, mandate, receipt, and
+   revocation boundaries.
+2. **Personal edge intelligence:** local accelerators handle private context,
+   filtering, classification, and lightweight planning while expensive work is
+   routed outward. Hivra still treats every model as a replaceable provider.
+3. **Regulated machine economy:** agents receive formal identities and service
+   accounts. Hivra still binds authority to the person's Capsule and grants
+   only bounded, attributable delegation.
+
+The architecture must not depend on selecting one of these scenarios.
+
+### 8.2 Intent is not an effect
+
+A durable intent describes an owned objective and constraints across time. It
+is not an API request, provider payload, order, transaction, or permission.
+Planning may choose or replace executors, but trusted code must compile each
+eligible action into an exact bounded mandate and the existing effect
+lifecycle must reconcile its result.
+
+The minimal future authority chain is:
+
+```text
+durable intent
+  -> proposal
+  -> deterministic eligibility decision
+  -> bounded mandate
+  -> exact effect operation
+  -> provider evidence
+  -> verified receipt or unresolved observation
+  -> reconciliation
+```
+
+No AI output may skip or own an arrow in this chain.
+
+### 8.3 State and settlement tiers
+
+Hivra must not assume that all activity belongs in one consensus domain:
+
+- local state records person-owned truth and private operational state under
+  their existing separate owners;
+- pair-scoped evidence supports exact bilateral interaction where its
+  invariants are sufficient;
+- multi-party coordination requires its own ordering, quorum, and conflict
+  contract rather than being inferred from pair consensus;
+- global settlement or anchoring is an optional effect provider used only when
+  public ordering, scarce ownership, clearing, or dispute evidence requires it.
+
+No chain, solver, broker, bank, or synthetic-asset system becomes Core truth.
+
+### 8.4 Financial abstraction boundary
+
+The runtime may eventually express objectives in purchasing power, liquidity,
+risk, duration, and constraints instead of a particular asset or settlement
+rail. It must not hide collateral, oracle, counterparty, jurisdiction,
+liquidation, custody, or settlement risk. Synthetic instruments are provider
+capabilities with explicit evidence and failure modes, not a new Hivra asset
+ontology.
+
+### 8.5 Product consequence
+
+Future user surfaces should center goals, active mandates, resource/risk
+limits, unresolved obligations, effects, and receipts. A list of agent
+personalities or provider-specific tasks is secondary diagnostic information.
+The Operations Center described above is the likely composition surface, but
+it remains a projection over existing owners until a separate bounded product
+unit proves otherwise.
