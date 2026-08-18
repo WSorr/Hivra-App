@@ -3482,6 +3482,11 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     repository review gates, clean detached-checkout validation, protected PR,
     and green post-merge CI. No following product pass is selected
     automatically.
+  - Status: complete on `main` at `79bab2e` (2026-08-18) through protected PR
+    `#129`; required run `32083764573` and post-merge run `32083870579` passed.
+    The current-status document fell from 597 to 146 lines with 38 additions
+    against 473 removals across the pass. No owner, gate, runtime path, VPS
+    state, tag, or Release was added. No following pass is selected.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
