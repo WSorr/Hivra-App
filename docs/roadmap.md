@@ -3697,8 +3697,34 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     - transport/listeners, Capsule or exchange credentials, account reads,
       credential rotation/replacement, leases, mandates, trading effects,
       reconciliation, tags, Releases, and 2.0 implementation.
-  - Status: implementation candidate active on 2026-08-18; host evidence and
-    protected integration remain pending.
+  - Status: complete on `main` at `644afd5` (2026-08-18). Implementation PR
+    `#140` passed required run `32113384559`; post-merge run `32113481798`
+    passed.
+  - Exact merge-SHA VPS-to-Mac evidence:
+    - source commit `644afd57df3e76d4cb700d0382f7f339031d7658`;
+    - Linux x64 binary SHA-256
+      `7bdb88ade101255262e2779e929ae9989d69026ddc0f2bb91432e021622679d9`
+      and unit SHA-256
+      `61d582064ee8be1f1ef53b19f6b4fc28f2cf415d24173b69d53fb6a129fa8583`;
+    - stable `runner_key_id`
+      `74f65430c6620a2c1c69eeb2c71d31ee9f3c031a2b4425cd77809a91a165aa97`;
+    - sequence `1` evidence hash
+      `f569384a2fc3278b4cb1265fd43e359d42ca6c8c17e04ad5dd397c90951424b1`
+      verified off-host as an exact replay;
+    - sequence `2` evidence hash
+      `7061db1a87c9c8bb61e12e1f4dda739cdc102a29a44b83dffc0e2971dcc440c6`
+      verified as the exact next continuation, while comparing sequence `1`
+      against sequence `2` failed closed with `sequenceConflict`;
+    - retained evidence copies live outside the repository under
+      `/Volumes/Dev/projects/hivra-artifacts/trading-shadow-anchors/644afd5`;
+    - active service evidence showed `NRestarts=0`, about 20 MiB memory,
+      `MemoryMax=128 MiB`, zero swap, and `TasksMax=16`;
+    - exact deactivation and uninstall removed every canonical runner path;
+      the site remained HTTP `200`, all four Amnezia containers remained
+      active, and listener-set hash stayed
+      `90032566b9cb2593804feef530cf2673121e52ff7856b7d19b480ce2686d4b50`.
+    No next pass, tag, Release, credential rotation, account authority, lease,
+    transport/listener, or remote effect is selected.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
