@@ -2,11 +2,10 @@
 
 Status date: 2026-08-18
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Remote Runner Pass R — Portable
-External Evidence Anchor` is active. It may export and independently verify the
-exact signed public-shadow evidence already owned by the replay harness; host
-smoke evidence remains pending. Credential rotation/replacement, account
-reads, leases, remote effects, release, and 2.0 work remain unauthorized.
+Current development focus: no pass is selected. `1.x Trading Remote Runner
+Pass R — Portable External Evidence Anchor` is complete; detailed evidence
+remains owned by `roadmap.md`. Credential rotation/replacement, account reads,
+leases, remote effects, release, and 2.0 work remain unauthorized.
 
 ## 1. Read This First
 
@@ -16,7 +15,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete Pass R off-host continuity evidence without adding transport or effect authority. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | None selected. A later unit requires an explicit product decision. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -26,7 +25,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Pass R active | The existing artifact owner exports one exact signed evidence file plus its public key; the existing replay harness authenticates an anchor and rejects rollback, fork, wrong identity, and non-canonical continuation off-host. | Exact merge-SHA VPS-to-Mac evidence is pending. Credential rotation/replacement, account reads, leases, transport/listeners, and remote effects remain blocked. |
+| **1.x maintained runtime** | No active unit | Trading Remote Runner Pass R proved exact signed-evidence export, off-host authentication, one-step continuity, rollback rejection, and complete host cleanup through the existing owners. | Credential rotation/replacement, account reads, leases, transport/listeners, and remote effects remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
