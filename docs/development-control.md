@@ -2,442 +2,12 @@
 
 Status date: 2026-08-18
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no following pass is selected automatically. `1.x
-Trading Remote Runner Pass M — Verifiable Bundle and Ephemeral Exact-Unit
-Install` is complete on `main` at `0ba5bcc` through protected PR `#127`;
-required run `32077843922` and post-merge run `32078130235` passed. The clean
-Linux x64 bundle from `b80dc8d` (tree-identical to the merged commit) bound its
-binary, canonical unit, manifest, and install paths; its binary SHA-256 was
-`5c662b67da2fabfe0201d8126f4fa18950fa4731294662572f07eb7ca8aad393`
-and its unit SHA-256 was
-`61d582064ee8be1f1ef53b19f6b4fc28f2cf415d24173b69d53fb6a129fa8583`.
-The exact checked-in unit was atomically published under `/opt`, linked without
-enablement, received one temporary encrypted runner-only credential, and
-appended public evidence hash
-`86e375726c05b2230c298b5b73e7b4e4c3d4c5577a3de8428f72f93040af4807`
-at cycle `1/288` with zero restarts and the exact 128 MiB/no-swap/16-task
-limits. The smoke then removed its bundle, unit link, credential, systemd state,
-lock, and temporary source. The website remained HTTP `200`, all Amnezia
-container identities/start times and zero restart counts were unchanged, and
-the listener set was identical. Two pre-final attempts failed closed before
-evidence and exposed a non-portable `file` dependency plus EXIT-trap scope;
-both were removed with regression gates before the final bundle was built.
-Persistent installation, boot enablement, durable runner identity, external
-anchoring, account reads, leases, effects, tags, and Releases remain
-unauthorized. The preceding `1.x Trading Remote Runner Pass L — Fail-Closed
-Public-Shadow Supervisor Contract`
-is complete on `main` at `dc6ce3a` through protected PR `#125`; required run
-`32075468982` and post-merge run `32076142166` passed. One systemd contract owns
-only process lifecycle and resource containment: successful bounded batches may
-restart, while provider, validation, append, timeout, signal, OOM, and malformed
-credential failures remain stopped. The clean Linux x64 smoke artifact from
-`775378d` (tree-identical to the merged commit) had SHA-256
-`64264ae0bca4b0b90d768c4ce254f3ae7d488d16eb1c8b93ace8a9e5d8f08868`.
-An isolated transient VPS smoke appended one public evidence record with hash
-`e33532cf2e19cd86480ed95998217b0cbf9ccc5999b850a791b7e71a9ca6413e`;
-the malformed-credential case remained failed with exit status `1` and zero
-restarts after the 60-second restart window. The exact 128 MiB/no-swap/16-task
-limits and protected systemd credential delivery were observed. The website
-remained HTTP `200`, Amnezia containers retained zero restarts, listeners were
-unchanged, and all test unit/path state was removed. Installation, enablement,
-durable credential creation, account access, external anchoring, leases,
-effects, tags, and Releases remain unauthorized. The preceding `1.x Trading
-Remote Runner Pass K — Ephemeral VPS Resource Soak Evidence` is complete: sixty
-serial public observations completed under a transient 128 MiB ceiling with a
-63.29 MiB measured peak, and a 64 MiB production budget remains rejected as
-marginless. The preceding `1.x Trading Remote Runner Pass J — Ephemeral VPS
-Public Observation Evidence` is complete. The exact public-only Linux x64
-artifact from clean source `12c8f30`
-with SHA-256 `8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`
-was transferred only to a unique temporary directory on the audited Debian 13
-x86-64 host. One low-priority public `BTC-USDT` observation completed in 3.213
-seconds, appended sequence `1` with evidence hash
-`5c8f75b6b7fb32b9f09e4c2b1a33ceec16d18068a0144eb0ca7d06f21986013b`,
-used a peak resident set of 24,072 KiB, and produced no stderr. The runner-only
-signing seed was generated ephemerally on the host and removed from the process
-environment; no BingX credential, Capsule material, account read, order,
-effect, service, listener, or persistent runner state was introduced. The
-existing website remained HTTP `200`, all pre-existing VPN containers remained
-running, and the temporary process, stream, manifest, binary, and directory
-were removed. Supervisor installation, durable host identity, credentials,
-account access, external anchoring, leases, effects, tags, and Releases remain
-unauthorized. The preceding `1.x Trading Remote Runner Pass I — Linux Runtime
-Startup Evidence` is complete on
-`main` at `1770ded` through protected PR `#121`; required run `32057547066`
-and post-merge run `32057670511` passed. The existing artifact script built and
-verified one ephemeral Linux x64 ELF in the required Ubuntu job, removed runner
-authority from the child environment, executed the binary, and accepted only
-the canonical probe's exact fail-closed missing-authority result. Loader
-failure, target mismatch, inherited seed, unexpected output, false success,
-artifact upload, and review-gate checkout mutation fail closed. Local and clean
-checkout gates, Rust workspace, Flutter analyze, repeat full Flutter `931/931`,
-focused concurrency `3/3`, required PR gates, and post-merge CI passed. No
-artifact was uploaded. Public provider execution, transfer, installation,
-supervisor configuration, VPS access, site or Amnezia changes, credentials,
-account reads, external anchoring, Capsule state, leases, and effects remain
-unauthorized. The preceding `1.x Trading Remote Runner Pass H — Pinned Linux
-x64 Artifact Evidence` is complete
-on `main` at `ea36a8b` through protected PR `#119`; required run `32054282257`
-and post-merge run `32054365614` passed. The existing packaging owner uses one
-minimal pure-Dart dependency closure with an exact lock and compiles only the
-explicit `linux/x64` cross-target. The manifest binds the dependency-lock
-SHA-256 and verification requires an ELF x86-64 executable matching the exact
-target. Package substitution, unlocked resolution, target confusion, binary
-mutation, and authenticated effect markers fail closed. No Linux execution,
-transfer, installation, systemd/Docker, VPS change, network/resource policy,
-credential, account read, Capsule state, lease, external anchor, or effect
-route is authorized. The post-merge ELF x86-64 artifact is 7,807,720 bytes with
-SHA-256 `8c31e006535227088ea4b9ff63f162d06760f37c28bd18072a6f18fcee1f34b6`;
-its dependency-lock SHA-256 is
-`f5443e020cbafc892fb75080be84899d3d7f6196be1dc0f7525d73f1eac789ac`.
-Pinned dependency validation, target/binary/source/authority negative tests,
-Flutter `931/931`, analyze, Rust workspace, full review gates, clean detached-
-checkout packaging, protected PR, and green post-merge CI passed. Linux runtime
-execution, transfer, deployment, VPS configuration, supervisor, network or
-resource policy, credentials, account reads, external anchoring, and effects
-remain unauthorized. The preceding
-`1.x Trading Remote Runner Pass G — Verifiable Standalone Host Artifact` is complete
-on `main` at `3fbe8f2` through protected PR `#117`; required run `32044373306`
-and post-merge run `32044425543` passed. One existing probe entrypoint may be
-compiled into one host-native executable only from a completely clean tree and
-the pinned Dart SDK. One strict manifest binds its exact SHA-256, size, source
-commit, platform, entrypoint, and `public-market-shadow-only` authority profile.
-The verifier rejects mutation, unknown manifest shape, linked state, non-native
-files, and authenticated exchange authority markers. Dart AOT output is not
-claimed byte-reproducible; provenance binds the one produced artifact. No
-transfer, Linux deployment, systemd/Docker unit, VPS change, credential,
-account read, Capsule state, lease, receiver, external anchor, or effect route
-is authorized. The post-merge Darwin arm64 evidence artifact is 6,917,488 bytes
-with SHA-256 `4782f3f119f1975dc4ed7005f94ad96526ae6f9753377483102e0c1adf498282`.
-Verifier negative tests, dirty-tree rejection, Flutter `931/931`, analyze, Rust
-workspace, full review gates, clean detached-checkout packaging, protected PR,
-and green post-merge CI passed. Linux build evidence, transfer, deployment, VPS
-configuration, supervisor, external anchor, account reads, and effects remain
-unauthorized. The preceding `1.x Trading Remote Runner Pass F — Public-Only
-Bounded Scheduler` is complete on
-`main` at `712177f` through protected PR `#115`; required run `32043346812` and
-post-merge run `32043400512` passed. The existing
-`flutter/tool/trading_remote_shadow_probe.dart` composition root may run only
-1–288 serial public observations with an explicit 60–3600 second delay. A
-failure stops the process without overlap, internal retry, inferred success,
-or scheduler state. No service, DTO, receiver, supervisor, deployment unit,
-VPS configuration, credential, account read, Capsule state, lease, or effect
-route is authorized. Scheduler `4/4`, combined scheduler/shadow/replay `45/45`,
-Flutter `931/931`, analyze, Rust workspace, full review gates, clean detached-
-checkout, and scheduler/authority mutations passed. No following scheduler,
-deployment, VPS, lease, external-anchor, account-read, or effect pass is
-authorized. The preceding `1.x Trading Remote Runner Pass E — Authenticated
-Bounded Stream Compaction` is
-complete on `main` at `8c5c644` through protected PR `#113`; required run
-`32042296142` and post-merge run `32042345162` passed. The existing
-`BingxFuturesShadowStreamStore` remains the sole runner-retention owner. A full
-authenticated 256-entry tail advances only after its exact final signed
-evidence is durably committed as the local checkpoint; restart continues the
-global sequence and predecessor hash without resetting or creating another
-journal. Corrupt, foreign-key, partial, conflicting, linked, or non-file state
-fails closed. Focused store `27/27`, combined shadow/replay `39/39`, Flutter
-`927/927`, analyze, Rust workspace, full review gates, clean detached-checkout,
-and the checkpoint-before-cleanup mutation test passed. No new DTO, service,
-owner, journal, credential, scheduler, deployment, Capsule state, account read,
-or effect route was added. Scheduler, daemon, VPS deployment, external anchor,
-lease, remote effects, tags, and Releases remain unauthorized. A local
-checkpoint does not provide rollback resistance; external anchoring remains a
-separate prerequisite before any remotely authorized effect. The preceding
-`1.x Flutter Test Runtime Isolation Remediation` is
-complete on `main` at `24eb042` through protected PR `#111`; required run
-`32036080325` and post-merge run `32036163520` passed.
-`UserVisibleDataDirectoryService` remains the sole home-resolution owner. Every
-Flutter test using default filesystem owners now runs beneath one suite-scoped
-temporary home retained through test completion; explicit per-test overrides
-retain precedence. Default `CapsuleFileStore` and `UiEventLogService` probes,
-real-root negative evidence, mutation-tested architecture gate, Flutter
-`921/921`, analyze, Rust workspace, full review gates, and clean detached-
-checkout validation passed. Real runtime and user-visible Hivra roots are
-sealed from test reads, writes, migration, and cleanup. No production storage
-route, DTO, service, owner, runtime behavior, product pass, V2 pass, deployment,
-tag, or Release was added. No following pass is selected automatically. The
-preceding `1.x Chat Execution Control Durable Lifecycle
-Remediation` is complete on `main` at `bb4b52a` through protected PR `#109`;
-required run `32032243278` and post-merge run `32032343388` passed. The existing native Chat
-handoff remains the sole transport ingress owner and the existing
-`CapsuleDeliveryInboxStore` remains the sole 1.x Flutter delivery-capability
-retention owner. An authenticated execution command or receipt may advance its
-adapter acknowledgement only after its exact decision/receipt is durably
-committed. A failed deterministic receipt send retains the exact canonical
-receipt and retries it after restart without re-evaluating the command. Receipt
-sender, target, peer, Capsule, command id, canonical hash, and stable record id
-remain bound and fail closed. No second inbox, execution route, provider
-effect, Core/Ledger fact, plugin ABI, scheduler, deployment, tag, or Release is
-authorized. Flutter `920/920`, analyze, Rust workspace, full review gates,
-clean detached-checkout gates, and focused Chat delivery `33/33` passed. No
-following pass is selected automatically. The preceding `1.x Trading Shadow Identity Atomic Commit
-Remediation` is complete on `main` at `2af3de5` through protected PR `#107`;
-required run `32027671293` and post-merge run `32027767936` passed.
-`BingxFuturesShadowStreamStore` remains the sole runner-only identity and
-evidence retention owner. Initial identity binding uses one fixed pending file,
-flush, then atomic rename before producing evidence. Recovery is permitted only
-for exact uncommitted identity state while the stream is empty; committed
-corruption, foreign-key pending identity, committed-plus-pending ambiguity, and
-unbound retained state fail closed before the producer runs. Flutter `919/919`,
-analyze, Rust workspace, full review gates, clean-checkout gates, and `21/21`
-focused tests passed. No new DTO, service, owner, credential, scheduler,
-deployment, provider, effect, Core/Ledger path, tag, or Release was added. No
-following pass is selected automatically. The preceding `1.x Trading
-Execution Outcome Truth Remediation` is complete on `main` at `505c4ca`
-through protected PR `#105`; required run
-`32025516002` and post-merge run `32025615776` passed. The existing
-`BingxFuturesExchangeExecutionUseCaseService` remains the sole provider-effect
-owner, and `BingxFuturesTradingCycleUseCaseService` remains the sole cycle
-consumer. A cycle reports `executed` only when the canonical execution owner
-and nested provider result both prove success. Provider rejection, timeout,
-missing success evidence, or contradictory wrapper status remains non-success;
-a reserved event claim remains unconfirmed and cannot authorize recreation.
-Flutter `913/913`, analyze, Rust workspace, full review gates, clean-checkout
-gates, `32/32` focused tests, required PR gates, and post-merge CI passed. No
-DTO, provider, effect route, scheduler, Remote Runner/VPS, Core/Ledger path,
-tag, or Release was added. The preceding
-`1.x Chat Durable Handoff Capacity Remediation` is complete on `main` at
-`340c8a6` through protected PR `#103`; required run `32024383365` and
-post-merge run `32024462405` passed. The existing native Chat handoff remains the sole transport-to-
-capability retention owner, and `CapsuleDeliveryInboxStore` remains the sole
-durable Flutter timeline owner. Ordinary messages must acknowledge their exact
-adapter event only after durable timeline merge; handoff records and replay
-tombstones must remain bounded FIFO windows that overwrite oldest retained
-state instead of permanently exhausting capacity. No second inbox, transport,
-DTO, Core/Ledger fact, or notification path is authorized. The preceding
-bounded `1.x Trading Remote Runner Pass D` crash-atomic append remediation is
-complete on `main` at `ede2eb3` through
-protected PR `#101`; required PR run `32021137109` and post-merge run
-`32021215679` passed. The existing deterministic replay harness remains the
-shadow-evidence semantics and authentication owner. The public-only probe now
-appends through one runner-only store that authenticates retained evidence and
-continues its immutable sequence/predecessor chain after restart. Retention is
-bounded at 256 entries; corruption, key confusion, conflict, full capacity,
-and exhausted inter-process lock budget fail closed. Flutter `910/910`,
-`flutter analyze`, Rust workspace tests, `review_all.sh`, clean-checkout gates,
-`15/15` focused crash-atomic adverse tests, required PR gates, and post-merge CI
-passed. The earlier live BingX observation and independent OpenSSL signature
-verification remain Pass C evidence. Scheduler, daemon, rotation,
-transport/receiver, VPS deployment, remote credentials, lease activation,
-account reads, live order, background execution, second effect route,
-Core/Ledger facts, tag, and Release remain blocked. The preceding `1.x
-Trading Capsule-Owned Bounded Mandate` is complete on `main` at `61f8f1d`. The existing
-Capsule-scoped `BingxFuturesOrderTrackingStore` remains the sole mandate-state
-owner and `BingxFuturesExchangeExecutionUseCaseService` remains the sole
-exchange-effect and enforcement owner. Every new order effect now requires one
-active versioned mandate bound to the exact Capsule, account, symbol,
-test/live mode, validity window, notional ceiling, risk policy, and effect
-budget. Expired, revoked, malformed, mismatched, escalated, or exhausted
-mandates fail closed without creating a second effect route, Core/Ledger fact,
-plugin ABI, or general mandate runtime. Protected PR `#91`, required branch
-gates run `31915301503`, and post-merge repository-gates run `31915346326`
-passed. Same-source automatic packaged control smoke created one test-mode
-mandate on macOS, preserved its exact id across cold restart, revoked it through
-Emergency Pause, and preserved the revoked state across another cold restart.
-The pre-existing effect-claim count remained one and no new provider effect was
-requested. The Android upgrade preserved its Capsules and opened the shared
-Trading UI paused; `Run Intent` was not invoked. Source was `61f8f1d`; macOS
-Release build `1.0.3+100030017` ZIP SHA-256 was
-`3bec7a6ce665de33345eee5cd1a079d29efacfe5d0b2f1bb2886915279e19b9a`, and
-Android Release build `1.0.3+100030042` APK SHA-256 was
-`9c68811a0aae3f08d61f22d9668166cff29d62b9bc1786f5c68d7239be20a755`.
-No live order, background execution, Remote Runner/VPS, tag, or Release was
-created. `1.x Trading Durable Emergency Pause` is complete on
-`main` at `4d2f09f`. The existing Capsule-scoped
-`BingxFuturesOrderTrackingStore` remains the sole operational-state owner and
-`BingxFuturesExchangeExecutionUseCaseService` remains the sole exchange-effect
-owner. Trading now starts fail-closed, explicit enable/pause state survives
-restart and Capsule switching, and the execution owner checks the durable state
-before risk work and again immediately before claim/queue. Missing, legacy, or
-malformed control state cannot authorize an effect. This closes the
-process-local `_droneEnabled = true` path without creating a mandate runtime,
-new service, second effect route, Core/Ledger fact, or plugin ABI. Protected PR
-`#88`, required branch gates, and post-merge repository-gates run
-`31904504430` passed. Same-source smoke-only Release build
-`1.0.3+100030041` proved Android enabled and paused states across separate cold
-restarts, then left the Capsule paused. macOS restored the paused state after a
-cold process restart and explicit Keychain authorization. Source was
-`4d2f09f`; the macOS executable SHA-256 was
-`6a8e82254649fb3f532b1d7190309e287d9c2dd1fb2b56b4e056402d07de1e90`
-and the Android APK SHA-256 was
-`01303b706745ce4d9ef7e2df4a3e696872f8194c4f169047116b618ecf121027`.
-No provider effect, tag, or Release was created. The preceding
-`1.x Trading Productization — Local Strategy Lifecycle Evidence` is complete on
-`main` at `e25b1e0`. The existing live-strategy, plugin-intent, risk,
-execution-queue, managed-order, and exchange-execution owners proved one canonical local cycle:
-packaged macOS diagnostics captured a successful test-order receipt, stable
-semantic freshness, persisted ownership evidence, cold-restart reconciliation,
-and no duplicate provider effect; the same Android package loaded the Trading
-Drone, fetched 1,039 perpetual markets, rejected a paused intent before any
-effect, and restarted without adopting an unrelated order. No new runtime owner
-or route was added. Live orders, background execution, Remote Runner/VPS, a
-bounded mandate, new DTO/service/effect paths, v2, tags, and Releases remain
-blocked. A bounded trading mandate and remote host remain later explicit
-decisions; this remediation authorizes neither. `1.x Moltbook
-Person-First Runtime Community Bootstrap` is complete on `main` at
-`dc15de9`. Protected PR `#75` and post-merge repository-gates run
-`31881796780` passed. Packaged macOS Hands smoke used source `dc15de9`, Release
-build `1.0.3+100030035`, and ZIP SHA-256
-`d5236f5c5f893b724882efabe9f4b87385f1d668587c5f83886f92e8c1d670fb`.
-After a confirmed rejected credential, a new exact acknowledgement requeued
-the same stable operation `moltbook-submolt-91957960...4cb9d`; it succeeded on
-attempt two with provider receipt `7f40d1ea-e89c-4b5a-a81d-0fa0608da56f`.
-Independent public observation matched the exact descriptor and creator
-account `hivra_ambassador`. Cold restart restored one succeeded community
-operation, kept post/comment effect counts unchanged at `5/5`, projected
-ownership verification, and selected `m/person-first-runtime` as the local
-draft destination. No automatic post, duplicate community, DTO, service,
-adapter, owner, or second effect route was created. Generic community
-management, AI-selected destinations, post migration, background execution,
-tags, Releases, Remote Runner/VPS, and v2 remain blocked. Flutter test
-filesystem isolation issue `#76` is registered separately and is not part of
-this completed effect pass. The preceding `1.x Moltbook Bundled Public Change
-Ingestion` and its draft-binding remediation remain complete on `main` at
-`c3949bf`, with packaged macOS Hands evidence recorded in `roadmap.md`. `1.x Chat Contact Selection
-Projection` remains complete on `main` at `c56213f`. The existing Chat
-`TextEditingController` remains the sole selected-peer owner, and the workspace
-now observes that controller directly instead of waiting for an unrelated
-dialog rebuild. The negative-before/positive-after widget vector, `849/849`
-Flutter tests, full local and clean-checkout gates, protected PR `#69`, green
-post-merge repository gates, and packaged Android Hands smoke from source
-`c56213f`, build `1.0.3+100030031`, prove that one tap selected `h1un5...` and
-immediately projected the conversation header and enabled composer. Android
-artifact SHA-256 is
-`1990e92157cc623d0efb582533ee2acbf2f29a25a0eeae71c8dd5642f8dfa544`.
-No second selected-peer state, picker, DTO, service, or Chat route was added.
-The previous `1.x Chat Conversation Workspace UX` pass is complete. Protected
-PR `#67`, merge source `aafbf52`, green
-post-merge repository gates, and packaged macOS/Android Hands smoke from the
-same source at build `1.0.3+100030030` close the passive-projection and viewport
-remediations. One `CUX31 open live` send entered the already-open Android
-conversation through periodic passive receive, grew the retained timeline from
-16 to 17, and appeared immediately at the normal Chat edge without refresh,
-scroll, reopen, or restart. The pass keeps `WasmPluginsScreen` as workspace
-orchestrator and `CapsuleDeliveryInboxStore` plus the existing Chat delivery and
-attestation services as the sole state and lifecycle owners. It adds no receive,
-transport, inbox, DTO, service, Core/Ledger, FFI/WASM, attachment,
-background-delivery, or notification path. No tag or Release is selected.
-The preceding `1.x Capsule-scoped Chat Unread Indicator` remains complete.
-The preceding durable receive handoff is complete on `main` at `c9caa7e` with
-green protected PR/post-merge gates and packaged macOS/Android restart smoke.
-The bounded implementation extends the existing Chat inbox/projection owner
-with one persisted Capsule-scoped read state over retained message ids. The
-cross-screen Plugins navigation badge is a shell projection only, and messages
-become read only after the canonical Chat workspace projects them. Replay,
-restart, retention, corruption, Capsule isolation, and concurrent projection
-vectors are covered. Protected PR `#60`, post-merge run `31673505950`, and
-fresh packaged macOS/Android Hands smoke from source `d50e70f`, local build
-`1.0.3+100030025`, completed the pass. A second inbox,
-transport route, Core/Ledger fact, OS push service, attachment lifecycle, or
-cross-Capsule unread state is not authorized. The bounded Android
-Invitations refresh remediation is complete on `main` at `96433fa`. The top-
-bar action now invokes the existing canonical passive-receive owner, refreshes
-the retained Capsule-scoped projection independently of Ledger-version change,
-and presents every non-empty result through the same invitation feedback path
-as pull-to-refresh. Fresh packaged Android Release smoke from `96433fa`, local
-build `1.0.3+100030023`, SHA-256
-`0886443a6eee643025395f8b0310c8e0a2f1df3ae06a1c5fcc657e413483c151`,
-proved a top-bar tap produced `reason=manual` and the user-visible
-`No new invitation deliveries` result without a swipe. Protected PRs `#54`
-and `#56` and post-merge repository gate `31664542748` passed. No second
-receive, inbox, transport, projection, or feedback owner was added. The bounded
-P2 Capsule AI unlock remediation is complete on `main`. Packaged macOS Release
-smoke from `b6c2e01` migrated the legacy provider preference, then a cold restart unlocked
-Gemini with zero password prompts and changed `Unlock AI` to `Lock AI`. Provider
-credentials remain in Secure Storage while the non-secret provider id belongs
-to local configuration under the same credential owner. No second credential
-owner, provider path, or AI authority was added. The completed Moltbook feed
-pass adds one
-Capsule-scoped, commitment-bound queue of explicitly confirmed public facts to
-the existing Moltbook plugin-state owner. Gemini may propose the next queued
-item only after process-scoped unlock; the existing WASM draft, exact approval,
-external-effect, receipt, and reconciliation owners remain unchanged. Direct
-AI access to Ledger, repository, Capsule history, credentials, or publication
-authority remains forbidden. A Git/CI producer is not part of this pass.
-Trading Restart Recovery and Reconciliation is complete on `main`. Exact
-account-bound provider evidence now distinguishes active,
-terminal, and unresolved managed orders without adopting manual orders or
-recreating missing effects. Remote Runner/VPS and background execution remain
-blocked. `v1.0.3-test16` remains the published
-GitHub test prerelease. Exact artifacts built from clean source commit `30e0800` passed
-packaged hands smoke on macOS and Android; release tag `v1.0.3-test16` records
-the evidence-only HEAD `2a23411`. The published macOS artifact is unsigned and
-not notarized. Moltbook Reference-Grade passes A-B closed the session-trigger
-latch and verified the existing Assisted post/reply lifecycle through exact
-approval, publication challenge, receipt reconciliation, cold restart, and
-no-duplicate recovery on Android. No new effect owner, release candidate, or
-automatic publication authority was added. Moltbook Reference-Grade Pass C is
-complete: explicit foreground nested-reply authority uses the existing
-engagement/effect path. Android Hands smoke found that WASM could
-reselect a journal-owned comment and stop before considering another eligible
-comment; the existing publication owner now filters such targets before
-planning. Follow-up Android smoke then proved that a `no_action` result on the
-first heartbeat candidate starved later candidates; the same cycle owner now
-continues through the bounded ordered set while still advancing at most one
-action. Final cross-Capsule review found that the same external account could
-already have answered a target from another local Capsule, so provider-visible
-direct replies now close that target before planning. Packaged Hands smoke from
-source `4899b2d`, build `1.0.3+100030020`, passed on macOS and Android: exact
-approval, challenge verification, provider receipt, public visibility, cold
-restart, ordered candidate exhaustion, and no duplicate effect were confirmed.
-The Trading protective-order ownership audit is complete. BingX placement and
-open-orders contracts expose no verified parent-to-generated-protection ID
-binding, while the documented `triggerOrderId` read field is insufficiently
-directional to authorize ownership. Hivra therefore keeps those orders
-`Exchange only`; exact managed `orderId` evidence and Capsule-scoped tracking
-remain the only ownership path. No heuristic adoption, second registry, DTO,
-service, exchange effect, or runtime route was added. The bounded Capsule AI
-Runtime restart acceptance is complete. It changed no production runtime:
-automated evidence proves process-lock and Capsule binding, while packaged
-macOS `test16` evidence proves that Gemini configuration survives a cold start,
-an explicit Ask restores the saved credential without key re-entry, outbound
-context remains redacted, provider backpressure is visible, and one bounded
-retry returns an advisory result. Trading Remote Runner Pass B remediation is
-complete: public market shadow computation is physically separated from local
-consensus/risk/execution inputs, verification begins from exact canonical
-untrusted bytes, and Dart plus independent Python golden evidence covers wire,
-hash, key binding, and negative mutations. Runtime consumers, network,
-persistence, credentials, UI, VPS, exchange effects, Pass C, and a second
-execution path remain unauthorized. The bounded post-Pass-B consolidation is
-complete: the existing TVH rule owner now exposes market-only evaluation
-without consensus inputs, while its existing guarded entry retains local
-consensus policy. No decision semantics or product authority changed.
-Trading Liquidity Lifecycle hardening is complete as a bounded 1.x product
-pass. The
-existing market pipeline now excludes forming provider candles from the
-canonical snapshot digest, derived liquidity, and zone evaluation, and the
-existing zone owner reduces a bounded closed-candle sweep/reclaim lifecycle
-with ATR-body, expiry, and retest limits. No new owner, plugin ABI, credential,
-network, persistence, remote runner, or exchange-effect path is added. Full
-automated gates and an automatic macOS zone-calculation smoke are complete. The
-smoke scanned the six-symbol Core Watchlist, selected a READY SOL-USDT setup,
-calculated an executable fresh sellside zone, and prepared a decision envelope
-without invoking an exchange order effect. No live order, release, or following
-pass was authorized by that result. The active pass keeps liquidity-event
-identity in the existing zone owner, freshness and exchange submission in the
-existing execution use case, and durable Capsule-scoped effect claims in the
-existing managed-order store. Remote Runner/VPS, background execution, a new
-plugin ABI, and any second effect route remain unauthorized.
-Stable `1.0`, another release candidate, and 2.0 runtime work remain
-unauthorized without a separate explicit decision.
-V2-0 passes A-E and V2-1 passes A-E are complete; 2.0 design is paused with no
-next pass selected. They
-established repository ownership evidence, Capsule identity/birth, Starter
-inventory, continuity export, recovery, and Capsule selection/prepared-
-activation contracts without changing a runtime path. Recovery, persistence,
-UI/FFI, addressing, seed handling, import/export/delete, and runtime
-implementation remain unauthorized. Capsule AI Runtime convergence remains
-complete, feature-owned provider dispatch and credential reads remain zero,
-and the full T0 environment verifier matches every repository pin. No AI-5,
-T1, or other runtime upgrade is implied.
-Transactional serialized
-plugin install/update/remove is complete; authenticated Nostr delivery uses
-signed kind `9444` plus NIP-44 v2, while deprecated kind `4`/NIP-04 remains
-isolated to guarded read-only compatibility input.
-
-This is the short operational map for deciding what Hivra work is happening
-now. It is not a second specification, backlog, or release record. It points
-to the authoritative document for each kind of decision.
+Current development focus: `1.x Documentation Control Consolidation` is the
+only selected unit. It removes historical pass evidence and stale selections
+from this navigation board; it changes no runtime, protocol, deployment,
+release, or product authority. Trading Remote Runner Pass M is complete; its
+detailed evidence remains owned by `roadmap.md`. No following product pass is
+selected automatically.
 
 ## 1. Read This First
 
@@ -447,46 +17,27 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Trading Remote Runner Pass E is selected to replace the authenticated shadow stream's finite 256-entry dead end with one bounded checkpointed continuation path. | `roadmap.md`, Trading Drone goal contract |
+| What is the next 1.x step? | Documentation Control Consolidation only; no product or runtime pass is selected. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
-Do not start from the chronological history in `roadmap.md`. Start from this
-table, then open only the linked authority for the selected work item.
+Do not infer current work from chronological history in `roadmap.md`. Start
+from this table, then open only the linked authority for the selected unit.
 
 ## 2. Current Development Board
 
-| Line | State | Current unit | Completion evidence | Next boundary |
+| Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading Remote Runner Pass E selected | The existing shadow-stream store owns authenticated bounded compaction; canonical signed evidence remains the only checkpoint wire. | Full-tail continuation, crash-overlap recovery, conflict/no-delete and mutation evidence are required before closure. | Scheduler, VPS deployment, external anchoring, leases, account reads, and remote effects remain blocked. |
-| **1.x release** | `v1.0.3-test16` published as test prerelease | Verified source artifacts from `30e0800`; evidence-only release tag at `2a23411`. | Manual signoff, guarded preflight, exact remote asset digests, PR gates, and post-merge gates passed. | No next candidate or stable `1.0` claim is selected automatically. |
-| **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused with no next pass selected | No active 2.0 unit. Runtime implementation remains unauthorized. | Post-Pass E consolidation confirmed one normative blueprint owner, subordinate schema/vector evidence, history-only roadmap entries, and registry-owned production debt without a duplicate contract source. | Resume only by an explicit later decision; do not infer Pass F. |
-| **Platform toolchain** | T0 reverified | One baseline manifest, exact Rust pin, and fail-closed verifier cover the Flutter/Dart, Rust, Android, and macOS matrix. | Full verification on 2026-08-04 matches every pin; only the documented simulator-discovery and host-evidence warnings remain outside macOS/Android packaging scope. | T1 remains unselected; select a dedicated upgrade unit only after V2-0/pass A or a release-blocking toolchain finding. |
-| **Capsule AI Runtime** | P2 unlock remediation complete on `main` | The existing credential owner keeps provider credentials in Secure Storage, the non-secret provider id in local configuration, and one process lease. | One protected read per post-migration unlock, bounded non-enumerating legacy migration, malformed local preference failure, PR `#52`, post-merge run `31659447915`, and packaged macOS cold-restart smoke from `b6c2e01`. | No next AI pass is selected; no second credential owner or AI-5. |
-| **Future product tracks** | Parked | AI trading advice, distributed backup drone, staking drone, and any further Moltbook authority remain unselected. Moltbook Observe/Assisted effects and explicit foreground bounded replies retain their existing reviewed boundaries. | Their own approved contract and capability-closure result; Moltbook additionally follows `plugins/moltbook_engagement_lifecycle_v1.md`. | They do not become active without an explicit product decision. |
+| **1.x maintained runtime** | Documentation-only consolidation selected | Remove stale current-state claims and duplicate historical evidence from this file. | No runtime or product pass is selected automatically. Durable runner identity, persistent installation, boot enablement, external anchoring, account reads, leases, and remote effects remain unauthorized. |
+| **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
+| **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
+| **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
+| **Capsule AI Runtime** | Current remediation complete | The existing credential owner and one process lease remain canonical. | No second credential owner or AI-5 is selected. |
+| **Future product tracks** | Parked | AI trading advice, distributed backup, staking, and further Moltbook authority remain unselected. | Each requires its own approved contract and capability-closure decision. |
 
 `12.3` passes 1-18 are complete. Any later transport remediation requires a
-new named finding and bounded pass; no pass is inferred merely because a screen
-appears to work in one manual run.
-
-### Ordered Tail
-
-This is the current execution order, not a second backlog:
-
-1. **P1 — complete:** The bounded Moltbook Capsule Public Change Feed passed
-   full gates, protected PR `#50`, and post-merge CI at `caed6d4`. No next pass
-   is selected; do not infer Git/CI ingestion, automatic publication, Remote
-   Runner/VPS, background trading, or release.
-2. **P2 — complete:** AI provider preference migration and post-migration cold
-   unlock passed from `b6c2e01`; the same process lease and credential owner
-   remain canonical.
-3. **P3 — parked work:** crypto-agility protocol design, dependency upgrades,
-   AI trading advice, distributed backup, and staking remain non-runtime or
-   parked until the active design unit or a named release decision permits
-   selection.
-
+new named finding and bounded pass; no pass is inferred from one manual run.
 Unchecked boxes in reusable release/smoke checklists are execution templates,
-not automatically active debt. A checklist becomes active only for a named
-candidate or selected pass recorded here and in `roadmap.md`.
+not automatically active debt.
 
 ## 3. The Only Two Work Lanes
 
@@ -533,10 +84,11 @@ At the end of a meaningful pass, update only the source that owns its status:
 | Change type | Update |
 | --- | --- |
 | Current behavior, protocol, invariant | `specification.md` and, if user-visible, `hivra-conceptual-model.md` |
-| Engineering item state / next pass | `roadmap.md` and the board in this file |
+| Engineering history and debt | `roadmap.md` |
+| Current unit and next decision | The board in this file |
 | 2.0 ownership / contract / migration proof | `architecture-v2-blueprint.md` and the board in this file |
 | Flutter/Rust/Android/macOS toolchain update | `docs/platform-toolchain-evolution.md`, the roadmap, and release evidence |
-| Release readiness | the applicable release checklist and release evidence |
+| Release readiness | The applicable release checklist and release evidence |
 
 No status update means the work is not ready to be called complete.
 
@@ -591,7 +143,4 @@ For a normal 1.x repair, read only:
 
 For 2.0 design, replace item 2 with `architecture-v2-blueprint.md` and use the
 current code only to inventory reality. This keeps the context small without
-forgetting the product's hard rules. `V2-0` may start once the current baseline
-and ordered 1.x debt are reflected consistently in this document and the
-roadmap; it remains design evidence only until the blueprint exit criteria are
-satisfied.
+forgetting the product's hard rules.
