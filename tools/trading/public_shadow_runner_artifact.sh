@@ -448,6 +448,29 @@ PY
   echo "PASS trading-runner-artifact: built $output"
 }
 
+wait_for_exact_unit_evidence() {
+  local since="$1"
+  local expected_sequence="$2"
+  local log=""
+  local evidence=""
+  local active_state=""
+  for _ in $(seq 1 120); do
+    log="$(journalctl -u "$UNIT_NAME" --since "$since" --no-pager -o cat)"
+    evidence="$(printf '%s\n' "$log" |
+      grep "^shadow_evidence_appended=$expected_sequence " | tail -1 || true)"
+    [ -z "$evidence" ] || break
+    active_state="$(systemctl show -p ActiveState --value "$UNIT_NAME")"
+    [ "$active_state" != "failed" ] || {
+      printf '%s\n' "$log" >&2
+      die "exact unit failed before evidence sequence $expected_sequence"
+    }
+    sleep 1
+  done
+  [ -n "$evidence" ] ||
+    die "exact unit produced no evidence sequence $expected_sequence"
+  printf '%s\n' "$evidence"
+}
+
 ephemeral_install_smoke() {
   local directory="$1"
   verify_artifact "$directory" >/dev/null
@@ -565,28 +588,30 @@ ephemeral_install_smoke() {
   local started_at
   started_at="$(date --iso-8601=seconds)"
   systemctl start "$UNIT_NAME"
-  local log=""
-  local active_state=""
-  for _ in $(seq 1 120); do
-    log="$(journalctl -u "$UNIT_NAME" --since "$started_at" --no-pager -o cat)"
-    if printf '%s\n' "$log" | grep -q '^shadow_evidence_appended='; then
-      break
-    fi
-    active_state="$(systemctl show -p ActiveState --value "$UNIT_NAME")"
-    [ "$active_state" != "failed" ] || {
-      printf '%s\n' "$log" >&2
-      die "ephemeral exact unit failed before evidence append"
-    }
-    sleep 1
-  done
-  local evidence
-  evidence="$(printf '%s\n' "$log" | grep '^shadow_evidence_appended=' | tail -1)"
-  [ -n "$evidence" ] || die "ephemeral exact unit produced no evidence"
+  local first_evidence
+  first_evidence="$(wait_for_exact_unit_evidence "$started_at" 1)"
   [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "active" ] ||
     die "ephemeral exact unit is not active after first cycle"
   [ "$(systemctl show -p NRestarts --value "$UNIT_NAME")" = "0" ] ||
     die "ephemeral exact unit restarted unexpectedly"
-  printf '%s\n' "$evidence"
+
+  systemctl stop "$UNIT_NAME"
+  [ -f "$CREDENTIAL_INSTALL_PATH" ] ||
+    die "encrypted runner credential disappeared across stop"
+  [ -f "$STATE_DIRECTORY/stream/stream_identity.v1.json" ] ||
+    die "runner identity state disappeared across stop"
+  local restarted_at
+  restarted_at="$(date --iso-8601=seconds)"
+  systemctl start "$UNIT_NAME"
+  local second_evidence
+  second_evidence="$(wait_for_exact_unit_evidence "$restarted_at" 2)"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "active" ] ||
+    die "ephemeral exact unit is not active after restart continuity"
+  [ "$(systemctl show -p NRestarts --value "$UNIT_NAME")" = "0" ] ||
+    die "restart continuity used an implicit supervisor restart"
+  [ "$first_evidence" != "$second_evidence" ] ||
+    die "restart continuity repeated the first evidence"
+  printf '%s\n%s\n' "$first_evidence" "$second_evidence"
   systemctl show "$UNIT_NAME" \
     -p MemoryMax \
     -p MemorySwapMax \
@@ -611,7 +636,7 @@ ephemeral_install_smoke() {
   done
   systemctl cat "$UNIT_NAME" >/dev/null 2>&1 &&
     die "ephemeral install cleanup retained the loaded unit"
-  echo "PASS trading-runner-artifact: exact unit installed, started, and removed without enablement"
+  echo "PASS trading-runner-artifact: exact unit retained encrypted identity across restart and cleaned up without enablement"
 }
 
 self_test() {

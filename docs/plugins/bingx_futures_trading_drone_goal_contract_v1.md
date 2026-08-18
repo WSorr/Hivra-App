@@ -817,6 +817,29 @@ anchor, release artifact, tag, or Release. A persistent host identity and
 boot-enabled observation service require a separate decision after this smoke
 evidence is closed.
 
+### 11.21 Pass N: Encrypted Identity Restart Continuity
+
+Pass N strengthens the existing exact-unit smoke without adding an installer,
+credential owner, stream, or supervisor. The same encrypted runner-only
+credential and the same private systemd state directory must survive one
+explicit stop/start boundary. The first process must append sequence `1`; the
+second must append sequence `2` through the existing authenticated stream.
+Sequence reset, repeated first evidence, missing credential, missing committed
+identity, implicit supervisor restart, or cleanup residue fails the smoke.
+
+The existing stream store remains the identity and evidence owner. Its
+committed `runner_key_id` rejects a missing or foreign seed before the public
+provider producer is invoked, while exact same-key restart continues the
+sequence and predecessor chain. The artifact script only orchestrates evidence
+for that existing contract; it does not define a second recovery mechanism.
+
+This pass proves process-restart continuity, not durable production recovery.
+Credential rotation, replacement after loss, boot enablement, persistent
+installation, rollback-resistant external anchoring, account reads, leases,
+exchange effects, tags, and Releases remain unauthorized. On the audited VPS,
+host-root or offline-disk compromise remains outside this runner-only evidence
+boundary and cannot be promoted into Capsule or trading authority.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

@@ -3488,6 +3488,26 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     against 473 removals across the pass. No owner, gate, runtime path, VPS
     state, tag, or Release was added. No following pass is selected.
 
+- `1.x Trading Remote Runner Pass N — Encrypted Identity Restart Continuity`
+  - Lane: bounded 1.x host-lifecycle evidence; no persistent deployment,
+    account access, effect, release, or 2.0 work.
+  - Invariant: the exact unit appends sequence `1`, crosses one explicit
+    stop/start boundary with the same encrypted runner-only credential and
+    retained state, then appends sequence `2` without an implicit restart.
+  - Sole owner: the existing shadow store owns identity and evidence; the
+    existing artifact script only orchestrates the exact-unit smoke. No owner,
+    service, DTO, credential store, journal, or effect path is added.
+  - Removed or sealed: host restart continuity can no longer be inferred from
+    local store tests or one process start. Sequence reset, missing identity,
+    repeated evidence, implicit restart, and cleanup residue fail closed.
+    Rotation/replacement, persistent installation, boot enablement, external
+    anchoring, account reads, leases, effects, tags, and Releases remain sealed.
+  - Exit evidence: focused probe/store tests, artifact and parity negative
+    mutations, full local and clean-checkout gates, one exact-bundle VPS
+    stop/start smoke with website and Amnezia continuity, protected PR, and
+    green post-merge CI.
+  - Status: selected; implementation and host evidence pending.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
