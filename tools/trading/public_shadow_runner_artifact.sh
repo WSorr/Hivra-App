@@ -23,6 +23,7 @@ MODE=""
 ARTIFACT_DIR=""
 TARGET_OS=""
 TARGET_ARCH=""
+EXPECTED_RUNNER_KEY_ID=""
 
 usage() {
   cat <<'EOF'
@@ -32,6 +33,11 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --verify <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --runtime-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --install-disabled <artifact-dir>
+  tools/trading/public_shadow_runner_artifact.sh --initialize-disabled <artifact-dir>
+  tools/trading/public_shadow_runner_artifact.sh --activate <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+  tools/trading/public_shadow_runner_artifact.sh --deactivate <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --uninstall-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --self-test
@@ -40,7 +46,9 @@ The build mode requires a completely clean worktree and the pinned Dart SDK.
 It produces one host-native executable, the exact systemd unit, and one exact
 provenance manifest. Host lifecycle modes require a root Linux systemd host.
 Installation requires empty canonical target paths and leaves the exact unit
-disabled and inactive. Uninstall refuses drifted or foreign-owned paths.
+disabled and inactive. Initialization proves its persistent identity without
+enabling it. Activation requires that exact identity. Uninstall refuses drifted
+or foreign-owned paths.
 EOF
 }
 
@@ -474,6 +482,35 @@ wait_for_exact_unit_evidence() {
   printf '%s\n' "$evidence"
 }
 
+current_unit_journal_cursor() {
+  local cursor
+  cursor="$(journalctl -u "$UNIT_NAME" -n 0 --show-cursor --no-pager |
+    sed -n 's/^-- cursor: //p' | tail -1)"
+  [ -n "$cursor" ] || die "could not establish exact unit journal cursor"
+  printf '%s\n' "$cursor"
+}
+
+wait_for_unit_evidence_after_cursor() {
+  local cursor="$1"
+  local log=""
+  local evidence=""
+  local active_state=""
+  for _ in $(seq 1 120); do
+    log="$(journalctl -u "$UNIT_NAME" --after-cursor="$cursor" --no-pager -o cat)"
+    evidence="$(printf '%s\n' "$log" |
+      grep '^shadow_evidence_appended=[1-9][0-9]* ' | tail -1 || true)"
+    [ -z "$evidence" ] || break
+    active_state="$(systemctl show -p ActiveState --value "$UNIT_NAME")"
+    [ "$active_state" != "failed" ] || {
+      printf '%s\n' "$log" >&2
+      die "exact unit failed before identity evidence"
+    }
+    sleep 1
+  done
+  [ -n "$evidence" ] || die "exact unit produced no identity evidence"
+  printf '%s\n' "$evidence"
+}
+
 require_install_host() {
   local directory="$1"
   verify_artifact "$directory" >/dev/null
@@ -487,6 +524,204 @@ require_install_host() {
   command -v openssl >/dev/null 2>&1 || die "openssl is required"
   command -v systemctl >/dev/null 2>&1 || die "systemctl is required"
   command -v systemd-creds >/dev/null 2>&1 || die "systemd-creds is required"
+}
+
+require_expected_runner_key_id() {
+  printf '%s' "$EXPECTED_RUNNER_KEY_ID" |
+    grep -Eq '^[0-9a-f]{64}$' ||
+    die "expected runner key id must be 64 lowercase hex characters"
+}
+
+require_exact_installed_bundle() {
+  local directory="$1"
+  require_install_host "$directory"
+  local state_private="/var/lib/private/hivra-trading-public-shadow"
+  [ -d "$BUNDLE_INSTALL_PATH" ] && [ ! -L "$BUNDLE_INSTALL_PATH" ] ||
+    die "host lifecycle requires the canonical real bundle directory"
+  verify_artifact "$BUNDLE_INSTALL_PATH" >/dev/null
+  cmp -s "$BINARY_INSTALL_PATH" "$directory/$BINARY_NAME" ||
+    die "host lifecycle refused a drifted runner binary"
+  cmp -s "$UNIT_INSTALL_PATH" "$directory/$UNIT_NAME" ||
+    die "host lifecycle refused a drifted runner unit"
+  cmp -s "$BUNDLE_INSTALL_PATH/$MANIFEST_NAME" "$directory/$MANIFEST_NAME" ||
+    die "host lifecycle refused a drifted runner manifest"
+  [ -L "$UNIT_LINK_PATH" ] &&
+    [ "$(readlink "$UNIT_LINK_PATH")" = "$UNIT_INSTALL_PATH" ] ||
+    die "host lifecycle refused a foreign unit link"
+  [ -f "$CREDENTIAL_INSTALL_PATH" ] && [ ! -L "$CREDENTIAL_INSTALL_PATH" ] ||
+    die "host lifecycle refused a foreign credential"
+  if [ -L "$STATE_DIRECTORY" ]; then
+    [ "$(readlink -f "$STATE_DIRECTORY")" = "$state_private" ] ||
+      die "host lifecycle refused a foreign state link"
+  elif [ -e "$STATE_DIRECTORY" ]; then
+    [ -d "$STATE_DIRECTORY" ] || die "host lifecycle refused foreign state"
+  fi
+  systemctl cat "$UNIT_NAME" >/dev/null 2>&1 ||
+    die "host lifecycle requires the exact loaded unit"
+}
+
+read_installed_runner_key_id() {
+  local identity="$STATE_DIRECTORY/stream/stream_identity.v1.json"
+  python3 - "$identity" <<'PY'
+import json
+import os
+import pathlib
+import re
+import stat
+import sys
+
+path = pathlib.Path(sys.argv[1])
+try:
+    metadata = os.lstat(path)
+except FileNotFoundError:
+    raise SystemExit("runner identity is not initialized")
+if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 1024:
+    raise SystemExit("runner identity is not one bounded regular file")
+try:
+    value = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit("runner identity is invalid")
+if (
+    not isinstance(value, dict)
+    or set(value) != {"schema_version", "runner_key_id"}
+    or value["schema_version"] != 1
+    or not isinstance(value["runner_key_id"], str)
+    or re.fullmatch(r"[0-9a-f]{64}", value["runner_key_id"]) is None
+):
+    raise SystemExit("runner identity is invalid")
+print(value["runner_key_id"])
+PY
+}
+
+evidence_runner_key_id() {
+  printf '%s\n' "$1" |
+    sed -n 's/.* runner_key_id=\([0-9a-f]\{64\}\) .*/\1/p'
+}
+
+initialize_disabled() {
+  local directory="$1"
+  require_exact_installed_bundle "$directory"
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  trap 'systemctl stop "$UNIT_NAME" >/dev/null 2>&1 || true; rm -f "$lock_path"' EXIT INT TERM
+
+  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "disabled initialization refused an enabled unit" ;;
+  esac
+  [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
+    die "disabled initialization refused boot enablement"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "disabled initialization requires an inactive unit"
+
+  local journal_cursor
+  journal_cursor="$(current_unit_journal_cursor)"
+  systemctl start "$UNIT_NAME"
+  local evidence
+  evidence="$(wait_for_unit_evidence_after_cursor "$journal_cursor")"
+  [ "$(systemctl show -p NRestarts --value "$UNIT_NAME")" = "0" ] ||
+    die "disabled initialization used an implicit supervisor restart"
+  local evidence_key_id
+  local installed_key_id
+  evidence_key_id="$(evidence_runner_key_id "$evidence")"
+  installed_key_id="$(read_installed_runner_key_id)"
+  [ -n "$evidence_key_id" ] && [ "$evidence_key_id" = "$installed_key_id" ] ||
+    die "disabled initialization produced inconsistent identity evidence"
+  systemctl stop "$UNIT_NAME"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "disabled initialization did not stop"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "disabled initialization changed enablement" ;;
+  esac
+  [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
+    die "disabled initialization created boot enablement"
+
+  trap - EXIT INT TERM
+  rm -f "$lock_path"
+  exec 9>&-
+  printf '%s\n' "$evidence"
+  echo "PASS trading-runner-artifact: initialized disabled runner_key_id=$installed_key_id"
+}
+
+activate_identity_bound() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  trap 'systemctl stop "$UNIT_NAME" >/dev/null 2>&1 || true; systemctl disable "$UNIT_NAME" >/dev/null 2>&1 || true; rm -f "$lock_path"' EXIT INT TERM
+
+  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "identity-bound activation requires a disabled unit" ;;
+  esac
+  [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
+    die "identity-bound activation refused pre-existing boot enablement"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "identity-bound activation requires an inactive unit"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "identity-bound activation refused the installed runner key id"
+
+  local journal_cursor
+  journal_cursor="$(current_unit_journal_cursor)"
+  systemctl start "$UNIT_NAME"
+  local evidence
+  evidence="$(wait_for_unit_evidence_after_cursor "$journal_cursor")"
+  [ "$(evidence_runner_key_id "$evidence")" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "identity-bound activation observed a different runner key id"
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "active" ] ||
+    die "identity-bound activation did not remain active"
+  [ "$(systemctl show -p NRestarts --value "$UNIT_NAME")" = "0" ] ||
+    die "identity-bound activation used an implicit supervisor restart"
+
+  systemctl enable "$UNIT_NAME" >/dev/null
+  [ "$(systemctl is-enabled "$UNIT_NAME")" = "enabled" ] ||
+    die "identity-bound activation did not enable the exact unit"
+  [ -L "$wants_path" ] &&
+    [ "$(readlink -f "$wants_path")" = "$UNIT_INSTALL_PATH" ] ||
+    die "identity-bound activation created an unexpected boot link"
+
+  trap - EXIT INT TERM
+  rm -f "$lock_path"
+  exec 9>&-
+  printf '%s\n' "$evidence"
+  echo "PASS trading-runner-artifact: activated runner_key_id=$EXPECTED_RUNNER_KEY_ID"
+}
+
+deactivate_identity_bound() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  trap 'rm -f "$lock_path"' EXIT INT TERM
+
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "identity-bound deactivation refused the installed runner key id"
+  systemctl disable "$UNIT_NAME" >/dev/null
+  systemctl stop "$UNIT_NAME"
+  case "$(systemctl is-enabled "$UNIT_NAME" 2>/dev/null || true)" in
+    linked|disabled) ;;
+    *) die "identity-bound deactivation left the unit enabled" ;;
+  esac
+  [ "$(systemctl show -p ActiveState --value "$UNIT_NAME")" = "inactive" ] ||
+    die "identity-bound deactivation left the unit active"
+  local wants_path="/etc/systemd/system/multi-user.target.wants/$UNIT_NAME"
+  [ ! -e "$wants_path" ] && [ ! -L "$wants_path" ] ||
+    die "identity-bound deactivation retained boot enablement"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "identity-bound deactivation changed runner identity"
+
+  trap - EXIT INT TERM
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: deactivated runner_key_id=$EXPECTED_RUNNER_KEY_ID"
 }
 
 install_disabled() {
@@ -825,7 +1060,7 @@ self_test() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -844,6 +1079,12 @@ while [ $# -gt 0 ]; do
     --target-arch)
       [ $# -ge 2 ] && [ -z "$TARGET_ARCH" ] || die "invalid target-arch arguments"
       TARGET_ARCH="$2"
+      shift 2
+      ;;
+    --expected-runner-key-id)
+      [ $# -ge 2 ] && [ -z "$EXPECTED_RUNNER_KEY_ID" ] ||
+        die "invalid expected-runner-key-id arguments"
+      EXPECTED_RUNNER_KEY_ID="$2"
       shift 2
       ;;
     --help|-h)
@@ -869,12 +1110,30 @@ case "$MODE" in
     runtime_smoke_artifact "$ARTIFACT_DIR"
     ;;
   install-disabled)
-    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] ||
       die "disabled install reads the target only from the manifest"
     install_disabled "$ARTIFACT_DIR"
     ;;
-  uninstall-disabled)
+  initialize-disabled)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] ||
+      die "disabled initialization reads identity from exact evidence"
+    initialize_disabled "$ARTIFACT_DIR"
+    ;;
+  activate)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+      die "activation reads the target only from the manifest"
+    activate_identity_bound "$ARTIFACT_DIR"
+    ;;
+  deactivate)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+      die "deactivation reads the target only from the manifest"
+    deactivate_identity_bound "$ARTIFACT_DIR"
+    ;;
+  uninstall-disabled)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] ||
       die "disabled uninstall reads the target only from the manifest"
     uninstall_disabled "$ARTIFACT_DIR"
     ;;
@@ -884,7 +1143,8 @@ case "$MODE" in
     ephemeral_install_smoke "$ARTIFACT_DIR"
     ;;
   self-test)
-    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] ||
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$EXPECTED_RUNNER_KEY_ID" ] ||
       die "self-test does not accept a target"
     self_test
     ;;

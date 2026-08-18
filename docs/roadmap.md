@@ -3607,6 +3607,37 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     checkout, artifact self-tests, and independent lifecycle mutations passed.
     No following pass is selected.
 
+- `1.x Trading Remote Runner Pass Q — Explicit Identity-Bound Activation`
+  - Lane: maintained 1.x host lifecycle; public-market shadow observation only.
+  - Invariant:
+    - an installed runner may become boot-enabled only after its committed
+      `runner_key_id` matches both the operator's expected fingerprint and new
+      authenticated evidence from the exact disabled unit.
+  - Sole owner:
+    - `tools/trading/public_shadow_runner_artifact.sh` remains the only install,
+      initialization, activation, deactivation, and uninstall owner.
+  - Threat model:
+    - blind first-boot identity creation, wrong-key activation, bundle or unit
+      drift, foreign path adoption, pre-existing enablement, concurrent host
+      operations, stale journal evidence, failed-start enablement residue, and
+      deactivation of an ambiguous runner must fail closed.
+  - Exit evidence:
+    - mutation/self-tests and the trading parity gate;
+    - full repository gates and clean detached-checkout verification;
+    - required PR and post-merge GitHub Actions;
+    - exact merge-SHA VPS install, disabled identity initialization, wrong-key
+      rejection, matching-key activation, authenticated evidence, exact
+      deactivation, uninstall, and unchanged site/Amnezia evidence without a
+      host reboot.
+  - Removed or sealed:
+    - boot enablement before identity proof and silent adoption of a different
+      runner identity are unreachable through the canonical host lifecycle.
+  - Still blocked:
+    - external anchoring, credential rotation/replacement, Capsule or exchange
+      credentials, account reads, leases, mandates, trading effects,
+      reconciliation, listeners, tags, Releases, and 2.0 implementation.
+  - Status: implementation candidate; merge-SHA host evidence pending.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
