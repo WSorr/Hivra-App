@@ -3837,7 +3837,20 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     local and clean-checkout gates, protected PR/post-merge CI, then merge-SHA
     VPS proof of one redacted read, transient collection, exact uninstall, and
     unchanged website/Amnezia/listener baselines.
-  - Status: selected (2026-08-18); implementation and host evidence pending.
+  - Status: complete on `main` at `4623874` (2026-08-18) through protected PR
+    `#150`; required run `32174387634` and post-merge run `32174515264`
+    passed. Exact merge-SHA VPS evidence admitted one runner-bound mandate,
+    proved exact replay idempotency and changed-content rejection, provisioned
+    one host-encrypted account-bound credential without plaintext retention,
+    and completed one collected balance/positions/open-orders read with
+    redacted evidence hash
+    `62434856c94a233000f7bd05b8f78a785243a53fe268effa2d2ff0565402f2fd`
+    and `effect=false`. The persistent unit remained disabled, inactive, and
+    free of the exchange credential. Exact uninstall removed the unit, seed,
+    mandate, encrypted credential, and state; the website, all four Amnezia
+    containers, and the normalized listener baseline remained unchanged.
+    Evidence remains outside the repository. No account payload was retained,
+    no exchange effect, tag, or Release occurred, and no next pass is selected.
 
 - `External Personal-Agent Runtime Pattern Audit`
   - Scope: preserve anonymized external personal-agent runtime observations
