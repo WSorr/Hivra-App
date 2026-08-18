@@ -280,7 +280,7 @@ Use this only when evaluating personal-agent operations, approvals, AI context,
 artifacts, or runtime-health UX against Hivra's existing owners and laws.
 
 Contains:
-- pinned OpenClaw and Aithy research snapshots;
+- anonymized external personal-agent runtime observations;
 - patterns that may be adapted without adding a second lifecycle owner;
 - patterns rejected by Hivra authority and Ledger boundaries;
 - a non-authorizing Remote Runner readiness fact and revisit trigger.
