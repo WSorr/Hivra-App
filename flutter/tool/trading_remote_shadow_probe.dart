@@ -52,6 +52,7 @@ Future<void> main(List<String> args) async {
         );
         stdout.writeln(
           'shadow_evidence_appended=${evidence.sequence} '
+          'runner_key_id=${evidence.runnerKeyId} '
           'evidence_hash=${evidence.evidenceHashHex} '
           'cycle=$cycleNumber/${schedule.runCount}',
         );
