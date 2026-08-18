@@ -3506,7 +3506,24 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     mutations, full local and clean-checkout gates, one exact-bundle VPS
     stop/start smoke with website and Amnezia continuity, protected PR, and
     green post-merge CI.
-  - Status: selected; implementation and host evidence pending.
+  - Status: complete on `main` at `96f2628` (2026-08-18) through protected PR
+    `#131`; required run `32085039781` and post-merge run `32085133479` passed.
+    The exact post-merge Linux x64 bundle used binary SHA-256
+    `bbe5bfd53d69eaab8886d6e8b7869fd1ea3fb92404caa92a9219e191fd5bb2d3`
+    and canonical unit SHA-256
+    `61d582064ee8be1f1ef53b19f6b4fc28f2cf415d24173b69d53fb6a129fa8583`.
+    On the audited VPS, one encrypted runner-only credential produced sequence
+    `1` with evidence hash
+    `2f7db45e1baf233aee9236b233fa45a45a63c68e381060e2caa431632c140c0b`,
+    survived an explicit stop/start with retained identity state, and produced
+    sequence `2` with evidence hash
+    `1af1f27ea9fc0a7bf5de262f2de4eeee7a8d0c8c52898bfb22532b1a64344bea`.
+    `NRestarts` remained zero and the exact 128 MiB/no-swap/16-task boundaries
+    remained active. Cleanup removed every bundle, unit, credential, state,
+    lock, and enablement path; website HTTP status, Amnezia container identity,
+    start time/restart count, and listeners were unchanged. Full Flutter
+    `934/934`, analyze, Rust workspace, review gates, clean checkout, and focused
+    `34/34` passed. No following pass is selected.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
