@@ -3584,7 +3584,28 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     mutations, full local and clean-checkout gates, exact merge-SHA VPS
     install/start/stop/uninstall with stable `runner_key_id` and unchanged
     website/Amnezia/listeners, protected PR, and green post-merge CI.
-  - Status: selected; implementation and host evidence pending.
+  - Status: complete on `main` at `7d93eb6` (2026-08-18) through protected PR
+    `#135`; required run `32106482943` and post-merge run `32106609859`
+    passed.
+  - Exact merge-SHA VPS evidence: installation ended disabled and inactive;
+    explicit processes appended sequences `1` and `2` with stable
+    `runner_key_id`
+    `769281de3913cb91cad60d76b30f0e2a32e85d2b39a1cdd8bf14f80b9e6ca0ce`
+    and evidence hashes
+    `b1c0a0397d297e3a5336b10fb91fd59356d9c7824fabcafc358e8b47cfc0b90e`
+    and
+    `e6811c223495ed4655de255425c824056f761087486da2c5419f923830808c9b`.
+    The binary SHA-256 was
+    `d9c969355bc6b2131e3177f07e16eb93d2500f2b3576e8b2a8aef731abeacda5`;
+    the unit SHA-256 was
+    `61d582064ee8be1f1ef53b19f6b4fc28f2cf415d24173b69d53fb6a129fa8583`.
+    Exact uninstall removed every runner bundle, link, credential, and state
+    path. The site remained HTTP `200`, all four Amnezia containers remained
+    active, and the listener-set hash stayed unchanged at
+    `d962a1ffaa457f23708c3ec345a4479063e8de4a3a8e2bd000103adf287dae0e`.
+    Full Flutter `934/934`, analyze, Rust workspace, review gates, clean
+    checkout, artifact self-tests, and independent lifecycle mutations passed.
+    No following pass is selected.
 
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
