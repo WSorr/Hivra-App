@@ -304,7 +304,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/settings_screen.dart` line `8` (`SettingsScreen`) — rule `surface_mapping:ui_settings`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/settings_screen.dart` line `622` (`_CapsuleCardScannerScreen`) — rule `surface_mapping:ui_capsule_card_scanner`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/starters_screen.dart` line `16` (`StartersScreen`) — rule `surface_mapping:ui_starters`
-- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/trading_drone_screen.dart` line `52` (`TradingDroneScreen`) — rule `registry`
+- `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/trading_drone_screen.dart` line `55` (`TradingDroneScreen`) — rule `registry`
 - `COMPATIBILITY_DEBT` — `flutter/lib/screens/transports_screen.dart` line `8` (`TransportsScreen`) — rule `surface_mapping:ui_transports`
 - `REGISTERED_ENTRYPOINT` — `flutter/lib/screens/wasm_plugins_screen.dart` line `79` (`WasmPluginsScreen`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ai_capsule_inspection_service.dart` line `104` (`AiCapsuleInspectionService`) — rule `current_flutter_service_support`
@@ -424,7 +424,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/settings_service.dart` line `10` (`SettingsService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/temporary_backup_share_service.dart` line `9` (`TemporaryBackupShareService`) — rule `current_flutter_service_support`
 - `CAPABILITY_OWNER` — `flutter/lib/services/trading_drone_module_service.dart` line `29` (`TradingDroneModule`) — rule `registry`
-- `REGISTERED_EVIDENCE` — `flutter/lib/services/trading_drone_module_service.dart` line `90` (`TradingDroneModuleService`) — rule `registry`
+- `REGISTERED_EVIDENCE` — `flutter/lib/services/trading_drone_module_service.dart` line `99` (`TradingDroneModuleService`) — rule `registry`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/transport_health_policy_service.dart` line `43` (`TransportHealthPolicyService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ui_event_log_service.dart` line `10` (`UiEventLogService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/ui_feedback_service.dart` line `8` (`UiFeedbackService`) — rule `current_flutter_service_support`
@@ -449,28 +449,28 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `flutter/lib/services/ai_tooling_module_service.dart` line `83` (`buildPluginScaffoldDraftService` → `AiPluginScaffoldDraftService`)
 - `flutter/lib/services/ai_tooling_module_service.dart` line `87` (`buildPatchProposalService` → `AiPatchProposalService`)
 - `flutter/lib/services/ai_tooling_module_service.dart` line `91` (`buildReviewGateIntegrationService` → `AiReviewGateIntegrationService`)
-- `flutter/lib/services/app_runtime_service.dart` line `147` (`buildConsensusRuntimeService` → `ConsensusRuntimeService`)
-- `flutter/lib/services/app_runtime_service.dart` line `162` (`buildPluginExecutionGuardService` → `PluginExecutionGuardService`)
-- `flutter/lib/services/app_runtime_service.dart` line `168` (`buildManualConsensusCheckService` → `ManualConsensusCheckService`)
-- `flutter/lib/services/app_runtime_service.dart` line `179` (`buildConsensusAttestationSyncService` → `ConsensusAttestationSyncService`)
-- `flutter/lib/services/app_runtime_service.dart` line `183` (`buildConsensusAttestedGuardService` → `ConsensusAttestedGuardService`)
-- `flutter/lib/services/app_runtime_service.dart` line `191` (`buildConsensusAttestationExchangeService` → `ConsensusAttestationExchangeService`)
-- `flutter/lib/services/app_runtime_service.dart` line `196` (`buildCapsuleDiagnosticsService` → `CapsuleDiagnosticsService`)
-- `flutter/lib/services/app_runtime_service.dart` line `203` (`buildCapsuleChatDeliveryService` → `CapsuleChatDeliveryService`)
-- `flutter/lib/services/app_runtime_service.dart` line `207` (`buildCapsuleAddressService` → `CapsuleAddressService`)
-- `flutter/lib/services/app_runtime_service.dart` line `211` (`buildCapsuleContactLabelStore` → `CapsuleContactLabelStore`)
-- `flutter/lib/services/app_runtime_service.dart` line `217` (`buildPluginHostApiService` → `PluginHostApiService`)
-- `flutter/lib/services/app_runtime_service.dart` line `248` (`buildBingxFuturesCredentialStore` → `BingxFuturesCredentialStore`)
-- `flutter/lib/services/app_runtime_service.dart` line `254` (`buildBingxFuturesExchangeService` → `BingxFuturesExchangeService`)
-- `flutter/lib/services/app_runtime_service.dart` line `258` (`buildBingxFuturesOrderTrackingStore` → `BingxFuturesOrderTrackingStore`)
-- `flutter/lib/services/app_runtime_service.dart` line `264` (`buildBingxFuturesRiskHistoryService` → `BingxFuturesRiskHistoryService`)
-- `flutter/lib/services/app_runtime_service.dart` line `331` (`buildRelationshipService` → `RelationshipService`)
-- `flutter/lib/services/app_runtime_service.dart` line `343` (`buildSettingsService` → `SettingsService`)
+- `flutter/lib/services/app_runtime_service.dart` line `160` (`buildConsensusRuntimeService` → `ConsensusRuntimeService`)
+- `flutter/lib/services/app_runtime_service.dart` line `175` (`buildPluginExecutionGuardService` → `PluginExecutionGuardService`)
+- `flutter/lib/services/app_runtime_service.dart` line `181` (`buildManualConsensusCheckService` → `ManualConsensusCheckService`)
+- `flutter/lib/services/app_runtime_service.dart` line `192` (`buildConsensusAttestationSyncService` → `ConsensusAttestationSyncService`)
+- `flutter/lib/services/app_runtime_service.dart` line `196` (`buildConsensusAttestedGuardService` → `ConsensusAttestedGuardService`)
+- `flutter/lib/services/app_runtime_service.dart` line `204` (`buildConsensusAttestationExchangeService` → `ConsensusAttestationExchangeService`)
+- `flutter/lib/services/app_runtime_service.dart` line `209` (`buildCapsuleDiagnosticsService` → `CapsuleDiagnosticsService`)
+- `flutter/lib/services/app_runtime_service.dart` line `216` (`buildCapsuleChatDeliveryService` → `CapsuleChatDeliveryService`)
+- `flutter/lib/services/app_runtime_service.dart` line `220` (`buildCapsuleAddressService` → `CapsuleAddressService`)
+- `flutter/lib/services/app_runtime_service.dart` line `224` (`buildCapsuleContactLabelStore` → `CapsuleContactLabelStore`)
+- `flutter/lib/services/app_runtime_service.dart` line `230` (`buildPluginHostApiService` → `PluginHostApiService`)
+- `flutter/lib/services/app_runtime_service.dart` line `261` (`buildBingxFuturesCredentialStore` → `BingxFuturesCredentialStore`)
+- `flutter/lib/services/app_runtime_service.dart` line `267` (`buildBingxFuturesExchangeService` → `BingxFuturesExchangeService`)
+- `flutter/lib/services/app_runtime_service.dart` line `271` (`buildBingxFuturesOrderTrackingStore` → `BingxFuturesOrderTrackingStore`)
+- `flutter/lib/services/app_runtime_service.dart` line `277` (`buildBingxFuturesRiskHistoryService` → `BingxFuturesRiskHistoryService`)
+- `flutter/lib/services/app_runtime_service.dart` line `344` (`buildRelationshipService` → `RelationshipService`)
+- `flutter/lib/services/app_runtime_service.dart` line `356` (`buildSettingsService` → `SettingsService`)
 - `flutter/lib/services/invitation_module_service.dart` line `29` (`build` → `InvitationModule`)
 - `flutter/lib/services/ledger_inspector_module_service.dart` line `28` (`build` → `LedgerInspectorModule`)
 - `flutter/lib/services/main_screen_module_service.dart` line `34` (`build` → `MainScreenModule`)
 - `flutter/lib/services/plugin_runtime_module_service.dart` line `1836` (`build` → `PluginRuntimeModule`)
-- `flutter/lib/services/trading_drone_module_service.dart` line `95` (`build` → `TradingDroneModule`)
+- `flutter/lib/services/trading_drone_module_service.dart` line `104` (`build` → `TradingDroneModule`)
 
 ### Generic Service Locator Evidence
 
@@ -478,7 +478,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 ### Oversized Candidate Surfaces
 
-- `4320` lines — `flutter/lib/screens/trading_drone_screen.dart`
+- `4457` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3329` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
 - `2171` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
@@ -549,12 +549,12 @@ Largest registered owner files by line count:
 - `576` lines — `ledger_truth` — `core/hivra-core/src/ledger.rs` (`Ledger`)
 - `557` lines — `capsule_ai_runtime` — `flutter/lib/services/capsule_ai_runtime_service.dart` (`CapsuleAiRuntimeService`)
 - `460` lines — `history_projection` — `core/hivra-core/src/history.rs` (`history_view_v1`)
-- `356` lines — `person_runtime_shell` — `flutter/lib/services/app_runtime_service.dart` (`AppRuntimeService`)
+- `369` lines — `person_runtime_shell` — `flutter/lib/services/app_runtime_service.dart` (`AppRuntimeService`)
 - `311` lines — `capsule_delivery` — `flutter/lib/services/capsule_delivery_lifecycle_service.dart` (`CapsuleDeliveryLifecycleService`)
 - `284` lines — `capsule_selection` — `flutter/lib/services/capsule_selector_service.dart` (`CapsuleSelectorService`)
 - `216` lines — `wasm_drone_runtime` — `platform/hivra-wasm-runtime/src/lib.rs` (`invoke_json`)
 - `202` lines — `starter_inventory` — `core/hivra-core/src/starter.rs` (`Starter`)
-- `160` lines — `trading_drone` — `flutter/lib/services/trading_drone_module_service.dart` (`TradingDroneModule`)
+- `171` lines — `trading_drone` — `flutter/lib/services/trading_drone_module_service.dart` (`TradingDroneModule`)
 - `158` lines — `capsule_recovery` — `flutter/lib/services/recovery_service.dart` (`RecoveryService`)
 - `157` lines — `capsule_identity` — `core/hivra-core/src/capsule.rs` (`Capsule`)
 - `62` lines — `capsule_birth` — `flutter/lib/services/first_launch_service.dart` (`FirstLaunchService`)

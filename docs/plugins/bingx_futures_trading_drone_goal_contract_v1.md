@@ -925,6 +925,31 @@ credential, account read, mandate, lease, trading decision, order, cancel,
 reconciliation, tag, or Release authority. Credential loss/rotation and remote
 effects remain separate blocked product decisions.
 
+### 11.25 Pass S: Capsule-Signed Remote Mandate Admission
+
+The existing `BingxFuturesTradingMandate` remains the sole owner of bounded
+Trading authority semantics. A versioned admission artifact commits to the
+exact canonical mandate, its Capsule root, account binding, symbol, test/live
+mode, issue/expiry window, risk and effect limits, plus the exact initialized
+`runner_key_id`. The existing Capsule root signer signs the domain-separated
+SHA-256 commitment. The signature is an explicit 1.x Ed25519 compatibility
+boundary, not a new Capsule identity contract or a 2.0 crypto choice.
+
+The existing host artifact lifecycle accepts only bounded canonical bytes,
+reconstructs both the mandate id and admission commitment independently,
+requires an active non-revoked mandate, verifies the exact Capsule signature,
+and matches the installed runner identity. It atomically retains one prepared
+artifact. Exact replay is idempotent; any different retained authority,
+mutation, downgrade, wrong Capsule, wrong account commitment, wrong runner,
+invalid signature, or stale time window fails closed. Replacement, rotation,
+and signed revocation remain separate decisions rather than implicit overwrite.
+
+Prepared admission grants no exchange credential, account read, lease,
+listener, scheduling decision, order, cancellation, reconciliation, or effect.
+The local exchange execution owner remains the only implemented effect path.
+No generic mandate runtime, new FFI, Core fact, Ledger event, or plugin ABI is
+introduced.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of

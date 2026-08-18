@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -17,10 +18,12 @@ import '../models/capsule_chat_models.dart';
 import '../models/plugin_contract_ids.dart';
 import '../models/plugin_host_api_models.dart';
 import '../services/app_runtime_service.dart';
+import '../services/atomic_file_write_service.dart';
 import '../services/capsule_passive_receive_coordinator.dart';
 import '../services/consensus_attestation_exchange_service.dart';
 import '../services/trading_drone_module_service.dart';
 import '../services/bingx_futures_trading_cycle_use_case_service.dart';
+import '../services/hivra_file_picker_service.dart';
 import '../utils/bingx_futures_zone_evidence_formatter.dart';
 import '../utils/peer_identity_format.dart';
 
@@ -133,6 +136,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   BingxFuturesTradingMandate? _tradingMandate;
   bool _tradingControlLoaded = false;
   bool _savingTradingControl = false;
+  bool _exportingRemoteMandate = false;
   double _stopLossPercent = _defaultStopLossPercent;
   double _takeProfitRiskReward = _defaultTakeProfitRiskReward;
 
@@ -510,6 +514,117 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           ),
     );
     return result == true;
+  }
+
+  Future<void> _exportSignedRemoteMandate() async {
+    if (_exportingRemoteMandate) return;
+    final mandate = _tradingMandate;
+    if (!_droneEnabled ||
+        mandate == null ||
+        !mandate.isActiveAt(DateTime.now().toUtc())) {
+      await _showSnack('An active bounded trading mandate is required.');
+      return;
+    }
+    if (!Platform.isMacOS) {
+      await _showSnack(
+        'Remote mandate export is currently available on macOS.',
+      );
+      return;
+    }
+    final runnerKeyController = TextEditingController();
+    final runnerKeyId = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Prepare remote mandate'),
+            content: TextField(
+              controller: runnerKeyController,
+              autocorrect: false,
+              enableSuggestions: false,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Runner key id',
+                hintText: '64 lowercase hex characters',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed:
+                    () => Navigator.of(
+                      context,
+                    ).pop(runnerKeyController.text.trim()),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+    );
+    runnerKeyController.dispose();
+    if (runnerKeyId == null) return;
+    final admission = BingxFuturesRemoteMandateAdmission.issue(
+      mandate: mandate,
+      runnerKeyId: runnerKeyId,
+      signCommitment: _module.signRootCommitment,
+    );
+    if (admission == null ||
+        BingxFuturesRemoteMandateAdmission.parseAndVerify(
+              untrustedWireBytes: utf8.encode(admission.canonicalJson),
+              verifySignature:
+                  ({
+                    required messageHashHex,
+                    required participantIdHex,
+                    required signatureHex,
+                  }) => _module.verifyRootCommitmentSignature(
+                    commitmentHashHex: messageHashHex,
+                    capsuleRootHex: participantIdHex,
+                    signatureHex: signatureHex,
+                  ),
+            ) ==
+            null) {
+      await _showSnack('Capsule could not sign the exact remote mandate.');
+      return;
+    }
+    final directory = await HivraFilePickerService.selectDirectory(
+      confirmButtonText: 'Export mandate',
+    );
+    if (directory == null || directory.trim().isEmpty) return;
+    final target = File(
+      '${directory.trim()}/trading-remote-mandate-${admission.operationId.substring(0, 16)}.json',
+    );
+    if (await target.exists()) {
+      await _showSnack('The exact remote mandate artifact already exists.');
+      return;
+    }
+    setState(() {
+      _exportingRemoteMandate = true;
+    });
+    try {
+      await const AtomicFileWriteService().writeString(
+        target,
+        admission.canonicalJson,
+      );
+      await _module.uiLog.log(
+        'bingx.remote_mandate.exported',
+        'operation_id=${admission.operationId} '
+            'runner_key_id=${admission.runnerKeyId} effect=false',
+      );
+      await _showSnack('Signed remote mandate exported.');
+    } catch (error) {
+      await _module.uiLog.log(
+        'bingx.remote_mandate.export.error',
+        'operation_id=${admission.operationId} error=$error effect=false',
+      );
+      await _showSnack('Remote mandate export failed.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _exportingRemoteMandate = false;
+        });
+      }
+    }
   }
 
   Future<void> _restoreOpenOrdersTrackingState() async {
@@ -3833,6 +3948,28 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                           : Icons.play_circle_outline_rounded,
                     ),
                     label: Text(_droneEnabled ? 'Emergency Pause' : 'Resume'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _runningIntent ||
+                                _savingTradingControl ||
+                                _exportingRemoteMandate ||
+                                !_droneEnabled
+                            ? null
+                            : _exportSignedRemoteMandate,
+                    icon:
+                        _exportingRemoteMandate
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.verified_user_outlined),
+                    label: Text(
+                      _exportingRemoteMandate
+                          ? 'Exporting mandate'
+                          : 'Export Remote Mandate',
+                    ),
                   ),
                   FilledButton.tonalIcon(
                     onPressed:

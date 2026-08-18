@@ -52,6 +52,13 @@ class TradingDroneModule {
   final ConsensusAttestationExchangeService attestationExchange;
   final UiEventLogService uiLog;
   final String? Function() activeCapsuleRootHex;
+  final String? Function(String commitmentHashHex) signRootCommitment;
+  final bool Function({
+    required String commitmentHashHex,
+    required String capsuleRootHex,
+    required String signatureHex,
+  })
+  verifyRootCommitmentSignature;
 
   const TradingDroneModule({
     required this.pluginHostApi,
@@ -79,6 +86,8 @@ class TradingDroneModule {
     required this.attestationExchange,
     required this.uiLog,
     required this.activeCapsuleRootHex,
+    required this.signRootCommitment,
+    required this.verifyRootCommitmentSignature,
   });
 
   String accountBindingHashHex(BingxFuturesApiCredentials credentials) =>
@@ -155,6 +164,8 @@ class TradingDroneModuleService {
       attestationExchange: runtime.buildConsensusAttestationExchangeService(),
       uiLog: const UiEventLogService(),
       activeCapsuleRootHex: runtime.activeCapsuleRootHex,
+      signRootCommitment: runtime.signRootCommitment,
+      verifyRootCommitmentSignature: runtime.verifyRootCommitmentSignature,
     );
   }
 }

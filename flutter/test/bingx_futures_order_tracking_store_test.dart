@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -507,6 +508,80 @@ void main() {
       final unknown = <String, dynamic>{...encoded, 'authority': true};
       expect(BingxFuturesTradingMandate.fromJsonMap(missing), isNull);
       expect(BingxFuturesTradingMandate.fromJsonMap(unknown), isNull);
+
+      final admission = BingxFuturesRemoteMandateAdmission.issue(
+        mandate: mandate,
+        runnerKeyId:
+            'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        signCommitment: (commitment) => '$commitment$commitment',
+      );
+      expect(admission, isNotNull);
+      expect(
+        admission!.commitmentHashHex,
+        '77c675b4e32dce7cbdd1f8b874009737fe343816d16f729b9505f013f1f84d8a',
+      );
+      bool verifyAdmission({
+        required String messageHashHex,
+        required String participantIdHex,
+        required String signatureHex,
+      }) =>
+          participantIdHex == capsuleHex &&
+          signatureHex == '$messageHashHex$messageHashHex';
+      expect(
+        BingxFuturesRemoteMandateAdmission.parseAndVerify(
+          untrustedWireBytes: admission.canonicalJson.codeUnits,
+          verifySignature: verifyAdmission,
+        )?.operationId,
+        admission.operationId,
+      );
+      final admissionJson = admission.toJson();
+      for (final mutation in <Map<String, dynamic>>[
+        <String, dynamic>{...admissionJson, 'runner_key_id': accountHex},
+        <String, dynamic>{...admissionJson, 'signature_suite': 'legacy-v0'},
+        <String, dynamic>{...admissionJson, 'operation_id': accountHex},
+        <String, dynamic>{
+          ...admissionJson,
+          'signature_hex': List<String>.filled(128, '0').join(),
+        },
+        <String, dynamic>{
+          ...admissionJson,
+          'mandate': <String, dynamic>{
+            ...mandate.toJson(),
+            'symbol': 'ETH-USDT',
+          },
+        },
+        <String, dynamic>{...admissionJson, 'unknown': true},
+      ]) {
+        expect(
+          BingxFuturesRemoteMandateAdmission.parseAndVerify(
+            untrustedWireBytes: jsonEncode(mutation).codeUnits,
+            verifySignature: verifyAdmission,
+          ),
+          isNull,
+        );
+      }
+      final reordered = <String, dynamic>{
+        'operation_id': admission.operationId,
+        'contract_version': BingxFuturesRemoteMandateAdmission.contractVersion,
+        for (final entry in admissionJson.entries)
+          if (entry.key != 'operation_id' && entry.key != 'contract_version')
+            entry.key: entry.value,
+      };
+      expect(
+        BingxFuturesRemoteMandateAdmission.parseAndVerify(
+          untrustedWireBytes: jsonEncode(reordered).codeUnits,
+          verifySignature: verifyAdmission,
+        ),
+        isNull,
+      );
+      expect(
+        BingxFuturesRemoteMandateAdmission.issue(
+          mandate: mandate.revoke(now),
+          runnerKeyId: admission.runnerKeyId,
+          signCommitment: (commitment) => '$commitment$commitment',
+        ),
+        isNull,
+      );
 
       final store = BingxFuturesOrderTrackingStore(
         readActiveCapsuleRootHex: () => capsuleHex,

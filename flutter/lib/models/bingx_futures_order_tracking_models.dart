@@ -329,6 +329,152 @@ class BingxFuturesTradingMandate {
   }
 }
 
+class BingxFuturesRemoteMandateAdmission {
+  static const String contractVersion = 'trading-remote-mandate-admission-v1';
+  static const String signatureSuite = 'ed25519-v1';
+  static const int maxWireBytes = 8192;
+
+  final String operationId;
+  final String commitmentHashHex;
+  final String runnerKeyId;
+  final BingxFuturesTradingMandate mandate;
+  final String signatureHex;
+
+  const BingxFuturesRemoteMandateAdmission._({
+    required this.operationId,
+    required this.commitmentHashHex,
+    required this.runnerKeyId,
+    required this.mandate,
+    required this.signatureHex,
+  });
+
+  static BingxFuturesRemoteMandateAdmission? issue({
+    required BingxFuturesTradingMandate mandate,
+    required String runnerKeyId,
+    required String? Function(String commitmentHashHex) signCommitment,
+  }) {
+    if (mandate.revokedAtUtc != null) return null;
+    final normalizedRunnerKeyId = runnerKeyId.trim().toLowerCase();
+    if (!_isSha256(normalizedRunnerKeyId)) return null;
+    final commitmentHashHex = _deriveCommitmentHash(
+      mandate: mandate,
+      runnerKeyId: normalizedRunnerKeyId,
+    );
+    final signatureHex =
+        signCommitment(commitmentHashHex)?.trim().toLowerCase() ?? '';
+    if (!RegExp(r'^[0-9a-f]{128}$').hasMatch(signatureHex)) return null;
+    return BingxFuturesRemoteMandateAdmission._(
+      operationId: commitmentHashHex,
+      commitmentHashHex: commitmentHashHex,
+      runnerKeyId: normalizedRunnerKeyId,
+      mandate: mandate,
+      signatureHex: signatureHex,
+    );
+  }
+
+  static BingxFuturesRemoteMandateAdmission? parseAndVerify({
+    required List<int> untrustedWireBytes,
+    required bool Function({
+      required String messageHashHex,
+      required String participantIdHex,
+      required String signatureHex,
+    })
+    verifySignature,
+  }) {
+    if (untrustedWireBytes.isEmpty ||
+        untrustedWireBytes.length > maxWireBytes) {
+      return null;
+    }
+    try {
+      final raw = utf8.decode(untrustedWireBytes, allowMalformed: false);
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      const expectedKeys = <String>{
+        'contract_version',
+        'operation_id',
+        'commitment_hash_hex',
+        'runner_key_id',
+        'mandate',
+        'signature_suite',
+        'signature_hex',
+      };
+      if (decoded.keys.toSet().difference(expectedKeys).isNotEmpty ||
+          expectedKeys.difference(decoded.keys.toSet()).isNotEmpty ||
+          decoded['contract_version'] != contractVersion ||
+          decoded['signature_suite'] != signatureSuite ||
+          decoded['mandate'] is! Map<String, dynamic>) {
+        return null;
+      }
+      final mandate = BingxFuturesTradingMandate.fromJsonMap(
+        decoded['mandate']! as Map<String, dynamic>,
+      );
+      if (mandate == null || mandate.revokedAtUtc != null) return null;
+      final runnerKeyId = decoded['runner_key_id']?.toString() ?? '';
+      final commitmentHashHex =
+          decoded['commitment_hash_hex']?.toString() ?? '';
+      final operationId = decoded['operation_id']?.toString() ?? '';
+      final signatureHex = decoded['signature_hex']?.toString() ?? '';
+      if (!_isSha256(runnerKeyId) ||
+          !_isSha256(commitmentHashHex) ||
+          operationId != commitmentHashHex ||
+          !RegExp(r'^[0-9a-f]{128}$').hasMatch(signatureHex) ||
+          commitmentHashHex !=
+              _deriveCommitmentHash(
+                mandate: mandate,
+                runnerKeyId: runnerKeyId,
+              )) {
+        return null;
+      }
+      final admission = BingxFuturesRemoteMandateAdmission._(
+        operationId: operationId,
+        commitmentHashHex: commitmentHashHex,
+        runnerKeyId: runnerKeyId,
+        mandate: mandate,
+        signatureHex: signatureHex,
+      );
+      if (raw != admission.canonicalJson) return null;
+      if (!verifySignature(
+        messageHashHex: commitmentHashHex,
+        participantIdHex: mandate.capsuleRootHex,
+        signatureHex: signatureHex,
+      )) {
+        return null;
+      }
+      return admission;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'contract_version': contractVersion,
+    'operation_id': operationId,
+    'commitment_hash_hex': commitmentHashHex,
+    'runner_key_id': runnerKeyId,
+    'mandate': mandate.toJson(),
+    'signature_suite': signatureSuite,
+    'signature_hex': signatureHex,
+  };
+
+  String get canonicalJson => jsonEncode(toJson());
+
+  static String _deriveCommitmentHash({
+    required BingxFuturesTradingMandate mandate,
+    required String runnerKeyId,
+  }) =>
+      sha256
+          .convert(
+            utf8.encode(
+              'hivra:bingx-futures-remote-mandate-admission:v1\n'
+              '${jsonEncode(<String, dynamic>{'contract_version': contractVersion, 'runner_key_id': runnerKeyId, 'mandate': mandate.toJson()})}',
+            ),
+          )
+          .toString();
+
+  static bool _isSha256(String value) =>
+      RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
+}
+
 class BingxLiquidityEventEffectClaim {
   final String liquidityEventId;
   final String clientOrderId;
