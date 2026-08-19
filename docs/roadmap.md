@@ -3877,8 +3877,19 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     execution eligibility: expired unused and pending operations stop before
     provider access, while exact completed evidence remains inspectable after
     expiry. Mutation, signature, and binding failures remain terminal first.
-  - Status: P2 remediation selected (2026-08-19); merge-SHA VPS evidence remains
-    blocked until its protected PR and post-merge gates pass.
+  - Status: complete (2026-08-19). Remediation merged at `5abecf6` through
+    protected PR `#153`; required and post-merge repository gates passed.
+    Exact-`5abecf6` VPS evidence proved v1 and mutation rejection, exact
+    admission replay, one collected account read, and no-network replay of the
+    same redacted evidence hash
+    `090be0c844f5fab6625a87ad2d3b81d62217fdfe5958a7f53480ec428a493bb8`.
+    Exact-source host self-tests covered expired unused, pending, and completed
+    authority plus signature and binding rejection. Exact uninstall removed
+    the unit, seed, mandate, encrypted credential, and state; the website,
+    nginx, four Amnezia containers, and normalized listener baseline remained
+    unchanged. Evidence remains outside the repository. No account payload,
+    exchange effect, schedule, lease, tag, or Release occurred, and no next
+    pass is selected.
 
 - `External Personal-Agent Runtime Pattern Audit`
   - Scope: preserve anonymized external personal-agent runtime observations
