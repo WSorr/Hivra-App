@@ -287,6 +287,21 @@ Contains:
   bounded mandate, effect evidence, receipt, and reconciliation;
 - a non-authorizing Remote Runner readiness fact and revisit trigger.
 
+### 25) `research/trading-empirical-authority-pass.md` (parked research)
+
+Use this only when evaluating whether the proven Trading mandate, runner,
+single-use account-read, effect, receipt, and reconciliation primitives justify
+a later empirical remote-authority experiment.
+
+Contains:
+- a statement-by-statement reconciliation of the supplied authority brief with
+  current `main` at `b7be618`;
+- completed local Trading and Pass U primitives recorded as existing facts;
+- the unresolved remote-effect threat model and experiment questions;
+- the gate against premature universal Capability/Warrant abstractions.
+
+It selects no implementation pass, VPS change, runtime contract, or release.
+
 ## Recommended Reading Order
 
 1. `development-control.md`
@@ -309,6 +324,7 @@ Contains:
 18. `docs/platform-toolchain-evolution.md` before changing the native build stack
 19. `architecture/continuous-ledger-protocol-v5.md` before changing ledger signing, import, or persistence
 20. `external-agent-runtime-pattern-audit.md` when evaluating external personal-agent runtime patterns
+21. `research/trading-empirical-authority-pass.md` only when a concrete authority experiment or cross-capability consolidation review is selected
 
 ## Supporting Index
 
