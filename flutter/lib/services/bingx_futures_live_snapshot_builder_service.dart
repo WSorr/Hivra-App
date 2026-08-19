@@ -51,41 +51,48 @@ class BingxFuturesLiveSnapshotBuilderService {
       );
     }
 
-    final k1m = await exchange.getPublicKlines(
+    final k1mFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '1m',
       limit: 120,
     );
-    final k5m = await exchange.getPublicKlines(
+    final k5mFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '5m',
       limit: 120,
     );
-    final k15m = await exchange.getPublicKlines(
+    final k15mFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '15m',
       limit: 220,
     );
-    final k1h = await exchange.getPublicKlines(
+    final k1hFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '1h',
       limit: 120,
     );
-    final k4h = await exchange.getPublicKlines(
+    final k4hFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '4h',
       limit: 500,
     );
-    final k1d = await exchange.getPublicKlines(
+    final k1dFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '1d',
       limit: 120,
     );
-    final k1w = await exchange.getPublicKlines(
+    final k1wFuture = exchange.getPublicKlines(
       symbol: normalizedSymbol,
       interval: '1w',
       limit: 60,
     );
+    final k1m = await k1mFuture;
+    final k5m = await k5mFuture;
+    final k15m = await k15mFuture;
+    final k1h = await k1hFuture;
+    final k4h = await k4hFuture;
+    final k1d = await k1dFuture;
+    final k1w = await k1wFuture;
 
     final klineResults = <BingxFuturesPublicKlinesResult>[
       k1m,
@@ -106,10 +113,30 @@ class BingxFuturesLiveSnapshotBuilderService {
       }
     }
 
-    final trades = await exchange.getPublicTrades(
+    final tradesFuture = exchange.getPublicTrades(
       symbol: normalizedSymbol,
       limit: 200,
     );
+    final premiumFuture = exchange.getPublicPremiumIndex(
+      symbol: normalizedSymbol,
+    );
+    final openInterestFuture = exchange.getPublicOpenInterest(
+      symbol: normalizedSymbol,
+    );
+    final openInterestHistoryFuture = exchange.getPublicOpenInterestHistory(
+      symbol: normalizedSymbol,
+      period: '5m',
+      limit: 24,
+    );
+    final depthFuture = exchange.getPublicDepth(
+      symbol: normalizedSymbol,
+      limit: 20,
+    );
+    final trades = await tradesFuture;
+    final premium = await premiumFuture;
+    final oi = await openInterestFuture;
+    final oiHistory = await openInterestHistoryFuture;
+    final depth = await depthFuture;
     if (!trades.isSuccess || trades.trades.isEmpty) {
       return _fail(
         symbol: normalizedSymbol,
@@ -118,9 +145,6 @@ class BingxFuturesLiveSnapshotBuilderService {
       );
     }
 
-    final premium = await exchange.getPublicPremiumIndex(
-      symbol: normalizedSymbol,
-    );
     if (!premium.isSuccess ||
         premium.fundingRateDecimal == null ||
         premium.fundingRateDecimal!.isEmpty) {
@@ -131,7 +155,6 @@ class BingxFuturesLiveSnapshotBuilderService {
       );
     }
 
-    final oi = await exchange.getPublicOpenInterest(symbol: normalizedSymbol);
     if (!oi.isSuccess ||
         oi.openInterestDecimal == null ||
         oi.openInterestDecimal!.isEmpty) {
@@ -141,16 +164,6 @@ class BingxFuturesLiveSnapshotBuilderService {
         message: 'Open interest unavailable: ${oi.exchangeMessage}',
       );
     }
-    final oiHistory = await exchange.getPublicOpenInterestHistory(
-      symbol: normalizedSymbol,
-      period: '5m',
-      limit: 24,
-    );
-
-    final depth = await exchange.getPublicDepth(
-      symbol: normalizedSymbol,
-      limit: 20,
-    );
     if (!depth.isSuccess || (depth.bids.isEmpty && depth.asks.isEmpty)) {
       return _fail(
         symbol: normalizedSymbol,
@@ -309,13 +322,15 @@ class BingxFuturesLiveSnapshotBuilderService {
     DateTime observedAtUtc,
   ) {
     final duration = Duration(minutes: _timeframeMinutes(timeframe));
-    return input.where((kline) {
-      final openTime = DateTime.fromMillisecondsSinceEpoch(
-        kline.openTimeMs,
-        isUtc: true,
-      );
-      return !openTime.add(duration).isAfter(observedAtUtc);
-    }).toList(growable: false);
+    return input
+        .where((kline) {
+          final openTime = DateTime.fromMillisecondsSinceEpoch(
+            kline.openTimeMs,
+            isUtc: true,
+          );
+          return !openTime.add(duration).isAfter(observedAtUtc);
+        })
+        .toList(growable: false);
   }
 
   List<BingxFuturesTrade> _mapTrades(List<BingxFuturesPublicTrade> input) {

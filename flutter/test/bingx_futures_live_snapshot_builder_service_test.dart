@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
@@ -5,13 +7,96 @@ import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.d
 
 void main() {
   group('BingxFuturesLiveSnapshotBuilderService', () {
-    test('builds snapshot with OI history and liquidation proxy levels',
-        () async {
+    test('fetches independent public reads in two bounded phases', () async {
+      final klineGate = Completer<void>();
+      final contextGate = Completer<void>();
+      var klineRequests = 0;
+      var contextRequests = 0;
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          final path = request.uri.path;
+          if (path == '/openApi/swap/v2/quote/price') {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"price":"100.5","time":1710000399000}}',
+            );
+          }
+          if (path == '/openApi/swap/v3/quote/klines') {
+            klineRequests += 1;
+            if (klineRequests == 7) klineGate.complete();
+            await klineGate.future;
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":[[1710000000000,"100","102","99","101"],[1710000300000,"101","103","100","102"]]}',
+            );
+          }
+          contextRequests += 1;
+          if (contextRequests == 5) contextGate.complete();
+          await contextGate.future;
+          if (path == '/openApi/swap/v2/quote/trades') {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":[{"id":"t1","side":"BUY","price":"100.4","qty":"4","time":1710000397000}]}',
+            );
+          }
+          if (path == '/openApi/swap/v2/quote/premiumIndex') {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"markPrice":"100.5","indexPrice":"100.4","lastFundingRate":"0.0001","nextFundingTime":1710003600000,"time":1710000399000}}',
+            );
+          }
+          if (path == '/openApi/swap/v2/quote/openInterest') {
+            if (request.uri.queryParameters.containsKey('period')) {
+              return const BingxHttpResponse(
+                statusCode: 200,
+                body:
+                    '{"code":0,"msg":"ok","data":{"list":[{"openInterest":"1000","time":1710000000000},{"openInterest":"1065","time":1710000300000}]}}',
+              );
+            }
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"openInterest":"1065","time":1710000300000}}',
+            );
+          }
+          if (path == '/openApi/swap/v2/quote/depth') {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"time":1710000399000,"bids":[["100.1","45"]],"asks":[["100.8","51"]]}}',
+            );
+          }
+          return const BingxHttpResponse(
+            statusCode: 404,
+            body: '{"code":404,"msg":"not found"}',
+          );
+        },
+      );
+
+      final result = await BingxFuturesLiveSnapshotBuilderService(
+            clockUtc:
+                () => DateTime.fromMillisecondsSinceEpoch(
+                  1710000400000,
+                  isUtc: true,
+                ),
+          )
+          .fetchAndBuild(exchange: exchange, symbol: 'BTC-USDT')
+          .timeout(const Duration(seconds: 1));
+
+      expect(result.isSuccess, isTrue);
+      expect(klineRequests, 7);
+      expect(contextRequests, 5);
+    });
+
+    test('builds snapshot with OI history and liquidation proxy levels', () async {
       final builder = BingxFuturesLiveSnapshotBuilderService(
-        clockUtc: () => DateTime.fromMillisecondsSinceEpoch(
-          1710000400000,
-          isUtc: true,
-        ),
+        clockUtc:
+            () =>
+                DateTime.fromMillisecondsSinceEpoch(1710000400000, isUtc: true),
       );
       var requestedExtended4hHistory = false;
       final exchange = BingxFuturesExchangeService(
@@ -86,8 +171,9 @@ void main() {
       final snapshot = result.snapshotInput!;
       expect(snapshot.openInterest.length, 3);
       expect(
-        snapshot.liquidityLevels
-            .any((item) => item.kind == 'liquidation_proxy'),
+        snapshot.liquidityLevels.any(
+          (item) => item.kind == 'liquidation_proxy',
+        ),
         isTrue,
       );
       expect(requestedExtended4hHistory, isTrue);
@@ -108,13 +194,11 @@ void main() {
       );
     });
 
-    test('does not treat account force-orders as market liquidation feed',
-        () async {
+    test('does not treat account force-orders as market liquidation feed', () async {
       final builder = BingxFuturesLiveSnapshotBuilderService(
-        clockUtc: () => DateTime.fromMillisecondsSinceEpoch(
-          1710000400000,
-          isUtc: true,
-        ),
+        clockUtc:
+            () =>
+                DateTime.fromMillisecondsSinceEpoch(1710000400000, isUtc: true),
       );
       var requestedAccountForceOrders = false;
       final exchange = BingxFuturesExchangeService(
