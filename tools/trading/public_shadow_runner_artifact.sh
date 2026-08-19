@@ -1057,11 +1057,8 @@ def instant(name):
         raise SystemExit(f"invalid mandate {name}")
 issued = instant("issued_at_utc")
 expires = instant("expires_at_utc")
-now = datetime.datetime.now(datetime.timezone.utc)
 if expires <= issued or expires - issued > datetime.timedelta(hours=24):
     raise SystemExit("mandate time bounds are invalid")
-if now < issued or now >= expires:
-    raise SystemExit("mandate is not currently active")
 pathlib.Path(work, "digest.bin").write_bytes(bytes.fromhex(commitment))
 pathlib.Path(work, "signature.bin").write_bytes(bytes.fromhex(value["signature_hex"]))
 pathlib.Path(work, "capsule-public-key.der").write_bytes(
@@ -1071,6 +1068,7 @@ pathlib.Path(work, "operation-id").write_text(value["operation_id"], encoding="a
 pathlib.Path(work, "account-binding").write_text(
     mandate["account_binding_hash_hex"], encoding="ascii"
 )
+pathlib.Path(work, "issued-at").write_text(mandate["issued_at_utc"], encoding="ascii")
 pathlib.Path(work, "expires-at").write_text(mandate["expires_at_utc"], encoding="ascii")
 pathlib.Path(work, "read-scope").write_text(
     ",".join(value["read_scope"]), encoding="ascii"
@@ -1084,6 +1082,30 @@ PY
     -inkey "$work/capsule-public-key.der" -keyform DER -rawin \
     -in "$work/digest.bin" -sigfile "$work/signature.bin" >/dev/null 2>&1 ||
     die "mandate Capsule signature is invalid"
+}
+
+require_remote_mandate_execution_eligible() {
+  local verified_work="$1"
+  python3 - "$verified_work/issued-at" "$verified_work/expires-at" <<'PY'
+import datetime
+import pathlib
+import sys
+
+def instant(path):
+    raw = pathlib.Path(path).read_text(encoding="ascii")
+    if not raw.endswith("Z"):
+        raise SystemExit("mandate execution time is invalid")
+    try:
+        return datetime.datetime.fromisoformat(raw[:-1] + "+00:00")
+    except ValueError:
+        raise SystemExit("mandate execution time is invalid")
+
+issued = instant(sys.argv[1])
+expires = instant(sys.argv[2])
+now = datetime.datetime.now(datetime.timezone.utc)
+if now < issued or now >= expires:
+    raise SystemExit("mandate is not currently eligible for execution")
+PY
 }
 
 admit_remote_mandate() {
@@ -1437,6 +1459,37 @@ finally:
 PY
 }
 
+resolve_account_read_operation_before_provider() {
+  local journal_dir="$1"
+  local journal="$2"
+  local operation_id="$3"
+  local runner_key_id="$4"
+  local account_binding="$5"
+  local verified_work="$6"
+  local replay_evidence="$7"
+  [ -z "$(find "$journal_dir" -mindepth 1 -maxdepth 1 ! -name "$operation_id.json" -print -quit)" ] ||
+    die "account probe found conflicting operation journal state"
+  if [ -e "$journal" ] || [ -L "$journal" ]; then
+    local journal_state
+    journal_state="$(validate_account_read_operation_journal \
+      "$journal" "$operation_id" "$runner_key_id" \
+      "$account_binding" "$replay_evidence")" ||
+      die "account probe retained operation journal is invalid"
+    if [ "$journal_state" = "completed" ]; then
+      local replay_hash
+      replay_hash="$(validate_account_read_evidence \
+        "$replay_evidence" "$operation_id" "$runner_key_id" \
+        "$account_binding")"
+      echo "completed:$replay_hash"
+      return
+    fi
+    die "account probe operation is unresolved after an interrupted attempt"
+  fi
+  require_remote_mandate_execution_eligible "$verified_work" ||
+    die "account probe authority is not currently eligible for execution"
+  echo eligible
+}
+
 probe_exchange_account_once() {
   local directory="$1"
   require_expected_runner_key_id
@@ -1490,29 +1543,21 @@ probe_exchange_account_once() {
     install -d -m 0700 "$journal_dir"
   fi
   local journal="$journal_dir/$operation_id.json"
-  [ -z "$(find "$journal_dir" -mindepth 1 -maxdepth 1 ! -name "$operation_id.json" -print -quit)" ] ||
-    die "account probe found conflicting operation journal state"
-  if [ -e "$journal" ] || [ -L "$journal" ]; then
-    local replay_evidence="$work/replay-evidence.json"
-    local journal_state
-    journal_state="$(validate_account_read_operation_journal \
-      "$journal" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" \
-      "$account_binding" "$replay_evidence")" ||
-      die "account probe retained operation journal is invalid"
-    if [ "$journal_state" = "completed" ]; then
-      local replay_hash
-      replay_hash="$(validate_account_read_evidence \
-        "$replay_evidence" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" \
-        "$account_binding")"
-      trap - EXIT INT TERM
-      rm -rf "$work"
-      rm -f "$lock_path"
-      exec 9>&-
-      echo "PASS trading-runner-artifact: exact account-read replay returned retained redacted evidence evidence_hash=$replay_hash effect=false"
-      return
-    fi
-    die "account probe operation is unresolved after an interrupted attempt"
+  local replay_evidence="$work/replay-evidence.json"
+  local resolution
+  resolution="$(resolve_account_read_operation_before_provider \
+    "$journal_dir" "$journal" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" \
+    "$account_binding" "$work/verified" "$replay_evidence")"
+  if [[ "$resolution" == completed:* ]]; then
+    local replay_hash="${resolution#completed:}"
+    trap - EXIT INT TERM
+    rm -rf "$work"
+    rm -f "$lock_path"
+    exec 9>&-
+    echo "PASS trading-runner-artifact: exact account-read replay returned retained redacted evidence evidence_hash=$replay_hash effect=false"
+    return
   fi
+  [ "$resolution" = eligible ] || die "account probe resolution is invalid"
   commit_account_read_operation_journal \
     "$journal" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" \
     "$account_binding" pending
@@ -1597,7 +1642,7 @@ probe_exchange_account_once() {
   rm -rf "$work"
   rm -f "$lock_path"
   exec 9>&-
-  echo "PASS trading-runner-artifact: completed one signed single-use account read evidence_hash=$evidence_hash effect=false"
+  echo "PASS trading-runner-artifact: completed one Capsule-authorized single-use account read evidence_hash=$evidence_hash effect=false"
 }
 
 install_disabled() {
@@ -2062,77 +2107,182 @@ import sys
 root = pathlib.Path(sys.argv[1])
 capsule = (root / "capsule.hex").read_text(encoding="ascii").strip()
 runner = hashlib.sha256(b"pass-s-runner").hexdigest()
-issued = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)
-expires = issued + datetime.timedelta(hours=1)
-semantic = {
-    "capsule_root_hex": capsule,
-    "account_binding_hash_hex": hashlib.sha256(b"account").hexdigest(),
-    "symbol": "BTC-USDT",
-    "test_order": True,
-    "issued_at_utc": issued.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-    "expires_at_utc": expires.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-    "max_order_notional_quote_decimal": "100",
-    "max_risk_per_trade_percent": 2.0,
-    "max_daily_loss_percent": 5.0,
-    "max_concurrent_positions": 3,
-    "cooldown_after_loss_streak": 2,
-    "cooldown_minutes": 60,
-    "max_effects": 32,
-}
-mandate_id = hashlib.sha256(
-    b"hivra:bingx-futures-trading-mandate:v1\n" +
-    json.dumps(semantic, separators=(",", ":")).encode()
-).hexdigest()
-mandate = {"version": 1, "mandate_id": mandate_id, **semantic, "revoked_at_utc": None}
-commitment_semantic = {
-    "contract_version": "trading-remote-mandate-admission-v2",
-    "runner_key_id": runner,
-    "operation_kind": "account_read",
-    "read_scope": ["balance", "positions", "open_orders"],
-    "max_uses": 1,
-    "mandate": mandate,
-}
-commitment = hashlib.sha256(
-    b"hivra:bingx-futures-remote-mandate-admission:v2\n" +
-    json.dumps(commitment_semantic, separators=(",", ":")).encode()
-).hexdigest()
-(root / "digest.bin").write_bytes(bytes.fromhex(commitment))
-(root / "metadata.json").write_text(json.dumps({
-    "runner": runner,
-    "commitment": commitment,
-    "mandate": mandate,
-}, separators=(",", ":")), encoding="utf-8")
+now = datetime.datetime.now(datetime.timezone.utc)
+
+def write_case(name, issued, expires):
+    semantic = {
+        "capsule_root_hex": capsule,
+        "account_binding_hash_hex": hashlib.sha256(b"account").hexdigest(),
+        "symbol": "BTC-USDT",
+        "test_order": True,
+        "issued_at_utc": issued.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "expires_at_utc": expires.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "max_order_notional_quote_decimal": "100",
+        "max_risk_per_trade_percent": 2.0,
+        "max_daily_loss_percent": 5.0,
+        "max_concurrent_positions": 3,
+        "cooldown_after_loss_streak": 2,
+        "cooldown_minutes": 60,
+        "max_effects": 32,
+    }
+    mandate_id = hashlib.sha256(
+        b"hivra:bingx-futures-trading-mandate:v1\n" +
+        json.dumps(semantic, separators=(",", ":")).encode()
+    ).hexdigest()
+    mandate = {"version": 1, "mandate_id": mandate_id, **semantic, "revoked_at_utc": None}
+    commitment_semantic = {
+        "contract_version": "trading-remote-mandate-admission-v2",
+        "runner_key_id": runner,
+        "operation_kind": "account_read",
+        "read_scope": ["balance", "positions", "open_orders"],
+        "max_uses": 1,
+        "mandate": mandate,
+    }
+    commitment = hashlib.sha256(
+        b"hivra:bingx-futures-remote-mandate-admission:v2\n" +
+        json.dumps(commitment_semantic, separators=(",", ":")).encode()
+    ).hexdigest()
+    (root / f"{name}digest.bin").write_bytes(bytes.fromhex(commitment))
+    (root / f"{name}metadata.json").write_text(json.dumps({
+        "runner": runner,
+        "commitment": commitment,
+        "mandate": mandate,
+    }, separators=(",", ":")), encoding="utf-8")
+
+write_case("", now - datetime.timedelta(minutes=1), now + datetime.timedelta(minutes=59))
+write_case("expired-", now - datetime.timedelta(hours=2), now - datetime.timedelta(hours=1))
 PY
   openssl pkeyutl -sign -inkey "$mandate_test/capsule.pem" -rawin \
     -in "$mandate_test/digest.bin" -out "$mandate_test/signature.bin"
+  openssl pkeyutl -sign -inkey "$mandate_test/capsule.pem" -rawin \
+    -in "$mandate_test/expired-digest.bin" -out "$mandate_test/expired-signature.bin"
   python3 - "$mandate_test" <<'PY'
 import json
 import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
-metadata = json.loads((root / "metadata.json").read_text())
-artifact = {
-    "contract_version": "trading-remote-mandate-admission-v2",
-    "operation_id": metadata["commitment"],
-    "commitment_hash_hex": metadata["commitment"],
-    "runner_key_id": metadata["runner"],
-    "operation_kind": "account_read",
-    "read_scope": ["balance", "positions", "open_orders"],
-    "max_uses": 1,
-    "mandate": metadata["mandate"],
-    "signature_suite": "ed25519-v1",
-    "signature_hex": (root / "signature.bin").read_bytes().hex(),
-}
-(root / "admission.json").write_text(
-    json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
-)
+for name in ("", "expired-"):
+    metadata = json.loads((root / f"{name}metadata.json").read_text())
+    artifact = {
+        "contract_version": "trading-remote-mandate-admission-v2",
+        "operation_id": metadata["commitment"],
+        "commitment_hash_hex": metadata["commitment"],
+        "runner_key_id": metadata["runner"],
+        "operation_kind": "account_read",
+        "read_scope": ["balance", "positions", "open_orders"],
+        "max_uses": 1,
+        "mandate": metadata["mandate"],
+        "signature_suite": "ed25519-v1",
+        "signature_hex": (root / f"{name}signature.bin").read_bytes().hex(),
+    }
+    (root / f"{name}admission.json").write_text(
+        json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
+    )
 PY
   local expected_runner
   expected_runner="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["runner_key_id"])' "$mandate_test/admission.json")"
   mkdir "$mandate_test/verified"
   verify_remote_mandate_artifact \
     "$mandate_test/admission.json" "$expected_runner" "$mandate_test/verified"
+  require_remote_mandate_execution_eligible "$mandate_test/verified"
+  mkdir "$mandate_test/expired-verified"
+  verify_remote_mandate_artifact \
+    "$mandate_test/expired-admission.json" "$expected_runner" \
+    "$mandate_test/expired-verified"
+  if (require_remote_mandate_execution_eligible \
+    "$mandate_test/expired-verified") >/dev/null 2>&1; then
+    die "self-test accepted expired unused account-read authority"
+  fi
+  local expired_operation expired_account expired_journal_dir expired_journal
+  local expired_replay expired_evidence
+  expired_operation="$(cat "$mandate_test/expired-verified/operation-id")"
+  expired_account="$(cat "$mandate_test/expired-verified/account-binding")"
+  expired_journal_dir="$mandate_test/expired-journal"
+  expired_journal="$expired_journal_dir/$expired_operation.json"
+  expired_replay="$mandate_test/expired-replay.json"
+  expired_evidence="$mandate_test/expired-evidence.json"
+  mkdir "$expired_journal_dir"
+  if (resolve_account_read_operation_before_provider \
+    "$expired_journal_dir" "$expired_journal" "$expired_operation" \
+    "$expected_runner" "$expired_account" "$mandate_test/expired-verified" \
+    "$expired_replay") >/dev/null 2>&1; then
+    die "self-test allowed an expired unused account read to reach the provider boundary"
+  fi
+  commit_account_read_operation_journal \
+    "$expired_journal" "$expired_operation" "$expected_runner" \
+    "$expired_account" pending
+  if (resolve_account_read_operation_before_provider \
+    "$expired_journal_dir" "$expired_journal" "$expired_operation" \
+    "$expected_runner" "$expired_account" "$mandate_test/expired-verified" \
+    "$expired_replay") >/dev/null 2>&1; then
+    die "self-test retried an expired pending account read"
+  fi
+  python3 - "$expired_evidence" "$expired_operation" "$expected_runner" \
+    "$expired_account" <<'PY'
+import datetime
+import json
+import pathlib
+import sys
+
+path, operation, runner, account = sys.argv[1:]
+value = {
+    "contract_version": "hivra-trading-account-read-evidence-v2",
+    "account_read_operation_id": operation,
+    "runner_key_id": runner,
+    "account_binding_hash_hex": account,
+    "read_scope": ["balance", "positions", "open_orders"],
+    "max_uses": 1,
+    "observed_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+    "checks": [
+        {"name": "balance", "success": True},
+        {"name": "positions", "success": True},
+        {"name": "open_orders", "success": True},
+    ],
+    "effect": False,
+}
+pathlib.Path(path).write_text(json.dumps(value, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+  commit_account_read_operation_journal \
+    "$expired_journal" "$expired_operation" "$expected_runner" \
+    "$expired_account" completed "$expired_evidence"
+  local expired_resolution expired_evidence_hash
+  expired_resolution="$(resolve_account_read_operation_before_provider \
+    "$expired_journal_dir" "$expired_journal" "$expired_operation" \
+    "$expected_runner" "$expired_account" "$mandate_test/expired-verified" \
+    "$expired_replay")"
+  expired_evidence_hash="$(validate_account_read_evidence \
+    "$expired_evidence" "$expired_operation" "$expected_runner" \
+    "$expired_account")"
+  [ "$expired_resolution" = "completed:$expired_evidence_hash" ] ||
+    die "self-test could not inspect exact completed evidence after expiry"
+  cmp -s "$expired_evidence" "$expired_replay" ||
+    die "self-test changed completed evidence after expiry"
+  cp "$mandate_test/expired-admission.json" \
+    "$mandate_test/expired-completed-mutated.json"
+  python3 - "$mandate_test/expired-completed-mutated.json" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+value = json.loads(path.read_text(encoding="utf-8"))
+signature = value["signature_hex"]
+value["signature_hex"] = ("0" if signature[0] != "0" else "1") + signature[1:]
+path.write_text(json.dumps(value, separators=(",", ":")), encoding="utf-8")
+PY
+  mkdir "$mandate_test/expired-mutated-verified"
+  if (verify_remote_mandate_artifact \
+    "$mandate_test/expired-completed-mutated.json" "$expected_runner" \
+    "$mandate_test/expired-mutated-verified") >/dev/null 2>&1; then
+    die "self-test accepted invalid authority for expired completed replay"
+  fi
+  mkdir "$mandate_test/expired-wrong-runner-verified"
+  if (verify_remote_mandate_artifact \
+    "$mandate_test/expired-admission.json" "$(printf '0%.0s' {1..64})" \
+    "$mandate_test/expired-wrong-runner-verified") >/dev/null 2>&1; then
+    die "self-test accepted wrong binding for expired completed replay"
+  fi
   cp "$mandate_test/admission.json" "$mandate_test/mutated.json"
   sed -i.bak 's/"symbol":"BTC-USDT"/"symbol":"ETH-USDT"/' "$mandate_test/mutated.json"
   if (verify_remote_mandate_artifact "$mandate_test/mutated.json" "$expected_runner" "$mandate_test/verified") >/dev/null 2>&1; then

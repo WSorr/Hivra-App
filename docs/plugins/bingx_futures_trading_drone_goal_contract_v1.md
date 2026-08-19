@@ -1029,6 +1029,15 @@ and never guesses that no request occurred. Corrupt, conflicting, linked, or
 unexpected journal state fails closed. No balance, position, order, provider
 body, API material, or provider message is retained.
 
+Static artifact verification covers canonical shape, semantic commitment,
+Capsule signature, runner/account/scope binding, and valid bounded timestamps;
+it does not require the mandate to be currently active. The host resolves the
+operation journal next. Exact `completed` evidence remains inspectable after
+expiry, while `pending` remains unresolved. Only an unused operation proceeds
+to the current issued/expiry eligibility check, immediately before `pending`
+is committed and any provider GET can start. Mutation, signature, and binding
+failures remain terminal before journal replay.
+
 This remediation adds no service, Core/Ledger fact, FFI contract, plugin ABI,
 schedule, lease, persistent runner credential, POST/DELETE path, order,
 cancellation, reconciliation, exchange effect, tag, or Release.

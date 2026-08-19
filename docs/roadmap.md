@@ -3871,7 +3871,14 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     post-merge CI, then merge-SHA VPS proof of first read, no-network completed
     replay, unresolved pending rejection, exact uninstall, and unchanged
     website/Amnezia/listener baselines.
-  - Status: selected (2026-08-19); implementation and host evidence pending.
+  - Review remediation: merged commit `28fc500` correctly bound and consumed
+    the authority, but current-activity validation still preceded completed
+    journal replay. Static cryptographic verification is now separated from
+    execution eligibility: expired unused and pending operations stop before
+    provider access, while exact completed evidence remains inspectable after
+    expiry. Mutation, signature, and binding failures remain terminal first.
+  - Status: P2 remediation selected (2026-08-19); merge-SHA VPS evidence remains
+    blocked until its protected PR and post-merge gates pass.
 
 - `External Personal-Agent Runtime Pattern Audit`
   - Scope: preserve anonymized external personal-agent runtime observations
