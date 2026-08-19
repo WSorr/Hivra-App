@@ -3912,6 +3912,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     for a Capsule property, not a new entity or a replacement for PFR. No
     durable-intent contract or implementation pass is selected.
 
+- `Trading Empirical Authority Research`
+  - Scope: preserve the supplied authority hypothesis and reconcile its full
+    threat model with the implemented local Trading and Pass U boundaries.
+  - Result: local mandate/effect/reconciliation and remote admission,
+    encrypted prepared credential, and exact single-use account-read primitives
+    are existing facts; remote AI, effects, cumulative delegation, revocation
+    delivery, and independently verifiable effect receipts remain experiments.
+  - Status: parked in `research/trading-empirical-authority-pass.md`. It selects
+    no pass, universal Capability/Warrant abstraction, VPS change, or release.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
