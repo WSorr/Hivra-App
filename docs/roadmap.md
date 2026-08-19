@@ -1252,6 +1252,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     clean-checkout bundle build and Linux runtime smoke, protected PR and
     post-merge gate, then merge-SHA VPS simulated-order evidence. A minimal live
     subaccount order remains a separate explicit approval.
+  - Merge-SHA smoke finding: implementation merged at `d5534e0`, and its exact
+    Linux bundle installed disabled with encrypted prepared credentials while
+    website, Amnezia containers, and listeners remained unchanged. Two packaged
+    macOS intent attempts exhausted the bounded cycle timeout before producing a
+    fresh signed intent because the snapshot builder awaited independent public
+    reads serially. No order artifact, provider POST, schedule, lease, or live
+    effect occurred. Remediation is restricted to concurrent bounded reads in
+    the existing snapshot owner plus a concurrency regression; final VPS
+    evidence must use the remediation merge SHA rather than `d5534e0`.
   - Entropy reduction:
 
     | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
