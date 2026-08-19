@@ -627,6 +627,138 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     }
   }
 
+  Future<void> _exportSignedRemoteExactOrder() async {
+    if (_exportingRemoteMandate) return;
+    final mandate = _tradingMandate;
+    final result = _lastIntentResponse?.result;
+    if (!_droneEnabled ||
+        mandate == null ||
+        !mandate.isActiveAt(DateTime.now().toUtc()) ||
+        result == null) {
+      await _showSnack('An active mandate and fresh intent are required.');
+      return;
+    }
+    if (!Platform.isMacOS) {
+      await _showSnack('Remote order export is currently available on macOS.');
+      return;
+    }
+    final intent = BingxFuturesIntentPayload.fromPluginResult(result);
+    final fresh = await _module.executionUseCase
+        .isPreparedLiquidityDecisionFresh(
+          payload: intent,
+          rawIntentResult: result,
+          preparedDecision: _lastPreparedLiveDecision,
+          refreshDecision:
+              () => _computeLiveDecision(
+                symbol: intent.symbol,
+                peerHex: result['peer_hex']?.toString().trim() ?? '',
+                silent: true,
+                forceConsensusSignable: true,
+                zoneEvaluationSide: intent.side,
+              ),
+        );
+    if (!fresh) {
+      await _showSnack('Market structure changed. Run a fresh intent first.');
+      return;
+    }
+    if (!mounted) return;
+    final runnerKeyController = TextEditingController();
+    final runnerKeyId = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Prepare one exact remote order'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${intent.symbol} · ${intent.side.toUpperCase()} · '
+                  '${intent.quantityDecimal} · '
+                  '${mandate.testOrder ? "TEST" : "LIVE"}',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: runnerKeyController,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Runner key id',
+                    hintText: '64 lowercase hex characters',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed:
+                    () => Navigator.of(
+                      context,
+                    ).pop(runnerKeyController.text.trim()),
+                child: const Text('Sign exact order'),
+              ),
+            ],
+          ),
+    );
+    runnerKeyController.dispose();
+    if (runnerKeyId == null) return;
+    final admission = BingxFuturesRemoteMandateAdmission.issueExactOrder(
+      mandate: mandate,
+      runnerKeyId: runnerKeyId,
+      exactOrder: intent.toExactOrderJson(testOrder: mandate.testOrder),
+      signCommitment: _module.signRootCommitment,
+    );
+    if (admission == null ||
+        BingxFuturesRemoteMandateAdmission.parseAndVerify(
+              untrustedWireBytes: utf8.encode(admission.canonicalJson),
+              verifySignature:
+                  ({
+                    required messageHashHex,
+                    required participantIdHex,
+                    required signatureHex,
+                  }) => _module.verifyRootCommitmentSignature(
+                    commitmentHashHex: messageHashHex,
+                    capsuleRootHex: participantIdHex,
+                    signatureHex: signatureHex,
+                  ),
+            ) ==
+            null) {
+      await _showSnack('Capsule could not sign the exact remote order.');
+      return;
+    }
+    final directory = await HivraFilePickerService.selectDirectory(
+      confirmButtonText: 'Export exact order',
+    );
+    if (directory == null || directory.trim().isEmpty) return;
+    final target = File(
+      '${directory.trim()}/trading-remote-order-${admission.operationId.substring(0, 16)}.json',
+    );
+    if (await target.exists()) {
+      await _showSnack('The exact remote order artifact already exists.');
+      return;
+    }
+    setState(() => _exportingRemoteMandate = true);
+    try {
+      await const AtomicFileWriteService().writeString(
+        target,
+        admission.canonicalJson,
+      );
+      await _module.uiLog.log(
+        'bingx.remote_order.exported',
+        'operation_id=${admission.operationId} '
+            'runner_key_id=${admission.runnerKeyId} effect=false',
+      );
+      await _showSnack('Signed exact remote order exported.');
+    } finally {
+      if (mounted) setState(() => _exportingRemoteMandate = false);
+    }
+  }
+
   Future<void> _restoreOpenOrdersTrackingState() async {
     try {
       final state = await _module.orderTrackingStore.load();
@@ -3858,6 +3990,18 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                     label: Text(
                       _fittingMaxNotional ? 'Fitting' : 'Auto-fit Notional',
                     ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _runningIntent ||
+                                _savingTradingControl ||
+                                _exportingRemoteMandate ||
+                                !_droneEnabled ||
+                                !hasExecutableIntent
+                            ? null
+                            : _exportSignedRemoteExactOrder,
+                    icon: const Icon(Icons.outbox_outlined),
+                    label: const Text('Export Exact Order'),
                   ),
                 ],
               ),

@@ -83,27 +83,12 @@ class BingxFuturesExchangeExecutionUseCaseService {
 
     final liquidityEventId = preparedDecision?.liquidityEventId?.trim() ?? '';
     if (payload.entryMode == 'zone_pending') {
-      final preparedBar =
-          preparedDecision?.latestClosedMicroBarAtUtc?.trim() ?? '';
-      if (liquidityEventId.isEmpty ||
-          preparedBar.isEmpty ||
-          refreshDecision == null) {
-        return _result(
-          status: BingxFuturesExchangeExecutionUseCaseStatus.staleIntent,
-          payload: payload,
-          errorCode: 'liquidity_event_evidence_missing',
-          errorMessage: 'Run a fresh liquidity intent before execution.',
-        );
-      }
-      final fresh = await refreshDecision();
-      if (fresh == null ||
-          !fresh.canPrepareIntent ||
-          fresh.liquidityEventId != liquidityEventId ||
-          fresh.latestClosedMicroBarAtUtc != preparedBar ||
-          fresh.zoneLowDecimal != preparedDecision!.zoneLowDecimal ||
-          fresh.zoneHighDecimal != preparedDecision.zoneHighDecimal ||
-          fresh.side != payload.side ||
-          fresh.zoneSide != rawIntentResult['zone_side']?.toString().trim()) {
+      if (!await isPreparedLiquidityDecisionFresh(
+        payload: payload,
+        rawIntentResult: rawIntentResult,
+        preparedDecision: preparedDecision,
+        refreshDecision: refreshDecision,
+      )) {
         return _result(
           status: BingxFuturesExchangeExecutionUseCaseStatus.staleIntent,
           payload: payload,
@@ -322,6 +307,33 @@ class BingxFuturesExchangeExecutionUseCaseService {
                   'Exchange effect failed without a success receipt.'),
       diagnostics: executionDiagnostics,
     );
+  }
+
+  Future<bool> isPreparedLiquidityDecisionFresh({
+    required BingxFuturesIntentPayload payload,
+    required Map<String, dynamic> rawIntentResult,
+    required BingxFuturesLiveDecisionResult? preparedDecision,
+    required Future<BingxFuturesLiveDecisionResult?> Function()?
+    refreshDecision,
+  }) async {
+    if (payload.entryMode != 'zone_pending') return true;
+    final liquidityEventId = preparedDecision?.liquidityEventId?.trim() ?? '';
+    final preparedBar =
+        preparedDecision?.latestClosedMicroBarAtUtc?.trim() ?? '';
+    if (liquidityEventId.isEmpty ||
+        preparedBar.isEmpty ||
+        refreshDecision == null) {
+      return false;
+    }
+    final fresh = await refreshDecision();
+    return fresh != null &&
+        fresh.canPrepareIntent &&
+        fresh.liquidityEventId == liquidityEventId &&
+        fresh.latestClosedMicroBarAtUtc == preparedBar &&
+        fresh.zoneLowDecimal == preparedDecision!.zoneLowDecimal &&
+        fresh.zoneHighDecimal == preparedDecision.zoneHighDecimal &&
+        fresh.side == payload.side &&
+        fresh.zoneSide == rawIntentResult['zone_side']?.toString().trim();
   }
 
   static String accountBindingHashHex(BingxFuturesApiCredentials credentials) {

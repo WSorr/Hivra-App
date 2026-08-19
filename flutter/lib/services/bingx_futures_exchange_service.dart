@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import '../models/bingx_futures_exchange_models.dart';
+import '../models/external_effect_models.dart';
 import 'bingx_futures_public_market_data_port.dart';
 
 typedef BingxHttpRequestSender =
@@ -2167,5 +2168,174 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
     } finally {
       client.close(force: true);
     }
+  }
+}
+
+class BingxFuturesExternalEffectAdapter implements ExternalEffectAdapter {
+  static const String providerId = 'bingx-futures';
+  static const String exactOrderEffectKind = 'place-exact-order';
+
+  final BingxFuturesExchangeService _exchange;
+  final BingxFuturesApiCredentials _credentials;
+  final String _accountBindingId;
+  final DateTime Function() _clock;
+
+  BingxFuturesExternalEffectAdapter({
+    required BingxFuturesExchangeService exchange,
+    required BingxFuturesApiCredentials credentials,
+    required String accountBindingId,
+    DateTime Function()? clock,
+  }) : _exchange = exchange,
+       _credentials = credentials.normalized(),
+       _accountBindingId = accountBindingId,
+       _clock = clock ?? DateTime.now;
+
+  @override
+  Future<ExternalEffectAdapterResult> deliver(
+    ExternalEffectAdapterRequest request,
+  ) async {
+    final exactOrder = _parseRequest(request);
+    final result = await _exchange.placeOrder(
+      credentials: _credentials,
+      intent: exactOrder.intent,
+      testOrder: exactOrder.testOrder,
+    );
+    if (result.isSuccess) {
+      return _succeeded(
+        request,
+        exactOrder,
+        providerReferenceId:
+            result.orderId ?? 'test:${exactOrder.intent.clientOrderId}',
+        exchangeCode: result.exchangeCode,
+        signedPayloadHashHex: result.signedPayloadHashHex,
+      );
+    }
+    if (result.httpStatusCode >= 400 &&
+        result.httpStatusCode < 500 &&
+        result.httpStatusCode != 408 &&
+        result.httpStatusCode != 429) {
+      return ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.terminalFailure,
+        errorCode: 'provider_rejected',
+        errorMessage: 'BingX rejected the exact order (${result.exchangeCode})',
+      );
+    }
+    return ExternalEffectAdapterResult(
+      status: ExternalEffectAdapterStatus.unresolved,
+      errorCode: 'provider_outcome_ambiguous',
+      errorMessage: 'BingX order outcome requires reconciliation',
+      providerReferenceId: result.orderId,
+    );
+  }
+
+  @override
+  Future<ExternalEffectAdapterResult> reconcile(
+    ExternalEffectAdapterRequest request,
+  ) async {
+    final exactOrder = _parseRequest(request);
+    if (exactOrder.testOrder) {
+      return const ExternalEffectAdapterResult(
+        status: ExternalEffectAdapterStatus.unresolved,
+        errorCode: 'test_order_outcome_ambiguous',
+        errorMessage: 'A test order has no queryable live order receipt',
+      );
+    }
+    final result = await _exchange.getOrder(
+      credentials: _credentials,
+      symbol: exactOrder.intent.symbol,
+      orderId: request.providerReferenceId,
+      clientOrderId:
+          request.providerReferenceId == null
+              ? exactOrder.intent.clientOrderId
+              : null,
+    );
+    final order = result.order;
+    if (result.isSuccess && order != null) {
+      return _succeeded(
+        request,
+        exactOrder,
+        providerReferenceId: order.orderId,
+        exchangeCode: result.exchangeCode,
+        signedPayloadHashHex: result.signedPayloadHashHex,
+      );
+    }
+    return const ExternalEffectAdapterResult(
+      status: ExternalEffectAdapterStatus.unresolved,
+      errorCode: 'order_not_confirmed',
+      errorMessage: 'The exact order is not yet confirmed by reconciliation',
+    );
+  }
+
+  @override
+  Future<ExternalEffectAdapterResult> resolveRequiredAction(
+    ExternalEffectAdapterRequest request,
+    ExternalEffectRequiredAction action,
+    String response,
+  ) async => const ExternalEffectAdapterResult(
+    status: ExternalEffectAdapterStatus.terminalFailure,
+    errorCode: 'required_action_unsupported',
+    errorMessage: 'BingX exact orders do not use interactive provider actions',
+  );
+
+  ({BingxFuturesIntentPayload intent, bool testOrder}) _parseRequest(
+    ExternalEffectAdapterRequest request,
+  ) {
+    request.validate();
+    if (request.providerId != providerId ||
+        request.effectKind != exactOrderEffectKind ||
+        request.accountBindingId != _accountBindingId) {
+      throw const FormatException('BingX exact effect binding mismatch');
+    }
+    final decoded = jsonDecode(request.canonicalPayloadJson);
+    if (decoded is! Map<String, dynamic> || decoded['test_order'] is! bool) {
+      throw const FormatException('BingX exact effect payload is invalid');
+    }
+    final intent = BingxFuturesIntentPayload.fromPluginResult(decoded);
+    final canonical = intent.toExactOrderJson(
+      testOrder: decoded['test_order']! as bool,
+    );
+    if (jsonEncode(canonical) != request.canonicalPayloadJson) {
+      throw const FormatException(
+        'BingX exact effect payload is not canonical',
+      );
+    }
+    return (intent: intent, testOrder: decoded['test_order']! as bool);
+  }
+
+  ExternalEffectAdapterResult _succeeded(
+    ExternalEffectAdapterRequest request,
+    ({BingxFuturesIntentPayload intent, bool testOrder}) exactOrder, {
+    required String providerReferenceId,
+    required String exchangeCode,
+    required String signedPayloadHashHex,
+  }) {
+    final evidenceHashHex =
+        sha256
+            .convert(
+              utf8.encode(
+                jsonEncode(<String, dynamic>{
+                  'operation_id': request.operationId,
+                  'provider_id': providerId,
+                  'provider_reference_id': providerReferenceId,
+                  'client_order_id': exactOrder.intent.clientOrderId,
+                  'symbol': exactOrder.intent.symbol,
+                  'test_order': exactOrder.testOrder,
+                  'exchange_code': exchangeCode,
+                  'signed_payload_hash_hex': signedPayloadHashHex,
+                }),
+              ),
+            )
+            .toString();
+    return ExternalEffectAdapterResult(
+      status: ExternalEffectAdapterStatus.succeeded,
+      providerReferenceId: providerReferenceId,
+      receipt: ExternalEffectReceipt(
+        operationId: request.operationId,
+        providerId: providerId,
+        providerReceiptId: providerReferenceId,
+        evidenceHashHex: evidenceHashHex,
+        receivedAtUtc: _clock().toUtc().toIso8601String(),
+      ),
+    );
   }
 }

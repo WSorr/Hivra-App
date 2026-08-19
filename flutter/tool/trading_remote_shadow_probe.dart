@@ -308,7 +308,6 @@ void _validateModeOptions(Map<String, String> options, String mode) {
   };
   const accountOnly = <String>{
     'account-read-credential-file',
-    'expected-runner-key-id',
     'expected-account-binding-hash',
     'account-read-operation-id',
     'account-read-scope',
@@ -318,12 +317,16 @@ void _validateModeOptions(Map<String, String> options, String mode) {
   if (mode != publicShadowMode && mode != accountReadMode) {
     throw const FormatException('unsupported runner mode');
   }
-  final forbidden = mode == publicShadowMode ? accountOnly : publicOnly;
+  final forbidden = switch (mode) {
+    publicShadowMode => accountOnly,
+    _ => publicOnly,
+  };
   if (forbidden.any(options.containsKey)) {
     throw const FormatException('runner mode options are ambiguous');
   }
   if (mode == accountReadMode &&
-      accountOnly.any((key) => (options[key]?.trim() ?? '').isEmpty)) {
+      (accountOnly.any((key) => (options[key]?.trim() ?? '').isEmpty) ||
+          (options['expected-runner-key-id']?.trim() ?? '').isEmpty)) {
     throw const FormatException('account read options are incomplete');
   }
 }

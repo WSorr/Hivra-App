@@ -2,12 +2,12 @@
 
 Status date: 2026-08-19
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no implementation pass is selected. `1.x Trading
-Pass U Remediation — Expired Completed Account-Read Inspection` is complete at
-`5abecf6`; merge-SHA VPS evidence proved exact completed replay after expiry,
-zero provider access for expired unused or pending authority, exact uninstall,
-and unchanged co-hosted workloads. Scheduling, leases, account-state
-persistence, remote effects, release, and 2.0 work remain unauthorized.
+Current development focus: `1.x Trading Remote Runner — One Exact Order Effect`
+is selected. The implementation must bind one trigger-limit order to the exact
+Capsule signature and runner, persist `delivering` before one provider POST,
+and reconcile ambiguous delivery through the existing external-effect journal.
+Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
+withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
 ## 1. Read This First
 
@@ -17,7 +17,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No pass is selected; choose one bounded product finding explicitly. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | Complete the selected one-exact-order implementation, gates, PR, and merge-SHA simulated VPS evidence. A live order requires separate approval. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -27,7 +27,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Pass U remediation complete; no pass selected | Static authority verification remains independent of execution eligibility; completed redacted evidence remains inspectable after expiry without provider access. | Select one bounded product finding explicitly; do not infer scheduling, leases, remote effects, release, or 2.0 work. |
+| **1.x maintained runtime** | One Exact Order Effect selected | One signed semantic operation may issue at most one BingX POST; timeout and restart reconcile without blind replay. | Merge implementation through required gates, then prove the simulated lifecycle on the merge SHA. Live order remains separately gated. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

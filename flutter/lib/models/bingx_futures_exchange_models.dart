@@ -132,6 +132,24 @@ class BingxFuturesIntentPayload {
 
   String get exchangeSide => side == 'buy' ? 'BUY' : 'SELL';
   String get positionSide => side == 'buy' ? 'LONG' : 'SHORT';
+
+  Map<String, dynamic> toExactOrderJson({required bool testOrder}) =>
+      <String, dynamic>{
+        'client_order_id': clientOrderId,
+        'symbol': symbol,
+        'side': side,
+        'order_type': orderType,
+        'quantity_decimal': quantityDecimal,
+        'limit_price_decimal': limitPriceDecimal,
+        'time_in_force': timeInForce,
+        'entry_mode': entryMode,
+        'trigger_price_decimal': triggerPriceDecimal,
+        'stop_loss_decimal': stopLossDecimal,
+        'take_profit_decimal': takeProfitDecimal,
+        'intent_hash_hex': intentHashHex,
+        'test_order': testOrder,
+      };
+
   String get exchangeOrderType {
     if (entryMode == 'zone_pending' && orderType == 'limit') {
       return 'TRIGGER_LIMIT';
