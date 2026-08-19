@@ -949,3 +949,24 @@ Fields:
   verified before retained state is trusted,
 - durable command identity supplies restart-safe anti-replay for the current
   1.x path; a separate plugin execution journal must not duplicate it.
+
+## 16. Remote One-Exact-Order Boundary
+
+The remote runner may execute only a Capsule-signed `one_exact_order`
+admission bound to one runner key, one trading mandate, one account binding,
+one symbol, one canonical trigger-limit payload, and `max_uses = 1`.
+
+- `ExternalEffectService` remains the sole durable effect lifecycle owner.
+- The read-only public-shadow executable has no order-effect imports or routes.
+- A separate bounded effect executable is invoked only by the existing host
+  lifecycle with transient systemd credentials and a 128 MiB memory limit.
+- `delivering` is durable before the provider POST.
+- Timeout, interruption, or missing query evidence is `unresolved`, never
+  success and never permission for a second POST.
+- Live reconciliation uses the exact `client_order_id`; a missing order remains
+  unresolved instead of returning `notFound` to the generic retry transition.
+- Test-order success proves provider-boundary wiring but not live acceptance;
+  a live subaccount order requires a separate explicit operator decision.
+- Scheduling, leases, cancellation, leverage/margin mutation, withdrawal,
+  transfer, Pair Consensus, AI authority, and multi-symbol execution are out of
+  scope.

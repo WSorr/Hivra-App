@@ -1231,6 +1231,33 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
       service.
   - Status: completed (2026-07-07).
 
+- `1.x Trading Remote Runner — One Exact Order Effect`
+  - Lane: 1.x product completion; selected 2026-08-19.
+  - Invariant: one Capsule-signed exact operation can cause at most one BingX
+    order POST, including after timeout, retry, process restart, and host
+    restart.
+  - Sole owner: `ExternalEffectService` owns durable effect state;
+    `BingxFuturesExchangeService` maps only the exact provider request and
+    reconciliation; `public_shadow_runner_artifact.sh` retains the single host
+    packaging and transient-launch lifecycle.
+  - Scope: one symbol, one canonical trigger-limit payload, one dedicated
+    futures account binding, stable `operation_id`, `max_uses = 1`, durable
+    pre-POST handoff, redacted receipt, and REST reconciliation by exact client
+    order id.
+  - Sealed: the public-shadow executable remains physically effect-free;
+    `notFound` cannot requeue an attempted order; no scheduler, lease, Pair
+    Consensus, AI authority, cancellation, transfer/withdrawal, Core, Ledger,
+    plugin ABI, tag, or Release is added.
+  - Exit evidence: focused mutation/replay/restart tests, full repository gates,
+    clean-checkout bundle build and Linux runtime smoke, protected PR and
+    post-merge gate, then merge-SHA VPS simulated-order evidence. A minimal live
+    subaccount order remains a separate explicit approval.
+  - Entropy reduction:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | One v3 exact-order admission variant and one effect executable in the existing bundle | Public-shadow effect imports, blind POST replay, widened provider endpoints | Timeout is unresolved; exact replay is inspection/reconciliation, not re-execution | Zero lifecycle owners; zero Core/Ledger paths | Simulated evidence does not prove live acceptance or 24/7 scheduling | Separate decision on one minimal live subaccount order after merge-SHA VPS evidence |
+
 - `11.30 Explainable Capsule History`
   - Goal:
     - provide one ledger-backed history surface for relationships,

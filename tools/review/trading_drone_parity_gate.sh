@@ -6,6 +6,7 @@ CHECKLIST="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
 PUBLIC_SNAPSHOT="$ROOT/flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart"
 PUBLIC_STRATEGY="$ROOT/flutter/lib/services/bingx_futures_live_strategy_use_case_service.dart"
 SHADOW_PROBE="$ROOT/flutter/tool/trading_remote_shadow_probe.dart"
+EXACT_ORDER_PROBE="$ROOT/flutter/tool/trading_remote_exact_order.dart"
 SHADOW_ANCHOR_VERIFIER="$ROOT/flutter/tool/verify_trading_shadow_anchor.dart"
 SHADOW_EVIDENCE="$ROOT/flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart"
 SHADOW_STREAM="$ROOT/flutter/lib/services/bingx_futures_shadow_stream_store.dart"
@@ -18,6 +19,8 @@ EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_
 TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
 TRADING_MODELS="$ROOT/flutter/lib/models/bingx_futures_order_tracking_models.dart"
 TRADING_SCREEN="$ROOT/flutter/lib/screens/trading_drone_screen.dart"
+EXCHANGE_SERVICE="$ROOT/flutter/lib/services/bingx_futures_exchange_service.dart"
+REMOTE_PROBE_TEST="$ROOT/flutter/test/trading_remote_shadow_probe_test.dart"
 STATUS=0
 
 pass() {
@@ -63,7 +66,7 @@ shadow_probe_is_bounded_scheduler() {
 runner_artifact_is_verifiable() {
   [ -x "$1" ] &&
     rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"' "$1" &&
-    rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-exact-single-use-account-read"' "$1" &&
+    rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-single-use-account-read-and-exact-order"' "$1" &&
     rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
     rg -q 'build output must stay outside the repository' "$1" &&
     rg -q 'binary_sha256=' "$1" &&
@@ -80,7 +83,8 @@ runner_artifact_is_verifiable() {
     rg -q 'artifact unit does not match the canonical source' "$1" &&
     rg -q 'forbidden exchange-effect authority markers' "$1" &&
     rg -q 'dart compile exe' "$1" &&
-    rg -q '"tool/trading_remote_shadow_probe.dart"' "$1"
+    rg -q '"tool/trading_remote_shadow_probe.dart"' "$1" &&
+    rg -q '"tool/trading_remote_exact_order.dart"' "$1"
 }
 
 runner_bundle_install_is_fail_closed() {
@@ -363,6 +367,34 @@ runner_account_read_probe_is_fail_closed() {
     ! rg -q 'responseBody|accountEquityQuoteDecimal|quantityDecimal|orderId' "$2" &&
     ! shadow_probe_has_authority "$2" &&
     ! rg -q 'LoadCredentialEncrypted=.*bingx|LoadCredential=.*bingx' "$3"
+}
+
+runner_exact_order_is_fail_closed() {
+  local artifact="$1"
+  local probe="$2"
+  local models="$3"
+  local exchange="$4"
+  local tests="$5"
+  rg -q -- '--execute-exact-order <artifact-dir>' "$artifact" &&
+    rg -q 'execute_exact_order_once' "$artifact" &&
+    rg -q 'LoadCredentialEncrypted="bingx-exchange:' "$artifact" &&
+    rg -q 'LoadCredential=exact-order-admission:' "$artifact" &&
+    rg -q 'MemoryMax=128M' "$artifact" &&
+    rg -q 'exact-order.v3.json' "$artifact" &&
+    rg -q 'mutated exact-order semantics' "$artifact" &&
+    rg -q 'const String exactOrderMode = .exact-order.' "$probe" &&
+    rg -q 'ExternalEffectService' "$probe" &&
+    rg -q 'approvalEvidenceHashHex: admission.commitmentHashHex' "$probe" &&
+    rg -q 'exact order authority expired before delivery' "$probe" &&
+    rg -q 'exactOrderContractVersion' "$models" &&
+    rg -q "exactOrderOperationKind = 'one_exact_order'" "$models" &&
+    rg -q 'class BingxFuturesExternalEffectAdapter' "$exchange" &&
+    rg -q 'test_order_outcome_ambiguous' "$exchange" &&
+    rg -q 'order_not_confirmed' "$exchange" &&
+    rg -q 'exact test order replay never issues a second POST' "$tests" &&
+    rg -q 'ambiguous test order remains unresolved without blind retry' "$tests" &&
+    rg -q 'live timeout reconciles by client id after restart' "$tests" &&
+    "$artifact" --self-test >/dev/null
 }
 
 runner_package_is_pinned() {
@@ -677,6 +709,24 @@ if runner_account_read_probe_is_fail_closed \
   pass "mandate-bound account read is transient, redacted, and effect-free"
 else
   fail "mandate-bound account read lost transient, redaction, or no-effect boundaries"
+fi
+
+if runner_exact_order_is_fail_closed \
+  "$RUNNER_ARTIFACT" "$EXACT_ORDER_PROBE" "$TRADING_MODELS" \
+  "$EXCHANGE_SERVICE" "$REMOTE_PROBE_TEST"; then
+pass "exact remote order uses one signed operation, durable effect journal, and reconciliation-only replay"
+
+if rg -n \
+  '\.(cancelOrder|switchLeverage|switchMarginType)\s*\(' \
+  "$ROOT/flutter/tool/trading_remote_exact_order.dart" >/dev/null || \
+  rg -n \
+    -- '--(cancel-order|switch-leverage|switch-margin-type|withdraw|transfer)' \
+    "$ROOT/flutter/tool/trading_remote_exact_order.dart" >/dev/null; then
+  fail "exact remote order executable exposes widened exchange authority"
+fi
+pass "exact remote order executable exposes no cancel, leverage, margin, transfer, or withdrawal path"
+else
+  fail "exact remote order lost signed binding, durable handoff, or no-duplicate reconciliation"
 fi
 
 if runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_REPOSITORY_GATES"; then

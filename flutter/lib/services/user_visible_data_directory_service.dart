@@ -2,9 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
-
+import 'application_documents_directory.dart';
 import 'atomic_file_write_service.dart';
 
 class UserVisibleDataDirectoryService {
@@ -39,10 +37,8 @@ class UserVisibleDataDirectoryService {
   }) : _homeOverride = homeOverride,
        _atomicWrites = atomicWrites;
 
-  @visibleForTesting
   static String? get testHomeOverride => _testHomeOverride;
 
-  @visibleForTesting
   static void setTestHomeOverride(String? path) {
     _testHomeOverride = path;
   }
@@ -64,7 +60,7 @@ class UserVisibleDataDirectoryService {
     if (home != null && home.isNotEmpty) {
       root = Directory('$home/Documents/$_rootName');
     } else {
-      final docs = await getApplicationDocumentsDirectory();
+      final docs = await resolveApplicationDocumentsDirectory();
       root = Directory('${docs.path}/$_rootName');
     }
 
@@ -124,7 +120,7 @@ class UserVisibleDataDirectoryService {
       return Directory('$home/Library/Application Support/$_rootName');
     }
 
-    final docs = await getApplicationDocumentsDirectory();
+    final docs = await resolveApplicationDocumentsDirectory();
     return Directory('${docs.path}/$_rootName');
   }
 

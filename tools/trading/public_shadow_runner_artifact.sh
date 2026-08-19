@@ -9,12 +9,14 @@ PACKAGE_DIR="$ROOT/tools/trading/public_shadow_runner_package"
 PACKAGE_LOCK="$PACKAGE_DIR/pubspec.lock"
 UNIT_SOURCE="$ROOT/tools/trading/hivra-trading-public-shadow-runner.service"
 BINARY_NAME="hivra-trading-public-shadow-runner"
+EFFECT_BINARY_NAME="hivra-trading-exact-order-runner"
 UNIT_NAME="hivra-trading-public-shadow-runner.service"
 MANIFEST_NAME="ARTIFACT-MANIFEST.v1"
 SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"
-AUTHORITY_PROFILE="public-market-shadow-plus-exact-single-use-account-read"
+AUTHORITY_PROFILE="public-market-shadow-plus-single-use-account-read-and-exact-order"
 BUNDLE_INSTALL_PATH="/opt/hivra/trading-public-shadow"
 BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$BINARY_NAME"
+EFFECT_BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$EFFECT_BINARY_NAME"
 UNIT_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$UNIT_NAME"
 UNIT_LINK_PATH="/etc/systemd/system/$UNIT_NAME"
 CREDENTIAL_INSTALL_PATH="/etc/credstore.encrypted/hivra-trading-public-shadow.seed"
@@ -52,6 +54,8 @@ Usage:
   tools/trading/public_shadow_runner_artifact.sh --provision-exchange-credential <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --probe-exchange-account <artifact-dir>
+    --expected-runner-key-id <64-lowercase-hex>
+  tools/trading/public_shadow_runner_artifact.sh --execute-exact-order <artifact-dir>
     --expected-runner-key-id <64-lowercase-hex>
   tools/trading/public_shadow_runner_artifact.sh --uninstall-disabled <artifact-dir>
   tools/trading/public_shadow_runner_artifact.sh --ephemeral-install-smoke <artifact-dir>
@@ -133,6 +137,7 @@ sha256_stdin() {
 runtime_smoke_artifact() {
   local directory="$1"
   local binary="$directory/$BINARY_NAME"
+  local effect_binary="$directory/$EFFECT_BINARY_NAME"
   local manifest="$directory/$MANIFEST_NAME"
   verify_artifact "$directory" >/dev/null
   [ "$(sed -n 's/^target_os=//p' "$manifest")" = "linux" ] &&
@@ -158,6 +163,17 @@ runtime_smoke_artifact() {
     "trading shadow probe failed: FormatException: HIVRA_SHADOW_RUNNER_SEED_HEX must be 32-byte lowercase hex" ] || {
     rm -rf "$smoke_root"
     die "runtime smoke did not reach the fail-closed probe boundary"
+  }
+  : >"$stdout_file"
+  : >"$stderr_file"
+  if "$effect_binary" >"$stdout_file" 2>"$stderr_file"; then
+    rm -rf "$smoke_root"
+    die "runtime smoke accepted missing exact-order authority"
+  fi
+  [ ! -s "$stdout_file" ] &&
+    [ "$(cat "$stderr_file")" = "trading exact order failed" ] || {
+    rm -rf "$smoke_root"
+    die "runtime smoke did not reach the fail-closed effect boundary"
   }
   rm -rf "$smoke_root"
   echo "PASS trading-runner-artifact: Linux x64 runtime starts and rejects missing authority"
@@ -253,6 +269,7 @@ write_manifest() {
   local target_arch="$5"
   local dependency_lock_sha="$6"
   local binary="$directory/$BINARY_NAME"
+  local effect_binary="$directory/$EFFECT_BINARY_NAME"
   local unit="$directory/$UNIT_NAME"
   cat > "$directory/$MANIFEST_NAME" <<EOF
 schema_version=$SCHEMA_VERSION
@@ -267,10 +284,15 @@ authority_profile=$AUTHORITY_PROFILE
 binary_file=$BINARY_NAME
 binary_sha256=$(sha256_file "$binary")
 binary_size=$(file_size "$binary")
+effect_entrypoint=flutter/tool/trading_remote_exact_order.dart
+effect_binary_file=$EFFECT_BINARY_NAME
+effect_binary_sha256=$(sha256_file "$effect_binary")
+effect_binary_size=$(file_size "$effect_binary")
 unit_file=$UNIT_NAME
 unit_sha256=$(sha256_file "$unit")
 bundle_install_path=$BUNDLE_INSTALL_PATH
 binary_install_path=$BINARY_INSTALL_PATH
+effect_binary_install_path=$EFFECT_BINARY_INSTALL_PATH
 unit_install_path=$UNIT_INSTALL_PATH
 unit_link_path=$UNIT_LINK_PATH
 credential_install_path=$CREDENTIAL_INSTALL_PATH
@@ -281,17 +303,20 @@ EOF
 verify_artifact() {
   local directory="$1"
   local binary="$directory/$BINARY_NAME"
+  local effect_binary="$directory/$EFFECT_BINARY_NAME"
   local unit="$directory/$UNIT_NAME"
   local manifest="$directory/$MANIFEST_NAME"
   [ -d "$directory" ] && [ ! -L "$directory" ] ||
     die "artifact directory must be a real directory"
   [ -f "$binary" ] && [ ! -L "$binary" ] && [ -x "$binary" ] ||
     die "artifact binary must be one executable regular file"
+  [ -f "$effect_binary" ] && [ ! -L "$effect_binary" ] && [ -x "$effect_binary" ] ||
+    die "artifact effect binary must be one executable regular file"
   [ -f "$unit" ] && [ ! -L "$unit" ] && [ ! -x "$unit" ] ||
     die "artifact unit must be one non-executable regular file"
   [ -f "$manifest" ] && [ ! -L "$manifest" ] ||
     die "artifact manifest must be one regular file"
-  [ "$(find "$directory" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = "3" ] ||
+  [ "$(find "$directory" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')" = "4" ] ||
     die "artifact directory contains unknown entries"
 
   python3 - \
@@ -299,9 +324,11 @@ verify_artifact() {
     "$SCHEMA_VERSION" \
     "$AUTHORITY_PROFILE" \
     "$BINARY_NAME" \
+    "$EFFECT_BINARY_NAME" \
     "$UNIT_NAME" \
     "$BUNDLE_INSTALL_PATH" \
     "$BINARY_INSTALL_PATH" \
+    "$EFFECT_BINARY_INSTALL_PATH" \
     "$UNIT_INSTALL_PATH" \
     "$UNIT_LINK_PATH" \
     "$CREDENTIAL_INSTALL_PATH" \
@@ -314,9 +341,11 @@ import sys
     schema,
     authority,
     binary_name,
+    effect_binary_name,
     unit_name,
     bundle_install_path,
     binary_install_path,
+    effect_binary_install_path,
     unit_install_path,
     unit_link_path,
     credential_install_path,
@@ -335,10 +364,15 @@ expected = [
     "binary_file",
     "binary_sha256",
     "binary_size",
+    "effect_entrypoint",
+    "effect_binary_file",
+    "effect_binary_sha256",
+    "effect_binary_size",
     "unit_file",
     "unit_sha256",
     "bundle_install_path",
     "binary_install_path",
+    "effect_binary_install_path",
     "unit_install_path",
     "unit_link_path",
     "credential_install_path",
@@ -379,6 +413,14 @@ if not re.fullmatch(r"[0-9a-f]{64}", parsed["binary_sha256"]):
     raise SystemExit("invalid binary SHA-256")
 if not re.fullmatch(r"[1-9][0-9]*", parsed["binary_size"]):
     raise SystemExit("invalid binary size")
+if parsed["effect_entrypoint"] != "flutter/tool/trading_remote_exact_order.dart":
+    raise SystemExit("effect entrypoint mismatch")
+if parsed["effect_binary_file"] != effect_binary_name:
+    raise SystemExit("effect binary filename mismatch")
+if not re.fullmatch(r"[0-9a-f]{64}", parsed["effect_binary_sha256"]):
+    raise SystemExit("invalid effect binary SHA-256")
+if not re.fullmatch(r"[1-9][0-9]*", parsed["effect_binary_size"]):
+    raise SystemExit("invalid effect binary size")
 if parsed["unit_file"] != unit_name:
     raise SystemExit("unit filename mismatch")
 if not re.fullmatch(r"[0-9a-f]{64}", parsed["unit_sha256"]):
@@ -387,6 +429,8 @@ if parsed["bundle_install_path"] != bundle_install_path:
     raise SystemExit("bundle install path mismatch")
 if parsed["binary_install_path"] != binary_install_path:
     raise SystemExit("binary install path mismatch")
+if parsed["effect_binary_install_path"] != effect_binary_install_path:
+    raise SystemExit("effect binary install path mismatch")
 if parsed["unit_install_path"] != unit_install_path:
     raise SystemExit("unit install path mismatch")
 if parsed["unit_link_path"] != unit_link_path:
@@ -399,6 +443,8 @@ PY
 
   local expected_sha
   local expected_size
+  local expected_effect_sha
+  local expected_effect_size
   local expected_lock_sha
   local expected_unit_sha
   local source_commit
@@ -406,6 +452,8 @@ PY
   local target_arch
   expected_sha="$(sed -n 's/^binary_sha256=//p' "$manifest")"
   expected_size="$(sed -n 's/^binary_size=//p' "$manifest")"
+  expected_effect_sha="$(sed -n 's/^effect_binary_sha256=//p' "$manifest")"
+  expected_effect_size="$(sed -n 's/^effect_binary_size=//p' "$manifest")"
   expected_lock_sha="$(sed -n 's/^dependency_lock_sha256=//p' "$manifest")"
   expected_unit_sha="$(sed -n 's/^unit_sha256=//p' "$manifest")"
   source_commit="$(sed -n 's/^source_commit=//p' "$manifest")"
@@ -415,6 +463,10 @@ PY
     die "artifact binary SHA-256 mismatch"
   [ "$(file_size "$binary")" = "$expected_size" ] ||
     die "artifact binary size mismatch"
+  [ "$(sha256_file "$effect_binary")" = "$expected_effect_sha" ] ||
+    die "artifact effect binary SHA-256 mismatch"
+  [ "$(file_size "$effect_binary")" = "$expected_effect_size" ] ||
+    die "artifact effect binary size mismatch"
   [ "$(sha256_file "$unit")" = "$expected_unit_sha" ] ||
     die "artifact unit SHA-256 mismatch"
   cmp -s "$unit" "$UNIT_SOURCE" ||
@@ -436,6 +488,11 @@ PY
       die "artifact binary does not match Darwin x64 manifest" ;;
     *) die "artifact target is not an allowed packaging target" ;;
   esac
+  local detected_effect_targets
+  detected_effect_targets="$(binary_target "$effect_binary")" ||
+    die "artifact effect binary is not a supported host-native executable"
+  [ "$detected_effect_targets" = "$detected_targets" ] ||
+    die "artifact binaries target different platforms"
   for marker in \
     'openApi/swap/v2/user/balance' \
     'openApi/swap/v2/user/positions' \
@@ -446,9 +503,21 @@ PY
       die "artifact is missing the bounded account-read marker: $marker"
   done
   if grep -aEq \
-    'openApi/swap/v2/trade/order([^s]|$)|openApi/swap/v2/trade/(leverage|marginType)|placeOrder|cancelOrder|switchLeverage|switchMarginType' \
+    'openApi/swap/v2/trade/order([^s]|$)|openApi/swap/v2/trade/(leverage|marginType)|placeOrder|cancelOrder|switchLeverage|switchMarginType|ExternalEffect' \
     "$binary"; then
     die "artifact contains forbidden exchange-effect authority markers"
+  fi
+  for marker in \
+    'openApi/swap/v2/trade/order' \
+    'openApi/swap/v2/trade/order/test' \
+    'hivra-trading-exact-order-evidence-v1'; do
+    grep -aFq "$marker" "$effect_binary" ||
+      die "artifact effect binary is missing exact-order marker: $marker"
+  done
+  if grep -aEq \
+    -- '--(cancel-order|switch-leverage|switch-margin-type|withdraw|transfer)(=|[^a-z-])' \
+    "$effect_binary"; then
+    die "artifact effect binary exposes a forbidden widened-authority option"
   fi
   echo "PASS trading-runner-artifact: verified $directory"
 }
@@ -527,9 +596,15 @@ PY
       "${compile_target[@]}" \
       "tool/trading_remote_shadow_probe.dart" \
       -o "$pending/$BINARY_NAME"
+    dart compile exe \
+      --packages="$pending/package_config.json" \
+      "${compile_target[@]}" \
+      "tool/trading_remote_exact_order.dart" \
+      -o "$pending/$EFFECT_BINARY_NAME"
   )
   rm -f "$pending/package_config.json"
   chmod 700 "$pending/$BINARY_NAME"
+  chmod 700 "$pending/$EFFECT_BINARY_NAME"
   cp "$UNIT_SOURCE" "$pending/$UNIT_NAME"
   chmod 600 "$pending/$UNIT_NAME"
   write_manifest \
@@ -628,6 +703,8 @@ require_exact_installed_bundle() {
   verify_artifact "$BUNDLE_INSTALL_PATH" >/dev/null
   cmp -s "$BINARY_INSTALL_PATH" "$directory/$BINARY_NAME" ||
     die "host lifecycle refused a drifted runner binary"
+  cmp -s "$EFFECT_BINARY_INSTALL_PATH" "$directory/$EFFECT_BINARY_NAME" ||
+    die "host lifecycle refused a drifted effect binary"
   cmp -s "$UNIT_INSTALL_PATH" "$directory/$UNIT_NAME" ||
     die "host lifecycle refused a drifted runner unit"
   cmp -s "$BUNDLE_INSTALL_PATH/$MANIFEST_NAME" "$directory/$MANIFEST_NAME" ||
@@ -950,10 +1027,16 @@ try:
     value = json.loads(text)
 except (UnicodeDecodeError, json.JSONDecodeError):
     raise SystemExit("mandate artifact is not strict UTF-8 JSON")
+version = value.get("contract_version") if isinstance(value, dict) else None
+is_account_read = version == "trading-remote-mandate-admission-v2"
+is_exact_order = version == "trading-remote-mandate-admission-v3"
+if not is_account_read and not is_exact_order:
+    raise SystemExit("mandate contract version mismatch")
 expected_root = [
     "contract_version", "operation_id", "commitment_hash_hex",
-    "runner_key_id", "operation_kind", "read_scope", "max_uses",
-    "mandate", "signature_suite", "signature_hex",
+    "runner_key_id", "operation_kind",
+    *( ["read_scope"] if is_account_read else ["exact_order"] ),
+    "max_uses", "mandate", "signature_suite", "signature_hex",
 ]
 expected_mandate = [
     "version", "mandate_id", "capsule_root_hex", "account_binding_hash_hex",
@@ -970,16 +1053,52 @@ if not isinstance(mandate, dict) or list(mandate) != expected_mandate:
     raise SystemExit("mandate shape is not canonical")
 if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
     raise SystemExit("mandate artifact bytes are not canonical")
-if value["contract_version"] != "trading-remote-mandate-admission-v2":
-    raise SystemExit("mandate contract version mismatch")
 if value["signature_suite"] != "ed25519-v1":
     raise SystemExit("mandate signature suite mismatch")
-if value["operation_kind"] != "account_read":
-    raise SystemExit("mandate operation kind mismatch")
-if value["read_scope"] != ["balance", "positions", "open_orders"]:
-    raise SystemExit("mandate account-read scope mismatch")
 if value["max_uses"] != 1:
-    raise SystemExit("mandate account-read use bound mismatch")
+    raise SystemExit("mandate account-read use bound mismatch" if is_account_read else "mandate exact-order use bound mismatch")
+if is_account_read:
+    if value["operation_kind"] != "account_read":
+        raise SystemExit("mandate operation kind mismatch")
+    if value["read_scope"] != ["balance", "positions", "open_orders"]:
+        raise SystemExit("mandate account-read scope mismatch")
+else:
+    if value["operation_kind"] != "one_exact_order":
+        raise SystemExit("mandate operation kind mismatch")
+    expected_order = [
+        "client_order_id", "symbol", "side", "order_type",
+        "quantity_decimal", "limit_price_decimal", "time_in_force",
+        "entry_mode", "trigger_price_decimal", "stop_loss_decimal",
+        "take_profit_decimal", "intent_hash_hex", "test_order",
+    ]
+    exact_order = value.get("exact_order")
+    if not isinstance(exact_order, dict) or list(exact_order) != expected_order:
+        raise SystemExit("exact order shape is not canonical")
+    if (
+        re.fullmatch(r"[A-Za-z0-9_-]{1,40}", str(exact_order["client_order_id"])) is None
+        or exact_order["symbol"] != mandate["symbol"]
+        or exact_order["side"] not in ("buy", "sell")
+        or exact_order["order_type"] != "limit"
+        or exact_order["entry_mode"] != "zone_pending"
+        or exact_order["time_in_force"] != "GTC"
+        or exact_order["test_order"] is not mandate["test_order"]
+        or not isinstance(exact_order["intent_hash_hex"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", exact_order["intent_hash_hex"]) is None
+    ):
+        raise SystemExit("exact order authority is not bounded")
+    decimal = re.compile(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,8})?")
+    for key in ("quantity_decimal", "limit_price_decimal", "trigger_price_decimal"):
+        if not isinstance(exact_order[key], str) or decimal.fullmatch(exact_order[key]) is None or float(exact_order[key]) <= 0:
+            raise SystemExit(f"invalid exact order {key}")
+    for key in ("stop_loss_decimal", "take_profit_decimal"):
+        if exact_order[key] is not None and (
+            not isinstance(exact_order[key], str)
+            or decimal.fullmatch(exact_order[key]) is None
+            or float(exact_order[key]) <= 0
+        ):
+            raise SystemExit(f"invalid exact order {key}")
+    if float(exact_order["quantity_decimal"]) * float(exact_order["limit_price_decimal"]) > float(mandate["max_order_notional_quote_decimal"]):
+        raise SystemExit("exact order exceeds mandate notional")
 if value["runner_key_id"] != expected_runner_key_id:
     raise SystemExit("mandate runner binding mismatch")
 hex64 = re.compile(r"[0-9a-f]{64}")
@@ -1037,12 +1156,12 @@ commitment_semantic = {
     "contract_version": value["contract_version"],
     "runner_key_id": value["runner_key_id"],
     "operation_kind": value["operation_kind"],
-    "read_scope": value["read_scope"],
+    **({"read_scope": value["read_scope"]} if is_account_read else {"exact_order": value["exact_order"]}),
     "max_uses": value["max_uses"],
     "mandate": mandate,
 }
 commitment = hashlib.sha256(
-    b"hivra:bingx-futures-remote-mandate-admission:v2\n" +
+    (b"hivra:bingx-futures-remote-mandate-admission:v2\n" if is_account_read else b"hivra:bingx-futures-remote-mandate-admission:v3\n") +
     json.dumps(commitment_semantic, separators=(",", ":")).encode("utf-8")
 ).hexdigest()
 if value["commitment_hash_hex"] != commitment:
@@ -1070,9 +1189,15 @@ pathlib.Path(work, "account-binding").write_text(
 )
 pathlib.Path(work, "issued-at").write_text(mandate["issued_at_utc"], encoding="ascii")
 pathlib.Path(work, "expires-at").write_text(mandate["expires_at_utc"], encoding="ascii")
-pathlib.Path(work, "read-scope").write_text(
-    ",".join(value["read_scope"]), encoding="ascii"
-)
+pathlib.Path(work, "operation-kind").write_text(value["operation_kind"], encoding="ascii")
+if is_account_read:
+    pathlib.Path(work, "read-scope").write_text(
+        ",".join(value["read_scope"]), encoding="ascii"
+    )
+else:
+    pathlib.Path(work, "exact-order.json").write_text(
+        json.dumps(value["exact_order"], separators=(",", ":")), encoding="utf-8"
+    )
 pathlib.Path(work, "max-uses").write_text(str(value["max_uses"]), encoding="ascii")
 PY
   then
@@ -1127,7 +1252,14 @@ admit_remote_mandate() {
     "$work/input.json" "$EXPECTED_RUNNER_KEY_ID" "$work"
   local target_dir="$STATE_DIRECTORY/mandates"
   local legacy_target="$target_dir/prepared.v1.json"
-  local target="$target_dir/prepared.v2.json"
+  local operation_kind
+  operation_kind="$(cat "$work/operation-kind")"
+  local target
+  case "$operation_kind" in
+    account_read) target="$target_dir/prepared.v2.json" ;;
+    one_exact_order) target="$target_dir/exact-order.v3.json" ;;
+    *) die "mandate admission produced an unsupported operation kind" ;;
+  esac
   if [ -e "$target_dir" ] || [ -L "$target_dir" ]; then
     [ -d "$target_dir" ] && [ ! -L "$target_dir" ] ||
       die "mandate admission refused foreign state directory"
@@ -1147,7 +1279,7 @@ admit_remote_mandate() {
     pending="$(mktemp "$target_dir/.prepared.pending.XXXXXX")"
     install -m 0600 "$work/input.json" "$pending"
     mv "$pending" "$target"
-    echo "PASS trading-runner-artifact: admitted one prepared remote mandate operation_id=$(cat "$work/operation-id") runner_key_id=$EXPECTED_RUNNER_KEY_ID effect=false"
+    echo "PASS trading-runner-artifact: admitted one prepared remote mandate operation_id=$(cat "$work/operation-id") runner_key_id=$EXPECTED_RUNNER_KEY_ID operation_kind=$operation_kind effect=false"
   fi
   trap - EXIT INT TERM
   rm -rf "$work"
@@ -1180,7 +1312,13 @@ provision_exchange_credential() {
     rm -f "$lock_path"
   ' EXIT INT TERM
 
-  local mandate="$STATE_DIRECTORY/mandates/prepared.v2.json"
+  local mandate
+  if [ -f "$STATE_DIRECTORY/mandates/exact-order.v3.json" ] &&
+    [ ! -L "$STATE_DIRECTORY/mandates/exact-order.v3.json" ]; then
+    mandate="$STATE_DIRECTORY/mandates/exact-order.v3.json"
+  else
+    mandate="$STATE_DIRECTORY/mandates/prepared.v2.json"
+  fi
   [ ! -e "$STATE_DIRECTORY/mandates/prepared.v1.json" ] &&
     [ ! -L "$STATE_DIRECTORY/mandates/prepared.v1.json" ] ||
     die "credential provisioning refused legacy account-read authority"
@@ -1645,6 +1783,142 @@ probe_exchange_account_once() {
   echo "PASS trading-runner-artifact: completed one Capsule-authorized single-use account read evidence_hash=$evidence_hash effect=false"
 }
 
+validate_exact_order_evidence() {
+  local source="$1"
+  local expected_operation="$2"
+  python3 - "$source" "$expected_operation" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+source, expected_operation = sys.argv[1:]
+raw = pathlib.Path(source).read_bytes()
+if len(raw) < 2 or len(raw) > 2048 or not raw.endswith(b"\n") or raw.endswith(b"\n\n"):
+    raise SystemExit("exact-order evidence is not one bounded line")
+try:
+    text = raw[:-1].decode("utf-8")
+    value = json.loads(text)
+except (UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit("exact-order evidence is not strict UTF-8 JSON")
+expected_keys = [
+    "contract_version", "operation_id", "state", "attempt_count",
+    "provider_reference_id", "receipt_evidence_hash_hex", "test_order",
+]
+if not isinstance(value, dict) or list(value) != expected_keys:
+    raise SystemExit("exact-order evidence shape is not canonical")
+if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
+    raise SystemExit("exact-order evidence bytes are not canonical")
+if value["contract_version"] != "hivra-trading-exact-order-evidence-v1":
+    raise SystemExit("exact-order evidence version mismatch")
+if value["operation_id"] != expected_operation:
+    raise SystemExit("exact-order evidence operation mismatch")
+if value["state"] not in ("succeeded", "unresolved", "terminal_failure"):
+    raise SystemExit("exact-order evidence state is invalid")
+if not isinstance(value["attempt_count"], int) or value["attempt_count"] != 1:
+    raise SystemExit("exact-order evidence use bound mismatch")
+if value["provider_reference_id"] is not None and not isinstance(value["provider_reference_id"], str):
+    raise SystemExit("exact-order evidence provider reference is invalid")
+receipt = value["receipt_evidence_hash_hex"]
+if receipt is not None and (not isinstance(receipt, str) or re.fullmatch(r"[0-9a-f]{64}", receipt) is None):
+    raise SystemExit("exact-order evidence receipt is invalid")
+if value["state"] == "succeeded" and receipt is None:
+    raise SystemExit("successful exact-order evidence lacks receipt")
+if not isinstance(value["test_order"], bool):
+    raise SystemExit("exact-order evidence mode is invalid")
+print(value["state"])
+PY
+}
+
+execute_exact_order_once() {
+  local directory="$1"
+  require_expected_runner_key_id
+  require_exact_installed_bundle "$directory"
+  command -v systemd-run >/dev/null 2>&1 || die "systemd-run is required"
+  [ "$(read_installed_runner_key_id)" = "$EXPECTED_RUNNER_KEY_ID" ] ||
+    die "exact order refused the installed runner key id"
+  [ -f "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] &&
+    [ ! -L "$EXCHANGE_CREDENTIAL_INSTALL_PATH" ] ||
+    die "exact order requires one prepared exchange credential"
+  local mandate="$STATE_DIRECTORY/mandates/exact-order.v3.json"
+  [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
+    die "exact order requires one prepared exact authority"
+
+  local lock_path="/run/lock/hivra-trading-public-shadow-install.lock"
+  exec 9>"$lock_path"
+  flock -n 9 || die "another public-shadow install operation is active"
+  local work
+  work="$(mktemp -d /run/hivra-trading-exact-order.XXXXXX)"
+  trap 'rm -rf "$work"; rm -f "$lock_path"' EXIT INT TERM
+  mkdir "$work/verified"
+  verify_remote_mandate_artifact \
+    "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
+  [ "$(cat "$work/verified/operation-kind")" = "one_exact_order" ] ||
+    die "exact order authority kind mismatch"
+  local operation_id
+  operation_id="$(cat "$work/verified/operation-id")"
+  local transient_name="hivra-trading-exact-order-${operation_id:0:12}-$$"
+  local credential_dir="/run/credentials/$transient_name.service"
+  if ! systemd-run \
+    --unit="$transient_name" \
+    --service-type=exec \
+    --wait --pipe --collect --quiet \
+    --property=DynamicUser=yes \
+    --property=StateDirectory=hivra-trading-public-shadow \
+    --property=StateDirectoryMode=0700 \
+    --property=LoadCredentialEncrypted="runner-seed:$CREDENTIAL_INSTALL_PATH" \
+    --property=LoadCredentialEncrypted="bingx-exchange:$EXCHANGE_CREDENTIAL_INSTALL_PATH" \
+    --property="LoadCredential=exact-order-admission:$mandate" \
+    --property=RuntimeMaxSec=60s \
+    --property=TimeoutStartSec=60s \
+    --property=TimeoutStopSec=10s \
+    --property=KillMode=mixed \
+    --property=OOMPolicy=stop \
+    --property=MemoryMax=128M \
+    --property=MemorySwapMax=0 \
+    --property=TasksMax=16 \
+    --property=NoNewPrivileges=yes \
+    --property=PrivateTmp=yes \
+    --property=PrivateDevices=yes \
+    --property=ProtectSystem=strict \
+    --property=ProtectHome=yes \
+    --property=ProtectProc=invisible \
+    --property=ProcSubset=pid \
+    --property=ProtectKernelTunables=yes \
+    --property=ProtectKernelModules=yes \
+    --property=ProtectKernelLogs=yes \
+    --property=ProtectControlGroups=yes \
+    --property=RestrictSUIDSGID=yes \
+    --property=RestrictNamespaces=yes \
+    --property=LockPersonality=yes \
+    --property=MemoryDenyWriteExecute=yes \
+    --property=CapabilityBoundingSet= \
+    --property=AmbientCapabilities= \
+    --property=SystemCallArchitectures=native \
+    --property=SystemCallFilter=@system-service \
+    --property="RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" \
+    --property=SocketBindDeny=any \
+    --property=IPAccounting=yes \
+    "$EFFECT_BINARY_INSTALL_PATH" \
+      --mode exact-order \
+      --runner-seed-file "$credential_dir/runner-seed" \
+      --exact-order-credential-file "$credential_dir/bingx-exchange" \
+      --exact-order-admission-file "$credential_dir/exact-order-admission" \
+      --exact-order-state-home "$STATE_DIRECTORY/exact-order-runtime" \
+      --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
+      >"$work/stdout" 2>"$work/stderr"; then
+    die "exact order failed without exposing provider output"
+  fi
+  [ ! -s "$work/stderr" ] || die "exact order produced unexpected standard error"
+  local state
+  state="$(validate_exact_order_evidence "$work/stdout" "$operation_id")"
+  trap - EXIT INT TERM
+  rm -rf "$work"
+  rm -f "$lock_path"
+  exec 9>&-
+  echo "PASS trading-runner-artifact: exact order lifecycle state=$state operation_id=$operation_id"
+}
+
 install_disabled() {
   local directory="$1"
   require_install_host "$directory"
@@ -1710,12 +1984,16 @@ install_disabled() {
   [ ! -L /opt/hivra ] || die "/opt/hivra must not be a symlink"
   pending_bundle="$(mktemp -d /opt/hivra/.trading-public-shadow.pending.XXXXXX)"
   install -m 0755 "$directory/$BINARY_NAME" "$pending_bundle/$BINARY_NAME"
+  install -m 0755 "$directory/$EFFECT_BINARY_NAME" "$pending_bundle/$EFFECT_BINARY_NAME"
   install -m 0644 "$directory/$UNIT_NAME" "$pending_bundle/$UNIT_NAME"
   install -m 0600 "$directory/$MANIFEST_NAME" "$pending_bundle/$MANIFEST_NAME"
   chmod 0755 "$pending_bundle"
   [ "$(sha256_file "$pending_bundle/$BINARY_NAME")" = \
     "$(sed -n 's/^binary_sha256=//p' "$directory/$MANIFEST_NAME")" ] ||
     die "staged binary hash mismatch"
+  [ "$(sha256_file "$pending_bundle/$EFFECT_BINARY_NAME")" = \
+    "$(sed -n 's/^effect_binary_sha256=//p' "$directory/$MANIFEST_NAME")" ] ||
+    die "staged effect binary hash mismatch"
   [ "$(sha256_file "$pending_bundle/$UNIT_NAME")" = \
     "$(sed -n 's/^unit_sha256=//p' "$directory/$MANIFEST_NAME")" ] ||
     die "staged unit hash mismatch"
@@ -1774,6 +2052,8 @@ uninstall_disabled() {
   verify_artifact "$BUNDLE_INSTALL_PATH" >/dev/null
   cmp -s "$BINARY_INSTALL_PATH" "$directory/$BINARY_NAME" ||
     die "uninstall refused a drifted runner binary"
+  cmp -s "$EFFECT_BINARY_INSTALL_PATH" "$directory/$EFFECT_BINARY_NAME" ||
+    die "uninstall refused a drifted effect binary"
   cmp -s "$UNIT_INSTALL_PATH" "$directory/$UNIT_NAME" ||
     die "uninstall refused a drifted runner unit"
   cmp -s "$BUNDLE_INSTALL_PATH/$MANIFEST_NAME" "$directory/$MANIFEST_NAME" ||
@@ -1911,13 +2191,19 @@ self_test() {
   local artifact="$root/artifact"
   mkdir "$artifact"
   cp /bin/echo "$artifact/$BINARY_NAME"
+  cp /bin/echo "$artifact/$EFFECT_BINARY_NAME"
   printf '%s\n' \
     'openApi/swap/v2/user/balance' \
     'openApi/swap/v2/user/positions' \
     'openApi/swap/v2/trade/openOrders' \
     'hivra-trading-account-read-evidence-v2' \
     'balance,positions,open_orders' >> "$artifact/$BINARY_NAME"
+  printf '%s\n' \
+    'openApi/swap/v2/trade/order' \
+    'openApi/swap/v2/trade/order/test' \
+    'hivra-trading-exact-order-evidence-v1' >> "$artifact/$EFFECT_BINARY_NAME"
   chmod 700 "$artifact/$BINARY_NAME"
+  chmod 700 "$artifact/$EFFECT_BINARY_NAME"
   cp "$UNIT_SOURCE" "$artifact/$UNIT_NAME"
   chmod 600 "$artifact/$UNIT_NAME"
   write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
@@ -2013,10 +2299,10 @@ self_test() {
   fi
   mv "$artifact/$MANIFEST_NAME.bak" "$artifact/$MANIFEST_NAME"
 
-  printf '\nplaceOrder\n' >> "$artifact/$BINARY_NAME"
+  printf '\n--cancel-order forbidden\n' >> "$artifact/$EFFECT_BINARY_NAME"
   write_manifest "$artifact" "$(git -C "$ROOT" rev-parse HEAD)" "3.11.0" "$(host_os)" "$(host_arch)" "$(sha256_file "$PACKAGE_LOCK")"
   if (verify_artifact "$artifact") >/dev/null 2>&1; then
-    die "self-test accepted an exchange-effect authority marker"
+    die "self-test accepted a widened-authority option"
   fi
 
   local account_evidence="$root/account-read-evidence.json"
@@ -2182,6 +2468,88 @@ for name in ("", "expired-"):
 PY
   local expected_runner
   expected_runner="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["runner_key_id"])' "$mandate_test/admission.json")"
+  python3 - "$mandate_test" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+metadata = json.loads((root / "metadata.json").read_text())
+exact_order = {
+    "client_order_id": "hivra-self-test-1",
+    "symbol": "BTC-USDT",
+    "side": "buy",
+    "order_type": "limit",
+    "quantity_decimal": "0.01",
+    "limit_price_decimal": "100",
+    "time_in_force": "GTC",
+    "entry_mode": "zone_pending",
+    "trigger_price_decimal": "99",
+    "stop_loss_decimal": None,
+    "take_profit_decimal": None,
+    "intent_hash_hex": hashlib.sha256(b"intent").hexdigest(),
+    "test_order": True,
+}
+semantic = {
+    "contract_version": "trading-remote-mandate-admission-v3",
+    "runner_key_id": metadata["runner"],
+    "operation_kind": "one_exact_order",
+    "exact_order": exact_order,
+    "max_uses": 1,
+    "mandate": metadata["mandate"],
+}
+commitment = hashlib.sha256(
+    b"hivra:bingx-futures-remote-mandate-admission:v3\n" +
+    json.dumps(semantic, separators=(",", ":")).encode()
+).hexdigest()
+(root / "exact-digest.bin").write_bytes(bytes.fromhex(commitment))
+(root / "exact-metadata.json").write_text(json.dumps({
+    "commitment": commitment,
+    "semantic": semantic,
+}, separators=(",", ":")), encoding="utf-8")
+PY
+  openssl pkeyutl -sign -inkey "$mandate_test/capsule.pem" -rawin \
+    -in "$mandate_test/exact-digest.bin" -out "$mandate_test/exact-signature.bin"
+  python3 - "$mandate_test" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+metadata = json.loads((root / "exact-metadata.json").read_text())
+semantic = metadata["semantic"]
+artifact = {
+    "contract_version": semantic["contract_version"],
+    "operation_id": metadata["commitment"],
+    "commitment_hash_hex": metadata["commitment"],
+    "runner_key_id": semantic["runner_key_id"],
+    "operation_kind": semantic["operation_kind"],
+    "exact_order": semantic["exact_order"],
+    "max_uses": semantic["max_uses"],
+    "mandate": semantic["mandate"],
+    "signature_suite": "ed25519-v1",
+    "signature_hex": (root / "exact-signature.bin").read_bytes().hex(),
+}
+(root / "exact-admission.json").write_text(
+    json.dumps(artifact, separators=(",", ":")), encoding="utf-8"
+)
+PY
+  mkdir "$mandate_test/exact-verified"
+  verify_remote_mandate_artifact \
+    "$mandate_test/exact-admission.json" "$expected_runner" \
+    "$mandate_test/exact-verified"
+  [ "$(cat "$mandate_test/exact-verified/operation-kind")" = "one_exact_order" ] ||
+    die "self-test lost exact-order operation kind"
+  cp "$mandate_test/exact-admission.json" "$mandate_test/exact-mutated.json"
+  sed -i.bak 's/"quantity_decimal":"0.01"/"quantity_decimal":"0.02"/' \
+    "$mandate_test/exact-mutated.json"
+  mkdir "$mandate_test/exact-mutated-verified"
+  if (verify_remote_mandate_artifact \
+    "$mandate_test/exact-mutated.json" "$expected_runner" \
+    "$mandate_test/exact-mutated-verified") >/dev/null 2>&1; then
+    die "self-test accepted mutated exact-order semantics"
+  fi
   mkdir "$mandate_test/verified"
   verify_remote_mandate_artifact \
     "$mandate_test/admission.json" "$expected_runner" "$mandate_test/verified"
@@ -2337,7 +2705,7 @@ PY
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--provision-exchange-credential|--probe-exchange-account|--uninstall-disabled|--ephemeral-install-smoke)
+    --build|--verify|--runtime-smoke|--install-disabled|--initialize-disabled|--activate|--deactivate|--export-anchor|--admit-mandate|--provision-exchange-credential|--probe-exchange-account|--execute-exact-order|--uninstall-disabled|--ephemeral-install-smoke)
       [ -z "$MODE" ] && [ $# -ge 2 ] || die "invalid mode arguments"
       MODE="${1#--}"
       ARTIFACT_DIR="$2"
@@ -2455,6 +2823,12 @@ case "$MODE" in
       [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
       die "account probe requires only runner identity and prepared host state"
     probe_exchange_account_once "$ARTIFACT_DIR"
+    ;;
+  execute-exact-order)
+    [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&
+      [ -z "$ANCHOR_OUTPUT" ] && [ -z "$MANDATE_ARTIFACT" ] ||
+      die "exact order requires only runner identity and prepared host state"
+    execute_exact_order_once "$ARTIFACT_DIR"
     ;;
   uninstall-disabled)
     [ -z "$TARGET_OS" ] && [ -z "$TARGET_ARCH" ] &&

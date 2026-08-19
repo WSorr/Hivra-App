@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,8 +6,10 @@ import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
+import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 
 import '../tool/trading_remote_shadow_probe.dart';
+import '../tool/trading_remote_exact_order.dart';
 
 void main() {
   test(
@@ -423,7 +426,289 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('exact test order replay never issues a second POST', () async {
+    final fixture = await _exactOrderFixture(testOrder: true);
+    addTearDown(fixture.dispose);
+    final requests = <BingxHttpRequest>[];
+    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+      requests.add(request);
+      return const BingxHttpResponse(
+        statusCode: 200,
+        body: '{"code":0,"msg":"success","data":{}}',
+      );
+    }
+
+    final first =
+        jsonDecode(
+              await runMandateBoundExactOrder(
+                options: fixture.options,
+                runnerSeedBytes: fixture.runnerSeedBytes,
+                nowUtc: () => fixture.nowUtc,
+                clockMs: () => 1770000000000,
+                requestSender: sender,
+              ),
+            )
+            as Map<String, dynamic>;
+    final replay =
+        jsonDecode(
+              await runMandateBoundExactOrder(
+                options: fixture.options,
+                runnerSeedBytes: fixture.runnerSeedBytes,
+                nowUtc: () => fixture.nowUtc,
+                clockMs: () => 1770000001000,
+                requestSender: sender,
+              ),
+            )
+            as Map<String, dynamic>;
+
+    expect(first['state'], 'succeeded');
+    expect(replay, first);
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+    expect(requests.single.uri.path, '/openApi/swap/v2/trade/order/test');
+  });
+
+  test('ambiguous test order remains unresolved without blind retry', () async {
+    final fixture = await _exactOrderFixture(testOrder: true);
+    addTearDown(fixture.dispose);
+    var requests = 0;
+    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+      requests++;
+      throw TimeoutException('provider timeout');
+    }
+
+    final first =
+        jsonDecode(
+              await runMandateBoundExactOrder(
+                options: fixture.options,
+                runnerSeedBytes: fixture.runnerSeedBytes,
+                nowUtc: () => fixture.nowUtc,
+                requestSender: sender,
+              ),
+            )
+            as Map<String, dynamic>;
+    final replay =
+        jsonDecode(
+              await runMandateBoundExactOrder(
+                options: fixture.options,
+                runnerSeedBytes: fixture.runnerSeedBytes,
+                nowUtc: () => fixture.nowUtc,
+                requestSender: sender,
+              ),
+            )
+            as Map<String, dynamic>;
+
+    expect(first['state'], 'unresolved');
+    expect(replay['state'], 'unresolved');
+    expect(first['attempt_count'], 1);
+    expect(replay['attempt_count'], 1);
+    expect(requests, 1);
+  });
+
+  test('live timeout reconciles by client id after restart', () async {
+    final fixture = await _exactOrderFixture(testOrder: false);
+    addTearDown(fixture.dispose);
+    final requests = <BingxHttpRequest>[];
+    var firstPost = true;
+    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+      requests.add(request);
+      if (request.method == 'POST' && firstPost) {
+        firstPost = false;
+        throw TimeoutException('provider timeout');
+      }
+      return const BingxHttpResponse(
+        statusCode: 200,
+        body:
+            '{"code":0,"msg":"success","data":{"order":{"orderId":"order-1","clientOrderId":"hivra-order-1","symbol":"BTC-USDT","side":"BUY","positionSide":"LONG","type":"TRIGGER_LIMIT","status":"NEW","price":"100","stopPrice":"99","origQty":"0.01","executedQty":"0","time":1770000000000}}}',
+      );
+    }
+
+    final first =
+        jsonDecode(
+              await runMandateBoundExactOrder(
+                options: fixture.options,
+                runnerSeedBytes: fixture.runnerSeedBytes,
+                nowUtc: () => fixture.nowUtc,
+                requestSender: sender,
+              ),
+            )
+            as Map<String, dynamic>;
+    final reconciled =
+        jsonDecode(
+              await runMandateBoundExactOrder(
+                options: fixture.options,
+                runnerSeedBytes: fixture.runnerSeedBytes,
+                nowUtc: () => fixture.nowUtc,
+                requestSender: sender,
+              ),
+            )
+            as Map<String, dynamic>;
+
+    expect(first['state'], 'unresolved');
+    expect(reconciled['state'], 'succeeded');
+    expect(reconciled['provider_reference_id'], 'order-1');
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+    expect(requests.where((request) => request.method == 'GET'), hasLength(1));
+    expect(requests.last.uri.query, contains('clientOrderId=hivra-order-1'));
+  });
+
+  test(
+    'exact order rejects mutation and expiry before provider access',
+    () async {
+      final fixture = await _exactOrderFixture(testOrder: true);
+      addTearDown(fixture.dispose);
+      final admissionFile = File(
+        fixture.options['exact-order-admission-file']!,
+      );
+      final original = await admissionFile.readAsString();
+      final mutated = original.replaceFirst(
+        '"quantity_decimal":"0.01"',
+        '"quantity_decimal":"0.02"',
+      );
+      await admissionFile.writeAsString(mutated, flush: true);
+      var requests = 0;
+      Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+        requests++;
+        return const BingxHttpResponse(statusCode: 200, body: '{"code":0}');
+      }
+
+      await expectLater(
+        runMandateBoundExactOrder(
+          options: fixture.options,
+          runnerSeedBytes: fixture.runnerSeedBytes,
+          nowUtc: () => fixture.nowUtc,
+          requestSender: sender,
+        ),
+        throwsFormatException,
+      );
+      await admissionFile.writeAsString(original, flush: true);
+      await expectLater(
+        runMandateBoundExactOrder(
+          options: fixture.options,
+          runnerSeedBytes: fixture.runnerSeedBytes,
+          nowUtc: () => fixture.nowUtc.add(const Duration(hours: 2)),
+          requestSender: sender,
+        ),
+        throwsFormatException,
+      );
+      expect(requests, 0);
+    },
+  );
 }
+
+Future<
+  ({
+    Directory directory,
+    List<int> runnerSeedBytes,
+    DateTime nowUtc,
+    Map<String, String> options,
+    Future<void> Function() dispose,
+  })
+>
+_exactOrderFixture({required bool testOrder}) async {
+  final directory = await Directory.systemTemp.createTemp(
+    'hivra-exact-order-fixture.',
+  );
+  final runnerSeedBytes = List<int>.generate(32, (index) => index + 11);
+  final runnerPublicKey =
+      await (await Ed25519().newKeyPairFromSeed(
+        runnerSeedBytes,
+      )).extractPublicKey();
+  final runnerKeyId = sha256.convert(runnerPublicKey.bytes).toString();
+  final capsuleSeedBytes = List<int>.generate(32, (index) => 255 - index);
+  final capsuleKeyPair = await Ed25519().newKeyPairFromSeed(capsuleSeedBytes);
+  final capsulePublicKey = await capsuleKeyPair.extractPublicKey();
+  final capsuleRootHex = _testHex(capsulePublicKey.bytes);
+  const apiKey = 'exact-order-api-key';
+  const apiSecret = 'exact-order-api-secret';
+  final accountBinding = sha256.convert(utf8.encode(apiKey)).toString();
+  final nowUtc = DateTime.utc(2026, 8, 19, 12);
+  final mandate = BingxFuturesTradingMandate.issue(
+    capsuleRootHex: capsuleRootHex,
+    accountBindingHashHex: accountBinding,
+    symbol: 'BTC-USDT',
+    testOrder: testOrder,
+    issuedAtUtc: nowUtc.subtract(const Duration(minutes: 1)),
+    expiresAtUtc: nowUtc.add(const Duration(hours: 1)),
+    maxOrderNotionalQuoteDecimal: '2',
+    maxRiskPerTradePercent: 1,
+    maxDailyLossPercent: 3,
+    maxConcurrentPositions: 1,
+    cooldownAfterLossStreak: 2,
+    cooldownMinutes: 10,
+    maxEffects: 1,
+  );
+  final exactOrder = <String, dynamic>{
+    'client_order_id': 'hivra-order-1',
+    'symbol': 'BTC-USDT',
+    'side': 'buy',
+    'order_type': 'limit',
+    'quantity_decimal': '0.01',
+    'limit_price_decimal': '100',
+    'time_in_force': 'GTC',
+    'entry_mode': 'zone_pending',
+    'trigger_price_decimal': '99',
+    'stop_loss_decimal': null,
+    'take_profit_decimal': null,
+    'intent_hash_hex': List<String>.filled(64, 'a').join(),
+    'test_order': testOrder,
+  };
+  final unsigned =
+      BingxFuturesRemoteMandateAdmission.issueExactOrder(
+        mandate: mandate,
+        runnerKeyId: runnerKeyId,
+        exactOrder: exactOrder,
+        signCommitment: (_) => List<String>.filled(128, '0').join(),
+      )!;
+  final signature = await Ed25519().sign(
+    _testDecodeHex(unsigned.commitmentHashHex),
+    keyPair: capsuleKeyPair,
+  );
+  final admission =
+      BingxFuturesRemoteMandateAdmission.issueExactOrder(
+        mandate: mandate,
+        runnerKeyId: runnerKeyId,
+        exactOrder: exactOrder,
+        signCommitment: (_) => _testHex(signature.bytes),
+      )!;
+  final admissionFile = File('${directory.path}/admission.json');
+  await admissionFile.writeAsString(admission.canonicalJson, flush: true);
+  final credentialFile = File('${directory.path}/credential.json');
+  await credentialFile.writeAsString(
+    jsonEncode(<String, String>{
+      'contract_version': 'bingx-exchange-credential-v1',
+      'api_key': apiKey,
+      'api_secret': apiSecret,
+    }),
+    flush: true,
+  );
+  expect(
+    (await Process.run('chmod', <String>['600', credentialFile.path])).exitCode,
+    0,
+  );
+  return (
+    directory: directory,
+    runnerSeedBytes: runnerSeedBytes,
+    nowUtc: nowUtc,
+    options: <String, String>{
+      'mode': exactOrderMode,
+      'runner-seed-file': '${directory.path}/unused-runner-seed',
+      'expected-runner-key-id': runnerKeyId,
+      'exact-order-admission-file': admissionFile.path,
+      'exact-order-credential-file': credentialFile.path,
+      'exact-order-state-home': '${directory.path}/state-home',
+    },
+    dispose: () => directory.delete(recursive: true),
+  );
+}
+
+String _testHex(List<int> bytes) =>
+    bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+
+List<int> _testDecodeHex(String value) => List<int>.generate(
+  value.length ~/ 2,
+  (index) => int.parse(value.substring(index * 2, index * 2 + 2), radix: 16),
+);
 
 Future<
   ({
