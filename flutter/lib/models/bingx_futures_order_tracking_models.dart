@@ -330,8 +330,15 @@ class BingxFuturesTradingMandate {
 }
 
 class BingxFuturesRemoteMandateAdmission {
-  static const String contractVersion = 'trading-remote-mandate-admission-v1';
+  static const String contractVersion = 'trading-remote-mandate-admission-v2';
   static const String signatureSuite = 'ed25519-v1';
+  static const String operationKind = 'account_read';
+  static const List<String> accountReadScope = <String>[
+    'balance',
+    'positions',
+    'open_orders',
+  ];
+  static const int maxUses = 1;
   static const int maxWireBytes = 8192;
 
   final String operationId;
@@ -389,11 +396,15 @@ class BingxFuturesRemoteMandateAdmission {
       final raw = utf8.decode(untrustedWireBytes, allowMalformed: false);
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) return null;
+      final decodedReadScope = decoded['read_scope'];
       const expectedKeys = <String>{
         'contract_version',
         'operation_id',
         'commitment_hash_hex',
         'runner_key_id',
+        'operation_kind',
+        'read_scope',
+        'max_uses',
         'mandate',
         'signature_suite',
         'signature_hex',
@@ -402,6 +413,13 @@ class BingxFuturesRemoteMandateAdmission {
           expectedKeys.difference(decoded.keys.toSet()).isNotEmpty ||
           decoded['contract_version'] != contractVersion ||
           decoded['signature_suite'] != signatureSuite ||
+          decoded['operation_kind'] != operationKind ||
+          decoded['max_uses'] != maxUses ||
+          decodedReadScope is! List<dynamic> ||
+          decodedReadScope.length != accountReadScope.length ||
+          Iterable<int>.generate(accountReadScope.length).any(
+            (index) => decodedReadScope[index] != accountReadScope[index],
+          ) ||
           decoded['mandate'] is! Map<String, dynamic>) {
         return null;
       }
@@ -451,6 +469,9 @@ class BingxFuturesRemoteMandateAdmission {
     'operation_id': operationId,
     'commitment_hash_hex': commitmentHashHex,
     'runner_key_id': runnerKeyId,
+    'operation_kind': operationKind,
+    'read_scope': accountReadScope,
+    'max_uses': maxUses,
     'mandate': mandate.toJson(),
     'signature_suite': signatureSuite,
     'signature_hex': signatureHex,
@@ -465,8 +486,8 @@ class BingxFuturesRemoteMandateAdmission {
       sha256
           .convert(
             utf8.encode(
-              'hivra:bingx-futures-remote-mandate-admission:v1\n'
-              '${jsonEncode(<String, dynamic>{'contract_version': contractVersion, 'runner_key_id': runnerKeyId, 'mandate': mandate.toJson()})}',
+              'hivra:bingx-futures-remote-mandate-admission:v2\n'
+              '${jsonEncode(<String, dynamic>{'contract_version': contractVersion, 'runner_key_id': runnerKeyId, 'operation_kind': operationKind, 'read_scope': accountReadScope, 'max_uses': maxUses, 'mandate': mandate.toJson()})}',
             ),
           )
           .toString();

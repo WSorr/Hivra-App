@@ -1,13 +1,13 @@
 # Hivra Development Control
 
-Status date: 2026-08-18
+Status date: 2026-08-19
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: no next pass is selected. `1.x Trading Remote
-Runner Pass U — Mandate-Bound One-Shot Account Read` is complete. Its exact
-merge-SHA VPS evidence proved one collected transient account read, redacted
-no-effect evidence, no persistent-runner credential access, exact cleanup, and
-unchanged co-hosted workloads. Scheduling, leases, account-state persistence,
-remote effects, release, and 2.0 work remain unauthorized.
+Current development focus: `1.x Trading Pass U Remediation — Exact Single-Use
+Account-Read Authority` is selected. The existing remote admission must bind
+the Capsule signature to the exact account-read scope and one use, while the
+existing host lifecycle must retain crash-safe operation consumption before
+provider access. Scheduling, leases, account-state persistence, remote effects,
+release, and 2.0 work remain unauthorized.
 
 ## 1. Read This First
 
@@ -17,7 +17,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No next pass is selected; choose one bounded product finding explicitly. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | Complete Pass U remediation without a second authority, journal owner, or provider path. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -27,7 +27,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Pass U complete; no next pass selected | The existing host lifecycle has proved one transient mandate-bound account-read probe through the existing signed-GET adapter with only redacted success evidence. | Select one bounded product finding explicitly; scheduling, leases, account persistence, and exchange effects remain blocked. |
+| **1.x maintained runtime** | Pass U remediation selected; implementation pending | Version the existing signed remote admission with exact ordered read scope and `max_uses=1`; atomically retain `pending` before provider access and `completed` only with canonical redacted evidence. | Full local/clean gates and merge-SHA VPS evidence must prove v1 rejection, no second provider invocation, crash-pending refusal, exact replay, cleanup, and unchanged co-hosted workloads. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

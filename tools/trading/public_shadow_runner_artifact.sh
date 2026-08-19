@@ -12,7 +12,7 @@ BINARY_NAME="hivra-trading-public-shadow-runner"
 UNIT_NAME="hivra-trading-public-shadow-runner.service"
 MANIFEST_NAME="ARTIFACT-MANIFEST.v1"
 SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"
-AUTHORITY_PROFILE="public-market-shadow-plus-transient-account-read"
+AUTHORITY_PROFILE="public-market-shadow-plus-exact-single-use-account-read"
 BUNDLE_INSTALL_PATH="/opt/hivra/trading-public-shadow"
 BINARY_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$BINARY_NAME"
 UNIT_INSTALL_PATH="$BUNDLE_INSTALL_PATH/$UNIT_NAME"
@@ -20,6 +20,8 @@ UNIT_LINK_PATH="/etc/systemd/system/$UNIT_NAME"
 CREDENTIAL_INSTALL_PATH="/etc/credstore.encrypted/hivra-trading-public-shadow.seed"
 EXCHANGE_CREDENTIAL_INSTALL_PATH="/etc/credstore.encrypted/hivra-trading-public-shadow.bingx"
 STATE_DIRECTORY="/var/lib/hivra-trading-public-shadow"
+ACCOUNT_READ_SCOPE_WIRE="balance,positions,open_orders"
+ACCOUNT_READ_MAX_USES="1"
 MODE=""
 ARTIFACT_DIR=""
 TARGET_OS=""
@@ -438,7 +440,8 @@ PY
     'openApi/swap/v2/user/balance' \
     'openApi/swap/v2/user/positions' \
     'openApi/swap/v2/trade/openOrders' \
-    'hivra-trading-account-read-evidence-v1'; do
+    'hivra-trading-account-read-evidence-v2' \
+    'balance,positions,open_orders'; do
     grep -aFq "$marker" "$binary" ||
       die "artifact is missing the bounded account-read marker: $marker"
   done
@@ -949,7 +952,8 @@ except (UnicodeDecodeError, json.JSONDecodeError):
     raise SystemExit("mandate artifact is not strict UTF-8 JSON")
 expected_root = [
     "contract_version", "operation_id", "commitment_hash_hex",
-    "runner_key_id", "mandate", "signature_suite", "signature_hex",
+    "runner_key_id", "operation_kind", "read_scope", "max_uses",
+    "mandate", "signature_suite", "signature_hex",
 ]
 expected_mandate = [
     "version", "mandate_id", "capsule_root_hex", "account_binding_hash_hex",
@@ -966,10 +970,16 @@ if not isinstance(mandate, dict) or list(mandate) != expected_mandate:
     raise SystemExit("mandate shape is not canonical")
 if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
     raise SystemExit("mandate artifact bytes are not canonical")
-if value["contract_version"] != "trading-remote-mandate-admission-v1":
+if value["contract_version"] != "trading-remote-mandate-admission-v2":
     raise SystemExit("mandate contract version mismatch")
 if value["signature_suite"] != "ed25519-v1":
     raise SystemExit("mandate signature suite mismatch")
+if value["operation_kind"] != "account_read":
+    raise SystemExit("mandate operation kind mismatch")
+if value["read_scope"] != ["balance", "positions", "open_orders"]:
+    raise SystemExit("mandate account-read scope mismatch")
+if value["max_uses"] != 1:
+    raise SystemExit("mandate account-read use bound mismatch")
 if value["runner_key_id"] != expected_runner_key_id:
     raise SystemExit("mandate runner binding mismatch")
 hex64 = re.compile(r"[0-9a-f]{64}")
@@ -1026,10 +1036,13 @@ if mandate["mandate_id"] != mandate_id:
 commitment_semantic = {
     "contract_version": value["contract_version"],
     "runner_key_id": value["runner_key_id"],
+    "operation_kind": value["operation_kind"],
+    "read_scope": value["read_scope"],
+    "max_uses": value["max_uses"],
     "mandate": mandate,
 }
 commitment = hashlib.sha256(
-    b"hivra:bingx-futures-remote-mandate-admission:v1\n" +
+    b"hivra:bingx-futures-remote-mandate-admission:v2\n" +
     json.dumps(commitment_semantic, separators=(",", ":")).encode("utf-8")
 ).hexdigest()
 if value["commitment_hash_hex"] != commitment:
@@ -1055,6 +1068,14 @@ pathlib.Path(work, "capsule-public-key.der").write_bytes(
     bytes.fromhex("302a300506032b6570032100" + mandate["capsule_root_hex"])
 )
 pathlib.Path(work, "operation-id").write_text(value["operation_id"], encoding="ascii")
+pathlib.Path(work, "account-binding").write_text(
+    mandate["account_binding_hash_hex"], encoding="ascii"
+)
+pathlib.Path(work, "expires-at").write_text(mandate["expires_at_utc"], encoding="ascii")
+pathlib.Path(work, "read-scope").write_text(
+    ",".join(value["read_scope"]), encoding="ascii"
+)
+pathlib.Path(work, "max-uses").write_text(str(value["max_uses"]), encoding="ascii")
 PY
   then
     die "mandate semantic validation failed"
@@ -1083,13 +1104,16 @@ admit_remote_mandate() {
   verify_remote_mandate_artifact \
     "$work/input.json" "$EXPECTED_RUNNER_KEY_ID" "$work"
   local target_dir="$STATE_DIRECTORY/mandates"
-  local target="$target_dir/prepared.v1.json"
+  local legacy_target="$target_dir/prepared.v1.json"
+  local target="$target_dir/prepared.v2.json"
   if [ -e "$target_dir" ] || [ -L "$target_dir" ]; then
     [ -d "$target_dir" ] && [ ! -L "$target_dir" ] ||
       die "mandate admission refused foreign state directory"
   else
     install -d -m 0700 "$target_dir"
   fi
+  [ ! -e "$legacy_target" ] && [ ! -L "$legacy_target" ] ||
+    die "mandate admission refused legacy account-read authority"
   if [ -e "$target" ] || [ -L "$target" ]; then
     [ -f "$target" ] && [ ! -L "$target" ] ||
       die "mandate admission refused foreign retained state"
@@ -1134,7 +1158,10 @@ provision_exchange_credential() {
     rm -f "$lock_path"
   ' EXIT INT TERM
 
-  local mandate="$STATE_DIRECTORY/mandates/prepared.v1.json"
+  local mandate="$STATE_DIRECTORY/mandates/prepared.v2.json"
+  [ ! -e "$STATE_DIRECTORY/mandates/prepared.v1.json" ] &&
+    [ ! -L "$STATE_DIRECTORY/mandates/prepared.v1.json" ] ||
+    die "credential provisioning refused legacy account-read authority"
   [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
     die "credential provisioning requires one prepared mandate"
   install -m 0600 "$mandate" "$work/mandate.json"
@@ -1232,23 +1259,26 @@ try:
 except (UnicodeDecodeError, json.JSONDecodeError):
     raise SystemExit("account-read evidence is not strict UTF-8 JSON")
 expected_keys = [
-    "contract_version", "mandate_operation_id", "runner_key_id",
-    "account_binding_hash_hex", "observed_at_utc", "checks", "effect",
+    "contract_version", "account_read_operation_id", "runner_key_id",
+    "account_binding_hash_hex", "read_scope", "max_uses",
+    "observed_at_utc", "checks", "effect",
 ]
 if not isinstance(value, dict) or list(value) != expected_keys:
     raise SystemExit("account-read evidence root shape is not canonical")
 if json.dumps(value, separators=(",", ":"), ensure_ascii=False) != text:
     raise SystemExit("account-read evidence bytes are not canonical")
-if value["contract_version"] != "hivra-trading-account-read-evidence-v1":
+if value["contract_version"] != "hivra-trading-account-read-evidence-v2":
     raise SystemExit("account-read evidence version mismatch")
 hex64 = re.compile(r"[0-9a-f]{64}")
 for key, expected in (
-    ("mandate_operation_id", expected_operation),
+    ("account_read_operation_id", expected_operation),
     ("runner_key_id", expected_runner),
     ("account_binding_hash_hex", expected_account),
 ):
     if not isinstance(value[key], str) or hex64.fullmatch(value[key]) is None or value[key] != expected:
         raise SystemExit(f"account-read evidence {key} mismatch")
+if value["read_scope"] != ["balance", "positions", "open_orders"] or value["max_uses"] != 1:
+    raise SystemExit("account-read evidence authority mismatch")
 try:
     observed = datetime.datetime.fromisoformat(value["observed_at_utc"].replace("Z", "+00:00"))
 except (AttributeError, ValueError):
@@ -1262,6 +1292,148 @@ if value["checks"] != [
 ] or value["effect"] is not False:
     raise SystemExit("account-read evidence is incomplete or effectful")
 print(hashlib.sha256(text.encode("utf-8")).hexdigest())
+PY
+}
+
+write_account_read_operation_journal() {
+  local target="$1"
+  local operation_id="$2"
+  local runner_key_id="$3"
+  local account_binding="$4"
+  local state="$5"
+  local evidence_source="${6:-}"
+  python3 - "$target" "$operation_id" "$runner_key_id" \
+    "$account_binding" "$state" "$evidence_source" <<'PY'
+import json
+import os
+import pathlib
+import re
+import sys
+
+target, operation_id, runner_key_id, account_binding, state, evidence_source = sys.argv[1:]
+hex64 = re.compile(r"[0-9a-f]{64}")
+if any(hex64.fullmatch(value) is None for value in (operation_id, runner_key_id, account_binding)):
+    raise SystemExit("account-read journal binding is invalid")
+if state not in ("pending", "completed"):
+    raise SystemExit("account-read journal state is invalid")
+evidence = None
+if state == "completed":
+    raw = pathlib.Path(evidence_source).read_bytes()
+    if not raw.endswith(b"\n") or raw.endswith(b"\n\n"):
+        raise SystemExit("account-read journal evidence is not one line")
+    evidence = json.loads(raw[:-1].decode("utf-8"))
+elif evidence_source:
+    raise SystemExit("pending account-read journal cannot contain evidence")
+value = {
+    "contract_version": "hivra-trading-account-read-operation-v1",
+    "operation_id": operation_id,
+    "runner_key_id": runner_key_id,
+    "account_binding_hash_hex": account_binding,
+    "read_scope": ["balance", "positions", "open_orders"],
+    "max_uses": 1,
+    "state": state,
+    "evidence": evidence,
+}
+with open(target, "xb") as output:
+    output.write(json.dumps(value, separators=(",", ":")).encode("utf-8"))
+    output.flush()
+    os.fsync(output.fileno())
+PY
+}
+
+validate_account_read_operation_journal() {
+  local source="$1"
+  local expected_operation="$2"
+  local expected_runner="$3"
+  local expected_account="$4"
+  local evidence_output="$5"
+  python3 - "$source" "$expected_operation" "$expected_runner" \
+    "$expected_account" "$evidence_output" <<'PY'
+import json
+import os
+import pathlib
+import re
+import sys
+
+source, expected_operation, expected_runner, expected_account, evidence_output = sys.argv[1:]
+path = pathlib.Path(source)
+if path.is_symlink() or not path.is_file():
+    raise SystemExit("account-read journal is not one regular file")
+raw = path.read_bytes()
+if len(raw) < 2 or len(raw) > 16384:
+    raise SystemExit("account-read journal bytes are not bounded")
+try:
+    text = raw.decode("utf-8")
+    value = json.loads(text)
+except (UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit("account-read journal is not strict UTF-8 JSON")
+expected_keys = [
+    "contract_version", "operation_id", "runner_key_id",
+    "account_binding_hash_hex", "read_scope", "max_uses", "state", "evidence",
+]
+if not isinstance(value, dict) or list(value) != expected_keys:
+    raise SystemExit("account-read journal root shape is not canonical")
+if json.dumps(value, separators=(",", ":")) != text:
+    raise SystemExit("account-read journal bytes are not canonical")
+if value["contract_version"] != "hivra-trading-account-read-operation-v1":
+    raise SystemExit("account-read journal version mismatch")
+hex64 = re.compile(r"[0-9a-f]{64}")
+for key, expected in (
+    ("operation_id", expected_operation),
+    ("runner_key_id", expected_runner),
+    ("account_binding_hash_hex", expected_account),
+):
+    if not isinstance(value[key], str) or hex64.fullmatch(value[key]) is None or value[key] != expected:
+        raise SystemExit(f"account-read journal {key} mismatch")
+if value["read_scope"] != ["balance", "positions", "open_orders"] or value["max_uses"] != 1:
+    raise SystemExit("account-read journal authority mismatch")
+state = value["state"]
+if state == "pending":
+    if value["evidence"] is not None:
+        raise SystemExit("pending account-read journal contains evidence")
+elif state == "completed":
+    if not isinstance(value["evidence"], dict):
+        raise SystemExit("completed account-read journal lacks evidence")
+    evidence = json.dumps(value["evidence"], separators=(",", ":")).encode("utf-8") + b"\n"
+    with open(evidence_output, "xb") as output:
+        output.write(evidence)
+        output.flush()
+        os.fsync(output.fileno())
+else:
+    raise SystemExit("account-read journal state is invalid")
+print(state)
+PY
+}
+
+commit_account_read_operation_journal() {
+  local target="$1"
+  local operation_id="$2"
+  local runner_key_id="$3"
+  local account_binding="$4"
+  local state="$5"
+  local evidence_source="${6:-}"
+  local directory
+  local pending
+  directory="$(dirname "$target")"
+  pending="$(mktemp "$directory/.operation.pending.XXXXXX")"
+  rm -f "$pending"
+  if ! write_account_read_operation_journal \
+    "$pending" "$operation_id" "$runner_key_id" "$account_binding" \
+    "$state" "$evidence_source"; then
+    rm -f "$pending"
+    return 1
+  fi
+  chmod 0600 "$pending"
+  mv "$pending" "$target"
+  python3 - "$directory" <<'PY'
+import os
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
 PY
 }
 
@@ -1289,7 +1461,10 @@ probe_exchange_account_once() {
   work="$(mktemp -d /run/hivra-trading-account-read.XXXXXX)"
   trap 'rm -rf "$work"; rm -f "$lock_path"' EXIT INT TERM
 
-  local mandate="$STATE_DIRECTORY/mandates/prepared.v1.json"
+  local mandate="$STATE_DIRECTORY/mandates/prepared.v2.json"
+  [ ! -e "$STATE_DIRECTORY/mandates/prepared.v1.json" ] &&
+    [ ! -L "$STATE_DIRECTORY/mandates/prepared.v1.json" ] ||
+    die "account probe refused legacy account-read authority"
   [ -f "$mandate" ] && [ ! -L "$mandate" ] ||
     die "account probe requires one prepared mandate"
   install -m 0600 "$mandate" "$work/mandate.json"
@@ -1297,22 +1472,50 @@ probe_exchange_account_once() {
   verify_remote_mandate_artifact \
     "$work/mandate.json" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
 
-  local operation_id account_binding expires_at
-  local -a mandate_fields=()
-  mapfile -t mandate_fields < <(python3 - "$work/mandate.json" <<'PY'
-import json
-import sys
+  local operation_id account_binding expires_at read_scope max_uses
+  operation_id="$(cat "$work/verified/operation-id")"
+  account_binding="$(cat "$work/verified/account-binding")"
+  expires_at="$(cat "$work/verified/expires-at")"
+  read_scope="$(cat "$work/verified/read-scope")"
+  max_uses="$(cat "$work/verified/max-uses")"
+  [ "$read_scope" = "$ACCOUNT_READ_SCOPE_WIRE" ] &&
+    [ "$max_uses" = "$ACCOUNT_READ_MAX_USES" ] ||
+    die "account probe verified authority is not exact"
 
-value = json.load(open(sys.argv[1], encoding="utf-8"))
-print(value["operation_id"])
-print(value["mandate"]["account_binding_hash_hex"])
-print(value["mandate"]["expires_at_utc"])
-PY
-)
-  [ "${#mandate_fields[@]}" = 3 ] || die "account probe mandate fields are incomplete"
-  operation_id="${mandate_fields[0]}"
-  account_binding="${mandate_fields[1]}"
-  expires_at="${mandate_fields[2]}"
+  local journal_dir="$STATE_DIRECTORY/account-read-operations"
+  if [ -e "$journal_dir" ] || [ -L "$journal_dir" ]; then
+    [ -d "$journal_dir" ] && [ ! -L "$journal_dir" ] ||
+      die "account probe refused foreign operation journal"
+  else
+    install -d -m 0700 "$journal_dir"
+  fi
+  local journal="$journal_dir/$operation_id.json"
+  [ -z "$(find "$journal_dir" -mindepth 1 -maxdepth 1 ! -name "$operation_id.json" -print -quit)" ] ||
+    die "account probe found conflicting operation journal state"
+  if [ -e "$journal" ] || [ -L "$journal" ]; then
+    local replay_evidence="$work/replay-evidence.json"
+    local journal_state
+    journal_state="$(validate_account_read_operation_journal \
+      "$journal" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" \
+      "$account_binding" "$replay_evidence")" ||
+      die "account probe retained operation journal is invalid"
+    if [ "$journal_state" = "completed" ]; then
+      local replay_hash
+      replay_hash="$(validate_account_read_evidence \
+        "$replay_evidence" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" \
+        "$account_binding")"
+      trap - EXIT INT TERM
+      rm -rf "$work"
+      rm -f "$lock_path"
+      exec 9>&-
+      echo "PASS trading-runner-artifact: exact account-read replay returned retained redacted evidence evidence_hash=$replay_hash effect=false"
+      return
+    fi
+    die "account probe operation is unresolved after an interrupted attempt"
+  fi
+  commit_account_read_operation_journal \
+    "$journal" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" \
+    "$account_binding" pending
 
   local transient_name="hivra-trading-account-read-${operation_id:0:12}-$$"
   local credential_dir="/run/credentials/$transient_name.service"
@@ -1369,8 +1572,10 @@ PY
       --account-read-credential-file "$credential_dir/bingx-exchange" \
       --expected-runner-key-id "$EXPECTED_RUNNER_KEY_ID" \
       --expected-account-binding-hash "$account_binding" \
-      --mandate-operation-id "$operation_id" \
-      --mandate-expires-at-utc "$expires_at" \
+      --account-read-operation-id "$operation_id" \
+      --account-read-scope "$read_scope" \
+      --account-read-max-uses "$max_uses" \
+      --account-read-expires-at-utc "$expires_at" \
       >"$work/stdout" 2>"$work/stderr"; then
     die "account probe failed without exposing provider output"
   fi
@@ -1378,6 +1583,9 @@ PY
   local evidence_hash
   evidence_hash="$(validate_account_read_evidence \
     "$work/stdout" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" "$account_binding")"
+  commit_account_read_operation_journal \
+    "$journal" "$operation_id" "$EXPECTED_RUNNER_KEY_ID" \
+    "$account_binding" completed "$work/stdout"
   for _ in $(seq 1 50); do
     [ "$(systemctl show -p LoadState --value "$transient_name.service" 2>/dev/null || true)" = "not-found" ] && break
     sleep 0.1
@@ -1389,7 +1597,7 @@ PY
   rm -rf "$work"
   rm -f "$lock_path"
   exec 9>&-
-  echo "PASS trading-runner-artifact: completed one redacted mandate-bound account read evidence_hash=$evidence_hash effect=false"
+  echo "PASS trading-runner-artifact: completed one signed single-use account read evidence_hash=$evidence_hash effect=false"
 }
 
 install_disabled() {
@@ -1662,7 +1870,8 @@ self_test() {
     'openApi/swap/v2/user/balance' \
     'openApi/swap/v2/user/positions' \
     'openApi/swap/v2/trade/openOrders' \
-    'hivra-trading-account-read-evidence-v1' >> "$artifact/$BINARY_NAME"
+    'hivra-trading-account-read-evidence-v2' \
+    'balance,positions,open_orders' >> "$artifact/$BINARY_NAME"
   chmod 700 "$artifact/$BINARY_NAME"
   cp "$UNIT_SOURCE" "$artifact/$UNIT_NAME"
   chmod 600 "$artifact/$UNIT_NAME"
@@ -1778,10 +1987,12 @@ import sys
 
 path, operation, runner, account = sys.argv[1:]
 value = {
-    "contract_version": "hivra-trading-account-read-evidence-v1",
-    "mandate_operation_id": operation,
+    "contract_version": "hivra-trading-account-read-evidence-v2",
+    "account_read_operation_id": operation,
     "runner_key_id": runner,
     "account_binding_hash_hex": account,
+    "read_scope": ["balance", "positions", "open_orders"],
+    "max_uses": 1,
     "observed_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
     "checks": [
         {"name": "balance", "success": True},
@@ -1800,6 +2011,40 @@ PY
     die "self-test accepted effectful account-read evidence"
   fi
   mv "$account_evidence.bak" "$account_evidence"
+
+  local account_journal_dir="$root/account-read-journal"
+  local account_journal="$account_journal_dir/$account_operation.json"
+  local account_replay="$account_journal_dir/replay.json"
+  mkdir "$account_journal_dir"
+  commit_account_read_operation_journal \
+    "$account_journal" "$account_operation" "$account_runner" \
+    "$account_binding" pending
+  [ "$(validate_account_read_operation_journal \
+    "$account_journal" "$account_operation" "$account_runner" \
+    "$account_binding" "$account_replay")" = pending ] ||
+    die "self-test lost pending account-read operation"
+  [ ! -e "$account_replay" ] ||
+    die "self-test projected evidence from a pending account-read operation"
+  commit_account_read_operation_journal \
+    "$account_journal" "$account_operation" "$account_runner" \
+    "$account_binding" completed "$account_evidence"
+  [ "$(validate_account_read_operation_journal \
+    "$account_journal" "$account_operation" "$account_runner" \
+    "$account_binding" "$account_replay")" = completed ] ||
+    die "self-test lost completed account-read operation"
+  [ "$(validate_account_read_evidence \
+    "$account_replay" "$account_operation" "$account_runner" \
+    "$account_binding")" = "$(validate_account_read_evidence \
+    "$account_evidence" "$account_operation" "$account_runner" \
+    "$account_binding")" ] ||
+    die "self-test changed retained account-read evidence"
+  cp "$account_journal" "$account_journal.mutated"
+  sed -i.bak 's/"max_uses":1/"max_uses":2/' "$account_journal.mutated"
+  if (validate_account_read_operation_journal \
+    "$account_journal.mutated" "$account_operation" "$account_runner" \
+    "$account_binding" "$account_journal_dir/mutated-evidence.json") >/dev/null 2>&1; then
+    die "self-test accepted widened account-read journal authority"
+  fi
 
   local mandate_test="$root/mandate-test"
   mkdir "$mandate_test"
@@ -1840,12 +2085,15 @@ mandate_id = hashlib.sha256(
 ).hexdigest()
 mandate = {"version": 1, "mandate_id": mandate_id, **semantic, "revoked_at_utc": None}
 commitment_semantic = {
-    "contract_version": "trading-remote-mandate-admission-v1",
+    "contract_version": "trading-remote-mandate-admission-v2",
     "runner_key_id": runner,
+    "operation_kind": "account_read",
+    "read_scope": ["balance", "positions", "open_orders"],
+    "max_uses": 1,
     "mandate": mandate,
 }
 commitment = hashlib.sha256(
-    b"hivra:bingx-futures-remote-mandate-admission:v1\n" +
+    b"hivra:bingx-futures-remote-mandate-admission:v2\n" +
     json.dumps(commitment_semantic, separators=(",", ":")).encode()
 ).hexdigest()
 (root / "digest.bin").write_bytes(bytes.fromhex(commitment))
@@ -1865,10 +2113,13 @@ import sys
 root = pathlib.Path(sys.argv[1])
 metadata = json.loads((root / "metadata.json").read_text())
 artifact = {
-    "contract_version": "trading-remote-mandate-admission-v1",
+    "contract_version": "trading-remote-mandate-admission-v2",
     "operation_id": metadata["commitment"],
     "commitment_hash_hex": metadata["commitment"],
     "runner_key_id": metadata["runner"],
+    "operation_kind": "account_read",
+    "read_scope": ["balance", "positions", "open_orders"],
+    "max_uses": 1,
     "mandate": metadata["mandate"],
     "signature_suite": "ed25519-v1",
     "signature_hex": (root / "signature.bin").read_bytes().hex(),
@@ -1886,6 +2137,30 @@ PY
   sed -i.bak 's/"symbol":"BTC-USDT"/"symbol":"ETH-USDT"/' "$mandate_test/mutated.json"
   if (verify_remote_mandate_artifact "$mandate_test/mutated.json" "$expected_runner" "$mandate_test/verified") >/dev/null 2>&1; then
     die "self-test accepted mutated mandate semantics"
+  fi
+  mv "$mandate_test/mutated.json.bak" "$mandate_test/mutated.json"
+  cp "$mandate_test/admission.json" "$mandate_test/mutated.json"
+  sed -i.bak 's/"open_orders"/"all_orders"/' "$mandate_test/mutated.json"
+  if (verify_remote_mandate_artifact "$mandate_test/mutated.json" "$expected_runner" "$mandate_test/verified") >/dev/null 2>&1; then
+    die "self-test accepted widened account-read scope"
+  fi
+  mv "$mandate_test/mutated.json.bak" "$mandate_test/mutated.json"
+  cp "$mandate_test/admission.json" "$mandate_test/mutated.json"
+  sed -i.bak 's/"max_uses":1/"max_uses":2/' "$mandate_test/mutated.json"
+  if (verify_remote_mandate_artifact "$mandate_test/mutated.json" "$expected_runner" "$mandate_test/verified") >/dev/null 2>&1; then
+    die "self-test accepted reusable account-read authority"
+  fi
+  mv "$mandate_test/mutated.json.bak" "$mandate_test/mutated.json"
+  cp "$mandate_test/admission.json" "$mandate_test/mutated.json"
+  sed -i.bak 's/trading-remote-mandate-admission-v2/trading-remote-mandate-admission-v1/g' "$mandate_test/mutated.json"
+  if (verify_remote_mandate_artifact "$mandate_test/mutated.json" "$expected_runner" "$mandate_test/verified") >/dev/null 2>&1; then
+    die "self-test accepted legacy v1 account-read authority"
+  fi
+  mv "$mandate_test/mutated.json.bak" "$mandate_test/mutated.json"
+  cp "$mandate_test/admission.json" "$mandate_test/mutated.json"
+  sed -i.bak 's/"operation_kind":"account_read"/"operation_kind":"account_write"/' "$mandate_test/mutated.json"
+  if (verify_remote_mandate_artifact "$mandate_test/mutated.json" "$expected_runner" "$mandate_test/verified") >/dev/null 2>&1; then
+    die "self-test accepted an account-write operation kind"
   fi
   mv "$mandate_test/mutated.json.bak" "$mandate_test/mutated.json"
   cp "$mandate_test/mutated.json" "$mandate_test/mutated.json.bak"

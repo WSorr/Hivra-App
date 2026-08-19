@@ -1005,6 +1005,34 @@ reconciliation, cancellation, exchange effect, boot activation, Core/Ledger
 fact, FFI, UI, plugin ABI, tag, or Release. Any durable account observation or
 remote execution process requires a separately selected pass.
 
+### 11.28 Pass U Remediation: Exact Single-Use Account-Read Authority
+
+The v1 remote admission proved runner, Capsule, mandate, account, and expiry
+binding, but it did not bind the exact account-read scope or consume authority
+after one attempt. It remains historical reachability evidence and is rejected
+by the account-read path. The existing remote admission envelope is versioned
+to v2 rather than introducing another DTO family or lifecycle owner.
+
+The Capsule signature now covers the exact runner, complete trading mandate,
+`operation_kind=account_read`, ordered scope `balance,positions,open_orders`,
+and `max_uses=1`. The domain-separated commitment is the account-read operation
+identifier. Changing, reordering, widening, or repeating the scope, changing
+the use bound, substituting the runner/account/mandate, or replaying a v1
+artifact fails closed before credential access or a provider request.
+
+The existing host artifact lifecycle owns one crash-safe operation journal. It
+atomically commits `pending` before the transient process may issue a GET and
+atomically replaces it with `completed` only after validating canonical
+redacted evidence. A completed replay returns that retained evidence without a
+new provider request. A restart with `pending` exposes an unresolved attempt
+and never guesses that no request occurred. Corrupt, conflicting, linked, or
+unexpected journal state fails closed. No balance, position, order, provider
+body, API material, or provider message is retained.
+
+This remediation adds no service, Core/Ledger fact, FFI contract, plugin ABI,
+schedule, lease, persistent runner credential, POST/DELETE path, order,
+cancellation, reconciliation, exchange effect, tag, or Release.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of
