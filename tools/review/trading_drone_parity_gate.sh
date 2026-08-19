@@ -63,7 +63,7 @@ shadow_probe_is_bounded_scheduler() {
 runner_artifact_is_verifiable() {
   [ -x "$1" ] &&
     rg -q 'SCHEMA_VERSION="hivra-trading-public-shadow-runner-bundle-v1"' "$1" &&
-    rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-transient-account-read"' "$1" &&
+    rg -q 'AUTHORITY_PROFILE="public-market-shadow-plus-exact-single-use-account-read"' "$1" &&
     rg -q 'artifact packaging requires a completely clean worktree' "$1" &&
     rg -q 'build output must stay outside the repository' "$1" &&
     rg -q 'binary_sha256=' "$1" &&
@@ -249,7 +249,10 @@ runner_external_anchor_is_fail_closed() {
 
 runner_mandate_admission_is_fail_closed() {
   rg -q 'class BingxFuturesRemoteMandateAdmission' "$2" &&
-    rg -q 'hivra:bingx-futures-remote-mandate-admission:v1' "$2" &&
+    rg -q 'hivra:bingx-futures-remote-mandate-admission:v2' "$2" &&
+    rg -q "operationKind = 'account_read'" "$2" &&
+    rg -q 'accountReadScope = <String>' "$2" &&
+    rg -q 'maxUses = 1' "$2" &&
     rg -q 'raw != admission\.canonicalJson' "$2" &&
     rg -q 'mandate\.revokedAtUtc != null' "$2" &&
     rg -q 'verifySignature' "$2" &&
@@ -259,6 +262,8 @@ runner_mandate_admission_is_fail_closed() {
     rg -q 'mandate artifact bytes are not canonical' "$1" &&
     rg -q 'mandate semantic id mismatch' "$1" &&
     rg -q 'mandate commitment mismatch' "$1" &&
+    rg -q 'mandate account-read scope mismatch' "$1" &&
+    rg -q 'mandate account-read use bound mismatch' "$1" &&
     rg -q 'mandate Capsule signature is invalid' "$1" &&
     rg -Fq 'value["runner_key_id"] != expected_runner_key_id' "$1" &&
     rg -q 'mandate admission refused conflicting retained authority' "$1" &&
@@ -290,6 +295,14 @@ runner_exchange_credential_is_prepared_only() {
 }
 
 runner_account_read_probe_is_fail_closed() {
+  local pending_commit_line
+  local replay_return_line
+  local provider_start_line
+  local completed_commit_line
+  pending_commit_line="$(rg -n -F '"$account_binding" pending' "$1" | head -1 | cut -d: -f1)"
+  replay_return_line="$(rg -n 'exact account-read replay returned retained redacted evidence' "$1" | head -1 | cut -d: -f1)"
+  provider_start_line="$(rg -n 'if ! systemd-run' "$1" | head -1 | cut -d: -f1)"
+  completed_commit_line="$(rg -n -F '"$account_binding" completed "$work/stdout"' "$1" | head -1 | cut -d: -f1)"
   rg -q -- '--probe-exchange-account <artifact-dir>' "$1" &&
     rg -q 'probe_exchange_account_once' "$1" &&
     rg -q 'account probe requires an inactive public-shadow runner' "$1" &&
@@ -307,11 +320,30 @@ runner_account_read_probe_is_fail_closed() {
     rg -q 'SocketBindDeny=any' "$1" &&
     rg -q -- '--mode account-read' "$1" &&
     rg -q 'validate_account_read_evidence' "$1" &&
+    rg -q 'commit_account_read_operation_journal' "$1" &&
+    rg -q 'validate_account_read_operation_journal' "$1" &&
+    rg -q 'account probe operation is unresolved after an interrupted attempt' "$1" &&
+    rg -q 'exact account-read replay returned retained redacted evidence' "$1" &&
+    rg -q '"hivra-trading-account-read-operation-v1"' "$1" &&
+    rg -q '"read_scope": \["balance", "positions", "open_orders"\]' "$1" &&
+    rg -q '"max_uses": 1' "$1" &&
+    rg -Fq '"$account_binding" pending' "$1" &&
+    rg -Fq '"$account_binding" completed "$work/stdout"' "$1" &&
+    [ -n "$pending_commit_line" ] &&
+    [ -n "$replay_return_line" ] &&
+    [ -n "$provider_start_line" ] &&
+    [ -n "$completed_commit_line" ] &&
+    [ "$pending_commit_line" -lt "$provider_start_line" ] &&
+    [ "$replay_return_line" -lt "$provider_start_line" ] &&
+    [ "$completed_commit_line" -gt "$provider_start_line" ] &&
     rg -q 'account-read evidence bytes are not canonical' "$1" &&
     rg -q 'account-read evidence is incomplete or effectful' "$1" &&
     rg -q 'account probe retained its transient unit' "$1" &&
     rg -q 'effect=false' "$1" &&
     rg -q "const String accountReadMode = 'account-read';" "$2" &&
+    rg -q "const String accountReadScopeWire = 'balance,positions,open_orders';" "$2" &&
+    rg -q 'const int accountReadMaxUses = 1;' "$2" &&
+    rg -q 'account read authority is not exact' "$2" &&
     rg -q 'runMandateBoundAccountRead' "$2" &&
     rg -q 'readExchangeCredentialFile' "$2" &&
     rg -q 'exchange account binding mismatch' "$2" &&
@@ -701,6 +733,7 @@ ANCHOR_KEY_MUTATION="$(mktemp)"
 ANCHOR_VERIFIER_MUTATION="$(mktemp)"
 ANCHOR_CONTINUITY_MUTATION="$(mktemp)"
 MANDATE_RUNNER_BINDING_MUTATION="$(mktemp)"
+MANDATE_SCOPE_MUTATION="$(mktemp)"
 EXCHANGE_ACCOUNT_BINDING_MUTATION="$(mktemp)"
 EXCHANGE_RUNNER_ACCESS_MUTATION="$(mktemp)"
 EXCHANGE_ROLLBACK_MUTATION="$(mktemp)"
@@ -708,7 +741,8 @@ EXCHANGE_VISIBLE_KEY_MUTATION="$(mktemp)"
 ACCOUNT_READ_TRANSIENT_MUTATION="$(mktemp)"
 ACCOUNT_READ_EFFECT_MUTATION="$(mktemp)"
 ACCOUNT_READ_RAW_OUTPUT_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION"' EXIT
+ACCOUNT_READ_JOURNAL_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -784,6 +818,8 @@ sed 's/evidence\.sequence != lastAcceptedSequence + 1/false/' \
   "$SHADOW_EVIDENCE" > "$ANCHOR_CONTINUITY_MUTATION"
 sed 's/value\["runner_key_id"\] != expected_runner_key_id/False/' \
   "$RUNNER_ARTIFACT" > "$MANDATE_RUNNER_BINDING_MUTATION"
+sed '/accountReadScope = <String>/,+4d' \
+  "$TRADING_MODELS" > "$MANDATE_SCOPE_MUTATION"
 sed 's/    "$expected_account_hash" ]/    "bypassed" ]/' \
   "$RUNNER_ARTIFACT" > "$EXCHANGE_ACCOUNT_BINDING_MUTATION"
 printf '%s\n' 'LoadCredentialEncrypted=bingx-exchange:/etc/credstore.encrypted/hivra-trading-public-shadow.bingx' \
@@ -799,6 +835,8 @@ sed "s/'effect': false/'effect': true/" \
   "$SHADOW_PROBE" > "$ACCOUNT_READ_EFFECT_MUTATION"
 cp "$SHADOW_PROBE" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION"
 printf '%s\n' 'responseBody' >> "$ACCOUNT_READ_RAW_OUTPUT_MUTATION"
+sed '/account_binding" pending/d' \
+  "$RUNNER_ARTIFACT" > "$ACCOUNT_READ_JOURNAL_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_exposes_runner_identity "$PROBE_IDENTITY_MUTATION" && \
@@ -832,13 +870,15 @@ if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   ! runner_external_anchor_is_fail_closed "$RUNNER_ARTIFACT" "$ANCHOR_VERIFIER_MUTATION" "$SHADOW_EVIDENCE" && \
   ! runner_external_anchor_is_fail_closed "$RUNNER_ARTIFACT" "$SHADOW_ANCHOR_VERIFIER" "$ANCHOR_CONTINUITY_MUTATION" && \
   ! runner_mandate_admission_is_fail_closed "$MANDATE_RUNNER_BINDING_MUTATION" "$TRADING_MODELS" "$TRADING_SCREEN" && \
+  ! runner_mandate_admission_is_fail_closed "$RUNNER_ARTIFACT" "$MANDATE_SCOPE_MUTATION" "$TRADING_SCREEN" && \
   ! runner_exchange_credential_is_prepared_only "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$RUNNER_SUPERVISOR" && \
   ! runner_exchange_credential_is_prepared_only "$RUNNER_ARTIFACT" "$EXCHANGE_RUNNER_ACCESS_MUTATION" && \
   ! runner_exchange_credential_is_prepared_only "$EXCHANGE_ROLLBACK_MUTATION" "$RUNNER_SUPERVISOR" && \
   ! runner_exchange_credential_is_prepared_only "$EXCHANGE_VISIBLE_KEY_MUTATION" "$RUNNER_SUPERVISOR" && \
   ! runner_account_read_probe_is_fail_closed "$ACCOUNT_READ_TRANSIENT_MUTATION" "$SHADOW_PROBE" "$RUNNER_SUPERVISOR" && \
   ! runner_account_read_probe_is_fail_closed "$RUNNER_ARTIFACT" "$ACCOUNT_READ_EFFECT_MUTATION" "$RUNNER_SUPERVISOR" && \
-  ! runner_account_read_probe_is_fail_closed "$RUNNER_ARTIFACT" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$RUNNER_SUPERVISOR"; then
+  ! runner_account_read_probe_is_fail_closed "$RUNNER_ARTIFACT" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$RUNNER_SUPERVISOR" && \
+  ! runner_account_read_probe_is_fail_closed "$ACCOUNT_READ_JOURNAL_MUTATION" "$SHADOW_PROBE" "$RUNNER_SUPERVISOR"; then
   pass "public, scheduler, bundle, activation, anchor, credential, account-read, durable-stream, and execution-outcome mutations are rejected"
 else
   fail "public, scheduler, bundle, activation, anchor, credential, account-read, durable-stream, or execution-outcome mutation self-test failed"

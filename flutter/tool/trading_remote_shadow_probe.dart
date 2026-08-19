@@ -14,7 +14,14 @@ const int maxScheduleIntervalSeconds = 3600;
 const String publicShadowMode = 'public-shadow';
 const String accountReadMode = 'account-read';
 const String accountReadEvidenceVersion =
-    'hivra-trading-account-read-evidence-v1';
+    'hivra-trading-account-read-evidence-v2';
+const String accountReadScopeWire = 'balance,positions,open_orders';
+const List<String> accountReadScope = <String>[
+  'balance',
+  'positions',
+  'open_orders',
+];
+const int accountReadMaxUses = 1;
 
 typedef TradingRemoteShadowCycle = Future<void> Function(int cycleNumber);
 typedef TradingRemoteShadowDelay = Future<void> Function(Duration duration);
@@ -101,8 +108,15 @@ Future<String> runMandateBoundAccountRead({
     options,
     'expected-account-binding-hash',
   );
-  final mandateOperationId = _requiredHex64(options, 'mandate-operation-id');
-  final expiresRaw = _required(options, 'mandate-expires-at-utc');
+  final accountReadOperationId = _requiredHex64(
+    options,
+    'account-read-operation-id',
+  );
+  if (_required(options, 'account-read-scope') != accountReadScopeWire ||
+      _required(options, 'account-read-max-uses') != '$accountReadMaxUses') {
+    throw const FormatException('account read authority is not exact');
+  }
+  final expiresRaw = _required(options, 'account-read-expires-at-utc');
   final expiresAtUtc = DateTime.tryParse(expiresRaw);
   if (expiresAtUtc == null ||
       !expiresAtUtc.isUtc ||
@@ -143,9 +157,11 @@ Future<String> runMandateBoundAccountRead({
 
   return jsonEncode(<String, dynamic>{
     'contract_version': accountReadEvidenceVersion,
-    'mandate_operation_id': mandateOperationId,
+    'account_read_operation_id': accountReadOperationId,
     'runner_key_id': expectedRunnerKeyId,
     'account_binding_hash_hex': expectedAccountBinding,
+    'read_scope': accountReadScope,
+    'max_uses': accountReadMaxUses,
     'observed_at_utc': observedAtUtc.toIso8601String(),
     'checks': <Map<String, dynamic>>[
       <String, dynamic>{'name': 'balance', 'success': true},
@@ -249,8 +265,10 @@ Map<String, String> _parseArgs(List<String> args) {
     'account-read-credential-file',
     'expected-runner-key-id',
     'expected-account-binding-hash',
-    'mandate-operation-id',
-    'mandate-expires-at-utc',
+    'account-read-operation-id',
+    'account-read-scope',
+    'account-read-max-uses',
+    'account-read-expires-at-utc',
   };
   final parsed = <String, String>{};
   for (var index = 0; index < args.length; index++) {
@@ -292,8 +310,10 @@ void _validateModeOptions(Map<String, String> options, String mode) {
     'account-read-credential-file',
     'expected-runner-key-id',
     'expected-account-binding-hash',
-    'mandate-operation-id',
-    'mandate-expires-at-utc',
+    'account-read-operation-id',
+    'account-read-scope',
+    'account-read-max-uses',
+    'account-read-expires-at-utc',
   };
   if (mode != publicShadowMode && mode != accountReadMode) {
     throw const FormatException('unsupported runner mode');

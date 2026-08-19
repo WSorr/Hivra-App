@@ -518,7 +518,7 @@ void main() {
       expect(admission, isNotNull);
       expect(
         admission!.commitmentHashHex,
-        '77c675b4e32dce7cbdd1f8b874009737fe343816d16f729b9505f013f1f84d8a',
+        '534c820cf2ff116730e7f649620bd390e4e1c4ff12bb931051cd07d7a8fa7f92',
       );
       bool verifyAdmission({
         required String messageHashHex,
@@ -536,9 +536,23 @@ void main() {
       );
       final admissionJson = admission.toJson();
       for (final mutation in <Map<String, dynamic>>[
+        <String, dynamic>{
+          ...admissionJson,
+          'contract_version': 'trading-remote-mandate-admission-v1',
+        },
         <String, dynamic>{...admissionJson, 'runner_key_id': accountHex},
         <String, dynamic>{...admissionJson, 'signature_suite': 'legacy-v0'},
         <String, dynamic>{...admissionJson, 'operation_id': accountHex},
+        <String, dynamic>{...admissionJson, 'operation_kind': 'account_write'},
+        <String, dynamic>{
+          ...admissionJson,
+          'read_scope': <String>['balance', 'positions', 'all_orders'],
+        },
+        <String, dynamic>{
+          ...admissionJson,
+          'read_scope': <String>['positions', 'balance', 'open_orders'],
+        },
+        <String, dynamic>{...admissionJson, 'max_uses': 2},
         <String, dynamic>{
           ...admissionJson,
           'signature_hex': List<String>.filled(128, '0').join(),

@@ -3852,6 +3852,27 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     Evidence remains outside the repository. No account payload was retained,
     no exchange effect, tag, or Release occurred, and no next pass is selected.
 
+- `1.x Trading Pass U Remediation — Exact Single-Use Account-Read Authority`
+  - Lane: bounded 1.x authority and restart remediation in the existing Remote
+    Runner host lifecycle.
+  - Invariant: one Capsule signature binds the exact runner, account, mandate,
+    ordered balance/positions/open-orders scope, expiry, and `max_uses=1`; one
+    operation can start at most one provider-read sequence.
+  - Sole owner: the existing remote admission model owns the signed commitment,
+    and `public_shadow_runner_artifact.sh` owns the existing host lifecycle and
+    its crash-safe operation-consumption state.
+  - Removed or sealed: v1 admission cannot authorize account reads; widened or
+    reordered scope, second provider invocation, crash-pending retry, corrupt
+    journal state, and inferred success fail closed. Scheduling, leases,
+    account payload persistence, POST/DELETE, effects, release, and 2.0 remain
+    sealed.
+  - Exit evidence: independent Dart/Python commitment parity, exact-scope and
+    journal mutations, full local and clean-checkout gates, protected PR and
+    post-merge CI, then merge-SHA VPS proof of first read, no-network completed
+    replay, unresolved pending rejection, exact uninstall, and unchanged
+    website/Amnezia/listener baselines.
+  - Status: selected (2026-08-19); implementation and host evidence pending.
+
 - `External Personal-Agent Runtime Pattern Audit`
   - Scope: preserve anonymized external personal-agent runtime observations
     and evaluate them against Hivra's product axis and three architecture laws.

@@ -248,17 +248,21 @@ void main() {
       final decoded = jsonDecode(evidence) as Map<String, dynamic>;
       expect(decoded.keys, <String>[
         'contract_version',
-        'mandate_operation_id',
+        'account_read_operation_id',
         'runner_key_id',
         'account_binding_hash_hex',
+        'read_scope',
+        'max_uses',
         'observed_at_utc',
         'checks',
         'effect',
       ]);
       expect(decoded['contract_version'], accountReadEvidenceVersion);
-      expect(decoded['mandate_operation_id'], fixture.operationId);
+      expect(decoded['account_read_operation_id'], fixture.operationId);
       expect(decoded['runner_key_id'], fixture.runnerKeyId);
       expect(decoded['account_binding_hash_hex'], fixture.accountBindingHash);
+      expect(decoded['read_scope'], accountReadScope);
+      expect(decoded['max_uses'], accountReadMaxUses);
       expect(decoded['observed_at_utc'], fixture.nowUtc.toIso8601String());
       expect(decoded['checks'], <Map<String, dynamic>>[
         <String, dynamic>{'name': 'balance', 'success': true},
@@ -301,7 +305,7 @@ void main() {
     addTearDown(fixture.dispose);
     var requests = 0;
     final options = Map<String, String>.from(fixture.options)
-      ..['mandate-expires-at-utc'] =
+      ..['account-read-expires-at-utc'] =
           fixture.nowUtc.subtract(const Duration(seconds: 1)).toIso8601String();
 
     await expectLater(
@@ -364,6 +368,29 @@ void main() {
       ),
       throwsFormatException,
     );
+  });
+
+  test('account read rejects widened or reusable authority', () async {
+    final fixture = await _accountReadFixture();
+    addTearDown(fixture.dispose);
+    var requests = 0;
+    for (final mutation in <Map<String, String>>[
+      <String, String>{'account-read-scope': 'balance,positions,all_orders'},
+      <String, String>{'account-read-max-uses': '2'},
+    ]) {
+      await expectLater(
+        runMandateBoundAccountRead(
+          options: Map<String, String>.from(fixture.options)..addAll(mutation),
+          runnerSeedBytes: fixture.seedBytes,
+          requestSender: (_) async {
+            requests++;
+            return const BingxHttpResponse(statusCode: 200, body: '{}');
+          },
+        ),
+        throwsFormatException,
+      );
+    }
+    expect(requests, 0);
   });
 
   test('account credential rejects links and permissive files', () async {
@@ -452,8 +479,10 @@ _accountReadFixture() async {
       'account-read-credential-file': credential.path,
       'expected-runner-key-id': runnerKeyId,
       'expected-account-binding-hash': accountBindingHash,
-      'mandate-operation-id': operationId,
-      'mandate-expires-at-utc':
+      'account-read-operation-id': operationId,
+      'account-read-scope': accountReadScopeWire,
+      'account-read-max-uses': '$accountReadMaxUses',
+      'account-read-expires-at-utc':
           nowUtc.add(const Duration(hours: 1)).toIso8601String(),
     },
     dispose: () => directory.delete(recursive: true),
