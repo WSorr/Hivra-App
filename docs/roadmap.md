@@ -1293,11 +1293,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     ABI, VPS deployment, tag, or Release changed. Packaged order smoke remains
     blocked until a separate audit proves a continuous public trade stream with
     gap detection and restart-safe session coverage.
+  - Public-session implementation: commit `a849cd3` adds one bounded,
+    process-scoped Asia/London/New York notional accumulator to the existing
+    public-shadow composition root and injects its output into the existing
+    snapshot/replay owner. The parser accepts the documented trade object and
+    the empirically observed bounded trade-list wire variant, validates a full
+    frame before aggregate mutation, bounds compressed and decoded input, and
+    resets completeness on disconnect, malformed input, stale heartbeat,
+    process restart, or the bounded 31-day supervisor restart. A live public
+    one-shot produced signed `NO_SIGNAL` evidence and exited without any
+    credential, account read, provider write, or order effect. Protected PR
+    `#163` and post-merge repository run `32408042062` passed. VPS deployment,
+    long-running warm-up evidence, packaged order smoke, and live orders remain
+    unselected.
   - Entropy reduction:
 
     | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
     | --- | --- | --- | --- | --- | --- |
     | One v3 exact-order admission variant and one effect executable in the existing bundle | Public-shadow effect imports, blind POST replay, widened provider endpoints | Timeout is unresolved; exact replay is inspection/reconciliation, not re-execution | Zero lifecycle owners; zero Core/Ledger paths | Simulated evidence does not prove live acceptance or 24/7 scheduling | Separate decision on one minimal live subaccount order after merge-SHA VPS evidence |
+    | One process-scoped three-session aggregate in the existing public-shadow composition root | Fabricated session profiles from recent REST trades, persistence of raw public trades, and guessed continuity across gaps | Complete session evidence means uninterrupted coverage from the current connection epoch, never merely available samples | One public observation state owner; zero new decision, Core, Ledger, credential, or effect paths | Merge-SHA VPS warm-up, disconnect/reset, resource, co-host, and uninstall evidence is absent | A bounded evidence-only VPS pass can be selected without granting exchange authority |
 
 - `11.30 Explainable Capsule History`
   - Goal:
