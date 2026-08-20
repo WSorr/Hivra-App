@@ -121,7 +121,22 @@ Data source policy:
    - each profile declares its evidence source and whether coverage is
      complete,
    - incomplete coverage MUST produce `NO_SIGNAL` even when recent flow,
-     trend, and whale activation align.
+     trend, and whale activation align,
+   - the public-shadow composition root obtains session evidence only from the
+     official unauthenticated BingX public trade stream,
+   - the stream exposes no sequence identifier; disconnect, parse failure,
+     stale heartbeat, process restart, or supervisor restart therefore resets
+     all accumulated coverage instead of bridging or guessing a gap,
+   - one process-scoped accumulator retains only the latest aggregate bucket
+     for Asia, London, and New York; raw trades and prior-process aggregates are
+     not persisted,
+   - each compressed frame and decoded payload is bounded; the parser accepts
+     only the documented trade object or the bounded trade-list wire variant,
+     validates every row before mutating an aggregate, and rejects the entire
+     frame on any malformed or cross-symbol row,
+   - a bucket is complete only when its start is at or after the current
+     uninterrupted connection epoch. Until all required buckets satisfy that
+     condition, the existing deterministic decision path emits `NO_SIGNAL`.
 
 Optional (v1.1+):
 

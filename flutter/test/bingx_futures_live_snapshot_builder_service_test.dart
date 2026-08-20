@@ -209,6 +209,40 @@ void main() {
             .priceDecimal,
         '102',
       );
+
+      const completeSessions = <BingxFuturesSessionVolumePoint>[
+        BingxFuturesSessionVolumePoint(
+          session: 'asia',
+          bucketStartUtc: '2024-03-09T00:00:00.000Z',
+          volumeDecimal: '1000.00000000',
+          deltaDecimal: '100.00000000',
+          evidenceSource: 'public_trade_stream',
+          coverageComplete: true,
+        ),
+        BingxFuturesSessionVolumePoint(
+          session: 'london',
+          bucketStartUtc: '2024-03-09T08:00:00.000Z',
+          volumeDecimal: '1200.00000000',
+          deltaDecimal: '-50.00000000',
+          evidenceSource: 'public_trade_stream',
+          coverageComplete: true,
+        ),
+        BingxFuturesSessionVolumePoint(
+          session: 'newyork',
+          bucketStartUtc: '2024-03-09T16:00:00.000Z',
+          volumeDecimal: '900.00000000',
+          deltaDecimal: '25.00000000',
+          evidenceSource: 'public_trade_stream',
+          coverageComplete: true,
+        ),
+      ];
+      final streamResult = await builder.fetchAndBuild(
+        exchange: exchange,
+        symbol: 'BTC-USDT',
+        sessionVolumes: completeSessions,
+      );
+      expect(streamResult.isSuccess, isTrue);
+      expect(streamResult.snapshotInput!.sessionVolumes, completeSessions);
     });
 
     test('does not treat account force-orders as market liquidation feed', () async {

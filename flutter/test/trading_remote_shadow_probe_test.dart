@@ -7,11 +7,116 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
+import 'package:hivra_app/services/bingx_futures_public_session_accumulator.dart';
 
 import '../tool/trading_remote_shadow_probe.dart';
 import '../tool/trading_remote_exact_order.dart';
 
 void main() {
+  test(
+    'public stream consumes heartbeat, acknowledgement, and trade',
+    () async {
+      var nowUtc = DateTime.utc(2026, 8, 20, 8, 1);
+      final accumulator = BingxFuturesPublicSessionAccumulator(
+        symbol: 'BTC-USDT',
+        clockUtc: () => nowUtc,
+      );
+      accumulator.beginConnection();
+      final frames = StreamController<Object>();
+      final sent = <Object>[];
+      final consumption = consumeBingxPublicTradeFrames(
+        frames: frames.stream,
+        send: sent.add,
+        accumulator: accumulator,
+        subscriptionId: 'subscription-1',
+      );
+
+      frames.add(gzip.encode(utf8.encode('Ping')));
+      frames.add(
+        gzip.encode(
+          utf8.encode(
+            jsonEncode(<String, Object?>{
+              'id': 'subscription-1',
+              'code': 0,
+              'msg': '',
+              'dataType': '',
+              'data': null,
+            }),
+          ),
+        ),
+      );
+      frames.add(
+        gzip.encode(
+          utf8.encode(
+            jsonEncode(<String, Object>{
+              'dataType': 'BTC-USDT@trade',
+              'data': <Object>[
+                <String, Object>{
+                  'T': nowUtc.millisecondsSinceEpoch,
+                  's': 'BTC-USDT',
+                  'p': '100',
+                  'q': '2',
+                  'm': false,
+                },
+              ],
+            }),
+          ),
+        ),
+      );
+      await frames.close();
+      await consumption;
+
+      expect(sent, <Object>['Pong']);
+      expect(
+        accumulator.snapshot().singleWhere((item) => item.session == 'london'),
+        isA<dynamic>()
+            .having((item) => item.volumeDecimal, 'volume', '200.00000000')
+            .having((item) => item.coverageComplete, 'coverage', isFalse),
+      );
+      expect(accumulator.isConnected, isFalse);
+    },
+  );
+
+  test('public stream parse failure disconnects and fails closed', () async {
+    final accumulator = BingxFuturesPublicSessionAccumulator(
+      symbol: 'BTC-USDT',
+    );
+    accumulator.beginConnection();
+    final frames = StreamController<Object>();
+    final consumption = consumeBingxPublicTradeFrames(
+      frames: frames.stream,
+      send: (_) {},
+      accumulator: accumulator,
+      subscriptionId: 'subscription-1',
+    );
+
+    frames.add('malformed');
+    await expectLater(consumption, throwsFormatException);
+    expect(accumulator.isConnected, isFalse);
+    await frames.close();
+  });
+
+  test('public frame decoder enforces compressed and expanded bounds', () {
+    expect(decodeBingxPublicFrame(gzip.encode(utf8.encode('Ping'))), 'Ping');
+    expect(
+      () => decodeBingxPublicFrame(
+        gzip.encode(
+          List<int>.filled(
+            BingxFuturesPublicSessionAccumulator.maxDecodedMessageBytes + 1,
+            65,
+          ),
+        ),
+      ),
+      throwsFormatException,
+    );
+    expect(
+      () => decodeBingxPublicFrame(
+        List<int>.filled(maxCompressedTradeFrameBytes + 1, 0),
+      ),
+      throwsFormatException,
+    );
+  });
+
   test(
     'bounded scheduler runs serial cycles with delays between successes',
     () async {

@@ -1,14 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_service.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
+import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.dart';
+import 'package:hivra_app/services/bingx_futures_public_session_accumulator.dart';
 import 'package:hivra_app/services/bingx_futures_shadow_stream_store.dart';
 
-const int maxScheduledRuns = 288;
+const int maxScheduledRuns = 8928;
 const int minScheduleIntervalSeconds = 60;
 const int maxScheduleIntervalSeconds = 3600;
 const String publicShadowMode = 'public-shadow';
@@ -22,6 +26,9 @@ const List<String> accountReadScope = <String>[
   'open_orders',
 ];
 const int accountReadMaxUses = 1;
+const int maxCompressedTradeFrameBytes = 16384;
+const String bingxPublicSwapWebSocket =
+    'wss://open-api-swap.bingx.com/swap-market';
 
 typedef TradingRemoteShadowCycle = Future<void> Function(int cycleNumber);
 typedef TradingRemoteShadowDelay = Future<void> Function(Duration duration);
@@ -49,31 +56,47 @@ Future<void> main(List<String> args) async {
       directory: Directory(_required(options, 'stream-dir')),
     );
     final marketData = BingxFuturesExchangeService();
-    await runBoundedShadowSchedule(
+    final symbol = _required(options, 'symbol');
+    final accumulator = BingxFuturesPublicSessionAccumulator(symbol: symbol);
+    final socket = await WebSocket.connect(
+      bingxPublicSwapWebSocket,
+      headers: const <String, dynamic>{'X-SOURCE-KEY': 'BX-AI-SKILL'},
+    );
+    await runPublicShadowWithSessionStream(
+      socket: socket,
+      accumulator: accumulator,
       runCount: schedule.runCount,
       interval: schedule.interval,
       runOnce: (cycleNumber) async {
+        if (!accumulator.isConnected) {
+          throw StateError('public trade stream disconnected');
+        }
+        final evidenceOwner = BingxFuturesDeterministicReplayHarnessService(
+          loadLiveSnapshot:
+              ({required exchange, required symbol}) =>
+                  const BingxFuturesLiveSnapshotBuilderService().fetchAndBuild(
+                    exchange: exchange,
+                    symbol: symbol,
+                    sessionVolumes: accumulator.snapshot(),
+                  ),
+        );
         final evidence = await stream.append(
           trustedRunnerKey: publicKey,
           produce:
               (sequence, previousEvidenceHashHex) =>
-                  const BingxFuturesDeterministicReplayHarnessService()
-                      .runLivePublicShadow(
-                        marketData: marketData,
-                        symbol: _required(options, 'symbol'),
-                        signingKey: signingKey,
-                        runnerBuildId: _required(options, 'runner-build-id'),
-                        pluginId: _required(options, 'plugin-id'),
-                        pluginVersion: _required(options, 'plugin-version'),
-                        packageDigestHex: _required(
-                          options,
-                          'package-digest-hex',
-                        ),
-                        hostAbi: _required(options, 'host-abi'),
-                        observedAtUtc: DateTime.now().toUtc(),
-                        sequence: sequence,
-                        previousEvidenceHashHex: previousEvidenceHashHex,
-                      ),
+                  evidenceOwner.runLivePublicShadow(
+                    marketData: marketData,
+                    symbol: symbol,
+                    signingKey: signingKey,
+                    runnerBuildId: _required(options, 'runner-build-id'),
+                    pluginId: _required(options, 'plugin-id'),
+                    pluginVersion: _required(options, 'plugin-version'),
+                    packageDigestHex: _required(options, 'package-digest-hex'),
+                    hostAbi: _required(options, 'host-abi'),
+                    observedAtUtc: DateTime.now().toUtc(),
+                    sequence: sequence,
+                    previousEvidenceHashHex: previousEvidenceHashHex,
+                  ),
         );
         stdout.writeln(
           'shadow_evidence_appended=${evidence.sequence} '
@@ -83,7 +106,6 @@ Future<void> main(List<String> args) async {
           'cycle=$cycleNumber/${schedule.runCount}',
         );
       },
-      delay: Future<void>.delayed,
     );
   } on Object catch (error) {
     stderr.writeln(
@@ -93,6 +115,156 @@ Future<void> main(List<String> args) async {
     );
     exitCode = 1;
   }
+  await stdout.flush();
+  await stderr.flush();
+  exit(exitCode);
+}
+
+Future<void> runPublicShadowWithSessionStream({
+  required WebSocket socket,
+  required BingxFuturesPublicSessionAccumulator accumulator,
+  required int runCount,
+  required Duration? interval,
+  required TradingRemoteShadowCycle runOnce,
+}) async {
+  const subscriptionId = 'hivra-public-session-trade-v1';
+  accumulator.beginConnection();
+  socket.add(
+    jsonEncode(<String, String>{
+      'id': subscriptionId,
+      'reqType': 'sub',
+      'dataType': '${accumulator.symbol}@trade',
+    }),
+  );
+  Object? streamError;
+  StackTrace? streamStackTrace;
+  final frameRelay = StreamController<dynamic>();
+  final socketSubscription = socket.listen(
+    frameRelay.add,
+    onError: frameRelay.addError,
+    onDone: frameRelay.close,
+    cancelOnError: false,
+  );
+  final streamTask = consumeBingxPublicTradeFrames(
+    frames: frameRelay.stream,
+    send: socket.add,
+    accumulator: accumulator,
+    subscriptionId: subscriptionId,
+  ).catchError((Object error, StackTrace stackTrace) {
+    streamError = error;
+    streamStackTrace = stackTrace;
+  });
+  void requireHealthyStream() {
+    final error = streamError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, streamStackTrace!);
+    }
+    if (!accumulator.isConnected) {
+      throw StateError('public trade stream disconnected');
+    }
+  }
+
+  try {
+    await runBoundedShadowSchedule(
+      runCount: runCount,
+      interval: interval,
+      runOnce: (cycleNumber) async {
+        requireHealthyStream();
+        await runOnce(cycleNumber);
+        requireHealthyStream();
+      },
+      delay: (duration) async {
+        await Future.any<void>(<Future<void>>[
+          Future<void>.delayed(duration),
+          streamTask,
+        ]);
+        requireHealthyStream();
+      },
+    );
+  } finally {
+    await socket
+        .close(WebSocketStatus.normalClosure, 'bounded cycle complete')
+        .timeout(const Duration(seconds: 2), onTimeout: () {});
+    await socketSubscription.cancel();
+    if (!frameRelay.isClosed) await frameRelay.close();
+    await streamTask;
+  }
+}
+
+Future<void> consumeBingxPublicTradeFrames({
+  required Stream<dynamic> frames,
+  required void Function(Object frame) send,
+  required BingxFuturesPublicSessionAccumulator accumulator,
+  required String subscriptionId,
+}) async {
+  try {
+    await for (final frame in frames) {
+      final message = decodeBingxPublicFrame(frame);
+      if (message == 'Ping') {
+        send('Pong');
+        accumulator.acceptHeartbeat();
+        continue;
+      }
+      final decoded = jsonDecode(message);
+      if (decoded is Map<String, dynamic> &&
+          decoded['id'] == subscriptionId &&
+          decoded['data'] == null) {
+        if (decoded['code'] != 0) {
+          throw const FormatException('public trade subscription rejected');
+        }
+        accumulator.acceptHeartbeat();
+        continue;
+      }
+      accumulator.acceptDecodedTradeMessage(message);
+    }
+  } finally {
+    accumulator.markDisconnected();
+  }
+}
+
+String decodeBingxPublicFrame(Object frame) {
+  if (frame is String) {
+    if (utf8.encode(frame).length >
+        BingxFuturesPublicSessionAccumulator.maxDecodedMessageBytes) {
+      throw const FormatException('public trade frame is oversized');
+    }
+    return frame;
+  }
+  if (frame is! List<int> || frame.length > maxCompressedTradeFrameBytes) {
+    throw const FormatException('public trade frame is invalid');
+  }
+  final output = BytesBuilder(copy: false);
+  final decodedSink = ByteConversionSink.from(
+    _BoundedBytesSink(
+      output: output,
+      maxBytes: BingxFuturesPublicSessionAccumulator.maxDecodedMessageBytes,
+    ),
+  );
+  final decoder = gzip.decoder.startChunkedConversion(decodedSink);
+  decoder.add(frame);
+  decoder.close();
+  final decoded = output.takeBytes();
+  return utf8.decode(decoded);
+}
+
+class _BoundedBytesSink implements Sink<List<int>> {
+  final BytesBuilder output;
+  final int maxBytes;
+  int _length = 0;
+
+  _BoundedBytesSink({required this.output, required this.maxBytes});
+
+  @override
+  void add(List<int> data) {
+    _length += data.length;
+    if (_length > maxBytes) {
+      throw const FormatException('public trade frame expands beyond limit');
+    }
+    output.add(data);
+  }
+
+  @override
+  void close() {}
 }
 
 Future<String> runMandateBoundAccountRead({
