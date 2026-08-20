@@ -480,6 +480,8 @@ class BingxFuturesLiveSnapshotBuilderService {
           DateTime.utc(now.year, now.month, now.day).toIso8601String(),
       volumeDecimal: _fmt(delta.abs()),
       deltaDecimal: _fmt(delta),
+      evidenceSource: 'recent_trade_sample',
+      coverageComplete: false,
     );
   }
 

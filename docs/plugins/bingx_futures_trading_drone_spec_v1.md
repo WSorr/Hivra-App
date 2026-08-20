@@ -104,7 +104,9 @@ Data source policy:
    - recommended depth: at least 300 closed candles (up to 1d) and at least 120 candles on 1w.
    - the all-perpetual signal scan prefilter uses the three latest closed 5m candles and admits only strictly rising volume; the forming candle never participates.
 4. Recent trades
-   - recent market trades (for taker-flow delta), recommended 200+ rows.
+   - bounded recent market trades, recommended 200+ rows,
+   - this sample is recent-flow evidence only and MUST NOT be expanded or
+     regrouped into a session profile.
 5. Open interest
    - latest value + short history (5m buckets, min 24 points).
 6. Funding data
@@ -115,7 +117,11 @@ Data source policy:
    - liquidation-level feed (if provided by data vendor/exchange endpoint).
 8. Session volume inputs
    - volume by session windows (Asia/London/NY),
-   - session delta profile for current and previous session.
+   - session taker-imbalance profile for the current and previous session,
+   - each profile declares its evidence source and whether coverage is
+     complete,
+   - incomplete coverage MUST produce `NO_SIGNAL` even when recent flow,
+     trend, and whale activation align.
 
 Optional (v1.1+):
 
@@ -356,13 +362,17 @@ Capsule, credential, account, mandate, provider, scheduler, or effect authority.
 
 ### 5.4 Microstructure Confirmation
 
-- taker-flow delta from recent trades:
-  - `delta = aggressive_buy_qty - aggressive_sell_qty`.
+- taker-flow imbalance from recent trades:
+  - raw quantity delta remains diagnostic only,
+  - the directional gate uses the dimensionless notional ratio
+    `(aggressive_buy_notional - aggressive_sell_notional) /
+    (aggressive_buy_notional + aggressive_sell_notional)`.
 - open-interest delta:
   - positive/negative regime relative to prior 3 buckets.
 - session volume regime:
   - active session volume percentile vs trailing baseline,
-  - session imbalance supports direction.
+  - a dimensionless notional imbalance supports direction,
+  - only complete current/previous session evidence may authorize a signal.
 - whale trigger activation:
   - require at least one high-confidence activation event aligned with intended direction.
 

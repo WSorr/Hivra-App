@@ -125,12 +125,16 @@ class BingxFuturesSessionVolumePoint {
   final String bucketStartUtc;
   final String volumeDecimal;
   final String deltaDecimal;
+  final String evidenceSource;
+  final bool coverageComplete;
 
   const BingxFuturesSessionVolumePoint({
     required this.session,
     required this.bucketStartUtc,
     required this.volumeDecimal,
     required this.deltaDecimal,
+    this.evidenceSource = 'declared_session_profile',
+    this.coverageComplete = true,
   });
 }
 

@@ -333,7 +333,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_execution_command_service.dart` line `43` (`InMemoryBingxExecutionCommandReplayStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_execution_command_service.dart` line `56` (`BingxFuturesExecutionCommandService`) — rule `current_flutter_service_support`
 - `REGISTERED_EVIDENCE` — `flutter/lib/services/bingx_futures_execution_queue_service.dart` line `105` (`BingxFuturesExecutionQueueService`) — rule `registry`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_feature_extractor_service.dart` line `95` (`BingxFuturesFeatureExtractorService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_feature_extractor_service.dart` line `101` (`BingxFuturesFeatureExtractorService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_intent_use_case_service.dart` line `7` (`BingxFuturesIntentUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_live_decision_service.dart` line `13` (`BingxFuturesLiveDecisionService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart` line `23` (`BingxFuturesLiveSnapshotBuilderService`) — rule `current_flutter_service_support`

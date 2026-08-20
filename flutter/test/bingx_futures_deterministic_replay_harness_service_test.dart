@@ -15,8 +15,8 @@ void main() {
   group('BingxFuturesDeterministicReplayHarnessService', () {
     const service = BingxFuturesDeterministicReplayHarnessService(
       policy: BingxTvhPolicy(
-        minAbsTradeDelta: 0.5,
-        minAbsSessionNetDelta: 1.0,
+        minAbsTradeImbalanceRatio: 0.5,
+        minAbsSessionImbalanceRatio: 0.01,
         maxAbsFundingRate: 0.01,
         requireWhaleActivation: true,
         requireConsensusSignable: true,
@@ -119,10 +119,9 @@ void main() {
         signingKey: signingKey,
         runnerKeyId: _runnerKeyId(publicKey),
       );
-
       expect(
         evidence.evidenceHashHex,
-        'cfa9f205c836d49073c99c17d8aa1ece6348f64cd023ecce9b01d71ebc4bb0ff',
+        'faccf741c56a01bef39cd288dcb550635266652fd6ca694ae7a955e083f6b1a5',
       );
       final golden = Map<String, dynamic>.from(
         jsonDecode(
@@ -152,8 +151,8 @@ void main() {
       var loadedSymbol = '';
       final liveService = BingxFuturesDeterministicReplayHarnessService(
         policy: const BingxTvhPolicy(
-          minAbsTradeDelta: 0.5,
-          minAbsSessionNetDelta: 1.0,
+          minAbsTradeImbalanceRatio: 0.5,
+          minAbsSessionImbalanceRatio: 0.01,
           maxAbsFundingRate: 0.01,
           requireWhaleActivation: true,
           requireConsensusSignable: true,
@@ -335,7 +334,6 @@ void main() {
         signingKey: signingKey,
         runnerKeyId: _runnerKeyId(publicKey),
       );
-
       expect(
         await _verify(
           service: service,

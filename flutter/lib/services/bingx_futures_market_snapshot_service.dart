@@ -39,6 +39,8 @@ class BingxFuturesMarketSnapshotService {
     }
     final liquidationFeedAvailable =
         liquidity.any((item) => item['kind'] == 'liquidation');
+    final sessionEvidenceComplete =
+        sessions.every((item) => item['coverage_complete'] == true);
 
     final snapshot = <String, dynamic>{
       'schema_version': 1,
@@ -55,6 +57,8 @@ class BingxFuturesMarketSnapshotService {
       'metadata': <String, dynamic>{
         'liquidation_feed_state':
             liquidationFeedAvailable ? 'known' : 'unknown',
+        'session_evidence_state':
+            sessionEvidenceComplete ? 'complete' : 'incomplete',
       },
     };
 
@@ -238,6 +242,9 @@ class BingxFuturesMarketSnapshotService {
           scale: 8,
           allowNegative: true,
         ),
+        'evidence_source':
+            _normalizeSessionEvidenceSource(item.evidenceSource),
+        'coverage_complete': item.coverageComplete,
       };
     }).toList();
     rows.sort((a, b) {
@@ -259,6 +266,16 @@ class BingxFuturesMarketSnapshotService {
       );
     }
     return rows;
+  }
+
+  String _normalizeSessionEvidenceSource(String raw) {
+    final value = raw.trim().toLowerCase();
+    if (value == 'declared_session_profile' ||
+        value == 'public_trade_stream' ||
+        value == 'recent_trade_sample') {
+      return value;
+    }
+    throw FormatException('unsupported session evidence source: $raw');
   }
 
   List<Map<String, dynamic>> _normalizeOrderBook(

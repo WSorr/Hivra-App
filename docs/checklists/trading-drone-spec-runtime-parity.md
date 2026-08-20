@@ -63,6 +63,12 @@ Legend:
 
 - [ ] Spec section `3. Data Inputs` is satisfied by runtime snapshot builder.
 - [ ] Required snapshot groups (instrument, prices, candles, trades, OI, funding, liquidity/session inputs) are present, else `NO_SIGNAL`.
+- [ ] Recent REST trades remain bounded recent-flow evidence and cannot be
+      relabeled as complete session evidence.
+- [ ] Incomplete current/previous session coverage emits `NO_SIGNAL` even when
+      all other directional evidence aligns.
+- [ ] Trade and session directional gates use dimensionless notional imbalance;
+      raw base-asset quantity deltas remain diagnostic-only.
 - [ ] Snapshot normalization rules are honored (UTC, deterministic sorting, fixed decimal scales, closed candles only).
 - [ ] `market_snapshot_hash` is produced from canonical JSON.
 - [ ] Feature extractor computes trend (EMA50/EMA200 15m), ATR14(5m), liquidity levels, and whale activations deterministically.

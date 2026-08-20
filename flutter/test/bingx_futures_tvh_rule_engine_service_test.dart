@@ -7,8 +7,8 @@ void main() {
   group('BingxFuturesTvhRuleEngineService', () {
     const service = BingxFuturesTvhRuleEngineService();
     const policy = BingxTvhPolicy(
-      minAbsTradeDelta: 0.5,
-      minAbsSessionNetDelta: 1.0,
+      minAbsTradeImbalanceRatio: 0.5,
+      minAbsSessionImbalanceRatio: 0.01,
       maxAbsFundingRate: 0.01,
       requireWhaleActivation: true,
       requireConsensusSignable: true,
@@ -131,6 +131,31 @@ void main() {
       );
     });
 
+    test('incomplete session evidence cannot authorize a signal', () {
+      final result = service.evaluateMarket(
+        features: _feature(
+          trend: BingxTrendDirection.bullish,
+          tradeDeltaDecimal: '1.50',
+          sessionNetDeltaDecimal: '3.20',
+          sessionEvidenceComplete: false,
+          hasBuyWhaleActivation: true,
+          hasSellWhaleActivation: false,
+        ),
+        fundingRateDecimal: '0.0008',
+        policy: policy,
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.noSignal);
+      expect(
+        result.reasons.singleWhere((reason) => reason.code == 'session_evidence'),
+        isA<BingxTvhDecisionReason>().having(
+          (reason) => reason.passed,
+          'passed',
+          isFalse,
+        ),
+      );
+    });
+
     test('is hash-stable for identical inputs', () {
       final features = _feature(
         trend: BingxTrendDirection.bullish,
@@ -163,6 +188,7 @@ BingxFuturesFeatureExtractionResult _feature({
   required BingxTrendDirection trend,
   required String tradeDeltaDecimal,
   required String sessionNetDeltaDecimal,
+  bool sessionEvidenceComplete = true,
   required bool hasBuyWhaleActivation,
   required bool hasSellWhaleActivation,
 }) {
@@ -178,8 +204,12 @@ BingxFuturesFeatureExtractionResult _feature({
     ema200m15Decimal: '100.0',
     atr14m5Decimal: '0.5',
     tradeDeltaDecimal: tradeDeltaDecimal,
+    tradeImbalanceRatioDecimal: tradeDeltaDecimal,
     openInterestDeltaDecimal: '10.0',
     sessionNetDeltaDecimal: sessionNetDeltaDecimal,
+    sessionImbalanceRatioDecimal:
+        (double.parse(sessionNetDeltaDecimal) / 100).toString(),
+    sessionEvidenceComplete: sessionEvidenceComplete,
     liquidityLevels: const <BingxDetectedLiquidityLevel>[],
     whaleActivations: const <BingxWhaleActivationEvent>[],
     hasBuyWhaleActivation: hasBuyWhaleActivation,

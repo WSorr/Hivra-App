@@ -18,15 +18,15 @@ class BingxTvhDecisionReason {
 }
 
 class BingxTvhPolicy {
-  final double minAbsTradeDelta;
-  final double minAbsSessionNetDelta;
+  final double minAbsTradeImbalanceRatio;
+  final double minAbsSessionImbalanceRatio;
   final double maxAbsFundingRate;
   final bool requireWhaleActivation;
   final bool requireConsensusSignable;
 
   const BingxTvhPolicy({
-    this.minAbsTradeDelta = 0.01,
-    this.minAbsSessionNetDelta = 0.01,
+    this.minAbsTradeImbalanceRatio = 0.01,
+    this.minAbsSessionImbalanceRatio = 0.01,
     this.maxAbsFundingRate = 0.01,
     this.requireWhaleActivation = true,
     this.requireConsensusSignable = false,
