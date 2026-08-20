@@ -23,6 +23,46 @@ void main() {
       expect(featuresA.hasSellWhaleActivation, isFalse);
     });
 
+    test('uses notional imbalance independent of base-asset units', () {
+      final btcLike = featureService.extract(
+        snapshotService.build(_buildInput(permuted: false)),
+      );
+      final lowPriceAsset = featureService.extract(
+        snapshotService.build(
+          _buildInput(
+            permuted: false,
+            tradePriceScale: 0.01,
+            tradeQuantityScale: 100,
+            sessionScale: 100,
+          ),
+        ),
+      );
+
+      expect(
+        lowPriceAsset.tradeImbalanceRatioDecimal,
+        btcLike.tradeImbalanceRatioDecimal,
+      );
+      expect(
+        lowPriceAsset.sessionImbalanceRatioDecimal,
+        btcLike.sessionImbalanceRatioDecimal,
+      );
+      expect(lowPriceAsset.tradeDeltaDecimal, isNot(btcLike.tradeDeltaDecimal));
+      expect(
+        lowPriceAsset.sessionNetDeltaDecimal,
+        isNot(btcLike.sessionNetDeltaDecimal),
+      );
+    });
+
+    test('marks recent-trade session evidence incomplete', () {
+      final features = featureService.extract(
+        snapshotService.build(
+          _buildInput(permuted: false, sessionCoverageComplete: false),
+        ),
+      );
+
+      expect(features.sessionEvidenceComplete, isFalse);
+    });
+
     test('fails when 15m candles are insufficient for ema200', () {
       final digest = snapshotService.build(_buildInput(
         permuted: false,
@@ -46,6 +86,10 @@ void main() {
 BingxFuturesMarketSnapshotInput _buildInput({
   required bool permuted,
   int fifteenMinuteCount = 220,
+  double tradePriceScale = 1,
+  double tradeQuantityScale = 1,
+  double sessionScale = 1,
+  bool sessionCoverageComplete = true,
 }) {
   final candles = <BingxFuturesCandle>[
     ..._generate15mCandles(count: fifteenMinuteCount),
@@ -162,23 +206,26 @@ BingxFuturesMarketSnapshotInput _buildInput({
   ];
 
   final sessionVolumes = <BingxFuturesSessionVolumePoint>[
-    const BingxFuturesSessionVolumePoint(
+    BingxFuturesSessionVolumePoint(
       session: 'asia',
       bucketStartUtc: '2026-04-25T00:00:00Z',
-      volumeDecimal: '1100.0',
-      deltaDecimal: '45.0',
+      volumeDecimal: (1100 * sessionScale).toString(),
+      deltaDecimal: (45 * sessionScale).toString(),
+      coverageComplete: sessionCoverageComplete,
     ),
-    const BingxFuturesSessionVolumePoint(
+    BingxFuturesSessionVolumePoint(
       session: 'london',
       bucketStartUtc: '2026-04-25T07:00:00Z',
-      volumeDecimal: '1800.0',
-      deltaDecimal: '85.0',
+      volumeDecimal: (1800 * sessionScale).toString(),
+      deltaDecimal: (85 * sessionScale).toString(),
+      coverageComplete: sessionCoverageComplete,
     ),
-    const BingxFuturesSessionVolumePoint(
+    BingxFuturesSessionVolumePoint(
       session: 'newyork',
       bucketStartUtc: '2026-04-25T13:00:00Z',
-      volumeDecimal: '1500.0',
-      deltaDecimal: '20.0',
+      volumeDecimal: (1500 * sessionScale).toString(),
+      deltaDecimal: (20 * sessionScale).toString(),
+      coverageComplete: sessionCoverageComplete,
     ),
   ];
 
@@ -217,7 +264,20 @@ BingxFuturesMarketSnapshotInput _buildInput({
       indexPriceDecimal: '102.40',
     ),
     candles: permuted ? candles.reversed.toList() : candles,
-    trades: permuted ? trades.reversed.toList() : trades,
+    trades: (permuted ? trades.reversed : trades)
+        .map(
+          (trade) => BingxFuturesTrade(
+            tradeId: trade.tradeId,
+            timestampUtc: trade.timestampUtc,
+            side: trade.side,
+            priceDecimal:
+                (double.parse(trade.priceDecimal) * tradePriceScale).toString(),
+            quantityDecimal:
+                (double.parse(trade.quantityDecimal) * tradeQuantityScale)
+                    .toString(),
+          ),
+        )
+        .toList(),
     openInterest: permuted ? openInterest.reversed.toList() : openInterest,
     funding: const BingxFuturesFundingSnapshot(
       timestampUtc: '2026-04-25T10:00:00Z',

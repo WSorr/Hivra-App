@@ -41,7 +41,92 @@ void main() {
         isTrue,
       );
     });
+
+    test('marks incomplete session coverage in canonical metadata', () {
+      final digest = service.build(
+        _withSessionVolumes(
+          _inputA(),
+          const <BingxFuturesSessionVolumePoint>[
+            BingxFuturesSessionVolumePoint(
+              session: 'asia',
+              bucketStartUtc: '2026-04-22T00:00:00Z',
+              volumeDecimal: '10',
+              deltaDecimal: '2',
+              evidenceSource: 'recent_trade_sample',
+              coverageComplete: false,
+            ),
+            BingxFuturesSessionVolumePoint(
+              session: 'london',
+              bucketStartUtc: '2026-04-22T08:00:00Z',
+              volumeDecimal: '10',
+              deltaDecimal: '2',
+              evidenceSource: 'recent_trade_sample',
+              coverageComplete: false,
+            ),
+            BingxFuturesSessionVolumePoint(
+              session: 'newyork',
+              bucketStartUtc: '2026-04-22T16:00:00Z',
+              volumeDecimal: '10',
+              deltaDecimal: '2',
+              evidenceSource: 'recent_trade_sample',
+              coverageComplete: false,
+            ),
+          ],
+        ),
+      );
+
+      expect(
+        digest.normalizedSnapshot['metadata']?['session_evidence_state'],
+        'incomplete',
+      );
+    });
+
+    test('rejects unknown session evidence source', () {
+      final input = _inputA();
+      expect(
+        () => service.build(
+          _withSessionVolumes(
+            input,
+            input.sessionVolumes
+                .map(
+                  (item) => BingxFuturesSessionVolumePoint(
+                    session: item.session,
+                    bucketStartUtc: item.bucketStartUtc,
+                    volumeDecimal: item.volumeDecimal,
+                    deltaDecimal: item.deltaDecimal,
+                    evidenceSource: 'guessed_profile',
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('unsupported session evidence source'),
+          ),
+        ),
+      );
+    });
   });
+}
+
+BingxFuturesMarketSnapshotInput _withSessionVolumes(
+  BingxFuturesMarketSnapshotInput input,
+  List<BingxFuturesSessionVolumePoint> sessionVolumes,
+) {
+  return BingxFuturesMarketSnapshotInput(
+    instrument: input.instrument,
+    prices: input.prices,
+    candles: input.candles,
+    trades: input.trades,
+    openInterest: input.openInterest,
+    funding: input.funding,
+    liquidityLevels: input.liquidityLevels,
+    sessionVolumes: sessionVolumes,
+    orderBookTopLevels: input.orderBookTopLevels,
+  );
 }
 
 BingxFuturesMarketSnapshotInput _inputA() {

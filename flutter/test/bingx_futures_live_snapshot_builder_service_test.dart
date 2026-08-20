@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
+import 'package:hivra_app/models/bingx_futures_market_snapshot_models.dart';
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.dart';
 
@@ -169,6 +170,22 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       final snapshot = result.snapshotInput!;
+      expect(
+        snapshot.sessionVolumes,
+        everyElement(
+          isA<BingxFuturesSessionVolumePoint>()
+              .having(
+                (item) => item.evidenceSource,
+                'evidenceSource',
+                'recent_trade_sample',
+              )
+              .having(
+                (item) => item.coverageComplete,
+                'coverageComplete',
+                isFalse,
+              ),
+        ),
+      );
       expect(snapshot.openInterest.length, 3);
       expect(
         snapshot.liquidityLevels.any(

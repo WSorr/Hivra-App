@@ -66,8 +66,11 @@ class BingxFuturesFeatureExtractionResult {
   final String ema200m15Decimal;
   final String atr14m5Decimal;
   final String tradeDeltaDecimal;
+  final String tradeImbalanceRatioDecimal;
   final String openInterestDeltaDecimal;
   final String sessionNetDeltaDecimal;
+  final String sessionImbalanceRatioDecimal;
+  final bool sessionEvidenceComplete;
   final List<BingxDetectedLiquidityLevel> liquidityLevels;
   final List<BingxWhaleActivationEvent> whaleActivations;
   final bool hasBuyWhaleActivation;
@@ -83,8 +86,11 @@ class BingxFuturesFeatureExtractionResult {
     required this.ema200m15Decimal,
     required this.atr14m5Decimal,
     required this.tradeDeltaDecimal,
+    required this.tradeImbalanceRatioDecimal,
     required this.openInterestDeltaDecimal,
     required this.sessionNetDeltaDecimal,
+    required this.sessionImbalanceRatioDecimal,
+    this.sessionEvidenceComplete = true,
     required this.liquidityLevels,
     required this.whaleActivations,
     required this.hasBuyWhaleActivation,
@@ -132,8 +138,14 @@ class BingxFuturesFeatureExtractorService {
 
     final detectedLevels = _detectPivotClusterLevels(candles5m, atr10);
     final tradeDelta = _tradeDelta(snapshot.normalizedSnapshot);
+    final tradeImbalanceRatio =
+        _tradeImbalanceRatio(snapshot.normalizedSnapshot);
     final oiDelta = _openInterestDelta(snapshot.normalizedSnapshot);
     final sessionNetDelta = _sessionNetDelta(snapshot.normalizedSnapshot);
+    final sessionImbalanceRatio =
+        _sessionImbalanceRatio(snapshot.normalizedSnapshot);
+    final sessionEvidenceComplete =
+        _sessionEvidenceComplete(snapshot.normalizedSnapshot);
     final whaleEvents = _detectWhaleActivations(
       snapshot: snapshot.normalizedSnapshot,
       levels: detectedLevels,
@@ -150,8 +162,12 @@ class BingxFuturesFeatureExtractorService {
       'ema200_15m_decimal': _fmtDecimal(ema200, 8),
       'atr14_5m_decimal': _fmtDecimal(atr14, 8),
       'trade_delta_decimal': _fmtDecimal(tradeDelta, 8),
+      'trade_imbalance_ratio_decimal': _fmtDecimal(tradeImbalanceRatio, 8),
       'open_interest_delta_decimal': _fmtDecimal(oiDelta, 8),
       'session_net_delta_decimal': _fmtDecimal(sessionNetDelta, 8),
+      'session_imbalance_ratio_decimal':
+          _fmtDecimal(sessionImbalanceRatio, 8),
+      'session_evidence_complete': sessionEvidenceComplete,
       'liquidity_levels': detectedLevels
           .map(
             (item) => <String, dynamic>{
@@ -194,8 +210,11 @@ class BingxFuturesFeatureExtractorService {
       ema200m15Decimal: _fmtDecimal(ema200, 8),
       atr14m5Decimal: _fmtDecimal(atr14, 8),
       tradeDeltaDecimal: _fmtDecimal(tradeDelta, 8),
+      tradeImbalanceRatioDecimal: _fmtDecimal(tradeImbalanceRatio, 8),
       openInterestDeltaDecimal: _fmtDecimal(oiDelta, 8),
       sessionNetDeltaDecimal: _fmtDecimal(sessionNetDelta, 8),
+      sessionImbalanceRatioDecimal: _fmtDecimal(sessionImbalanceRatio, 8),
+      sessionEvidenceComplete: sessionEvidenceComplete,
       liquidityLevels: detectedLevels,
       whaleActivations: whaleEvents,
       hasBuyWhaleActivation:
@@ -478,6 +497,28 @@ class BingxFuturesFeatureExtractorService {
     return delta;
   }
 
+  double _tradeImbalanceRatio(Map<String, dynamic> snapshot) {
+    final raw = snapshot['trades'];
+    if (raw is! List) return 0;
+    var buyNotional = 0.0;
+    var sellNotional = 0.0;
+    for (final item in raw) {
+      final map = Map<String, dynamic>.from(item as Map);
+      final price = _parseDecimal(map['price_decimal'] as String);
+      final quantity = _parseDecimal(map['quantity_decimal'] as String);
+      final notional = price * quantity;
+      final side = (map['side'] as String).toLowerCase();
+      if (side == 'buy') {
+        buyNotional += notional;
+      } else if (side == 'sell') {
+        sellNotional += notional;
+      }
+    }
+    final total = buyNotional + sellNotional;
+    if (total <= 0) return 0;
+    return (buyNotional - sellNotional) / total;
+  }
+
   double _openInterestDelta(Map<String, dynamic> snapshot) {
     final raw = snapshot['open_interest'];
     if (raw is! List || raw.length < 2) return 0;
@@ -500,6 +541,26 @@ class BingxFuturesFeatureExtractorService {
       sum += _parseDecimal(map['delta_decimal'] as String);
     }
     return sum;
+  }
+
+  double _sessionImbalanceRatio(Map<String, dynamic> snapshot) {
+    final raw = snapshot['session_volumes'];
+    if (raw is! List) return 0;
+    var volume = 0.0;
+    var delta = 0.0;
+    for (final item in raw) {
+      final map = Map<String, dynamic>.from(item as Map);
+      volume += _parseDecimal(map['volume_decimal'] as String);
+      delta += _parseDecimal(map['delta_decimal'] as String);
+    }
+    if (volume <= 0) return 0;
+    return delta / volume;
+  }
+
+  bool _sessionEvidenceComplete(Map<String, dynamic> snapshot) {
+    final metadata = snapshot['metadata'];
+    return metadata is Map<String, dynamic> &&
+        metadata['session_evidence_state'] == 'complete';
   }
 
   List<_CandleRow> _readCandles(Map<String, dynamic> snapshot) {

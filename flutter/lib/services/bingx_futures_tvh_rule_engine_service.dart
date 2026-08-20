@@ -61,13 +61,13 @@ class BingxFuturesTvhRuleEngineService {
       fundingRateDecimal,
       field: 'funding_rate_decimal',
     );
-    final tradeDelta = _parseDecimal(
-      features.tradeDeltaDecimal,
-      field: 'trade_delta_decimal',
+    final tradeImbalanceRatio = _parseDecimal(
+      features.tradeImbalanceRatioDecimal,
+      field: 'trade_imbalance_ratio_decimal',
     );
-    final sessionNetDelta = _parseDecimal(
-      features.sessionNetDeltaDecimal,
-      field: 'session_net_delta_decimal',
+    final sessionImbalanceRatio = _parseDecimal(
+      features.sessionImbalanceRatioDecimal,
+      field: 'session_imbalance_ratio_decimal',
     );
 
     final fundingOk = fundingRate.abs() <= policy.maxAbsFundingRate;
@@ -88,12 +88,16 @@ class BingxFuturesTvhRuleEngineService {
       );
     }
 
-    final longTradeOk = tradeDelta >= policy.minAbsTradeDelta;
-    final longSessionOk = sessionNetDelta >= policy.minAbsSessionNetDelta;
+    final longTradeOk =
+        tradeImbalanceRatio >= policy.minAbsTradeImbalanceRatio;
+    final longSessionOk = features.sessionEvidenceComplete &&
+        sessionImbalanceRatio >= policy.minAbsSessionImbalanceRatio;
     final longWhaleOk =
         !policy.requireWhaleActivation || features.hasBuyWhaleActivation;
-    final shortTradeOk = tradeDelta <= -policy.minAbsTradeDelta;
-    final shortSessionOk = sessionNetDelta <= -policy.minAbsSessionNetDelta;
+    final shortTradeOk =
+        tradeImbalanceRatio <= -policy.minAbsTradeImbalanceRatio;
+    final shortSessionOk = features.sessionEvidenceComplete &&
+        sessionImbalanceRatio <= -policy.minAbsSessionImbalanceRatio;
     final shortWhaleOk =
         !policy.requireWhaleActivation || features.hasSellWhaleActivation;
 
@@ -117,18 +121,27 @@ class BingxFuturesTvhRuleEngineService {
     );
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'long_trade_delta',
-        passed: longTradeOk,
-        detail:
-            'value=${features.tradeDeltaDecimal} threshold=${_fmt(policy.minAbsTradeDelta)}',
+        code: 'session_evidence',
+        passed: features.sessionEvidenceComplete,
+        detail: features.sessionEvidenceComplete
+            ? 'coverage=complete'
+            : 'coverage=incomplete',
       ),
     );
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'long_session_delta',
+        code: 'long_trade_imbalance',
+        passed: longTradeOk,
+        detail:
+            'value=${features.tradeImbalanceRatioDecimal} threshold=${_fmt(policy.minAbsTradeImbalanceRatio)}',
+      ),
+    );
+    reasons.add(
+      BingxTvhDecisionReason(
+        code: 'long_session_imbalance',
         passed: longSessionOk,
         detail:
-            'value=${features.sessionNetDeltaDecimal} threshold=${_fmt(policy.minAbsSessionNetDelta)}',
+            'value=${features.sessionImbalanceRatioDecimal} threshold=${_fmt(policy.minAbsSessionImbalanceRatio)}',
       ),
     );
     reasons.add(
@@ -140,18 +153,18 @@ class BingxFuturesTvhRuleEngineService {
     );
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'short_trade_delta',
+        code: 'short_trade_imbalance',
         passed: shortTradeOk,
         detail:
-            'value=${features.tradeDeltaDecimal} threshold=-${_fmt(policy.minAbsTradeDelta)}',
+            'value=${features.tradeImbalanceRatioDecimal} threshold=-${_fmt(policy.minAbsTradeImbalanceRatio)}',
       ),
     );
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'short_session_delta',
+        code: 'short_session_imbalance',
         passed: shortSessionOk,
         detail:
-            'value=${features.sessionNetDeltaDecimal} threshold=-${_fmt(policy.minAbsSessionNetDelta)}',
+            'value=${features.sessionImbalanceRatioDecimal} threshold=-${_fmt(policy.minAbsSessionImbalanceRatio)}',
       ),
     );
     reasons.add(
