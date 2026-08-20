@@ -30,6 +30,7 @@ class BingxFuturesLiveSnapshotBuilderService {
   Future<BingxFuturesLiveSnapshotBuildResult> fetchAndBuild({
     required BingxFuturesPublicMarketDataPort exchange,
     required String symbol,
+    List<BingxFuturesSessionVolumePoint>? sessionVolumes,
   }) async {
     final normalizedSymbol = symbol.trim().toUpperCase();
     if (normalizedSymbol.isEmpty) {
@@ -209,7 +210,7 @@ class BingxFuturesLiveSnapshotBuilderService {
         priceDecimal: price.priceDecimal!,
         observedAtUtc: observationTime,
       );
-      final sessions = _deriveSessions(tradeRows);
+      final sessions = sessionVolumes ?? _deriveSessions(tradeRows);
       final orderBookLevels = _mapOrderBook(depth);
 
       final instrument = _buildInstrumentMeta(normalizedSymbol);

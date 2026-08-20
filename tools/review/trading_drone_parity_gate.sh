@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECKLIST="$ROOT/docs/checklists/trading-drone-spec-runtime-parity.md"
 PUBLIC_SNAPSHOT="$ROOT/flutter/lib/services/bingx_futures_live_snapshot_builder_service.dart"
+PUBLIC_SESSION_ACCUMULATOR="$ROOT/flutter/lib/services/bingx_futures_public_session_accumulator.dart"
 PUBLIC_STRATEGY="$ROOT/flutter/lib/services/bingx_futures_live_strategy_use_case_service.dart"
 SHADOW_PROBE="$ROOT/flutter/tool/trading_remote_shadow_probe.dart"
 EXACT_ORDER_PROBE="$ROOT/flutter/tool/trading_remote_exact_order.dart"
@@ -21,6 +22,7 @@ TRADING_MODELS="$ROOT/flutter/lib/models/bingx_futures_order_tracking_models.dar
 TRADING_SCREEN="$ROOT/flutter/lib/screens/trading_drone_screen.dart"
 EXCHANGE_SERVICE="$ROOT/flutter/lib/services/bingx_futures_exchange_service.dart"
 REMOTE_PROBE_TEST="$ROOT/flutter/test/trading_remote_shadow_probe_test.dart"
+PUBLIC_SESSION_TEST="$ROOT/flutter/test/bingx_futures_public_session_accumulator_test.dart"
 STATUS=0
 
 pass() {
@@ -50,7 +52,7 @@ shadow_probe_is_bounded_scheduler() {
   local delay_line
   cycle_line="$(rg -n 'await runOnce\(cycleNumber\);' "$1" | head -1 | cut -d: -f1)"
   delay_line="$(rg -n 'await delay\(interval!\);' "$1" | head -1 | cut -d: -f1)"
-  rg -q 'const int maxScheduledRuns = 288;' "$1" &&
+  rg -q 'const int maxScheduledRuns = 8928;' "$1" &&
     rg -q 'const int minScheduleIntervalSeconds = 60;' "$1" &&
     rg -q 'const int maxScheduleIntervalSeconds = 3600;' "$1" &&
     rg -q "'run-count'" "$1" &&
@@ -61,6 +63,25 @@ shadow_probe_is_bounded_scheduler() {
     [ -n "$delay_line" ] &&
     [ "$cycle_line" -lt "$delay_line" ] &&
     ! rg -q 'Timer\.periodic|while \(true\)|scheduleAtFixedRate|retry' "$1"
+}
+
+public_session_stream_is_fail_closed() {
+  rg -q 'class BingxFuturesPublicSessionAccumulator' "$1" &&
+    rg -q '_latestBySession\.clear\(\);' "$1" &&
+    rg -q 'maxMessageSilence = Duration\(seconds: 90\)' "$1" &&
+    rg -q 'maxTradesPerMessage = 256' "$1" &&
+    rg -q 'final trades = rows' "$1" &&
+    rg -q "evidenceSource: 'public_trade_stream'" "$1" &&
+    rg -q '!bucketStart\.isBefore\(connectedAt\)' "$1" &&
+    ! rg -q 'dart:io|File\(|Directory\(|RandomAccessFile' "$1" &&
+    rg -q 'wss://open-api-swap\.bingx\.com/swap-market' "$2" &&
+    rg -q "message == 'Ping'" "$2" &&
+    rg -q "send\('Pong'\)" "$2" &&
+    rg -q 'accumulator\.markDisconnected\(\);' "$2" &&
+    rg -q 'public trade frame expands beyond limit' "$2" &&
+    rg -q 'coverage becomes complete only for buckets observed after connect' "$3" &&
+    rg -q 'stale heartbeat and disconnect invalidate all coverage' "$3" &&
+    rg -q 'bounded trade batch is validated before aggregate mutation' "$3"
 }
 
 runner_artifact_is_verifiable() {
@@ -455,7 +476,7 @@ required_unit = {
     "Documentation": "https://github.com/WSorr/Hivra-App",
     "Wants": "network-online.target",
     "After": "network-online.target",
-    "StartLimitIntervalSec": "26h",
+    "StartLimitIntervalSec": "32d",
     "StartLimitBurst": "2",
 }
 required_service = {
@@ -467,7 +488,7 @@ required_service = {
     "LoadCredentialEncrypted": "runner-seed:/etc/credstore.encrypted/hivra-trading-public-shadow.seed",
     "Restart": "on-success",
     "RestartSec": "60s",
-    "RuntimeMaxSec": "25h",
+    "RuntimeMaxSec": "31d",
     "TimeoutStartSec": "30s",
     "TimeoutStopSec": "30s",
     "KillMode": "mixed",
@@ -535,7 +556,7 @@ expected = [
     "--package-digest-hex", "2cb440885a2fa473971364fb26cce304d079d393832b2b5bed6fd95517e61889",
     "--host-abi", "wasm32-wasi-preview1",
     "--stream-dir", "/var/lib/hivra-trading-public-shadow/stream",
-    "--run-count", "288",
+    "--run-count", "8928",
     "--interval-seconds", "300",
 ]
 if command != expected:
@@ -661,6 +682,12 @@ if shadow_probe_is_bounded_scheduler "$SHADOW_PROBE"; then
   pass "live shadow probe scheduler is bounded, serial, and retry-free"
 else
   fail "live shadow probe scheduler lost bounded cadence or serial execution"
+fi
+
+if public_session_stream_is_fail_closed "$PUBLIC_SESSION_ACCUMULATOR" "$SHADOW_PROBE" "$PUBLIC_SESSION_TEST"; then
+  pass "public session stream is bounded, gap-resetting, process-scoped, and authority-free"
+else
+  fail "public session stream lost bounded fail-closed coverage semantics"
 fi
 
 if runner_artifact_is_verifiable "$RUNNER_ARTIFACT" &&
@@ -801,7 +828,8 @@ ACCOUNT_READ_EFFECT_MUTATION="$(mktemp)"
 ACCOUNT_READ_RAW_OUTPUT_MUTATION="$(mktemp)"
 ACCOUNT_READ_JOURNAL_MUTATION="$(mktemp)"
 ACCOUNT_READ_ELIGIBILITY_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION"' EXIT
+PUBLIC_SESSION_GAP_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -898,10 +926,13 @@ sed '/account_binding" pending/d' \
   "$RUNNER_ARTIFACT" > "$ACCOUNT_READ_JOURNAL_MUTATION"
 sed '/require_remote_mandate_execution_eligible "\$verified_work"/d' \
   "$RUNNER_ARTIFACT" > "$ACCOUNT_READ_ELIGIBILITY_MUTATION"
+sed 's/accumulator\.markDisconnected();/accumulator.acceptHeartbeat();/' \
+  "$SHADOW_PROBE" > "$PUBLIC_SESSION_GAP_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_exposes_runner_identity "$PROBE_IDENTITY_MUTATION" && \
   ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
+  ! public_session_stream_is_fail_closed "$PUBLIC_SESSION_ACCUMULATOR" "$PUBLIC_SESSION_GAP_MUTATION" "$PUBLIC_SESSION_TEST" && \
   ! runner_artifact_is_verifiable "$ARTIFACT_MUTATION" && \
   ! runner_linux_smoke_is_fail_closed "$RUNTIME_SMOKE_MUTATION" "$CI_REPOSITORY_GATES" && \
   ! runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_CLEAN_MUTATION" && \
