@@ -52,6 +52,59 @@ Future<String> runTradingIntentWithTerminalEvidence({
   }
 }
 
+@visibleForTesting
+String tradingSignalScanActionLabel({required bool scanning}) =>
+    scanning ? 'Scanning' : 'Refresh Scan';
+
+@visibleForTesting
+bool tradingMandateMatchesSelection({
+  required BingxFuturesTradingMandate? mandate,
+  required bool droneEnabled,
+  required String selectedSymbol,
+  required bool testOrder,
+  required DateTime nowUtc,
+}) {
+  if (!droneEnabled || mandate == null || !mandate.isActiveAt(nowUtc)) {
+    return false;
+  }
+  final normalizedSymbol = selectedSymbol.trim().toUpperCase();
+  return mandate.symbol == normalizedSymbol && mandate.testOrder == testOrder;
+}
+
+@visibleForTesting
+String? tradingMandateSelectionNotice({
+  required BingxFuturesTradingMandate? mandate,
+  required bool droneEnabled,
+  required String selectedSymbol,
+  required bool testOrder,
+  required DateTime nowUtc,
+}) {
+  if (!droneEnabled || mandate == null) return null;
+  if (!mandate.isActiveAt(nowUtc)) {
+    return 'Trading mandate expired. Re-authorize before exact export.';
+  }
+  final normalizedSymbol = selectedSymbol.trim().toUpperCase();
+  if (tradingMandateMatchesSelection(
+    mandate: mandate,
+    droneEnabled: droneEnabled,
+    selectedSymbol: selectedSymbol,
+    testOrder: testOrder,
+    nowUtc: nowUtc,
+  )) {
+    return null;
+  }
+  final authorizedMode = mandate.testOrder ? 'TEST' : 'LIVE';
+  final selectedMode = testOrder ? 'TEST' : 'LIVE';
+  return 'Authorized for ${mandate.symbol} $authorizedMode. '
+      'Selected $normalizedSymbol $selectedMode. Re-authorize before exact export.';
+}
+
+@visibleForTesting
+String tradingSignalSnapshotLabel(DateTime observedAtUtc) {
+  final observed = observedAtUtc.toUtc().toIso8601String();
+  return 'Snapshot $observed. READY is observational; Run Intent revalidates current market.';
+}
+
 class TradingDroneScreen extends StatefulWidget {
   final AppRuntimeService? runtime;
 
@@ -171,6 +224,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   List<String> _availablePerpSymbols = const <String>[];
   List<BingxFuturesSignalRankEntry> _signalRankEntries =
       const <BingxFuturesSignalRankEntry>[];
+  DateTime? _signalScanCompletedAtUtc;
   Map<String, BingxFuturesLiveDecisionResult> _signalDecisionByHash =
       const <String, BingxFuturesLiveDecisionResult>{};
   BingxFuturesLiveDecisionResult? _displayedZoneDecision;
@@ -643,6 +697,17 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       return;
     }
     final intent = BingxFuturesIntentPayload.fromPluginResult(result);
+    final mandateMismatch = tradingMandateSelectionNotice(
+      mandate: mandate,
+      droneEnabled: _droneEnabled,
+      selectedSymbol: intent.symbol,
+      testOrder: _useTestOrderEndpoint,
+      nowUtc: DateTime.now().toUtc(),
+    );
+    if (mandateMismatch != null) {
+      await _showSnack(mandateMismatch, seconds: 4);
+      return;
+    }
     final fresh = await _module.executionUseCase
         .isPreparedLiquidityDecisionFresh(
           payload: intent,
@@ -1124,6 +1189,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     setState(() {
       _symbolController.text = selected;
       _displayedZoneDecision = null;
+      _lastIntentResponse = null;
+      _lastPreparedLiveDecision = null;
+      _intentBlockingMessage = null;
     });
     await _module.uiLog.log(
       'bingx.symbols.select',
@@ -1138,12 +1206,6 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
   Future<void> _scanSignalWatchlist() async {
     if (_scanningSignals) return;
-    if (_signalRankEntries.isNotEmpty && _signalRankExpanded) {
-      setState(() {
-        _signalRankExpanded = false;
-      });
-      return;
-    }
     final currentSymbol = _symbolController.text.trim().toUpperCase();
     final peerHex = _peerController.text.trim().toLowerCase();
     if (_signalScanScope == _signalScanScopeAllPerps &&
@@ -1232,6 +1294,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       if (!mounted) return;
       setState(() {
         _signalRankEntries = ranked.entries;
+        _signalScanCompletedAtUtc = DateTime.now().toUtc();
         _signalDecisionByHash = <String, BingxFuturesLiveDecisionResult>{
           for (final candidate in candidates)
             candidate.decision.liveDecisionHashHex: candidate.decision,
@@ -1418,6 +1481,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     setState(() {
       _symbolController.text = entry.symbol;
       _displayedZoneDecision = decision;
+      _lastIntentResponse = null;
+      _lastPreparedLiveDecision = null;
+      _intentBlockingMessage = null;
       if (entry.side != null) {
         _side = entry.side!;
         _zoneSide = entry.side == 'buy' ? 'sellside' : 'buyside';
@@ -1461,6 +1527,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       setState(() {
         _symbolController.text = normalizedSymbol;
         _displayedZoneDecision = null;
+        _lastIntentResponse = null;
+        _lastPreparedLiveDecision = null;
+        _intentBlockingMessage = null;
         _quantityController.text = _playbookQtyForSymbol(normalizedSymbol);
         _side = 'sell';
         _orderType = 'limit';
@@ -2518,6 +2587,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _entryMode = decoded['entry_mode']?.toString() ?? signal.entryMode;
       _strategyTagController.text = decoded['strategy_tag']?.toString() ?? '';
       _lastIntentResponse = null;
+      _lastPreparedLiveDecision = null;
       _intentBlockingMessage = null;
 
       if (_entryMode == 'zone_pending') {
@@ -3642,6 +3712,33 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     final hasExecutableIntent =
         _lastIntentResponse?.status == PluginHostApiStatus.executed &&
         _lastIntentResponse?.result != null;
+    final selectedSymbol = _symbolController.text.trim().toUpperCase();
+    final mandateSelectionNotice = tradingMandateSelectionNotice(
+      mandate: _tradingMandate,
+      droneEnabled: _droneEnabled,
+      selectedSymbol: selectedSymbol,
+      testOrder: _useTestOrderEndpoint,
+      nowUtc: DateTime.now().toUtc(),
+    );
+    final tradingControlSubtitle =
+        !_tradingControlLoaded || _savingTradingControl
+            ? 'Loading Capsule trading control.'
+            : mandateSelectionNotice ??
+                (_droneEnabled
+                    ? 'Strategy can prepare and execute orders.'
+                    : 'Paused. New strategy runs are blocked.');
+    final preparedSymbol =
+        _lastIntentResponse?.result?['symbol']?.toString().trim().toUpperCase();
+    final exactOrderMandateMatches =
+        hasExecutableIntent &&
+        preparedSymbol != null &&
+        tradingMandateMatchesSelection(
+          mandate: _tradingMandate,
+          droneEnabled: _droneEnabled,
+          selectedSymbol: preparedSymbol,
+          testOrder: _useTestOrderEndpoint,
+          nowUtc: DateTime.now().toUtc(),
+        );
     final canBroadcast = hasExecutableIntent;
     final shortIntentHash =
         _lastIntentResponse?.result?['intent_hash_hex']?.toString() ?? '';
@@ -3723,6 +3820,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                               setState(() {
                                 _symbolController.text = symbol;
                                 _displayedZoneDecision = null;
+                                _lastIntentResponse = null;
+                                _lastPreparedLiveDecision = null;
+                                _intentBlockingMessage = null;
                               });
                               unawaited(
                                 _maybeRetargetOpenOrdersTracking(
@@ -3821,6 +3921,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                                 _signalScanScope = value;
                                 _signalRankEntries =
                                     const <BingxFuturesSignalRankEntry>[];
+                                _signalScanCompletedAtUtc = null;
+                                _signalDecisionByHash =
+                                    const <
+                                      String,
+                                      BingxFuturesLiveDecisionResult
+                                    >{};
                                 _signalRankExpanded = true;
                               });
                             },
@@ -3838,18 +3944,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                             : Icon(
-                              _signalRankEntries.isNotEmpty &&
-                                      _signalRankExpanded
-                                  ? Icons.unfold_less_rounded
-                                  : Icons.radar_rounded,
+                              _signalRankEntries.isEmpty
+                                  ? Icons.radar_rounded
+                                  : Icons.refresh_rounded,
                             ),
                     label: Text(
-                      _scanningSignals
-                          ? 'Scanning'
-                          : (_signalRankEntries.isNotEmpty &&
-                                  _signalRankExpanded
-                              ? 'Hide Watchlist'
-                              : 'Scan Watchlist'),
+                      tradingSignalScanActionLabel(scanning: _scanningSignals),
                     ),
                   ),
                   Text(
@@ -3879,6 +3979,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                   ],
                 ],
               ),
+              if (_signalScanCompletedAtUtc != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  tradingSignalSnapshotLabel(_signalScanCompletedAtUtc!),
+                  style: const TextStyle(
+                    color: Color(0xFF97A3B5),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               _signalRankList(),
               const SizedBox(height: 8),
@@ -3898,15 +4008,23 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         },
                 title: const Text('Drone enabled'),
                 subtitle: Text(
-                  !_tradingControlLoaded || _savingTradingControl
-                      ? 'Loading Capsule trading control.'
-                      : _droneEnabled
-                      ? 'Strategy can prepare and execute orders.'
-                      : 'Paused. New strategy runs are blocked.',
+                  tradingControlSubtitle,
                   style: const TextStyle(color: Color(0xFF97A3B5)),
                 ),
                 contentPadding: EdgeInsets.zero,
               ),
+              if (mandateSelectionNotice != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        _runningIntent || _savingTradingControl
+                            ? null
+                            : () => unawaited(_changeDroneEnabled(true)),
+                    icon: const Icon(Icons.verified_user_outlined),
+                    label: Text('Re-authorize $selectedSymbol'),
+                  ),
+                ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 10,
@@ -3997,7 +4115,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                                 _savingTradingControl ||
                                 _exportingRemoteMandate ||
                                 !_droneEnabled ||
-                                !hasExecutableIntent
+                                !exactOrderMandateMatches
                             ? null
                             : _exportSignedRemoteExactOrder,
                     icon: const Icon(Icons.outbox_outlined),
@@ -4238,13 +4356,20 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                         : (value) {
                           setState(() {
                             _useTestOrderEndpoint = value;
+                            _lastIntentResponse = null;
+                            _lastPreparedLiveDecision = null;
+                            _intentBlockingMessage = null;
                           });
                         },
-                title: const Text('Use test order endpoint'),
+                title: Text(
+                  _useTestOrderEndpoint
+                      ? 'Simulation endpoint (no exchange order)'
+                      : 'Live endpoint (creates exchange order)',
+                ),
                 subtitle: Text(
                   _useTestOrderEndpoint
-                      ? '/openApi/swap/v2/trade/order/test'
-                      : '/openApi/swap/v2/trade/order',
+                      ? 'Validates one exact request without placing it on BingX.'
+                      : 'Places the exact authorized order on BingX.',
                   style: const TextStyle(color: Color(0xFF97A3B5)),
                 ),
                 contentPadding: EdgeInsets.zero,
