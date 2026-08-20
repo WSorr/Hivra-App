@@ -1261,6 +1261,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     effect occurred. Remediation is restricted to concurrent bounded reads in
     the existing snapshot owner plus a concurrency regression; final VPS
     evidence must use the remediation merge SHA rather than `d5534e0`.
+  - Follow-up finding: packaged Release smoke from the first remediation merge
+    `d12eb42` still timed out twice without producing an order artifact or
+    provider effect. Independent curl evidence showed a cold BingX TLS connect
+    taking `14.443717` seconds. The adapter created and force-closed a new
+    `HttpClient` for every request, so parallel reads multiplied cold
+    connections and discarded keep-alive state. The bounded follow-up retains
+    one process-scoped adapter HTTP session with one connection per host and a
+    loopback regression proving connection reuse. Provider endpoints, request
+    semantics, credentials, authority, effect ownership, and timeouts remain
+    unchanged; final VPS evidence must use the follow-up merge SHA.
   - Entropy reduction:
 
     | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |

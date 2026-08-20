@@ -12,6 +12,7 @@ typedef BingxHttpRequestSender =
 
 class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
   static const Duration _httpTimeout = Duration(seconds: 12);
+  static final HttpClient _defaultHttpClient = _createDefaultHttpClient();
   static const String _defaultBaseUrl = 'https://open-api.bingx.com';
   static const String _publicPricePath = '/openApi/swap/v2/quote/price';
   static const String _publicKlinesPath = '/openApi/swap/v3/quote/klines';
@@ -2145,29 +2146,37 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
 
   static int _defaultClockMs() => DateTime.now().millisecondsSinceEpoch;
 
+  static HttpClient _createDefaultHttpClient() {
+    final client = HttpClient();
+    client.connectionTimeout = _httpTimeout;
+    client.idleTimeout = const Duration(seconds: 30);
+    client.maxConnectionsPerHost = 1;
+    return client;
+  }
+
   static Future<BingxHttpResponse> _defaultRequestSender(
     BingxHttpRequest request,
   ) async {
-    final client = HttpClient();
-    client.connectionTimeout = _httpTimeout;
-    try {
-      final method = request.method.trim().toUpperCase();
-      final httpRequest = switch (method) {
-        'GET' => await client.getUrl(request.uri).timeout(_httpTimeout),
-        'POST' => await client.postUrl(request.uri).timeout(_httpTimeout),
-        'DELETE' => await client.deleteUrl(request.uri).timeout(_httpTimeout),
-        _ => throw FormatException('Unsupported HTTP method: $method'),
-      };
-      request.headers.forEach(httpRequest.headers.set);
-      if (request.body.isNotEmpty) {
-        httpRequest.write(request.body);
-      }
-      final httpResponse = await httpRequest.close().timeout(_httpTimeout);
-      final body = await utf8.decodeStream(httpResponse).timeout(_httpTimeout);
-      return BingxHttpResponse(statusCode: httpResponse.statusCode, body: body);
-    } finally {
-      client.close(force: true);
+    final method = request.method.trim().toUpperCase();
+    final httpRequest = switch (method) {
+      'GET' => await _defaultHttpClient
+          .getUrl(request.uri)
+          .timeout(_httpTimeout),
+      'POST' => await _defaultHttpClient
+          .postUrl(request.uri)
+          .timeout(_httpTimeout),
+      'DELETE' => await _defaultHttpClient
+          .deleteUrl(request.uri)
+          .timeout(_httpTimeout),
+      _ => throw FormatException('Unsupported HTTP method: $method'),
+    };
+    request.headers.forEach(httpRequest.headers.set);
+    if (request.body.isNotEmpty) {
+      httpRequest.write(request.body);
     }
+    final httpResponse = await httpRequest.close().timeout(_httpTimeout);
+    final body = await utf8.decodeStream(httpResponse).timeout(_httpTimeout);
+    return BingxHttpResponse(statusCode: httpResponse.statusCode, body: body);
   }
 }
 
