@@ -1271,6 +1271,16 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     loopback regression proving connection reuse. Provider endpoints, request
     semantics, credentials, authority, effect ownership, and timeouts remain
     unchanged; final VPS evidence must use the follow-up merge SHA.
+  - Product-feedback remediation: packaged smoke from `9c045eb` produced an XRP
+    READY observation, but the later Run Intent correctly rejected the now-stale
+    market state without creating an effect. The existing Trading screen now
+    keeps refresh available while results are expanded, timestamps each READY
+    observation, states that Run Intent revalidates current market data, clears
+    prepared intent when symbol or mode changes, fails closed when the active
+    mandate does not match the selected symbol and mode, and explicitly labels
+    the BingX simulation endpoint as non-ordering. No strategy, authority,
+    credential, VPS, or effect path changed. The next evidence step is a new
+    packaged macOS smoke and simulated VPS lifecycle from one current merge SHA.
   - Entropy reduction:
 
     | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
