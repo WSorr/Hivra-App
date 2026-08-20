@@ -2,14 +2,13 @@
 
 Status date: 2026-08-20
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Remote Runner — One Exact Order Effect`
-is ready for a new merge-SHA packaged smoke after bounded product-feedback
-remediation. The Trading screen now keeps refresh available, timestamps READY
-observations, revalidates market state at Run Intent, fails closed on mandate
-symbol/mode mismatch, clears prepared intent when scope changes, and states
-that the BingX simulation endpoint creates no exchange order. Existing order
-authority, effect ownership, credential access, and timeout semantics are
-unchanged.
+Current development focus: `1.x Trading Market Evidence Integrity` is complete
+at `f606dbe`. Bounded recent REST trades remain recent-flow evidence and can no
+longer masquerade as a complete session profile. Trade and session directional
+gates use dimensionless notional imbalance, and incomplete session coverage
+fails closed with `NO_SIGNAL`. The exact-order effect path remains intact, but
+packaged order smoke is blocked until a separately reviewed public session
+evidence source can provide continuous, restart-safe coverage.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
 withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
@@ -21,7 +20,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Build the packaged macOS application from the current merge SHA, repeat the focused Trading smoke, then run simulated VPS evidence. A live order requires separate approval. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | Audit a bounded public session-trade accumulator inside the existing public-shadow host lifecycle. It must prove coverage, gap detection, restart continuity, and fail-closed output before any packaged order smoke resumes. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -31,7 +30,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | One Exact Order Effect packaged smoke | One signed semantic operation may issue at most one BingX POST; timeout and restart reconcile without blind replay. | Repeat the product smoke and simulated VPS lifecycle from one current merge SHA. Live order remains separately gated. |
+| **1.x maintained runtime** | Market evidence remediation complete; order smoke blocked | One sample cannot confirm the same signal twice, raw asset units cannot bias directional thresholds, and incomplete session coverage cannot authorize an order. | Audit the existing public-shadow host boundary for one continuous, bounded, restart-safe BingX public trade accumulator. No implementation pass is selected until that audit closes owner and gap semantics. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

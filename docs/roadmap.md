@@ -1281,6 +1281,18 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     the BingX simulation endpoint as non-ordering. No strategy, authority,
     credential, VPS, or effect path changed. The next evidence step is a new
     packaged macOS smoke and simulated VPS lifecycle from one current merge SHA.
+  - Market-evidence remediation: packaged smoke then exposed that the latest
+    200 REST trades were reused both as recent taker flow and as a fabricated
+    Asia/London/New York session profile. Raw base-asset quantity thresholds
+    also biased decisions across symbols. Commit `f606dbe` seals both paths:
+    recent REST trades are explicitly incomplete session evidence, trade and
+    session gates use dimensionless notional imbalance, and incomplete session
+    coverage deterministically returns `NO_SIGNAL`. The canonical signed shadow
+    vector was regenerated and independently reconstructed by the existing
+    Python validator. No Core, Ledger, FFI, credential, provider effect, plugin
+    ABI, VPS deployment, tag, or Release changed. Packaged order smoke remains
+    blocked until a separate audit proves a continuous public trade stream with
+    gap detection and restart-safe session coverage.
   - Entropy reduction:
 
     | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
