@@ -2959,18 +2959,19 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     Runner/VPS, background execution, credentials, plugin ABI, release work,
     and a second exchange-effect route remain outside scope.
   - Invariant: one stable liquidity event can authorize at most one test/live
-    exchange effect, and only while the exact prepared closed-bar decision is
-    still current.
+    exchange effect, and only while fresh evidence confirms the same exact
+    event binding; a monotonic later closed bar alone does not create a new
+    event.
   - Sole owners: `BingxFuturesZoneDecisionService` derives event identity,
     `BingxFuturesExchangeExecutionUseCaseService` owns freshness and exchange
     submission, and the existing Capsule-scoped order tracking store owns the
     durable effect claim.
   - Sealed paths: timestamp-only client IDs, queue-only process idempotency,
     post-effect-only ownership recording, and replacement's direct queue call.
-  - Exit evidence: stale-bar/event negative vectors, concurrent duplicate and
-    restart recovery, Capsule isolation, bounded fail-closed claim retention,
-    one queue caller, full local/clean-checkout gates, protected PR, and green
-    post-merge repository gates.
+  - Exit evidence: backward-bar, changed-event, material-drift, concurrent
+    duplicate and restart recovery vectors, Capsule isolation, bounded
+    fail-closed claim retention, one queue caller, full local/clean-checkout
+    gates, protected PR, and green post-merge repository gates.
   - Status: complete (2026-08-11) at `255a356`; protected PR `#46`, clean
     checkout, and post-merge repository gates `31531348050` passed. No
     following product pass is selected.
@@ -4211,12 +4212,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     evaluation while an opposite actionable signal remains a fail-closed
     intent conflict. The intent-only UI must also say `prepared`, not
     `executed`.
+  - Protected remediation: PR `#182` merged the side-locked structural owner
+    and prepared-label regressions at `657a482`; branch and post-merge gates
+    passed.
+  - Packaged freshness finding: after LIVE mandate re-authorization, an
+    approximately 2.5-minute-old SOL intent was revalidated against the same
+    event direction, anchor source, reclaimed lifecycle, and nearly identical
+    zone. The lower boundary moved from `94.4268128` to `94.4270328`, about
+    0.00023%, but exact latest-bar and decimal equality returned
+    `liquidity_event_stale` before provider access. Later strategy scans were
+    independently blocked by transient volume/anchor gates; they do not prove
+    that the original event materially moved.
+  - Active freshness contract: the execution owner accepts a monotonic later
+    closed bar only when event id/time, side, zone side, anchor source,
+    lifecycle, executable state, and evaluation side remain exact and each
+    derived boundary drifts by at most 1 bp. Backward time, changed binding,
+    conflict, malformed decimals, or material drift remains fail-closed.
   - Status: active remediation (2026-08-22). Provider conformance,
     trigger-bound sizing, one exact live effect, receipt, cancellation, and
-    no-duplicate restart restoration are proven. Side-locked revalidation and
-    prepared-label regressions must pass protected gates before this pass can
-    close. The Trading Drone is not operational; VPS/24/7 execution,
-    scheduling, release, tag, and any additional live effect remain blocked.
+    no-duplicate restart restoration are proven. Side-locked revalidation is
+    merged; stable-event freshness and mandate-episode intent clearing must pass
+    protected gates and packaged non-effect smoke before this pass can close.
+    The Trading Drone is not operational; VPS/24/7 execution, scheduling,
+    release, tag, and any additional live effect remain blocked.
 
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into

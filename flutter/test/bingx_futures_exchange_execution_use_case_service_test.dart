@@ -269,45 +269,101 @@ void main() {
       expect(placeOrderCalled, isFalse);
     });
 
-    test('blocks a zone intent after the next closed market bar', () async {
-      var placeOrderCalled = false;
-      final exchange = BingxFuturesExchangeService();
-      final service = BingxFuturesExchangeExecutionUseCaseService(
-        exchange: exchange,
-        queue: BingxFuturesExecutionQueueService(
-          exchangeService: exchange,
-          placeOrderRunner: ({
-            required credentials,
-            required intent,
-            required testOrder,
-          }) async {
-            placeOrderCalled = true;
-            throw StateError('must not execute');
-          },
-        ),
-        riskHistory: riskHistory,
-        orderTrackingStore: executionControlStore,
-      );
+    test(
+      'keeps the same liquidity event fresh across a new closed bar and bounded zone drift',
+      () async {
+        final exchange = BingxFuturesExchangeService();
+        final service = BingxFuturesExchangeExecutionUseCaseService(
+          exchange: exchange,
+          queue: BingxFuturesExecutionQueueService(exchangeService: exchange),
+          riskHistory: riskHistory,
+          orderTrackingStore: executionControlStore,
+        );
 
-      final result = await service.execute(
-        screen: 'test',
-        rawIntentResult: _zoneIntent,
-        credentials: _credentials,
-        riskPolicy: _policy,
-        fallbackEquityQuote: 100,
-        testOrder: true,
-        preparedDecision: _decision(barAtUtc: '2026-08-11T10:00:00.000Z'),
-        refreshDecision:
-            () async => _decision(barAtUtc: '2026-08-11T10:05:00.000Z'),
-      );
+        final fresh = await service.isPreparedLiquidityDecisionFresh(
+          payload: BingxFuturesIntentPayload.fromPluginResult(_zoneIntent),
+          rawIntentResult: _zoneIntent,
+          preparedDecision: _decision(barAtUtc: '2026-08-11T10:00:00.000Z'),
+          refreshDecision:
+              () async => _decision(
+                barAtUtc: '2026-08-11T10:05:00.000Z',
+                zoneLowDecimal: '99.0002',
+                zoneHighDecimal: '101.0002',
+              ),
+        );
 
-      expect(
-        result.status,
-        BingxFuturesExchangeExecutionUseCaseStatus.staleIntent,
-      );
-      expect(result.errorCode, 'liquidity_event_stale');
-      expect(placeOrderCalled, isFalse);
-    });
+        expect(fresh, isTrue);
+      },
+    );
+
+    test(
+      'rejects a liquidity event when the closed bar moves backwards',
+      () async {
+        final exchange = BingxFuturesExchangeService();
+        final service = BingxFuturesExchangeExecutionUseCaseService(
+          exchange: exchange,
+          queue: BingxFuturesExecutionQueueService(exchangeService: exchange),
+          riskHistory: riskHistory,
+          orderTrackingStore: executionControlStore,
+        );
+
+        final fresh = await service.isPreparedLiquidityDecisionFresh(
+          payload: BingxFuturesIntentPayload.fromPluginResult(_zoneIntent),
+          rawIntentResult: _zoneIntent,
+          preparedDecision: _decision(barAtUtc: '2026-08-11T10:05:00.000Z'),
+          refreshDecision:
+              () async => _decision(barAtUtc: '2026-08-11T10:00:00.000Z'),
+        );
+
+        expect(fresh, isFalse);
+      },
+    );
+
+    test(
+      'rejects mutated liquidity binding and malformed zone drift',
+      () async {
+        final exchange = BingxFuturesExchangeService();
+        final service = BingxFuturesExchangeExecutionUseCaseService(
+          exchange: exchange,
+          queue: BingxFuturesExecutionQueueService(exchangeService: exchange),
+          riskHistory: riskHistory,
+          orderTrackingStore: executionControlStore,
+        );
+        final payload = BingxFuturesIntentPayload.fromPluginResult(_zoneIntent);
+        final prepared = _decision();
+
+        expect(
+          await service.isPreparedLiquidityDecisionFresh(
+            payload: payload,
+            rawIntentResult: _zoneIntent,
+            preparedDecision: prepared,
+            refreshDecision:
+                () async =>
+                    _decision(liquidityEventAtUtc: '2026-08-11T09:56:00.000Z'),
+          ),
+          isFalse,
+        );
+        expect(
+          await service.isPreparedLiquidityDecisionFresh(
+            payload: payload,
+            rawIntentResult: _zoneIntent,
+            preparedDecision: prepared,
+            refreshDecision:
+                () async => _decision(zoneAnchorLifecycle: 'consumed'),
+          ),
+          isFalse,
+        );
+        expect(
+          await service.isPreparedLiquidityDecisionFresh(
+            payload: payload,
+            rawIntentResult: _zoneIntent,
+            preparedDecision: prepared,
+            refreshDecision: () async => _decision(zoneLowDecimal: 'invalid'),
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('blocks a zone intent when the liquidity event changes', () async {
       final exchange = BingxFuturesExchangeService();
@@ -1685,6 +1741,8 @@ BingxFuturesLiveDecisionResult _decision({
   String barAtUtc = '2026-08-11T10:00:00.000Z',
   String zoneLowDecimal = '99',
   String zoneHighDecimal = '101',
+  String liquidityEventAtUtc = '2026-08-11T09:55:00.000Z',
+  String? zoneAnchorLifecycle,
 }) {
   return BingxFuturesLiveDecisionResult(
     canPrepareIntent: true,
@@ -1706,7 +1764,8 @@ BingxFuturesLiveDecisionResult _decision({
     trendGateBlocked: false,
     trendGateCode: 'ok',
     liquidityEventId: List<String>.filled(64, eventHex).join(),
-    liquidityEventAtUtc: '2026-08-11T09:55:00.000Z',
+    liquidityEventAtUtc: liquidityEventAtUtc,
     latestClosedMicroBarAtUtc: barAtUtc,
+    zoneAnchorLifecycle: zoneAnchorLifecycle,
   );
 }

@@ -69,6 +69,14 @@ effect execution is requested, the port MUST delegate only to
 `BingxFuturesExchangeExecutionUseCaseService`, which revalidates freshness,
 mandate, risk, event claim, and provider outcome.
 
+Freshness is bound to the stable liquidity event, not to byte-identical derived
+zone decimals or one particular latest-bar cursor. A later closed micro bar MAY
+confirm the same event when time moves monotonically, the event id, event time,
+side, zone side, anchor source, anchor lifecycle, and executable state remain
+exact, and each zone boundary moves by no more than 1 basis point. A changed,
+expired, consumed, conflicted, malformed, or materially displaced event MUST
+fail closed before provider access.
+
 For `zone_pending`, sizing MUST use the exact deterministic zone-entry price
 that will be committed to the intent. A current public quote may size only an
 order whose execution price is that quote. It MUST NOT size a future pending
