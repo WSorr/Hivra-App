@@ -18,6 +18,15 @@ class BingxFuturesPublicSessionAccumulator {
 
   bool get isConnected => _connected;
 
+  bool get hasHealthyConnection {
+    final now = _clockUtc().toUtc();
+    final lastMessageAt = _lastMessageAtUtc;
+    return _connected &&
+        lastMessageAt != null &&
+        !now.isBefore(lastMessageAt) &&
+        now.difference(lastMessageAt) <= maxMessageSilence;
+  }
+
   BingxFuturesPublicSessionAccumulator({
     required this.symbol,
     DateTime Function()? clockUtc,
@@ -122,11 +131,7 @@ class BingxFuturesPublicSessionAccumulator {
     final connectedAt = _connectedAtUtc;
     final lastMessageAt = _lastMessageAtUtc;
     final healthy =
-        _connected &&
-        connectedAt != null &&
-        lastMessageAt != null &&
-        !now.isBefore(lastMessageAt) &&
-        now.difference(lastMessageAt) <= maxMessageSilence;
+        connectedAt != null && lastMessageAt != null && hasHealthyConnection;
     return <String>['asia', 'london', 'newyork']
         .map((session) {
           final aggregate = _latestBySession[session];

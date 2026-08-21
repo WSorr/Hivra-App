@@ -7,11 +7,13 @@ import 'bingx_futures_exchange_service.dart';
 import 'bingx_futures_execution_queue_service.dart';
 import 'bingx_futures_intent_use_case_service.dart';
 import 'bingx_futures_live_strategy_use_case_service.dart';
+import 'bingx_futures_live_snapshot_builder_service.dart';
 import 'bingx_futures_observability_envelope_service.dart';
 import 'bingx_futures_order_replacement_service.dart';
 import 'bingx_futures_order_revalidation_service.dart';
 import 'bingx_futures_order_sizing_service.dart';
 import 'bingx_futures_order_tracking_store.dart';
+import 'bingx_futures_public_session_stream_service.dart';
 import 'bingx_futures_risk_governor_service.dart';
 import 'bingx_futures_risk_history_service.dart';
 import 'bingx_futures_signal_rank_use_case_service.dart';
@@ -42,6 +44,7 @@ class TradingDroneModule {
   final BingxFuturesSignalRankUseCaseService signalRankUseCase;
   final BingxFuturesOrderRevalidationService orderRevalidation;
   final BingxFuturesOrderReplacementService orderReplacement;
+  final BingxFuturesPublicSessionStreamService publicSessionStream;
   final BingxFuturesLiveStrategyUseCaseService liveStrategyUseCase;
   final BingxFuturesStrategyNamingService strategyNaming;
   final BingxFuturesVolumeGrowthFilterService volumeGrowthFilter;
@@ -76,6 +79,7 @@ class TradingDroneModule {
     required this.signalRankUseCase,
     required this.orderRevalidation,
     required this.orderReplacement,
+    required this.publicSessionStream,
     required this.liveStrategyUseCase,
     required this.strategyNaming,
     required this.volumeGrowthFilter,
@@ -128,8 +132,17 @@ class TradingDroneModuleService {
       orderTrackingStore: orderTrackingStore,
       observability: observability,
     );
+    final publicSessionStream = BingxFuturesPublicSessionStreamService();
+    final snapshotBuilder = const BingxFuturesLiveSnapshotBuilderService();
     final liveStrategyUseCase = BingxFuturesLiveStrategyUseCaseService(
       exchange: exchangeService,
+      loadSnapshot:
+          ({required exchange, required symbol}) =>
+              snapshotBuilder.fetchAndBuild(
+                exchange: exchange,
+                symbol: symbol,
+                sessionVolumes: publicSessionStream.snapshotFor(symbol),
+              ),
     );
     return TradingDroneModule(
       pluginHostApi: pluginHostApi,
@@ -149,6 +162,7 @@ class TradingDroneModuleService {
       ),
       orderRevalidation: const BingxFuturesOrderRevalidationService(),
       orderReplacement: const BingxFuturesOrderReplacementService(),
+      publicSessionStream: publicSessionStream,
       liveStrategyUseCase: liveStrategyUseCase,
       strategyNaming: const BingxFuturesStrategyNamingService(),
       volumeGrowthFilter: const BingxFuturesVolumeGrowthFilterService(),

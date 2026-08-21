@@ -245,6 +245,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         TradingDroneModuleService(
           runtime: widget.runtime ?? AppRuntimeService(),
         ).build();
+    unawaited(_primePublicSessionEvidence(_symbolController.text));
     unawaited(_restoreOpenOrdersTrackingState());
     _loadPerpetualSymbols(silent: true);
     _signalInbox = _module.chatDelivery.loadCachedTradeSignals();
@@ -254,6 +255,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
   @override
   void dispose() {
     _openOrdersPollTimer?.cancel();
+    unawaited(_module.publicSessionStream.disconnect());
     _peerController.dispose();
     _symbolController.dispose();
     _maxNotionalUsdtController.dispose();
@@ -269,6 +271,34 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     _apiSecretController.dispose();
     _cancelOrderIdController.dispose();
     super.dispose();
+  }
+
+  Future<bool> _primePublicSessionEvidence(
+    String symbol, {
+    bool reportFailure = false,
+  }) async {
+    final normalized = symbol.trim().toUpperCase();
+    if (normalized.isEmpty) return false;
+    try {
+      await _module.publicSessionStream.ensureConnected(normalized);
+      await _module.uiLog.log(
+        'bingx.market.session_stream',
+        'status=connected symbol=$normalized effect=false',
+      );
+      return true;
+    } catch (error) {
+      await _module.uiLog.log(
+        'bingx.market.session_stream.error',
+        'symbol=$normalized error=$error effect=false',
+      );
+      if (reportFailure) {
+        await _showSnack(
+          'Live session evidence is unavailable. No order can be prepared.',
+          seconds: 4,
+        );
+      }
+      return false;
+    }
   }
 
   bool get _isTrackingOpenOrders => _openOrdersPollTimer != null;
@@ -2111,6 +2141,9 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     if (symbol.isEmpty) {
       await _showSnack('Symbol is required');
       return 'blocked:symbol_required';
+    }
+    if (!await _primePublicSessionEvidence(symbol, reportFailure: true)) {
+      return 'blocked:session_stream_unavailable';
     }
     final forceAutoZonePending = _orderType == 'limit';
     if (forceAutoZonePending &&

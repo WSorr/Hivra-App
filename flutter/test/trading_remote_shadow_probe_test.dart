@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_exchange_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/services/bingx_futures_public_session_accumulator.dart';
+import 'package:hivra_app/services/bingx_futures_public_session_stream_service.dart';
 
 import '../tool/trading_remote_shadow_probe.dart';
 import '../tool/trading_remote_exact_order.dart';
@@ -111,7 +112,7 @@ void main() {
     );
     expect(
       () => decodeBingxPublicFrame(
-        List<int>.filled(maxCompressedTradeFrameBytes + 1, 0),
+        List<int>.filled(bingxPublicSessionMaxCompressedFrameBytes + 1, 0),
       ),
       throwsFormatException,
     );
