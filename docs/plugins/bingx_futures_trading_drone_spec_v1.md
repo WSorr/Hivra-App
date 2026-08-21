@@ -684,6 +684,9 @@ Risk-history boundary:
 
 - account equity and concurrent positions are read from authenticated BingX
   account endpoints,
+- missing, malformed, zero, or negative account equity is unavailable risk
+  evidence rather than valid capital; live execution fails closed while an
+  explicit test-order diagnostic may use its bounded fallback,
 - daily realized PnL, consecutive losses, and last-loss time are projected from
   authenticated `REALIZED_PNL` income records, not inferred from the account
   balance summary,

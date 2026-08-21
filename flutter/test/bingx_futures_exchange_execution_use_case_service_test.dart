@@ -406,6 +406,94 @@ void main() {
       },
     );
 
+    test('test validation falls back when account equity is zero', () async {
+      var placeOrderCalls = 0;
+      final exchange = BingxFuturesExchangeService(
+        requestSender: (request) async {
+          if (request.uri.path.endsWith('/quote/contracts')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":[{"symbol":"BTC-USDT","tradeMinQuantity":0.001,"tradeMinUSDT":2,"quantityPrecision":3,"pricePrecision":2}]}',
+            );
+          }
+          if (request.uri.path.endsWith('/quote/price')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":{"price":"100"}}',
+            );
+          }
+          if (request.uri.path.endsWith('/user/balance')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"balance":{"asset":"USDT","equity":"0"}}}',
+            );
+          }
+          if (request.uri.path.endsWith('/user/positions') ||
+              request.uri.path.endsWith('/user/income')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":[]}',
+            );
+          }
+          return const BingxHttpResponse(statusCode: 404, body: '{}');
+        },
+      );
+      final store = _trackingStore(tempHome);
+      await _setDroneEnabled(store, true);
+      final service = BingxFuturesExchangeExecutionUseCaseService(
+        exchange: exchange,
+        queue: BingxFuturesExecutionQueueService(
+          exchangeService: exchange,
+          placeOrderRunner: ({
+            required credentials,
+            required intent,
+            required testOrder,
+          }) async {
+            placeOrderCalls += 1;
+            return BingxFuturesOrderExecutionResult(
+              isSuccess: true,
+              httpStatusCode: 200,
+              exchangeCode: '0',
+              exchangeMessage: 'ok',
+              orderId: null,
+              endpointPath: '/test-order',
+              signedPayloadHashHex: List<String>.filled(64, 'e').join(),
+              responseBody: '{}',
+              intentHashHex: intent.intentHashHex,
+            );
+          },
+        ),
+        riskHistory: riskHistory,
+        orderTrackingStore: store,
+      );
+
+      final result = await service.execute(
+        screen: 'test',
+        rawIntentResult: _zoneIntent,
+        credentials: _credentials,
+        riskPolicy: _policy,
+        fallbackEquityQuote: 100,
+        testOrder: true,
+        preparedDecision: _decision(),
+        refreshDecision: () async => _decision(liveHashHex: '5'),
+      );
+
+      expect(
+        result.status,
+        BingxFuturesExchangeExecutionUseCaseStatus.validated,
+        reason: result.errorCode,
+      );
+      expect(result.diagnostics, contains(contains('fallbacks=balance,-,-')));
+      expect(
+        result.diagnostics,
+        contains(contains('account_equity_non_positive')),
+      );
+      expect(placeOrderCalls, 1);
+      expect((await store.load())!.liquidityEventEffectClaims, isEmpty);
+    });
+
     test('reports rejected provider effect as execution failure', () async {
       final exchange = BingxFuturesExchangeService();
       final store = _trackingStore(tempHome);

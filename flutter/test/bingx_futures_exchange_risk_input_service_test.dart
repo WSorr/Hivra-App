@@ -121,5 +121,53 @@ void main() {
       expect(result.positionsUnavailableMessage, 'internal error');
       expect(result.firstUnavailableReason, '100001 signature invalid');
     });
+
+    test('treats non-positive exchange equity as unavailable', () async {
+      final exchange = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender: (request) async {
+          if (request.uri.path == '/openApi/swap/v2/user/balance') {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":{"balance":{"asset":"USDT","equity":"0"}}}',
+            );
+          }
+          if (request.uri.path == '/openApi/swap/v2/user/positions') {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":[]}',
+            );
+          }
+          if (request.uri.path == '/openApi/swap/v2/user/income') {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":[]}',
+            );
+          }
+          return const BingxHttpResponse(statusCode: 404, body: '{}');
+        },
+      );
+      const service = BingxFuturesExchangeRiskInputService();
+
+      final result = await service.read(
+        exchangeService: exchange,
+        riskHistoryService: riskHistory,
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'key',
+          apiSecret: 'secret',
+        ),
+        fallbackEquityQuote: 250,
+        nowUtc: DateTime.fromMillisecondsSinceEpoch(1710000000000, isUtc: true),
+      );
+
+      expect(result.accountEquityQuoteDecimal, '250.00000000');
+      expect(result.usedBalanceFallback, isTrue);
+      expect(result.balanceUnavailableCode, 'account_equity_non_positive');
+      expect(
+        result.firstUnavailableReason,
+        'account_equity_non_positive BingX account equity must be positive',
+      );
+    });
   });
 }
