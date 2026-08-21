@@ -69,6 +69,11 @@ effect execution is requested, the port MUST delegate only to
 `BingxFuturesExchangeExecutionUseCaseService`, which revalidates freshness,
 mandate, risk, event claim, and provider outcome.
 
+For `zone_pending`, sizing MUST use the exact deterministic zone-entry price
+that will be committed to the intent. A current public quote may size only an
+order whose execution price is that quote. It MUST NOT size a future pending
+order at one price and validate its notional ceiling at another.
+
 The `executed` outcome requires both the canonical execution-owner status and
 an explicit successful provider result. Provider rejection, exhausted retry,
 timeout, missing success evidence, or a contradictory wrapper status remains a

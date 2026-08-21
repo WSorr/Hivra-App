@@ -50,37 +50,60 @@ void main() {
       expect(result.orderNotionalQuoteDecimal, '6.7078');
     });
 
-    test('uses minimum notional when it requires more than minimum quantity',
-        () {
+    test('sizes pending order against its exact zone entry price', () {
       final result = service.calculate(
-        maximumNotionalQuote: 5,
-        referencePriceDecimal: '100',
+        maximumNotionalQuote: 100,
+        referencePriceDecimal: '746.092468',
         rules: const BingxFuturesContractRules(
-          symbol: 'TEST-USDT',
+          symbol: 'BNB-USDT',
           minimumQuantityDecimal: '0.01',
-          minimumNotionalQuoteDecimal: '4',
+          minimumNotionalQuoteDecimal: '2',
           quantityPrecision: 2,
           pricePrecision: 2,
         ),
       );
 
       expect(result.status, BingxFuturesOrderSizingStatus.sized);
-      expect(result.minimumQuantityDecimal, '0.04');
-      expect(result.quantityDecimal, '0.05');
+      expect(result.quantityDecimal, '0.13');
+      expect(
+        num.parse(result.orderNotionalQuoteDecimal!),
+        lessThanOrEqualTo(100),
+      );
     });
+
+    test(
+      'uses minimum notional when it requires more than minimum quantity',
+      () {
+        final result = service.calculate(
+          maximumNotionalQuote: 5,
+          referencePriceDecimal: '100',
+          rules: const BingxFuturesContractRules(
+            symbol: 'TEST-USDT',
+            minimumQuantityDecimal: '0.01',
+            minimumNotionalQuoteDecimal: '4',
+            quantityPrecision: 2,
+            pricePrecision: 2,
+          ),
+        );
+
+        expect(result.status, BingxFuturesOrderSizingStatus.sized);
+        expect(result.minimumQuantityDecimal, '0.04');
+        expect(result.quantityDecimal, '0.05');
+      },
+    );
 
     test('is deterministic for identical inputs', () {
       BingxFuturesOrderSizingResult calculate() => service.calculate(
-            maximumNotionalQuote: 10,
-            referencePriceDecimal: '68.125',
-            rules: const BingxFuturesContractRules(
-              symbol: 'SOL-USDT',
-              minimumQuantityDecimal: '0.01',
-              minimumNotionalQuoteDecimal: '2',
-              quantityPrecision: 3,
-              pricePrecision: 3,
-            ),
-          );
+        maximumNotionalQuote: 10,
+        referencePriceDecimal: '68.125',
+        rules: const BingxFuturesContractRules(
+          symbol: 'SOL-USDT',
+          minimumQuantityDecimal: '0.01',
+          minimumNotionalQuoteDecimal: '2',
+          quantityPrecision: 3,
+          pricePrecision: 3,
+        ),
+      );
 
       final first = calculate();
       final second = calculate();
