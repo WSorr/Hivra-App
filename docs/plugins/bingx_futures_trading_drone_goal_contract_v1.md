@@ -984,7 +984,7 @@ unit remains disabled, inactive, and unable to load the exchange credential.
 
 The transient process reuses the existing `BingxFuturesExchangeService` signed
 GET adapter and permits exactly three official BingX futures reads:
-`/openApi/swap/v2/user/balance`, `/openApi/swap/v2/user/positions`, and
+`/openApi/swap/v3/user/balance`, `/openApi/swap/v2/user/positions`, and
 `/openApi/swap/v2/trade/openOrders`. It independently checks the runner key,
 API-key account binding, mandate operation id, and unexpired mandate before the
 first request. Any POST, DELETE, order placement, cancellation, leverage or

@@ -494,7 +494,7 @@ PY
   [ "$detected_effect_targets" = "$detected_targets" ] ||
     die "artifact binaries target different platforms"
   for marker in \
-    'openApi/swap/v2/user/balance' \
+    'openApi/swap/v3/user/balance' \
     'openApi/swap/v2/user/positions' \
     'openApi/swap/v2/trade/openOrders' \
     'hivra-trading-account-read-evidence-v2' \
@@ -2193,7 +2193,7 @@ self_test() {
   cp /bin/echo "$artifact/$BINARY_NAME"
   cp /bin/echo "$artifact/$EFFECT_BINARY_NAME"
   printf '%s\n' \
-    'openApi/swap/v2/user/balance' \
+    'openApi/swap/v3/user/balance' \
     'openApi/swap/v2/user/positions' \
     'openApi/swap/v2/trade/openOrders' \
     'hivra-trading-account-read-evidence-v2' \

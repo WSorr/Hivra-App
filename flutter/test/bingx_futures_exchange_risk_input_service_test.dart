@@ -31,11 +31,11 @@ void main() {
       final exchange = BingxFuturesExchangeService(
         clockMs: () => 1710000000000,
         requestSender: (request) async {
-          if (request.uri.path == '/openApi/swap/v2/user/balance') {
+          if (request.uri.path == '/openApi/swap/v3/user/balance') {
             return const BingxHttpResponse(
               statusCode: 200,
               body:
-                  '{"code":0,"msg":"ok","data":{"balance":{"asset":"USDT","equity":"1234.5","realisedProfit":"-12.3"}}}',
+                  '{"code":0,"msg":"ok","data":[{"asset":"USDT","equity":"1234.5","realisedProfit":"-12.3"}]}',
             );
           }
           if (request.uri.path == '/openApi/swap/v2/user/positions') {
@@ -81,7 +81,7 @@ void main() {
       final exchange = BingxFuturesExchangeService(
         clockMs: () => 1710000000000,
         requestSender: (request) async {
-          if (request.uri.path == '/openApi/swap/v2/user/balance') {
+          if (request.uri.path == '/openApi/swap/v3/user/balance') {
             return const BingxHttpResponse(
               statusCode: 200,
               body: '{"code":100001,"msg":"signature invalid","data":{}}',
@@ -126,11 +126,11 @@ void main() {
       final exchange = BingxFuturesExchangeService(
         clockMs: () => 1710000000000,
         requestSender: (request) async {
-          if (request.uri.path == '/openApi/swap/v2/user/balance') {
+          if (request.uri.path == '/openApi/swap/v3/user/balance') {
             return const BingxHttpResponse(
               statusCode: 200,
               body:
-                  '{"code":0,"msg":"ok","data":{"balance":{"asset":"USDT","equity":"0"}}}',
+                  '{"code":0,"msg":"ok","data":[{"asset":"USDT","equity":"0"}]}',
             );
           }
           if (request.uri.path == '/openApi/swap/v2/user/positions') {

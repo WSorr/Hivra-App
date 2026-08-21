@@ -34,7 +34,7 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
   static const String _getOpenOrdersPath = '/openApi/swap/v2/trade/openOrders';
   static const String _cancelOrderPath = '/openApi/swap/v2/trade/order';
   static const String _forceOrdersPath = '/openApi/swap/v2/trade/forceOrders';
-  static const String _userBalancePath = '/openApi/swap/v2/user/balance';
+  static const String _userBalancePath = '/openApi/swap/v3/user/balance';
   static const String _userPositionsPath = '/openApi/swap/v2/user/positions';
   static const String _userIncomePath = '/openApi/swap/v2/user/income';
 
@@ -2015,6 +2015,17 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
   }
 
   static Map<String, dynamic>? _extractBalanceRow(dynamic data) {
+    if (data is List) {
+      for (final row in data) {
+        if (row is! Map) continue;
+        final rowMap = Map<String, dynamic>.from(row);
+        final asset = rowMap['asset']?.toString().trim().toUpperCase();
+        if (asset == 'USDT') {
+          return rowMap;
+        }
+      }
+      return null;
+    }
     if (data is Map) {
       final map = Map<String, dynamic>.from(data);
       final nested = map['balance'];
