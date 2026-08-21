@@ -56,6 +56,53 @@ Future<String> runTradingIntentWithTerminalEvidence({
 String tradingSignalScanActionLabel({required bool scanning}) =>
     scanning ? 'Scanning' : 'Refresh Scan';
 
+String tradingPreferredSideForCycle({
+  required String symbol,
+  required String currentSide,
+  required List<BingxFuturesSignalRankEntry> rankedEntries,
+}) {
+  final normalizedSymbol = symbol.trim().toUpperCase();
+  for (final entry in rankedEntries) {
+    if (entry.symbol.trim().toUpperCase() != normalizedSymbol ||
+        entry.bucket != 'ready' ||
+        !entry.canPrepareIntent) {
+      continue;
+    }
+    final rankedSide = entry.side?.trim().toLowerCase();
+    if (rankedSide == 'buy' || rankedSide == 'sell') {
+      return rankedSide!;
+    }
+  }
+  return currentSide;
+}
+
+String tradingSideAfterCycle({
+  required String currentSide,
+  required bool cyclePrepared,
+  required String? decisionSide,
+}) {
+  if (!cyclePrepared) return currentSide;
+  final normalizedSide = decisionSide?.trim().toLowerCase();
+  return normalizedSide == 'buy' || normalizedSide == 'sell'
+      ? normalizedSide!
+      : currentSide;
+}
+
+String tradingZoneSideForOrderSide(String orderSide) =>
+    orderSide.trim().toLowerCase() == 'buy' ? 'buyside' : 'sellside';
+
+String tradingZoneSideAfterCycle({
+  required String currentZoneSide,
+  required bool cyclePrepared,
+  required String? decisionZoneSide,
+}) {
+  if (!cyclePrepared) return currentZoneSide;
+  final normalizedZoneSide = decisionZoneSide?.trim().toLowerCase();
+  return normalizedZoneSide == 'buyside' || normalizedZoneSide == 'sellside'
+      ? normalizedZoneSide!
+      : currentZoneSide;
+}
+
 @visibleForTesting
 bool tradingMandateMatchesSelection({
   required BingxFuturesTradingMandate? mandate,
@@ -1329,6 +1376,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           for (final candidate in candidates)
             candidate.decision.liveDecisionHashHex: candidate.decision,
         };
+        _side = tradingPreferredSideForCycle(
+          symbol: currentSymbol,
+          currentSide: _side,
+          rankedEntries: ranked.entries,
+        );
+        _zoneSide = tradingZoneSideForOrderSide(_side);
         _signalRankExpanded = true;
       });
       final top = ranked.entries.isEmpty ? null : ranked.entries.first;
@@ -1516,7 +1569,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       _intentBlockingMessage = null;
       if (entry.side != null) {
         _side = entry.side!;
-        _zoneSide = entry.side == 'buy' ? 'sellside' : 'buyside';
+        _zoneSide = tradingZoneSideForOrderSide(entry.side!);
       }
       if (entry.zoneLowDecimal != null && entry.zoneHighDecimal != null) {
         _entryMode = 'zone_pending';
@@ -2072,8 +2125,16 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         if (decision != null) {
           _displayedZoneDecision = decision;
           _lastPreparedLiveDecision = cycle.isPrepared ? decision : null;
-          _side = decision.side ?? _side;
-          _zoneSide = decision.zoneSide ?? _zoneSide;
+          _side = tradingSideAfterCycle(
+            currentSide: _side,
+            cyclePrepared: cycle.isPrepared,
+            decisionSide: decision.side,
+          );
+          _zoneSide = tradingZoneSideAfterCycle(
+            currentZoneSide: _zoneSide,
+            cyclePrepared: cycle.isPrepared,
+            decisionZoneSide: decision.zoneSide,
+          );
           _entryMode = 'zone_pending';
           _zonePriceRule = 'zone_mid';
           _zoneLowController.text = decision.zoneLowDecimal ?? '';
