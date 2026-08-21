@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivra_app/models/bingx_futures_signal_rank_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
@@ -91,5 +92,75 @@ void main() {
       'Snapshot 2026-08-20T10:39:15.000Z. READY is observational; '
       'Run Intent revalidates current market.',
     );
+  });
+
+  test('fresh ready rank overrides stale UI side for canonical cycle', () {
+    const entries = <BingxFuturesSignalRankEntry>[
+      BingxFuturesSignalRankEntry(
+        symbol: 'BNB-USDT',
+        bucket: 'ready',
+        score: 10555,
+        decision: 'short',
+        side: 'sell',
+        zoneLowDecimal: '745.41',
+        zoneHighDecimal: '746.76',
+        trendGateCode: 'ok',
+        canPrepareIntent: true,
+        liveDecisionHashHex: 'ranked-hash',
+        failedReasonCodes: <String>['long_trade_imbalance'],
+      ),
+    ];
+
+    expect(
+      tradingPreferredSideForCycle(
+        symbol: 'bnb-usdt',
+        currentSide: 'buy',
+        rankedEntries: entries,
+      ),
+      'sell',
+    );
+  });
+
+  test('blocked cycle cannot replace the selected execution side', () {
+    expect(
+      tradingSideAfterCycle(
+        currentSide: 'sell',
+        cyclePrepared: false,
+        decisionSide: 'buy',
+      ),
+      'sell',
+    );
+    expect(
+      tradingSideAfterCycle(
+        currentSide: 'sell',
+        cyclePrepared: true,
+        decisionSide: 'buy',
+      ),
+      'buy',
+    );
+  });
+
+  test('blocked cycle cannot replace the selected execution zone side', () {
+    expect(
+      tradingZoneSideAfterCycle(
+        currentZoneSide: 'sellside',
+        cyclePrepared: false,
+        decisionZoneSide: 'buyside',
+      ),
+      'sellside',
+    );
+    expect(
+      tradingZoneSideAfterCycle(
+        currentZoneSide: 'sellside',
+        cyclePrepared: true,
+        decisionZoneSide: 'buyside',
+      ),
+      'buyside',
+    );
+  });
+
+  test('ranked order side maps to the matching liquidity zone side', () {
+    expect(tradingZoneSideForOrderSide('buy'), 'buyside');
+    expect(tradingZoneSideForOrderSide('sell'), 'sellside');
   });
 }
