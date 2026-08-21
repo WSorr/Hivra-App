@@ -1,19 +1,17 @@
 # Hivra Development Control
 
-Status date: 2026-08-21
+Status date: 2026-08-22
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: the bounded `1.x Trading BingX Balance Contract
-Remediation` is complete at `a0d1bec`. The sole exchange adapter now reads the
-current BingX `/openApi/swap/v3/user/balance` contract and selects the exact
-USDT futures row; the legacy v2 balance route is sealed in local and remote
-account-read evidence. Packaged macOS Release validation from that SHA proved
-credential recovery and fail-closed handling, but BingX returned non-positive
-USDT futures equity for the configured subaccount. No provider order request
-was made. The next gate is external account readiness evidence, not another
-runtime change: confirm the dedicated funds are in the USDT-M Perpetual Futures
-wallet and the loaded API key belongs to that subaccount before one fresh
-bounded live attempt. No VPS deployment, plugin ABI, Core, Ledger, tag, or
-Release is authorized.
+Current development focus: `1.x BingX Provider Contract Conformance + Minimal
+Live Vertical` is active. Sanitized read-only evidence from the dedicated
+futures subaccount established the current balance, contract-rule, empty
+realized-PnL, empty-position, and empty-open-order response shapes. The existing
+exchange adapter and execution/reconciliation lifecycle remain the sole owners.
+The pass is not complete until protected merge gates pass and one packaged
+build places exactly one bounded live order, retains the provider identity and
+receipt, then reconciles the same effect after restart without duplication.
+Until then the Trading Drone is not operational and VPS/24/7 execution remains
+blocked. No plugin ABI, Core, Ledger, tag, or Release is authorized.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
 withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
@@ -25,7 +23,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Confirm positive USDT equity in the dedicated subaccount's Perpetual Futures wallet through the existing read/risk path. Only then prepare one fresh intent for the already authorized bounded live attempt; all mandate and risk guards remain mandatory. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | Complete the active BingX provider-contract pass through protected gates, then run one packaged minimal live order and restart reconciliation. Do not start VPS/24/7 execution. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -35,7 +33,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading BingX balance contract remediation complete | The existing exchange owner reads the current v3 balance contract and requires a positive USDT futures row before live execution. | Focused Flutter `81/81`, full Flutter `980/980`, Rust/analyze/repository gates, clean checkout, protected PR `#178`, post-merge run `32520786102`, and packaged read-only macOS evidence passed. | Resolve external subaccount futures-equity readiness; VPS, scheduler, release, and any unapproved exchange effect remain blocked. |
+| **1.x maintained runtime** | BingX provider-contract conformance active | The existing exchange owner validates captured provider shapes; the existing effect lifecycle alone owns placement, receipt, identity, and restart reconciliation. | Golden fixtures and negative mutations are implemented locally; full gates, protected merge, packaged live effect, and restart evidence remain pending. | Exactly one bounded packaged live order and no-duplicate restart reconciliation; VPS, scheduler, release, and any additional effect remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

@@ -4157,6 +4157,43 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     external subaccount readiness: dedicated funds must be visible in its
     USDT-M Perpetual Futures wallet before a fresh bounded live attempt.
 
+- `1.x BingX Provider Contract Conformance + Minimal Live Vertical`
+  - Lane: bounded provider-contract and packaged product-evidence pass. It
+    replaces endpoint-by-endpoint payload remediation with one conformance
+    boundary before any Remote Runner or 24/7 activation.
+  - Invariant: no successful BingX envelope becomes an accepted read, order
+    effect, or reconciliation receipt unless the existing exchange adapter can
+    parse its exact bounded shape. A prepared intent is not an executed effect.
+  - Sole owner: `BingxFuturesExchangeService` owns provider wire parsing; the
+    existing exchange execution and managed-order reconciliation lifecycle
+    remains the only effect owner. No second provider adapter, DTO family,
+    order journal, or execution route is permitted.
+  - Captured read evidence: sanitized dedicated-subaccount responses establish
+    v3 balance as a settlement-asset array, contract rules as an array, empty
+    `REALIZED_PNL` as `data: null`, positions as an empty array, and current
+    open trigger orders as `data.orders`. Credentials, signatures, identifiers,
+    and exact account values are excluded from repository evidence.
+  - Golden evidence: one canonical fixture set covers balance, contract rules,
+    realized PnL, positions, open trigger orders, placement, and exact order
+    receipt. Negative mutations cover missing USDT equity, incomplete rules,
+    malformed collection containers or rows, and missing provider order
+    identity. Placement and receipt fixtures remain official-contract evidence
+    until the packaged minimal-live run replaces their provenance with a
+    sanitized real response shape.
+  - Sealed paths: successful `data: null` income misclassified as malformed;
+    malformed positions/open orders downgraded to valid empty state; successful
+    placement or query without provider order identity; legacy
+    `clientOrderID`; and terminal `outcome=response:executed` for a prepared
+    intent.
+  - Exit evidence: focused and full Flutter tests, analyze, Rust workspace,
+    repository gates, clean checkout, protected PR and post-merge gates, then
+    one packaged build placing exactly one mandate-bounded live order. The same
+    order must be identified by provider receipt and reconciled after restart;
+    replay must create no duplicate effect.
+  - Status: active (2026-08-22). Read-shape capture and local implementation are
+    in progress. The Trading Drone is not operational; VPS/24/7 execution,
+    scheduling, release, tag, and any additional live effect remain blocked.
+
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
     the existing Capsule-scoped public change feed when the Moltbook workspace

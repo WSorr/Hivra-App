@@ -76,12 +76,12 @@ void main() {
         'quantity': '0.01',
         'timestamp': '1710000000000',
         'recvWindow': '5000',
-        'clientOrderID': 'ord-1',
+        'clientOrderId': 'ord-1',
         'timeInForce': 'GTC',
       });
       expect(
         canonical,
-        'clientOrderID=ord-1&positionSide=LONG&price=63000&quantity=0.01&recvWindow=5000&side=BUY&symbol=BTC-USDT&timeInForce=GTC&timestamp=1710000000000&type=LIMIT',
+        'clientOrderId=ord-1&positionSide=LONG&price=63000&quantity=0.01&recvWindow=5000&side=BUY&symbol=BTC-USDT&timeInForce=GTC&timestamp=1710000000000&type=LIMIT',
       );
       final signature = service.signParamString(
         canonicalParamString: canonical,
@@ -89,7 +89,7 @@ void main() {
       );
       expect(
         signature,
-        '5aa70449d084c7b3fd3591b46bf2d092de3979c79bc3150bac028219baf44e33',
+        '01a3fe5339adb2826cd38334dfd21046422adbc97cbd0199bd6f03809b7ebb71',
       );
     });
 
@@ -918,7 +918,7 @@ void main() {
         ),
       );
 
-      expect(result.isSuccess, isTrue);
+      expect(result.isSuccess, isFalse);
       expect(result.accountEquityQuoteDecimal, isNull);
     });
 

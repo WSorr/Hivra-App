@@ -61,7 +61,7 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
     final endpointPath = testOrder ? _testOrderPath : _liveOrderPath;
     final timestampMs = _clockMs();
     final params = <String, String>{
-      'clientOrderID': intent.clientOrderId,
+      'clientOrderId': intent.clientOrderId,
       'positionSide': intent.positionSide,
       'quantity': intent.quantityDecimal,
       'recvWindow': recvWindowMs.toString(),
@@ -146,7 +146,8 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
     final isSuccess =
         response.statusCode >= 200 &&
         response.statusCode < 300 &&
-        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok');
+        (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
+        orderId != null;
 
     return BingxFuturesOrderExecutionResult(
       isSuccess: isSuccess,
@@ -290,12 +291,12 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       params: params,
     );
     final decoded = _tryDecodeMap(response.body);
-    final orders = _extractOpenOrders(
+    final parsedOrders = _extractOpenOrders(
       decoded: decoded,
       fallbackSymbol: normalizedSymbol ?? '',
     );
     return BingxFuturesOpenOrdersResult(
-      isSuccess: response.isSuccess,
+      isSuccess: response.isSuccess && parsedOrders.shapeValid,
       httpStatusCode: response.httpStatusCode,
       exchangeCode: response.exchangeCode,
       exchangeMessage: response.exchangeMessage,
@@ -303,7 +304,7 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       signedPayloadHashHex: response.signedPayloadHashHex,
       responseBody: response.body,
       symbol: normalizedSymbol ?? 'ALL',
-      orders: orders,
+      orders: parsedOrders.orders,
     );
   }
 
@@ -334,8 +335,9 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       params: params,
     );
     final decoded = _tryDecodeMap(response.body);
+    final order = _extractOrder(decoded, fallbackSymbol: normalizedSymbol);
     return BingxFuturesOrderQueryResult(
-      isSuccess: response.isSuccess,
+      isSuccess: response.isSuccess && order != null,
       httpStatusCode: response.httpStatusCode,
       exchangeCode: response.exchangeCode,
       exchangeMessage: response.exchangeMessage,
@@ -346,7 +348,7 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       requestedOrderId: normalizedOrderId.isEmpty ? null : normalizedOrderId,
       requestedClientOrderId:
           normalizedClientOrderId.isEmpty ? null : normalizedClientOrderId,
-      order: _extractOrder(decoded, fallbackSymbol: normalizedSymbol),
+      order: order,
     );
   }
 
@@ -918,7 +920,7 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       'realised_profit',
     ]);
     return BingxFuturesUserBalanceResult(
-      isSuccess: response.isSuccess,
+      isSuccess: response.isSuccess && row != null && _isFiniteDecimal(equity),
       httpStatusCode: response.httpStatusCode,
       exchangeCode: response.exchangeCode,
       exchangeMessage: response.exchangeMessage,
@@ -950,16 +952,16 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       params: params,
     );
     final decoded = _tryDecodeMap(response.body);
-    final positions = _extractUserPositions(decoded);
+    final parsedPositions = _extractUserPositions(decoded);
     return BingxFuturesUserPositionsResult(
-      isSuccess: response.isSuccess,
+      isSuccess: response.isSuccess && parsedPositions.shapeValid,
       httpStatusCode: response.httpStatusCode,
       exchangeCode: response.exchangeCode,
       exchangeMessage: response.exchangeMessage,
       endpointPath: _userPositionsPath,
       signedPayloadHashHex: response.signedPayloadHashHex,
       responseBody: response.body,
-      positions: positions,
+      positions: parsedPositions.positions,
     );
   }
 
@@ -1082,7 +1084,8 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
         response.statusCode >= 200 &&
         response.statusCode < 300 &&
         (exchangeCode == '0' || exchangeCode == 'OK' || exchangeCode == 'ok') &&
-        rules != null;
+        rules != null &&
+        _contractRulesAreComplete(rules);
     return BingxFuturesContractRulesResult(
       isSuccess: isSuccess,
       httpStatusCode: response.statusCode,
@@ -1333,39 +1336,51 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
   static String? _extractOrderId(Map<String, dynamic>? decoded) {
     if (decoded == null) return null;
     final data = decoded['data'];
-    if (data is Map<String, dynamic>) {
-      final direct = data['orderId']?.toString();
-      if (direct != null && direct.isNotEmpty) return direct;
-      final order = data['order'];
-      if (order is Map<String, dynamic>) {
-        final nested = order['orderId']?.toString();
-        if (nested != null && nested.isNotEmpty) return nested;
+    if (data is Map) {
+      final map = Map<String, dynamic>.from(data);
+      final direct = _readTrimmedAny(map, const <String>['orderID', 'orderId']);
+      if (direct != null) return direct;
+      final order = map['order'];
+      if (order is Map) {
+        return _readTrimmedAny(Map<String, dynamic>.from(order), const <String>[
+          'orderID',
+          'orderId',
+        ]);
       }
     }
     return null;
   }
 
-  static List<BingxFuturesOpenOrder> _extractOpenOrders({
+  static ({bool shapeValid, List<BingxFuturesOpenOrder> orders})
+  _extractOpenOrders({
     required Map<String, dynamic>? decoded,
     required String fallbackSymbol,
   }) {
-    if (decoded == null) return const <BingxFuturesOpenOrder>[];
+    if (decoded == null) {
+      return (shapeValid: false, orders: const <BingxFuturesOpenOrder>[]);
+    }
     final data = decoded['data'];
     final rawList = <dynamic>[];
+    var shapeValid = false;
     if (data is List) {
       rawList.addAll(data);
-    } else if (data is Map<String, dynamic>) {
-      final orders = data['orders'];
+      shapeValid = true;
+    } else if (data is Map) {
+      final map = Map<String, dynamic>.from(data);
+      final orders = map['orders'];
       if (orders is List) {
         rawList.addAll(orders);
+        shapeValid = true;
       } else {
-        final rows = data['rows'];
+        final rows = map['rows'];
         if (rows is List) {
           rawList.addAll(rows);
+          shapeValid = true;
         } else {
-          final list = data['list'];
+          final list = map['list'];
           if (list is List) {
             rawList.addAll(list);
+            shapeValid = true;
           }
         }
       }
@@ -1373,19 +1388,29 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
 
     final parsed = <BingxFuturesOpenOrder>[];
     for (final raw in rawList) {
-      if (raw is! Map) continue;
+      if (raw is! Map) {
+        shapeValid = false;
+        continue;
+      }
       final order = _parseOpenOrder(
         Map<String, dynamic>.from(raw),
         fallbackSymbol: fallbackSymbol,
       );
-      if (order != null) parsed.add(order);
+      if (order == null) {
+        shapeValid = false;
+        continue;
+      }
+      parsed.add(order);
     }
     parsed.sort((a, b) {
       final ta = a.createdAtMs ?? 0;
       final tb = b.createdAtMs ?? 0;
       return tb.compareTo(ta);
     });
-    return List<BingxFuturesOpenOrder>.unmodifiable(parsed);
+    return (
+      shapeValid: shapeValid && parsed.length == rawList.length,
+      orders: List<BingxFuturesOpenOrder>.unmodifiable(parsed),
+    );
   }
 
   static BingxFuturesOpenOrder? _extractOrder(
@@ -1843,14 +1868,17 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
     return List<BingxFuturesForceOrder>.unmodifiable(parsed);
   }
 
-  static List<BingxFuturesUserPosition> _extractUserPositions(
-    Map<String, dynamic>? decoded,
-  ) {
-    if (decoded == null) return const <BingxFuturesUserPosition>[];
+  static ({bool shapeValid, List<BingxFuturesUserPosition> positions})
+  _extractUserPositions(Map<String, dynamic>? decoded) {
+    if (decoded == null) {
+      return (shapeValid: false, positions: const <BingxFuturesUserPosition>[]);
+    }
     final data = decoded['data'];
     final rows = <dynamic>[];
+    var shapeValid = false;
     if (data is List) {
       rows.addAll(data);
+      shapeValid = true;
     } else if (data is Map) {
       final candidates = <dynamic>[
         data['positions'],
@@ -1860,26 +1888,33 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       for (final candidate in candidates) {
         if (candidate is List) {
           rows.addAll(candidate);
+          shapeValid = true;
           break;
         }
       }
-      if (rows.isEmpty) rows.add(data);
     }
     final parsed = <BingxFuturesUserPosition>[];
     for (final row in rows) {
-      if (row is! Map) continue;
+      if (row is! Map) {
+        shapeValid = false;
+        continue;
+      }
       final map = Map<String, dynamic>.from(row);
       final symbol = _readStringField(map, const <String>['symbol', 'pair']);
-      if (symbol == null) continue;
+      final quantity = _readStringField(map, const <String>[
+        'positionAmt',
+        'positionAmount',
+        'quantity',
+        'size',
+      ]);
+      if (symbol == null || !_isFiniteDecimal(quantity)) {
+        shapeValid = false;
+        continue;
+      }
       parsed.add(
         BingxFuturesUserPosition(
           symbol: _tryNormalizeSymbol(symbol) ?? symbol.toUpperCase(),
-          quantityDecimal: _readStringField(map, const <String>[
-            'positionAmt',
-            'positionAmount',
-            'quantity',
-            'size',
-          ]),
+          quantityDecimal: quantity,
           unrealizedPnlDecimal: _readStringField(map, const <String>[
             'unRealizedProfit',
             'unrealizedPnl',
@@ -1892,11 +1927,17 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
         ),
       );
     }
-    return List<BingxFuturesUserPosition>.unmodifiable(parsed);
+    return (
+      shapeValid: shapeValid && parsed.length == rows.length,
+      positions: List<BingxFuturesUserPosition>.unmodifiable(parsed),
+    );
   }
 
   static List<dynamic>? _extractIncomeRows(Map<String, dynamic>? decoded) {
     final data = decoded?['data'];
+    if (decoded != null && decoded.containsKey('data') && data == null) {
+      return const <dynamic>[];
+    }
     if (data is List) return data;
     if (data is Map && data['list'] is List) {
       return data['list'] as List;
@@ -2153,6 +2194,29 @@ class BingxFuturesExchangeService implements BingxFuturesPublicMarketDataPort {
       return null;
     }
     return normalized;
+  }
+
+  static bool _isFiniteDecimal(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return false;
+    final value = num.tryParse(raw.trim());
+    return value != null && value.isFinite;
+  }
+
+  static bool _contractRulesAreComplete(BingxFuturesContractRules rules) {
+    final minimumQuantity = num.tryParse(rules.minimumQuantityDecimal ?? '');
+    final minimumNotional = num.tryParse(
+      rules.minimumNotionalQuoteDecimal ?? '',
+    );
+    return minimumQuantity != null &&
+        minimumQuantity.isFinite &&
+        minimumQuantity > 0 &&
+        minimumNotional != null &&
+        minimumNotional.isFinite &&
+        minimumNotional > 0 &&
+        rules.quantityPrecision != null &&
+        rules.quantityPrecision! >= 0 &&
+        rules.pricePrecision != null &&
+        rules.pricePrecision! >= 0;
   }
 
   static int _defaultClockMs() => DateTime.now().millisecondsSinceEpoch;

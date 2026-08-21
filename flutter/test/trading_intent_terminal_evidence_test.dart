@@ -2,6 +2,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
 void main() {
+  test('prepared intent outcome does not claim provider execution', () async {
+    final events = <String>[];
+
+    final outcome = await runTradingIntentWithTerminalEvidence(
+      pipeline: () async => preparedTradingIntentTerminalOutcome,
+      log: (source, message) async => events.add('$source $message'),
+    );
+
+    expect(outcome, 'intent:prepared');
+    expect(outcome, isNot(contains('executed')));
+    expect(
+      events.singleWhere((event) => event.startsWith('bingx.intent.finally ')),
+      contains('outcome=intent:prepared'),
+    );
+  });
+
   test('early guard records one terminal outcome in finally', () async {
     final events = <String>[];
 
