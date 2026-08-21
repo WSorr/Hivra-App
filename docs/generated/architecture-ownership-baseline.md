@@ -328,7 +328,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart` line `22` (`BingxFuturesExchangeExecutionUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_risk_input_service.dart` line `65` (`BingxFuturesExchangeRiskInputService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_service.dart` line `13` (`BingxFuturesExchangeService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_service.dart` line `2183` (`BingxFuturesExternalEffectAdapter`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_exchange_service.dart` line `2194` (`BingxFuturesExternalEffectAdapter`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_execution_command_service.dart` line `38` (`BingxExecutionCommandReplayStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_execution_command_service.dart` line `43` (`InMemoryBingxExecutionCommandReplayStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_execution_command_service.dart` line `56` (`BingxFuturesExecutionCommandService`) — rule `current_flutter_service_support`
@@ -482,7 +482,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 - `4826` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3329` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
-- `2350` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
+- `2361` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
 - `1929` lines — `flutter/lib/screens/wasm_plugins_screen.dart`
 - `1905` lines — `flutter/lib/services/plugin_runtime_module_service.dart`

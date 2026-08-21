@@ -350,7 +350,7 @@ void main() {
       expect(requests.map((request) => request.method), everyElement('GET'));
       expect(requests.map((request) => request.body), everyElement(isEmpty));
       expect(requests.map((request) => request.uri.path), <String>[
-        '/openApi/swap/v2/user/balance',
+        '/openApi/swap/v3/user/balance',
         '/openApi/swap/v2/user/positions',
         '/openApi/swap/v2/trade/openOrders',
       ]);

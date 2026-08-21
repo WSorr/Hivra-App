@@ -879,7 +879,7 @@ void main() {
           return const BingxHttpResponse(
             statusCode: 200,
             body:
-                '{"code":0,"msg":"ok","data":{"balance":{"asset":"USDT","equity":"1000.5","realisedProfit":"-5.25"}}}',
+                '{"code":0,"msg":"ok","data":[{"asset":"USDC","equity":"42"},{"asset":"USDT","equity":"1000.5","realisedProfit":"-5.25"}]}',
           );
         },
       );
@@ -892,12 +892,34 @@ void main() {
       );
 
       expect(capturedRequest.method, 'GET');
-      expect(capturedRequest.uri.path, '/openApi/swap/v2/user/balance');
+      expect(capturedRequest.uri.path, '/openApi/swap/v3/user/balance');
       expect(capturedRequest.uri.query, contains('signature='));
       expect(capturedRequest.headers['X-BX-APIKEY'], 'api-key');
       expect(result.isSuccess, isTrue);
       expect(result.accountEquityQuoteDecimal, '1000.5');
       expect(result.realizedPnlQuoteDecimal, '-5.25');
+    });
+
+    test('does not treat a non-USDT v3 balance row as account equity', () async {
+      final service = BingxFuturesExchangeService(
+        clockMs: () => 1710000000000,
+        requestSender:
+            (request) async => const BingxHttpResponse(
+              statusCode: 200,
+              body:
+                  '{"code":0,"msg":"ok","data":[{"asset":"USDC","equity":"42"}]}',
+            ),
+      );
+
+      final result = await service.getUserBalance(
+        credentials: const BingxFuturesApiCredentials(
+          apiKey: 'api-key',
+          apiSecret: 'api-secret',
+        ),
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.accountEquityQuoteDecimal, isNull);
     });
 
     test('reads user positions via signed endpoint', () async {
