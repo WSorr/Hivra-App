@@ -91,9 +91,10 @@ class BingxFuturesExchangeRiskInputService {
     final riskHistory = await riskHistoryFuture;
 
     final parsedEquity = _parseFinite(balance.accountEquityQuoteDecimal);
+    final hasPositiveEquity = parsedEquity != null && parsedEquity > 0;
     final concurrentPositions = _countConcurrentPositions(positions.positions);
 
-    final usedBalanceFallback = !balance.isSuccess || parsedEquity == null;
+    final usedBalanceFallback = !balance.isSuccess || !hasPositiveEquity;
     final usedPnlFallback = !riskHistory.isComplete;
     final usedPositionsFallback = !positions.isSuccess;
 
@@ -110,9 +111,18 @@ class BingxFuturesExchangeRiskInputService {
       usedBalanceFallback: usedBalanceFallback,
       usedPnlFallback: usedPnlFallback,
       usedPositionsFallback: usedPositionsFallback,
-      balanceUnavailableCode: usedBalanceFallback ? balance.exchangeCode : null,
+      balanceUnavailableCode:
+          usedBalanceFallback
+              ? balance.isSuccess && !hasPositiveEquity
+                  ? 'account_equity_non_positive'
+                  : balance.exchangeCode
+              : null,
       balanceUnavailableMessage:
-          usedBalanceFallback ? balance.exchangeMessage : null,
+          usedBalanceFallback
+              ? balance.isSuccess && !hasPositiveEquity
+                  ? 'BingX account equity must be positive'
+                  : balance.exchangeMessage
+              : null,
       positionsUnavailableCode:
           usedPositionsFallback ? positions.exchangeCode : null,
       positionsUnavailableMessage:
