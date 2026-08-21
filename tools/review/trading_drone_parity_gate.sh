@@ -19,6 +19,12 @@ RUNNER_SUPERVISOR="$ROOT/tools/trading/hivra-trading-public-shadow-runner.servic
 CI_REPOSITORY_GATES="$ROOT/.github/workflows/release-gates.yml"
 EXECUTION_USE_CASE="$ROOT/flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart"
 TRADING_CYCLE="$ROOT/flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart"
+TVH_RULE_ENGINE="$ROOT/flutter/lib/services/bingx_futures_tvh_rule_engine_service.dart"
+LIVE_DECISION="$ROOT/flutter/lib/services/bingx_futures_live_decision_service.dart"
+ZONE_DECISION="$ROOT/flutter/lib/services/bingx_futures_zone_decision_service.dart"
+TVH_RULE_TEST="$ROOT/flutter/test/bingx_futures_tvh_rule_engine_service_test.dart"
+ZONE_DECISION_TEST="$ROOT/flutter/test/bingx_futures_zone_decision_service_test.dart"
+TRADING_CYCLE_TEST="$ROOT/flutter/test/bingx_futures_trading_cycle_use_case_service_test.dart"
 TRADING_MODULE="$ROOT/flutter/lib/services/trading_drone_module_service.dart"
 TRADING_MODELS="$ROOT/flutter/lib/models/bingx_futures_order_tracking_models.dart"
 TRADING_SCREEN="$ROOT/flutter/lib/screens/trading_drone_screen.dart"
@@ -91,6 +97,21 @@ local_session_stream_is_wired() {
     rg -q 'publicSessionStream\.snapshotFor\(symbol\)' "$1" &&
     rg -q 'publicSessionStream\.ensureConnected\(normalized\)' "$2" &&
     rg -q 'publicSessionStream\.disconnect\(\)' "$2"
+}
+
+liquidity_sequence_is_canonical() {
+  rg -q 'final longReady = longTradeOk;' "$1" &&
+    rg -q 'final shortReady = shortTradeOk;' "$1" &&
+    ! rg -q 'minAbsSessionImbalanceRatio|requireWhaleActivation' "$1" &&
+    rg -q "'liquidation_proxy'" "$2" &&
+    rg -q '_applyLiquidationConfluence' "$3" &&
+    rg -q 'level\.weight \+ bonus' "$3" &&
+    ! rg -q 'anchorSource = "liquidation_proxy"' "$3" &&
+    rg -q "code: 'market_volume_activation_unavailable'" "$4" &&
+    rg -q 'volume activation does not require trend or whale alignment' "$5" &&
+    rg -q 'incomplete session evidence remains context, not authority' "$5" &&
+    rg -q 'liquidation proxy ranks fresh structure without becoming anchor' "$6" &&
+    rg -q 'projects the exact market blocker without preparing an effect' "$7"
 }
 
 runner_artifact_is_verifiable() {
@@ -700,6 +721,14 @@ else
   fail "public session stream lost bounded fail-closed coverage semantics"
 fi
 
+if liquidity_sequence_is_canonical \
+  "$TVH_RULE_ENGINE" "$LIVE_DECISION" "$ZONE_DECISION" "$TRADING_CYCLE" \
+  "$TVH_RULE_TEST" "$ZONE_DECISION_TEST" "$TRADING_CYCLE_TEST"; then
+  pass "liquidity sequence keeps volume authority, structural anchors, proxy ranking, and exact blockers"
+else
+  fail "liquidity sequence drifted into indicator conjunction, proxy authority, or generic blockers"
+fi
+
 if runner_artifact_is_verifiable "$RUNNER_ARTIFACT" &&
   runner_package_is_pinned "$RUNNER_PACKAGE" "$RUNNER_PACKAGE_LOCK" &&
   "$RUNNER_ARTIFACT" --self-test >/dev/null; then
@@ -840,7 +869,9 @@ ACCOUNT_READ_JOURNAL_MUTATION="$(mktemp)"
 ACCOUNT_READ_ELIGIBILITY_MUTATION="$(mktemp)"
 PUBLIC_SESSION_GAP_MUTATION="$(mktemp)"
 LOCAL_SESSION_WIRING_MUTATION="$(mktemp)"
-trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION"' EXIT
+LIQUIDITY_AUTHORITY_MUTATION="$(mktemp)"
+LIQUIDATION_ANCHOR_MUTATION="$(mktemp)"
+trap 'rm -f "$PUBLIC_MUTATION" "$PROBE_MUTATION" "$STREAM_MUTATION" "$CHECKPOINT_MUTATION" "$SCHEDULER_MUTATION" "$ARTIFACT_MUTATION" "$RUNTIME_SMOKE_MUTATION" "$CI_CLEAN_MUTATION" "$EXECUTION_MUTATION" "$CYCLE_MUTATION" "$SUPERVISOR_RESTART_MUTATION" "$SUPERVISOR_MEMORY_MUTATION" "$SUPERVISOR_CREDENTIAL_MUTATION" "$SUPERVISOR_LISTENER_MUTATION" "$BUNDLE_UNIT_MUTATION" "$BUNDLE_ENABLE_MUTATION" "$BUNDLE_COLLISION_MUTATION" "$BUNDLE_CLEANUP_MUTATION" "$BUNDLE_TRAP_SCOPE_MUTATION" "$BUNDLE_RESTART_MUTATION" "$PROBE_IDENTITY_MUTATION" "$BUNDLE_IDENTITY_MUTATION" "$BUNDLE_FOREIGN_STATE_MUTATION" "$BUNDLE_EARLY_ANCHOR_MUTATION" "$ACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_ROLLBACK_MUTATION" "$INITIALIZATION_ENABLE_MUTATION" "$DEACTIVATION_IDENTITY_MUTATION" "$ACTIVATION_STALE_LOG_MUTATION" "$ANCHOR_OVERWRITE_MUTATION" "$ANCHOR_KEY_MUTATION" "$ANCHOR_VERIFIER_MUTATION" "$ANCHOR_CONTINUITY_MUTATION" "$MANDATE_RUNNER_BINDING_MUTATION" "$MANDATE_SCOPE_MUTATION" "$EXCHANGE_ACCOUNT_BINDING_MUTATION" "$EXCHANGE_RUNNER_ACCESS_MUTATION" "$EXCHANGE_ROLLBACK_MUTATION" "$EXCHANGE_VISIBLE_KEY_MUTATION" "$ACCOUNT_READ_TRANSIENT_MUTATION" "$ACCOUNT_READ_EFFECT_MUTATION" "$ACCOUNT_READ_RAW_OUTPUT_MUTATION" "$ACCOUNT_READ_JOURNAL_MUTATION" "$ACCOUNT_READ_ELIGIBILITY_MUTATION" "$PUBLIC_SESSION_GAP_MUTATION" "$LOCAL_SESSION_WIRING_MUTATION" "$LIQUIDITY_AUTHORITY_MUTATION" "$LIQUIDATION_ANCHOR_MUTATION"' EXIT
 cp "$PUBLIC_SNAPSHOT" "$PUBLIC_MUTATION"
 cp "$SHADOW_PROBE" "$PROBE_MUTATION"
 printf '\nBingxFuturesApiCredentials\n' >> "$PUBLIC_MUTATION"
@@ -941,12 +972,18 @@ sed 's/accumulator\.markDisconnected();/accumulator.acceptHeartbeat();/' \
   "$PUBLIC_SESSION_STREAM" > "$PUBLIC_SESSION_GAP_MUTATION"
 sed 's/publicSessionStream\.snapshotFor(symbol)/null/' \
   "$TRADING_MODULE" > "$LOCAL_SESSION_WIRING_MUTATION"
+sed 's/final longReady = longTradeOk;/final longReady = longTradeOk \&\& longSessionAligned;/' \
+  "$TVH_RULE_ENGINE" > "$LIQUIDITY_AUTHORITY_MUTATION"
+sed 's/anchorSource = externalBuyRetest\.source;/anchorSource = "liquidation_proxy";/' \
+  "$ZONE_DECISION" > "$LIQUIDATION_ANCHOR_MUTATION"
 if public_pipeline_has_authority "$PUBLIC_MUTATION" && \
   shadow_probe_has_authority "$PROBE_MUTATION" && \
   ! shadow_probe_exposes_runner_identity "$PROBE_IDENTITY_MUTATION" && \
   ! shadow_probe_is_bounded_scheduler "$SCHEDULER_MUTATION" && \
   ! public_session_stream_is_fail_closed "$PUBLIC_SESSION_ACCUMULATOR" "$PUBLIC_SESSION_GAP_MUTATION" "$PUBLIC_SESSION_TEST" && \
   ! local_session_stream_is_wired "$LOCAL_SESSION_WIRING_MUTATION" "$TRADING_SCREEN" && \
+  ! liquidity_sequence_is_canonical "$LIQUIDITY_AUTHORITY_MUTATION" "$LIVE_DECISION" "$ZONE_DECISION" "$TRADING_CYCLE" "$TVH_RULE_TEST" "$ZONE_DECISION_TEST" "$TRADING_CYCLE_TEST" && \
+  ! liquidity_sequence_is_canonical "$TVH_RULE_ENGINE" "$LIVE_DECISION" "$LIQUIDATION_ANCHOR_MUTATION" "$TRADING_CYCLE" "$TVH_RULE_TEST" "$ZONE_DECISION_TEST" "$TRADING_CYCLE_TEST" && \
   ! runner_artifact_is_verifiable "$ARTIFACT_MUTATION" && \
   ! runner_linux_smoke_is_fail_closed "$RUNTIME_SMOKE_MUTATION" "$CI_REPOSITORY_GATES" && \
   ! runner_linux_smoke_is_fail_closed "$RUNNER_ARTIFACT" "$CI_CLEAN_MUTATION" && \

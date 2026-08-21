@@ -88,44 +88,32 @@ class BingxFuturesTvhRuleEngineService {
       );
     }
 
-    final longTradeOk =
-        tradeImbalanceRatio >= policy.minAbsTradeImbalanceRatio;
-    final longSessionOk = features.sessionEvidenceComplete &&
-        sessionImbalanceRatio >= policy.minAbsSessionImbalanceRatio;
-    final longWhaleOk =
-        !policy.requireWhaleActivation || features.hasBuyWhaleActivation;
+    final longTradeOk = tradeImbalanceRatio >= policy.minAbsTradeImbalanceRatio;
     final shortTradeOk =
         tradeImbalanceRatio <= -policy.minAbsTradeImbalanceRatio;
-    final shortSessionOk = features.sessionEvidenceComplete &&
-        sessionImbalanceRatio <= -policy.minAbsSessionImbalanceRatio;
-    final shortWhaleOk =
-        !policy.requireWhaleActivation || features.hasSellWhaleActivation;
+    final longSessionAligned =
+        features.sessionEvidenceComplete && sessionImbalanceRatio > 0;
+    final shortSessionAligned =
+        features.sessionEvidenceComplete && sessionImbalanceRatio < 0;
 
-    final longReady =
-        features.trendDirection == BingxTrendDirection.bullish &&
-        longTradeOk &&
-        longSessionOk &&
-        longWhaleOk;
-    final shortReady =
-        features.trendDirection == BingxTrendDirection.bearish &&
-        shortTradeOk &&
-        shortSessionOk &&
-        shortWhaleOk;
+    final longReady = longTradeOk;
+    final shortReady = shortTradeOk;
 
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'trend',
-        passed: features.trendDirection != BingxTrendDirection.neutral,
+        code: 'trend_context',
+        passed: true,
         detail: features.trendDirection.name,
       ),
     );
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'session_evidence',
-        passed: features.sessionEvidenceComplete,
-        detail: features.sessionEvidenceComplete
-            ? 'coverage=complete'
-            : 'coverage=incomplete',
+        code: 'session_context',
+        passed: true,
+        detail:
+            features.sessionEvidenceComplete
+                ? 'coverage=complete'
+                : 'coverage=incomplete',
       ),
     );
     reasons.add(
@@ -138,17 +126,18 @@ class BingxFuturesTvhRuleEngineService {
     );
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'long_session_imbalance',
-        passed: longSessionOk,
+        code: 'long_session_context',
+        passed: true,
         detail:
-            'value=${features.sessionImbalanceRatioDecimal} threshold=${_fmt(policy.minAbsSessionImbalanceRatio)}',
+            'aligned=$longSessionAligned '
+            'value=${features.sessionImbalanceRatioDecimal}',
       ),
     );
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'long_whale_activation',
-        passed: longWhaleOk,
-        detail: 'required=${policy.requireWhaleActivation}',
+        code: 'long_whale_context',
+        passed: true,
+        detail: 'observed=${features.hasBuyWhaleActivation}',
       ),
     );
     reasons.add(
@@ -161,17 +150,18 @@ class BingxFuturesTvhRuleEngineService {
     );
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'short_session_imbalance',
-        passed: shortSessionOk,
+        code: 'short_session_context',
+        passed: true,
         detail:
-            'value=${features.sessionImbalanceRatioDecimal} threshold=-${_fmt(policy.minAbsSessionImbalanceRatio)}',
+            'aligned=$shortSessionAligned '
+            'value=${features.sessionImbalanceRatioDecimal}',
       ),
     );
     reasons.add(
       BingxTvhDecisionReason(
-        code: 'short_whale_activation',
-        passed: shortWhaleOk,
-        detail: 'required=${policy.requireWhaleActivation}',
+        code: 'short_whale_context',
+        passed: true,
+        detail: 'observed=${features.hasSellWhaleActivation}',
       ),
     );
 

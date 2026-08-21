@@ -1,9 +1,4 @@
-enum BingxTvhDecisionKind {
-  long,
-  short,
-  noSignal,
-  blocked,
-}
+enum BingxTvhDecisionKind { long, short, noSignal, blocked }
 
 class BingxTvhDecisionReason {
   final String code;
@@ -19,16 +14,12 @@ class BingxTvhDecisionReason {
 
 class BingxTvhPolicy {
   final double minAbsTradeImbalanceRatio;
-  final double minAbsSessionImbalanceRatio;
   final double maxAbsFundingRate;
-  final bool requireWhaleActivation;
   final bool requireConsensusSignable;
 
   const BingxTvhPolicy({
     this.minAbsTradeImbalanceRatio = 0.01,
-    this.minAbsSessionImbalanceRatio = 0.01,
     this.maxAbsFundingRate = 0.01,
-    this.requireWhaleActivation = true,
     this.requireConsensusSignable = false,
   });
 }

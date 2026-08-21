@@ -124,7 +124,6 @@ void main() {
       final input = BingxFuturesLiveDecisionInput(
         snapshotInput: _buildShortInput(permuted: false),
         isConsensusSignable: true,
-        policy: const BingxTvhPolicy(requireWhaleActivation: false),
       );
 
       final first = service.decide(input);

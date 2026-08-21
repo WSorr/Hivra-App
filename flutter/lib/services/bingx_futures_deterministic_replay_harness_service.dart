@@ -243,9 +243,7 @@ class BingxFuturesDeterministicReplayHarnessService {
       fundingRateDecimal: fundingRateDecimal,
       policy: BingxTvhPolicy(
         minAbsTradeImbalanceRatio: _policy.minAbsTradeImbalanceRatio,
-        minAbsSessionImbalanceRatio: _policy.minAbsSessionImbalanceRatio,
         maxAbsFundingRate: _policy.maxAbsFundingRate,
-        requireWhaleActivation: _policy.requireWhaleActivation,
       ),
     );
     return BingxFuturesReplayRunResult(
@@ -278,10 +276,7 @@ class BingxFuturesDeterministicReplayHarnessService {
   String publicStrategyPolicyHashHex() {
     final canonical = jsonEncode(<String, dynamic>{
       'min_abs_trade_imbalance_ratio': _policy.minAbsTradeImbalanceRatio,
-      'min_abs_session_imbalance_ratio':
-          _policy.minAbsSessionImbalanceRatio,
       'max_abs_funding_rate': _policy.maxAbsFundingRate,
-      'require_whale_activation': _policy.requireWhaleActivation,
     });
     return sha256.convert(utf8.encode(canonical)).toString();
   }

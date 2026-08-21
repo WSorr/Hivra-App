@@ -454,7 +454,10 @@ class BingxFuturesZoneDecisionService {
       ),
     ];
     final externalSellRetest = _selectRetestLevelAbove(
-      externalHighCandidates,
+      _applyLiquidationConfluence(
+        externalHighCandidates,
+        input.liquidationSellLevels,
+      ),
       mid,
       minDistancePct: 0.008,
       targetDistancePct: targetRetestDistancePct,
@@ -462,7 +465,10 @@ class BingxFuturesZoneDecisionService {
       preferFarther: needsFartherRetest,
     );
     final externalBuyRetest = _selectRetestLevelBelow(
-      externalLowCandidates,
+      _applyLiquidationConfluence(
+        externalLowCandidates,
+        input.liquidationBuyLevels,
+      ),
       mid,
       minDistancePct: 0.008,
       targetDistancePct: targetRetestDistancePct,
@@ -939,6 +945,38 @@ class BingxFuturesZoneDecisionService {
       }
     }
     return best;
+  }
+
+  List<_ExternalLevelPoint> _applyLiquidationConfluence(
+    List<_ExternalLevelPoint> levels,
+    List<num> liquidationLevels,
+  ) {
+    final canonicalLiquidationLevels =
+        liquidationLevels.where((value) => value > 0).toList()..sort();
+    if (canonicalLiquidationLevels.isEmpty) return levels;
+    return levels
+        .map((level) {
+          final nearestBps = canonicalLiquidationLevels
+              .map(
+                (value) => ((value - level.price).abs() / level.price) * 10000,
+              )
+              .reduce((left, right) => left < right ? left : right);
+          final bonus =
+              nearestBps <= 20
+                  ? 0.45
+                  : nearestBps <= 50
+                  ? 0.25
+                  : nearestBps <= 100
+                  ? 0.10
+                  : 0.0;
+          return _ExternalLevelPoint(
+            price: level.price,
+            weight: level.weight + bonus,
+            source: level.source,
+            eventAtUtc: level.eventAtUtc,
+          );
+        })
+        .toList(growable: false);
   }
 
   _ExternalRetestLevel? _selectRetestLevelBelow(

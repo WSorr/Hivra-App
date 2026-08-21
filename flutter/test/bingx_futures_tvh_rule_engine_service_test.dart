@@ -8,9 +8,7 @@ void main() {
     const service = BingxFuturesTvhRuleEngineService();
     const policy = BingxTvhPolicy(
       minAbsTradeImbalanceRatio: 0.5,
-      minAbsSessionImbalanceRatio: 0.01,
       maxAbsFundingRate: 0.01,
-      requireWhaleActivation: true,
       requireConsensusSignable: true,
     );
 
@@ -131,7 +129,7 @@ void main() {
       );
     });
 
-    test('incomplete session evidence cannot authorize a signal', () {
+    test('incomplete session evidence remains context, not authority', () {
       final result = service.evaluateMarket(
         features: _feature(
           trend: BingxTrendDirection.bullish,
@@ -145,15 +143,34 @@ void main() {
         policy: policy,
       );
 
-      expect(result.decision, BingxTvhDecisionKind.noSignal);
+      expect(result.decision, BingxTvhDecisionKind.long);
       expect(
-        result.reasons.singleWhere((reason) => reason.code == 'session_evidence'),
+        result.reasons.singleWhere(
+          (reason) => reason.code == 'session_context',
+        ),
         isA<BingxTvhDecisionReason>().having(
           (reason) => reason.passed,
           'passed',
-          isFalse,
+          isTrue,
         ),
       );
+    });
+
+    test('volume activation does not require trend or whale alignment', () {
+      final result = service.evaluateMarket(
+        features: _feature(
+          trend: BingxTrendDirection.neutral,
+          tradeDeltaDecimal: '-1.50',
+          sessionNetDeltaDecimal: '3.20',
+          sessionEvidenceComplete: false,
+          hasBuyWhaleActivation: false,
+          hasSellWhaleActivation: false,
+        ),
+        fundingRateDecimal: '0.0008',
+        policy: policy,
+      );
+
+      expect(result.decision, BingxTvhDecisionKind.short);
     });
 
     test('is hash-stable for identical inputs', () {

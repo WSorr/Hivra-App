@@ -61,6 +61,49 @@ void main() {
       expect(executionCalls, 0);
     });
 
+    test(
+      'projects the exact market blocker without preparing an effect',
+      () async {
+        var intentCalls = 0;
+        var executionCalls = 0;
+        final service = _service(
+          decision: _decision(
+            canPrepareIntent: false,
+            decision: BingxTvhDecisionKind.noSignal,
+            side: null,
+            reasons: const <BingxTvhDecisionReason>[
+              BingxTvhDecisionReason(
+                code: 'long_trade_imbalance',
+                passed: false,
+                detail: 'below_threshold',
+              ),
+              BingxTvhDecisionReason(
+                code: 'short_trade_imbalance',
+                passed: false,
+                detail: 'above_threshold',
+              ),
+            ],
+          ),
+          intentRunner: (command) async {
+            intentCalls += 1;
+            return _intentResult(command);
+          },
+          executionRunner: _executionRunner(onCall: () => executionCalls += 1),
+        );
+
+        final result = await service.run(_command(executeEffect: true));
+
+        expect(result.status, BingxFuturesTradingCycleStatus.marketBlocked);
+        expect(result.reasonCode, 'market_volume_activation_unavailable');
+        expect(
+          result.reasonMessage,
+          'Recent aggressive volume has not activated either side.',
+        );
+        expect(intentCalls, 0);
+        expect(executionCalls, 0);
+      },
+    );
+
     test('rejects sizing failure before intent or effect', () async {
       var intentCalls = 0;
       var executionCalls = 0;
@@ -268,11 +311,17 @@ BingxFuturesLiveStrategyResult _liveResult(
   );
 }
 
-BingxFuturesLiveDecisionResult _decision({String? eventId = _eventId}) {
+BingxFuturesLiveDecisionResult _decision({
+  String? eventId = _eventId,
+  bool canPrepareIntent = true,
+  BingxTvhDecisionKind decision = BingxTvhDecisionKind.long,
+  String? side = 'buy',
+  List<BingxTvhDecisionReason> reasons = const <BingxTvhDecisionReason>[],
+}) {
   return BingxFuturesLiveDecisionResult(
-    canPrepareIntent: true,
-    decision: BingxTvhDecisionKind.long,
-    side: 'buy',
+    canPrepareIntent: canPrepareIntent,
+    decision: decision,
+    side: side,
     zoneSide: 'buyside',
     zoneLowDecimal: '90',
     zoneHighDecimal: '110',
@@ -282,7 +331,7 @@ BingxFuturesLiveDecisionResult _decision({String? eventId = _eventId}) {
     tvhDecisionHashHex: _hash3,
     liveDecisionHashHex: _hash4,
     canonicalJson: '{}',
-    reasons: const <BingxTvhDecisionReason>[],
+    reasons: reasons,
     trend15m: 'bullish',
     trend4h: 'bull',
     trend1d: 'bull',
