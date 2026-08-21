@@ -4073,6 +4073,23 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     intent tap or exchange effect. No VPS deployment, tag, Release, or next pass
     is authorized.
 
+- `1.x Trading Simulation Truth`
+  - Lane: bounded 1.x Trading execution-truth remediation.
+  - Invariant: TEST validates one exact order request but creates no exchange
+    effect; only an accepted LIVE order may consume a durable liquidity-event
+    claim and enter managed-order reconciliation.
+  - Sole owner: the existing
+    `BingxFuturesExchangeExecutionUseCaseService`; the trading screen projects
+    the canonical outcome and owns no execution truth.
+  - Sealed paths: TEST-as-`executed`, TEST durable event claims, TEST managed
+    orders, and TEST reconciliation. LIVE one-event/one-effect behavior remains
+    unchanged; no DTO family, service, effect route, Core, Ledger, plugin ABI,
+    VPS, tag, or Release path was added.
+  - Status: complete (2026-08-21) at `883e815`; protected PR `#170` repository
+    run `32485467763` and post-merge run `32485589837` passed. Focused Flutter
+    `38/38`, full Flutter/Rust/repository gates, and clean-checkout verification
+    passed. No next implementation pass is selected.
+
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
     the existing Capsule-scoped public change feed when the Moltbook workspace
