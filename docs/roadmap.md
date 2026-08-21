@@ -4004,6 +4004,28 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: parked in `research/trading-empirical-authority-pass.md`. It selects
     no pass, universal Capability/Warrant abstraction, VPS change, or release.
 
+- `1.x Trading Local Market Evidence`
+  - Lane: bounded 1.x Trading product completion before further VPS or order
+    work.
+  - Result: the Capsule Trading module and public-shadow tool share the same
+    bounded public trade frame parser and process-scoped session accumulator
+    semantics. The local canonical snapshot path consumes only evidence for
+    the exact selected symbol.
+  - Failure boundary: malformed, oversized, cross-symbol, disconnected, stale,
+    switched-symbol, screen-restart, and process-restart input cannot retain or
+    manufacture complete session coverage. Incomplete evidence remains
+    `NO_SIGNAL` and grants no exchange authority.
+  - Evidence: full Rust and Flutter suites, `flutter analyze`, repository gates,
+    clean detached checkout, parity-gate negative mutations, protected PR
+    `#165`, and post-merge Action `32449861616` passed at `1397713`.
+  - Sealed paths: no second decision/effect owner, historical-volume
+    fabrication, credential expansion, Core/Ledger fact, plugin ABI, VPS
+    deployment, scheduler, order, tag, or Release was added.
+  - Status: implementation complete (2026-08-21). Local Capsule trading is not
+    reference-grade until a separately selected packaged observation and
+    calculation soak proves fresh zone projection and complete warm-up. No next
+    pass is selected automatically.
+
 - `1.x Moltbook Capsule Public Change Feed`
   - Scope: let one Capsule retain a bounded queue of explicitly confirmed
     public development facts and feed the oldest pending item into the existing
