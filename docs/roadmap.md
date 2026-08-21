@@ -4130,7 +4130,32 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     and post-merge run `32518211298` passed.
   - Status: complete (2026-08-21) at `26e5412`. No exchange request, managed
     order, durable event claim, VPS change, tag, or Release was created by this
-    remediation. Fresh packaged macOS validation is the next gate.
+    remediation. Packaged macOS validation later confirmed stable BNB-USDT
+    `sell` selection through Refresh Scan and Run Intent.
+
+- `1.x Trading BingX Balance Contract Remediation`
+  - Lane: bounded 1.x provider-contract defect found during the first packaged
+    minimal-live preparation.
+  - Invariant: local execution and the bounded remote account-read artifact use
+    one current BingX futures balance contract and bind risk equity to the exact
+    USDT settlement row; unavailable or non-positive evidence remains closed.
+  - Sole owner: the existing `BingxFuturesExchangeService` signed-read adapter.
+    Risk policy, mandate, effect, reconciliation, Core, Ledger, plugin ABI, and
+    VPS owners remain unchanged.
+  - Sealed paths: legacy `/openApi/swap/v2/user/balance`, accidental selection
+    of the first non-USDT v3 row, and live fallback equity.
+  - Exit evidence: focused Flutter `81/81`, full Flutter `980/980`, analyze,
+    Rust workspace, runner artifact self-tests, repository gates, clean
+    detached checkout, protected PR `#178`, and post-merge run `32520786102`
+    passed.
+  - Packaged evidence: macOS Release from merge SHA `a0d1bec` restored the
+    Capsule-scoped credential and exercised only `Auto-fit Notional`. BingX
+    returned non-positive USDT futures equity, so the existing risk owner
+    failed closed. No provider order request, managed order, event claim, VPS
+    change, tag, or Release was created.
+  - Status: complete (2026-08-21) at `a0d1bec`. The remaining blocker is
+    external subaccount readiness: dedicated funds must be visible in its
+    USDT-M Perpetual Futures wallet before a fresh bounded live attempt.
 
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
