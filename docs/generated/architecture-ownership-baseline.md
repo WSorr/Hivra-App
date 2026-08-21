@@ -351,7 +351,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_shadow_stream_store.dart` line `15` (`BingxFuturesShadowStreamStore`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_signal_rank_use_case_service.dart` line `6` (`BingxFuturesSignalRankUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_strategy_naming_service.dart` line `3` (`BingxFuturesStrategyNamingService`) — rule `current_flutter_service_support`
-- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart` line `115` (`BingxFuturesTradingCycleUseCaseService`) — rule `current_flutter_service_support`
+- `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_trading_cycle_use_case_service.dart` line `117` (`BingxFuturesTradingCycleUseCaseService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_tvh_rule_engine_service.dart` line `8` (`BingxFuturesTvhRuleEngineService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_volume_growth_filter_service.dart` line `3` (`BingxFuturesVolumeGrowthFilterService`) — rule `current_flutter_service_support`
 - `SUPPORTING_COMPONENT` — `flutter/lib/services/bingx_futures_zone_decision_service.dart` line `202` (`BingxFuturesZoneDecisionService`) — rule `current_flutter_service_support`
@@ -480,7 +480,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 ### Oversized Candidate Surfaces
 
-- `4759` lines — `flutter/lib/screens/trading_drone_screen.dart`
+- `4765` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3329` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
 - `2350` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
