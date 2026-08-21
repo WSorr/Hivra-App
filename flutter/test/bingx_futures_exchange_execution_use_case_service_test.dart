@@ -337,9 +337,9 @@ void main() {
     });
 
     test(
-      'allows same semantic event across volatile snapshot changes',
+      'test validation is idempotent without a durable effect claim',
       () async {
-        var placeOrderCalled = false;
+        var placeOrderCalls = 0;
         final exchange = BingxFuturesExchangeService();
         final store = _trackingStore(tempHome);
         await _setDroneEnabled(store, true);
@@ -352,7 +352,7 @@ void main() {
               required intent,
               required testOrder,
             }) async {
-              placeOrderCalled = true;
+              placeOrderCalls += 1;
               return BingxFuturesOrderExecutionResult(
                 isSuccess: true,
                 httpStatusCode: 200,
@@ -370,7 +370,7 @@ void main() {
           orderTrackingStore: store,
         );
 
-        final result = await service.execute(
+        final first = await service.execute(
           screen: 'test',
           rawIntentResult: _zoneIntent,
           credentials: _credentials,
@@ -380,13 +380,29 @@ void main() {
           preparedDecision: _decision(),
           refreshDecision: () async => _decision(liveHashHex: '5'),
         );
+        final second = await service.execute(
+          screen: 'test',
+          rawIntentResult: _zoneIntent,
+          credentials: _credentials,
+          riskPolicy: _policy,
+          fallbackEquityQuote: 100,
+          testOrder: true,
+          preparedDecision: _decision(),
+          refreshDecision: () async => _decision(liveHashHex: '6'),
+        );
 
         expect(
-          result.status,
-          BingxFuturesExchangeExecutionUseCaseStatus.executed,
-          reason: result.errorCode,
+          first.status,
+          BingxFuturesExchangeExecutionUseCaseStatus.validated,
+          reason: first.errorCode,
         );
-        expect(placeOrderCalled, isTrue);
+        expect(
+          second.status,
+          BingxFuturesExchangeExecutionUseCaseStatus.validated,
+        );
+        expect(second.queuedExecution!.fromIdempotentCache, isTrue);
+        expect(placeOrderCalls, 1);
+        expect((await store.load())!.liquidityEventEffectClaims, isEmpty);
       },
     );
 
@@ -439,10 +455,7 @@ void main() {
       expect(result.errorCode, 'exchange_effect_failed');
       expect(result.errorMessage, 'provider rejected order');
       final state = await store.load();
-      expect(
-        state!.liquidityEventEffectClaims.values.single.status,
-        BingxLiquidityEventEffectClaimStatus.reserved,
-      );
+      expect(state!.liquidityEventEffectClaims, isEmpty);
     });
 
     test('bounded mandate rejects scope and authority mutations', () async {
@@ -596,7 +609,7 @@ void main() {
       expect(placeOrderCalled, isFalse);
     });
 
-    test('restart preserves receipt and blocks a second effect', () async {
+    test('live restart preserves receipt and blocks a second effect', () async {
       var placeOrderCalls = 0;
       var activeCapsule = List<String>.filled(64, 'd').join();
       final originalCapsule = activeCapsule;
@@ -618,6 +631,24 @@ void main() {
               body: '{"code":0,"msg":"ok","data":{"price":"100"}}',
             );
           }
+          if (request.uri.path.endsWith('/user/balance')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":{"balance":{"equity":"100"}}}',
+            );
+          }
+          if (request.uri.path.endsWith('/user/positions')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":[]}',
+            );
+          }
+          if (request.uri.path.endsWith('/user/income')) {
+            return const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"ok","data":[]}',
+            );
+          }
           return const BingxHttpResponse(
             statusCode: 503,
             body: '{"code":503,"msg":"test fallback"}',
@@ -628,7 +659,7 @@ void main() {
         readActiveCapsuleRootHex: () => activeCapsule,
         fileStore: fileStore,
       );
-      await _setDroneEnabled(trackingStore, true);
+      await _setDroneEnabled(trackingStore, true, testOrder: false);
       BingxFuturesExchangeExecutionUseCaseService buildUseCase(
         BingxFuturesOrderTrackingStore store,
       ) {
@@ -670,7 +701,7 @@ void main() {
           credentials: _credentials,
           riskPolicy: _policy,
           fallbackEquityQuote: 100,
-          testOrder: true,
+          testOrder: false,
           preparedDecision: _decision(),
           refreshDecision: () async => _decision(),
         );

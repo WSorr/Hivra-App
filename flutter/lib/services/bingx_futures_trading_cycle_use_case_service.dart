@@ -22,6 +22,7 @@ enum BingxFuturesTradingCycleStatus {
   intentBlocked,
   prepared,
   executionBlocked,
+  validated,
   executed,
 }
 
@@ -84,6 +85,7 @@ class BingxFuturesTradingCycleResult {
 
   bool get isPrepared =>
       status == BingxFuturesTradingCycleStatus.prepared ||
+      status == BingxFuturesTradingCycleStatus.validated ||
       status == BingxFuturesTradingCycleStatus.executed;
 }
 
@@ -323,6 +325,10 @@ class BingxFuturesTradingCycleUseCaseService {
         return refreshed.decision;
       },
     );
+    final executionValidated =
+        execution.status ==
+            BingxFuturesExchangeExecutionUseCaseStatus.validated &&
+        execution.queuedExecution?.execution.isSuccess == true;
     final executionSucceeded =
         execution.status ==
             BingxFuturesExchangeExecutionUseCaseStatus.executed &&
@@ -331,19 +337,27 @@ class BingxFuturesTradingCycleUseCaseService {
       status:
           executionSucceeded
               ? BingxFuturesTradingCycleStatus.executed
+              : executionValidated
+              ? BingxFuturesTradingCycleStatus.validated
               : BingxFuturesTradingCycleStatus.executionBlocked,
       reasonCode:
           execution.errorCode ??
           (executionSucceeded
               ? 'effect_executed'
+              : executionValidated
+              ? 'request_validated'
               : execution.status ==
-                  BingxFuturesExchangeExecutionUseCaseStatus.executed
+                      BingxFuturesExchangeExecutionUseCaseStatus.executed ||
+                  execution.status ==
+                      BingxFuturesExchangeExecutionUseCaseStatus.validated
               ? 'exchange_effect_failed'
               : execution.status.name),
       reasonMessage:
           execution.errorMessage ??
           (executionSucceeded
               ? 'Exchange effect executed.'
+              : executionValidated
+              ? 'Exact request validated; no exchange order was created.'
               : 'Exchange effect did not produce a success receipt.'),
       decision: decision,
       sizing: sizing,

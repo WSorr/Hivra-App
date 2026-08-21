@@ -2840,7 +2840,13 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
         _lastExecutionFromCache = queued.fromIdempotentCache;
       });
 
-      if (queued.execution.isSuccess) {
+      if (useCaseResult.status ==
+          BingxFuturesExchangeExecutionUseCaseStatus.validated) {
+        await _showSnack(
+          'Exact request validated. No exchange order was created.',
+          seconds: 4,
+        );
+      } else if (queued.execution.isSuccess) {
         final orderId = queued.execution.orderId?.trim();
         _registerManagedOrderId(
           orderId,
