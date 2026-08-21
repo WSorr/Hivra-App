@@ -2,15 +2,13 @@
 
 Status date: 2026-08-21
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: the bounded `1.x Trading Packaged TEST Remediation`
-is complete at `62157e3`. Pending orders size against their exact zone entry,
-non-positive exchange equity is unavailable evidence rather than a parser
-failure, and one unchanged closed liquidity event retains exact zone geometry
-across live-quote movement. Packaged macOS TEST validation reached a successful
-BingX simulation receipt without creating an exchange effect, durable event
-claim, or managed order. No next implementation pass is selected. Exchange
-effects, VPS deployment, plugin ABI, Core, Ledger, tag, and Release remain
-unauthorized.
+Current development focus: the bounded `1.x Trading Ranked-Side Binding
+Remediation` is complete at `26e5412`. A current READY scan now binds the
+selected execution side before Run Intent, the 1.x compatibility `zone_side`
+follows that order side, and a blocked revalidation cannot overwrite either
+selection. The previous false appearance of a rapid market-direction change is
+sealed. The next gate is a fresh packaged macOS validation from current `main`;
+no VPS deployment, plugin ABI, Core, Ledger, tag, or Release is authorized.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
 withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
@@ -22,7 +20,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No implementation pass is selected. Packaged Trading TEST now preserves exact closed-event zones and effect-free validation; choose the next bounded product finding separately. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | Build current `main` as packaged macOS Release and verify that Refresh Scan and Run Intent retain one exact ranked side. Any minimal LIVE exchange effect still requires the existing explicit operator authorization and all mandate/risk guards. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -32,7 +30,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Trading packaged TEST remediation complete | Exact zone-entry sizing, unavailable-equity handling, and closed-event zone stability remain inside their existing owners; TEST remains effect-free. | Flutter `975/975`, Rust, analyze, repository gates, protected PRs `#172`-`#174`, post-merge run `32515119910`, and packaged macOS BNB TEST receipt passed with no tracking-state mutation. | Select one bounded product finding separately; VPS effects, live orders, and release remain blocked. |
+| **1.x maintained runtime** | Trading ranked-side binding remediation complete | Refresh Scan projects one READY side into the existing screen selection; blocked Run Intent revalidation cannot replace it. | Focused Flutter `19/19`, full Flutter/Rust/analyze/repository gates, clean checkout, protected PR `#176`, and post-merge run `32518211298` passed. | Fresh packaged macOS side-binding smoke; VPS, scheduler, release, and any unapproved exchange effect remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

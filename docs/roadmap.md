@@ -4113,6 +4113,25 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
   - Status: complete (2026-08-21) at `62157e3`. No live order, tag, Release,
     VPS change, or next implementation pass is authorized.
 
+- `1.x Trading Ranked-Side Binding Remediation`
+  - Lane: bounded 1.x execution-selection defect found before the first minimal
+    packaged LIVE effect.
+  - Invariant: Refresh Scan and Run Intent use one current READY order side;
+    blocked revalidation may explain rejection but cannot silently replace the
+    selected side or its 1.x compatibility `zone_side`.
+  - Sole owner: the existing `TradingDroneScreen` projection boundary. The
+    live-decision, risk, mandate, effect, reconciliation, Core, Ledger, plugin
+    ABI, and VPS owners remain unchanged.
+  - Sealed paths: stale UI side overriding a current ranked result, inverted
+    order-side/`zone_side` projection, and blocked-cycle mutation that made a
+    stable signal look like rapid market-direction drift.
+  - Exit evidence: focused Flutter `19/19`, full Flutter suite, analyze, Rust
+    workspace, repository gates, clean detached checkout, protected PR `#176`,
+    and post-merge run `32518211298` passed.
+  - Status: complete (2026-08-21) at `26e5412`. No exchange request, managed
+    order, durable event claim, VPS change, tag, or Release was created by this
+    remediation. Fresh packaged macOS validation is the next gate.
+
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
     the existing Capsule-scoped public change feed when the Moltbook workspace
