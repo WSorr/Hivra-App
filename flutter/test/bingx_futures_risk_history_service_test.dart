@@ -145,6 +145,29 @@ void main() {
       expect(projection.recordCount, 1);
       expect(await service.load(), isNull);
     });
+
+    test('accepts provider null data as complete empty history', () async {
+      final exchange = BingxFuturesExchangeService(
+        clockMs: () => nowUtc.millisecondsSinceEpoch,
+        requestSender:
+            (_) async => const BingxHttpResponse(
+              statusCode: 200,
+              body: '{"code":0,"msg":"","data":null}',
+            ),
+      );
+
+      final projection = await service.refresh(
+        exchangeService: exchange,
+        credentials: _credentials,
+        nowUtc: nowUtc,
+      );
+
+      expect(projection.isComplete, isTrue);
+      expect(projection.realizedDailyPnlQuoteDecimal, '0.00000000');
+      expect(projection.lossStreakCount, 0);
+      expect(projection.recordCount, 0);
+      expect(await service.load(), isNotNull);
+    });
   });
 }
 

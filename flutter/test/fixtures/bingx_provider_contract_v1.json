@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "captured_at_utc": "2026-08-22T00:00:00Z",
+  "provenance": {
+    "read_contracts": "sanitized shapes captured from the dedicated BingX futures subaccount",
+    "effect_contracts": "official BingX perpetual swap API examples pending packaged live evidence"
+  },
+  "positive": {
+    "balance": {
+      "code": 0,
+      "msg": "",
+      "data": [
+        {
+          "asset": "USDT",
+          "availableMargin": "17.0000",
+          "balance": "17.0000",
+          "equity": "17.0000",
+          "frozenMargin": "0.0000",
+          "realizedProfit": "0",
+          "shortUid": "masked01",
+          "unrealizedProfit": "0.0000",
+          "usedMargin": "0.0000",
+          "userId": "masked-user-0001"
+        },
+        {
+          "asset": "USDC",
+          "availableMargin": "0.0000",
+          "balance": "0.0000",
+          "equity": "0.0000",
+          "frozenMargin": "0.0000",
+          "realizedProfit": "0",
+          "shortUid": "masked01",
+          "unrealizedProfit": "0.0000",
+          "usedMargin": "0.0000",
+          "userId": "masked-user-0001"
+        }
+      ]
+    },
+    "contract_rules": {
+      "code": 0,
+      "msg": "",
+      "data": [
+        {
+          "apiStateClose": "true",
+          "apiStateOpen": "true",
+          "asset": "BTC",
+          "brokerState": true,
+          "contractId": "100",
+          "currency": "USDT",
+          "displayName": "BTC/USDT",
+          "ensureTrigger": true,
+          "feeRate": 0.0005,
+          "launchTime": 1500000000000,
+          "maintainTime": 0,
+          "makerFeeRate": 0.0002,
+          "offTime": 0,
+          "pricePrecision": 1,
+          "quantityPrecision": 4,
+          "size": "0.0001",
+          "status": 1,
+          "symbol": "BTC-USDT",
+          "takerFeeRate": 0.0005,
+          "tradeMinLimit": 1,
+          "tradeMinQuantity": 0.0001,
+          "tradeMinUSDT": 2,
+          "triggerFeeRate": "0.00050000"
+        }
+      ]
+    },
+    "realized_pnl_empty": {
+      "code": 0,
+      "msg": "",
+      "data": null
+    },
+    "positions_empty": {
+      "code": 0,
+      "msg": "",
+      "data": []
+    },
+    "open_trigger_orders_empty": {
+      "code": 0,
+      "msg": "",
+      "data": {
+        "orders": []
+      }
+    },
+    "order_placement": {
+      "code": 0,
+      "msg": "",
+      "data": {
+        "order": {
+          "orderID": "9007199254740993",
+          "clientOrderId": "hivra-fixture-order",
+          "symbol": "BTC-USDT",
+          "side": "BUY",
+          "positionSide": "LONG",
+          "type": "TRIGGER_LIMIT",
+          "status": "NEW"
+        }
+      }
+    },
+    "order_receipt": {
+      "code": 0,
+      "msg": "",
+      "data": {
+        "orderID": "9007199254740993",
+        "clientOrderId": "hivra-fixture-order",
+        "symbol": "BTC-USDT",
+        "side": "BUY",
+        "positionSide": "LONG",
+        "type": "TRIGGER_LIMIT",
+        "status": "NEW",
+        "origQty": "0.0001",
+        "executedQty": "0",
+        "price": "70000.0",
+        "stopPrice": "70010.0",
+        "time": 1787356800000,
+        "updateTime": 1787356800000
+      }
+    }
+  },
+  "negative_mutations": {
+    "balance_without_usdt": {
+      "code": 0,
+      "msg": "",
+      "data": [
+        {
+          "asset": "USDC",
+          "equity": "17.0000"
+        }
+      ]
+    },
+    "contract_rules_without_minimum_notional": {
+      "code": 0,
+      "msg": "",
+      "data": [
+        {
+          "symbol": "BTC-USDT",
+          "tradeMinQuantity": 0.0001,
+          "quantityPrecision": 4,
+          "pricePrecision": 1
+        }
+      ]
+    },
+    "realized_pnl_malformed_container": {
+      "code": 0,
+      "msg": "",
+      "data": {}
+    },
+    "positions_with_unparseable_row": {
+      "code": 0,
+      "msg": "",
+      "data": [
+        {
+          "symbol": "BTC-USDT",
+          "positionAmt": "not-a-decimal",
+          "positionSide": "LONG"
+        }
+      ]
+    },
+    "open_orders_with_missing_identity": {
+      "code": 0,
+      "msg": "",
+      "data": {
+        "orders": [
+          {
+            "symbol": "BTC-USDT",
+            "side": "BUY",
+            "status": "NEW"
+          }
+        ]
+      }
+    },
+    "placement_without_order_identity": {
+      "code": 0,
+      "msg": "",
+      "data": {
+        "order": {
+          "clientOrderId": "hivra-fixture-order",
+          "status": "NEW"
+        }
+      }
+    },
+    "receipt_without_order_identity": {
+      "code": 0,
+      "msg": "",
+      "data": {
+        "clientOrderId": "hivra-fixture-order",
+        "symbol": "BTC-USDT",
+        "side": "BUY",
+        "status": "NEW"
+      }
+    }
+  }
+}

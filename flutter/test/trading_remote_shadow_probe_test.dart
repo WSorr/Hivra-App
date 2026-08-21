@@ -340,10 +340,15 @@ void main() {
         clockMs: () => 1770000000000,
         requestSender: (request) async {
           requests.add(request);
-          return const BingxHttpResponse(
-            statusCode: 200,
-            body: '{"code":0,"data":{}}',
-          );
+          final body = switch (request.uri.path) {
+            '/openApi/swap/v3/user/balance' =>
+              '{"code":0,"data":[{"asset":"USDT","equity":"17"}]}',
+            '/openApi/swap/v2/user/positions' => '{"code":0,"data":[]}',
+            '/openApi/swap/v2/trade/openOrders' =>
+              '{"code":0,"data":{"orders":[]}}',
+            _ => throw StateError('unexpected account-read endpoint'),
+          };
+          return BingxHttpResponse(statusCode: 200, body: body);
         },
       );
 
@@ -541,7 +546,8 @@ void main() {
       requests.add(request);
       return const BingxHttpResponse(
         statusCode: 200,
-        body: '{"code":0,"msg":"success","data":{}}',
+        body:
+            '{"code":0,"msg":"success","data":{"order":{"orderID":"test-order-1"}}}',
       );
     }
 

@@ -27,6 +27,8 @@ import '../services/hivra_file_picker_service.dart';
 import '../utils/bingx_futures_zone_evidence_formatter.dart';
 import '../utils/peer_identity_format.dart';
 
+const String preparedTradingIntentTerminalOutcome = 'intent:prepared';
+
 @visibleForTesting
 Future<String> runTradingIntentWithTerminalEvidence({
   required Future<String> Function() pipeline,
@@ -2176,7 +2178,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
       final hash = response.result?['intent_hash_hex']?.toString() ?? '';
       final shortHash = hash.length >= 12 ? '${hash.substring(0, 12)}..' : hash;
       await _showSnack('BingX intent prepared: $shortHash');
-      return 'response:${response.status.name}';
+      return preparedTradingIntentTerminalOutcome;
     }
     await _showSnack(cycle.reasonMessage, seconds: 4);
     return 'blocked:${cycle.reasonCode}';
@@ -2502,7 +2504,12 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
           await _showSnack(message, seconds: 4);
           break;
       }
-      return 'response:${response.status.name}';
+      return switch (response.status) {
+        PluginHostApiStatus.executed => preparedTradingIntentTerminalOutcome,
+        PluginHostApiStatus.blocked => 'blocked:intent_guard',
+        PluginHostApiStatus.rejected =>
+          'rejected:${response.errorCode ?? "intent_rejected"}',
+      };
     } on TimeoutException {
       await _module.uiLog.log(
         'bingx.intent.timeout',
