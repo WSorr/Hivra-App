@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart';
@@ -10,6 +9,7 @@ import 'package:hivra_app/services/bingx_futures_deterministic_replay_harness_se
 import 'package:hivra_app/services/bingx_futures_exchange_service.dart';
 import 'package:hivra_app/services/bingx_futures_live_snapshot_builder_service.dart';
 import 'package:hivra_app/services/bingx_futures_public_session_accumulator.dart';
+import 'package:hivra_app/services/bingx_futures_public_session_stream_service.dart';
 import 'package:hivra_app/services/bingx_futures_shadow_stream_store.dart';
 
 const int maxScheduledRuns = 8928;
@@ -26,9 +26,6 @@ const List<String> accountReadScope = <String>[
   'open_orders',
 ];
 const int accountReadMaxUses = 1;
-const int maxCompressedTradeFrameBytes = 16384;
-const String bingxPublicSwapWebSocket =
-    'wss://open-api-swap.bingx.com/swap-market';
 
 typedef TradingRemoteShadowCycle = Future<void> Function(int cycleNumber);
 typedef TradingRemoteShadowDelay = Future<void> Function(Duration duration);
@@ -68,7 +65,7 @@ Future<void> main(List<String> args) async {
       runCount: schedule.runCount,
       interval: schedule.interval,
       runOnce: (cycleNumber) async {
-        if (!accumulator.isConnected) {
+        if (!accumulator.hasHealthyConnection) {
           throw StateError('public trade stream disconnected');
         }
         final evidenceOwner = BingxFuturesDeterministicReplayHarnessService(
@@ -159,7 +156,7 @@ Future<void> runPublicShadowWithSessionStream({
     if (error != null) {
       Error.throwWithStackTrace(error, streamStackTrace!);
     }
-    if (!accumulator.isConnected) {
+    if (!accumulator.hasHealthyConnection) {
       throw StateError('public trade stream disconnected');
     }
   }
@@ -189,82 +186,6 @@ Future<void> runPublicShadowWithSessionStream({
     if (!frameRelay.isClosed) await frameRelay.close();
     await streamTask;
   }
-}
-
-Future<void> consumeBingxPublicTradeFrames({
-  required Stream<dynamic> frames,
-  required void Function(Object frame) send,
-  required BingxFuturesPublicSessionAccumulator accumulator,
-  required String subscriptionId,
-}) async {
-  try {
-    await for (final frame in frames) {
-      final message = decodeBingxPublicFrame(frame);
-      if (message == 'Ping') {
-        send('Pong');
-        accumulator.acceptHeartbeat();
-        continue;
-      }
-      final decoded = jsonDecode(message);
-      if (decoded is Map<String, dynamic> &&
-          decoded['id'] == subscriptionId &&
-          decoded['data'] == null) {
-        if (decoded['code'] != 0) {
-          throw const FormatException('public trade subscription rejected');
-        }
-        accumulator.acceptHeartbeat();
-        continue;
-      }
-      accumulator.acceptDecodedTradeMessage(message);
-    }
-  } finally {
-    accumulator.markDisconnected();
-  }
-}
-
-String decodeBingxPublicFrame(Object frame) {
-  if (frame is String) {
-    if (utf8.encode(frame).length >
-        BingxFuturesPublicSessionAccumulator.maxDecodedMessageBytes) {
-      throw const FormatException('public trade frame is oversized');
-    }
-    return frame;
-  }
-  if (frame is! List<int> || frame.length > maxCompressedTradeFrameBytes) {
-    throw const FormatException('public trade frame is invalid');
-  }
-  final output = BytesBuilder(copy: false);
-  final decodedSink = ByteConversionSink.from(
-    _BoundedBytesSink(
-      output: output,
-      maxBytes: BingxFuturesPublicSessionAccumulator.maxDecodedMessageBytes,
-    ),
-  );
-  final decoder = gzip.decoder.startChunkedConversion(decodedSink);
-  decoder.add(frame);
-  decoder.close();
-  final decoded = output.takeBytes();
-  return utf8.decode(decoded);
-}
-
-class _BoundedBytesSink implements Sink<List<int>> {
-  final BytesBuilder output;
-  final int maxBytes;
-  int _length = 0;
-
-  _BoundedBytesSink({required this.output, required this.maxBytes});
-
-  @override
-  void add(List<int> data) {
-    _length += data.length;
-    if (_length > maxBytes) {
-      throw const FormatException('public trade frame expands beyond limit');
-    }
-    output.add(data);
-  }
-
-  @override
-  void close() {}
 }
 
 Future<String> runMandateBoundAccountRead({

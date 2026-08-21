@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/services/bingx_futures_public_session_accumulator.dart';
+import 'package:hivra_app/services/bingx_futures_public_session_stream_service.dart';
 
 void main() {
   late DateTime nowUtc;
@@ -158,6 +161,59 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('stream owner binds one symbol and resets on symbol switch', () async {
+    final sockets = <_FakeWebSocket>[];
+    final service = BingxFuturesPublicSessionStreamService(
+      connect: () async {
+        final socket = _FakeWebSocket();
+        sockets.add(socket);
+        return socket;
+      },
+    );
+
+    await service.ensureConnected('BTC-USDT');
+    expect(service.isConnected, isTrue);
+    expect(service.symbol, 'BTC-USDT');
+    expect(
+      jsonDecode(sockets.single.sent.single as String),
+      containsPair('dataType', 'BTC-USDT@trade'),
+    );
+    final observedAt = DateTime.now().toUtc();
+    sockets.single.addIncoming(_trade(observedAt));
+    await Future<void>.delayed(Duration.zero);
+    expect(
+      service
+          .snapshotFor('BTC-USDT')!
+          .map((item) => item.volumeDecimal)
+          .where((value) => value != '0.00000000'),
+      isNotEmpty,
+    );
+
+    await service.ensureConnected('ETH-USDT');
+    expect(sockets.first.isClosed, isTrue);
+    expect(service.symbol, 'ETH-USDT');
+    expect(service.snapshotFor('BTC-USDT'), isNull);
+    expect(service.snapshotFor('ETH-USDT'), everyElement(_isIncomplete));
+    await service.disconnect();
+    expect(service.isConnected, isFalse);
+  });
+
+  test('stream owner fails closed after malformed frame', () async {
+    final socket = _FakeWebSocket();
+    final service = BingxFuturesPublicSessionStreamService(
+      connect: () async => socket,
+    );
+    await service.ensureConnected('BTC-USDT');
+
+    socket.addIncoming('malformed');
+    await Future<void>.delayed(Duration.zero);
+
+    expect(service.isConnected, isFalse);
+    expect(service.terminalError, isA<FormatException>());
+    expect(service.snapshotFor('BTC-USDT'), everyElement(_isIncomplete));
+    await service.disconnect();
+  });
 }
 
 final _isComplete = isA<dynamic>()
@@ -183,3 +239,41 @@ String _trade(
     'm': buyerIsMaker,
   },
 });
+
+class _FakeWebSocket extends Stream<dynamic> implements WebSocket {
+  final StreamController<dynamic> _controller =
+      StreamController<dynamic>.broadcast(sync: true);
+  final List<Object> sent = <Object>[];
+  bool isClosed = false;
+
+  void addIncoming(Object frame) => _controller.add(frame);
+
+  @override
+  void add(Object? data) {
+    if (data != null) sent.add(data);
+  }
+
+  @override
+  Future<void> close([int? closeCode, String? closeReason]) async {
+    if (isClosed) return;
+    isClosed = true;
+    await Future<void>.delayed(Duration.zero);
+    if (!_controller.isClosed) await _controller.close();
+  }
+
+  @override
+  StreamSubscription<dynamic> listen(
+    void Function(dynamic event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) => _controller.stream.listen(
+    onData,
+    onError: onError,
+    onDone: onDone,
+    cancelOnError: cancelOnError,
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
