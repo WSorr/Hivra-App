@@ -4090,6 +4090,29 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     `38/38`, full Flutter/Rust/repository gates, and clean-checkout verification
     passed. No next implementation pass is selected.
 
+- `1.x Trading Packaged TEST Remediation`
+  - Lane: bounded 1.x defects found by the packaged macOS TEST lifecycle; no
+    LIVE exchange effect, VPS, scheduler, plugin ABI, Core, or Ledger scope.
+  - Invariants:
+    - pending-order quantity is sized against the exact zone entry rather than
+      the current quote;
+    - non-positive account equity is unavailable evidence, TEST may use the
+      existing bounded diagnostic fallback, and LIVE remains fail-closed;
+    - while liquidity-event identity and the latest closed micro bar are
+      unchanged, exact zone geometry cannot drift with the live quote.
+  - Owners: the existing order-sizing, exchange-risk-input, and zone-decision
+    services. No DTO family, service, state owner, effect route, or durable
+    lifecycle was added.
+  - Exit evidence: Flutter `975/975`, `flutter analyze`, Rust workspace tests,
+    repository gates, protected PRs `#172`, `#173`, and `#174`, and green
+    post-merge run `32515119910`. A Release build from merge SHA `62157e3`
+    prepared BNB-USDT from the same exact zone before and during execution,
+    passed the bounded risk check at `0.37304481%`, and received a successful
+    BingX TEST simulation receipt. The before/after operational-state evidence
+    retained zero managed orders and no new liquidity-event effect claim.
+  - Status: complete (2026-08-21) at `62157e3`. No live order, tag, Release,
+    VPS change, or next implementation pass is authorized.
+
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
     the existing Capsule-scoped public change feed when the Moltbook workspace
