@@ -58,6 +58,12 @@ Future<String> runTradingIntentWithTerminalEvidence({
 String tradingSignalScanActionLabel({required bool scanning}) =>
     scanning ? 'Scanning' : 'Refresh Scan';
 
+@visibleForTesting
+String tradingIntentStatusLabel(PluginHostApiStatus? status) {
+  if (status == null) return 'idle';
+  return status == PluginHostApiStatus.executed ? 'prepared' : status.name;
+}
+
 String tradingPreferredSideForCycle({
   required String symbol,
   required String currentSide,
@@ -4404,7 +4410,7 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
                 runSpacing: 8,
                 children: [
                   _statusChip(
-                    'Status: ${_lastIntentResponse?.status.name ?? "idle"}',
+                    'Status: ${tradingIntentStatusLabel(_lastIntentResponse?.status)}',
                   ),
                   _statusChip('Intent: $intentHashLabel'),
                   if (_lastIntentResponse?.errorCode != null &&
