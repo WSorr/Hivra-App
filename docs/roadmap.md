@@ -4063,11 +4063,15 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
 
     | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
     | --- | --- | --- | --- | --- | --- |
-    | One ordered strategy contract and focused negative mutations | Mandatory full-session/whale/trend conjunction; ignored `liquidation_proxy` handoff; generic blocker | Direction comes from current aggressive volume; entries come only from fresh/reclaimed structure; proxies rank but never authorize | Zero owners, DTO families, plugin ABI changes, or effect paths | `zone_side` retains legacy entry-side naming; thresholds still need packaged market evidence | A bounded no-effect local observation soak after protected merge |
+    | One ordered strategy contract and focused negative mutations | Mandatory full-session/whale/trend conjunction; ignored `liquidation_proxy` handoff; generic blocker | Direction comes from current aggressive volume; entries come only from fresh/reclaimed structure; proxies rank but never authorize | Zero owners, DTO families, plugin ABI changes, or effect paths | `zone_side` retains legacy entry-side naming | Selection of the next bounded Trading product finding |
   - Status: complete (2026-08-21) at `0572511`; protected PR `#167` and
-    post-merge repository run `32479483944` passed. No exchange effect, VPS
-    deployment, tag, Release, or next pass is authorized. A packaged no-effect
-    observation soak is only a candidate and must be selected separately.
+    post-merge repository run `32479483944` passed. A packaged macOS Release
+    no-effect observation soak from `9b6d27a` then completed against the
+    six-symbol core watchlist. The scan produced exact current decisions and
+    blockers, retained liquidation proxies as non-authoritative context, ranked
+    `BTC-USDT` and `DOGE-USDT` as observational `READY`, and recorded no new
+    intent tap or exchange effect. No VPS deployment, tag, Release, or next pass
+    is authorized.
 
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
