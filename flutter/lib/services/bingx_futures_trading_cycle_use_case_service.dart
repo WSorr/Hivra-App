@@ -97,6 +97,7 @@ typedef BingxFuturesOrderSizingCycleRunner =
     Future<BingxFuturesOrderSizingResult> Function({
       required String symbol,
       required num maximumNotionalQuote,
+      required String referencePriceDecimal,
     });
 typedef BingxFuturesIntentCycleRunner =
     Future<BingxFuturesIntentUseCaseResult> Function(
@@ -141,7 +142,17 @@ class BingxFuturesTradingCycleUseCaseService {
        assert(intentRunner != null || intentUseCase != null),
        assert(executionRunner != null || executionUseCase != null),
        _runLiveStrategy = liveStrategyRunner ?? liveStrategy!.execute,
-       _runSizing = sizingRunner ?? orderSizing!.size,
+       _runSizing =
+           sizingRunner ??
+           (({
+             required String symbol,
+             required num maximumNotionalQuote,
+             required String referencePriceDecimal,
+           }) => orderSizing!.size(
+             symbol: symbol,
+             maximumNotionalQuote: maximumNotionalQuote,
+             referencePriceDecimal: referencePriceDecimal,
+           )),
        _runIntent = intentRunner ?? intentUseCase!.execute,
        _runExecution = executionRunner ?? executionUseCase!.execute,
        _strategyNaming = strategyNaming,
@@ -198,9 +209,21 @@ class BingxFuturesTradingCycleUseCaseService {
       );
     }
 
+    final zoneLow = num.tryParse(decision.zoneLowDecimal!);
+    final zoneHigh = num.tryParse(decision.zoneHighDecimal!);
+    if (zoneLow == null || zoneHigh == null || zoneLow <= 0 || zoneHigh <= 0) {
+      return _blocked(
+        BingxFuturesTradingCycleStatus.marketBlocked,
+        'liquidity_zone_invalid',
+        'Liquidity zone is invalid.',
+        decision: decision,
+      );
+    }
+    final entryPrice = (zoneLow + zoneHigh) / 2;
     final sizing = await _runSizing(
       symbol: symbol,
       maximumNotionalQuote: command.maximumNotionalQuote,
+      referencePriceDecimal: _formatDecimal(entryPrice),
     );
     if (sizing.status != BingxFuturesOrderSizingStatus.sized ||
         sizing.quantityDecimal == null) {
@@ -213,18 +236,6 @@ class BingxFuturesTradingCycleUseCaseService {
       );
     }
 
-    final zoneLow = num.tryParse(decision.zoneLowDecimal!);
-    final zoneHigh = num.tryParse(decision.zoneHighDecimal!);
-    if (zoneLow == null || zoneHigh == null || zoneLow <= 0 || zoneHigh <= 0) {
-      return _blocked(
-        BingxFuturesTradingCycleStatus.marketBlocked,
-        'liquidity_zone_invalid',
-        'Liquidity zone is invalid.',
-        decision: decision,
-        sizing: sizing,
-      );
-    }
-    final entryPrice = (zoneLow + zoneHigh) / 2;
     final targets = _riskTargets(
       side: decision.side!,
       entryPrice: entryPrice,

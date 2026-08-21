@@ -41,6 +41,40 @@ void main() {
       },
     );
 
+    test('sizes a pending order against the exact zone entry price', () async {
+      String? capturedReferencePrice;
+      BingxFuturesIntentCommand? capturedIntent;
+      final service = _service(
+        sizingRunner: ({
+          required symbol,
+          required maximumNotionalQuote,
+          required referencePriceDecimal,
+        }) async {
+          capturedReferencePrice = referencePriceDecimal;
+          return const BingxFuturesOrderSizingResult(
+            status: BingxFuturesOrderSizingStatus.sized,
+            reasonCode: 'sized',
+            reasonMessage: 'ok',
+            quantityDecimal: '0.13',
+            orderNotionalQuoteDecimal: '96.99125',
+            minimumQuantityDecimal: '0.01',
+            minimumNotionalQuoteDecimal: '2',
+          );
+        },
+        intentRunner: (command) async {
+          capturedIntent = command;
+          return _intentResult(command);
+        },
+        executionRunner: _executionRunner(onCall: () {}),
+      );
+
+      final result = await service.run(_command(executeEffect: false));
+
+      expect(result.status, BingxFuturesTradingCycleStatus.prepared);
+      expect(capturedReferencePrice, '100');
+      expect(capturedIntent!.quantityDecimal, '0.13');
+    });
+
     test('rejects missing event evidence before intent or effect', () async {
       var intentCalls = 0;
       var executionCalls = 0;
@@ -294,6 +328,7 @@ BingxFuturesTradingCycleUseCaseService _service({
     minimumNotionalQuoteDecimal: '2',
   ),
   BingxFuturesLiveStrategyCycleRunner? liveRunner,
+  BingxFuturesOrderSizingCycleRunner? sizingRunner,
   BingxFuturesIntentCycleRunner? intentRunner,
   required BingxFuturesExecutionCycleRunner executionRunner,
   Duration intentTimeout = const Duration(seconds: 20),
@@ -302,7 +337,12 @@ BingxFuturesTradingCycleUseCaseService _service({
     liveStrategyRunner:
         liveRunner ?? (command) async => _liveResult(decision ?? _decision()),
     sizingRunner:
-        ({required symbol, required maximumNotionalQuote}) async => sizing,
+        sizingRunner ??
+        ({
+          required symbol,
+          required maximumNotionalQuote,
+          required referencePriceDecimal,
+        }) async => sizing,
     intentRunner: intentRunner ?? (command) async => _intentResult(command),
     executionRunner: executionRunner,
     nowUtc: () => DateTime.utc(2026, 8, 16),

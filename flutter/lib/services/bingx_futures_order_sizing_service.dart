@@ -14,6 +14,7 @@ class BingxFuturesOrderSizingService {
   Future<BingxFuturesOrderSizingResult> size({
     required String symbol,
     required num maximumNotionalQuote,
+    String? referencePriceDecimal,
   }) async {
     if (maximumNotionalQuote <= 0) {
       return _unavailable(
@@ -22,16 +23,25 @@ class BingxFuturesOrderSizingService {
       );
     }
 
-    final results = await Future.wait<Object>(<Future<Object>>[
-      _exchange.getPublicPrice(symbol: symbol),
+    final normalizedReferencePrice = referencePriceDecimal?.trim();
+    final quoteFuture =
+        normalizedReferencePrice == null || normalizedReferencePrice.isEmpty
+            ? _exchange.getPublicPrice(symbol: symbol)
+            : Future<BingxFuturesPublicPriceResult?>.value(null);
+    final results = await Future.wait<Object?>(<Future<Object?>>[
+      quoteFuture,
       _exchange.getPerpetualContractRules(symbol: symbol),
     ]);
-    final quote = results[0] as BingxFuturesPublicPriceResult;
+    final quote = results[0] as BingxFuturesPublicPriceResult?;
     final rulesResult = results[1] as BingxFuturesContractRulesResult;
-    if (!quote.isSuccess || quote.priceDecimal == null) {
+    final sizingReferencePrice =
+        normalizedReferencePrice == null || normalizedReferencePrice.isEmpty
+            ? quote?.priceDecimal
+            : normalizedReferencePrice;
+    if (sizingReferencePrice == null || sizingReferencePrice.isEmpty) {
       return _unavailable(
         code: 'quote_unavailable',
-        message: 'BingX quote is unavailable (${quote.exchangeCode})',
+        message: 'BingX quote is unavailable (${quote?.exchangeCode ?? '-'})',
       );
     }
     if (!rulesResult.isSuccess || rulesResult.rules == null) {
@@ -44,7 +54,7 @@ class BingxFuturesOrderSizingService {
 
     return calculate(
       maximumNotionalQuote: maximumNotionalQuote,
-      referencePriceDecimal: quote.priceDecimal!,
+      referencePriceDecimal: sizingReferencePrice,
       rules: rulesResult.rules!,
     );
   }
@@ -64,9 +74,7 @@ class BingxFuturesOrderSizingService {
       );
     }
 
-    final minimumQuantity = _optionalNonNegative(
-      rules.minimumQuantityDecimal,
-    );
+    final minimumQuantity = _optionalNonNegative(rules.minimumQuantityDecimal);
     final minimumNotional = _optionalNonNegative(
       rules.minimumNotionalQuoteDecimal,
     );
@@ -93,7 +101,8 @@ class BingxFuturesOrderSizingService {
       return BingxFuturesOrderSizingResult(
         status: BingxFuturesOrderSizingStatus.blocked,
         reasonCode: 'exchange_minimum_exceeds_risk_budget',
-        reasonMessage: 'BingX minimum for ${rules.symbol} is about '
+        reasonMessage:
+            'BingX minimum for ${rules.symbol} is about '
             '${_format(minimumOrderNotional, 4)} USDT, above the '
             '${_format(maximumNotionalQuote, 4)} USDT risk notional',
         quantityDecimal: null,
