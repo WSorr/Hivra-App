@@ -480,7 +480,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 
 ### Oversized Candidate Surfaces
 
-- `4839` lines — `flutter/lib/screens/trading_drone_screen.dart`
+- `4844` lines — `flutter/lib/screens/trading_drone_screen.dart`
 - `3329` lines — `flutter/lib/screens/moltbook_ambassador_screen.dart`
 - `2425` lines — `flutter/lib/services/bingx_futures_exchange_service.dart`
 - `2004` lines — `flutter/lib/services/capsule_persistence_service.dart`
@@ -495,6 +495,7 @@ These verdicts describe production-path closure. A reviewed design-only contract
 - `920` lines — `flutter/lib/services/moltbook_provider_adapter.dart`
 - `885` lines — `flutter/lib/screens/relationships_screen.dart`
 - `838` lines — `flutter/lib/screens/main_screen.dart`
+- `836` lines — `flutter/lib/services/bingx_futures_exchange_execution_use_case_service.dart`
 - `834` lines — `flutter/lib/services/capsule_delivery_inbox_store.dart`
 - `815` lines — `flutter/lib/services/invitation_intent_handler.dart`
 - `801` lines — `flutter/lib/services/moltbook_external_effect_adapter.dart`

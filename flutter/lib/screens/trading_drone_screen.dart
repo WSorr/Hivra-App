@@ -609,6 +609,11 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
     setState(() {
       _droneEnabled = value;
       _tradingMandate = nextMandate;
+      if (value) {
+        _lastIntentResponse = null;
+        _lastPreparedLiveDecision = null;
+        _intentBlockingMessage = null;
+      }
       _savingTradingControl = true;
     });
     await _persistOpenOrdersTrackingState(source: 'drone_control_changed');

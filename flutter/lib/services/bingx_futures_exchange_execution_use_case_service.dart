@@ -20,6 +20,8 @@ import 'bingx_futures_risk_history_service.dart';
 part 'bingx_futures_exchange_execution_mandate.dart';
 
 class BingxFuturesExchangeExecutionUseCaseService {
+  static const double _maxLiquidityZoneBoundaryDriftBps = 1.0;
+
   final BingxFuturesExchangeService _exchange;
   final BingxFuturesExecutionQueueService _queue;
   final BingxFuturesExchangeRiskInputService _riskInput;
@@ -320,22 +322,57 @@ class BingxFuturesExchangeExecutionUseCaseService {
   }) async {
     if (payload.entryMode != 'zone_pending') return true;
     final liquidityEventId = preparedDecision?.liquidityEventId?.trim() ?? '';
+    final liquidityEventAtUtc =
+        preparedDecision?.liquidityEventAtUtc?.trim() ?? '';
     final preparedBar =
         preparedDecision?.latestClosedMicroBarAtUtc?.trim() ?? '';
     if (liquidityEventId.isEmpty ||
+        liquidityEventAtUtc.isEmpty ||
         preparedBar.isEmpty ||
         refreshDecision == null) {
       return false;
     }
     final fresh = await refreshDecision();
-    return fresh != null &&
-        fresh.canPrepareIntent &&
-        fresh.liquidityEventId == liquidityEventId &&
-        fresh.latestClosedMicroBarAtUtc == preparedBar &&
-        fresh.zoneLowDecimal == preparedDecision!.zoneLowDecimal &&
-        fresh.zoneHighDecimal == preparedDecision.zoneHighDecimal &&
+    if (fresh == null || !fresh.canPrepareIntent || fresh.zoneConflict) {
+      return false;
+    }
+    final freshBar = fresh.latestClosedMicroBarAtUtc?.trim() ?? '';
+    final preparedBarAt = DateTime.tryParse(preparedBar)?.toUtc();
+    final freshBarAt = DateTime.tryParse(freshBar)?.toUtc();
+    if (preparedBarAt == null ||
+        freshBarAt == null ||
+        freshBarAt.isBefore(preparedBarAt)) {
+      return false;
+    }
+    return fresh.liquidityEventId == liquidityEventId &&
+        fresh.liquidityEventAtUtc?.trim() == liquidityEventAtUtc &&
         fresh.side == payload.side &&
-        fresh.zoneSide == rawIntentResult['zone_side']?.toString().trim();
+        fresh.zoneSide == rawIntentResult['zone_side']?.toString().trim() &&
+        fresh.zoneAnchorSource == preparedDecision!.zoneAnchorSource &&
+        fresh.zoneAnchorLifecycle == preparedDecision.zoneAnchorLifecycle &&
+        fresh.zoneAnchorExecutable == preparedDecision.zoneAnchorExecutable &&
+        fresh.zoneEvaluationSide == preparedDecision.zoneEvaluationSide &&
+        _zoneBoundaryWithinFreshnessDrift(
+          preparedDecision.zoneLowDecimal,
+          fresh.zoneLowDecimal,
+        ) &&
+        _zoneBoundaryWithinFreshnessDrift(
+          preparedDecision.zoneHighDecimal,
+          fresh.zoneHighDecimal,
+        );
+  }
+
+  bool _zoneBoundaryWithinFreshnessDrift(
+    String? preparedDecimal,
+    String? freshDecimal,
+  ) {
+    final prepared = double.tryParse(preparedDecimal?.trim() ?? '');
+    final fresh = double.tryParse(freshDecimal?.trim() ?? '');
+    if (prepared == null || fresh == null || prepared <= 0 || fresh <= 0) {
+      return false;
+    }
+    final driftBps = ((fresh - prepared).abs() / prepared) * 10000;
+    return driftBps <= _maxLiquidityZoneBoundaryDriftBps;
   }
 
   static String accountBindingHashHex(BingxFuturesApiCredentials credentials) {
