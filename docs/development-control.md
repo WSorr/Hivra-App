@@ -7,9 +7,14 @@ Live Vertical` is active. Sanitized read-only evidence from the dedicated
 futures subaccount established the current balance, contract-rule, empty
 realized-PnL, empty-position, and empty-open-order response shapes. The existing
 exchange adapter and execution/reconciliation lifecycle remain the sole owners.
-The pass is not complete until protected merge gates pass and one packaged
-build places exactly one bounded live order, retains the provider identity and
-receipt, then reconciles the same effect after restart without duplication.
+Provider conformance is merged and its gates are green. The first packaged
+live attempt issued no provider request: the mandate guard rejected quantity
+sized against a zone midpoint whose buy trigger produced a larger notional.
+The active remediation binds pending-order sizing to the exact side-specific
+trigger price. The pass is not complete until that fix passes protected gates
+and one new packaged build places exactly one bounded live order, retains the
+provider identity and receipt, then reconciles the same effect after restart
+without duplication.
 Until then the Trading Drone is not operational and VPS/24/7 execution remains
 blocked. No plugin ABI, Core, Ledger, tag, or Release is authorized.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
@@ -33,7 +38,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | BingX provider-contract conformance active | The existing exchange owner validates captured provider shapes; the existing effect lifecycle alone owns placement, receipt, identity, and restart reconciliation. | Golden fixtures and negative mutations are implemented locally; full gates, protected merge, packaged live effect, and restart evidence remain pending. | Exactly one bounded packaged live order and no-duplicate restart reconciliation; VPS, scheduler, release, and any additional effect remain blocked. |
+| **1.x maintained runtime** | BingX provider-contract conformance active | The existing exchange owner validates captured provider shapes; the existing trading cycle owns trigger-bound sizing; the existing effect lifecycle alone owns placement, receipt, identity, and restart reconciliation. | Provider conformance is merged; trigger-bound sizing remediation, protected gates, packaged live effect, and restart evidence remain pending. | Exactly one bounded packaged live order and no-duplicate restart reconciliation; VPS, scheduler, release, and any additional effect remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

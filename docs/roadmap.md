@@ -4190,9 +4190,17 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     one packaged build placing exactly one mandate-bounded live order. The same
     order must be identified by provider receipt and reconciled after restart;
     replay must create no duplicate effect.
-  - Status: active (2026-08-22). Read-shape capture and local implementation are
-    in progress. The Trading Drone is not operational; VPS/24/7 execution,
-    scheduling, release, tag, and any additional live effect remain blocked.
+  - Packaged finding: the first post-merge live attempt issued zero provider
+    requests because the mandate guard rejected a buy quantity sized at the
+    zone midpoint when the exact upper trigger produced a larger notional.
+    Pending-order sizing must use the same side-specific trigger price bound
+    into the intent and checked by the mandate; buy uses the zone high and sell
+    uses the zone low. Midpoint remains the strategy entry reference only.
+  - Status: active (2026-08-22). Provider conformance is merged and green;
+    trigger-bound sizing remediation, a fresh packaged live effect, and restart
+    reconciliation remain. The Trading Drone is not operational; VPS/24/7
+    execution, scheduling, release, tag, and any additional live effect remain
+    blocked.
 
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
