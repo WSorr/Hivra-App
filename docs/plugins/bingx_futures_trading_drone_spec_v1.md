@@ -717,6 +717,12 @@ Broadcast behavior:
 6. Runtime parity:
    - execution path uses runtime invoke boundary only (no host fallback mutation path),
    - execution envelope hash is traceable to intent hash and decision hash.
+7. Simulation truth:
+   - a successful BingX test-endpoint request is `validated`, not `executed`,
+   - validation creates no exchange order, durable liquidity-event effect claim,
+     managed-order ownership, receipt, or reconciliation obligation,
+   - exact repeated validation may use the existing in-process idempotency
+     cache, while LIVE execution retains the durable one-event/one-effect path.
 
 ---
 
@@ -969,6 +975,11 @@ If gate passes:
 - execution adapter uses local secret storage only,
 - exchange API credentials MUST NOT be mirrored into user-visible or
   app-private plaintext files; unavailable secure storage blocks persistence,
+- the test endpoint validates one exact provider request but does not reserve
+  or confirm a durable liquidity-event effect claim and MUST NOT be projected
+  as an exchange order,
+- only LIVE execution may reserve the event before provider delivery and
+  confirm it from a successful provider result,
 - no remote capsule can force direct exchange mutation.
 
 ### 15.4 Receipt Envelope (outgoing)

@@ -223,6 +223,39 @@ void main() {
     );
 
     test(
+      'projects test validation without claiming an exchange effect',
+      () async {
+        final service = _service(
+          executionRunner: ({
+            required screen,
+            required rawIntentResult,
+            required credentials,
+            required riskPolicy,
+            required fallbackEquityQuote,
+            required testOrder,
+            preparedDecision,
+            refreshDecision,
+          }) async {
+            expect(testOrder, isTrue);
+            return _validatedResult();
+          },
+        );
+
+        final result = await service.run(
+          _command(executeEffect: true, testOrder: true),
+        );
+
+        expect(result.status, BingxFuturesTradingCycleStatus.validated);
+        expect(result.reasonCode, 'request_validated');
+        expect(
+          result.reasonMessage,
+          'Exact request validated; no exchange order was created.',
+        );
+        expect(result.isPrepared, isTrue);
+      },
+    );
+
+    test(
       'rejects contradictory executed outcome without provider success',
       () async {
         final service = _service(
@@ -280,6 +313,7 @@ BingxFuturesTradingCycleUseCaseService _service({
 BingxFuturesTradingCycleCommand _command({
   required bool executeEffect,
   BingxFuturesApiCredentials? credentials = _credentials,
+  bool testOrder = false,
 }) {
   return BingxFuturesTradingCycleCommand(
     screen: 'test_headless_cycle',
@@ -291,7 +325,7 @@ BingxFuturesTradingCycleCommand _command({
     credentials: credentials,
     riskPolicy: _policy,
     fallbackEquityQuote: 100,
-    testOrder: true,
+    testOrder: testOrder,
     executeEffect: executeEffect,
     recentMicroBars: 8,
     zoneNearBps: 15,
@@ -468,6 +502,19 @@ const _executedResult = BingxFuturesExchangeExecutionUseCaseResult(
   errorMessage: null,
   diagnostics: <String>[],
 );
+
+BingxFuturesExchangeExecutionUseCaseResult _validatedResult() {
+  return BingxFuturesExchangeExecutionUseCaseResult(
+    status: BingxFuturesExchangeExecutionUseCaseStatus.validated,
+    payload: _executedResult.payload,
+    riskDecision: _executedResult.riskDecision,
+    queuedExecution: _executedResult.queuedExecution,
+    executionEnvelope: _executedResult.executionEnvelope,
+    errorCode: null,
+    errorMessage: null,
+    diagnostics: const <String>[],
+  );
+}
 
 const _providerRejectedResult = BingxFuturesExchangeExecutionUseCaseResult(
   status: BingxFuturesExchangeExecutionUseCaseStatus.executed,
