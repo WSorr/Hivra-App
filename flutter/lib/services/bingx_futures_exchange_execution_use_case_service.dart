@@ -173,7 +173,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
       );
     }
 
-    if (!testOrder && liquidityEventId.isNotEmpty) {
+    if (!testOrder) {
       final orderTrackingStore = _orderTrackingStore!;
       final mandateId =
           (await orderTrackingStore.loadForCapsule(
@@ -253,9 +253,7 @@ class BingxFuturesExchangeExecutionUseCaseService {
       testOrder: testOrder,
     );
     final executionDiagnostics = <String>[...risk.diagnostics];
-    if (!testOrder &&
-        liquidityEventId.isNotEmpty &&
-        queued.execution.isSuccess) {
+    if (!testOrder && queued.execution.isSuccess) {
       try {
         await _orderTrackingStore!.confirmLiquidityEventEffectForCapsule(
           capsuleRootHex: executionCapsuleRootHex!,
