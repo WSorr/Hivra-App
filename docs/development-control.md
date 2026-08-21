@@ -2,17 +2,14 @@
 
 Status date: 2026-08-21
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x Trading Local Market Evidence` is merged at
-`1397713`. The Capsule Trading module and public-shadow tool now share one
-bounded public frame parser and session accumulator semantics. The local
-canonical live-strategy path receives only same-symbol process-scoped
-Asia/London/New York evidence; symbol changes, disconnect, malformed input,
-stale heartbeat, screen/process restart, and supervisor restart reset
-completeness because the source has no sequence identifier. Incomplete
-coverage still fails closed with `NO_SIGNAL`. Local Capsule trading is not yet
-reference-grade: a packaged observation/calculation soak must prove fresh zone
-projection and full-session warm-up before one exact live-order pass can be
-selected. VPS deployment and packaged order smoke remain inactive.
+Current development focus: `1.x Trading Liquidity Sequence Recomposition` is
+selected as a bounded local/public market-decision remediation. The existing
+decision owner is being reduced to one ordered sequence: fresh structural
+liquidity, recent aggressive-volume activation, structural anchor or bounded
+sweep/reclaim, liquidation-proxy ranking, then hard guards. Trend, OI, session,
+and large-flow evidence remain context rather than mandatory authority. No
+exchange effect, VPS deployment, plugin ABI, Core, Ledger, tag, or Release is
+authorized by this pass.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
 withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
@@ -24,7 +21,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No implementation pass is selected. The next candidate is packaged local Capsule observation/calculation evidence: exact-symbol warm-up, fresh zone projection, stale/disconnect reset, and no exchange effect. VPS work remains blocked until local trading is reference-grade. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | Complete the selected Trading liquidity-sequence remediation through protected merge, then run one packaged no-effect observation soak. No live order or VPS effect is selected. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -34,7 +31,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Local/public session evidence parity merged; acceptance soak not selected | One bounded parser/accumulator semantics feeds both the local Capsule live-strategy composition and the existing public-shadow runner; gaps, symbol changes, and restarts reset completeness. | Full Rust/Flutter/repository gates, negative mutations, clean checkout, protected PR `#165`, and post-merge run `32449861616` passed at `1397713`. | Select packaged local observation/calculation evidence before any exact live-order pass; VPS, credentials, account reads, order effects, and release remain blocked. |
+| **1.x maintained runtime** | Trading liquidity-sequence remediation selected | One existing market-decision owner composes structural liquidity, current aggressive volume, proxy ranking, and hard guards; context indicators cannot form a second authority path. | Focused strategy vectors and negative mutations pass locally; full gates, clean checkout, protected PR, and post-merge evidence remain required. | After merge, select only a packaged no-effect observation soak; VPS effects, live orders, and release remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

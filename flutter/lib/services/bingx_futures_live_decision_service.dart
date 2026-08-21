@@ -118,6 +118,11 @@ class BingxFuturesLiveDecisionService {
       zone: zone,
     );
     final trendGateBlocked = trendGateCode != 'ok';
+    final liquidationConfluence = _hasLiquidationConfluence(
+      side: decisionSide,
+      zone: zone,
+      levels: input.snapshotInput.liquidityLevels,
+    );
     final canPrepareIntent =
         decisionSide != null &&
         zone != null &&
@@ -138,6 +143,11 @@ class BingxFuturesLiveDecisionService {
         code: trendGateCode,
         passed: !trendGateBlocked,
         detail: trendGateBlocked ? 'trend_gate_blocked' : 'trend_gate_ok',
+      ),
+      BingxTvhDecisionReason(
+        code: 'liquidation_proxy_context',
+        passed: true,
+        detail: 'aligned=$liquidationConfluence',
       ),
     ];
     return _buildResult(
@@ -398,14 +408,35 @@ class BingxFuturesLiveDecisionService {
     List<BingxFuturesLiquidityLevel> levels, {
     required String side,
   }) {
-    return levels
-        .where(
-          (level) =>
-              level.kind.trim().toLowerCase() == 'liquidation' &&
-              level.side.trim().toLowerCase() == side,
-        )
-        .map((level) => _parsePositiveDecimal(level.priceDecimal, field: side))
-        .toList(growable: false);
+    final values =
+        levels
+            .where(
+              (level) =>
+                  (level.kind.trim().toLowerCase() == 'liquidation' ||
+                      level.kind.trim().toLowerCase() == 'liquidation_proxy') &&
+                  level.side.trim().toLowerCase() == side,
+            )
+            .map(
+              (level) => _parsePositiveDecimal(level.priceDecimal, field: side),
+            )
+            .toList();
+    values.sort();
+    return values;
+  }
+
+  bool _hasLiquidationConfluence({
+    required String? side,
+    required BingxFuturesZoneDecisionResult? zone,
+    required List<BingxFuturesLiquidityLevel> levels,
+  }) {
+    if (side == null || zone == null) return false;
+    final legacyZoneSide = side == 'buy' ? 'buyside' : 'sellside';
+    final midpoint = (zone.zoneLow + zone.zoneHigh) / 2;
+    if (midpoint <= 0) return false;
+    return _readLiquidationLevels(
+      levels,
+      side: legacyZoneSide,
+    ).any((price) => ((price - midpoint).abs() / midpoint) <= 0.01);
   }
 
   num _readOpenInterestDeltaPct(BingxFuturesMarketSnapshotInput input) {

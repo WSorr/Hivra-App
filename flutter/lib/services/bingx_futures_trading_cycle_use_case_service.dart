@@ -179,10 +179,11 @@ class BingxFuturesTradingCycleUseCaseService {
         decision.zoneSide == null ||
         decision.zoneLowDecimal == null ||
         decision.zoneHighDecimal == null) {
+      final blocker = _marketDecisionBlocker(decision);
       return _blocked(
         BingxFuturesTradingCycleStatus.marketBlocked,
-        'market_decision_blocked',
-        'No executable market decision is available.',
+        blocker.code,
+        blocker.message,
         decision: decision,
       );
     }
@@ -350,6 +351,68 @@ class BingxFuturesTradingCycleUseCaseService {
       execution: execution,
       stopLossDecimal: targets.stopLossDecimal,
       takeProfitDecimal: targets.takeProfitDecimal,
+    );
+  }
+
+  ({String code, String message}) _marketDecisionBlocker(
+    BingxFuturesLiveDecisionResult decision,
+  ) {
+    final failedCodes =
+        decision.reasons
+            .where((reason) => !reason.passed)
+            .map((reason) => reason.code)
+            .toSet();
+    if (failedCodes.contains('consensus_guard')) {
+      return (
+        code: 'market_consensus_guard_blocked',
+        message: 'Pair-scoped consensus does not authorize this decision.',
+      );
+    }
+    if (failedCodes.contains('funding_guard')) {
+      return (
+        code: 'market_funding_extreme',
+        message: 'Funding is outside the configured trading boundary.',
+      );
+    }
+    if (failedCodes.contains('zone_side_alignment') || decision.zoneConflict) {
+      return (
+        code: 'market_liquidity_zone_conflict',
+        message: 'The liquidity zone conflicts with the activated side.',
+      );
+    }
+    if (decision.trendGateBlocked) {
+      return (
+        code: decision.trendGateCode,
+        message: switch (decision.trendGateCode) {
+          'liquidity_anchor_unavailable' =>
+            'No fresh executable liquidity anchor is available.',
+          'momentum_gate_short_missed_retest' ||
+          'momentum_gate_long_missed_retest' =>
+            'The market has already moved beyond the bounded retest.',
+          'trend_gate_short_far_retest' || 'trend_gate_long_far_retest' =>
+            'The pending retest is too far for the current continuation.',
+          _ => 'The structural market gate rejected this decision.',
+        },
+      );
+    }
+    final volumeUnavailable =
+        failedCodes.contains('long_trade_imbalance') &&
+        failedCodes.contains('short_trade_imbalance');
+    if (volumeUnavailable || decision.side == null) {
+      return (
+        code: 'market_volume_activation_unavailable',
+        message: 'Recent aggressive volume has not activated either side.',
+      );
+    }
+    if (!decision.zoneAnchorExecutable) {
+      return (
+        code: 'liquidity_anchor_unavailable',
+        message: 'No fresh executable liquidity anchor is available.',
+      );
+    }
+    return (
+      code: 'market_decision_incomplete',
+      message: 'The market decision is missing executable evidence.',
     );
   }
 

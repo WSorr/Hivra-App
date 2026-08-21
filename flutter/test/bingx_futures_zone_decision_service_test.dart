@@ -92,6 +92,80 @@ void main() {
       expect(result.strength, greaterThanOrEqualTo(50));
     });
 
+    test('liquidation proxy ranks fresh structure without becoming anchor', () {
+      final base = _inputForSweepUp();
+      BingxFuturesZoneDecisionInput input({List<num> proxies = const <num>[]}) {
+        return BingxFuturesZoneDecisionInput(
+          midPrice: 110,
+          fallbackSide: 'buy',
+          requiredSide: 'buy',
+          microHighs: base.microHighs,
+          microLows: base.microLows,
+          macroHighs: base.macroHighs,
+          macroLows: base.macroLows,
+          higherHighs: const <num>[
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+            119,
+            120,
+            119,
+            118,
+            119,
+          ],
+          higherLows: const <num>[
+            105,
+            104,
+            100,
+            104,
+            106,
+            105,
+            102,
+            105,
+            106,
+            105,
+            104,
+            105,
+          ],
+          higherCloses: const <num>[
+            112,
+            110,
+            104,
+            108,
+            114,
+            111,
+            106,
+            109,
+            113,
+            108,
+            107,
+            109,
+          ],
+          dailyHighs: const <num>[],
+          dailyLows: const <num>[],
+          dailyCloses: const <num>[],
+          weeklyHighs: const <num>[],
+          weeklyLows: const <num>[],
+          liquidationBuyLevels: proxies,
+          recentMicroBars: base.recentMicroBars,
+          zoneNearBps: base.zoneNearBps,
+          zoneFarBps: base.zoneFarBps,
+        );
+      }
+
+      final withoutProxy = service.decide(input: input());
+      final withProxy = service.decide(input: input(proxies: const <num>[102]));
+
+      expect(withoutProxy.externalBuyRetest, 100);
+      expect(withProxy.externalBuyRetest, 102);
+      expect(withProxy.anchorSource, '4h_fresh_low');
+      expect(withProxy.anchorExecutable, isTrue);
+    });
+
     test('locks zone calculation to upstream TVH side', () {
       final base = _inputForSweepUp();
       final result = service.decide(

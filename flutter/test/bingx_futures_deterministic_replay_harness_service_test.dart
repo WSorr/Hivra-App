@@ -16,9 +16,7 @@ void main() {
     const service = BingxFuturesDeterministicReplayHarnessService(
       policy: BingxTvhPolicy(
         minAbsTradeImbalanceRatio: 0.5,
-        minAbsSessionImbalanceRatio: 0.01,
         maxAbsFundingRate: 0.01,
-        requireWhaleActivation: true,
         requireConsensusSignable: true,
       ),
     );
@@ -121,7 +119,7 @@ void main() {
       );
       expect(
         evidence.evidenceHashHex,
-        'faccf741c56a01bef39cd288dcb550635266652fd6ca694ae7a955e083f6b1a5',
+        '4fc12ad3041b61d36986239d61337cdcb49b11ac8bbb21b5c32d702de1f764ac',
       );
       final golden = Map<String, dynamic>.from(
         jsonDecode(
@@ -152,9 +150,7 @@ void main() {
       final liveService = BingxFuturesDeterministicReplayHarnessService(
         policy: const BingxTvhPolicy(
           minAbsTradeImbalanceRatio: 0.5,
-          minAbsSessionImbalanceRatio: 0.01,
           maxAbsFundingRate: 0.01,
-          requireWhaleActivation: true,
           requireConsensusSignable: true,
         ),
         loadLiveSnapshot: ({required exchange, required symbol}) async {

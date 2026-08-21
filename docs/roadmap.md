@@ -4043,6 +4043,30 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     and post-merge repository gates `31654314173` passed. No following pass is
     selected.
 
+- `1.x Trading Liquidity Sequence Recomposition`
+  - Lane: bounded 1.x Trading product remediation; local and public market
+    decision logic only.
+  - Invariant: one deterministic sequence owns market preparation:
+    `fresh liquidity pool -> recent aggressive-volume activation -> structural
+    anchor or sweep/reclaim -> proxy ranking -> hard guards`.
+  - Sole owner: `BingxFuturesLiveDecisionService`, using the existing pure TVH
+    rule engine and zone calculator. The exchange effect, risk, claim,
+    reconciliation, plugin ABI, Core, Ledger, and VPS owners remain unchanged.
+  - Threat model: indefinite session warm-up, indicator-conjunction starvation,
+    liquidation proxy becoming an entry anchor, stale or consumed structure,
+    extreme funding, and generic blocker text hiding the actual rejection.
+  - Exit evidence: context-only session/trend/large-flow vectors, liquidation
+    structural-ranking and proxy-no-authority vectors, exact blocker projection,
+    canonical shadow-vector reconstruction, full local and clean-checkout gates,
+    protected PR/post-merge CI, and packaged no-effect diagnostics smoke.
+  - Entropy reduction:
+
+    | Added | Removed or sealed | Ambiguity eliminated | New owner/path count | Remaining compatibility debt | Next decision unlocked |
+    | --- | --- | --- | --- | --- | --- |
+    | One ordered strategy contract and focused negative mutations | Mandatory full-session/whale/trend conjunction; ignored `liquidation_proxy` handoff; generic blocker | Direction comes from current aggressive volume; entries come only from fresh/reclaimed structure; proxies rank but never authorize | Zero owners, DTO families, plugin ABI changes, or effect paths | `zone_side` retains legacy entry-side naming; thresholds still need packaged market evidence | A bounded no-effect local observation soak after protected merge |
+  - Status: implementation candidate; no exchange effect, VPS deployment, tag,
+    Release, or next pass is authorized until protected merge and evidence.
+
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into
     the existing Capsule-scoped public change feed when the Moltbook workspace

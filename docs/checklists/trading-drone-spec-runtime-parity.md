@@ -13,7 +13,7 @@ Legend:
 |---|---|---|---|
 | Snapshot normalization + canonical hash | DONE | `flutter/lib/services/bingx_futures_market_snapshot_service.dart` | Keep regression green |
 | Live exchange data surface for full TVH snapshot | DONE | `BingxFuturesExchangeService` exposes `getPublicPrice`, `getPublicKlines`, `getPublicDepth`, `getPublicTrades`, `getPublicPremiumIndex`, `getPublicOpenInterest` | Keep parsing tests green and verify exchange payload variants |
-| Feature extractor (EMA/ATR/liquidity/whale) | DONE | `flutter/lib/services/bingx_futures_feature_extractor_service.dart` | Keep regression green |
+| Feature extractor (EMA/ATR/liquidity/flow context) | DONE | `flutter/lib/services/bingx_futures_feature_extractor_service.dart` | Keep regression green |
 | TVH rule engine (`LONG/SHORT/NO_SIGNAL/BLOCKED`) | DONE | `flutter/lib/services/bingx_futures_tvh_rule_engine_service.dart` | Keep regression green |
 | Deterministic replay harness | DONE | `flutter/lib/services/bingx_futures_deterministic_replay_harness_service.dart` | Keep fixture parity checks |
 | Live entry uses TVH decision as primary gate | DONE | `TradingDroneScreen` resolves limit intents via `BingxFuturesLiveDecisionService` before host call | Keep live-decision replay checks green |
@@ -22,10 +22,10 @@ Legend:
 | Momentum-missed continuation gate | DONE | `BingxFuturesLiveDecisionService` blocks untouched far pending entries with deterministic `momentum_gate_*_missed_retest` codes | Keep missed-retest regressions green |
 | HTF liquidity lifecycle gate | DONE | `BingxFuturesZoneDecisionService` accepts only untouched confirmed swing pivots or a bounded closed-candle micro sweep/reclaim with ATR body, expiry, and retest limits; internal fallback levels are diagnostic-only | Keep fresh/sweep-origin/consumed/weak-body/expiry/retest-limit/non-executable-fallback regressions green |
 | Pending-zone evidence projection | DONE | `TradingDroneScreen` labels HTF bounds as pending rather than current price and projects source, formation time, age, signed distance, and mandatory Run Intent revalidation from the matching existing live decision | Keep formatter, malformed-evidence fallback, and live-decision reference-price regressions green; manually verify symbol reset in packaged smoke |
-| Public liquidity confluence proxies | DONE | `BingxFuturesLiveSnapshotBuilderService` deterministically clusters fresh bounded depth, ranks it with closed structure, OI, funding, and aggressive flow, emits at most three `liquidation_proxy` levels per side, and exposes them through the existing strategy diagnostic without granting effect authority | Keep permutation, bounded-output, stale/crossed-depth, force-order isolation, and proxy-only no-authority regressions green |
+| Public liquidity confluence proxies | DONE | `BingxFuturesLiveSnapshotBuilderService` deterministically emits at most three bounded `liquidation_proxy` levels per side; `BingxFuturesZoneDecisionService` uses them only to rank valid closed-structure candidates and never as entry authority | Keep permutation, bounded-output, structural-ranking, stale/crossed-depth, force-order isolation, and proxy-only no-authority regressions green |
 | Live public shadow probe | DONE | The existing replay harness signs canonical public observations through `BingxFuturesPublicMarketDataPort`; run-count `1` remains the one-shot compatibility path and accepts no Capsule, credential, mandate, account state, or effect owner | Unbounded daemon operation, deployment, leases, account reads, and remote effects remain unauthorized |
 | Durable public shadow stream | DONE | `BingxFuturesShadowStreamStore` atomically commits the runner identity, retains at most 256 authenticated tail files, then commits the exact signed tail head as a local checkpoint before bounded cleanup and global sequence continuation | Keep identity/checkpoint pending recovery, foreign-key/corruption/unbound-state rejection, crash overlap, conflicting checkpoint no-delete, repeated compaction, and concurrency regressions green; external anchoring, daemon scheduling, deployment, leases, receivers, account reads, and remote effects remain unauthorized |
-| Bounded public shadow scheduler | DONE | The existing probe composition root may run 1–8928 strictly serial public observations at a 60–3600 second fixed delay; the 31-day supervisor cycle preserves bounded operation while the process-scoped public stream warms complete session evidence, and the first failure terminates without overlap, retry, or inferred success | Keep unbounded loops, credential access from the public runner, listeners, automatic gap bridging, account reads outside their separate one-shot path, and remote effects unauthorized |
+| Bounded public shadow scheduler | DONE | The existing probe composition root may run 1–8928 strictly serial public observations at a 60–3600 second fixed delay; process-scoped session evidence enriches context as coverage accumulates, and the first failure terminates without overlap, retry, or inferred success | Keep unbounded loops, credential access from the public runner, listeners, automatic gap bridging, account reads outside their separate one-shot path, and remote effects unauthorized |
 | Verifiable standalone runner artifact | DONE | One packaging tool compiles the existing public-shadow and transient account-read composition root from a clean pinned source tree and binds the exact host-native binary SHA-256, size, source commit, Dart version, platform, entrypoint, and authority profile in a strict manifest | Dart AOT is not claimed byte-reproducible; keep Linux build evidence, transfer, installation, supervisor, VPS configuration, credentials, durable account state, external anchoring, and remote effects scoped to separate passes |
 | Fail-closed public-shadow supervisor contract | DONE | One systemd unit uses encrypted credential-file delivery, restarts only after a successful bounded batch, stops on failure, denies listener binding, and fixes 128 MiB memory, zero swap, 16 tasks, finite runtime, dynamic identity, and public-only arguments | Keep bundle creation, atomic installation, credential creation, enablement, exact-unit runtime smoke, external anchoring, account reads, leases, and remote effects unauthorized |
 | Verifiable runner bundle and persistent disabled install | DONE | The existing artifact owner binds exact binary/unit bytes and canonical paths, atomically publishes one `/opt` bundle, refuses pre-existing state, persists one encrypted runner-only credential, and leaves the exact unit disabled and inactive; exact uninstall verifies ownership, removes the bundle last for retryability, and the same smoke proves restart identity before complete cleanup | Keep credential rotation/replacement, external anchoring, account reads, leases, and remote effects unauthorized; boot enablement is owned only by the separate identity-bound activation row |
@@ -62,20 +62,20 @@ Legend:
 ## Spec vs Runtime Matrix
 
 - [ ] Spec section `3. Data Inputs` is satisfied by runtime snapshot builder.
-- [ ] Required snapshot groups (instrument, prices, candles, trades, OI, funding, liquidity/session inputs) are present, else `NO_SIGNAL`.
+- [ ] Closed-bar structure and recent aggressive trades are present before a directional market decision can prepare an intent.
 - [ ] Recent REST trades remain bounded recent-flow evidence and cannot be
       relabeled as complete session evidence.
-- [ ] Incomplete current/previous session coverage emits `NO_SIGNAL` even when
-      all other directional evidence aligns.
+- [ ] Incomplete current/previous session coverage remains explicit context and
+      cannot independently authorize or block a directional decision.
 - [ ] Public session evidence retains only three aggregate buckets in process;
       disconnect, malformed input, stale heartbeat, process restart, and the
       bounded supervisor restart reset completeness because the source has no
       sequence identifier.
-- [ ] Trade and session directional gates use dimensionless notional imbalance;
-      raw base-asset quantity deltas remain diagnostic-only.
+- [ ] Recent aggressive trade activation uses dimensionless notional imbalance;
+      session and raw base-asset quantity deltas remain diagnostic-only.
 - [ ] Snapshot normalization rules are honored (UTC, deterministic sorting, fixed decimal scales, closed candles only).
 - [ ] `market_snapshot_hash` is produced from canonical JSON.
-- [ ] Feature extractor computes trend (EMA50/EMA200 15m), ATR14(5m), liquidity levels, and whale activations deterministically.
+- [ ] Feature extractor computes trend (EMA50/EMA200 15m), ATR14(5m), liquidity levels, and large-flow context deterministically.
 - [ ] Live decision emits trend bundle (`trend_15m`, `trend_4h`, `trend_1d`) and deterministic trend-gate status.
 - [ ] Live decision blocks missed continuation retests before host intent preparation.
 - [ ] HTF pending-entry anchors are confirmed untouched swing pivots, never raw highs/lows.
@@ -83,10 +83,13 @@ Legend:
 - [ ] `sweep_origin`, immediate `post_sweep_reaction`, and `consumed` levels cannot silently enter the fresh candidate set.
 - [ ] Post-sweep entry requires a current `sweep -> reclaim -> displacement` decision.
 - [ ] Internal older/recent high/low fallback is diagnostic-only and cannot authorize an intent.
-- [ ] Liquidation, force-order, and orderbook proxy levels remain contextual evidence and cannot authorize an intent.
+- [ ] Liquidation, force-order, and orderbook proxy levels may rank valid structural candidates but cannot authorize an intent or become its anchor.
+- [ ] Trend, OI, session evidence, and large-flow activation remain context; recent aggressive-volume imbalance owns directional activation.
 - [ ] Missing executable liquidity anchor emits `liquidity_anchor_unavailable` and makes managed-order revalidation cancel-only.
 - [ ] Pending-zone fields cannot be mistaken for current price: source, formation time, age, signed distance, and Run Intent revalidation are visible, and changing symbol clears prior evidence.
 - [ ] Rule engine decision path is explicit and hashable: `LONG | SHORT | NO_SIGNAL | BLOCKED`.
+- [ ] A blocked foreground cycle exposes the exact funding, volume, structure,
+      zone-conflict, or continuation reason without invoking intent/effect owners.
 - [ ] Funding guard is applied before execution intent.
 - [ ] Risk governor is applied before exchange execution.
 - [ ] Live exchange execution is blocked if balance, pnl, or position inputs

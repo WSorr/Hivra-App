@@ -115,13 +115,11 @@ Data source policy:
    - buyside/sellside external liquidity levels from HTF swings (up to 1w),
    - internal liquidity levels (local equal highs/lows and range inefficiencies on 1m/5m/15m),
    - liquidation-level feed (if provided by data vendor/exchange endpoint).
-8. Session volume inputs
+8. Session volume context
    - volume by session windows (Asia/London/NY),
    - session taker-imbalance profile for the current and previous session,
    - each profile declares its evidence source and whether coverage is
      complete,
-   - incomplete coverage MUST produce `NO_SIGNAL` even when recent flow,
-     trend, and whale activation align,
    - the public-shadow composition root obtains session evidence only from the
      official unauthenticated BingX public trade stream,
    - the stream exposes no sequence identifier; disconnect, parse failure,
@@ -135,27 +133,31 @@ Data source policy:
      validates every row before mutating an aggregate, and rejects the entire
      frame on any malformed or cross-symbol row,
    - a bucket is complete only when its start is at or after the current
-     uninterrupted connection epoch. Until all required buckets satisfy that
-     condition, the existing deterministic decision path emits `NO_SIGNAL`.
+     uninterrupted connection epoch,
+   - complete or incomplete session evidence is deterministic context; it does
+     not grant or deny entry authority.
 
 Optional (v1.1+):
 
 - long/short account ratio.
 
-If any required group (1..8) is missing, result MUST be `NO_SIGNAL`.
-Missing **optional** groups MUST NOT block signal generation.
+Groups 1-4 are required to derive a closed-bar structural decision. Recent
+trades provide the directional volume activation. Open interest, funding, and
+liquidity proxies are required when their corresponding guard or ranking rule
+is evaluated. Session context and whale activation are optional explanatory
+evidence and MUST NOT independently authorize or block a signal.
 
-### 3.1 Whale Trigger Activation Stream (instead of raw orderbook bias)
+### 3.1 Large-Flow Context (instead of raw orderbook bias)
 
 For v1, the drone MUST NOT rely on passive orderbook imbalance as a primary decision input.
 
-Instead, it tracks **activated large pending orders** ("whale trigger activations") via:
+Instead, it may track large-flow activation context via:
 
 1. aggressive trade prints near mapped liquidity levels,
 2. synchronized impulse in short-window volume,
 3. synchronized OI jump/drop in the same event window.
 
-Normalized event output:
+Normalized context output:
 
 - `activation_side: buy|sell`
 - `activation_price_decimal`
@@ -163,6 +165,10 @@ Normalized event output:
 - `activation_window_start_utc`
 - `activation_window_end_utc`
 - `activation_confidence_decimal` (0..1)
+
+This output is contextual. It may strengthen explainability or ranking, but it
+cannot replace a fresh structural liquidity anchor or recent aggressive-volume
+activation.
 
 ---
 
@@ -375,21 +381,22 @@ simultaneous committed and pending identities, or any unbound retained state
 MUST fail closed without deletion or rebinding. Identity recovery grants no
 Capsule, credential, account, mandate, provider, scheduler, or effect authority.
 
-### 5.4 Microstructure Confirmation
+### 5.4 Directional Volume Activation
 
 - taker-flow imbalance from recent trades:
   - raw quantity delta remains diagnostic only,
   - the directional gate uses the dimensionless notional ratio
     `(aggressive_buy_notional - aggressive_sell_notional) /
     (aggressive_buy_notional + aggressive_sell_notional)`.
-- open-interest delta:
-  - positive/negative regime relative to prior 3 buckets.
-- session volume regime:
-  - active session volume percentile vs trailing baseline,
-  - a dimensionless notional imbalance supports direction,
-  - only complete current/previous session evidence may authorize a signal.
-- whale trigger activation:
-  - require at least one high-confidence activation event aligned with intended direction.
+- positive imbalance activates a long candidate when it reaches the configured
+  magnitude,
+- negative imbalance activates a short candidate when it reaches the configured
+  magnitude,
+- default absolute activation threshold v1: `0.01` of recent aggressive
+  notional (1%),
+- neutral recent flow yields `NO_SIGNAL`,
+- open interest, session imbalance, trend, and large-flow activation remain
+  context and do not substitute for recent aggressive-volume activation.
 
 ### 5.5 External/Internal Liquidity Confirmation
 
@@ -449,16 +456,22 @@ revalidates the zone. A ranked scan selection may project the matching retained
 live decision, but changing the symbol MUST clear that evidence and execution
 MUST continue to use a newly computed decision.
 
+Liquidation and bounded orderbook-derived proxies rank already valid structural
+pools. They never become executable anchors by themselves. If a proxy aligns
+with multiple candidates, deterministic distance bands increase the candidate
+weight while preserving the structural source and lifecycle.
+
 If liquidation-level feed is unavailable:
 
 - liquidation score is marked `unknown`,
-- signal can still pass if all non-liquidation criteria pass.
+- signal can still pass if structural liquidity, volume activation, and all
+  hard guards pass.
 
 ### 5.6 Funding Regime Filter
 
 - block signals on extreme funding:
   - `abs(funding_rate) > funding_extreme_threshold`.
-- default threshold v1: `0.0015` (0.15%).
+- default threshold v1: `0.01` (1%).
 
 ### 5.7 Orderbook Policy
 
@@ -471,25 +484,35 @@ Orderbook depth is **not** a required decision feature for v1 TVH.
 
 ---
 
-## 6. TVH Entry Criteria (v1 Rule-Set)
+## 6. TVH Entry Sequence (v1 Rule-Set)
 
-All conditions below MUST pass in one evaluation cycle.
+The canonical strategy is an ordered sequence, not a conjunction of every
+available indicator:
+
+1. Detect bounded fresh liquidity pools from confirmed closed-candle structure.
+2. Maintain each pool lifecycle as `fresh`, `sweep_origin`,
+   `post_sweep_reaction`, `reclaimed`, `consumed`, or unavailable.
+3. Use recent aggressive-volume imbalance to activate exactly one direction.
+4. Select an executable pool or a bounded sweep/reclaim event for that side.
+5. Rank valid structural candidates with liquidation-proxy confluence.
+6. Apply hard freshness, funding, structural, risk, claim, and effect guards.
+7. Use trend, OI, session, and large-flow evidence as context for explanation
+   and bounded retest safety, not as independent authority.
+
+The independently implemented Hivra detector may resemble common
+buyside/sellside-liquidity and ICT workflows at the conceptual level, but no
+third-party script, source code, threshold set, or branding is part of this
+contract.
 
 ### 6.1 LONG TVH
 
-1. Trend context bullish (EMA50 > EMA200, 15m).
-2. A sellside sweep is detected within last 3 closed 5m candles.
-3. Price re-enters zone and closes above sweep reclaim level.
-   Historical `sweep_origin`/`consumed` HTF levels do not satisfy this rule.
-4. Microstructure confirms:
-   - delta > 0,
-   - open-interest delta >= 0,
-   - session volume regime supports long,
-   - whale trigger activation supports long.
-5. Liquidity confirms:
-   - external liquidity map has valid upside target,
-   - internal liquidity supports reclaim continuation.
-6. Funding is not extreme.
+1. Recent aggressive-volume imbalance activates `buy`.
+2. An untouched confirmed structural low or a current sellside-liquidity
+   sweep/reclaim supplies the executable entry anchor.
+3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
+   not satisfy the anchor rule.
+4. Liquidation proxies may rank the structural candidate but cannot supply it.
+5. Funding is not extreme and freshness/risk/effect guards pass.
 
 Entry anchor:
 
@@ -497,23 +520,26 @@ Entry anchor:
 
 ### 6.2 SHORT TVH
 
-1. Trend context bearish (EMA50 < EMA200, 15m).
-2. A buyside sweep is detected within last 3 closed 5m candles.
-3. Price re-enters zone and closes below sweep reclaim level.
-   Historical `sweep_origin`/`consumed` HTF levels do not satisfy this rule.
-4. Microstructure confirms:
-   - delta < 0,
-   - open-interest delta >= 0 (new positioning) or policy-allowed weakening regime,
-   - session volume regime supports short,
-   - whale trigger activation supports short.
-5. Liquidity confirms:
-   - external liquidity map has valid downside target,
-   - internal liquidity supports reclaim continuation.
-6. Funding is not extreme.
+1. Recent aggressive-volume imbalance activates `sell`.
+2. An untouched confirmed structural high or a current buyside-liquidity
+   sweep/reclaim supplies the executable entry anchor.
+3. Historical `sweep_origin`, `post_sweep_reaction`, and `consumed` levels do
+   not satisfy the anchor rule.
+4. Liquidation proxies may rank the structural candidate but cannot supply it.
+5. Funding is not extreme and freshness/risk/effect guards pass.
 
 Entry anchor:
 
 - zone-based pending entry inside reclaim zone.
+
+### 6.2.1 Liquidity Naming Boundary
+
+The strategy uses ICT pool-side language: highs hold buyside liquidity and lows
+hold sellside liquidity. The existing plugin ABI field `zone_side` is retained
+for 1.x compatibility and names the entry/order side (`buyside` for `buy`,
+`sellside` for `sell`). It MUST NOT be interpreted as the pool-side taxonomy.
+Changing that compatibility field requires a separately versioned plugin
+contract and is outside this pass.
 
 ### 6.3 Trend-Gate (Continuation vs Far Retest)
 
@@ -676,7 +702,10 @@ Broadcast behavior:
 1. Determinism:
    - repeated evaluation on identical snapshot produces identical `intent_hash`.
 2. Safety:
-   - missing required data -> `NO_SIGNAL`, never partial trade intent.
+   - missing closed-bar structure or directional volume activation ->
+     `NO_SIGNAL`, never a partial trade intent,
+   - unavailable session or large-flow context remains visible but does not
+     impersonate entry authority,
    - failed risk gate -> deterministic `blocked` decision code.
 3. Boundary discipline:
    - no direct ledger writes from drone,
