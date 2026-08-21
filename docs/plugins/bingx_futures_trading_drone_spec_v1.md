@@ -494,7 +494,9 @@ Orderbook depth is **not** a required decision feature for v1 TVH.
 The canonical strategy is an ordered sequence, not a conjunction of every
 available indicator:
 
-1. Detect bounded fresh liquidity pools from confirmed closed-candle structure.
+1. Detect bounded fresh liquidity pools from confirmed closed-candle structure;
+   while the latest closed micro bar and liquidity-event identity are unchanged,
+   the exact zone geometry must not drift with the live quote.
 2. Maintain each pool lifecycle as `fresh`, `sweep_origin`,
    `post_sweep_reaction`, `reclaimed`, `consumed`, or unavailable.
 3. Use recent aggressive-volume imbalance to activate exactly one direction.

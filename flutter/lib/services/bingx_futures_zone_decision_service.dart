@@ -279,8 +279,12 @@ class BingxFuturesZoneDecisionService {
     final macroLow = input.macroLows.reduce((a, b) => a < b ? a : b);
     final macroRange = macroHigh - macroLow;
 
-    final minWidth = mid * 0.0010;
-    final maxWidth = mid * 0.0040;
+    final closedStructurePrice =
+        input.microCloses.isNotEmpty && input.microCloses.last > 0
+            ? input.microCloses.last
+            : (macroHigh + macroLow) / 2;
+    final minWidth = closedStructurePrice * 0.0010;
+    final maxWidth = closedStructurePrice * 0.0040;
     final widthFromMacro = macroRange * 0.08;
     final width = _clamp(widthFromMacro, minWidth, maxWidth);
     final fallbackWidth = _fallbackZoneWidth(

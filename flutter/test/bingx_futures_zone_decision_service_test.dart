@@ -521,6 +521,23 @@ void main() {
       expect(result.zoneLow, greaterThanOrEqualTo(88));
     });
 
+    test('closed liquidity event zone ignores live quote drift', () {
+      final first = service.decide(
+        input: _microReclaimInput(side: 'sell', midPrice: 96),
+      );
+      final second = service.decide(
+        input: _microReclaimInput(side: 'sell', midPrice: 96.4),
+      );
+
+      expect(first.anchorSource, 'micro_sweep_reclaim');
+      expect(second.anchorSource, first.anchorSource);
+      expect(first.liquidityEventId, isNotNull);
+      expect(second.liquidityEventId, first.liquidityEventId);
+      expect(second.latestClosedMicroBarAtUtc, first.latestClosedMicroBarAtUtc);
+      expect(second.zoneLow, first.zoneLow);
+      expect(second.zoneHigh, first.zoneHigh);
+    });
+
     test('rejects reclaim candle whose body is too small relative to ATR', () {
       final result = service.decide(
         input: _microReclaimInput(side: 'sell', weakBody: true),
@@ -552,6 +569,7 @@ void main() {
 
 BingxFuturesZoneDecisionInput _microReclaimInput({
   required String side,
+  num midPrice = 96,
   bool weakBody = false,
   bool expired = false,
   bool excessiveRetests = false,
@@ -601,13 +619,24 @@ BingxFuturesZoneDecisionInput _microReclaimInput({
   }
 
   return BingxFuturesZoneDecisionInput(
-    midPrice: 96,
+    symbol: 'DOGE-USDT',
+    midPrice: midPrice,
     fallbackSide: side,
     requiredSide: side,
     microHighs: highs,
     microLows: lows,
     microOpens: opens,
     microCloses: closes,
+    microCloseTimesUtc: List<String>.generate(
+      highs.length,
+      (index) =>
+          DateTime.utc(
+            2026,
+            8,
+            21,
+            10,
+          ).add(Duration(minutes: index * 5)).toIso8601String(),
+    ),
     macroHighs: List<num>.filled(40, 105),
     macroLows: List<num>.filled(40, 85),
     higherHighs: const <num>[],
