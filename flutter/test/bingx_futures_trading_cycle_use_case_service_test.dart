@@ -41,7 +41,7 @@ void main() {
       },
     );
 
-    test('sizes a pending order against the exact zone entry price', () async {
+    test('sizes a pending buy against its exact trigger price', () async {
       String? capturedReferencePrice;
       BingxFuturesIntentCommand? capturedIntent;
       final service = _service(
@@ -71,8 +71,45 @@ void main() {
       final result = await service.run(_command(executeEffect: false));
 
       expect(result.status, BingxFuturesTradingCycleStatus.prepared);
-      expect(capturedReferencePrice, '100');
+      expect(capturedReferencePrice, '110');
       expect(capturedIntent!.quantityDecimal, '0.13');
+      expect(capturedIntent!.triggerPriceDecimal, '110');
+    });
+
+    test('sizes a pending sell against its exact trigger price', () async {
+      String? capturedReferencePrice;
+      BingxFuturesIntentCommand? capturedIntent;
+      final service = _service(
+        decision: _decision(decision: BingxTvhDecisionKind.short, side: 'sell'),
+        sizingRunner: ({
+          required symbol,
+          required maximumNotionalQuote,
+          required referencePriceDecimal,
+        }) async {
+          capturedReferencePrice = referencePriceDecimal;
+          return const BingxFuturesOrderSizingResult(
+            status: BingxFuturesOrderSizingStatus.sized,
+            reasonCode: 'sized',
+            reasonMessage: 'ok',
+            quantityDecimal: '0.13',
+            orderNotionalQuoteDecimal: '11.7',
+            minimumQuantityDecimal: '0.01',
+            minimumNotionalQuoteDecimal: '2',
+          );
+        },
+        intentRunner: (command) async {
+          capturedIntent = command;
+          return _intentResult(command);
+        },
+        executionRunner: _executionRunner(onCall: () {}),
+      );
+
+      final result = await service.run(_command(executeEffect: false));
+
+      expect(result.status, BingxFuturesTradingCycleStatus.prepared);
+      expect(capturedReferencePrice, '90');
+      expect(capturedIntent!.quantityDecimal, '0.13');
+      expect(capturedIntent!.triggerPriceDecimal, '90');
     });
 
     test('rejects missing event evidence before intent or effect', () async {

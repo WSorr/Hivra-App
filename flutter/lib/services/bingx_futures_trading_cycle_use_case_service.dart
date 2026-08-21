@@ -220,10 +220,11 @@ class BingxFuturesTradingCycleUseCaseService {
       );
     }
     final entryPrice = (zoneLow + zoneHigh) / 2;
+    final triggerPrice = decision.side == 'buy' ? zoneHigh : zoneLow;
     final sizing = await _runSizing(
       symbol: symbol,
       maximumNotionalQuote: command.maximumNotionalQuote,
-      referencePriceDecimal: _formatDecimal(entryPrice),
+      referencePriceDecimal: _formatDecimal(triggerPrice),
     );
     if (sizing.status != BingxFuturesOrderSizingStatus.sized ||
         sizing.quantityDecimal == null) {
