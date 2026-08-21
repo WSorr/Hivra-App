@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivra_app/models/bingx_futures_signal_rank_models.dart';
 import 'package:hivra_app/models/bingx_futures_order_tracking_models.dart';
+import 'package:hivra_app/models/plugin_host_api_models.dart';
 import 'package:hivra_app/screens/trading_drone_screen.dart';
 
 void main() {
@@ -24,6 +25,11 @@ void main() {
   test('signal scan action remains refresh after results exist', () {
     expect(tradingSignalScanActionLabel(scanning: false), 'Refresh Scan');
     expect(tradingSignalScanActionLabel(scanning: true), 'Scanning');
+  });
+
+  test('prepared intent is not labelled as executed effect', () {
+    expect(tradingIntentStatusLabel(null), 'idle');
+    expect(tradingIntentStatusLabel(PluginHostApiStatus.executed), 'prepared');
   });
 
   test('exact export selection must match active mandate symbol and mode', () {

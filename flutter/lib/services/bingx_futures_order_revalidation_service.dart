@@ -1,10 +1,7 @@
 import '../models/bingx_futures_live_decision_models.dart';
 import '../models/bingx_futures_exchange_models.dart';
 
-enum BingxFuturesOrderRevalidationAction {
-  keep,
-  cancel,
-}
+enum BingxFuturesOrderRevalidationAction { keep, cancel }
 
 class BingxFuturesOrderRevalidationResult {
   final BingxFuturesOrderRevalidationAction action;
@@ -37,8 +34,9 @@ class BingxFuturesOrderRevalidationService {
       );
     }
 
-    final effectiveSide = liveDecision.side ?? liveDecision.zoneEvaluationSide;
-    final hasStructuralEvaluation = liveDecision.zoneEvaluationSide != null &&
+    final effectiveSide = liveDecision.zoneEvaluationSide ?? liveDecision.side;
+    final hasStructuralEvaluation =
+        liveDecision.zoneEvaluationSide != null &&
         liveDecision.zoneLowDecimal != null &&
         liveDecision.zoneHighDecimal != null;
     if (!liveDecision.canPrepareIntent && !hasStructuralEvaluation) {
@@ -96,12 +94,14 @@ class BingxFuturesOrderRevalidationService {
     final structuralOnly = !liveDecision.canPrepareIntent;
     return BingxFuturesOrderRevalidationResult(
       action: BingxFuturesOrderRevalidationAction.keep,
-      reasonCode: structuralOnly
-          ? 'structural_setup_still_valid'
-          : 'live_setup_still_valid',
-      reasonMessage: structuralOnly
-          ? 'Open order remains aligned with its side-locked structural zone.'
-          : 'Open order remains aligned with live TVH setup.',
+      reasonCode:
+          structuralOnly
+              ? 'structural_setup_still_valid'
+              : 'live_setup_still_valid',
+      reasonMessage:
+          structuralOnly
+              ? 'Open order remains aligned with its side-locked structural zone.'
+              : 'Open order remains aligned with live TVH setup.',
     );
   }
 

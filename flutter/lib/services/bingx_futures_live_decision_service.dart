@@ -50,7 +50,7 @@ class BingxFuturesLiveDecisionService {
       BingxTvhDecisionKind.noSignal || BingxTvhDecisionKind.blocked => null,
     };
     final requestedZoneSide = _normalizeSide(input.zoneEvaluationSide);
-    final zoneEvaluationSide = decisionSide ?? requestedZoneSide;
+    final zoneEvaluationSide = requestedZoneSide ?? decisionSide;
 
     BingxFuturesZoneDecisionResult? zone;
     if (zoneEvaluationSide != null) {
@@ -111,15 +111,20 @@ class BingxFuturesLiveDecisionService {
       );
     }
 
-    final zoneConflict = zone != null && zone.side != zoneEvaluationSide;
+    final zoneConflict =
+        zone != null &&
+        (zone.side != zoneEvaluationSide ||
+            (requestedZoneSide != null &&
+                decisionSide != null &&
+                decisionSide != requestedZoneSide));
     final trendGateCode = _evaluateTrendGate(
-      side: decisionSide,
+      side: zoneEvaluationSide,
       features: features,
       zone: zone,
     );
     final trendGateBlocked = trendGateCode != 'ok';
     final liquidationConfluence = _hasLiquidationConfluence(
-      side: decisionSide,
+      side: zoneEvaluationSide,
       zone: zone,
       levels: input.snapshotInput.liquidityLevels,
     );

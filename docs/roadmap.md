@@ -4196,11 +4196,27 @@ No active `11.x` trading-drone / AI-engineer module-boundary debt remains in v1 
     Pending-order sizing must use the same side-specific trigger price bound
     into the intent and checked by the mandate; buy uses the zone high and sell
     uses the zone low. Midpoint remains the strategy entry reference only.
-  - Status: active (2026-08-22). Provider conformance is merged and green;
-    trigger-bound sizing remediation, a fresh packaged live effect, and restart
-    reconciliation remain. The Trading Drone is not operational; VPS/24/7
-    execution, scheduling, release, tag, and any additional live effect remain
-    blocked.
+  - Packaged live evidence: Release build `1.0.3+100030046` from merge SHA
+    `6b81149` placed exactly one Capsule-mandated XRP trigger order with one
+    provider POST, HTTP success, a retained provider identity, and immediate
+    open-order reconciliation. The existing revalidation lifecycle later
+    cancelled that order and retained the terminal receipt. Restarting the
+    same artifact restored the byte-identical journal and issued zero duplicate
+    effects.
+  - Remaining finding: side-locked structural revalidation requested the
+    existing SELL order side, but `BingxFuturesLiveDecisionService` allowed a
+    momentary opposite LONG signal to replace the requested evaluation side.
+    That produced an unrelated unavailable buy anchor and cancelled the SELL
+    order after less than one minute. Explicit structural side must own zone
+    evaluation while an opposite actionable signal remains a fail-closed
+    intent conflict. The intent-only UI must also say `prepared`, not
+    `executed`.
+  - Status: active remediation (2026-08-22). Provider conformance,
+    trigger-bound sizing, one exact live effect, receipt, cancellation, and
+    no-duplicate restart restoration are proven. Side-locked revalidation and
+    prepared-label regressions must pass protected gates before this pass can
+    close. The Trading Drone is not operational; VPS/24/7 execution,
+    scheduling, release, tag, and any additional live effect remain blocked.
 
 - `1.x Moltbook Bundled Public Change Ingestion`
   - Scope: import one bounded, reviewed build-time product-change manifest into

@@ -150,27 +150,50 @@ void main() {
       expect(result.reasonCode, 'structural_setup_still_valid');
     });
 
-    test('keeps plain NO_SIGNAL when no structural evaluation was requested',
-        () {
+    test('keeps side-locked SELL structure during opposite live signal', () {
       final result = service.revalidate(
         order: _openOrder(
-          side: 'BUY',
-          priceDecimal: '560.0',
-          triggerPriceDecimal: '560.0',
+          side: 'SELL',
+          priceDecimal: '104.5',
+          triggerPriceDecimal: '104.5',
         ),
         liveDecision: _decision(
-          side: null,
-          zoneLowDecimal: null,
-          zoneHighDecimal: null,
+          side: 'buy',
+          zoneEvaluationSide: 'sell',
+          zoneLowDecimal: '104.0',
+          zoneHighDecimal: '105.0',
           canPrepareIntent: false,
-          decision: BingxTvhDecisionKind.noSignal,
-          zoneAnchorExecutable: false,
+          decision: BingxTvhDecisionKind.long,
         ),
       );
 
       expect(result.shouldCancel, isFalse);
-      expect(result.reasonCode, 'live_decision_not_actionable');
+      expect(result.reasonCode, 'structural_setup_still_valid');
     });
+
+    test(
+      'keeps plain NO_SIGNAL when no structural evaluation was requested',
+      () {
+        final result = service.revalidate(
+          order: _openOrder(
+            side: 'BUY',
+            priceDecimal: '560.0',
+            triggerPriceDecimal: '560.0',
+          ),
+          liveDecision: _decision(
+            side: null,
+            zoneLowDecimal: null,
+            zoneHighDecimal: null,
+            canPrepareIntent: false,
+            decision: BingxTvhDecisionKind.noSignal,
+            zoneAnchorExecutable: false,
+          ),
+        );
+
+        expect(result.shouldCancel, isFalse);
+        expect(result.reasonCode, 'live_decision_not_actionable');
+      },
+    );
   });
 }
 
@@ -207,14 +230,16 @@ BingxFuturesLiveDecisionResult _decision({
 }) {
   return BingxFuturesLiveDecisionResult(
     canPrepareIntent: canPrepareIntent,
-    decision: decision ??
+    decision:
+        decision ??
         (side == 'buy'
             ? BingxTvhDecisionKind.long
             : BingxTvhDecisionKind.short),
     side: side,
-    zoneSide: (side ?? zoneEvaluationSide) == 'buy'
-        ? 'buyside'
-        : (side ?? zoneEvaluationSide) == 'sell'
+    zoneSide:
+        (side ?? zoneEvaluationSide) == 'buy'
+            ? 'buyside'
+            : (side ?? zoneEvaluationSide) == 'sell'
             ? 'sellside'
             : null,
     zoneLowDecimal: zoneLowDecimal,

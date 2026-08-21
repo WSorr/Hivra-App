@@ -7,14 +7,15 @@ Live Vertical` is active. Sanitized read-only evidence from the dedicated
 futures subaccount established the current balance, contract-rule, empty
 realized-PnL, empty-position, and empty-open-order response shapes. The existing
 exchange adapter and execution/reconciliation lifecycle remain the sole owners.
-Provider conformance is merged and its gates are green. The first packaged
-live attempt issued no provider request: the mandate guard rejected quantity
-sized against a zone midpoint whose buy trigger produced a larger notional.
-The active remediation binds pending-order sizing to the exact side-specific
-trigger price. The pass is not complete until that fix passes protected gates
-and one new packaged build places exactly one bounded live order, retains the
-provider identity and receipt, then reconciles the same effect after restart
-without duplication.
+Provider conformance and trigger-bound sizing are merged and green. A packaged
+build then placed exactly one bounded live trigger order, retained the provider
+identity, reconciled it while open, cancelled it through the existing
+revalidation lifecycle, and restored the exact terminal claim after restart
+without a duplicate provider effect. That run exposed one remaining product
+remediation: an explicitly side-locked structural revalidation can be replaced
+by a momentary opposite actionable signal, causing a valid pending order to be
+cancelled against the wrong side. The same remediation replaces the misleading
+intent-only UI label `executed` with `prepared`.
 Until then the Trading Drone is not operational and VPS/24/7 execution remains
 blocked. No plugin ABI, Core, Ledger, tag, or Release is authorized.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
@@ -28,7 +29,7 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | Complete the active BingX provider-contract pass through protected gates, then run one packaged minimal live order and restart reconciliation. Do not start VPS/24/7 execution. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | Complete the bounded BingX side-locked revalidation remediation through protected gates. Do not repeat the proven live effect or start VPS/24/7 execution. | This board; detailed history remains in `roadmap.md` |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
 Do not infer current work from chronological history in `roadmap.md`. Start
@@ -38,7 +39,7 @@ from this table, then open only the linked authority for the selected unit.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | BingX provider-contract conformance active | The existing exchange owner validates captured provider shapes; the existing trading cycle owns trigger-bound sizing; the existing effect lifecycle alone owns placement, receipt, identity, and restart reconciliation. | Provider conformance is merged; trigger-bound sizing remediation, protected gates, packaged live effect, and restart evidence remain pending. | Exactly one bounded packaged live order and no-duplicate restart reconciliation; VPS, scheduler, release, and any additional effect remain blocked. |
+| **1.x maintained runtime** | BingX minimal-live remediation active | The existing live-decision owner preserves explicit structural side evaluation; the existing effect lifecycle alone owns placement, receipt, identity, cancellation, and restart evidence. | Provider conformance, trigger sizing, one packaged live effect, provider receipt, cancellation receipt, and no-duplicate restart restoration are proven. | Merge side-locked revalidation and prepared-label remediation through protected gates; VPS, scheduler, release, and any additional effect remain blocked. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
