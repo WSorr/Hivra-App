@@ -99,6 +99,12 @@ String tradingSideAfterCycle({
 String tradingZoneSideForOrderSide(String orderSide) =>
     orderSide.trim().toLowerCase() == 'buy' ? 'buyside' : 'sellside';
 
+@visibleForTesting
+String? tradingManagedOrderStructuralSide(String orderSide) {
+  final normalized = orderSide.trim().toLowerCase();
+  return normalized == 'buy' || normalized == 'sell' ? normalized : null;
+}
+
 String tradingZoneSideAfterCycle({
   required String currentZoneSide,
   required bool cyclePrepared,
@@ -3266,28 +3272,26 @@ class _TradingDroneScreenState extends State<TradingDroneScreen> {
 
       for (final order in entry.value) {
         if (!_managedOrderIds.contains(order.orderId)) continue;
-        final orderSide = switch (order.side.trim().toLowerCase()) {
-          'buy' => 'buy',
-          'sell' => 'sell',
-          _ => null,
-        };
+        final structuralSide = tradingManagedOrderStructuralSide(order.side);
         var revalidationDecision = actionableDecision;
-        if (!actionableDecision.canPrepareIntent && orderSide != null) {
-          if (!structuralDecisions.containsKey(orderSide)) {
-            structuralDecisions[orderSide] = await _computeLiveDecision(
+        // Entry confirmation is short-lived; a live order belongs to its
+        // structural side until that projection becomes invalid.
+        if (structuralSide != null) {
+          if (!structuralDecisions.containsKey(structuralSide)) {
+            structuralDecisions[structuralSide] = await _computeLiveDecision(
               symbol: entry.key,
               peerHex: '',
               silent: true,
               forceConsensusSignable: true,
-              zoneEvaluationSide: orderSide,
+              zoneEvaluationSide: structuralSide,
             );
           }
-          final structuralDecision = structuralDecisions[orderSide];
+          final structuralDecision = structuralDecisions[structuralSide];
           if (structuralDecision == null) {
             await _module.uiLog.log(
               'bingx.exchange.revalidate.skip',
               'symbol=${entry.key} orderId=${order.orderId} '
-                  'reason=structural_decision_unavailable side=$orderSide',
+                  'reason=structural_decision_unavailable side=$structuralSide',
             );
             continue;
           }

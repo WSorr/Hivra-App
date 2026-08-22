@@ -194,6 +194,12 @@ void main() {
     expect(tradingZoneSideForOrderSide('sell'), 'sellside');
   });
 
+  test('managed order revalidation always locks its existing side', () {
+    expect(tradingManagedOrderStructuralSide('SELL'), 'sell');
+    expect(tradingManagedOrderStructuralSide('BUY'), 'buy');
+    expect(tradingManagedOrderStructuralSide('unknown'), isNull);
+  });
+
   test(
     'restart resumes an unresolved live effect without a known order id',
     () {
