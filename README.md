@@ -38,10 +38,10 @@ Hivra has two deliberately separate development lines:
   capability owners, contracts, facts, projections, effects, and dependency
   edges. It does not introduce a second production runtime into 1.x.
 
-The short current-stage board is
-[Hivra Development Control](docs/development-control.md). The detailed work
-history and active remediation program remain in the
-[Roadmap](docs/roadmap.md).
+The current-stage board is
+[Hivra Development Control](docs/development-control.md). The
+[Roadmap](docs/roadmap.md) is a frozen historical archive, not an active
+backlog or completion source.
 
 ## Architecture
 

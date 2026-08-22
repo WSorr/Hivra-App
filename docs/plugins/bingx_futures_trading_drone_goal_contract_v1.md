@@ -37,12 +37,13 @@ Any change violating one of these laws is rejected.
 2. Plugin host boundary + capability contract: `docs/plugins/plugin_host_api_v1.md`
 3. Drone decision/TVH contract: `docs/plugins/bingx_futures_trading_drone_spec_v1.md`
 4. Runtime parity gate: `docs/checklists/trading-drone-spec-runtime-parity.md`
-5. Milestone history/status log: `docs/roadmap.md` (status, not normative behavior source)
+5. Current product selection: `docs/development-control.md`
 
 If documents disagree:
 
 - normative behavior follows levels 1..4 above,
-- roadmap text must be updated to match normative docs, not vice versa.
+- archived roadmap text never overrides this contract; correct existing
+  historical text only when it states a false fact.
 
 ---
 
@@ -94,17 +95,18 @@ future headless composition must reuse that port rather than copy screen logic.
 
 ---
 
-## 6. Work Cadence for Every Drone Change
+## 6. Work Cadence for Drone Changes
 
-After each logic patch:
+For each bounded product change:
 
-1. Update normative docs when contract changes.
-2. Run required drone tests from parity checklist.
-3. Run `tools/review/release_discipline_gate.sh`.
-4. Capture manual smoke evidence for affected path (`situational` / `interactive` / `risk_blocked` / retry / receipt).
-5. Record unresolved gaps explicitly before next patch.
+1. Update this contract only when behavior or an invariant changes.
+2. Run focused tests for the affected owner.
+3. Run repository gates once before integration.
+4. Capture focused manual smoke only when the changed risk requires it.
+5. Keep unresolved product failures in the issue or active board, not in a new
+   documentation closure pass.
 
-No “silent” behavior change without this cycle.
+Routine fixes do not require a separate status commit or documentation PR.
 
 ---
 
@@ -128,16 +130,19 @@ No “silent” behavior change without this cycle.
 
 ---
 
-## 9. Ownership Rule
+## 9. Product Completion Rule
 
-Trading-drone work is considered complete only when:
+The Trading Drone is considered operational only when one packaged build proves
+the complete bounded journey:
 
-- code path,
-- tests,
-- docs,
-- and smoke evidence
+- current provider reads and risk projection succeed;
+- one fresh event produces at most one provider order;
+- the provider receipt is bound to that event and authority;
+- restart reconciliation restores the same order without a duplicate effect;
+- cancellation and terminal state are visible and durable.
 
-all point to the same behavior.
+Green unit tests, documentation, a completed pass, or a single accepted order
+are necessary evidence but are not an operational-product claim.
 
 ---
 

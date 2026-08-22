@@ -1,6 +1,15 @@
 # Hivra Roadmap
 
-This roadmap tracks the main engineering work needed to move Hivra from a working prototype to a disciplined, stable public product.
+This file is the frozen chronological archive of engineering work completed or
+considered through 2026-08-22. It is not the active backlog, current-status
+board, or completion checklist.
+
+Routine fixes MUST NOT append status, closure, remediation, checkpoint, CI-run,
+or smoke-test narratives here. Current work is selected only in
+`docs/development-control.md`; normative behavior belongs in the relevant
+contract; implementation history belongs in Git, the merged PR, tests, and
+release evidence. This archive may only shrink through consolidation or receive
+a factual correction to existing history.
 
 It is intentionally focused on architecture, determinism, release hygiene, and recovery safety rather than feature volume.
 
@@ -16,8 +25,9 @@ Hivra is a local-first runtime for user-owned Capsules, not a social network or 
 
 ## Product Axis Gate
 
-Every roadmap item is evaluated against `docs/product-axis.md` before work
-starts and after it lands. It must name:
+New work is evaluated against `docs/product-axis.md` before implementation and
+after product evidence. A high-risk architecture, security, migration, or
+external-effect unit must name:
 
 - the permanent invariant strengthened or risk removed;
 - the sole capability owner;
@@ -36,8 +46,8 @@ it does not enter production behind temporary DTOs or parallel facades.
 ## Parallel Version Tracks
 
 The current one-page navigation board and session protocol live in
-`docs/development-control.md`. This roadmap remains the detailed engineering
-history and status authority for individual work items.
+`docs/development-control.md`. This roadmap remains historical evidence only
+and has no status authority.
 
 ### Hivra 1.x: maintained product line
 

@@ -354,8 +354,10 @@ require_present "$DRONE_GOAL_CONTRACT" '## 2\. Three Hivra Laws \(Mandatory\)' \
   "drone goal contract includes Hivra laws section"
 require_present "$DRONE_GOAL_CONTRACT" '## 3\. Source-of-Truth Stack \(Order of Authority\)' \
   "drone goal contract includes source-of-truth stack"
-require_present "$DRONE_GOAL_CONTRACT" '## 6\. Work Cadence for Every Drone Change' \
-  "drone goal contract includes mandatory work cadence"
+require_present "$DRONE_GOAL_CONTRACT" '## 6\. Work Cadence for Drone Changes' \
+  "drone goal contract includes product work cadence"
+require_present "$DRONE_GOAL_CONTRACT" 'Routine fixes do not require a separate status commit or documentation PR\.' \
+  "drone goal contract forbids routine closure bureaucracy"
 require_present "$DRONE_GOAL_CONTRACT" '## 7\. Acceptance Gates \(Must Pass Together\)' \
   "drone goal contract includes acceptance gates"
 require_present "$CHECKLIST_USER_LIFETIME" 'Scenario 1: First Capsule Birth' \
