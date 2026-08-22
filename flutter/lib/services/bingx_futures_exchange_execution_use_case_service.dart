@@ -649,10 +649,17 @@ class BingxFuturesExchangeExecutionUseCaseService {
       takeProfitRiskReward: current.takeProfitRiskReward,
     );
     await store.saveReconciledForCapsule(capsuleRootHex, next);
-    final lifecycleStates = <BingxManagedOrderLifecycleStatus>[
-      ...provenance.values.map((value) => value.lifecycleStatus),
-      ...claims.values.map((value) => value.lifecycleStatus),
-    ];
+    final lifecycleStates =
+        <String, BingxManagedOrderLifecycleStatus>{
+          for (final record in provenance.values)
+            'order:${record.orderId}': record.lifecycleStatus,
+          for (final claim in claims.values)
+            if (claim.orderId?.trim().isNotEmpty == true)
+              'order:${claim.orderId!.trim()}': claim.lifecycleStatus
+            else
+              'client:${claim.testOrder ? "test" : "live"}:${claim.clientOrderId}':
+                  claim.lifecycleStatus,
+        }.values;
     final terminalCount = lifecycleStates.where(_isTerminalLifecycle).length;
     final unresolvedCount =
         lifecycleStates
