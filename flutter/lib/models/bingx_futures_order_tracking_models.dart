@@ -335,9 +335,13 @@ class BingxFuturesRemoteMandateAdmission {
   static const String contractVersion = 'trading-remote-mandate-admission-v2';
   static const String exactOrderContractVersion =
       'trading-remote-mandate-admission-v3';
+  static const String deterministicOrderContractVersion =
+      'trading-remote-mandate-admission-v4';
   static const String signatureSuite = 'ed25519-v1';
   static const String operationKind = 'account_read';
   static const String exactOrderOperationKind = 'one_exact_order';
+  static const String deterministicOrderOperationKind =
+      'one_deterministic_order';
   static const List<String> accountReadScope = <String>[
     'balance',
     'positions',
@@ -351,6 +355,7 @@ class BingxFuturesRemoteMandateAdmission {
   final String runnerKeyId;
   final BingxFuturesTradingMandate mandate;
   final Map<String, dynamic>? exactOrder;
+  final Map<String, dynamic>? strategyPolicy;
   final String signatureHex;
 
   const BingxFuturesRemoteMandateAdmission._({
@@ -359,6 +364,7 @@ class BingxFuturesRemoteMandateAdmission {
     required this.runnerKeyId,
     required this.mandate,
     required this.exactOrder,
+    required this.strategyPolicy,
     required this.signatureHex,
   });
 
@@ -383,6 +389,7 @@ class BingxFuturesRemoteMandateAdmission {
       runnerKeyId: normalizedRunnerKeyId,
       mandate: mandate,
       exactOrder: null,
+      strategyPolicy: null,
       signatureHex: signatureHex,
     );
   }
@@ -412,6 +419,37 @@ class BingxFuturesRemoteMandateAdmission {
       runnerKeyId: normalizedRunnerKeyId,
       mandate: mandate,
       exactOrder: normalizedOrder,
+      strategyPolicy: null,
+      signatureHex: signatureHex,
+    );
+  }
+
+  static BingxFuturesRemoteMandateAdmission? issueDeterministicOrder({
+    required BingxFuturesTradingMandate mandate,
+    required String runnerKeyId,
+    required Map<String, dynamic> strategyPolicy,
+    required String? Function(String commitmentHashHex) signCommitment,
+  }) {
+    if (mandate.revokedAtUtc != null) return null;
+    final normalizedRunnerKeyId = runnerKeyId.trim().toLowerCase();
+    if (!_isSha256(normalizedRunnerKeyId)) return null;
+    final normalizedPolicy = _normalizeStrategyPolicy(strategyPolicy);
+    if (normalizedPolicy == null) return null;
+    final commitmentHashHex = _deriveDeterministicOrderCommitmentHash(
+      mandate: mandate,
+      runnerKeyId: normalizedRunnerKeyId,
+      strategyPolicy: normalizedPolicy,
+    );
+    final signatureHex =
+        signCommitment(commitmentHashHex)?.trim().toLowerCase() ?? '';
+    if (!RegExp(r'^[0-9a-f]{128}$').hasMatch(signatureHex)) return null;
+    return BingxFuturesRemoteMandateAdmission._(
+      operationId: commitmentHashHex,
+      commitmentHashHex: commitmentHashHex,
+      runnerKeyId: normalizedRunnerKeyId,
+      mandate: mandate,
+      exactOrder: null,
+      strategyPolicy: normalizedPolicy,
       signatureHex: signatureHex,
     );
   }
@@ -436,7 +474,10 @@ class BingxFuturesRemoteMandateAdmission {
       final version = decoded['contract_version'];
       final isAccountRead = version == contractVersion;
       final isExactOrder = version == exactOrderContractVersion;
-      if (!isAccountRead && !isExactOrder) return null;
+      final isDeterministicOrder = version == deterministicOrderContractVersion;
+      if (!isAccountRead && !isExactOrder && !isDeterministicOrder) {
+        return null;
+      }
       final expectedKeys = <String>{
         'contract_version',
         'operation_id',
@@ -445,6 +486,7 @@ class BingxFuturesRemoteMandateAdmission {
         'operation_kind',
         if (isAccountRead) 'read_scope',
         if (isExactOrder) 'exact_order',
+        if (isDeterministicOrder) 'strategy_policy',
         'max_uses',
         'mandate',
         'signature_suite',
@@ -462,6 +504,7 @@ class BingxFuturesRemoteMandateAdmission {
       );
       if (mandate == null || mandate.revokedAtUtc != null) return null;
       Map<String, dynamic>? exactOrder;
+      Map<String, dynamic>? strategyPolicy;
       if (isAccountRead) {
         final decodedReadScope = decoded['read_scope'];
         if (decoded['operation_kind'] != operationKind ||
@@ -472,7 +515,7 @@ class BingxFuturesRemoteMandateAdmission {
             )) {
           return null;
         }
-      } else {
+      } else if (isExactOrder) {
         if (decoded['operation_kind'] != exactOrderOperationKind ||
             decoded['exact_order'] is! Map<String, dynamic>) {
           return null;
@@ -482,6 +525,15 @@ class BingxFuturesRemoteMandateAdmission {
           mandate,
         );
         if (exactOrder == null) return null;
+      } else {
+        if (decoded['operation_kind'] != deterministicOrderOperationKind ||
+            decoded['strategy_policy'] is! Map<String, dynamic>) {
+          return null;
+        }
+        strategyPolicy = _normalizeStrategyPolicy(
+          decoded['strategy_policy']! as Map<String, dynamic>,
+        );
+        if (strategyPolicy == null) return null;
       }
       final runnerKeyId = decoded['runner_key_id']?.toString() ?? '';
       final commitmentHashHex =
@@ -498,10 +550,16 @@ class BingxFuturesRemoteMandateAdmission {
                     mandate: mandate,
                     runnerKeyId: runnerKeyId,
                   )
-                  : _deriveExactOrderCommitmentHash(
+                  : isExactOrder
+                  ? _deriveExactOrderCommitmentHash(
                     mandate: mandate,
                     runnerKeyId: runnerKeyId,
                     exactOrder: exactOrder!,
+                  )
+                  : _deriveDeterministicOrderCommitmentHash(
+                    mandate: mandate,
+                    runnerKeyId: runnerKeyId,
+                    strategyPolicy: strategyPolicy!,
                   ))) {
         return null;
       }
@@ -511,6 +569,7 @@ class BingxFuturesRemoteMandateAdmission {
         runnerKeyId: runnerKeyId,
         mandate: mandate,
         exactOrder: exactOrder,
+        strategyPolicy: strategyPolicy,
         signatureHex: signatureHex,
       );
       if (raw != admission.canonicalJson) return null;
@@ -555,16 +614,27 @@ class BingxFuturesRemoteMandateAdmission {
   }
 
   bool get isExactOrder => exactOrder != null;
+  bool get isDeterministicOrder => strategyPolicy != null;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'contract_version':
-        isExactOrder ? exactOrderContractVersion : contractVersion,
+        isExactOrder
+            ? exactOrderContractVersion
+            : isDeterministicOrder
+            ? deterministicOrderContractVersion
+            : contractVersion,
     'operation_id': operationId,
     'commitment_hash_hex': commitmentHashHex,
     'runner_key_id': runnerKeyId,
-    'operation_kind': isExactOrder ? exactOrderOperationKind : operationKind,
-    if (!isExactOrder) 'read_scope': accountReadScope,
+    'operation_kind':
+        isExactOrder
+            ? exactOrderOperationKind
+            : isDeterministicOrder
+            ? deterministicOrderOperationKind
+            : operationKind,
+    if (!isExactOrder && !isDeterministicOrder) 'read_scope': accountReadScope,
     if (isExactOrder) 'exact_order': exactOrder,
+    if (isDeterministicOrder) 'strategy_policy': strategyPolicy,
     'max_uses': maxUses,
     'mandate': mandate.toJson(),
     'signature_suite': signatureSuite,
@@ -599,6 +669,73 @@ class BingxFuturesRemoteMandateAdmission {
             ),
           )
           .toString();
+
+  static String _deriveDeterministicOrderCommitmentHash({
+    required BingxFuturesTradingMandate mandate,
+    required String runnerKeyId,
+    required Map<String, dynamic> strategyPolicy,
+  }) =>
+      sha256
+          .convert(
+            utf8.encode(
+              'hivra:bingx-futures-remote-mandate-admission:v4\n'
+              '${jsonEncode(<String, dynamic>{'contract_version': deterministicOrderContractVersion, 'runner_key_id': runnerKeyId, 'operation_kind': deterministicOrderOperationKind, 'strategy_policy': strategyPolicy, 'max_uses': maxUses, 'mandate': mandate.toJson()})}',
+            ),
+          )
+          .toString();
+
+  static Map<String, dynamic>? _normalizeStrategyPolicy(
+    Map<String, dynamic> value,
+  ) {
+    const keys = <String>{
+      'runner_build_id',
+      'plugin_id',
+      'plugin_version',
+      'package_digest_hex',
+      'host_abi',
+      'stop_loss_percent',
+      'minimum_risk_reward',
+    };
+    if (value.keys.toSet().difference(keys).isNotEmpty ||
+        keys.difference(value.keys.toSet()).isNotEmpty) {
+      return null;
+    }
+    final buildId = value['runner_build_id']?.toString().trim() ?? '';
+    final pluginId = value['plugin_id']?.toString().trim() ?? '';
+    final pluginVersion = value['plugin_version']?.toString().trim() ?? '';
+    final digest =
+        value['package_digest_hex']?.toString().trim().toLowerCase() ?? '';
+    final hostAbi = value['host_abi']?.toString().trim() ?? '';
+    final stopLoss = (value['stop_loss_percent'] as num?)?.toDouble();
+    final minimumRiskReward =
+        (value['minimum_risk_reward'] as num?)?.toDouble();
+    if (buildId.isEmpty ||
+        pluginId.isEmpty ||
+        pluginVersion.isEmpty ||
+        hostAbi.isEmpty ||
+        buildId.length > 128 ||
+        pluginId.length > 128 ||
+        pluginVersion.length > 128 ||
+        hostAbi.length > 128 ||
+        !_isSha256(digest) ||
+        stopLoss == null ||
+        !stopLoss.isFinite ||
+        stopLoss <= 0 ||
+        minimumRiskReward == null ||
+        !minimumRiskReward.isFinite ||
+        minimumRiskReward <= 0) {
+      return null;
+    }
+    return <String, dynamic>{
+      'runner_build_id': buildId,
+      'plugin_id': pluginId,
+      'plugin_version': pluginVersion,
+      'package_digest_hex': digest,
+      'host_abi': hostAbi,
+      'stop_loss_percent': stopLoss,
+      'minimum_risk_reward': minimumRiskReward,
+    };
+  }
 
   static Map<String, dynamic>? _normalizeExactOrder(
     Map<String, dynamic> value,

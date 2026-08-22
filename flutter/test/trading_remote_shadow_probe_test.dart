@@ -627,6 +627,81 @@ void main() {
     expect(requests.where((request) => request.method == 'POST'), hasLength(1));
   });
 
+  test('one deterministic authority cannot execute a second candidate', () async {
+    final fixture = await _exactOrderFixture(testOrder: true);
+    addTearDown(fixture.dispose);
+    final exactAdmission =
+        BingxFuturesRemoteMandateAdmission.parseAndVerify(
+          untrustedWireBytes:
+              await File(
+                fixture.options['exact-order-admission-file']!,
+              ).readAsBytes(),
+          verifySignature:
+              ({
+                required messageHashHex,
+                required participantIdHex,
+                required signatureHex,
+              }) => true,
+        )!;
+    final deterministic =
+        BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
+          mandate: exactAdmission.mandate,
+          runnerKeyId: exactAdmission.runnerKeyId,
+          strategyPolicy: <String, dynamic>{
+            'runner_build_id': 'runner-build',
+            'plugin_id': 'hivra.bingx-futures-trading',
+            'plugin_version': '0.2.7-plugins',
+            'package_digest_hex': 'a' * 64,
+            'host_abi': 'dart-headless-v1',
+            'stop_loss_percent': 5,
+            'minimum_risk_reward': 2,
+          },
+          signCommitment: (_) => '8' * 128,
+        )!;
+    final credentials = await readExchangeCredentialFile(
+      fixture.options['exact-order-credential-file']!,
+    );
+    final requests = <BingxHttpRequest>[];
+    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+      requests.add(request);
+      return const BingxHttpResponse(
+        statusCode: 200,
+        body:
+            '{"code":0,"msg":"success","data":{"order":{"orderID":"test-order-1"}}}',
+      );
+    }
+
+    final first = await runAuthorizedExactOrder(
+      admission: deterministic,
+      exactOrder: exactAdmission.exactOrder!,
+      effectOperationId: deterministic.operationId,
+      credentials: credentials,
+      stateHome: fixture.options['exact-order-state-home']!,
+      nowUtc: () => fixture.nowUtc,
+      requestSender: sender,
+    );
+    final secondOrder =
+        Map<String, dynamic>.from(exactAdmission.exactOrder!)
+          ..['client_order_id'] = 'hivra-order-2'
+          ..['intent_hash_hex'] = 'b' * 64;
+    await expectLater(
+      runAuthorizedExactOrder(
+        admission: deterministic,
+        exactOrder: secondOrder,
+        effectOperationId: deterministic.operationId,
+        credentials: credentials,
+        stateHome: fixture.options['exact-order-state-home']!,
+        nowUtc: () => fixture.nowUtc,
+        requestSender: sender,
+      ),
+      throwsStateError,
+    );
+
+    expect(jsonDecode(first)['state'], 'succeeded');
+    expect(jsonDecode(first)['operation_id'], deterministic.operationId);
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+  });
+
   test('ambiguous test order remains unresolved without blind retry', () async {
     final fixture = await _exactOrderFixture(testOrder: true);
     addTearDown(fixture.dispose);

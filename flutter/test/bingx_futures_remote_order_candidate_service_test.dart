@@ -84,6 +84,58 @@ void main() {
       },
     );
 
+    test('binds one deterministic cycle to exact runner policy', () async {
+      final fixture = await _fixture();
+      final admission =
+          BingxFuturesRemoteMandateAdmission.issueDeterministicOrder(
+            mandate: fixture.mandate,
+            runnerKeyId: '7' * 64,
+            strategyPolicy: <String, dynamic>{
+              'runner_build_id': 'runner-build',
+              'plugin_id': 'hivra.bingx-futures-trading',
+              'plugin_version': '0.2.7-plugins',
+              'package_digest_hex': 'a' * 64,
+              'host_abi': 'dart-headless-v1',
+              'stop_loss_percent': 5,
+              'minimum_risk_reward': 2,
+            },
+            signCommitment: (_) => '8' * 128,
+          );
+
+      expect(admission, isNotNull);
+      expect(admission!.isDeterministicOrder, isTrue);
+      expect(admission.isExactOrder, isFalse);
+      expect(
+        admission.toJson()['operation_kind'],
+        BingxFuturesRemoteMandateAdmission.deterministicOrderOperationKind,
+      );
+      final reparsed = BingxFuturesRemoteMandateAdmission.parseAndVerify(
+        untrustedWireBytes: utf8.encode(admission.canonicalJson),
+        verifySignature:
+            ({
+              required messageHashHex,
+              required participantIdHex,
+              required signatureHex,
+            }) => true,
+      );
+      expect(reparsed?.canonicalJson, admission.canonicalJson);
+
+      final mutated = jsonDecode(admission.canonicalJson);
+      mutated['strategy_policy']['minimum_risk_reward'] = 1;
+      expect(
+        BingxFuturesRemoteMandateAdmission.parseAndVerify(
+          untrustedWireBytes: utf8.encode(jsonEncode(mutated)),
+          verifySignature:
+              ({
+                required messageHashHex,
+                required participantIdHex,
+                required signatureHex,
+              }) => true,
+        ),
+        isNull,
+      );
+    });
+
     test('does not adapt stale or mutated candidate bytes', () async {
       final fixture = await _fixture();
       final result = await _compose(fixture);
