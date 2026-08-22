@@ -575,9 +575,56 @@ void main() {
             as Map<String, dynamic>;
 
     expect(first['state'], 'succeeded');
+    expect(first['operation_id'], List<String>.filled(64, 'a').join());
     expect(replay, first);
     expect(requests.where((request) => request.method == 'POST'), hasLength(1));
     expect(requests.single.uri.path, '/openApi/swap/v2/trade/order/test');
+  });
+
+  test('renewed admission cannot repeat the same exact intent', () async {
+    final fixture = await _exactOrderFixture(testOrder: true);
+    addTearDown(fixture.dispose);
+    final requests = <BingxHttpRequest>[];
+    Future<BingxHttpResponse> sender(BingxHttpRequest request) async {
+      requests.add(request);
+      return const BingxHttpResponse(
+        statusCode: 200,
+        body:
+            '{"code":0,"msg":"success","data":{"order":{"orderID":"test-order-1"}}}',
+      );
+    }
+
+    final first =
+        jsonDecode(
+              await runMandateBoundExactOrder(
+                options: fixture.options,
+                runnerSeedBytes: fixture.runnerSeedBytes,
+                nowUtc: () => fixture.nowUtc,
+                requestSender: sender,
+              ),
+            )
+            as Map<String, dynamic>;
+    final renewedAdmissionOperationId = await fixture.replaceAdmission(
+      fixture.nowUtc.add(const Duration(hours: 2)),
+    );
+    final renewed =
+        jsonDecode(
+              await runMandateBoundExactOrder(
+                options: fixture.options,
+                runnerSeedBytes: fixture.runnerSeedBytes,
+                nowUtc: () => fixture.nowUtc,
+                requestSender: sender,
+              ),
+            )
+            as Map<String, dynamic>;
+
+    expect(
+      renewedAdmissionOperationId,
+      isNot(fixture.initialAdmissionOperationId),
+    );
+    expect(renewed, first);
+    expect(renewed['operation_id'], List<String>.filled(64, 'a').join());
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
   });
 
   test('ambiguous test order remains unresolved without blind retry', () async {
@@ -714,6 +761,8 @@ Future<
     List<int> runnerSeedBytes,
     DateTime nowUtc,
     Map<String, String> options,
+    String initialAdmissionOperationId,
+    Future<String> Function(DateTime expiresAtUtc) replaceAdmission,
     Future<void> Function() dispose,
   })
 >
@@ -735,21 +784,6 @@ _exactOrderFixture({required bool testOrder}) async {
   const apiSecret = 'exact-order-api-secret';
   final accountBinding = sha256.convert(utf8.encode(apiKey)).toString();
   final nowUtc = DateTime.utc(2026, 8, 19, 12);
-  final mandate = BingxFuturesTradingMandate.issue(
-    capsuleRootHex: capsuleRootHex,
-    accountBindingHashHex: accountBinding,
-    symbol: 'BTC-USDT',
-    testOrder: testOrder,
-    issuedAtUtc: nowUtc.subtract(const Duration(minutes: 1)),
-    expiresAtUtc: nowUtc.add(const Duration(hours: 1)),
-    maxOrderNotionalQuoteDecimal: '2',
-    maxRiskPerTradePercent: 1,
-    maxDailyLossPercent: 3,
-    maxConcurrentPositions: 1,
-    cooldownAfterLossStreak: 2,
-    cooldownMinutes: 10,
-    maxEffects: 1,
-  );
   final exactOrder = <String, dynamic>{
     'client_order_id': 'hivra-order-1',
     'symbol': 'BTC-USDT',
@@ -765,26 +799,48 @@ _exactOrderFixture({required bool testOrder}) async {
     'intent_hash_hex': List<String>.filled(64, 'a').join(),
     'test_order': testOrder,
   };
-  final unsigned =
-      BingxFuturesRemoteMandateAdmission.issueExactOrder(
-        mandate: mandate,
-        runnerKeyId: runnerKeyId,
-        exactOrder: exactOrder,
-        signCommitment: (_) => List<String>.filled(128, '0').join(),
-      )!;
-  final signature = await Ed25519().sign(
-    _testDecodeHex(unsigned.commitmentHashHex),
-    keyPair: capsuleKeyPair,
-  );
-  final admission =
-      BingxFuturesRemoteMandateAdmission.issueExactOrder(
-        mandate: mandate,
-        runnerKeyId: runnerKeyId,
-        exactOrder: exactOrder,
-        signCommitment: (_) => _testHex(signature.bytes),
-      )!;
   final admissionFile = File('${directory.path}/admission.json');
-  await admissionFile.writeAsString(admission.canonicalJson, flush: true);
+  Future<String> replaceAdmission(DateTime expiresAtUtc) async {
+    final mandate = BingxFuturesTradingMandate.issue(
+      capsuleRootHex: capsuleRootHex,
+      accountBindingHashHex: accountBinding,
+      symbol: 'BTC-USDT',
+      testOrder: testOrder,
+      issuedAtUtc: nowUtc.subtract(const Duration(minutes: 1)),
+      expiresAtUtc: expiresAtUtc,
+      maxOrderNotionalQuoteDecimal: '2',
+      maxRiskPerTradePercent: 1,
+      maxDailyLossPercent: 3,
+      maxConcurrentPositions: 1,
+      cooldownAfterLossStreak: 2,
+      cooldownMinutes: 10,
+      maxEffects: 1,
+    );
+    final unsigned =
+        BingxFuturesRemoteMandateAdmission.issueExactOrder(
+          mandate: mandate,
+          runnerKeyId: runnerKeyId,
+          exactOrder: exactOrder,
+          signCommitment: (_) => List<String>.filled(128, '0').join(),
+        )!;
+    final signature = await Ed25519().sign(
+      _testDecodeHex(unsigned.commitmentHashHex),
+      keyPair: capsuleKeyPair,
+    );
+    final admission =
+        BingxFuturesRemoteMandateAdmission.issueExactOrder(
+          mandate: mandate,
+          runnerKeyId: runnerKeyId,
+          exactOrder: exactOrder,
+          signCommitment: (_) => _testHex(signature.bytes),
+        )!;
+    await admissionFile.writeAsString(admission.canonicalJson, flush: true);
+    return admission.operationId;
+  }
+
+  final initialAdmissionOperationId = await replaceAdmission(
+    nowUtc.add(const Duration(hours: 1)),
+  );
   final credentialFile = File('${directory.path}/credential.json');
   await credentialFile.writeAsString(
     jsonEncode(<String, String>{
@@ -802,6 +858,8 @@ _exactOrderFixture({required bool testOrder}) async {
     directory: directory,
     runnerSeedBytes: runnerSeedBytes,
     nowUtc: nowUtc,
+    initialAdmissionOperationId: initialAdmissionOperationId,
+    replaceAdmission: replaceAdmission,
     options: <String, String>{
       'mode': exactOrderMode,
       'runner-seed-file': '${directory.path}/unused-runner-seed',

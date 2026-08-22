@@ -90,6 +90,15 @@ Future<String> runMandateBoundExactOrder({
   if (!Directory(stateHome).isAbsolute) {
     throw const FormatException('exact order state home must be absolute');
   }
+  final effectOperationId =
+      admission.exactOrder!['intent_hash_hex']
+          ?.toString()
+          .trim()
+          .toLowerCase() ??
+      '';
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(effectOperationId)) {
+    throw const FormatException('exact order intent identity is invalid');
+  }
   final now = nowUtc ?? () => DateTime.now().toUtc();
   final adapter = BingxFuturesExternalEffectAdapter(
     exchange: BingxFuturesExchangeService(
@@ -116,7 +125,7 @@ Future<String> runMandateBoundExactOrder({
   for (final operation in await effects.list(
     pluginId: bingxFuturesTradingPluginId,
   )) {
-    if (operation.operationId == admission.operationId) {
+    if (operation.operationId == effectOperationId) {
       existing = operation;
       break;
     }
@@ -125,7 +134,7 @@ Future<String> runMandateBoundExactOrder({
     throw const FormatException('exact order authority is not active');
   }
   var operation = await effects.prepare(
-    operationId: admission.operationId,
+    operationId: effectOperationId,
     pluginId: bingxFuturesTradingPluginId,
     providerId: BingxFuturesExternalEffectAdapter.providerId,
     accountBindingId: accountBinding,
@@ -138,7 +147,7 @@ Future<String> runMandateBoundExactOrder({
     }
     operation = await effects.approve(
       pluginId: bingxFuturesTradingPluginId,
-      operationId: admission.operationId,
+      operationId: effectOperationId,
       approvalEvidenceHashHex: admission.commitmentHashHex,
     );
   }
@@ -148,7 +157,7 @@ Future<String> runMandateBoundExactOrder({
     }
     operation = await effects.enqueue(
       pluginId: bingxFuturesTradingPluginId,
-      operationId: admission.operationId,
+      operationId: effectOperationId,
     );
   }
   if (operation.state == ExternalEffectState.queued &&
@@ -159,7 +168,7 @@ Future<String> runMandateBoundExactOrder({
   }
   operation = await effects.process(
     pluginId: bingxFuturesTradingPluginId,
-    operationId: admission.operationId,
+    operationId: effectOperationId,
   );
   return jsonEncode(<String, dynamic>{
     'contract_version': 'hivra-trading-exact-order-evidence-v1',

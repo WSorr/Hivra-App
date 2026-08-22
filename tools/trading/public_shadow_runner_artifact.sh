@@ -1195,6 +1195,9 @@ if is_account_read:
         ",".join(value["read_scope"]), encoding="ascii"
     )
 else:
+    pathlib.Path(work, "effect-operation-id").write_text(
+        value["exact_order"]["intent_hash_hex"], encoding="ascii"
+    )
     pathlib.Path(work, "exact-order.json").write_text(
         json.dumps(value["exact_order"], separators=(",", ":")), encoding="utf-8"
     )
@@ -1855,9 +1858,10 @@ execute_exact_order_once() {
     "$mandate" "$EXPECTED_RUNNER_KEY_ID" "$work/verified"
   [ "$(cat "$work/verified/operation-kind")" = "one_exact_order" ] ||
     die "exact order authority kind mismatch"
-  local operation_id
-  operation_id="$(cat "$work/verified/operation-id")"
-  local transient_name="hivra-trading-exact-order-${operation_id:0:12}-$$"
+  local admission_operation_id effect_operation_id
+  admission_operation_id="$(cat "$work/verified/operation-id")"
+  effect_operation_id="$(cat "$work/verified/effect-operation-id")"
+  local transient_name="hivra-trading-exact-order-${effect_operation_id:0:12}-$$"
   local credential_dir="/run/credentials/$transient_name.service"
   if ! systemd-run \
     --unit="$transient_name" \
@@ -1911,12 +1915,12 @@ execute_exact_order_once() {
   fi
   [ ! -s "$work/stderr" ] || die "exact order produced unexpected standard error"
   local state
-  state="$(validate_exact_order_evidence "$work/stdout" "$operation_id")"
+  state="$(validate_exact_order_evidence "$work/stdout" "$effect_operation_id")"
   trap - EXIT INT TERM
   rm -rf "$work"
   rm -f "$lock_path"
   exec 9>&-
-  echo "PASS trading-runner-artifact: exact order lifecycle state=$state operation_id=$operation_id"
+  echo "PASS trading-runner-artifact: exact order lifecycle state=$state effect_operation_id=$effect_operation_id admission_operation_id=$admission_operation_id"
 }
 
 install_disabled() {
@@ -2541,6 +2545,10 @@ PY
     "$mandate_test/exact-verified"
   [ "$(cat "$mandate_test/exact-verified/operation-kind")" = "one_exact_order" ] ||
     die "self-test lost exact-order operation kind"
+  local expected_exact_effect
+  expected_exact_effect="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exact_order"]["intent_hash_hex"])' "$mandate_test/exact-admission.json")"
+  [ "$(cat "$mandate_test/exact-verified/effect-operation-id")" = "$expected_exact_effect" ] ||
+    die "self-test lost exact-order effect identity"
   cp "$mandate_test/exact-admission.json" "$mandate_test/exact-mutated.json"
   sed -i.bak 's/"quantity_decimal":"0.01"/"quantity_decimal":"0.02"/' \
     "$mandate_test/exact-mutated.json"
