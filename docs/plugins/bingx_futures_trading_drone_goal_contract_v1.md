@@ -1088,6 +1088,13 @@ candidate hash, and rejects expired, mutated, incomplete, non-canonical, or
 non-positive order values. This is schema composition only: it neither issues
 the v3 admission nor signs, journals, or executes an effect.
 
+When an admitted exact order reaches the existing remote effect journal, its
+canonical `intent_hash_hex` is the effect operation identity. The v3 admission
+commitment remains signed approval evidence and may change when authority is
+renewed; it must not create another journal operation for the same exact intent.
+This closes exact-intent replay without claiming that independently recomposed
+candidates for one liquidity event are already one cryptographic identity.
+
 ## 12. Local Bounded Mandate Boundary
 
 The normative mandate contract is section 5.3.3 of
