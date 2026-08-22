@@ -6,6 +6,7 @@ import 'package:cryptography/cryptography.dart';
 import '../models/bingx_futures_market_snapshot_models.dart';
 import '../models/bingx_futures_tvh_rule_models.dart';
 import 'bingx_futures_feature_extractor_service.dart';
+import 'bingx_futures_live_decision_service.dart';
 import 'bingx_futures_live_snapshot_builder_service.dart';
 import 'bingx_futures_market_snapshot_service.dart';
 import 'bingx_futures_public_market_data_port.dart';
@@ -191,6 +192,7 @@ class BingxFuturesDeterministicReplayHarnessService {
   final BingxFuturesMarketSnapshotService _snapshotService;
   final BingxFuturesFeatureExtractorService _featureExtractor;
   final BingxFuturesTvhRuleEngineService _ruleEngine;
+  final BingxFuturesLiveDecisionService _liveDecisionService;
   final BingxTvhPolicy _policy;
   final BingxFuturesLiveShadowSnapshotLoader _loadLiveSnapshot;
 
@@ -201,11 +203,14 @@ class BingxFuturesDeterministicReplayHarnessService {
         const BingxFuturesFeatureExtractorService(),
     BingxFuturesTvhRuleEngineService ruleEngine =
         const BingxFuturesTvhRuleEngineService(),
+    BingxFuturesLiveDecisionService liveDecisionService =
+        const BingxFuturesLiveDecisionService(),
     BingxTvhPolicy policy = const BingxTvhPolicy(),
     BingxFuturesLiveShadowSnapshotLoader? loadLiveSnapshot,
   }) : _snapshotService = snapshotService,
        _featureExtractor = featureExtractor,
        _ruleEngine = ruleEngine,
+       _liveDecisionService = liveDecisionService,
        _policy = policy,
        _loadLiveSnapshot = loadLiveSnapshot ?? _loadDefaultLiveShadowSnapshot;
 
@@ -251,6 +256,25 @@ class BingxFuturesDeterministicReplayHarnessService {
       marketSnapshotHashHex: snapshotDigest.marketSnapshotHashHex,
       featureHashHex: featureResult.featureHashHex,
       decisionHashHex: decision.decisionHashHex,
+      decision: decision.decision,
+      topReasonCode:
+          decision.reasons.isNotEmpty ? decision.reasons.first.code : '',
+    );
+  }
+
+  BingxFuturesReplayRunResult runPublicLiveMarket({
+    required String fixtureId,
+    required BingxFuturesMarketSnapshotInput snapshotInput,
+  }) {
+    final decision = _liveDecisionService.decidePublicMarket(
+      snapshotInput: snapshotInput,
+      policy: _policy,
+    );
+    return BingxFuturesReplayRunResult(
+      fixtureId: fixtureId,
+      marketSnapshotHashHex: decision.marketSnapshotHashHex,
+      featureHashHex: decision.featureHashHex,
+      decisionHashHex: decision.liveDecisionHashHex,
       decision: decision.decision,
       topReasonCode:
           decision.reasons.isNotEmpty ? decision.reasons.first.code : '',
@@ -434,10 +458,9 @@ class BingxFuturesDeterministicReplayHarnessService {
       throw StateError('public snapshot unavailable: ${snapshot.errorCode}');
     }
     final publicKey = await signingKey.extractPublicKey();
-    final publicRun = runPublicMarket(
+    final publicRun = runPublicLiveMarket(
       fixtureId: 'live:$normalizedSymbol',
       snapshotInput: snapshot.snapshotInput!,
-      fundingRateDecimal: snapshot.snapshotInput!.funding.fundingRateDecimal,
     );
     final observedAt = observedAtUtc.toUtc();
     final unsigned = buildShadowEvidence(

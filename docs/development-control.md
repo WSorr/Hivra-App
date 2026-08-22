@@ -4,7 +4,8 @@ Status date: 2026-08-22
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
 Current development focus: Hivra 1.x product completion. The Trading Drone has
 proved one bounded live order and restart reconciliation, but it is not yet an
-operational product. No next implementation unit is selected. VPS/24/7
+operational product. Remote public-shadow evidence now reproduces the full
+market-only live decision rather than a reduced TVH verdict. VPS/24/7
 execution, plugin ABI, Core, Ledger, tag, Release, and 2.0 runtime work remain
 blocked until an explicit product finding selects them.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
@@ -29,7 +30,7 @@ then open only the contract and tests for the selected product outcome.
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | Product completion; no unit selected | Chat, Moltbook, and Trading must each close a complete user journey through their existing canonical owners. | Trading has proved one bounded live effect and restart reconciliation; this is evidence, not an operational-product claim. | Select one reproduced product blocker. Do not create a documentation pass to describe it. |
+| **1.x maintained runtime** | Product completion; no unit selected | Chat, Moltbook, and Trading must each close a complete user journey through their existing canonical owners. | Trading has proved one bounded live effect, restart reconciliation, and full live-decision remote shadow parity; this is evidence, not an operational-product claim. | Select one reproduced product blocker. Do not create a documentation pass to describe it. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |

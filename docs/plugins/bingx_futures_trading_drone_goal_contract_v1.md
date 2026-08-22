@@ -214,12 +214,14 @@ Canonical Pass A path:
 ```text
 public BingX market data
   -> pinned Trading Drone package and policy
-  -> deterministic shadow decision
+  -> full market-only live decision (TVH + zone + trend + target)
   -> signed, bounded shadow evidence
   -> local comparison and diagnostics only
 ```
 
-There is no remote effect path in Pass A.
+The shadow decision uses the same live decision owner as the foreground drone,
+but its public entry accepts no consensus, risk, account, mandate, credential,
+or effect input. There is no remote effect path in Pass A.
 
 ### 11.2 Permanent Authority Boundary
 

@@ -33,18 +33,54 @@ class BingxFuturesLiveDecisionService {
        _ruleEngine = ruleEngine,
        _zoneDecision = zoneDecision;
 
-  BingxFuturesLiveDecisionResult decide(BingxFuturesLiveDecisionInput input) {
+  BingxFuturesLiveDecisionResult decide(BingxFuturesLiveDecisionInput input) =>
+      _decide(input, marketOnly: false);
+
+  BingxFuturesLiveDecisionResult decidePublicMarket({
+    required BingxFuturesMarketSnapshotInput snapshotInput,
+    int recentMicroBars = 8,
+    double zoneNearBps = 15.0,
+    double zoneFarBps = 35.0,
+    BingxTvhPolicy policy = const BingxTvhPolicy(),
+    String? zoneEvaluationSide,
+  }) => _decide(
+    BingxFuturesLiveDecisionInput(
+      snapshotInput: snapshotInput,
+      isConsensusSignable: true,
+      recentMicroBars: recentMicroBars,
+      zoneNearBps: zoneNearBps,
+      zoneFarBps: zoneFarBps,
+      policy: policy,
+      zoneEvaluationSide: zoneEvaluationSide,
+    ),
+    marketOnly: true,
+  );
+
+  BingxFuturesLiveDecisionResult _decide(
+    BingxFuturesLiveDecisionInput input, {
+    required bool marketOnly,
+  }) {
     final snapshot = _snapshotService.build(input.snapshotInput);
     final features = _featureExtractor.extract(snapshot);
     final requestedZoneSide = _normalizeSide(input.zoneEvaluationSide);
-    final tvhDecision = _ruleEngine.evaluate(
-      features: features,
-      fundingRateDecimal: input.snapshotInput.funding.fundingRateDecimal,
-      isConsensusSignable: input.isConsensusSignable,
-      requiredSide: requestedZoneSide,
-      blockingFactCodes: input.blockingFactCodes,
-      policy: input.policy,
-    );
+    final tvhDecision =
+        marketOnly
+            ? _ruleEngine.evaluateMarket(
+              features: features,
+              fundingRateDecimal:
+                  input.snapshotInput.funding.fundingRateDecimal,
+              requiredSide: requestedZoneSide,
+              policy: input.policy,
+            )
+            : _ruleEngine.evaluate(
+              features: features,
+              fundingRateDecimal:
+                  input.snapshotInput.funding.fundingRateDecimal,
+              isConsensusSignable: input.isConsensusSignable,
+              requiredSide: requestedZoneSide,
+              blockingFactCodes: input.blockingFactCodes,
+              policy: input.policy,
+            );
 
     final decisionSide = switch (tvhDecision.decision) {
       BingxTvhDecisionKind.long => 'buy',
