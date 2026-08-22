@@ -710,13 +710,13 @@ def render_report(registry: dict, evidence: dict) -> str:
     lines.extend(["", "### Candidate Inventory", ""])
     for candidate in evidence["discovery"]["candidates"]:
         lines.append(
-            f"- `{candidate['classification']}` — `{candidate['path']}` line `{candidate['line']}` "
+            f"- `{candidate['classification']}` — `{candidate['path']}` "
             f"(`{candidate['symbol']}`) — rule `{candidate['rule_id']}`"
         )
     lines.extend(["", "### Composition Builders", ""])
     for builder in evidence["discovery"]["builders"]:
         lines.append(
-            f"- `{builder['path']}` line `{builder['line']}` (`{builder['symbol']}` → `{builder['return_type']}`)"
+            f"- `{builder['path']}` (`{builder['symbol']}` → `{builder['return_type']}`)"
         )
     lines.extend(["", "### Generic Service Locator Evidence", ""])
     if evidence["discovery"]["locator_occurrences"]:
@@ -725,8 +725,11 @@ def render_report(registry: dict, evidence: dict) -> str:
     else:
         lines.append("- No registered or unregistered generic service-locator pattern was found.")
     lines.extend(["", "### Oversized Candidate Surfaces", ""])
-    for line_count, path in evidence["discovery"]["oversized"]:
-        lines.append(f"- `{line_count}` lines — `{path}`")
+    lines.append(
+        "Exact line counts are evaluated live by the ownership gate and are not persisted in this baseline."
+    )
+    for _, path in sorted(evidence["discovery"]["oversized"], key=lambda item: item[1]):
+        lines.append(f"- `{path}`")
     lines.extend(["", "## UI and Flutter/FFI Boundary Map", ""])
     lines.extend([
         "| Surface | Kind | Capability | Status | Named target | Rationale |",
@@ -737,9 +740,17 @@ def render_report(registry: dict, evidence: dict) -> str:
             f"| `{mapping['path']}` (`{mapping['symbol']}`) | `{mapping['kind']}` | "
             f"`{mapping['capability_id']}` | `{mapping['status']}` | `{mapping['target']}` | {mapping['rationale']} |"
         )
-    lines.extend(["", "## Owner Surface Entropy", "", "Largest registered owner files by line count:", ""])
-    for line_count, capability_id, path, symbol in evidence["owner_sizes"]:
-        lines.append(f"- `{line_count}` lines — `{capability_id}` — `{path}` (`{symbol}`)")
+    lines.extend([
+        "",
+        "## Owner Surface Inventory",
+        "",
+        "Registered owner paths are persisted structurally; volatile line counts are evaluated live by the ownership gate.",
+        "",
+    ])
+    for _, capability_id, path, symbol in sorted(
+        evidence["owner_sizes"], key=lambda item: (item[1], item[2], item[3])
+    ):
+        lines.append(f"- `{capability_id}` — `{path}` (`{symbol}`)")
     lines.append("")
     return "\n".join(lines)
 
@@ -822,6 +833,24 @@ def self_test(registry: dict) -> None:
             continue
         raise RegistryError(f"self-test failed to reject {name}")
 
+    evidence = validate_registry(registry)
+    baseline = render_report(registry, evidence)
+    volatile = copy.deepcopy(evidence)
+    for candidate in volatile["discovery"]["candidates"]:
+        candidate["line"] += 1000
+    for builder in volatile["discovery"]["builders"]:
+        builder["line"] += 1000
+    volatile["discovery"]["oversized"] = [
+        (line_count + 1000, path)
+        for line_count, path in volatile["discovery"]["oversized"]
+    ]
+    volatile["owner_sizes"] = [
+        (line_count + 1000, capability_id, path, symbol)
+        for line_count, capability_id, path, symbol in volatile["owner_sizes"]
+    ]
+    if render_report(registry, volatile) != baseline:
+        raise RegistryError("self-test failed: volatile source positions changed the report")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -837,14 +866,20 @@ def main() -> int:
             self_test(registry)
             print("PASS ownership-registry: fail-closed self-test")
             return 0
-        report = render_report(registry, validate_registry(registry))
+        evidence = validate_registry(registry)
+        report = render_report(registry, evidence)
         if args.write:
             REPORT_PATH.write_text(report, encoding="utf-8")
             print(f"WROTE {REPORT_PATH.relative_to(ROOT)}")
             return 0
         if not REPORT_PATH.is_file() or REPORT_PATH.read_text(encoding="utf-8") != report:
             raise RegistryError("generated report is stale; run generate_ownership_report.py --write")
-        print("PASS ownership-registry: registry and generated report are current")
+        oversized = evidence["discovery"]["oversized"]
+        largest = max(oversized, default=(0, "none"))
+        print(
+            "PASS ownership-registry: registry and generated report are current; "
+            f"live oversized={len(oversized)} largest={largest[1]}:{largest[0]}"
+        )
         return 0
     except (RegistryError, json.JSONDecodeError, OSError, ValueError) as error:
         print(f"FAIL ownership-registry: {error}", file=sys.stderr)
