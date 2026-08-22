@@ -221,6 +221,23 @@ class BingxFuturesTradingCycleUseCaseService {
     }
     final entryPrice = (zoneLow + zoneHigh) / 2;
     final triggerPrice = decision.side == 'buy' ? zoneHigh : zoneLow;
+    final targets = deriveBingxFuturesLiquidityTargets(
+      side: decision.side!,
+      entryPrice: entryPrice,
+      stopLossPercent: command.stopLossPercent,
+      minimumRiskReward: command.takeProfitRiskReward,
+      oppositeLiquidityTargetDecimal: decision.oppositeLiquidityTargetDecimal,
+    );
+    if (targets.blockerCode != null) {
+      return _blocked(
+        BingxFuturesTradingCycleStatus.marketBlocked,
+        targets.blockerCode!,
+        targets.blockerMessage!,
+        decision: decision,
+        stopLossDecimal: targets.stopLossDecimal,
+        takeProfitDecimal: targets.takeProfitDecimal,
+      );
+    }
     final sizing = await _runSizing(
       symbol: symbol,
       maximumNotionalQuote: command.maximumNotionalQuote,
@@ -237,12 +254,6 @@ class BingxFuturesTradingCycleUseCaseService {
       );
     }
 
-    final targets = _riskTargets(
-      side: decision.side!,
-      entryPrice: entryPrice,
-      stopLossPercent: command.stopLossPercent,
-      riskReward: command.takeProfitRiskReward,
-    );
     late final BingxFuturesIntentUseCaseResult intent;
     try {
       intent = await _runIntent(
@@ -460,27 +471,6 @@ class BingxFuturesTradingCycleUseCaseService {
     );
   }
 
-  ({String stopLossDecimal, String takeProfitDecimal}) _riskTargets({
-    required String side,
-    required num entryPrice,
-    required double stopLossPercent,
-    required double riskReward,
-  }) {
-    final stopFactor = stopLossPercent / 100;
-    final buy = side == 'buy';
-    final stopLoss =
-        buy ? entryPrice * (1 - stopFactor) : entryPrice * (1 + stopFactor);
-    final risk = (stopLoss - entryPrice).abs();
-    final takeProfit =
-        buy
-            ? entryPrice + (risk * riskReward)
-            : entryPrice - (risk * riskReward);
-    return (
-      stopLossDecimal: _formatDecimal(stopLoss),
-      takeProfitDecimal: _formatDecimal(takeProfit),
-    );
-  }
-
   String _formatDecimal(num value) =>
       value.toStringAsFixed(8).replaceFirst(RegExp(r'\.?0+$'), '');
 
@@ -506,4 +496,67 @@ class BingxFuturesTradingCycleUseCaseService {
       takeProfitDecimal: takeProfitDecimal,
     );
   }
+}
+
+({
+  String? stopLossDecimal,
+  String? takeProfitDecimal,
+  double? actualRiskReward,
+  String? blockerCode,
+  String? blockerMessage,
+})
+deriveBingxFuturesLiquidityTargets({
+  required String side,
+  required num entryPrice,
+  required double stopLossPercent,
+  required double minimumRiskReward,
+  required String? oppositeLiquidityTargetDecimal,
+}) {
+  String decimal(num value) =>
+      value.toStringAsFixed(8).replaceFirst(RegExp(r'\.?0+$'), '');
+
+  final buy = side.trim().toLowerCase() == 'buy';
+  final stopFactor = stopLossPercent / 100;
+  final stopLoss =
+      buy ? entryPrice * (1 - stopFactor) : entryPrice * (1 + stopFactor);
+  final stopLossDecimal = decimal(stopLoss);
+  final target = num.tryParse(oppositeLiquidityTargetDecimal?.trim() ?? '');
+  if (target == null || target <= 0) {
+    return (
+      stopLossDecimal: stopLossDecimal,
+      takeProfitDecimal: null,
+      actualRiskReward: null,
+      blockerCode: 'opposite_liquidity_target_unavailable',
+      blockerMessage: 'Fresh opposite liquidity is unavailable.',
+    );
+  }
+  final profitDistance = buy ? target - entryPrice : entryPrice - target;
+  if (profitDistance <= 0) {
+    return (
+      stopLossDecimal: stopLossDecimal,
+      takeProfitDecimal: null,
+      actualRiskReward: null,
+      blockerCode: 'opposite_liquidity_target_wrong_side',
+      blockerMessage: 'Opposite liquidity is not on the profitable side.',
+    );
+  }
+  final riskDistance = (stopLoss - entryPrice).abs();
+  final actualRiskReward = profitDistance / riskDistance;
+  if (!actualRiskReward.isFinite || actualRiskReward < minimumRiskReward) {
+    return (
+      stopLossDecimal: stopLossDecimal,
+      takeProfitDecimal: decimal(target),
+      actualRiskReward: actualRiskReward,
+      blockerCode: 'opposite_liquidity_risk_reward_insufficient',
+      blockerMessage:
+          'Opposite liquidity does not meet the minimum risk/reward.',
+    );
+  }
+  return (
+    stopLossDecimal: stopLossDecimal,
+    takeProfitDecimal: decimal(target),
+    actualRiskReward: actualRiskReward,
+    blockerCode: null,
+    blockerMessage: null,
+  );
 }

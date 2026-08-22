@@ -631,9 +631,14 @@ For every accepted TVH:
 
 1. Stop-loss distance:
    - `max(structure_invalidation_distance, 0.8 * ATR14_5m)`.
-2. Take-profit baseline:
-   - first target at `>= 1.8R`,
-   - optional second target at `>= 2.5R`.
+2. Take-profit authority:
+   - the first target is the nearest fresh opposite external-liquidity level on
+     the profitable side of the entry,
+   - configured `R` is a minimum quality gate, not a synthetic target-price
+     generator,
+   - reject the setup when the opposite-liquidity target is unavailable,
+     stale, on the wrong side, or below the configured minimum `R`,
+   - an optional second target may use a farther fresh opposite-liquidity level.
 3. Reject setup when:
    - estimated slippage > `max_slippage_bps`,
    - stop distance violates symbol precision/min distance constraints.

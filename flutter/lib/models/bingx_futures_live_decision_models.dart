@@ -49,6 +49,9 @@ class BingxFuturesLiveDecisionResult {
   final String? liquidityEventAtUtc;
   final String? latestClosedMicroBarAtUtc;
   final String? referencePriceDecimal;
+  final String? oppositeLiquidityTargetDecimal;
+  final String? oppositeLiquidityTargetSource;
+  final String? oppositeLiquidityTargetAtUtc;
 
   const BingxFuturesLiveDecisionResult({
     required this.canPrepareIntent,
@@ -77,5 +80,8 @@ class BingxFuturesLiveDecisionResult {
     this.liquidityEventAtUtc,
     this.latestClosedMicroBarAtUtc,
     this.referencePriceDecimal,
+    this.oppositeLiquidityTargetDecimal,
+    this.oppositeLiquidityTargetSource,
+    this.oppositeLiquidityTargetAtUtc,
   });
 }
