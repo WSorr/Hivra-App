@@ -264,8 +264,9 @@ Before an evolution unit changes code, record:
 6. whether ABI, artifact layout, signing, storage, or startup behavior changed;
 7. source commit and resulting artifact hashes.
 
-The final record belongs in the release evidence for a released update and in
-`docs/roadmap.md` while the unit remains active.
+The final record belongs in the release evidence for a released update. While
+the unit is active, its outcome and exit evidence belong in the implementation
+PR and the short board in `docs/development-control.md`.
 
 ## 6. Relationship to 1.x and 2.0
 

@@ -2,31 +2,11 @@
 
 Status date: 2026-08-22
 Current released baseline: commit `2a23411` (`v1.0.3-test16`, macOS and Android manual signoff recorded)
-Current development focus: `1.x BingX Provider Contract Conformance + Minimal
-Live Vertical` is active. Sanitized read-only evidence from the dedicated
-futures subaccount established the current balance, contract-rule, empty
-realized-PnL, empty-position, and empty-open-order response shapes. The existing
-exchange adapter and execution/reconciliation lifecycle remain the sole owners.
-Provider conformance and trigger-bound sizing are merged and green. A packaged
-build then placed exactly one bounded live trigger order, retained the provider
-identity, reconciled it while open, cancelled it through the existing
-revalidation lifecycle, and restored the exact terminal claim after restart
-without a duplicate provider effect. Protected PR `#182` closed the resulting
-side-locked revalidation and prepared-label remediation at `657a482`. A later
-packaged SOL run exposed a separate freshness defect: the same executable
-liquidity event was rejected after a later closed bar and an approximately
-0.00023% zone-boundary adjustment. Stable-event freshness is merged and green
-at `1eccd22`: it keeps exact event, side, anchor, lifecycle, and monotonic-time
-binding while allowing at most 1 bp of derived boundary drift, and mandate
-re-authorization clears the previous prepared intent. Packaged smoke then found
-that a blocked SOL zone-conflict decision still populated executable pending-
-zone fields. Protected PR `#184` merged the bounded projection remediation at
-`1e339d3`. Packaged Release smoke then reproduced both
-`market_liquidity_zone_conflict` and `liquidity_anchor_unavailable` with
-`effect=false`, empty executable fields, and the exact blocking notice. No next
-implementation pass is selected. The Trading Drone is not operational and
-VPS/24/7 execution remains blocked. No plugin ABI, Core, Ledger, tag, or Release
-is authorized.
+Current development focus: Hivra 1.x product completion. The Trading Drone has
+proved one bounded live order and restart reconciliation, but it is not yet an
+operational product. No next implementation unit is selected. VPS/24/7
+execution, plugin ABI, Core, Ledger, tag, Release, and 2.0 runtime work remain
+blocked until an explicit product finding selects them.
 Scheduling, leases, multi-symbol execution, Pair Consensus, AI authority,
 withdrawal/transfer endpoints, release, and 2.0 work remain unauthorized.
 
@@ -38,37 +18,37 @@ Before resuming work, answer four questions in this order:
 | --- | --- | --- |
 | What product rules cannot move? | The product axis, the three laws, local-first Capsule ownership, Ledger truth, and capability isolation. | `product-axis.md`, then `specification.md` |
 | Which runtime is releasable? | Hivra 1.x on `main` is the sole production line. | `specification.md`, release checklists |
-| What is the next 1.x step? | No implementation pass is selected. A separate observed P2 is that restart initializes the screen in TEST mode instead of restoring the active Capsule mandate mode; select it explicitly before changing behavior. | This board; detailed history remains in `roadmap.md` |
+| What is the next 1.x step? | Select one observed user-facing failure that blocks the next complete Chat, Moltbook, or Trading journey. No implementation unit is currently selected. | This board and the relevant product contract |
 | Is 2.0 implementation work allowed? | No. Completed V2-0/V2-1 design checkpoints authorize no production path; a later unit must be selected explicitly. | `architecture-v2-blueprint.md` |
 
-Do not infer current work from chronological history in `roadmap.md`. Start
-from this table, then open only the linked authority for the selected unit.
+Do not infer current work from chronological history in `roadmap.md`. It is a
+frozen archive, not an active backlog or status source. Start from this table,
+then open only the contract and tests for the selected product outcome.
 
 ## 2. Current Development Board
 
 | Line | State | Current unit | Completion boundary | Next boundary |
 | --- | --- | --- | --- | --- |
-| **1.x maintained runtime** | No implementation pass selected | The existing Trading screen projects executable order fields only for a prepared decision whose `canPrepareIntent` flag is true. | Provider conformance, trigger sizing, one packaged live effect, restart restoration, side-locked revalidation, prepared-label remediation, stable-event freshness, and blocked-zone projection are proven. | Explicitly select the observed Capsule-mandate mode restoration P2 or another bounded product finding; VPS, scheduler, release, and any additional effect remain blocked. |
+| **1.x maintained runtime** | Product completion; no unit selected | Chat, Moltbook, and Trading must each close a complete user journey through their existing canonical owners. | Trading has proved one bounded live effect and restart reconciliation; this is evidence, not an operational-product claim. | Select one reproduced product blocker. Do not create a documentation pass to describe it. |
 | **1.x release** | `v1.0.3-test16` published as test prerelease | The release and its evidence remain unchanged. | No next candidate or stable `1.0` claim is selected automatically. |
 | **2.0 architecture** | `V2-0` and `V2-1 / passes A-E` complete; paused | No active 2.0 unit; runtime implementation remains unauthorized. | Resume only by an explicit later decision; do not infer Pass F. |
 | **Platform toolchain** | T0 reverified | The pinned baseline remains canonical. | T1 requires a dedicated selected upgrade unit. |
 | **Capsule AI Runtime** | Current remediation complete | The existing credential owner and one process lease remain canonical. | No second credential owner or AI-5 is selected. |
 | **Future product tracks** | Parked | Durable intent and bounded delegation, AI trading advice, distributed backup, staking, and further Moltbook authority remain unselected. | Each requires its own approved contract and capability-closure decision. |
 
-`12.3` passes 1-18 are complete. Any later transport remediation requires a
-new named finding and bounded pass; no pass is inferred from one manual run.
 Unchecked boxes in reusable release/smoke checklists are execution templates,
-not automatically active debt.
+not automatically active debt. Historical pass numbering creates no future
+work and is not used for ordinary product defects.
 
 ## 3. The Only Two Work Lanes
 
 ```text
-1.x maintenance
-  reported failure or review finding
-  -> one scoped remediation pass
+1.x product work
+  reproduced user-facing failure or missing journey
+  -> one bounded implementation unit in the existing owner
   -> regression test + gates
   -> focused manual smoke when risk requires it
-  -> commit
+  -> one implementation PR
   -> optional release decision
 
 2.0 design
@@ -86,32 +66,34 @@ must not change 1.x behavior merely to make a diagram look cleaner.
 
 ## 4. Session Protocol
 
-At the beginning of a development session, record the following in the task
-conversation before editing:
+At the beginning of a development session, state only:
 
-1. **Lane and item:** for example, `1.x / 12.3 pass 3` or `2.0 / V2-0`.
-2. **Invariant:** the one product-axis invariant being strengthened.
-3. **Owner:** the sole capability/module allowed to own the decision or effect.
-4. **Exit evidence:** exact tests, gates, and manual smoke required.
-5. **Removal/sealing:** the old path, ambiguity, or forbidden edge that will
-   disappear or be made unreachable.
+1. **Outcome:** the observable user journey or failure being changed.
+2. **Owner:** the existing capability/module that owns the decision or effect.
+3. **Exit evidence:** the smallest automated and manual evidence that proves
+   the outcome without a regression.
 
 Before packaged manual smoke begins, follow the operator-selection rule in
 `docs/checklists/manual-smoke.md`: stop and ask **"Hands or automatic?"**. Do
 not start interactive actions until the person chooses who drives the UI.
 
-At the end of a meaningful pass, update only the source that owns its status:
+Documentation follows semantic change, not implementation ceremony:
 
 | Change type | Update |
 | --- | --- |
-| Current behavior, protocol, invariant | `specification.md` and, if user-visible, `hivra-conceptual-model.md` |
-| Engineering history and debt | `roadmap.md` |
-| Current unit and next decision | The board in this file |
-| 2.0 ownership / contract / migration proof | `architecture-v2-blueprint.md` and the board in this file |
-| Flutter/Rust/Android/macOS toolchain update | `docs/platform-toolchain-evolution.md`, the roadmap, and release evidence |
+| Current behavior, protocol, invariant changed | Update its existing normative contract in the implementation PR |
+| Ordinary bug fixed without a contract change | Code, regression test, and evidence only; no documentation closure |
+| Current product outcome or next decision changed materially | Update the board in this file in the implementation PR |
+| 2.0 ownership / contract / migration proof | `architecture-v2-blueprint.md` in its explicitly selected design PR |
+| Flutter/Rust/Android/macOS toolchain contract changed | `docs/platform-toolchain-evolution.md` and release evidence |
 | Release readiness | The applicable release checklist and release evidence |
 
-No status update means the work is not ready to be called complete.
+`roadmap.md` is a frozen historical archive. Routine fixes MUST NOT append to
+it. A separate documentation-only status, closure, remediation, or checkpoint
+PR MUST NOT follow an ordinary implementation PR. Git history, the merged PR,
+tests, and manual evidence already record that history. Documentation-only PRs
+remain valid for real specification, architecture, migration, research, or
+release-document changes.
 
 ## 5. Decision Rules
 
@@ -123,8 +105,8 @@ No status update means the work is not ready to be called complete.
   consolidate its lifecycle before adding behavior.
 - If the task cannot state what old path is removed or sealed, it must not add
   a new abstraction.
-- If a manual test exposes a discrepancy, record the reproduction and route it
-  into one active 1.x remediation pass rather than creating an untracked fix.
+- If a manual test exposes a discrepancy, preserve the reproduction in the
+  issue or implementation PR and fix it through the existing owner.
 - If a task is not needed for the next 1.x release and changes ownership or
   contracts, it belongs in the 2.0 design line first.
 
@@ -158,10 +140,9 @@ Repository integration and product release are separate processes.
 For a normal 1.x repair, read only:
 
 1. `development-control.md`
-2. the relevant `roadmap.md` item
-3. `product-axis.md`
-4. the relevant specification/architecture contract and focused tests
+2. `product-axis.md`
+3. the relevant specification/architecture contract and focused tests
 
-For 2.0 design, replace item 2 with `architecture-v2-blueprint.md` and use the
-current code only to inventory reality. This keeps the context small without
-forgetting the product's hard rules.
+For 2.0 design, also read `architecture-v2-blueprint.md` and use the current
+code only to inventory reality. Read `roadmap.md` only when historical evidence
+is specifically needed.

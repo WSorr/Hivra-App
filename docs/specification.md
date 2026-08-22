@@ -1701,12 +1701,13 @@ The current status is:
 - Crypto agility is a 2.0 contract and migration program. Runtime work cannot
   begin until suite registry, descriptor/proof encoding, hybrid checkpoint,
   downgrade, recovery, and golden-vector contracts are closed.
-- Canonical invitation and relationship projection convergence remains an
-  active implementation debt tracked in `docs/roadmap.md`; until it is closed,
-  Flutter projection services are compatibility implementations and MUST NOT
-  become additional truth owners.
+- Canonical invitation and relationship projection convergence remains a
+  compatibility boundary; Flutter projection services MUST NOT become
+  additional truth owners. If further convergence is selected as active work,
+  it must appear in `docs/development-control.md` or a linked implementation
+  issue, not be inferred from historical roadmap text.
 - Cryptographic history continuity, event-scoped delivery records, and other
-  listed hardening items remain roadmap work.
+  hardening items require explicit product selection before implementation.
 - Release readiness is determined by the guarded release workflow and the
   platform signoff checklists, not by this status section alone.
 
