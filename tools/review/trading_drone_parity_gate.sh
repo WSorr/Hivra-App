@@ -100,8 +100,8 @@ local_session_stream_is_wired() {
 }
 
 liquidity_sequence_is_canonical() {
-  rg -q 'final longReady = longTradeOk;' "$1" &&
-    rg -q 'final shortReady = shortTradeOk;' "$1" &&
+  rg -q "final longReady = longTradeOk && normalizedRequiredSide != 'sell';" "$1" &&
+    rg -q "final shortReady = shortTradeOk && normalizedRequiredSide != 'buy';" "$1" &&
     ! rg -q 'minAbsSessionImbalanceRatio|requireWhaleActivation' "$1" &&
     rg -q "'liquidation_proxy'" "$2" &&
     rg -q '_applyLiquidationConfluence' "$3" &&
@@ -109,6 +109,7 @@ liquidity_sequence_is_canonical() {
     ! rg -q 'anchorSource = "liquidation_proxy"' "$3" &&
     rg -q "code: 'market_volume_activation_unavailable'" "$4" &&
     rg -q 'volume activation does not require trend or whale alignment' "$5" &&
+    rg -q 'opposite trade flow cannot flip a constrained liquidity side' "$5" &&
     rg -q 'incomplete session evidence remains context, not authority' "$5" &&
     rg -q 'liquidation proxy ranks fresh structure without becoming anchor' "$6" &&
     rg -q 'projects the exact market blocker without preparing an effect' "$7"
@@ -972,7 +973,7 @@ sed 's/accumulator\.markDisconnected();/accumulator.acceptHeartbeat();/' \
   "$PUBLIC_SESSION_STREAM" > "$PUBLIC_SESSION_GAP_MUTATION"
 sed 's/publicSessionStream\.snapshotFor(symbol)/null/' \
   "$TRADING_MODULE" > "$LOCAL_SESSION_WIRING_MUTATION"
-sed 's/final longReady = longTradeOk;/final longReady = longTradeOk \&\& longSessionAligned;/' \
+sed "s/final longReady = longTradeOk && normalizedRequiredSide != 'sell';/final longReady = longTradeOk \&\& longSessionAligned \&\& normalizedRequiredSide != 'sell';/" \
   "$TVH_RULE_ENGINE" > "$LIQUIDITY_AUTHORITY_MUTATION"
 sed 's/anchorSource = externalBuyRetest\.source;/anchorSource = "liquidation_proxy";/' \
   "$ZONE_DECISION" > "$LIQUIDATION_ANCHOR_MUTATION"

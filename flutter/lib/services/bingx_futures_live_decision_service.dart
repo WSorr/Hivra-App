@@ -36,10 +36,12 @@ class BingxFuturesLiveDecisionService {
   BingxFuturesLiveDecisionResult decide(BingxFuturesLiveDecisionInput input) {
     final snapshot = _snapshotService.build(input.snapshotInput);
     final features = _featureExtractor.extract(snapshot);
+    final requestedZoneSide = _normalizeSide(input.zoneEvaluationSide);
     final tvhDecision = _ruleEngine.evaluate(
       features: features,
       fundingRateDecimal: input.snapshotInput.funding.fundingRateDecimal,
       isConsensusSignable: input.isConsensusSignable,
+      requiredSide: requestedZoneSide,
       blockingFactCodes: input.blockingFactCodes,
       policy: input.policy,
     );
@@ -49,7 +51,6 @@ class BingxFuturesLiveDecisionService {
       BingxTvhDecisionKind.short => 'sell',
       BingxTvhDecisionKind.noSignal || BingxTvhDecisionKind.blocked => null,
     };
-    final requestedZoneSide = _normalizeSide(input.zoneEvaluationSide);
     final zoneEvaluationSide = requestedZoneSide ?? decisionSide;
 
     BingxFuturesZoneDecisionResult? zone;

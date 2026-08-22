@@ -12,6 +12,7 @@ class BingxFuturesTvhRuleEngineService {
     required BingxFuturesFeatureExtractionResult features,
     required String fundingRateDecimal,
     required bool isConsensusSignable,
+    String? requiredSide,
     List<String> blockingFactCodes = const <String>[],
     BingxTvhPolicy policy = const BingxTvhPolicy(),
   }) {
@@ -46,6 +47,7 @@ class BingxFuturesTvhRuleEngineService {
     return evaluateMarket(
       features: features,
       fundingRateDecimal: fundingRateDecimal,
+      requiredSide: requiredSide,
       policy: policy,
     );
   }
@@ -53,9 +55,11 @@ class BingxFuturesTvhRuleEngineService {
   BingxTvhDecisionResult evaluateMarket({
     required BingxFuturesFeatureExtractionResult features,
     required String fundingRateDecimal,
+    String? requiredSide,
     BingxTvhPolicy policy = const BingxTvhPolicy(),
   }) {
     final reasons = <BingxTvhDecisionReason>[];
+    final normalizedRequiredSide = _normalizeOptionalSide(requiredSide);
 
     final fundingRate = _parseDecimal(
       fundingRateDecimal,
@@ -96,8 +100,8 @@ class BingxFuturesTvhRuleEngineService {
     final shortSessionAligned =
         features.sessionEvidenceComplete && sessionImbalanceRatio < 0;
 
-    final longReady = longTradeOk;
-    final shortReady = shortTradeOk;
+    final longReady = longTradeOk && normalizedRequiredSide != 'sell';
+    final shortReady = shortTradeOk && normalizedRequiredSide != 'buy';
 
     reasons.add(
       BingxTvhDecisionReason(
@@ -116,6 +120,15 @@ class BingxFuturesTvhRuleEngineService {
                 : 'coverage=incomplete',
       ),
     );
+    if (normalizedRequiredSide != null) {
+      reasons.add(
+        BingxTvhDecisionReason(
+          code: 'liquidity_side_constraint',
+          passed: true,
+          detail: normalizedRequiredSide,
+        ),
+      );
+    }
     reasons.add(
       BingxTvhDecisionReason(
         code: 'long_trade_imbalance',
@@ -220,6 +233,13 @@ class BingxFuturesTvhRuleEngineService {
       throw FormatException('$field must be a decimal number');
     }
     return parsed;
+  }
+
+  String? _normalizeOptionalSide(String? side) {
+    final normalized = side?.trim().toLowerCase();
+    if (normalized == null || normalized.isEmpty) return null;
+    if (normalized == 'buy' || normalized == 'sell') return normalized;
+    throw FormatException('requiredSide must be buy or sell: $side');
   }
 
   String _fmt(double value) =>
