@@ -104,7 +104,7 @@
       {"id": "owner_and_locator", "status": "COMPLETE", "evidence": "Owner candidates, duplicate owners, composition builders, and generic service-locator patterns are fail-closed evidence.", "gate": "tools/review/ownership_registry_gate.sh"},
       {"id": "closure_verdicts", "status": "COMPLETE", "evidence": "Every registered capability has READY, NEEDS_CONTRACT, NEEDS_PROTOCOL, or REJECTED with missing boundaries.", "gate": "tools/review/ownership_registry_gate.sh"},
       {"id": "crypto_compatibility_debt", "status": "COMPLETE", "evidence": "Fixed-size crypto shapes remain non-increasing and confined to the explicit 1.x compatibility boundary.", "gate": "tools/review/architecture_contract_gate.sh"},
-      {"id": "entropy_baseline", "status": "COMPLETE", "evidence": "Generated owner sizes and oversized candidate surfaces expose current concentration without moving runtime files.", "gate": "tools/review/ownership_registry_gate.sh"},
+      {"id": "entropy_baseline", "status": "COMPLETE", "evidence": "The gate computes owner sizes live while the generated baseline persists only stable owner and oversized-surface identities.", "gate": "tools/review/ownership_registry_gate.sh"},
       {"id": "runtime_scope", "status": "COMPLETE", "evidence": "V2-0 produced architecture registry, generated evidence, documentation, and review gates only; it authorizes no runtime implementation.", "gate": "tools/review/architecture_contract_gate.sh"}
     ],
     "ordered_non_ready_capabilities": [
